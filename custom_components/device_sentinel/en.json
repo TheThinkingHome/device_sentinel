@@ -1,0 +1,7 @@
+{
+  "config": {
+    "abort": {
+      "single_instance_allowed": "Device Sentinel is already configured. Only a single instance is supported."
+    }
+  }
+}
