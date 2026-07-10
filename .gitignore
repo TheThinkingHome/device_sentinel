@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Home Assistant dev clutter
+.HA_VERSION
+*.log
+.storage/
+config/
