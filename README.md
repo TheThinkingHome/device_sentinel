@@ -20,7 +20,11 @@ Device Sentinel is the integration successor to the Sentinel template blueprints
 
 ## Installation (development)
 
-Through HACS custom repositories: HACS, Custom repositories, paste this repository's URL, category Integration, install, restart, then add Device Sentinel under Settings, Devices and Services.
+One click, on a machine with HACS installed:
+
+[![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=TheThinkingHome&repository=device_sentinel&category=integration)
+
+Or by hand: HACS, the three-dot menu, Custom repositories, paste `https://github.com/TheThinkingHome/device_sentinel`, category Integration, Add. Then install Device Sentinel from HACS, restart Home Assistant, and add it under Settings, Devices and Services, Add Integration.
 
 ## From The Thinking Home
 
