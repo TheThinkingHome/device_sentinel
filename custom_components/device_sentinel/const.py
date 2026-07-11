@@ -55,6 +55,27 @@ STORM_RELEASE_SECONDS = 5.0
 STORM_EXEMPT_PER_HOUR = 10
 STORM_HISTORY_SECONDS = 3600
 
+# Taint debounce: an unavailable or unknown shorter than this is a
+# hiccup, not an outage; it sets no taint. Matches the blueprints'
+# three-minute unavailable debounce. Provisional per the soak.
+TAINT_DEBOUNCE_SECONDS = 180
+
+# Statistics epoch: when storage carries an older epoch, learned
+# statistics (daily maxima, event counts, signal minima) are wiped
+# once so every rhythm is learned under the final rule set. Clocks
+# and identity survive.
+STATS_EPOCH = "0.2.3"
+DATA_STATS_EPOCH = "stats_epoch"
+
+# Per-device signal fields (linkquality/RSSI, gather-first).
+DEV_SIGNAL_VALUE = "signal_value"
+DEV_SIGNAL_TODAY_MIN = "signal_today_min"
+DEV_SIGNAL_DAILY_MIN = "signal_daily_min"
+
+# Signal-entity recognition terms (Z2M sets no device class on
+# linkquality; ZHA/Z-Wave use device_class signal_strength).
+SIGNAL_NAME_TERMS = ("linkquality", "lqi", "rssi")
+
 # Rolling statistics: daily maxima kept per device. 14 days records
 # more than the rolling window will need, so the window-length
 # tunable can be settled from soak data without re-collecting.
