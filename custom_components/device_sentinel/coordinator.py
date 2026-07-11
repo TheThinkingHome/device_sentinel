@@ -59,6 +59,8 @@ from .const import (
     STORAGE_KEY,
     STORAGE_VERSION,
     STORM_DEVICE_THRESHOLD,
+    STORM_EXEMPT_PER_HOUR,
+    STORM_HISTORY_SECONDS,
     STORM_RELEASE_SECONDS,
     STORM_WINDOW_SECONDS,
 )
@@ -109,6 +111,8 @@ class DeviceSentinelCoordinator:
         self._grace_taints: set[str] = set()
         self._storm_feed_q: dict[str, deque[tuple[float, str]]] = {}
         self._storm_active: dict[str, dict[str, Any]] = {}
+        self._storm_history: dict[str, deque[float]] = {}
+        self._storm_exempt: set[str] = set()
 
         self._listeners: list[Any] = []
         self._unsubs: list[Any] = []
@@ -214,8 +218,19 @@ class DeviceSentinelCoordinator:
     # ---------------------------------------------------- registry view
 
     def _primary_domain(self, device: dr.DeviceEntry) -> str:
-        """Return the integration domain owning a device."""
-        for entry_id in device.config_entries:
+        """Return the integration domain owning a device.
+
+        Multi-homed devices (known to their own integration and to a
+        network tracker at once) attribute to the registry's
+        primary_config_entry, the entry that created the device, with
+        a sorted fallback so the pick is deterministic either way.
+        """
+        entry_ids: list[str] = []
+        primary = getattr(device, "primary_config_entry", None)
+        if primary is not None:
+            entry_ids.append(primary)
+        entry_ids.extend(sorted(device.config_entries))
+        for entry_id in entry_ids:
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry is not None:
                 return entry.domain
@@ -388,7 +403,7 @@ class DeviceSentinelCoordinator:
         self, entry_id: str | None, device_id: str, now: float
     ) -> dict[str, Any] | None:
         """Feed the per-integration storm detector; return active storm."""
-        if entry_id is None:
+        if entry_id is None or entry_id in self._storm_exempt:
             return None
         queue = self._storm_feed_q.setdefault(entry_id, deque())
         queue.append((now, device_id))
@@ -400,6 +415,26 @@ class DeviceSentinelCoordinator:
         storm = self._storm_active.get(entry_id)
         if distinct >= STORM_DEVICE_THRESHOLD:
             if storm is None:
+                history = self._storm_history.setdefault(entry_id, deque())
+                history.append(now)
+                cutoff_h = now - STORM_HISTORY_SECONDS
+                while history and history[0] < cutoff_h:
+                    history.popleft()
+                if len(history) >= STORM_EXEMPT_PER_HOUR:
+                    self._storm_exempt.add(entry_id)
+                    self._storm_feed_q.pop(entry_id, None)
+                    entry = self.hass.config_entries.async_get_entry(
+                        entry_id
+                    )
+                    LOGGER.info(
+                        "Integration %s reclassified as synchronized "
+                        "polling (%d storms inside an hour); storm "
+                        "exclusion disabled for it, its devices learn "
+                        "their poll cadence as rhythm",
+                        entry.domain if entry else entry_id,
+                        len(history),
+                    )
+                    return None
                 storm = {
                     "start": now,
                     "last_met": now,
@@ -420,16 +455,17 @@ class DeviceSentinelCoordinator:
         self, entry_id: str, storm: dict[str, Any], now: float
     ) -> None:
         """Close a storm and log its full accounting."""
-        entry = self.hass.config_entries.async_get_entry(entry_id)
-        domain = entry.domain if entry else entry_id
-        LOGGER.info(
-            "Storm on %s ended: %d devices, %d stamps excluded from "
-            "learning, %.1f s duration",
-            domain,
-            len(storm["devices"]),
-            storm["stamps"],
-            storm["last_met"] - storm["start"] + STORM_RELEASE_SECONDS,
-        )
+        if storm["stamps"]:
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            domain = entry.domain if entry else entry_id
+            LOGGER.info(
+                "Storm on %s ended: %d devices, %d stamps excluded from "
+                "learning, %.1f s duration",
+                domain,
+                len(storm["devices"]),
+                storm["stamps"],
+                storm["last_met"] - storm["start"] + STORM_RELEASE_SECONDS,
+            )
         self._storm_active.pop(entry_id, None)
 
     def _sweep_storms(self, now: float) -> None:
