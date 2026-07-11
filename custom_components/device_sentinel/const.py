@@ -47,6 +47,14 @@ STORM_DEVICE_THRESHOLD = 15
 STORM_WINDOW_SECONDS = 2.0
 STORM_RELEASE_SECONDS = 5.0
 
+# Storm duty-cycle exemption: an integration storming chronically is a
+# synchronized poller (all its devices update in the same instant every
+# scan), not a republisher. Its devices' honest rhythm is the poll
+# cadence, so storm exclusion stops applying to it. Provisional per the
+# soak, learned from the tplink_router finding (920 storms overnight).
+STORM_EXEMPT_PER_HOUR = 10
+STORM_HISTORY_SECONDS = 3600
+
 # Rolling statistics: daily maxima kept per device. 14 days records
 # more than the rolling window will need, so the window-length
 # tunable can be settled from soak data without re-collecting.
