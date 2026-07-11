@@ -45,4 +45,5 @@ async def async_unload_entry(
 ) -> bool:
     """Unload a Device Sentinel config entry."""
     LOGGER.info("Device Sentinel unloading")
+    await entry.runtime_data.async_shutdown()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
