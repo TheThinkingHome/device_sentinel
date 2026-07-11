@@ -106,6 +106,7 @@ class DeviceSentinelCoordinator:
         self._grace_until: float = 0.0
         self._grace_stamps: int = 0
         self._grace_devices: set[str] = set()
+        self._grace_taints: set[str] = set()
         self._storm_feed_q: dict[str, deque[tuple[float, str]]] = {}
         self._storm_active: dict[str, dict[str, Any]] = {}
 
@@ -317,12 +318,15 @@ class DeviceSentinelCoordinator:
             if record is not None and not record[DEV_TAINTED]:
                 record[DEV_TAINTED] = True
                 self._dirty = True
-                LOGGER.info(
-                    "Device tainted by %s going %s; its next completed "
-                    "gap will not feed learning",
-                    entity_id,
-                    new_state.state,
-                )
+                if dt_util.utcnow().timestamp() < self._grace_until:
+                    self._grace_taints.add(device_id)
+                else:
+                    LOGGER.info(
+                        "Device tainted by %s going %s; its next "
+                        "completed gap will not feed learning",
+                        entity_id,
+                        new_state.state,
+                    )
             return
         self._record_activity(device_id, entry_id)
 
@@ -348,6 +352,13 @@ class DeviceSentinelCoordinator:
         storm = self._storm_feed(entry_id, device_id, now)
         grace = now < self._grace_until
 
+        # A taint is consumed by any real-value stamp: the outage ended
+        # here, and the spanning gap is excluded by whichever rule
+        # applies. Exclusions are independent, not exclusive.
+        tainted = record[DEV_TAINTED]
+        if tainted:
+            record[DEV_TAINTED] = False
+
         last = record[DEV_LAST_ACTIVITY]
         if grace:
             self._grace_stamps += 1
@@ -355,8 +366,7 @@ class DeviceSentinelCoordinator:
         elif storm is not None:
             storm["stamps"] += 1
             storm["devices"].add(device_id)
-        elif record[DEV_TAINTED]:
-            record[DEV_TAINTED] = False
+        elif tainted:
             if last is not None:
                 LOGGER.info(
                     "Completed gap of %.0f s on a tainted device excluded "
@@ -435,10 +445,11 @@ class DeviceSentinelCoordinator:
         """Log the startup grace summary."""
         LOGGER.info(
             "Startup grace closed after %d s: %d stamps across %d devices "
-            "excluded from learning",
+            "excluded from learning; %d boot-blip taints aggregated",
             STARTUP_GRACE_SECONDS,
             self._grace_stamps,
             len(self._grace_devices),
+            len(self._grace_taints),
         )
 
     async def _on_midnight(self, _now: Any) -> None:
