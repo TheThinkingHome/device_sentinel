@@ -43,6 +43,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     DAILY_MAX_KEEP,
+    DATA_STATS_EPOCH,
     DATA_DEVICES,
     DATA_FIRST_INSTALLED,
     DATA_SETUP_COUNT,
@@ -50,8 +51,13 @@ from .const import (
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
     DEV_LAST_ACTIVITY,
+    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_TODAY_MIN,
+    DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     DEV_TODAY_MAX,
+    SIGNAL_NAME_TERMS,
+    STATS_EPOCH,
     LEARNING_MIN_DAYS,
     LOGGER,
     RENDER_TICK_SECONDS,
@@ -63,6 +69,7 @@ from .const import (
     STORM_HISTORY_SECONDS,
     STORM_RELEASE_SECONDS,
     STORM_WINDOW_SECONDS,
+    TAINT_DEBOUNCE_SECONDS,
 )
 
 BAD_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
@@ -77,6 +84,9 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_FIRST_OBSERVED: now_iso,
         DEV_EVENT_COUNT: 0,
         DEV_TAINTED: False,
+        DEV_SIGNAL_VALUE: None,
+        DEV_SIGNAL_TODAY_MIN: None,
+        DEV_SIGNAL_DAILY_MIN: [],
     }
 
 
@@ -102,6 +112,9 @@ class DeviceSentinelCoordinator:
         self._watched: dict[str, str] = {}  # device_id -> integration domain
         self._set_aside: dict[str, tuple[str, str]] = {}  # id -> (name, domain)
         self._last_seen_entity: dict[str, str] = {}  # device_id -> entity_id
+        self._signal_entities: set[str] = set()
+        self._signal_devices: set[str] = set()
+        self._pending_unavailable: dict[str, float] = {}
         self.deviceless_count: int = 0
 
         # Grace and storm state.
@@ -136,6 +149,30 @@ class DeviceSentinelCoordinator:
         loaded[DATA_SETUP_COUNT] = int(loaded.get(DATA_SETUP_COUNT, 0)) + 1
         loaded.setdefault(DATA_FIRST_INSTALLED, dt_util.utcnow().isoformat())
         loaded.setdefault(DATA_DEVICES, {})
+        if loaded.get(DATA_STATS_EPOCH) != STATS_EPOCH:
+            wiped = 0
+            for record in loaded[DATA_DEVICES].values():
+                record[DEV_DAILY_MAX] = []
+                record[DEV_TODAY_MAX] = None
+                record[DEV_EVENT_COUNT] = 0
+                record[DEV_TAINTED] = False
+                record[DEV_SIGNAL_VALUE] = None
+                record[DEV_SIGNAL_TODAY_MIN] = None
+                record[DEV_SIGNAL_DAILY_MIN] = []
+                wiped += 1
+            loaded[DATA_STATS_EPOCH] = STATS_EPOCH
+            LOGGER.info(
+                "Statistics epoch %s: learned statistics reset for %d "
+                "devices so rhythms are learned under the final rule "
+                "set; activity clocks and identity kept",
+                STATS_EPOCH,
+                wiped,
+            )
+        else:
+            for record in loaded[DATA_DEVICES].values():
+                record.setdefault(DEV_SIGNAL_VALUE, None)
+                record.setdefault(DEV_SIGNAL_TODAY_MIN, None)
+                record.setdefault(DEV_SIGNAL_DAILY_MIN, [])
         self.data = loaded
         await self._store.async_save(self.data)
         self.storage_healthy = True
@@ -253,6 +290,8 @@ class DeviceSentinelCoordinator:
 
         entity_map: dict[str, tuple[str, str | None]] = {}
         last_seen_entity: dict[str, str] = {}
+        signal_entities: set[str] = set()
+        signal_devices: set[str] = set()
         deviceless = 0
         for ent in ent_reg.entities.values():
             if ent.device_id is None:
@@ -261,13 +300,19 @@ class DeviceSentinelCoordinator:
             if ent.device_id not in watched:
                 continue
             entity_map[ent.entity_id] = (ent.device_id, ent.config_entry_id)
-            if ent.entity_id.endswith("_last_seen"):
+            if self._is_last_seen(ent):
                 last_seen_entity[ent.device_id] = ent.entity_id
+            if self._is_signal(ent):
+                if ent.disabled_by is None:
+                    signal_entities.add(ent.entity_id)
+                    signal_devices.add(ent.device_id)
 
         self._watched = watched
         self._set_aside = set_aside
         self._entity_map = entity_map
         self._last_seen_entity = last_seen_entity
+        self._signal_entities = signal_entities
+        self._signal_devices = signal_devices
         self.deviceless_count = deviceless
 
         now_iso = dt_util.utcnow().isoformat()
@@ -293,6 +338,30 @@ class DeviceSentinelCoordinator:
                 len(set_aside),
                 names,
             )
+
+    @staticmethod
+    def _is_last_seen(ent: er.RegistryEntry) -> bool:
+        """Recognize a last_seen entity from registry fields alone."""
+        hay = " ".join(
+            str(x)
+            for x in (ent.entity_id, ent.unique_id, ent.original_name)
+            if x
+        ).lower()
+        return "last_seen" in hay or "last seen" in hay
+
+    @staticmethod
+    def _is_signal(ent: er.RegistryEntry) -> bool:
+        """Recognize a signal-strength entity from registry fields."""
+        if str(ent.original_device_class) == "signal_strength" or str(
+            getattr(ent, "device_class", None)
+        ) == "signal_strength":
+            return True
+        hay = " ".join(
+            str(x)
+            for x in (ent.entity_id, ent.unique_id, ent.original_name)
+            if x
+        ).lower()
+        return any(term in hay for term in SIGNAL_NAME_TERMS)
 
     def _seed_from_last_seen(self, device_id: str) -> float | None:
         """Seed a new device's clock from its last_seen entity, if any."""
@@ -329,21 +398,34 @@ class DeviceSentinelCoordinator:
         entity_id = event.data["entity_id"]
         device_id, entry_id = self._entity_map[entity_id]
         if new_state.state in BAD_STATES:
-            record = self.data[DATA_DEVICES].get(device_id)
-            if record is not None and not record[DEV_TAINTED]:
-                record[DEV_TAINTED] = True
-                self._dirty = True
-                if dt_util.utcnow().timestamp() < self._grace_until:
-                    self._grace_taints.add(device_id)
-                else:
-                    LOGGER.info(
-                        "Device tainted by %s going %s; its next "
-                        "completed gap will not feed learning",
-                        entity_id,
-                        new_state.state,
-                    )
+            # Debounced: note when the absence began, taint only if it
+            # lasts. A dead device never recovers, never completes a
+            # gap, and so needs no taint to stay unlearned.
+            self._pending_unavailable.setdefault(
+                entity_id, dt_util.utcnow().timestamp()
+            )
             return
-        self._record_activity(device_id, entry_id)
+        began = self._pending_unavailable.pop(entity_id, None)
+        if began is not None:
+            gone = dt_util.utcnow().timestamp() - began
+            if gone >= TAINT_DEBOUNCE_SECONDS:
+                record = self.data[DATA_DEVICES].get(device_id)
+                if record is not None and not record[DEV_TAINTED]:
+                    record[DEV_TAINTED] = True
+                    self._dirty = True
+                    if dt_util.utcnow().timestamp() < self._grace_until:
+                        self._grace_taints.add(device_id)
+                    else:
+                        LOGGER.info(
+                            "Device tainted: %s was %s for %.0f s; its "
+                            "next completed gap will not feed learning",
+                            entity_id,
+                            new_state.state,
+                            gone,
+                        )
+        self._record_activity(
+            device_id, entry_id, entity_id, new_state.state
+        )
 
     @callback
     def _on_state_reported(self, event: Event) -> None:
@@ -353,16 +435,35 @@ class DeviceSentinelCoordinator:
             return
         entity_id = event.data["entity_id"]
         device_id, entry_id = self._entity_map[entity_id]
-        self._record_activity(device_id, entry_id)
+        self._record_activity(
+            device_id, entry_id, entity_id, new_state.state
+        )
 
     @callback
-    def _record_activity(self, device_id: str, entry_id: str | None) -> None:
+    def _record_activity(
+        self,
+        device_id: str,
+        entry_id: str | None,
+        entity_id: str | None = None,
+        state: str | None = None,
+    ) -> None:
         """Stamp the device clock, completing a gap for learning if clean."""
         now = dt_util.utcnow().timestamp()
         record = self.data[DATA_DEVICES].get(device_id)
         if record is None:
             record = _new_device_record(dt_util.utcnow().isoformat(), None)
             self.data[DATA_DEVICES][device_id] = record
+
+        if entity_id in self._signal_entities and state is not None:
+            try:
+                value = float(state)
+            except ValueError:
+                value = None
+            if value is not None:
+                record[DEV_SIGNAL_VALUE] = value
+                today_min = record.get(DEV_SIGNAL_TODAY_MIN)
+                if today_min is None or value < today_min:
+                    record[DEV_SIGNAL_TODAY_MIN] = value
 
         storm = self._storm_feed(entry_id, device_id, now)
         grace = now < self._grace_until
@@ -497,6 +598,12 @@ class DeviceSentinelCoordinator:
                 del record[DEV_DAILY_MAX][:-DAILY_MAX_KEEP]
                 record[DEV_TODAY_MAX] = None
                 pushed += 1
+            if record.get(DEV_SIGNAL_TODAY_MIN) is not None:
+                record[DEV_SIGNAL_DAILY_MIN].append(
+                    record[DEV_SIGNAL_TODAY_MIN]
+                )
+                del record[DEV_SIGNAL_DAILY_MIN][:-DAILY_MAX_KEEP]
+                record[DEV_SIGNAL_TODAY_MIN] = None
         if pushed:
             self._dirty = True
         LOGGER.info(
@@ -588,6 +695,48 @@ class DeviceSentinelCoordinator:
             )["set_aside"] += 1
         return breakdown
 
+    async def async_enable_signal_entities(self) -> dict[str, int]:
+        """Enable integration-disabled last_seen and signal entities.
+
+        User-disabled entities are respected and only counted. Home
+        Assistant reloads the owning config entries automatically a
+        short delay after enabling.
+        """
+        ent_reg = er.async_get(self.hass)
+        enabled_last_seen = 0
+        enabled_signal = 0
+        skipped_user = 0
+        for ent in list(ent_reg.entities.values()):
+            if ent.device_id not in self._watched:
+                continue
+            is_ls = self._is_last_seen(ent)
+            is_sig = self._is_signal(ent)
+            if not (is_ls or is_sig):
+                continue
+            if ent.disabled_by is None:
+                continue
+            if ent.disabled_by is er.RegistryEntryDisabler.USER:
+                skipped_user += 1
+                continue
+            ent_reg.async_update_entity(ent.entity_id, disabled_by=None)
+            if is_ls:
+                enabled_last_seen += 1
+            else:
+                enabled_signal += 1
+        LOGGER.info(
+            "Enable assist: enabled %d last_seen and %d signal "
+            "entities; %d left alone because a user disabled them. "
+            "Home Assistant reloads the owning integrations shortly",
+            enabled_last_seen,
+            enabled_signal,
+            skipped_user,
+        )
+        return {
+            "last_seen": enabled_last_seen,
+            "signal": enabled_signal,
+            "skipped_user": skipped_user,
+        }
+
     @property
     def clock_source_split(self) -> dict[str, Any]:
         """Return the last_seen versus recorded-clock split."""
@@ -603,5 +752,9 @@ class DeviceSentinelCoordinator:
         return {
             "with_last_seen": with_ls,
             "without_last_seen": len(self._watched) - with_ls,
+            "with_signal": len(self._signal_devices & set(self._watched)),
+            "without_signal": len(
+                set(self._watched) - self._signal_devices
+            ),
             "without_by_integration": without_by_domain,
         }
