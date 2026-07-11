@@ -114,7 +114,7 @@ class DeviceSentinelCoordinator:
         self._last_seen_entity: dict[str, str] = {}  # device_id -> entity_id
         self._signal_entities: set[str] = set()
         self._signal_devices: set[str] = set()
-        self._pending_unavailable: dict[str, float] = {}
+        self._pending_unavailable: dict[str, tuple[float, str]] = {}
         self.deviceless_count: int = 0
 
         # Grace and storm state.
@@ -402,11 +402,13 @@ class DeviceSentinelCoordinator:
             # lasts. A dead device never recovers, never completes a
             # gap, and so needs no taint to stay unlearned.
             self._pending_unavailable.setdefault(
-                entity_id, dt_util.utcnow().timestamp()
+                entity_id,
+                (dt_util.utcnow().timestamp(), new_state.state),
             )
             return
-        began = self._pending_unavailable.pop(entity_id, None)
-        if began is not None:
+        pending = self._pending_unavailable.pop(entity_id, None)
+        if pending is not None:
+            began, bad_state = pending
             gone = dt_util.utcnow().timestamp() - began
             if gone >= TAINT_DEBOUNCE_SECONDS:
                 record = self.data[DATA_DEVICES].get(device_id)
@@ -420,7 +422,7 @@ class DeviceSentinelCoordinator:
                             "Device tainted: %s was %s for %.0f s; its "
                             "next completed gap will not feed learning",
                             entity_id,
-                            new_state.state,
+                            bad_state,
                             gone,
                         )
         self._record_activity(
