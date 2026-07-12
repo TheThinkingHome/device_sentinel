@@ -1,18 +1,26 @@
 # Device Sentinel
 
-A Home Assistant custom integration that watches hardware liveness: frozen devices (silent but showing a healthy value), unavailable devices, and low batteries. It learns each device's own reporting rhythm and sets per-device freeze windows automatically, so it watches everything by default and false-alarms on almost nothing.
+A Home Assistant custom integration that watches hardware liveness: frozen devices (silent but showing a healthy value), unavailable devices, low batteries, and weak radio links. It learns each device's own reporting rhythm and sets per-device freeze windows automatically, so it watches everything by default and false-alarms on almost nothing.
 
-**Status: pre-release backbone (0.1.0). Not intended for use.** This version proves the installation path, the config flow, and persistent storage. It detects nothing and alerts nothing yet. Detection, problem lists, and notifications arrive in later versions.
+**Status: pre-release (0.2.x, the telemetry recorder). Not intended for use.** The current version observes and learns; it detects nothing and alerts nothing yet. Detection, problem lists, and notifications arrive in later versions. Until this project reaches its public release, the blueprints remain the supported tools.
 
-Device Sentinel is the integration successor to the Sentinel template blueprints ([Battery Sentinel, Entity Sentinel, Sentinel Notify](https://github.com/TheThinkingHome/Automations)). Until this project reaches its public release, the blueprints remain the supported tools.
+Device Sentinel is the integration successor to the Sentinel template blueprints ([Battery Sentinel, Entity Sentinel, Sentinel Notify](https://github.com/TheThinkingHome/Automations)).
 
-## What it will do
+## What it does today
 
-- Watch every device in the registry by default, with an exclude list for exceptions. Non-hardware devices (Sun, Backup, add-ons, frontend plugins) are set aside automatically.
-- Learn each device's reporting rhythm from the event bus and set its freeze window from its own worst normal silence plus a margin. No tiers, no hand-guessed windows.
-- Detect frozen devices at device level (any entity's activity vouches for the device), and unavailable, unknown, or missing entities at entity level.
-- Track batteries against a threshold, with below-threshold-since carried across restarts.
-- Keep acknowledgeable problem lists as its own to-do entities, and notify about additions only, with quiet hours and per-device priority.
+- Watches every device in the registry by default. Non-hardware devices (Sun, Backup, add-ons, frontend plugins) are set aside automatically.
+- Learns each device's reporting rhythm from the event bus: the worst normal silence per day, kept as a rolling per-device history in persistent storage that survives restarts and updates. Restart republishes, reconnect storms, and outages are recognized and excluded, so a device can never teach the system that being broken is normal.
+- Records each device's signal strength (Zigbee linkquality, Wi-Fi RSSI) with rolling daily minima.
+- One-press enable assist: a button that enables the last_seen and signal entities integrations ship disabled, so protocol truth flows without hand-enabling entities one by one. Entities a user disabled personally are left alone.
+- Coverage, learning-progress, and classification sensors, plus two diagnostic files written nightly to `/config/device_sentinel/`: the learned-rhythms table (device_telemetry.txt) and the watched-versus-set-aside audit (classification.txt).
+
+## What is coming
+
+- Frozen-device detection at device level (any entity's activity vouches for the device), with each device's window set from its own learned rhythm plus a margin. No tiers, no hand-guessed windows.
+- Unavailable, unknown, and missing detection at entity level.
+- Battery tracking against a threshold, and signal tracking the same way, with below-threshold-since carried across restarts.
+- Acknowledgeable problem lists as the integration's own to-do entities, and notifications about additions only, with quiet hours and per-device priority.
+- An exclude list (entity, device, label, area, integration) and tuning knobs, all through the options flow.
 
 ## Requirements
 
