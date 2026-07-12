@@ -100,3 +100,10 @@ SENTINEL_TYPE_COVERAGE = "coverage"
 SENTINEL_TYPE_LEARNING = "learning_progress"
 SENTINEL_TYPE_CLASSIFICATION = "classification"
 SENTINEL_TYPE_CLOCK_SOURCE = "clock_source"
+
+# Diagnostic files, written at every setup and after every midnight
+# rollover. They live under /config, never under custom_components
+# (code, wiped on update).
+REPORT_DIR = "device_sentinel"
+REPORT_TELEMETRY = "device_telemetry.txt"
+REPORT_CLASSIFICATION = "classification.txt"
