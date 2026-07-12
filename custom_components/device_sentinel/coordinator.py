@@ -19,6 +19,7 @@ Core rules implemented here, all ruled in the project document:
 
 from __future__ import annotations
 
+import os
 from collections import deque
 from datetime import timedelta
 from typing import Any
@@ -44,6 +45,9 @@ from homeassistant.util import dt as dt_util
 from .const import (
     DAILY_MAX_KEEP,
     DATA_STATS_EPOCH,
+    REPORT_CLASSIFICATION,
+    REPORT_DIR,
+    REPORT_TELEMETRY,
     DATA_DEVICES,
     DATA_FIRST_INSTALLED,
     DATA_SETUP_COUNT,
@@ -242,6 +246,7 @@ class DeviceSentinelCoordinator:
             len(self._set_aside),
             self.deviceless_count,
         )
+        await self.hass.async_add_executor_job(self._write_reports)
 
     async def async_shutdown(self) -> None:
         """Stop listening and flush storage."""
@@ -608,11 +613,137 @@ class DeviceSentinelCoordinator:
                 record[DEV_SIGNAL_TODAY_MIN] = None
         if pushed:
             self._dirty = True
+            await self._store.async_save(self.data)
+            self._dirty = False
         LOGGER.info(
             "Day rollover: pushed daily maxima for %d of %d watched devices",
             pushed,
             len(self.data[DATA_DEVICES]),
         )
+        await self.hass.async_add_executor_job(self._write_reports)
+
+    def _fmt_gap(self, seconds: Any) -> str:
+        """Format a gap for the report."""
+        if seconds is None:
+            return "-"
+        if seconds >= 3600:
+            return f"{seconds / 3600:.2f}h"
+        return f"{seconds:.0f}s"
+
+    def _write_reports(self) -> None:
+        """Write both diagnostic files to /config/device_sentinel/."""
+        report_dir = self.hass.config.path(REPORT_DIR)
+        os.makedirs(report_dir, exist_ok=True)
+        self._write_telemetry(report_dir)
+        self._write_classification(report_dir)
+
+    def _write_telemetry(self, report_dir: str) -> None:
+        """Write device_telemetry.txt, the learned-statistics table.
+
+        The triage view for a doubted detection: each device's proven
+        rhythm, clock source, signal minima, and the tunables in
+        effect, so the delay knobs get set against real numbers.
+        """
+        dev_reg = dr.async_get(self.hass)
+        lines = [
+            f"Device Sentinel v{self.version} learned statistics",
+            f"Written {dt_util.now().isoformat(timespec='seconds')} "
+            f"after the day rollover",
+            f"Tunables: grace {STARTUP_GRACE_SECONDS} s, storm "
+            f"{STORM_DEVICE_THRESHOLD} devices/"
+            f"{STORM_WINDOW_SECONDS:g} s (exempt at "
+            f"{STORM_EXEMPT_PER_HOUR}/h), taint debounce "
+            f"{TAINT_DEBOUNCE_SECONDS} s, arming floor "
+            f"{LEARNING_MIN_DAYS} days, keep {DAILY_MAX_KEEP} days",
+            "",
+            f"{'DEVICE':38} {'DAYS':>4} {'WORST GAP':>10} "
+            f"{'CLOCK':>6} {'EVENTS':>7} {'SIGNAL':>7} {'SIG MIN':>8}",
+            "-" * 88,
+        ]
+        rows = []
+        for dev_id, rec in self.data[DATA_DEVICES].items():
+            device = dev_reg.async_get(dev_id)
+            name = (
+                (device.name_by_user or device.name or dev_id)
+                if device
+                else dev_id
+            )
+            daily = rec.get(DEV_DAILY_MAX) or []
+            sig_mins = list(rec.get(DEV_SIGNAL_DAILY_MIN) or [])
+            if rec.get(DEV_SIGNAL_TODAY_MIN) is not None:
+                sig_mins.append(rec[DEV_SIGNAL_TODAY_MIN])
+            rows.append(
+                (
+                    name[:38],
+                    len(daily),
+                    max(daily) if daily else None,
+                    "seen"
+                    if dev_id in self._last_seen_entity
+                    else "clock",
+                    int(rec.get(DEV_EVENT_COUNT, 0)),
+                    rec.get(DEV_SIGNAL_VALUE),
+                    min(sig_mins) if sig_mins else None,
+                )
+            )
+        rows.sort(key=lambda r: (r[2] is None, -(r[2] or 0)))
+        for name, days, worst, clock, events, sig, sigmin in rows:
+            sig_s = "-" if sig is None else f"{sig:g}"
+            sigmin_s = "-" if sigmin is None else f"{sigmin:g}"
+            lines.append(
+                f"{name:38} {days:>4} {self._fmt_gap(worst):>10} "
+                f"{clock:>6} {events:>7} {sig_s:>7} {sigmin_s:>8}"
+            )
+        lines.append("")
+        lines.append(f"{len(rows)} watched devices.")
+        path = os.path.join(report_dir, REPORT_TELEMETRY)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+        LOGGER.info("Telemetry report written to %s", path)
+
+    def _write_classification(self, report_dir: str) -> None:
+        """Write classification.txt, the audit view.
+
+        Answers "why is my device not watched" and "why is this thing
+        in my report": every watched device with integration and clock
+        source, every set-aside device with its integration, and the
+        deviceless count.
+        """
+        dev_reg = dr.async_get(self.hass)
+        lines = [
+            f"Device Sentinel v{self.version} classification",
+            f"Written {dt_util.now().isoformat(timespec='seconds')}",
+            f"Watching {len(self._watched)} of "
+            f"{len(self._watched) + len(self._set_aside)} devices; "
+            f"{len(self._set_aside)} set aside (entry_type service); "
+            f"{self.deviceless_count} deviceless entities visible only "
+            f"at entity level",
+            "",
+            f"WATCHED ({len(self._watched)})",
+            f"{'DEVICE':40} {'INTEGRATION':>18} {'CLOCK':>6}",
+            "-" * 66,
+        ]
+        watched_rows = []
+        for dev_id, domain in self._watched.items():
+            device = dev_reg.async_get(dev_id)
+            name = (
+                (device.name_by_user or device.name or dev_id)
+                if device
+                else dev_id
+            )
+            clock = "seen" if dev_id in self._last_seen_entity else "clock"
+            watched_rows.append((name[:40], domain, clock))
+        for name, domain, clock in sorted(watched_rows):
+            lines.append(f"{name:40} {domain:>18} {clock:>6}")
+        lines.append("")
+        lines.append(f"SET ASIDE ({len(self._set_aside)})")
+        lines.append(f"{'DEVICE':40} {'INTEGRATION':>18}")
+        lines.append("-" * 60)
+        for name, domain in sorted(self._set_aside.values()):
+            lines.append(f"{name[:40]:40} {domain:>18}")
+        path = os.path.join(report_dir, REPORT_CLASSIFICATION)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+        LOGGER.info("Classification report written to %s", path)
 
     async def _on_render_tick(self, _now: Any) -> None:
         """Sweep storms, persist if dirty, refresh the sensors."""
