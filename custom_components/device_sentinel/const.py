@@ -120,3 +120,22 @@ REPORT_STALE_FILES = ("device_telemetry.txt", "classification.txt")
 # any, so nothing is trimmed. Both are soak-settled provisionals.
 TRIM_TOP_K = 1
 TRIM_MIN_SAMPLES = 7
+
+# Step 3: battery detection (value-only; liveness belongs to Step 4).
+# The threshold is user-configurable through the options flow because
+# batteries drift slowly: proving detection live means sliding the
+# threshold above a real cell's level. The clear margin is small (2)
+# because a load-driven rest-rebound is a genuine recovery that
+# should clear the flag, not a flap to suppress; widen only if the
+# soak shows flapping.
+CONF_LOW_THRESHOLD = "low_threshold"
+DEFAULT_LOW_THRESHOLD = 20
+BATTERY_CLEAR_MARGIN = 2
+
+# Per-device battery storage fields.
+DEV_BATTERY_LOW = "battery_low"
+DEV_BATTERY_SINCE = "battery_since"
+DEV_BATTERY_VALUE = "battery_value"
+
+SENTINEL_TYPE_BATTERY_COUNT = "battery_low_count"
+SENTINEL_TYPE_BATTERY_LIST = "battery_low_list"
