@@ -43,7 +43,10 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BATTERY_CLEAR_MARGIN,
+    CONF_LOW_THRESHOLD,
     DAILY_MAX_KEEP,
+    DEFAULT_LOW_THRESHOLD,
     DATA_STATS_EPOCH,
     REPORT_CLASSIFICATION,
     REPORT_DIR,
@@ -54,6 +57,9 @@ from .const import (
     DATA_DEVICES,
     DATA_FIRST_INSTALLED,
     DATA_SETUP_COUNT,
+    DEV_BATTERY_LOW,
+    DEV_BATTERY_SINCE,
+    DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
@@ -94,6 +100,9 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_SIGNAL_VALUE: None,
         DEV_SIGNAL_TODAY_MIN: None,
         DEV_SIGNAL_DAILY_MIN: [],
+        DEV_BATTERY_LOW: False,
+        DEV_BATTERY_SINCE: None,
+        DEV_BATTERY_VALUE: None,
     }
 
 
@@ -121,6 +130,11 @@ class DeviceSentinelCoordinator:
         self._last_seen_entity: dict[str, str] = {}  # device_id -> entity_id
         self._signal_entities: set[str] = set()
         self._signal_devices: set[str] = set()
+        # device_id -> (entity_id, is_binary). Election prefers the
+        # percentage entity; the binary low flag is the fallback.
+        self._battery_entity: dict[str, tuple[str, bool]] = {}
+        # entity_id -> device_id, the reverse index the intake uses.
+        self._battery_entity_reverse: dict[str, str] = {}
         self._pending_unavailable: dict[str, tuple[float, str]] = {}
         self.deviceless_count: int = 0
 
@@ -166,6 +180,9 @@ class DeviceSentinelCoordinator:
                 record[DEV_SIGNAL_VALUE] = None
                 record[DEV_SIGNAL_TODAY_MIN] = None
                 record[DEV_SIGNAL_DAILY_MIN] = []
+                record.setdefault(DEV_BATTERY_LOW, False)
+                record.setdefault(DEV_BATTERY_SINCE, None)
+                record.setdefault(DEV_BATTERY_VALUE, None)
                 wiped += 1
             loaded[DATA_STATS_EPOCH] = STATS_EPOCH
             LOGGER.info(
@@ -180,6 +197,9 @@ class DeviceSentinelCoordinator:
                 record.setdefault(DEV_SIGNAL_VALUE, None)
                 record.setdefault(DEV_SIGNAL_TODAY_MIN, None)
                 record.setdefault(DEV_SIGNAL_DAILY_MIN, [])
+                record.setdefault(DEV_BATTERY_LOW, False)
+                record.setdefault(DEV_BATTERY_SINCE, None)
+                record.setdefault(DEV_BATTERY_VALUE, None)
         self.data = loaded
         await self._store.async_save(self.data)
         self.storage_healthy = True
@@ -236,6 +256,8 @@ class DeviceSentinelCoordinator:
                 EVENT_HOMEASSISTANT_STOP, self._on_hass_stop
             )
         )
+
+        self._evaluate_all_batteries()
 
         LOGGER.info(
             "Device Sentinel v%s setup complete: setup_count=%s, "
@@ -300,6 +322,7 @@ class DeviceSentinelCoordinator:
         last_seen_entity: dict[str, str] = {}
         signal_entities: set[str] = set()
         signal_devices: set[str] = set()
+        battery_entity: dict[str, tuple[str, bool]] = {}
         deviceless = 0
         for ent in ent_reg.entities.values():
             if ent.device_id is None:
@@ -314,6 +337,15 @@ class DeviceSentinelCoordinator:
                 if ent.disabled_by is None:
                     signal_entities.add(ent.entity_id)
                     signal_devices.add(ent.device_id)
+            if ent.disabled_by is None and self._is_battery(ent):
+                is_binary = ent.entity_id.startswith("binary_sensor.")
+                current = battery_entity.get(ent.device_id)
+                # Percentage beats binary; among equals, first wins.
+                if current is None or (current[1] and not is_binary):
+                    battery_entity[ent.device_id] = (
+                        ent.entity_id,
+                        is_binary,
+                    )
 
         self._watched = watched
         self._set_aside = set_aside
@@ -321,6 +353,11 @@ class DeviceSentinelCoordinator:
         self._last_seen_entity = last_seen_entity
         self._signal_entities = signal_entities
         self._signal_devices = signal_devices
+        self._battery_entity = battery_entity
+        self._battery_entity_reverse = {
+            entity_id: device_id
+            for device_id, (entity_id, _) in battery_entity.items()
+        }
         self.deviceless_count = deviceless
 
         now_iso = dt_util.utcnow().isoformat()
@@ -370,6 +407,19 @@ class DeviceSentinelCoordinator:
             if x
         ).lower()
         return any(term in hay for term in SIGNAL_NAME_TERMS)
+
+    @staticmethod
+    def _is_battery(ent: er.RegistryEntry) -> bool:
+        """Recognize a battery entity from its registry device class.
+
+        Percentage batteries are sensors with device_class battery;
+        binary low flags are binary_sensors with device_class battery.
+        Chargers, battery_charging flags, and the like carry other
+        device classes and are correctly ignored.
+        """
+        if str(ent.original_device_class or ent.device_class) != "battery":
+            return False
+        return ent.entity_id.startswith(("sensor.", "binary_sensor."))
 
     def _seed_from_last_seen(self, device_id: str) -> float | None:
         """Seed a new device's clock from its last_seen entity, if any."""
@@ -436,6 +486,11 @@ class DeviceSentinelCoordinator:
         self._record_activity(
             device_id, entry_id, entity_id, new_state.state
         )
+        if entity_id in self._battery_entity_reverse:
+            self._evaluate_battery(
+                self._battery_entity_reverse[entity_id],
+                notify_on_change=True,
+            )
 
     @callback
     def _on_state_reported(self, event: Event) -> None:
@@ -972,6 +1027,176 @@ class DeviceSentinelCoordinator:
                 domain, {"watched": 0, "set_aside": 0}
             )["set_aside"] += 1
         return breakdown
+
+    @property
+    def low_threshold(self) -> float:
+        """Return the configured low threshold (options flow, live)."""
+        return float(
+            self.entry.options.get(
+                CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD
+            )
+        )
+
+    @callback
+    def _evaluate_battery(
+        self, device_id: str, notify_on_change: bool = False
+    ) -> None:
+        """Judge one device's battery against the threshold.
+
+        The hysteresis, carried from Battery Sentinel 1.2.0: flag at
+        or below the threshold; once flagged, stay flagged until the
+        value climbs past threshold plus the clear margin, so a cell
+        hovering exactly at the line never flaps. The margin is small
+        (2) because a load-driven rest-rebound is a genuine recovery
+        and is allowed to clear the flag (ruled 2026-07-13).
+
+        below-threshold-since: the first crossing stamps the time,
+        later evaluations carry it, recovery clears it. It lives in
+        storage, so it survives restarts by construction.
+
+        An unavailable or unknown battery value changes nothing: the
+        last verdict holds, because liveness is Step 4's job and a
+        dead reading is not a level reading.
+        """
+        election = self._battery_entity.get(device_id)
+        record = self.data[DATA_DEVICES].get(device_id)
+        if election is None or record is None:
+            return
+        battery_entity_id, is_binary = election
+        state = self.hass.states.get(battery_entity_id)
+        if state is None or state.state in BAD_STATES:
+            return
+
+        was_low = bool(record.get(DEV_BATTERY_LOW))
+        if is_binary:
+            is_low = state.state == "on"
+            level = None
+        else:
+            try:
+                level = float(state.state)
+            except ValueError:
+                return
+            threshold = self.low_threshold
+            if was_low:
+                is_low = level < threshold + BATTERY_CLEAR_MARGIN
+            else:
+                is_low = level <= threshold
+
+        changed = (
+            is_low != was_low
+            or record.get(DEV_BATTERY_VALUE) != level
+        )
+        record[DEV_BATTERY_VALUE] = level
+        if is_low and not was_low:
+            record[DEV_BATTERY_LOW] = True
+            record[DEV_BATTERY_SINCE] = dt_util.utcnow().isoformat()
+            LOGGER.info(
+                "Battery low: %s at %s (threshold %s)",
+                battery_entity_id,
+                "on" if is_binary else level,
+                self.low_threshold,
+            )
+        elif was_low and not is_low:
+            record[DEV_BATTERY_LOW] = False
+            record[DEV_BATTERY_SINCE] = None
+            LOGGER.info(
+                "Battery recovered: %s at %s",
+                battery_entity_id,
+                "off" if is_binary else level,
+            )
+        if changed:
+            self._dirty = True
+            if notify_on_change:
+                self._notify()
+
+    @callback
+    def _evaluate_all_batteries(self) -> None:
+        """Judge every elected battery; used at setup and on options
+        changes, so a threshold slid upward flags immediately."""
+        for device_id in self._battery_entity:
+            self._evaluate_battery(device_id)
+
+    async def async_options_updated(self) -> None:
+        """Re-judge the fleet under new options, live, no restart."""
+        LOGGER.info(
+            "Options updated: low threshold now %s; re-evaluating",
+            self.low_threshold,
+        )
+        self._evaluate_all_batteries()
+        if self._dirty:
+            await self._store.async_save(self.data)
+            self._dirty = False
+        self._notify()
+
+    @property
+    def battery_low_list(self) -> list[dict[str, Any]]:
+        """Return the low list, one row per device, area then name.
+
+        Row shape follows the blueprint contract: name, entity_id,
+        area, level, since (below-threshold-since), last_seen (the
+        battery entity's own last report), age, kind: device.
+        """
+        dev_reg = dr.async_get(self.hass)
+        area_reg_names: dict[str, str] = {}
+        rows: list[dict[str, Any]] = []
+        for device_id, (entity_id, is_binary) in (
+            self._battery_entity.items()
+        ):
+            record = self.data[DATA_DEVICES].get(device_id)
+            if not record or not record.get(DEV_BATTERY_LOW):
+                continue
+            device = dev_reg.async_get(device_id)
+            device_name = (
+                (device.name_by_user or device.name or device_id)
+                if device
+                else device_id
+            )
+            area_name = "Unassigned"
+            if device and device.area_id:
+                if device.area_id not in area_reg_names:
+                    from homeassistant.helpers import area_registry as ar
+
+                    area = ar.async_get(self.hass).async_get_area(
+                        device.area_id
+                    )
+                    area_reg_names[device.area_id] = (
+                        area.name if area else device.area_id
+                    )
+                area_name = area_reg_names[device.area_id]
+            state = self.hass.states.get(entity_id)
+            since = record.get(DEV_BATTERY_SINCE)
+            since_dt = dt_util.parse_datetime(since) if since else None
+            rows.append(
+                {
+                    "name": device_name,
+                    "entity_id": entity_id,
+                    "area": area_name,
+                    "level": record.get(DEV_BATTERY_VALUE),
+                    "since": since,
+                    "last_seen": (
+                        state.last_reported.isoformat()
+                        if state and state.last_reported
+                        else None
+                    ),
+                    "age": (
+                        dt_util.get_age(since_dt) if since_dt else "unknown"
+                    ),
+                    "kind": "device",
+                }
+            )
+        rows.sort(key=lambda row: (row["area"], row["name"]))
+        return rows
+
+    @property
+    def battery_low_count(self) -> int:
+        """Return the number of devices currently battery-low."""
+        return sum(
+            1
+            for device_id in self._battery_entity
+            if (self.data[DATA_DEVICES].get(device_id) or {}).get(
+                DEV_BATTERY_LOW
+            )
+        )
 
     async def async_enable_signal_entities(self) -> dict[str, int]:
         """Enable integration-disabled last_seen and signal entities.
