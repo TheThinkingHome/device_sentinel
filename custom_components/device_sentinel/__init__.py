@@ -36,8 +36,20 @@ async def async_setup_entry(
     await coordinator.async_setup()
 
     entry.runtime_data = coordinator
+    # Options changes (the battery threshold today) apply live: the
+    # listener re-judges the fleet without a reload or restart.
+    entry.async_on_unload(
+        entry.add_update_listener(_async_options_updated)
+    )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def _async_options_updated(
+    hass: HomeAssistant, entry: DeviceSentinelConfigEntry
+) -> None:
+    """Apply changed options to the running coordinator."""
+    await entry.runtime_data.async_options_updated()
 
 
 async def async_unload_entry(
