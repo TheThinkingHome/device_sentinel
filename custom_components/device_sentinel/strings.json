@@ -1,9 +1,21 @@
-
 {
   "title": "Device Sentinel",
   "config": {
     "abort": {
       "single_instance_allowed": "Device Sentinel is already configured. Only a single instance is supported."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Device Sentinel tuning",
+        "data": {
+          "low_threshold": "Battery low threshold (%)"
+        },
+        "data_description": {
+          "low_threshold": "A battery at or below this level is flagged low. It clears once it climbs 2 points above the threshold."
+        }
+      }
     }
   }
 }
