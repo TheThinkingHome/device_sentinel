@@ -47,7 +47,10 @@ from .const import (
     DATA_STATS_EPOCH,
     REPORT_CLASSIFICATION,
     REPORT_DIR,
+    REPORT_STALE_FILES,
     REPORT_TELEMETRY,
+    TRIM_MIN_SAMPLES,
+    TRIM_TOP_K,
     DATA_DEVICES,
     DATA_FIRST_INSTALLED,
     DATA_SETUP_COUNT,
@@ -631,116 +634,258 @@ class DeviceSentinelCoordinator:
         return f"{seconds:.0f}s"
 
     def _write_reports(self) -> None:
-        """Write both diagnostic files to /config/device_sentinel/."""
-        report_dir = self.hass.config.path(REPORT_DIR)
-        os.makedirs(report_dir, exist_ok=True)
-        self._write_telemetry(report_dir)
-        self._write_classification(report_dir)
+        """Write both diagnostic files to /config/device_sentinel/.
 
-    def _write_telemetry(self, report_dir: str) -> None:
-        """Write device_telemetry.txt, the learned-statistics table.
+        They live under /config because custom_components is code and
+        is overwritten on every update (a ruled decision). Written at
+        every setup and after every midnight rollover, so the files
+        always exist from first boot and are never staler than the
+        last restart or midnight. Stale pre-0.2.6 .txt files are
+        removed so the folder holds one truth.
+        """
+        report_directory = self.hass.config.path(REPORT_DIR)
+        os.makedirs(report_directory, exist_ok=True)
+        for stale_name in REPORT_STALE_FILES:
+            stale_path = os.path.join(report_directory, stale_name)
+            if os.path.isfile(stale_path):
+                os.remove(stale_path)
+        self._write_telemetry(report_directory)
+        self._write_classification(report_directory)
 
-        The triage view for a doubted detection: each device's proven
-        rhythm, clock source, signal minima, and the tunables in
-        effect, so the delay knobs get set against real numbers.
+    @staticmethod
+    def _trimmed_maximum(
+        daily_maximum_gaps: list[float],
+    ) -> tuple[float | None, set[int]]:
+        """Return (operative rhythm, indices of set-aside outliers).
+
+        The trimmed maximum is the Step 4 window rhythm, previewed
+        here for display: the top TRIM_TOP_K daily maxima are set
+        aside as suspected anomalies, and the rhythm is the maximum
+        of the survivors. One anomalous day therefore moves nothing,
+        while a spike that recurs leaves a second high value among
+        the survivors and correctly raises the rhythm. Below
+        TRIM_MIN_SAMPLES days nothing is trimmed: with so few samples
+        an apparent outlier cannot be told from the true rhythm.
+        """
+        if not daily_maximum_gaps:
+            return None, set()
+        if len(daily_maximum_gaps) < TRIM_MIN_SAMPLES:
+            return max(daily_maximum_gaps), set()
+        by_value_descending = sorted(
+            range(len(daily_maximum_gaps)),
+            key=lambda index: daily_maximum_gaps[index],
+            reverse=True,
+        )
+        set_aside_indices = set(by_value_descending[:TRIM_TOP_K])
+        survivors = [
+            gap
+            for index, gap in enumerate(daily_maximum_gaps)
+            if index not in set_aside_indices
+        ]
+        return max(survivors), set_aside_indices
+
+    def _fmt_gap(self, seconds: Any) -> str:
+        """Format a gap for the report."""
+        if seconds is None:
+            return "-"
+        if seconds >= 3600:
+            return f"{seconds / 3600:.2f}h"
+        return f"{seconds:.0f}s"
+
+    def _format_maxima_cell(self, daily_maximum_gaps: list[float]) -> str:
+        """Render the maxima list newest-first with the trim visible.
+
+        Set-aside outliers are struck through (excluded from the
+        window basis); the operative rhythm is bold. They can never
+        be the same value styled twice, because the operative rhythm
+        is by definition chosen after the outliers are removed.
+        """
+        if not daily_maximum_gaps:
+            return "-"
+        operative, set_aside_indices = self._trimmed_maximum(
+            daily_maximum_gaps
+        )
+        # Bold exactly one survivor equal to the operative rhythm.
+        operative_index = None
+        for index, gap in enumerate(daily_maximum_gaps):
+            if index not in set_aside_indices and gap == operative:
+                operative_index = index
+                break
+        parts = []
+        # Storage appends oldest-to-newest; display newest first.
+        for index in reversed(range(len(daily_maximum_gaps))):
+            text = self._fmt_gap(daily_maximum_gaps[index])
+            if index in set_aside_indices:
+                parts.append(f"~~{text}~~")
+            elif index == operative_index:
+                parts.append(f"**{text}**")
+            else:
+                parts.append(text)
+        return ", ".join(parts)
+
+    def _write_telemetry(self, report_directory: str) -> None:
+        """Write device_telemetry.md, the learned-rhythms table.
+
+        The triage view for a doubted detection: each device's full
+        daily-maxima history (newest first), the trimmed-maximum
+        preview of its window basis, its clock source, and the
+        tunables in effect, so the tuning knobs get set against real
+        numbers. The trim shown here is display-only during the soak;
+        the detection engine adopts the same rule at Step 4.
         """
         dev_reg = dr.async_get(self.hass)
+        sample_note = (
+            f"k={TRIM_TOP_K} once a device has {TRIM_MIN_SAMPLES} "
+            f"daily maxima; below that nothing is trimmed and the "
+            f"window basis is the plain maximum (too few samples to "
+            f"tell an outlier from the rhythm)."
+        )
         lines = [
-            f"Device Sentinel v{self.version} learned statistics",
-            f"Written {dt_util.now().isoformat(timespec='seconds')} "
-            f"after the day rollover",
+            f"# Device Sentinel v{self.version} learned statistics",
+            "",
+            f"Written {dt_util.now().isoformat(timespec='seconds')}",
+            "",
+            f"Rule: the window basis is the **trimmed maximum** of "
+            f"the rolling daily maxima: the top {TRIM_TOP_K} value(s) "
+            f"are ~~set aside~~ as suspected anomalies and the basis "
+            f"is the max of the survivors. {sample_note}",
+            "",
             f"Tunables: grace {STARTUP_GRACE_SECONDS} s, storm "
             f"{STORM_DEVICE_THRESHOLD} devices/"
             f"{STORM_WINDOW_SECONDS:g} s (exempt at "
             f"{STORM_EXEMPT_PER_HOUR}/h), taint debounce "
             f"{TAINT_DEBOUNCE_SECONDS} s, arming floor "
-            f"{LEARNING_MIN_DAYS} days, keep {DAILY_MAX_KEEP} days",
+            f"{LEARNING_MIN_DAYS} days, keep {DAILY_MAX_KEEP} days.",
             "",
-            f"{'DEVICE':38} {'DAYS':>4} {'WORST GAP':>10} "
-            f"{'CLOCK':>6} {'EVENTS':>7} {'SIGNAL':>7} {'SIG MIN':>8}",
-            "-" * 88,
+            "| DEVICE | DAYS | WINDOW BASIS | GAPS (newest first) | "
+            "CLOCK | EVENTS | SIGNAL | SIG MIN |",
+            "|---|---|---|---|---|---|---|---|",
         ]
         rows = []
-        for dev_id, rec in self.data[DATA_DEVICES].items():
-            device = dev_reg.async_get(dev_id)
-            name = (
-                (device.name_by_user or device.name or dev_id)
+        for device_id, record in self.data[DATA_DEVICES].items():
+            device = dev_reg.async_get(device_id)
+            device_name = (
+                (device.name_by_user or device.name or device_id)
                 if device
-                else dev_id
+                else device_id
             )
-            daily = rec.get(DEV_DAILY_MAX) or []
-            sig_mins = list(rec.get(DEV_SIGNAL_DAILY_MIN) or [])
-            if rec.get(DEV_SIGNAL_TODAY_MIN) is not None:
-                sig_mins.append(rec[DEV_SIGNAL_TODAY_MIN])
+            daily_maximum_gaps = record.get(DEV_DAILY_MAX) or []
+            operative, _ = self._trimmed_maximum(daily_maximum_gaps)
+            signal_minimum_candidates = list(
+                record.get(DEV_SIGNAL_DAILY_MIN) or []
+            )
+            if record.get(DEV_SIGNAL_TODAY_MIN) is not None:
+                signal_minimum_candidates.append(
+                    record[DEV_SIGNAL_TODAY_MIN]
+                )
             rows.append(
                 (
-                    name[:38],
-                    len(daily),
-                    max(daily) if daily else None,
+                    device_name,
+                    len(daily_maximum_gaps),
+                    operative,
+                    self._format_maxima_cell(daily_maximum_gaps),
                     "seen"
-                    if dev_id in self._last_seen_entity
+                    if device_id in self._last_seen_entity
                     else "clock",
-                    int(rec.get(DEV_EVENT_COUNT, 0)),
-                    rec.get(DEV_SIGNAL_VALUE),
-                    min(sig_mins) if sig_mins else None,
+                    int(record.get(DEV_EVENT_COUNT, 0)),
+                    record.get(DEV_SIGNAL_VALUE),
+                    min(signal_minimum_candidates)
+                    if signal_minimum_candidates
+                    else None,
                 )
             )
-        rows.sort(key=lambda r: (r[2] is None, -(r[2] or 0)))
-        for name, days, worst, clock, events, sig, sigmin in rows:
-            sig_s = "-" if sig is None else f"{sig:g}"
-            sigmin_s = "-" if sigmin is None else f"{sigmin:g}"
+        rows.sort(key=lambda row: (row[2] is None, -(row[2] or 0)))
+        for (
+            device_name,
+            day_count,
+            operative,
+            maxima_cell,
+            clock_source,
+            event_count,
+            signal_value,
+            signal_minimum,
+        ) in rows:
+            signal_text = "-" if signal_value is None else f"{signal_value:g}"
+            signal_minimum_text = (
+                "-" if signal_minimum is None else f"{signal_minimum:g}"
+            )
             lines.append(
-                f"{name:38} {days:>4} {self._fmt_gap(worst):>10} "
-                f"{clock:>6} {events:>7} {sig_s:>7} {sigmin_s:>8}"
+                f"| {device_name} | {day_count} | "
+                f"{self._fmt_gap(operative)} | {maxima_cell} | "
+                f"{clock_source} | {event_count} | {signal_text} | "
+                f"{signal_minimum_text} |"
             )
         lines.append("")
         lines.append(f"{len(rows)} watched devices.")
-        path = os.path.join(report_dir, REPORT_TELEMETRY)
+        path = os.path.join(report_directory, REPORT_TELEMETRY)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
         LOGGER.info("Telemetry report written to %s", path)
 
-    def _write_classification(self, report_dir: str) -> None:
-        """Write classification.txt, the audit view.
+    def _write_classification(self, report_directory: str) -> None:
+        """Write classification.md, the audit view.
 
         Answers "why is my device not watched" and "why is this thing
-        in my report": every watched device with integration and clock
-        source, every set-aside device with its integration, and the
-        deviceless count.
+        in my report": every watched device with integration, clock
+        source, and a COPIES count that makes duplicate registry
+        devices (network-tracker ghosts, multi-homed doubles) visible
+        at a glance; every set-aside device with its integration; and
+        the deviceless count.
         """
         dev_reg = dr.async_get(self.hass)
+        watched_rows = []
+        name_copy_counts: dict[str, int] = {}
+        for device_id, integration_domain in self._watched.items():
+            device = dev_reg.async_get(device_id)
+            device_name = (
+                (device.name_by_user or device.name or device_id)
+                if device
+                else device_id
+            )
+            clock_source = (
+                "seen" if device_id in self._last_seen_entity else "clock"
+            )
+            watched_rows.append(
+                (device_name, integration_domain, clock_source)
+            )
+            name_copy_counts[device_name] = (
+                name_copy_counts.get(device_name, 0) + 1
+            )
         lines = [
-            f"Device Sentinel v{self.version} classification",
+            f"# Device Sentinel v{self.version} classification",
+            "",
             f"Written {dt_util.now().isoformat(timespec='seconds')}",
+            "",
             f"Watching {len(self._watched)} of "
             f"{len(self._watched) + len(self._set_aside)} devices; "
             f"{len(self._set_aside)} set aside (entry_type service); "
             f"{self.deviceless_count} deviceless entities visible only "
-            f"at entity level",
+            f"at entity level. COPIES above 1 means duplicate registry "
+            f"devices sharing a name (network-tracker ghosts, "
+            f"multi-homed doubles): exclude-list candidates.",
             "",
-            f"WATCHED ({len(self._watched)})",
-            f"{'DEVICE':40} {'INTEGRATION':>18} {'CLOCK':>6}",
-            "-" * 66,
+            f"## Watched ({len(self._watched)})",
+            "",
+            "| DEVICE | INTEGRATION | CLOCK | COPIES |",
+            "|---|---|---|---|",
         ]
-        watched_rows = []
-        for dev_id, domain in self._watched.items():
-            device = dev_reg.async_get(dev_id)
-            name = (
-                (device.name_by_user or device.name or dev_id)
-                if device
-                else dev_id
+        for device_name, integration_domain, clock_source in sorted(
+            watched_rows
+        ):
+            lines.append(
+                f"| {device_name} | {integration_domain} | "
+                f"{clock_source} | {name_copy_counts[device_name]} |"
             )
-            clock = "seen" if dev_id in self._last_seen_entity else "clock"
-            watched_rows.append((name[:40], domain, clock))
-        for name, domain, clock in sorted(watched_rows):
-            lines.append(f"{name:40} {domain:>18} {clock:>6}")
         lines.append("")
-        lines.append(f"SET ASIDE ({len(self._set_aside)})")
-        lines.append(f"{'DEVICE':40} {'INTEGRATION':>18}")
-        lines.append("-" * 60)
-        for name, domain in sorted(self._set_aside.values()):
-            lines.append(f"{name[:40]:40} {domain:>18}")
-        path = os.path.join(report_dir, REPORT_CLASSIFICATION)
+        lines.append(f"## Set aside ({len(self._set_aside)})")
+        lines.append("")
+        lines.append("| DEVICE | INTEGRATION |")
+        lines.append("|---|---|")
+        for device_name, integration_domain in sorted(
+            self._set_aside.values()
+        ):
+            lines.append(f"| {device_name} | {integration_domain} |")
+        path = os.path.join(report_directory, REPORT_CLASSIFICATION)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
         LOGGER.info("Classification report written to %s", path)
