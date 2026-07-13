@@ -103,7 +103,20 @@ SENTINEL_TYPE_CLOCK_SOURCE = "clock_source"
 
 # Diagnostic files, written at every setup and after every midnight
 # rollover. They live under /config, never under custom_components
-# (code, wiped on update).
+# (code, wiped on update). Markdown since 0.2.6 so the maxima lists
+# can carry emphasis (set-aside outliers struck through, the window
+# basis bold).
 REPORT_DIR = "device_sentinel"
-REPORT_TELEMETRY = "device_telemetry.txt"
-REPORT_CLASSIFICATION = "classification.txt"
+REPORT_TELEMETRY = "device_telemetry.md"
+REPORT_CLASSIFICATION = "classification.md"
+REPORT_STALE_FILES = ("device_telemetry.txt", "classification.txt")
+
+# The trimmed maximum, previewed in the telemetry report (display
+# only during the soak; becomes the Step 4 window rhythm). The top
+# TRIM_TOP_K daily maxima are set aside as suspected anomalies and
+# the operative rhythm is the maximum of the survivors, so one
+# anomalous day moves nothing while a recurring high value counts.
+# Below TRIM_MIN_SAMPLES days there are too few samples to spare
+# any, so nothing is trimmed. Both are soak-settled provisionals.
+TRIM_TOP_K = 1
+TRIM_MIN_SAMPLES = 7
