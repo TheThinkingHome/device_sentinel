@@ -44,6 +44,11 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     BATTERY_CLEAR_MARGIN,
+    CONF_EXCLUDED_AREAS,
+    CONF_EXCLUDED_DEVICES,
+    CONF_EXCLUDED_ENTITIES,
+    CONF_EXCLUDED_INTEGRATIONS,
+    CONF_EXCLUDED_LABELS,
     DATA_TODO_ITEMS,
     CONF_LOW_THRESHOLD,
     DAILY_MAX_KEEP,
@@ -137,6 +142,12 @@ class DeviceSentinelCoordinator:
         # Registry view, rebuilt on registry changes.
         self._entity_map: dict[str, tuple[str, str | None]] = {}
         self._watched: dict[str, str] = {}  # device_id -> integration domain
+        # Exclusion suppresses judgment, not observation: these sets
+        # gate reporting only. Clocks, statistics, and vouching keep
+        # running for everything in them, so undo is instant and the
+        # rhythm history carries no holes.
+        self._excluded_devices: dict[str, str] = {}  # device_id -> reason
+        self._excluded_entities: dict[str, str] = {}  # entity_id -> reason
         self._set_aside: dict[str, tuple[str, str]] = {}  # id -> (name, domain)
         self._last_seen_entity: dict[str, str] = {}  # device_id -> entity_id
         self._signal_entities: set[str] = set()
@@ -323,15 +334,42 @@ class DeviceSentinelCoordinator:
         ent_reg = er.async_get(self.hass)
         dev_reg = dr.async_get(self.hass)
 
+        options = self.entry.options
+        excluded_device_ids = set(
+            options.get(CONF_EXCLUDED_DEVICES, [])
+        )
+        excluded_entity_ids = set(
+            options.get(CONF_EXCLUDED_ENTITIES, [])
+        )
+        excluded_labels = set(options.get(CONF_EXCLUDED_LABELS, []))
+        excluded_areas = set(options.get(CONF_EXCLUDED_AREAS, []))
+        excluded_integrations = set(
+            options.get(CONF_EXCLUDED_INTEGRATIONS, [])
+        )
+
         watched: dict[str, str] = {}
         set_aside: dict[str, tuple[str, str]] = {}
+        excluded_devices: dict[str, str] = {}
+        excluded_entities: dict[str, str] = {}
         for device in dev_reg.devices.values():
             domain = self._primary_domain(device)
             name = device.name_by_user or device.name or device.id
             if device.entry_type is dr.DeviceEntryType.SERVICE:
                 set_aside[device.id] = (name, domain)
-            else:
-                watched[device.id] = domain
+                continue
+            watched[device.id] = domain
+            # Device-level exclusion reasons, first match names it.
+            # The integration test uses the primary domain, so an
+            # integration exclude catches only devices it owns, never
+            # multi-homed hardware it merely sees.
+            if device.id in excluded_device_ids:
+                excluded_devices[device.id] = "device"
+            elif device.area_id and device.area_id in excluded_areas:
+                excluded_devices[device.id] = "area"
+            elif excluded_labels & set(device.labels or ()):
+                excluded_devices[device.id] = "label"
+            elif domain in excluded_integrations:
+                excluded_devices[device.id] = "integration"
 
         entity_map: dict[str, tuple[str, str | None]] = {}
         last_seen_entity: dict[str, str] = {}
@@ -346,6 +384,12 @@ class DeviceSentinelCoordinator:
             if ent.device_id not in watched:
                 continue
             entity_map[ent.entity_id] = (ent.device_id, ent.config_entry_id)
+            if ent.entity_id in excluded_entity_ids:
+                excluded_entities[ent.entity_id] = "entity"
+            elif excluded_labels & set(ent.labels or ()):
+                excluded_entities[ent.entity_id] = "label"
+            elif ent.area_id and ent.area_id in excluded_areas:
+                excluded_entities[ent.entity_id] = "area"
             if self._is_last_seen(ent):
                 last_seen_entity[ent.device_id] = ent.entity_id
             if self._is_signal(ent):
@@ -364,6 +408,8 @@ class DeviceSentinelCoordinator:
 
         self._watched = watched
         self._set_aside = set_aside
+        self._excluded_devices = excluded_devices
+        self._excluded_entities = excluded_entities
         self._entity_map = entity_map
         self._last_seen_entity = last_seen_entity
         self._signal_entities = signal_entities
@@ -1036,6 +1082,38 @@ class DeviceSentinelCoordinator:
                 f"| {device_name} | {integration_domain} | "
                 f"{clock_source} | {name_copy_counts[device_name]} |"
             )
+        if self._excluded_devices or self._excluded_entities:
+            lines.append("")
+            lines.append(
+                f"## Excluded from judgment "
+                f"({len(self._excluded_devices)} devices, "
+                f"{len(self._excluded_entities)} entities)"
+            )
+            lines.append("")
+            lines.append(
+                "Exclusion suppresses judgment, not observation: these "
+                "keep their clocks and statistics and never appear in "
+                "detections. An excluded entity still vouches for its "
+                "device."
+            )
+            lines.append("")
+            lines.append("| ITEM | KIND | REASON |")
+            lines.append("|---|---|---|")
+            for device_id, reason in sorted(
+                self._excluded_devices.items(),
+                key=lambda pair: pair[0],
+            ):
+                device = dev_reg.async_get(device_id)
+                item_name = (
+                    (device.name_by_user or device.name or device_id)
+                    if device
+                    else device_id
+                )
+                lines.append(f"| {item_name} | device | {reason} |")
+            for entity_id, reason in sorted(
+                self._excluded_entities.items()
+            ):
+                lines.append(f"| {entity_id} | entity | {reason} |")
         lines.append("")
         lines.append(f"## Set aside ({len(self._set_aside)})")
         lines.append("")
@@ -1307,9 +1385,13 @@ class DeviceSentinelCoordinator:
 
     async def async_options_updated(self) -> None:
         """Re-judge the fleet under new options, live, no restart."""
+        self._rebuild_registry_view()
         LOGGER.info(
-            "Options updated: low threshold now %s; re-evaluating",
+            "Options updated: low threshold now %s, %d devices and %d "
+            "entities excluded; re-evaluating",
             self.low_threshold,
+            len(self._excluded_devices),
+            len(self._excluded_entities),
         )
         self._evaluate_all_batteries()
         if self._dirty:
@@ -1331,6 +1413,13 @@ class DeviceSentinelCoordinator:
         for device_id, (entity_id, is_binary) in (
             self._battery_entity.items()
         ):
+            # Judgment suppression: the verdict is still computed and
+            # stored (observation), it is just never reported here.
+            if (
+                device_id in self._excluded_devices
+                or entity_id in self._excluded_entities
+            ):
+                continue
             record = self.data[DATA_DEVICES].get(device_id)
             if not record or not record.get(DEV_BATTERY_LOW):
                 continue
@@ -1381,8 +1470,10 @@ class DeviceSentinelCoordinator:
         """Return the number of devices currently battery-low."""
         return sum(
             1
-            for device_id in self._battery_entity
-            if (self.data[DATA_DEVICES].get(device_id) or {}).get(
+            for device_id, (entity_id, _) in self._battery_entity.items()
+            if device_id not in self._excluded_devices
+            and entity_id not in self._excluded_entities
+            and (self.data[DATA_DEVICES].get(device_id) or {}).get(
                 DEV_BATTERY_LOW
             )
         )
