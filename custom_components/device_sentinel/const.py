@@ -152,3 +152,20 @@ SENTINEL_TYPE_BATTERY_LIST = "battery_low_list"
 SIGNAL_ARMING_DAYS = 7
 SIGNAL_LQI_DANGER_FACTOR = 0.5
 SIGNAL_RSSI_DANGER_OFFSET = 10.0
+
+# Notification backbone (0.3.3). The configuration surface only: the
+# targets to notify, the quiet-hours window, the daily-reminder time,
+# and the high-priority designation that pierces quiet hours. These
+# settings are stored and inert until the Step 5 engine reads them;
+# nothing sends, gates, or diffs yet. The engine is separable from
+# its configuration, so the backbone is built and tested alone.
+CONF_NOTIFY_TARGETS = "notify_targets"
+CONF_QUIET_START = "quiet_start"
+CONF_QUIET_END = "quiet_end"
+CONF_REMINDER_TIME = "reminder_time"
+CONF_HIGH_PRIORITY_PIERCES_QUIET = "high_priority_pierces_quiet"
+
+DEFAULT_QUIET_START = "22:00:00"
+DEFAULT_QUIET_END = "07:00:00"
+DEFAULT_REMINDER_TIME = "09:00:00"
+DEFAULT_HIGH_PRIORITY_PIERCES_QUIET = True
