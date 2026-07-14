@@ -176,4 +176,6 @@ async def test_todo_identity_attributes(hass: HomeAssistant):
     state = hass.states.get("todo.device_sentinel")
     assert state is not None
     assert state.attributes["sentinel_type"] == "problem_list"
-    assert state.attributes["sentinel_version"] == "0.3.6"
+    # Assert identity is present, not a pinned number: a version bump
+    # must not fail a test about attributes existing.
+    assert state.attributes["sentinel_version"]
