@@ -6,12 +6,16 @@
 
 """The Device Sentinel integration.
 
-Watches hardware liveness: frozen devices, unavailable devices, and
-low batteries, with per-device freeze windows learned from each
-device's own reporting rhythm.
+Watches hardware liveness: frozen devices, unavailable devices, low
+batteries, and weak radio links, with per-device freeze windows
+learned from each device's own reporting rhythm rather than
+hand-assigned tiers.
 
-This is the Step 1 backbone: config flow, storage round-trip, and one
-status sensor proving the entity pipeline. It detects nothing yet.
+Battery detection is live. The telemetry recorder learns rhythms and
+signal baselines continuously. Freeze and unavailability detection,
+signal detection, and the notification engine arrive in later steps;
+their configuration surfaces and the problem list are already built
+and inert.
 """
 
 from __future__ import annotations
