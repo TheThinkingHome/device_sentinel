@@ -185,3 +185,25 @@ DEFAULT_REMINDER_TIME = "08:00:00"
 REMINDER_MODE_NONE = "none"
 REMINDER_MODE_OVERNIGHT = "overnight"
 REMINDER_MODE_DAILY = "daily"
+
+# The problem list (0.3.5). One todo entity, not one per family:
+# the type lives on each item, so a single list matches the
+# novice-first thesis while losing nothing. Items are stored under
+# their own storage key, separate from per-device telemetry, because
+# they are problem records rather than device statistics.
+DATA_TODO_ITEMS = "todo_items"
+
+TODO_UID = "uid"
+TODO_SUMMARY = "summary"
+TODO_DESCRIPTION = "description"
+TODO_STATUS = "status"
+TODO_SORT_NAME = "sort_name"
+TODO_KIND = "kind"
+TODO_OURS = "ours"
+
+# Item kinds, one per detection family. The engine sets these at
+# Step 5; the backbone only carries them.
+TODO_KIND_BATTERY = "battery"
+TODO_KIND_FROZEN = "frozen"
+TODO_KIND_UNAVAILABLE = "unavailable"
+TODO_KIND_SIGNAL = "signal"
