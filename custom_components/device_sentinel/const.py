@@ -207,3 +207,18 @@ TODO_KIND_BATTERY = "battery"
 TODO_KIND_FROZEN = "frozen"
 TODO_KIND_UNAVAILABLE = "unavailable"
 TODO_KIND_SIGNAL = "signal"
+
+# The exclude surface (0.3.6). One list, five selectors, governing
+# every detection family present and future. Exclusion suppresses
+# judgment, not observation: excluded devices and entities keep
+# their clocks, statistics, and vouching, so an undo is instant and
+# free and the rhythm history carries no holes. An excluded entity
+# still vouches for its device's freeze clock; only its own
+# reporting is suppressed.
+CONF_EXCLUDED_ENTITIES = "excluded_entities"
+CONF_EXCLUDED_DEVICES = "excluded_devices"
+CONF_EXCLUDED_LABELS = "excluded_labels"
+CONF_EXCLUDED_AREAS = "excluded_areas"
+CONF_EXCLUDED_INTEGRATIONS = "excluded_integrations"
+
+SENTINEL_TYPE_PROBLEM_LIST = "problem_list"
