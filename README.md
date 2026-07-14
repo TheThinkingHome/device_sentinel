@@ -1,27 +1,32 @@
 # Device Sentinel
 
-A Home Assistant custom integration that watches hardware liveness: frozen devices (silent but showing a healthy value), unavailable devices, low batteries, and weak radio links. It learns each device's own reporting rhythm and sets per-device freeze windows automatically, so it watches everything by default and false-alarms on almost nothing.
+Somewhere in your house right now, a sensor may be lying to you. It froze, and Home Assistant is still showing the last thing it heard. The dashboard looks healthy. The corpse looks fine.
 
-**Status: pre-release (0.3.x). Not intended for use.** Battery detection is live; freeze and unavailable detection, signal detection, problem lists, and notifications arrive in later versions. Until this project reaches its public release, the blueprints remain the supported tools.
+Device Sentinel is a Home Assistant custom integration that watches for exactly that: frozen devices (silent but wearing healthy values), unavailable devices, low batteries, and weak radio links. It learns the system it is installed in, so you do not have to configure it.
 
-Device Sentinel is the integration successor to the Sentinel template blueprints ([Battery Sentinel, Entity Sentinel, Sentinel Notify](https://github.com/TheThinkingHome/Automations)).
+**Status: pre-release (0.3.x). Not ready for use.** Battery detection is live; freeze, unavailability, and signal detection, problem lists, and notifications arrive in later steps. Until public release, the [Sentinel blueprints](https://github.com/TheThinkingHome/Automations) remain the supported tools. Device Sentinel is their successor.
+
+## The idea
+
+Install it, add it, answer zero questions. From that moment it watches every device in your registry by default. Non-hardware devices (Sun, add-ons, dashboard plugins) classify themselves out automatically, and you exclude the rare exception in two clicks. Where customization earns its place it exists, sliders and per-device overrides for the tuner, but a novice never needs to touch any of it.
+
+Then it learns. It measures each device's reporting rhythm from the event bus, the longest it normally goes silent, tracked daily in storage that survives every restart and update. Each device's freeze window is its own worst normal silence plus a margin. No tiers, no hand-guessed timings, no helper entities to create. One anomalous day moves nothing; a repeating anomaly counts; a frozen device can never teach the system that freezing is normal, because only silences that end get learned. Restart republishes, restored states, and reconnect storms are recognized and excluded on their pattern alone.
 
 ## What it does today
 
-- Watches every device in the registry by default. Non-hardware devices (Sun, Backup, add-ons, frontend plugins) are set aside automatically.
-- Detects low batteries: the percentage entity elected over the binary flag per device, a configurable threshold (dashboard slider, applied live), hysteresis so a cell at the line never flaps, and below-threshold-since carried in storage across restarts. Reported through battery_low_count and battery_low_list entities.
-- Learns each device's reporting rhythm from the event bus: the worst normal silence per day, kept as a rolling per-device history in persistent storage that survives restarts and updates. Restart republishes, reconnect storms, and outages are recognized and excluded, so a device can never teach the system that being broken is normal.
-- Records each device's signal strength (Zigbee linkquality, Wi-Fi RSSI) with rolling daily minima.
-- One-press enable assist: a button that enables the last_seen and signal entities integrations ship disabled, so protocol truth flows without hand-enabling entities one by one. Entities a user disabled personally are left alone.
-- Coverage, learning-progress, and classification sensors, plus two diagnostic files written nightly to `/config/device_sentinel/`: the learned-rhythms table (device_telemetry.txt) and the watched-versus-set-aside audit (classification.txt).
+- Watches all devices by default with automatic service-device classification, and reports coverage, learning progress, and classification through its own entities.
+- Learns per-device reporting rhythms and per-device signal baselines (Zigbee linkquality, Wi-Fi RSSI), with anomaly-trimmed rolling histories.
+- Detects low batteries: the percentage entity elected over the binary flag, a threshold on a dashboard slider applied live, hysteresis so a cell at the line never flaps, and below-threshold-since carried across restarts. Reported through battery_low_count and battery_low_list.
+- One-press enable assist: a button that enables the last_seen and signal entities integrations ship disabled, so protocol truth flows without hand-enabling entities. Entities a user disabled personally are left alone.
+- Writes two human-readable diagnostic files nightly to `/config/device_sentinel/`: the learned-rhythms table and the watched-versus-set-aside audit.
 
 ## What is coming
 
-- Frozen-device detection at device level (any entity's activity vouches for the device), with each device's window set from its own learned rhythm plus a margin. No tiers, no hand-guessed windows.
-- Unavailable, unknown, and missing detection at entity level.
-- Signal detection against each device's own learned baseline (no global threshold; LQI has no cross-manufacturer standard).
-- Acknowledgeable problem lists as the integration's own to-do entities, and notifications about additions only, with quiet hours and per-device priority.
-- An exclude list (entity, device, label, area, integration) and tuning knobs, all through the options flow.
+- Frozen-device detection at device level (any entity's activity vouches for its siblings), each window armed per device from its own learned rhythm.
+- Unavailable, unknown, and never-reported detection at entity level, with the last signal readings before a failure attached as forensics.
+- Signal detection against each device's own learned baseline; there is no cross-manufacturer LQI standard, so there is no global threshold.
+- Problem lists as real to-do entities (the checkbox is the acknowledgment; recovery deletes), and notifications about additions only, with quiet hours and per-device priority.
+- The exclude list (entity, device, label, area, integration) with pickers populated from what was detected.
 
 ## Requirements
 
@@ -37,7 +42,7 @@ Or by hand: HACS, the three-dot menu, Custom repositories, paste `https://github
 
 ## From The Thinking Home
 
-Design notes and articles live at [xeazy.com](https://xeazy.com). Blueprints live in the [Automations](https://github.com/TheThinkingHome/Automations) repository.
+The story behind this project: [From Blueprints to Integration: Why Device Sentinel Exists](https://xeazy.com) on xeazy.com, where design notes and articles live. Blueprints live in the [Automations](https://github.com/TheThinkingHome/Automations) repository.
 
 ## License
 
