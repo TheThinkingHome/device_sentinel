@@ -18,7 +18,11 @@ from homeassistant.loader import async_get_integration
 from .const import DOMAIN, LOGGER
 from .coordinator import DeviceSentinelCoordinator
 
-PLATFORMS: list[Platform] = [Platform.BUTTON, Platform.SENSOR]
+PLATFORMS: list[Platform] = [
+    Platform.BUTTON,
+    Platform.NUMBER,
+    Platform.SENSOR,
+]
 
 type DeviceSentinelConfigEntry = ConfigEntry[DeviceSentinelCoordinator]
 
