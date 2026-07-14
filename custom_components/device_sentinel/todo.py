@@ -42,7 +42,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import DeviceSentinelConfigEntry
 from .const import (
+    ATTR_SENTINEL_TYPE,
+    ATTR_SENTINEL_VERSION,
     DOMAIN,
+    SENTINEL_TYPE_PROBLEM_LIST,
     TODO_DESCRIPTION,
     TODO_KIND,
     TODO_OURS,
@@ -88,6 +91,10 @@ class DeviceSentinelTodoList(TodoListEntity):
             entry_type=DeviceEntryType.SERVICE,
             sw_version=coordinator.version,
         )
+        self._attr_extra_state_attributes = {
+            ATTR_SENTINEL_TYPE: SENTINEL_TYPE_PROBLEM_LIST,
+            ATTR_SENTINEL_VERSION: coordinator.version,
+        }
 
     async def async_added_to_hass(self) -> None:
         """Track coordinator refreshes so engine writes surface."""
