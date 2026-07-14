@@ -139,6 +139,7 @@ class DeviceSentinelCoordinator:
         # entity_id -> device_id, the reverse index the intake uses.
         self._battery_entity_reverse: dict[str, str] = {}
         self._pending_unavailable: dict[str, tuple[float, str]] = {}
+        self._taint_consumed_at: dict[str, float] = {}
         self.deviceless_count: int = 0
 
         # Grace and storm state.
@@ -274,7 +275,9 @@ class DeviceSentinelCoordinator:
             len(self._set_aside),
             self.deviceless_count,
         )
-        await self.hass.async_add_executor_job(self._write_reports)
+        await self.hass.async_add_executor_job(
+            self._write_reports, "setup"
+        )
 
     async def async_shutdown(self) -> None:
         """Stop listening and flush storage."""
@@ -471,7 +474,10 @@ class DeviceSentinelCoordinator:
         if pending is not None:
             began, bad_state = pending
             gone = dt_util.utcnow().timestamp() - began
-            if gone >= TAINT_DEBOUNCE_SECONDS:
+            same_episode = began <= self._taint_consumed_at.get(
+                device_id, 0.0
+            )
+            if gone >= TAINT_DEBOUNCE_SECONDS and not same_episode:
                 record = self.data[DATA_DEVICES].get(device_id)
                 if record is not None and not record[DEV_TAINTED]:
                     record[DEV_TAINTED] = True
@@ -542,6 +548,7 @@ class DeviceSentinelCoordinator:
         tainted = record[DEV_TAINTED]
         if tainted:
             record[DEV_TAINTED] = False
+            self._taint_consumed_at[device_id] = now
 
         last = record[DEV_LAST_ACTIVITY]
         if grace:
@@ -718,7 +725,7 @@ class DeviceSentinelCoordinator:
             return f"{seconds / 3600:.2f}h"
         return f"{seconds:.0f}s"
 
-    def _write_reports(self) -> None:
+    def _write_reports(self, trigger: str = "manual") -> None:
         """Write both diagnostic files to /config/device_sentinel/.
 
         They live under /config because custom_components is code and
@@ -734,8 +741,8 @@ class DeviceSentinelCoordinator:
             stale_path = os.path.join(report_directory, stale_name)
             if os.path.isfile(stale_path):
                 os.remove(stale_path)
-        self._write_telemetry(report_directory)
-        self._write_classification(report_directory)
+        self._write_telemetry(report_directory, trigger)
+        self._write_classification(report_directory, trigger)
 
     @staticmethod
     def _trimmed_maximum(
@@ -835,7 +842,9 @@ class DeviceSentinelCoordinator:
                 parts.append(text)
         return ", ".join(parts)
 
-    def _write_telemetry(self, report_directory: str) -> None:
+    def _write_telemetry(
+        self, report_directory: str, trigger: str
+    ) -> None:
         """Write device_telemetry.md, the learned-rhythms table.
 
         The triage view for a doubted detection: each device's full
@@ -855,7 +864,8 @@ class DeviceSentinelCoordinator:
         lines = [
             f"# Device Sentinel v{self.version} learned statistics",
             "",
-            f"Written {dt_util.now().isoformat(timespec='seconds')}",
+            f"Written {dt_util.now().isoformat(timespec='seconds')} "
+            f"({trigger})",
             "",
             f"Signal preview: FLOOR is the trimmed minimum of the "
             f"daily signal minima (same trim rule); DANGER is the "
@@ -960,7 +970,9 @@ class DeviceSentinelCoordinator:
             handle.write("\n".join(lines) + "\n")
         LOGGER.info("Telemetry report written to %s", path)
 
-    def _write_classification(self, report_directory: str) -> None:
+    def _write_classification(
+        self, report_directory: str, trigger: str
+    ) -> None:
         """Write classification.md, the audit view.
 
         Answers "why is my device not watched" and "why is this thing
@@ -992,7 +1004,8 @@ class DeviceSentinelCoordinator:
         lines = [
             f"# Device Sentinel v{self.version} classification",
             "",
-            f"Written {dt_util.now().isoformat(timespec='seconds')}",
+            f"Written {dt_util.now().isoformat(timespec='seconds')} "
+            f"({trigger})",
             "",
             f"Watching {len(self._watched)} of "
             f"{len(self._watched) + len(self._set_aside)} devices; "
