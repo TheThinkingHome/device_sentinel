@@ -139,3 +139,16 @@ DEV_BATTERY_VALUE = "battery_value"
 
 SENTINEL_TYPE_BATTERY_COUNT = "battery_low_count"
 SENTINEL_TYPE_BATTERY_LIST = "battery_low_list"
+
+# Signal preview (0.3.1, display-only). The floor is the trimmed
+# minimum of the rolling daily signal minima (mirror of the gap
+# rule: drop the bottom TRIM_TOP_K as anomalies once
+# TRIM_MIN_SAMPLES days exist). The candidate danger line is
+# family-specific because one number cannot serve both unit
+# families: LQI is positive (bigger is better, scale varies by
+# stack), dBm RSSI is negative. Family is detected by sign. These
+# formulas are previewed in device_telemetry.md and ruled from real
+# data before any detection acts on them.
+SIGNAL_ARMING_DAYS = 7
+SIGNAL_LQI_DANGER_FACTOR = 0.5
+SIGNAL_RSSI_DANGER_OFFSET = 10.0
