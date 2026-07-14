@@ -36,6 +36,11 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_EXCLUDED_AREAS,
+    CONF_EXCLUDED_DEVICES,
+    CONF_EXCLUDED_ENTITIES,
+    CONF_EXCLUDED_INTEGRATIONS,
+    CONF_EXCLUDED_LABELS,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_LOW_THRESHOLD,
     CONF_NORMAL_PRIORITY_TARGETS,
@@ -110,7 +115,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """Show the top-level menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["thresholds", "notifications"],
+            menu_options=["thresholds", "notifications", "exclusions"],
         )
 
     async def async_step_thresholds(
@@ -139,6 +144,79 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     )
+                }
+            ),
+        )
+
+    async def async_step_exclusions(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """The exclude surface: five selectors, one list, every family.
+
+        Exclusion suppresses judgment, not observation (a ruled
+        decision): excluded devices and entities keep their clocks,
+        statistics, and vouching, so undo is instant and the rhythm
+        history carries no holes. Changes apply live on save through
+        the options update listener, no restart.
+
+        The integration picker is populated live from the config
+        entries present on this system; an integration exclude
+        catches only devices that integration owns, never multi-homed
+        hardware it merely sees.
+        """
+        if user_input is not None:
+            return self.async_create_entry(
+                data={**self.config_entry.options, **user_input}
+            )
+        options = self.config_entry.options
+        integration_domains = sorted(
+            {
+                entry.domain
+                for entry in self.hass.config_entries.async_entries()
+                if entry.domain != DOMAIN
+            }
+        )
+        return self.async_show_form(
+            step_id="exclusions",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_EXCLUDED_ENTITIES,
+                        default=options.get(CONF_EXCLUDED_ENTITIES, []),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(multiple=True)
+                    ),
+                    vol.Optional(
+                        CONF_EXCLUDED_DEVICES,
+                        default=options.get(CONF_EXCLUDED_DEVICES, []),
+                    ): selector.DeviceSelector(
+                        selector.DeviceSelectorConfig(multiple=True)
+                    ),
+                    vol.Optional(
+                        CONF_EXCLUDED_LABELS,
+                        default=options.get(CONF_EXCLUDED_LABELS, []),
+                    ): selector.LabelSelector(
+                        selector.LabelSelectorConfig(multiple=True)
+                    ),
+                    vol.Optional(
+                        CONF_EXCLUDED_AREAS,
+                        default=options.get(CONF_EXCLUDED_AREAS, []),
+                    ): selector.AreaSelector(
+                        selector.AreaSelectorConfig(multiple=True)
+                    ),
+                    vol.Optional(
+                        CONF_EXCLUDED_INTEGRATIONS,
+                        default=options.get(
+                            CONF_EXCLUDED_INTEGRATIONS, []
+                        ),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=integration_domains,
+                            multiple=True,
+                            custom_value=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
                 }
             ),
         )
