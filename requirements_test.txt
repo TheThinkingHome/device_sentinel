@@ -1,0 +1,4 @@
+# The test harness, pinned to the exact versions the suite was
+# proven against (HA 2025.1.4 under Python 3.12; the 2026-era API
+# delta is hand-audited, and the Panorama proof gate is final).
+pytest-homeassistant-custom-component==0.13.205
