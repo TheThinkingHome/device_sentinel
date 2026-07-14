@@ -44,6 +44,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     BATTERY_CLEAR_MARGIN,
+    DATA_TODO_ITEMS,
     CONF_LOW_THRESHOLD,
     DAILY_MAX_KEEP,
     DEFAULT_LOW_THRESHOLD,
@@ -86,6 +87,13 @@ from .const import (
     STORM_RELEASE_SECONDS,
     STORM_WINDOW_SECONDS,
     TAINT_DEBOUNCE_SECONDS,
+    TODO_DESCRIPTION,
+    TODO_KIND,
+    TODO_OURS,
+    TODO_SORT_NAME,
+    TODO_STATUS,
+    TODO_SUMMARY,
+    TODO_UID,
 )
 
 BAD_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
@@ -174,6 +182,7 @@ class DeviceSentinelCoordinator:
         loaded[DATA_SETUP_COUNT] = int(loaded.get(DATA_SETUP_COUNT, 0)) + 1
         loaded.setdefault(DATA_FIRST_INSTALLED, dt_util.utcnow().isoformat())
         loaded.setdefault(DATA_DEVICES, {})
+        loaded.setdefault(DATA_TODO_ITEMS, [])
         if loaded.get(DATA_STATS_EPOCH) != STATS_EPOCH:
             wiped = 0
             for record in loaded[DATA_DEVICES].values():
@@ -1123,6 +1132,90 @@ class DeviceSentinelCoordinator:
                 domain, {"watched": 0, "set_aside": 0}
             )["set_aside"] += 1
         return breakdown
+
+    @property
+    def todo_items(self) -> list[dict[str, Any]]:
+        """Return the stored problem items, alphabetical by name."""
+        return self.data.get(DATA_TODO_ITEMS, [])
+
+    def _sort_todo_items(self) -> None:
+        """Enforce alphabetical order by the common name.
+
+        Order is owned by the integration and re-imposed on every
+        write, because a readable list beats one ordered by age. User
+        reordering does not stick, by design: this is a
+        system-maintained problem list, not a personal one.
+        """
+        self.data[DATA_TODO_ITEMS].sort(
+            key=lambda record: (
+                record.get(TODO_SORT_NAME) or record.get(TODO_SUMMARY) or ""
+            ).lower()
+        )
+
+    async def async_todo_add(
+        self,
+        summary: str,
+        description: str | None,
+        sort_name: str,
+        kind: str | None,
+        ours: bool,
+        uid: str,
+    ) -> None:
+        """Add one item and persist, keeping the list alphabetical."""
+        self.data[DATA_TODO_ITEMS].append(
+            {
+                TODO_UID: uid,
+                TODO_SUMMARY: summary,
+                TODO_DESCRIPTION: description,
+                TODO_STATUS: "needs_action",
+                TODO_SORT_NAME: sort_name,
+                TODO_KIND: kind,
+                TODO_OURS: ours,
+            }
+        )
+        self._sort_todo_items()
+        await self._store.async_save(self.data)
+        self._notify()
+
+    async def async_todo_update(
+        self,
+        uid: str | None,
+        summary: str | None = None,
+        description: str | None = None,
+        status: str | None = None,
+    ) -> None:
+        """Apply an edit to one item.
+
+        A status of completed is the acknowledgment: the item stays on
+        the list and the engine goes quiet about it. Only a recovery
+        deletes it.
+        """
+        for record in self.data[DATA_TODO_ITEMS]:
+            if record[TODO_UID] != uid:
+                continue
+            if summary is not None:
+                record[TODO_SUMMARY] = summary
+                record[TODO_SORT_NAME] = (
+                    record.get(TODO_SORT_NAME) or summary
+                )
+            if description is not None:
+                record[TODO_DESCRIPTION] = description
+            if status is not None:
+                record[TODO_STATUS] = status
+            break
+        self._sort_todo_items()
+        await self._store.async_save(self.data)
+        self._notify()
+
+    async def async_todo_delete(self, uids: list[str]) -> None:
+        """Delete items by uid, whoever created them."""
+        self.data[DATA_TODO_ITEMS] = [
+            record
+            for record in self.data[DATA_TODO_ITEMS]
+            if record[TODO_UID] not in uids
+        ]
+        await self._store.async_save(self.data)
+        self._notify()
 
     @property
     def low_threshold(self) -> float:
