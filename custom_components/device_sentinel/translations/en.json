@@ -11,7 +11,8 @@
         "title": "Device Sentinel tuning",
         "menu_options": {
           "thresholds": "Thresholds",
-          "notifications": "Notifications"
+          "notifications": "Notifications",
+          "exclusions": "Exclusions"
         }
       },
       "thresholds": {
@@ -45,6 +46,24 @@
           "quiet_hours_end": "When the quiet window ends. Nothing fires at this time; it only defines the window.",
           "daily_reminder_mode": "None: notify only on new items. Overnight changes: only if something appeared during quiet hours. Daily summary: every day, with an all-clear when nothing is flagged.",
           "daily_reminder_time": "When the daily send is owed. The time is only a wake-up; a send missed during a reboot is caught up on the next run."
+        }
+      },
+      "exclusions": {
+        "title": "Exclusions",
+        "description": "Excluded items keep learning and never appear in detections or lists. Undo any time; nothing is lost. An excluded entity still vouches for its device.",
+        "data": {
+          "excluded_entities": "Excluded entities",
+          "excluded_devices": "Excluded devices",
+          "excluded_labels": "Excluded labels",
+          "excluded_areas": "Excluded areas",
+          "excluded_integrations": "Excluded integrations"
+        },
+        "data_description": {
+          "excluded_entities": "These entities are never reported themselves, but still count as activity for their device.",
+          "excluded_devices": "These devices are never judged or listed.",
+          "excluded_labels": "Devices and entities carrying these labels are excluded.",
+          "excluded_areas": "Devices and entities in these areas are excluded.",
+          "excluded_integrations": "Devices owned by these integrations are excluded. Hardware an integration merely sees (a router tracking a camera) is not caught."
         }
       }
     }
