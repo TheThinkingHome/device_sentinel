@@ -25,21 +25,36 @@
       },
       "notifications": {
         "title": "Notifications",
-        "description": "These settings are stored now and used once detection notifications are built.",
+        "description": "These settings are stored now and used once detection notifications are built. Nothing is sent yet.",
         "data": {
-          "notify_targets": "Notification targets",
-          "quiet_start": "Quiet hours start",
-          "quiet_end": "Quiet hours end",
-          "reminder_time": "Daily reminder time",
-          "high_priority_pierces_quiet": "High-priority items pierce quiet hours"
+          "high_priority_targets": "High-priority push targets",
+          "normal_priority_targets": "Normal-priority push targets",
+          "persistent_enabled": "Create a persistent notification",
+          "quiet_hours_enabled": "Enable quiet hours",
+          "quiet_hours_start": "Quiet hours start",
+          "quiet_hours_end": "Quiet hours end",
+          "daily_reminder_mode": "Daily reminder mode",
+          "daily_reminder_time": "Reminder time"
         },
         "data_description": {
-          "notify_targets": "Where routine notifications are sent. Discovered from your system.",
-          "quiet_start": "Routine notifications are held from this time.",
-          "quiet_end": "Routine notifications resume at this time.",
-          "reminder_time": "A once-daily summary of outstanding items is sent at this time.",
-          "high_priority_pierces_quiet": "When on, a high-priority item is delivered even during quiet hours."
+          "high_priority_targets": "Notify targets that receive high-priority pushes. High priority bypasses Do Not Disturb and pierces quiet hours. Leave empty for none.",
+          "normal_priority_targets": "Notify targets that receive normal pushes. Standard delivery, held during quiet hours. A target in both lists is treated as high. Leave empty for none.",
+          "persistent_enabled": "Also maintain a persistent notification in the UI, replaced in place so it never stacks.",
+          "quiet_hours_enabled": "When on, normal-priority pushes are held during the window below; high-priority targets still fire, and the lists and state keep updating.",
+          "quiet_hours_start": "When the quiet window begins. A start later than the end crosses midnight.",
+          "quiet_hours_end": "When the quiet window ends. Nothing fires at this time; it only defines the window.",
+          "daily_reminder_mode": "None: notify only on new items. Overnight changes: only if something appeared during quiet hours. Daily summary: every day, with an all-clear when nothing is flagged.",
+          "daily_reminder_time": "When the daily send is owed. The time is only a wake-up; a send missed during a reboot is caught up on the next run."
         }
+      }
+    }
+  },
+  "selector": {
+    "reminder_mode": {
+      "options": {
+        "none": "None (notify only on new items)",
+        "overnight": "Overnight changes (only if something was added during quiet hours)",
+        "daily": "Daily summary (every day, all-clear when nothing is flagged)"
       }
     }
   }
