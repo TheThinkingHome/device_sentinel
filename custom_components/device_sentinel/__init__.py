@@ -22,6 +22,7 @@ PLATFORMS: list[Platform] = [
     Platform.BUTTON,
     Platform.NUMBER,
     Platform.SENSOR,
+    Platform.TODO,
 ]
 
 type DeviceSentinelConfigEntry = ConfigEntry[DeviceSentinelCoordinator]
