@@ -36,18 +36,26 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
-    CONF_HIGH_PRIORITY_PIERCES_QUIET,
+    CONF_HIGH_PRIORITY_TARGETS,
     CONF_LOW_THRESHOLD,
-    CONF_NOTIFY_TARGETS,
+    CONF_NORMAL_PRIORITY_TARGETS,
+    CONF_PERSISTENT_ENABLED,
+    CONF_QUIET_ENABLED,
     CONF_QUIET_END,
     CONF_QUIET_START,
+    CONF_REMINDER_MODE,
     CONF_REMINDER_TIME,
-    DEFAULT_HIGH_PRIORITY_PIERCES_QUIET,
     DEFAULT_LOW_THRESHOLD,
+    DEFAULT_PERSISTENT_ENABLED,
+    DEFAULT_QUIET_ENABLED,
     DEFAULT_QUIET_END,
     DEFAULT_QUIET_START,
+    DEFAULT_REMINDER_MODE,
     DEFAULT_REMINDER_TIME,
     DOMAIN,
+    REMINDER_MODE_DAILY,
+    REMINDER_MODE_NONE,
+    REMINDER_MODE_OVERNIGHT,
 )
 
 # The notify domain exposes one service per target; the persistent
@@ -138,33 +146,74 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     async def async_step_notifications(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """The notification backbone: targets, quiet hours, reminder.
+        """The notification backbone, mirrored to Sentinel Notify.
 
-        Stored and inert until the Step 5 engine reads them. High
-        priority pierces quiet hours so a critical item (a freezer
-        sensor at 3 AM) is never held back.
+        Two target lists: high-priority targets bypass Do Not Disturb
+        and pierce quiet hours; normal-priority targets get standard
+        delivery and are held during quiet hours. Either may be empty.
+        A target in both is normalized to high on save, so the Step 5
+        engine inherits the rule rather than re-deriving it. Also the
+        persistent card, the quiet-hours window, and the daily
+        reminder mode and time.
+
+        Everything here is stored and inert until the engine reads it.
         """
         if user_input is not None:
+            high = list(user_input.get(CONF_HIGH_PRIORITY_TARGETS, []))
+            normal = [
+                target
+                for target in user_input.get(
+                    CONF_NORMAL_PRIORITY_TARGETS, []
+                )
+                if target not in high
+            ]
+            user_input[CONF_NORMAL_PRIORITY_TARGETS] = normal
             return self.async_create_entry(
                 data={**self.config_entry.options, **user_input}
             )
         options = self.config_entry.options
         discovered = _discover_notify_targets(self.hass)
+
+        def target_selector() -> selector.SelectSelector:
+            """A multi-select of discovered targets, typing allowed."""
+            return selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=discovered,
+                    multiple=True,
+                    custom_value=True,
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            )
+
         return self.async_show_form(
             step_id="notifications",
             data_schema=vol.Schema(
                 {
                     vol.Optional(
-                        CONF_NOTIFY_TARGETS,
-                        default=options.get(CONF_NOTIFY_TARGETS, []),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=discovered,
-                            multiple=True,
-                            mode=selector.SelectSelectorMode.LIST,
-                            custom_value=True,
-                        )
-                    ),
+                        CONF_HIGH_PRIORITY_TARGETS,
+                        default=options.get(
+                            CONF_HIGH_PRIORITY_TARGETS, []
+                        ),
+                    ): target_selector(),
+                    vol.Optional(
+                        CONF_NORMAL_PRIORITY_TARGETS,
+                        default=options.get(
+                            CONF_NORMAL_PRIORITY_TARGETS, []
+                        ),
+                    ): target_selector(),
+                    vol.Required(
+                        CONF_PERSISTENT_ENABLED,
+                        default=options.get(
+                            CONF_PERSISTENT_ENABLED,
+                            DEFAULT_PERSISTENT_ENABLED,
+                        ),
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_QUIET_ENABLED,
+                        default=options.get(
+                            CONF_QUIET_ENABLED, DEFAULT_QUIET_ENABLED
+                        ),
+                    ): selector.BooleanSelector(),
                     vol.Required(
                         CONF_QUIET_START,
                         default=options.get(
@@ -178,18 +227,27 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         ),
                     ): selector.TimeSelector(),
                     vol.Required(
+                        CONF_REMINDER_MODE,
+                        default=options.get(
+                            CONF_REMINDER_MODE, DEFAULT_REMINDER_MODE
+                        ),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                REMINDER_MODE_NONE,
+                                REMINDER_MODE_OVERNIGHT,
+                                REMINDER_MODE_DAILY,
+                            ],
+                            translation_key="reminder_mode",
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Required(
                         CONF_REMINDER_TIME,
                         default=options.get(
                             CONF_REMINDER_TIME, DEFAULT_REMINDER_TIME
                         ),
                     ): selector.TimeSelector(),
-                    vol.Required(
-                        CONF_HIGH_PRIORITY_PIERCES_QUIET,
-                        default=options.get(
-                            CONF_HIGH_PRIORITY_PIERCES_QUIET,
-                            DEFAULT_HIGH_PRIORITY_PIERCES_QUIET,
-                        ),
-                    ): selector.BooleanSelector(),
                 }
             ),
         )
