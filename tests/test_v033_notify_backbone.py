@@ -1,6 +1,10 @@
-"""0.3.3 tests: the notification backbone (config surface only)."""
+"""Notification backbone tests (config surface only, no engine).
 
-import pytest
+0.3.3 introduced it; 0.3.4 rebuilt it to mirror Sentinel Notify:
+two target lists (high pierces quiet hours, normal is held), the
+persistent card, quiet hours, and the daily reminder mode and time.
+"""
+
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
@@ -10,9 +14,12 @@ from custom_components.device_sentinel.config_flow import (
     _discover_notify_targets,
 )
 from custom_components.device_sentinel.const import (
-    CONF_HIGH_PRIORITY_PIERCES_QUIET,
-    CONF_NOTIFY_TARGETS,
+    CONF_HIGH_PRIORITY_TARGETS,
+    CONF_NORMAL_PRIORITY_TARGETS,
+    CONF_PERSISTENT_ENABLED,
+    CONF_QUIET_ENABLED,
     CONF_QUIET_START,
+    CONF_REMINDER_MODE,
     CONF_REMINDER_TIME,
 )
 
@@ -45,32 +52,68 @@ async def test_options_menu_branches(hass: HomeAssistant):
     assert set(result["menu_options"]) == {"thresholds", "notifications"}
 
 
-async def test_notifications_step_round_trip(hass: HomeAssistant):
+async def test_two_lists_and_both_means_high(hass: HomeAssistant):
     hass.services._services.setdefault("notify", {})
-    hass.services._services["notify"]["mobile_app_s24"] = object()
+    for name in ("mobile_app_mine", "mobile_app_wife"):
+        hass.services._services["notify"][name] = object()
     entry = await _setup(hass)
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "notifications"}
     )
-    assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "notifications"
 
+    # Mine is high; wife is normal; a shared target is listed in both.
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            CONF_NOTIFY_TARGETS: ["notify.mobile_app_s24"],
-            CONF_QUIET_START: "23:00:00",
-            "quiet_end": "06:30:00",
-            CONF_REMINDER_TIME: "08:15:00",
-            CONF_HIGH_PRIORITY_PIERCES_QUIET: True,
+            CONF_HIGH_PRIORITY_TARGETS: [
+                "notify.mobile_app_mine",
+                "notify.mobile_app_wife",
+            ],
+            CONF_NORMAL_PRIORITY_TARGETS: ["notify.mobile_app_wife"],
+            CONF_PERSISTENT_ENABLED: True,
+            CONF_QUIET_ENABLED: True,
+            CONF_QUIET_START: "22:00:00",
+            "quiet_hours_end": "07:00:00",
+            CONF_REMINDER_MODE: "overnight",
+            CONF_REMINDER_TIME: "08:00:00",
         },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options[CONF_NOTIFY_TARGETS] == ["notify.mobile_app_s24"]
-    assert entry.options[CONF_QUIET_START] == "23:00:00"
-    assert entry.options[CONF_HIGH_PRIORITY_PIERCES_QUIET] is True
+    # The shared target normalized out of the normal list (both = high).
+    assert entry.options[CONF_HIGH_PRIORITY_TARGETS] == [
+        "notify.mobile_app_mine",
+        "notify.mobile_app_wife",
+    ]
+    assert entry.options[CONF_NORMAL_PRIORITY_TARGETS] == []
+    assert entry.options[CONF_QUIET_ENABLED] is True
+    assert entry.options[CONF_REMINDER_MODE] == "overnight"
+
+
+async def test_empty_lists_allowed(hass: HomeAssistant):
+    entry = await _setup(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "notifications"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_HIGH_PRIORITY_TARGETS: [],
+            CONF_NORMAL_PRIORITY_TARGETS: [],
+            CONF_PERSISTENT_ENABLED: False,
+            CONF_QUIET_ENABLED: False,
+            CONF_QUIET_START: "22:00:00",
+            "quiet_hours_end": "08:00:00",
+            CONF_REMINDER_MODE: "none",
+            CONF_REMINDER_TIME: "08:00:00",
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_HIGH_PRIORITY_TARGETS] == []
+    assert entry.options[CONF_NORMAL_PRIORITY_TARGETS] == []
 
 
 async def test_thresholds_still_work_through_menu(hass: HomeAssistant):
