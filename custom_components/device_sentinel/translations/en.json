@@ -9,11 +9,36 @@
     "step": {
       "init": {
         "title": "Device Sentinel tuning",
+        "menu_options": {
+          "thresholds": "Thresholds",
+          "notifications": "Notifications"
+        }
+      },
+      "thresholds": {
+        "title": "Thresholds",
         "data": {
           "low_threshold": "Battery low threshold (%)"
         },
         "data_description": {
           "low_threshold": "A battery at or below this level is flagged low. It clears once it climbs 2 points above the threshold."
+        }
+      },
+      "notifications": {
+        "title": "Notifications",
+        "description": "These settings are stored now and used once detection notifications are built.",
+        "data": {
+          "notify_targets": "Notification targets",
+          "quiet_start": "Quiet hours start",
+          "quiet_end": "Quiet hours end",
+          "reminder_time": "Daily reminder time",
+          "high_priority_pierces_quiet": "High-priority items pierce quiet hours"
+        },
+        "data_description": {
+          "notify_targets": "Where routine notifications are sent. Discovered from your system.",
+          "quiet_start": "Routine notifications are held from this time.",
+          "quiet_end": "Routine notifications resume at this time.",
+          "reminder_time": "A once-daily summary of outstanding items is sent at this time.",
+          "high_priority_pierces_quiet": "When on, a high-priority item is delivered even during quiet hours."
         }
       }
     }
