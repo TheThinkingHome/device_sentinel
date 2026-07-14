@@ -52,6 +52,9 @@ from .const import (
     REPORT_DIR,
     REPORT_STALE_FILES,
     REPORT_TELEMETRY,
+    SIGNAL_ARMING_DAYS,
+    SIGNAL_LQI_DANGER_FACTOR,
+    SIGNAL_RSSI_DANGER_OFFSET,
     TRIM_MIN_SAMPLES,
     TRIM_TOP_K,
     DATA_DEVICES,
@@ -680,6 +683,33 @@ class DeviceSentinelCoordinator:
         )
         await self.hass.async_add_executor_job(self._write_reports)
 
+    @staticmethod
+    def _trimmed_minimum(
+        daily_minimum_signals: list[float],
+    ) -> float | None:
+        """Return the signal floor: the trimmed minimum of the daily
+        minima, the exact mirror of the gap rule. The bottom
+        TRIM_TOP_K values are set aside as anomalies once
+        TRIM_MIN_SAMPLES days exist; below that, the plain minimum.
+        One anomalous bad-signal day moves nothing; a recurring drop
+        counts as real degradation."""
+        if not daily_minimum_signals:
+            return None
+        if len(daily_minimum_signals) < TRIM_MIN_SAMPLES:
+            return min(daily_minimum_signals)
+        survivors = sorted(daily_minimum_signals)[TRIM_TOP_K:]
+        return min(survivors)
+
+    @staticmethod
+    def _signal_family_and_danger(floor: float) -> tuple[str, float]:
+        """Classify the unit family by sign and return the candidate
+        danger line (preview only, ruled from real data before any
+        detection acts on it): LQI-like positives flag below
+        floor * factor; dBm negatives flag below floor - offset."""
+        if floor >= 0:
+            return "LQI", floor * SIGNAL_LQI_DANGER_FACTOR
+        return "RSSI", floor - SIGNAL_RSSI_DANGER_OFFSET
+
     def _fmt_gap(self, seconds: Any) -> str:
         """Format a gap for the report."""
         if seconds is None:
@@ -738,6 +768,33 @@ class DeviceSentinelCoordinator:
             if index not in set_aside_indices
         ]
         return max(survivors), set_aside_indices
+
+    @staticmethod
+    def _trimmed_minimum(
+        daily_minimum_signals: list[float],
+    ) -> float | None:
+        """Return the signal floor: the trimmed minimum of the daily
+        minima, the exact mirror of the gap rule. The bottom
+        TRIM_TOP_K values are set aside as anomalies once
+        TRIM_MIN_SAMPLES days exist; below that, the plain minimum.
+        One anomalous bad-signal day moves nothing; a recurring drop
+        counts as real degradation."""
+        if not daily_minimum_signals:
+            return None
+        if len(daily_minimum_signals) < TRIM_MIN_SAMPLES:
+            return min(daily_minimum_signals)
+        survivors = sorted(daily_minimum_signals)[TRIM_TOP_K:]
+        return min(survivors)
+
+    @staticmethod
+    def _signal_family_and_danger(floor: float) -> tuple[str, float]:
+        """Classify the unit family by sign and return the candidate
+        danger line (preview only, ruled from real data before any
+        detection acts on it): LQI-like positives flag below
+        floor * factor; dBm negatives flag below floor - offset."""
+        if floor >= 0:
+            return "LQI", floor * SIGNAL_LQI_DANGER_FACTOR
+        return "RSSI", floor - SIGNAL_RSSI_DANGER_OFFSET
 
     def _fmt_gap(self, seconds: Any) -> str:
         """Format a gap for the report."""
@@ -800,6 +857,13 @@ class DeviceSentinelCoordinator:
             "",
             f"Written {dt_util.now().isoformat(timespec='seconds')}",
             "",
+            f"Signal preview: FLOOR is the trimmed minimum of the "
+            f"daily signal minima (same trim rule); DANGER is the "
+            f"candidate line, display-only until ruled: LQI flags "
+            f"below floor x {SIGNAL_LQI_DANGER_FACTOR:g}, RSSI below "
+            f"floor - {SIGNAL_RSSI_DANGER_OFFSET:g} dB; blank until "
+            f"a device has {SIGNAL_ARMING_DAYS} signal days.",
+            "",
             f"Rule: the window basis is the **trimmed maximum** of "
             f"the rolling daily maxima: the top {TRIM_TOP_K} value(s) "
             f"are ~~set aside~~ as suspected anomalies and the basis "
@@ -813,8 +877,9 @@ class DeviceSentinelCoordinator:
             f"{LEARNING_MIN_DAYS} days, keep {DAILY_MAX_KEEP} days.",
             "",
             "| DEVICE | DAYS | WINDOW BASIS | GAPS (newest first) | "
-            "CLOCK | EVENTS | SIGNAL | SIG MIN |",
-            "|---|---|---|---|---|---|---|---|",
+            "CLOCK | EVENTS | SIGNAL | SIG MIN | FLOOR | FAMILY | "
+            "DANGER |",
+            "|---|---|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
         for device_id, record in self.data[DATA_DEVICES].items():
@@ -833,6 +898,14 @@ class DeviceSentinelCoordinator:
                 signal_minimum_candidates.append(
                     record[DEV_SIGNAL_TODAY_MIN]
                 )
+            signal_days = record.get(DEV_SIGNAL_DAILY_MIN) or []
+            if len(signal_days) >= SIGNAL_ARMING_DAYS:
+                signal_floor = self._trimmed_minimum(signal_days)
+                family, danger_line = self._signal_family_and_danger(
+                    signal_floor
+                )
+            else:
+                signal_floor, family, danger_line = None, None, None
             rows.append(
                 (
                     device_name,
@@ -847,6 +920,9 @@ class DeviceSentinelCoordinator:
                     min(signal_minimum_candidates)
                     if signal_minimum_candidates
                     else None,
+                    signal_floor,
+                    family,
+                    danger_line,
                 )
             )
         rows.sort(key=lambda row: (row[2] is None, -(row[2] or 0)))
@@ -859,16 +935,23 @@ class DeviceSentinelCoordinator:
             event_count,
             signal_value,
             signal_minimum,
+            signal_floor,
+            family,
+            danger_line,
         ) in rows:
             signal_text = "-" if signal_value is None else f"{signal_value:g}"
             signal_minimum_text = (
                 "-" if signal_minimum is None else f"{signal_minimum:g}"
             )
+            floor_text = "-" if signal_floor is None else f"{signal_floor:g}"
+            family_text = family or "-"
+            danger_text = "-" if danger_line is None else f"{danger_line:g}"
             lines.append(
                 f"| {device_name} | {day_count} | "
                 f"{self._fmt_gap(operative)} | {maxima_cell} | "
                 f"{clock_source} | {event_count} | {signal_text} | "
-                f"{signal_minimum_text} |"
+                f"{signal_minimum_text} | {floor_text} | {family_text} | "
+                f"{danger_text} |"
             )
         lines.append("")
         lines.append(f"{len(rows)} watched devices.")
