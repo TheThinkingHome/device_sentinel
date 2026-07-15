@@ -1,6 +1,12 @@
 {
   "title": "Device Sentinel",
   "config": {
+    "step": {
+      "user": {
+        "title": "Device Sentinel",
+        "description": "Device Sentinel installs with working defaults and starts watching immediately. Tuning lives in the options after setup."
+      }
+    },
     "abort": {
       "single_instance_allowed": "Device Sentinel is already configured. Only a single instance is supported."
     }
