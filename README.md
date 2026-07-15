@@ -54,7 +54,7 @@ Or by hand: HACS, the three-dot menu, Custom repositories, paste `https://github
 
 ## From The Thinking Home
 
-The full story: [From Blueprints to Integration: Why Device Sentinel Exists](https://xeazy.com) on xeazy.com. Blueprints live in the [Automations](https://github.com/TheThinkingHome/Automations) repository.
+The full story: [From Blueprints to Integration: Why Device Sentinel Exists](https://xeazy.com/reliable-home-assistant-dead-sensor-detection/) on xeazy.com. Blueprints live in the [Automations](https://github.com/TheThinkingHome/Automations) repository.
 
 ## License
 
