@@ -1,0 +1,28 @@
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+name: Feature request
+description: An idea for what Device Sentinel should do.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem it solves
+      description: What real situation in your home does this address? Concrete beats abstract.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        Note: Device Sentinel is pre-release and built in strict steps. Ideas that fit the
+        design land in the queue; the design document rules. Detection accuracy comes first,
+        everything else after.

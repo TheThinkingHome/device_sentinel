@@ -1,0 +1,47 @@
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+name: Bug report
+description: Something misbehaved. Evidence beats description, so the form asks for files.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Device Sentinel judges from evidence, and so does its author.
+        The three attachments below answer most questions before they are asked.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did Device Sentinel do, and what did you expect instead?
+      placeholder: It flagged my kitchen leak sensor as battery low, but the battery reads 80%.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics download
+      description: |
+        Settings, Devices and Services, Device Sentinel, three-dot menu, Download diagnostics.
+        Drag the JSON file here. It carries the learned state, tunables, and classification,
+        with your notification targets redacted automatically.
+    validations:
+      required: true
+  - type: textarea
+    id: reports
+    attributes:
+      label: Diagnostic files (optional but helpful)
+      description: |
+        From /config/device_sentinel/: device_telemetry.md and classification.md.
+        Drag them here if the issue involves rhythms, windows, or what is watched.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Device Sentinel version and Home Assistant version.
+      placeholder: Device Sentinel 0.3.8, Home Assistant 2026.7.1
+    validations:
+      required: true

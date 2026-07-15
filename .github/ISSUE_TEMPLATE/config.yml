@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: The article behind the project
+    url: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+    about: Why Device Sentinel exists and where it is headed.
