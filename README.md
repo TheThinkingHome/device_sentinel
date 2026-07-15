@@ -2,6 +2,9 @@
 
 ![Tests](https://github.com/TheThinkingHome/device_sentinel/actions/workflows/test.yml/badge.svg)
 ![Validate](https://github.com/TheThinkingHome/device_sentinel/actions/workflows/validate.yml/badge.svg)
+![Version](https://img.shields.io/github/v/release/TheThinkingHome/device_sentinel)
+![License](https://img.shields.io/github/license/TheThinkingHome/device_sentinel)
+![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)
 
 Somewhere in your house right now, a sensor may be lying to you. It froze, and Home Assistant is still showing the last thing it heard. Temperature 22.4. Motion clear. Door closed. The dashboard looks healthy. The corpse looks fine.
 
