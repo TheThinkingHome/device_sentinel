@@ -24,7 +24,7 @@
       },
       "notifications": {
         "title": "Notifications",
-        "description": "Two target lists. High-priority targets are for phones that should always be reached: they bypass Do Not Disturb and quiet hours. Normal-priority targets get standard delivery and are held during quiet hours. Either list may be empty, and a target in both is treated as high. These settings are stored now and used once detection notifications are built; nothing is sent yet.\n\nFull documentation: [Device Sentinel wiki](https://github.com/TheThinkingHome/device_sentinel/wiki)",
+        "description": "Two target lists. High-priority targets are for phones that should always be reached: they bypass Do Not Disturb and quiet hours. Normal-priority targets get standard delivery and are held during quiet hours. Either list may be empty, and a target in both is treated as high. These settings are stored now and used once detection notifications are built; nothing is sent yet.\n\nFull documentation: {wiki_link}",
         "data": {
           "high_priority_targets": "High-priority push targets",
           "normal_priority_targets": "Normal-priority push targets",
@@ -48,7 +48,7 @@
       },
       "exclusions": {
         "title": "Exclusions",
-        "description": "Exclusion suppresses judgment, not observation: excluded devices and entities are never reported, but they keep their clocks and learned statistics, so undoing an exclusion is instant and nothing is lost. An excluded entity still counts as activity for its device. Excluding an integration catches only devices it owns, never hardware it merely sees (a router tracking a camera does not drag the camera with it).\n\nFull documentation: [Device Sentinel wiki](https://github.com/TheThinkingHome/device_sentinel/wiki)",
+        "description": "Exclusion suppresses judgment, not observation: excluded devices and entities are never reported, but they keep their clocks and learned statistics, so undoing an exclusion is instant and nothing is lost. An excluded entity still counts as activity for its device. Excluding an integration catches only devices it owns, never hardware it merely sees (a router tracking a camera does not drag the camera with it).\n\nFull documentation: {wiki_link}",
         "data": {
           "excluded_entities": "Excluded entities",
           "excluded_devices": "Excluded devices",
@@ -76,7 +76,7 @@
           "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery judgment only; everything else about them stays watched.",
           "battery_excluded_integrations": "One tick covers every battery that integration owns, present and future (phones under mobile_app, for example)."
         },
-        "description": "Every battery Device Sentinel finds is watched by default. Where a device has both a percentage battery and a low-battery flag, the percentage is used. A battery is flagged at or below the threshold and clears once it climbs 2 points above it, so a cell at the line never flaps, and the time it crossed is kept across restarts. Exclude the batteries you do not care about below; everything else about those devices stays watched.\n\nFull documentation: [Device Sentinel wiki](https://github.com/TheThinkingHome/device_sentinel/wiki)"
+        "description": "Every battery Device Sentinel finds is watched by default. Where a device has both a percentage battery and a low-battery flag, the percentage is used. A battery is flagged at or below the threshold and clears once it climbs 2 points above it, so a cell at the line never flaps, and the time it crossed is kept across restarts. Exclude the batteries you do not care about below; everything else about those devices stays watched.\n\nFull documentation: {wiki_link}"
       }
     }
   },
