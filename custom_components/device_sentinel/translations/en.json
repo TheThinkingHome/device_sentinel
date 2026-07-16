@@ -22,12 +22,16 @@
         }
       },
       "thresholds": {
-        "title": "Thresholds",
+        "title": "Battery",
         "data": {
-          "low_threshold": "Battery low threshold (%)"
+          "low_threshold": "Battery low threshold (%)",
+          "battery_excluded_devices": "Exclude from battery detection",
+          "battery_excluded_integrations": "Exclude whole integrations from battery detection"
         },
         "data_description": {
-          "low_threshold": "A battery at or below this level is flagged low. It clears once it climbs 2 points above the threshold."
+          "low_threshold": "A battery at or below this level is flagged low. It clears once it climbs 2 points above the threshold.",
+          "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery judgment only; everything else about them stays watched.",
+          "battery_excluded_integrations": "One tick covers every battery that integration owns, present and future (phones under mobile_app, for example)."
         }
       },
       "notifications": {
