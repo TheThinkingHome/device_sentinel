@@ -14,8 +14,8 @@
   "options": {
     "step": {
       "init": {
-        "title": "Device Sentinel tuning",
-        "description": "Everything here is optional: Device Sentinel runs on sensible defaults from the moment it is installed. Work top to bottom when you do configure.\n\n**Exclusions**: choose what is never judged or reported. Excluded items keep learning, so undoing costs nothing.\n\n**Battery**: the low threshold, and which batteries are watched (exclude phones and tablets here).\n\n**Notifications**: where alerts will go, quiet hours, and the daily reminder. Stored now, used once detection notifications arrive.",
+        "title": "Device Sentinel Tuning",
+        "description": "Everything here is optional: Device Sentinel runs on sensible defaults from the moment it is installed. Work top to bottom when you do configure.\n\n**Exclusions**: choose what is never judged or reported. Excluded items keep learning, so undoing costs nothing.\n\n**Battery**: the low threshold, and which batteries are watched (exclude phones and tablets here).\n\n**Notifications**: where alerts will go, quiet hours, and the daily reminder. Stored now, used once detection notifications arrive.\n\nBoth exclude screens run the same ladder, broadest first: integration, then label, then device, then entity. A broader exclusion wins and erases the narrower picks it covers, so pick at the level you mean.",
         "menu_options": {
           "exclusions": "Exclusions",
           "battery": "Battery",
@@ -48,19 +48,17 @@
       },
       "exclusions": {
         "title": "Exclusions",
-        "description": "Exclusion suppresses judgment, not observation: excluded devices and entities are never reported, but they keep their clocks and learned statistics, so undoing an exclusion is instant and nothing is lost. An excluded entity still counts as activity for its device. Excluding an integration catches only devices it owns, never hardware it merely sees (a router tracking a camera does not drag the camera with it).\n\nFull documentation: {wiki_link}",
+        "description": "Exclusion suppresses judgment, not observation: excluded devices and entities are never reported, but they keep their clocks and learned statistics, so undoing an exclusion is instant and nothing is lost. An excluded entity still counts as activity for its device. Excluding an integration catches only devices it owns, never hardware it merely sees (a router tracking a camera does not drag the camera with it).\n\nThe four kinds run broadest to narrowest: integration, label, device, entity. Each list shows only what the ones above it have not already caught. A label is the one you can set without opening this dialog: tag a device or entity from its own page and it is excluded here.\n\nThe ladder erases what it covers. Exclude an integration and any device or entity you had picked from it is dropped, not parked, because the integration already covers them. Undo that integration later and those picks do not come back; they are watched again until you re-pick them. So exclude at the level you mean: use the broad kinds for things you are done with, and the narrow ones for fine tuning you want to keep.\n\nFull documentation: {wiki_link}",
         "data": {
           "excluded_entities": "Excluded entities",
           "excluded_devices": "Excluded devices",
           "excluded_labels": "Excluded labels",
-          "excluded_areas": "Excluded areas",
           "excluded_integrations": "Excluded integrations"
         },
         "data_description": {
           "excluded_entities": "These entities are never reported themselves, but still count as activity for their device.",
           "excluded_devices": "These devices are never judged or listed.",
           "excluded_labels": "Devices and entities carrying these labels are excluded.",
-          "excluded_areas": "Devices and entities in these areas are excluded.",
           "excluded_integrations": "Devices owned by these integrations are excluded. Hardware an integration merely sees (a router tracking a camera) is not caught."
         }
       },
@@ -69,14 +67,16 @@
         "data": {
           "low_threshold": "Battery low threshold (%)",
           "battery_excluded_devices": "Exclude from battery detection",
-          "battery_excluded_integrations": "Exclude whole integrations from battery detection"
+          "battery_excluded_integrations": "Exclude whole integrations from battery detection",
+          "battery_excluded_labels": "Battery-excluded labels"
         },
         "data_description": {
           "low_threshold": "A battery at or below this level is flagged low. It clears once it climbs 2 points above the threshold.",
           "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery judgment only; everything else about them stays watched.",
-          "battery_excluded_integrations": "One tick covers every battery that integration owns, present and future (phones under mobile_app, for example)."
+          "battery_excluded_integrations": "One tick covers every battery that integration owns, present and future (phones under mobile_app, for example).",
+          "battery_excluded_labels": "Any device carrying one of these labels stops being judged for battery. Set the label on the device's own page and it applies here without opening this dialog."
         },
-        "description": "Every battery Device Sentinel finds is watched by default. Where a device has both a percentage battery and a low-battery flag, the percentage is used. A battery is flagged at or below the threshold and clears once it climbs 2 points above it, so a cell at the line never flaps, and the time it crossed is kept across restarts. Exclude the batteries you do not care about below; everything else about those devices stays watched.\n\nFull documentation: {wiki_link}"
+        "description": "Every battery Device Sentinel finds is watched by default. Where a device has both a percentage battery and a low-battery flag, the percentage is used. A battery is flagged at or below the threshold and clears once it climbs 2 points above it, so a cell at the line never flaps, and the time it crossed is kept across restarts. Excluding a battery stops battery reports for that device only; everything else about it stays watched.\n\nThe excludes here run the same ladder as the Exclusions screen, minus entities: integration, label, device. There is no entity pick because battery judgment belongs to the device, and a device that swaps its battery entity would slip an entity pick.\n\nThe ladder erases what it covers. Exclude an integration and any device or entity you had picked from it is dropped, not parked, because the integration already covers them. Undo that integration later and those picks do not come back; they are watched again until you re-pick them. So exclude at the level you mean: use the broad kinds for things you are done with, and the narrow ones for fine tuning you want to keep.\n\nFull documentation: {wiki_link}"
       }
     }
   },
