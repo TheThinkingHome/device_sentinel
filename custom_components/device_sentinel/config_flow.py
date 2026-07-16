@@ -12,12 +12,16 @@ single_config_entry flag makes Home Assistant itself refuse a second
 entry, so the flow carries no duplicate guard of its own.
 
 The options flow is a menu that branches to each configuration
-surface, so it grows without becoming one long form. Today:
+surface, so it grows without becoming one long form. The menu runs
+in the order a new installation is best worked through:
 
-- Thresholds: the battery low threshold, applied live. It is a UI
-  knob rather than a constant because batteries drift slowly, and
-  proving detection live means sliding the threshold above a real
-  cell's level and watching it flag.
+- Exclusions: what is never judged or reported. It leads because
+  narrowing the field costs nothing to undo and every later family
+  inherits the result.
+- Battery: the low threshold and the battery-only excludes. The
+  threshold is a UI knob rather than a constant because batteries
+  drift slowly, and proving detection live means sliding the
+  threshold above a real cell's level and watching it flag.
 - Notifications: the backbone of the Step 5 engine, built ahead of
   it because the configuration surface is self-contained and touches
   no detection path. Discovered notify targets, the quiet-hours
@@ -25,7 +29,9 @@ surface, so it grows without becoming one long form. Today:
   pierce quiet hours. These settings are stored and inert until the
   engine reads them.
 
-The Exclusions surface joins this same menu in a later step.
+Each step's description carries a wiki_link placeholder rather than
+a literal URL, because hassfest rejects URLs in the translation
+files and asks for description placeholders instead.
 """
 
 from __future__ import annotations
@@ -70,6 +76,7 @@ from .const import (
     REMINDER_MODE_DAILY,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
+    WIKI_LINK_MARKDOWN,
 )
 
 # The notify domain exposes one service per target; the persistent
@@ -172,6 +179,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         )
         return self.async_show_form(
             step_id="battery",
+            description_placeholders={"wiki_link": WIKI_LINK_MARKDOWN},
             data_schema=vol.Schema(
                 {
                     vol.Required(
@@ -244,6 +252,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         )
         return self.async_show_form(
             step_id="exclusions",
+            description_placeholders={"wiki_link": WIKI_LINK_MARKDOWN},
             data_schema=vol.Schema(
                 {
                     vol.Optional(
@@ -331,6 +340,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
 
         return self.async_show_form(
             step_id="notifications",
+            description_placeholders={"wiki_link": WIKI_LINK_MARKDOWN},
             data_schema=vol.Schema(
                 {
                     vol.Optional(
