@@ -8,5 +8,5 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/TheThinkingHome/device_sentinel/issues",
   "single_config_entry": true,
-  "version": "0.3.9"
+  "version": "0.3.10"
 }
