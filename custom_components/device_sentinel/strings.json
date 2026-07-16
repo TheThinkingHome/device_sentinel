@@ -15,28 +15,16 @@
     "step": {
       "init": {
         "title": "Device Sentinel tuning",
+        "description": "Everything here is optional: Device Sentinel runs on sensible defaults from the moment it is installed. Work top to bottom when you do configure.\n\n**Exclusions**: choose what is never judged or reported. Excluded items keep learning, so undoing costs nothing.\n\n**Battery**: the low threshold, and which batteries are watched (exclude phones and tablets here).\n\n**Notifications**: where alerts will go, quiet hours, and the daily reminder. Stored now, used once detection notifications arrive.",
         "menu_options": {
-          "thresholds": "Thresholds",
-          "notifications": "Notifications",
-          "exclusions": "Exclusions"
-        }
-      },
-      "thresholds": {
-        "title": "Battery",
-        "data": {
-          "low_threshold": "Battery low threshold (%)",
-          "battery_excluded_devices": "Exclude from battery detection",
-          "battery_excluded_integrations": "Exclude whole integrations from battery detection"
-        },
-        "data_description": {
-          "low_threshold": "A battery at or below this level is flagged low. It clears once it climbs 2 points above the threshold.",
-          "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery judgment only; everything else about them stays watched.",
-          "battery_excluded_integrations": "One tick covers every battery that integration owns, present and future (phones under mobile_app, for example)."
+          "exclusions": "Exclusions",
+          "battery": "Battery",
+          "notifications": "Notifications"
         }
       },
       "notifications": {
         "title": "Notifications",
-        "description": "These settings are stored now and used once detection notifications are built. Nothing is sent yet.",
+        "description": "Two target lists. High-priority targets are for phones that should always be reached: they bypass Do Not Disturb and quiet hours. Normal-priority targets get standard delivery and are held during quiet hours. Either list may be empty, and a target in both is treated as high. These settings are stored now and used once detection notifications are built; nothing is sent yet.\n\nFull documentation: [Device Sentinel wiki](https://github.com/TheThinkingHome/device_sentinel/wiki)",
         "data": {
           "high_priority_targets": "High-priority push targets",
           "normal_priority_targets": "Normal-priority push targets",
@@ -60,7 +48,7 @@
       },
       "exclusions": {
         "title": "Exclusions",
-        "description": "Excluded items keep learning and never appear in detections or lists. Undo any time; nothing is lost. An excluded entity still vouches for its device.",
+        "description": "Exclusion suppresses judgment, not observation: excluded devices and entities are never reported, but they keep their clocks and learned statistics, so undoing an exclusion is instant and nothing is lost. An excluded entity still counts as activity for its device. Excluding an integration catches only devices it owns, never hardware it merely sees (a router tracking a camera does not drag the camera with it).\n\nFull documentation: [Device Sentinel wiki](https://github.com/TheThinkingHome/device_sentinel/wiki)",
         "data": {
           "excluded_entities": "Excluded entities",
           "excluded_devices": "Excluded devices",
@@ -75,6 +63,20 @@
           "excluded_areas": "Devices and entities in these areas are excluded.",
           "excluded_integrations": "Devices owned by these integrations are excluded. Hardware an integration merely sees (a router tracking a camera) is not caught."
         }
+      },
+      "battery": {
+        "title": "Battery",
+        "data": {
+          "low_threshold": "Battery low threshold (%)",
+          "battery_excluded_devices": "Exclude from battery detection",
+          "battery_excluded_integrations": "Exclude whole integrations from battery detection"
+        },
+        "data_description": {
+          "low_threshold": "A battery at or below this level is flagged low. It clears once it climbs 2 points above the threshold.",
+          "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery judgment only; everything else about them stays watched.",
+          "battery_excluded_integrations": "One tick covers every battery that integration owns, present and future (phones under mobile_app, for example)."
+        },
+        "description": "Every battery Device Sentinel finds is watched by default. Where a device has both a percentage battery and a low-battery flag, the percentage is used. A battery is flagged at or below the threshold and clears once it climbs 2 points above it, so a cell at the line never flaps, and the time it crossed is kept across restarts. Exclude the batteries you do not care about below; everything else about those devices stays watched.\n\nFull documentation: [Device Sentinel wiki](https://github.com/TheThinkingHome/device_sentinel/wiki)"
       }
     }
   },
