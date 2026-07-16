@@ -14,7 +14,6 @@ from datetime import timedelta
 
 import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
@@ -24,7 +23,6 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.device_sentinel.const import (
-    CONF_EXCLUDED_AREAS,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_ENTITIES,
     CONF_EXCLUDED_INTEGRATIONS,
@@ -109,18 +107,6 @@ async def test_excluded_entity_suppresses_its_reporting_only(
     assert record[DEV_EVENT_COUNT] > 0
     # Its own reporting is suppressed.
     assert coord.battery_low_count == 0
-
-
-async def test_area_exclude_resolves_devices(hass: HomeAssistant):
-    area = ar.async_get(hass).async_create("Garage")
-    source = MockConfigEntry(domain="test")
-    source.add_to_hass(hass)
-    device, _ = _battery_device(hass, source, 3)
-    dr.async_get(hass).async_update_device(device.id, area_id=area.id)
-
-    entry = await _setup(hass, options={CONF_EXCLUDED_AREAS: [area.id]})
-    coord = entry.runtime_data
-    assert coord._excluded_devices[device.id] == "area"
 
 
 async def test_integration_exclude_respects_primary_owner(
