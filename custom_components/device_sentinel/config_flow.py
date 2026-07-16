@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.10 (2026-07-16)
+#   Version: 0.3.11 (2026-07-16)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -29,6 +29,14 @@ in the order a new installation is best worked through:
   pierce quiet hours. These settings are stored and inert until the
   engine reads them.
 
+Both exclude screens run one priority ladder, broadest first:
+integration, label, device, entity (Battery stops at device). Each
+picker lists only what the kinds above it have not already caught,
+and a pick a broader kind covers is pruned from stored options on
+save. Pruning is silent and permanent by ruling: the screens warn
+about it up front, and undoing a broad exclusion does not restore
+the narrower picks it erased.
+
 Each step's description carries a wiki_link placeholder rather than
 a literal URL, because hassfest rejects URLs in the translation
 files and asks for description placeholders instead.
@@ -51,7 +59,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_BATTERY_EXCLUDED_DEVICES,
     CONF_BATTERY_EXCLUDED_INTEGRATIONS,
-    CONF_EXCLUDED_AREAS,
+    CONF_BATTERY_EXCLUDED_LABELS,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_ENTITIES,
     CONF_EXCLUDED_INTEGRATIONS,
@@ -102,6 +110,53 @@ def _discover_notify_targets(hass: Any) -> list[str]:
     return sorted(targets)
 
 
+def _devices_covered_by(
+    rows: list[dict[str, Any]],
+    excluded_integrations: list[str],
+    excluded_labels: list[str],
+) -> set[str]:
+    """Return the device ids an integration or label exclusion already
+    catches.
+
+    Coverage is positive only: a device is named here because a broader
+    exclusion demonstrably reaches it. An id we cannot account for, a
+    device deleted or belonging to an integration that has not loaded
+    yet, is never named, so a pick can only be pruned on proof rather
+    than on absence.
+    """
+    labels = set(excluded_labels)
+    integrations = set(excluded_integrations)
+    return {
+        row["device_id"]
+        for row in rows
+        if row["integration"] in integrations or (row["labels"] & labels)
+    }
+
+
+def _entities_covered_by(
+    rows: list[dict[str, Any]],
+    excluded_integrations: list[str],
+    excluded_labels: list[str],
+    excluded_devices: list[str],
+) -> set[str]:
+    """Return the entity ids a broader exclusion already catches.
+
+    Same positive-coverage rule as the device pass: an entity is named
+    only because its integration, one of its labels, or its device is
+    excluded.
+    """
+    labels = set(excluded_labels)
+    integrations = set(excluded_integrations)
+    devices = set(excluded_devices)
+    return {
+        row["entity_id"]
+        for row in rows
+        if row["integration"] in integrations
+        or (row["labels"] & labels)
+        or row["device_id"] in devices
+    }
+
+
 class DeviceSentinelConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the Device Sentinel config flow."""
 
@@ -141,38 +196,42 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         excludes, together, the family pattern (a family's knobs and
         its excludes share one screen).
 
+        The excludes run the same priority ladder as the global
+        surface, broadest first: integration, label, device. There is
+        no entity kind here by ruling, because battery judgment is
+        device-level and an entity pick could be dodged by a battery
+        re-election.
+
         The device picker is populated from the detected batteries,
         the pick-from-detected ruling: what you see listed is exactly
         what is being judged, named by device with its elected entity
-        shown. The integration picker offers only integrations that
-        actually own battery-bearing devices, so "everything
-        mobile_app" is one tick covering phones present and future.
-        Battery excludes are device-level and stack on top of the
-        global exclude list; they suppress battery judgment only.
+        shown.
         """
+        battery_rows = self.config_entry.runtime_data.detected_batteries
         if user_input is not None:
             return self.async_create_entry(
-                data={**self.config_entry.options, **user_input}
+                data={
+                    **self.config_entry.options,
+                    **self._pruned_battery_input(user_input, battery_rows),
+                }
             )
         options = self.config_entry.options
-        coordinator = self.config_entry.runtime_data
-        current = options.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD)
-        battery_rows = coordinator.detected_batteries
-        excluded_integrations = options.get(
-            CONF_BATTERY_EXCLUDED_INTEGRATIONS, []
+        covered = _devices_covered_by(
+            battery_rows,
+            options.get(CONF_BATTERY_EXCLUDED_INTEGRATIONS, []),
+            options.get(CONF_BATTERY_EXCLUDED_LABELS, []),
         )
-        # The integration picker leads, and the device list honors it:
-        # devices whose integration is already excluded do not appear,
-        # so the list only ever shows what still needs a decision.
-        # (Options forms are static once rendered, so the filter
-        # applies at each open, one save behind the integration tick.)
+        # The list only ever shows what still needs a decision: a
+        # device an integration or label exclude already reaches is
+        # gone from it. Options forms are static once rendered, so
+        # the filter applies at each open, one save behind the tick.
         device_options = [
             selector.SelectOptionDict(
                 value=row["device_id"],
                 label=f"{row['name']} ({row['entity_id']})",
             )
             for row in battery_rows
-            if row["integration"] not in excluded_integrations
+            if row["device_id"] not in covered
         ]
         integration_options = sorted(
             {row["integration"] for row in battery_rows}
@@ -183,7 +242,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_LOW_THRESHOLD, default=current
+                        CONF_LOW_THRESHOLD,
+                        default=options.get(
+                            CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD
+                        ),
                     ): selector.NumberSelector(
                         selector.NumberSelectorConfig(
                             min=1,
@@ -207,10 +269,22 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         )
                     ),
                     vol.Optional(
-                        CONF_BATTERY_EXCLUDED_DEVICES,
+                        CONF_BATTERY_EXCLUDED_LABELS,
                         default=options.get(
-                            CONF_BATTERY_EXCLUDED_DEVICES, []
+                            CONF_BATTERY_EXCLUDED_LABELS, []
                         ),
+                    ): selector.LabelSelector(
+                        selector.LabelSelectorConfig(multiple=True)
+                    ),
+                    vol.Optional(
+                        CONF_BATTERY_EXCLUDED_DEVICES,
+                        default=[
+                            device_id
+                            for device_id in options.get(
+                                CONF_BATTERY_EXCLUDED_DEVICES, []
+                            )
+                            if device_id not in covered
+                        ],
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=device_options,
@@ -222,10 +296,34 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             ),
         )
 
+    @staticmethod
+    def _pruned_battery_input(
+        user_input: dict[str, Any], battery_rows: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Drop device picks the same save's broader excludes cover.
+
+        Pruning happens here rather than being left to the frontend so
+        that the result is deterministic: a superseded pick is gone
+        because this code removed it, not because a hidden field
+        happened not to round-trip.
+        """
+        pruned = dict(user_input)
+        covered = _devices_covered_by(
+            battery_rows,
+            pruned.get(CONF_BATTERY_EXCLUDED_INTEGRATIONS, []),
+            pruned.get(CONF_BATTERY_EXCLUDED_LABELS, []),
+        )
+        pruned[CONF_BATTERY_EXCLUDED_DEVICES] = [
+            device_id
+            for device_id in pruned.get(CONF_BATTERY_EXCLUDED_DEVICES, [])
+            if device_id not in covered
+        ]
+        return pruned
+
     async def async_step_exclusions(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """The exclude surface: five selectors, one list, every family.
+        """The exclude surface: four selectors, one list, every family.
 
         Exclusion suppresses judgment, not observation (a ruled
         decision): excluded devices and entities keep their clocks,
@@ -233,14 +331,33 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         history carries no holes. Changes apply live on save through
         the options update listener, no restart.
 
+        The four kinds are a priority ladder, broadest first:
+        integration, label, device, entity. Each picker lists only
+        what the ones above it have not already caught, and a pick the
+        ladder supersedes is pruned on save rather than lingering
+        invisibly under a parent.
+
         The integration picker is populated live from the config
         entries present on this system; an integration exclude
         catches only devices that integration owns, never multi-homed
         hardware it merely sees.
+
+        The label picker is deliberately unfiltered. A label belongs
+        to no integration, and a label with no bearers yet is exactly
+        the one worth picking early, so filtering it would hide the
+        case it is for.
         """
+        coordinator = self.config_entry.runtime_data
+        device_rows = coordinator.watched_device_rows
+        entity_rows = coordinator.watched_entity_rows
         if user_input is not None:
             return self.async_create_entry(
-                data={**self.config_entry.options, **user_input}
+                data={
+                    **self.config_entry.options,
+                    **self._pruned_exclusion_input(
+                        user_input, device_rows, entity_rows
+                    ),
+                }
             )
         options = self.config_entry.options
         integration_domains = sorted(
@@ -250,40 +367,38 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 if entry.domain != DOMAIN
             }
         )
+        excluded_integrations = options.get(CONF_EXCLUDED_INTEGRATIONS, [])
+        excluded_labels = options.get(CONF_EXCLUDED_LABELS, [])
+        covered_devices = _devices_covered_by(
+            device_rows, excluded_integrations, excluded_labels
+        )
+        surviving_device_picks = [
+            device_id
+            for device_id in options.get(CONF_EXCLUDED_DEVICES, [])
+            if device_id not in covered_devices
+        ]
+        covered_entities = _entities_covered_by(
+            entity_rows,
+            excluded_integrations,
+            excluded_labels,
+            surviving_device_picks,
+        )
+        device_options = [
+            selector.SelectOptionDict(
+                value=row["device_id"],
+                label=f"{row['name']} ({row['integration']})",
+            )
+            for row in device_rows
+            if row["device_id"] not in covered_devices
+        ]
         return self.async_show_form(
             step_id="exclusions",
             description_placeholders={"wiki_link": WIKI_LINK_MARKDOWN},
             data_schema=vol.Schema(
                 {
                     vol.Optional(
-                        CONF_EXCLUDED_ENTITIES,
-                        default=options.get(CONF_EXCLUDED_ENTITIES, []),
-                    ): selector.EntitySelector(
-                        selector.EntitySelectorConfig(multiple=True)
-                    ),
-                    vol.Optional(
-                        CONF_EXCLUDED_DEVICES,
-                        default=options.get(CONF_EXCLUDED_DEVICES, []),
-                    ): selector.DeviceSelector(
-                        selector.DeviceSelectorConfig(multiple=True)
-                    ),
-                    vol.Optional(
-                        CONF_EXCLUDED_LABELS,
-                        default=options.get(CONF_EXCLUDED_LABELS, []),
-                    ): selector.LabelSelector(
-                        selector.LabelSelectorConfig(multiple=True)
-                    ),
-                    vol.Optional(
-                        CONF_EXCLUDED_AREAS,
-                        default=options.get(CONF_EXCLUDED_AREAS, []),
-                    ): selector.AreaSelector(
-                        selector.AreaSelectorConfig(multiple=True)
-                    ),
-                    vol.Optional(
                         CONF_EXCLUDED_INTEGRATIONS,
-                        default=options.get(
-                            CONF_EXCLUDED_INTEGRATIONS, []
-                        ),
+                        default=excluded_integrations,
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=integration_domains,
@@ -292,9 +407,76 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
+                    vol.Optional(
+                        CONF_EXCLUDED_LABELS, default=excluded_labels
+                    ): selector.LabelSelector(
+                        selector.LabelSelectorConfig(multiple=True)
+                    ),
+                    vol.Optional(
+                        CONF_EXCLUDED_DEVICES,
+                        default=surviving_device_picks,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=device_options,
+                            multiple=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_EXCLUDED_ENTITIES,
+                        default=[
+                            entity_id
+                            for entity_id in options.get(
+                                CONF_EXCLUDED_ENTITIES, []
+                            )
+                            if entity_id not in covered_entities
+                        ],
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            multiple=True,
+                            exclude_entities=sorted(covered_entities),
+                        )
+                    ),
                 }
             ),
         )
+
+    @staticmethod
+    def _pruned_exclusion_input(
+        user_input: dict[str, Any],
+        device_rows: list[dict[str, Any]],
+        entity_rows: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Drop device and entity picks the same save's broader
+        excludes cover, top of the ladder downward.
+
+        Devices are pruned first, then entities are judged against the
+        pruned device list, so one save settles the whole ladder and
+        no pick survives under a parent that hides it.
+        """
+        pruned = dict(user_input)
+        excluded_integrations = pruned.get(CONF_EXCLUDED_INTEGRATIONS, [])
+        excluded_labels = pruned.get(CONF_EXCLUDED_LABELS, [])
+        covered_devices = _devices_covered_by(
+            device_rows, excluded_integrations, excluded_labels
+        )
+        pruned[CONF_EXCLUDED_DEVICES] = [
+            device_id
+            for device_id in pruned.get(CONF_EXCLUDED_DEVICES, [])
+            if device_id not in covered_devices
+        ]
+        covered_entities = _entities_covered_by(
+            entity_rows,
+            excluded_integrations,
+            excluded_labels,
+            pruned[CONF_EXCLUDED_DEVICES],
+        )
+        pruned[CONF_EXCLUDED_ENTITIES] = [
+            entity_id
+            for entity_id in pruned.get(CONF_EXCLUDED_ENTITIES, [])
+            if entity_id not in covered_entities
+        ]
+        return pruned
 
     async def async_step_notifications(
         self, user_input: dict[str, Any] | None = None
