@@ -3,6 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+#   Version: 0.3.9 (2026-07-15)
 
 """Constants for the Device Sentinel integration."""
 
@@ -228,3 +229,13 @@ CONF_EXCLUDED_AREAS = "excluded_areas"
 CONF_EXCLUDED_INTEGRATIONS = "excluded_integrations"
 
 SENTINEL_TYPE_PROBLEM_LIST = "problem_list"
+
+# Battery-only exclusions (0.3.9). Scoped on top of the global
+# exclude list: a device here is excluded from battery judgment
+# only, keeping its freeze, unavailability, and signal watching for
+# the later steps. Keyed at the device level so a re-election
+# (percentage entity vanishing, binary elected instead) cannot dodge
+# it. The integration list makes "everything mobile_app" one tick,
+# covering phones present and future.
+CONF_BATTERY_EXCLUDED_DEVICES = "battery_excluded_devices"
+CONF_BATTERY_EXCLUDED_INTEGRATIONS = "battery_excluded_integrations"
