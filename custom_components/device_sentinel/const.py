@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.9 (2026-07-15)
+#   Version: 0.3.10 (2026-07-16)
 
 """Constants for the Device Sentinel integration."""
 
@@ -239,3 +239,14 @@ SENTINEL_TYPE_PROBLEM_LIST = "problem_list"
 # covering phones present and future.
 CONF_BATTERY_EXCLUDED_DEVICES = "battery_excluded_devices"
 CONF_BATTERY_EXCLUDED_INTEGRATIONS = "battery_excluded_integrations"
+
+
+# The documentation link the options screens append to their step
+# descriptions. It lives here rather than inside the translation
+# files because hassfest rejects a literal URL in strings.json and
+# directs integrations to pass links in as description placeholders,
+# which the flow supplies at render time.
+WIKI_LINK_MARKDOWN = (
+    "[Device Sentinel wiki]"
+    "(https://github.com/TheThinkingHome/device_sentinel/wiki)"
+)
