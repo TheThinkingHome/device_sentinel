@@ -3,6 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+#   Version: 0.3.9 (2026-07-15)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -54,6 +55,8 @@ from .const import (
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_ENTITIES,
     CONF_EXCLUDED_INTEGRATIONS,
+    CONF_BATTERY_EXCLUDED_DEVICES,
+    CONF_BATTERY_EXCLUDED_INTEGRATIONS,
     CONF_EXCLUDED_LABELS,
     DATA_TODO_ITEMS,
     CONF_LOW_THRESHOLD,
@@ -1421,9 +1424,11 @@ class DeviceSentinelCoordinator:
         ):
             # Judgment suppression: the verdict is still computed and
             # stored (observation), it is just never reported here.
+            # Battery-only excludes stack on top of the global list.
             if (
                 device_id in self._excluded_devices
                 or entity_id in self._excluded_entities
+                or self._battery_excluded(device_id)
             ):
                 continue
             record = self.data[DATA_DEVICES].get(device_id)
@@ -1479,10 +1484,47 @@ class DeviceSentinelCoordinator:
             for device_id, (entity_id, _) in self._battery_entity.items()
             if device_id not in self._excluded_devices
             and entity_id not in self._excluded_entities
+            and not self._battery_excluded(device_id)
             and (self.data[DATA_DEVICES].get(device_id) or {}).get(
                 DEV_BATTERY_LOW
             )
         )
+
+    def _battery_excluded(self, device_id: str) -> bool:
+        """Return whether a device is excluded from battery judgment
+        only. Device-level by ruling, so a battery-entity re-election
+        cannot dodge it; the integration test uses the owning domain,
+        so one tick covers a whole family of phones."""
+        options = self.entry.options
+        if device_id in options.get(CONF_BATTERY_EXCLUDED_DEVICES, []):
+            return True
+        return self._watched.get(device_id) in options.get(
+            CONF_BATTERY_EXCLUDED_INTEGRATIONS, []
+        )
+
+    @property
+    def detected_batteries(self) -> list[dict[str, str]]:
+        """Return every device with an elected battery, for the
+        options picker: what you see is what is being judged."""
+        dev_reg = dr.async_get(self.hass)
+        rows = []
+        for device_id, (entity_id, _) in self._battery_entity.items():
+            device = dev_reg.async_get(device_id)
+            device_name = (
+                (device.name_by_user or device.name or device_id)
+                if device
+                else device_id
+            )
+            rows.append(
+                {
+                    "device_id": device_id,
+                    "name": device_name,
+                    "entity_id": entity_id,
+                    "integration": self._watched.get(device_id, "?"),
+                }
+            )
+        rows.sort(key=lambda row: row["name"].lower())
+        return rows
 
     async def async_enable_signal_entities(self) -> dict[str, int]:
         """Enable integration-disabled last_seen and signal entities.
