@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.10 (2026-07-16)
+#   Version: 0.3.11 (2026-07-16)
 
 """Constants for the Device Sentinel integration."""
 
@@ -215,18 +215,33 @@ TODO_KIND_FROZEN = "frozen"
 TODO_KIND_UNAVAILABLE = "unavailable"
 TODO_KIND_SIGNAL = "signal"
 
-# The exclude surface (0.3.6). One list, five selectors, governing
+# The exclude surface (0.3.6). One list, four selectors, governing
 # every detection family present and future. Exclusion suppresses
 # judgment, not observation: excluded devices and entities keep
 # their clocks, statistics, and vouching, so an undo is instant and
 # free and the rhythm history carries no holes. An excluded entity
 # still vouches for its device's freeze clock; only its own
 # reporting is suppressed.
+#
+# The four kinds form a priority ladder, broadest first: integration,
+# label, device, entity. A broader exclusion supersedes a narrower
+# one and prunes it on save, so a pick can never be shadowed by an
+# invisible parent (ruled 2026-07-16).
+#
+# Area was a fifth kind through 0.3.10 and is removed at 0.3.11.
+# Area membership is set for dashboards, voice, and automations, so
+# letting it also switch off monitoring means a room reorganization
+# silently changes what is watched. A label carries one meaning and
+# is set for one reason, which is what this surface needs.
 CONF_EXCLUDED_ENTITIES = "excluded_entities"
 CONF_EXCLUDED_DEVICES = "excluded_devices"
 CONF_EXCLUDED_LABELS = "excluded_labels"
-CONF_EXCLUDED_AREAS = "excluded_areas"
 CONF_EXCLUDED_INTEGRATIONS = "excluded_integrations"
+
+# Option keys no longer read by any code path. Cleared once at setup
+# so a retired surface cannot linger in diagnostics and read as a
+# live setting.
+DEAD_OPTION_KEYS = ("excluded_areas",)
 
 SENTINEL_TYPE_PROBLEM_LIST = "problem_list"
 
@@ -236,9 +251,11 @@ SENTINEL_TYPE_PROBLEM_LIST = "problem_list"
 # the later steps. Keyed at the device level so a re-election
 # (percentage entity vanishing, binary elected instead) cannot dodge
 # it. The integration list makes "everything mobile_app" one tick,
-# covering phones present and future.
+# covering phones present and future. No entity kind here for the
+# same re-election reason.
 CONF_BATTERY_EXCLUDED_DEVICES = "battery_excluded_devices"
 CONF_BATTERY_EXCLUDED_INTEGRATIONS = "battery_excluded_integrations"
+CONF_BATTERY_EXCLUDED_LABELS = "battery_excluded_labels"
 
 
 # The documentation link the options screens append to their step
