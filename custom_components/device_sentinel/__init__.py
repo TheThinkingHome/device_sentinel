@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.9 (2026-07-15)
+#   Version: 0.3.11 (2026-07-16)
 
 """The Device Sentinel integration.
 
@@ -26,7 +26,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 
-from .const import DOMAIN, LOGGER
+from .const import DEAD_OPTION_KEYS, DOMAIN, LOGGER
 from .coordinator import DeviceSentinelCoordinator
 
 PLATFORMS: list[Platform] = [
@@ -39,6 +39,30 @@ PLATFORMS: list[Platform] = [
 type DeviceSentinelConfigEntry = ConfigEntry[DeviceSentinelCoordinator]
 
 
+def _drop_dead_options(
+    hass: HomeAssistant, entry: DeviceSentinelConfigEntry
+) -> None:
+    """Remove option keys from retired surfaces.
+
+    A key no code reads is worse than absent: it survives in
+    diagnostics and in the options JSON, where it reads as a live
+    setting that is quietly doing nothing. Removing it at setup keeps
+    the stored options honest about what the running build supports.
+    """
+    dead = [key for key in DEAD_OPTION_KEYS if key in entry.options]
+    if not dead:
+        return
+    remaining = {
+        key: value
+        for key, value in entry.options.items()
+        if key not in dead
+    }
+    LOGGER.info(
+        "Clearing options from retired surfaces: %s", ", ".join(dead)
+    )
+    hass.config_entries.async_update_entry(entry, options=remaining)
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: DeviceSentinelConfigEntry
 ) -> bool:
@@ -47,6 +71,8 @@ async def async_setup_entry(
     # touches one file. Read it at setup rather than duplicating it.
     integration = await async_get_integration(hass, DOMAIN)
     version = str(integration.version)
+
+    _drop_dead_options(hass, entry)
 
     coordinator = DeviceSentinelCoordinator(hass, entry, version)
     await coordinator.async_setup()
