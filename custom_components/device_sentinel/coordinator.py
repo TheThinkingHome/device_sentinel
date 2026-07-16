@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.9 (2026-07-15)
+#   Version: 0.3.11 (2026-07-16)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -51,12 +51,12 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     BATTERY_CLEAR_MARGIN,
-    CONF_EXCLUDED_AREAS,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_ENTITIES,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_EXCLUDED_DEVICES,
     CONF_BATTERY_EXCLUDED_INTEGRATIONS,
+    CONF_BATTERY_EXCLUDED_LABELS,
     CONF_EXCLUDED_LABELS,
     DATA_TODO_ITEMS,
     CONF_LOW_THRESHOLD,
@@ -151,6 +151,12 @@ class DeviceSentinelCoordinator:
         # Registry view, rebuilt on registry changes.
         self._entity_map: dict[str, tuple[str, str | None]] = {}
         self._watched: dict[str, str] = {}  # device_id -> integration domain
+        # Names and labels, cached from the registry at classify
+        # time. The options cascade reads them on every form open,
+        # and re-walking the registry there would race a rebuild.
+        self._device_names: dict[str, str] = {}  # device_id -> name
+        self._device_labels: dict[str, frozenset[str]] = {}
+        self._entity_labels: dict[str, frozenset[str]] = {}
         # Exclusion suppresses judgment, not observation: these sets
         # gate reporting only. Clocks, statistics, and vouching keep
         # running for everything in them, so undo is instant and the
@@ -351,12 +357,13 @@ class DeviceSentinelCoordinator:
             options.get(CONF_EXCLUDED_ENTITIES, [])
         )
         excluded_labels = set(options.get(CONF_EXCLUDED_LABELS, []))
-        excluded_areas = set(options.get(CONF_EXCLUDED_AREAS, []))
         excluded_integrations = set(
             options.get(CONF_EXCLUDED_INTEGRATIONS, [])
         )
 
         watched: dict[str, str] = {}
+        device_names: dict[str, str] = {}
+        device_labels: dict[str, frozenset[str]] = {}
         set_aside: dict[str, tuple[str, str]] = {}
         excluded_devices: dict[str, str] = {}
         excluded_entities: dict[str, str] = {}
@@ -367,20 +374,22 @@ class DeviceSentinelCoordinator:
                 set_aside[device.id] = (name, domain)
                 continue
             watched[device.id] = domain
-            # Device-level exclusion reasons, first match names it.
-            # The integration test uses the primary domain, so an
-            # integration exclude catches only devices it owns, never
-            # multi-homed hardware it merely sees.
-            if device.id in excluded_device_ids:
-                excluded_devices[device.id] = "device"
-            elif device.area_id and device.area_id in excluded_areas:
-                excluded_devices[device.id] = "area"
+            device_names[device.id] = name
+            device_labels[device.id] = frozenset(device.labels or ())
+            # Device-level exclusion reasons, named broadest first
+            # so the reason recorded is the one that would survive a
+            # prune. The integration test uses the primary domain, so
+            # an integration exclude catches only devices it owns,
+            # never multi-homed hardware it merely sees.
+            if domain in excluded_integrations:
+                excluded_devices[device.id] = "integration"
             elif excluded_labels & set(device.labels or ()):
                 excluded_devices[device.id] = "label"
-            elif domain in excluded_integrations:
-                excluded_devices[device.id] = "integration"
+            elif device.id in excluded_device_ids:
+                excluded_devices[device.id] = "device"
 
         entity_map: dict[str, tuple[str, str | None]] = {}
+        entity_labels: dict[str, frozenset[str]] = {}
         last_seen_entity: dict[str, str] = {}
         signal_entities: set[str] = set()
         signal_devices: set[str] = set()
@@ -393,12 +402,11 @@ class DeviceSentinelCoordinator:
             if ent.device_id not in watched:
                 continue
             entity_map[ent.entity_id] = (ent.device_id, ent.config_entry_id)
-            if ent.entity_id in excluded_entity_ids:
-                excluded_entities[ent.entity_id] = "entity"
-            elif excluded_labels & set(ent.labels or ()):
+            entity_labels[ent.entity_id] = frozenset(ent.labels or ())
+            if excluded_labels & set(ent.labels or ()):
                 excluded_entities[ent.entity_id] = "label"
-            elif ent.area_id and ent.area_id in excluded_areas:
-                excluded_entities[ent.entity_id] = "area"
+            elif ent.entity_id in excluded_entity_ids:
+                excluded_entities[ent.entity_id] = "entity"
             if self._is_last_seen(ent):
                 last_seen_entity[ent.device_id] = ent.entity_id
             if self._is_signal(ent):
@@ -416,10 +424,13 @@ class DeviceSentinelCoordinator:
                     )
 
         self._watched = watched
+        self._device_names = device_names
+        self._device_labels = device_labels
         self._set_aside = set_aside
         self._excluded_devices = excluded_devices
         self._excluded_entities = excluded_entities
         self._entity_map = entity_map
+        self._entity_labels = entity_labels
         self._last_seen_entity = last_seen_entity
         self._signal_entities = signal_entities
         self._signal_devices = signal_devices
@@ -1494,37 +1505,79 @@ class DeviceSentinelCoordinator:
         """Return whether a device is excluded from battery judgment
         only. Device-level by ruling, so a battery-entity re-election
         cannot dodge it; the integration test uses the owning domain,
-        so one tick covers a whole family of phones."""
+        so one tick covers a whole family of phones. The label test
+        reads the device's own labels, which is how a device can be
+        excluded from battery judgment without opening this dialog."""
         options = self.entry.options
-        if device_id in options.get(CONF_BATTERY_EXCLUDED_DEVICES, []):
-            return True
-        return self._watched.get(device_id) in options.get(
+        if self._watched.get(device_id) in options.get(
             CONF_BATTERY_EXCLUDED_INTEGRATIONS, []
-        )
+        ):
+            return True
+        if self._device_labels.get(device_id, frozenset()) & set(
+            options.get(CONF_BATTERY_EXCLUDED_LABELS, [])
+        ):
+            return True
+        return device_id in options.get(CONF_BATTERY_EXCLUDED_DEVICES, [])
 
     @property
-    def detected_batteries(self) -> list[dict[str, str]]:
+    def detected_batteries(self) -> list[dict[str, Any]]:
         """Return every device with an elected battery, for the
         options picker: what you see is what is being judged."""
-        dev_reg = dr.async_get(self.hass)
-        rows = []
-        for device_id, (entity_id, _) in self._battery_entity.items():
-            device = dev_reg.async_get(device_id)
-            device_name = (
-                (device.name_by_user or device.name or device_id)
-                if device
-                else device_id
-            )
-            rows.append(
-                {
-                    "device_id": device_id,
-                    "name": device_name,
-                    "entity_id": entity_id,
-                    "integration": self._watched.get(device_id, "?"),
-                }
-            )
+        rows = [
+            {
+                "device_id": device_id,
+                "name": self._device_names.get(device_id, device_id),
+                "entity_id": entity_id,
+                "integration": self._watched.get(device_id, "?"),
+                "labels": self._device_labels.get(
+                    device_id, frozenset()
+                ),
+            }
+            for device_id, (entity_id, _) in self._battery_entity.items()
+        ]
         rows.sort(key=lambda row: row["name"].lower())
         return rows
+
+    @property
+    def watched_device_rows(self) -> list[dict[str, Any]]:
+        """Return every watched device, for the exclusions picker.
+
+        Service-type devices are absent because they were never
+        watched, so the list cannot offer an exclusion that would do
+        nothing. Excluded devices are present: the list is what is
+        being judged, and an excluded device is still a device you
+        may want to un-exclude.
+        """
+        rows = [
+            {
+                "device_id": device_id,
+                "name": self._device_names.get(device_id, device_id),
+                "integration": integration_domain,
+                "labels": self._device_labels.get(
+                    device_id, frozenset()
+                ),
+            }
+            for device_id, integration_domain in self._watched.items()
+        ]
+        rows.sort(key=lambda row: row["name"].lower())
+        return rows
+
+    @property
+    def watched_entity_rows(self) -> list[dict[str, Any]]:
+        """Return every entity belonging to a watched device, with the
+        facts the exclusions cascade needs to decide what an upstream
+        exclusion already covers."""
+        return [
+            {
+                "entity_id": entity_id,
+                "device_id": device_id,
+                "integration": self._watched.get(device_id, "?"),
+                "labels": self._entity_labels.get(
+                    entity_id, frozenset()
+                ),
+            }
+            for entity_id, (device_id, _) in self._entity_map.items()
+        ]
 
     async def async_enable_signal_entities(self) -> dict[str, int]:
         """Enable integration-disabled last_seen and signal entities.
