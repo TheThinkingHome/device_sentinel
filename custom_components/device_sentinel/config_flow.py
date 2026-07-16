@@ -3,6 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+#   Version: 0.3.9 (2026-07-15)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -42,6 +43,8 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_BATTERY_EXCLUDED_DEVICES,
+    CONF_BATTERY_EXCLUDED_INTEGRATIONS,
     CONF_EXCLUDED_AREAS,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_ENTITIES,
@@ -127,13 +130,45 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     async def async_step_thresholds(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """The battery low threshold, applied live on save."""
+        """The battery section: the threshold and the battery-only
+        excludes, together, the family pattern (a family's knobs and
+        its excludes share one screen).
+
+        The device picker is populated from the detected batteries,
+        the pick-from-detected ruling: what you see listed is exactly
+        what is being judged, named by device with its elected entity
+        shown. The integration picker offers only integrations that
+        actually own battery-bearing devices, so "everything
+        mobile_app" is one tick covering phones present and future.
+        Battery excludes are device-level and stack on top of the
+        global exclude list; they suppress battery judgment only.
+        """
         if user_input is not None:
             return self.async_create_entry(
                 data={**self.config_entry.options, **user_input}
             )
-        current = self.config_entry.options.get(
-            CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD
+        options = self.config_entry.options
+        coordinator = self.config_entry.runtime_data
+        current = options.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD)
+        battery_rows = coordinator.detected_batteries
+        excluded_integrations = options.get(
+            CONF_BATTERY_EXCLUDED_INTEGRATIONS, []
+        )
+        # The integration picker leads, and the device list honors it:
+        # devices whose integration is already excluded do not appear,
+        # so the list only ever shows what still needs a decision.
+        # (Options forms are static once rendered, so the filter
+        # applies at each open, one save behind the integration tick.)
+        device_options = [
+            selector.SelectOptionDict(
+                value=row["device_id"],
+                label=f"{row['name']} ({row['entity_id']})",
+            )
+            for row in battery_rows
+            if row["integration"] not in excluded_integrations
+        ]
+        integration_options = sorted(
+            {row["integration"] for row in battery_rows}
         )
         return self.async_show_form(
             step_id="thresholds",
@@ -149,7 +184,32 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             unit_of_measurement="%",
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
-                    )
+                    ),
+                    vol.Optional(
+                        CONF_BATTERY_EXCLUDED_INTEGRATIONS,
+                        default=options.get(
+                            CONF_BATTERY_EXCLUDED_INTEGRATIONS, []
+                        ),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=integration_options,
+                            multiple=True,
+                            custom_value=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_BATTERY_EXCLUDED_DEVICES,
+                        default=options.get(
+                            CONF_BATTERY_EXCLUDED_DEVICES, []
+                        ),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=device_options,
+                            multiple=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
                 }
             ),
         )
