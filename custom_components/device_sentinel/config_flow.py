@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.9 (2026-07-15)
+#   Version: 0.3.10 (2026-07-16)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -124,10 +124,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """Show the top-level menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["thresholds", "notifications", "exclusions"],
+            menu_options=["exclusions", "battery", "notifications"],
         )
 
-    async def async_step_thresholds(
+    async def async_step_battery(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """The battery section: the threshold and the battery-only
@@ -171,7 +171,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             {row["integration"] for row in battery_rows}
         )
         return self.async_show_form(
-            step_id="thresholds",
+            step_id="battery",
             data_schema=vol.Schema(
                 {
                     vol.Required(
