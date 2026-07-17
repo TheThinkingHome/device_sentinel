@@ -3,6 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+#   Version: 0.3.12 (2026-07-17)
 
 """Todo platform for the Device Sentinel integration.
 
@@ -76,7 +77,10 @@ class DeviceSentinelTodoList(TodoListEntity):
     """The problem list, checkable and persistent."""
 
     _attr_has_entity_name = True
-    _attr_name = None
+    # Named rather than inheriting the device name: an unnamed
+    # entity renders as "Device Sentinel" on the device page, which
+    # tells a user nothing about what the row holds.
+    _attr_name = "Problem List"
     _attr_icon = "mdi:clipboard-alert-outline"
     _attr_should_poll = False
     _attr_supported_features = (
