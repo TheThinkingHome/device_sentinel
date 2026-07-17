@@ -6,16 +6,13 @@
 
 """Step 1 backbone tests for Device Sentinel."""
 
-from unittest.mock import patch
 
 import json
 import pathlib
 
-import pytest
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.setup import async_setup_component
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
