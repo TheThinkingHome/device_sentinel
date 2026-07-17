@@ -28,9 +28,10 @@ The learning defends itself. One anomalous day is set aside and moves nothing; a
 ## What it does today
 
 - Watches all devices by default; non-hardware devices (Sun, add-ons, dashboard plugins) classify themselves out, and the integration refuses to watch itself.
-- Learns per-device rhythms and per-device signal baselines with anomaly-trimmed rolling histories, and reports coverage and learning progress through its own entities.
+- Learns per-device rhythms and per-device signal baselines with anomaly-trimmed rolling histories, and reports Devices Watched and Devices Learned through its own entities.
 - Detects low batteries: percentage elected over the binary flag, a threshold on a dashboard slider applied live, hysteresis so a cell at the line never flaps, below-threshold-since carried across restarts.
-- One-press enable assist: enables the last_seen and signal entities integrations ship disabled, respecting anything a user disabled personally.
+- Scan and Enable: one press turns on the last_seen and signal entities that integrations ship disabled, respecting anything a user disabled personally.
+- Exclusions on a priority ladder (integration, label, device, entity), with pickers populated from what was actually detected, and a battery-only list beside them. Exclusion suppresses judgment, not observation: an excluded device keeps learning, so undoing costs nothing.
 - Writes two human-readable diagnostic files nightly: the learned-rhythms table and the watched-versus-set-aside audit.
 
 ## What is coming
@@ -38,8 +39,18 @@ The learning defends itself. One anomalous day is set aside and moves nothing; a
 - Frozen-device detection at device level, any entity's activity vouching for its siblings, each window armed per device from its own learned rhythm.
 - Unavailable, unknown, and never-reported detection at entity level, with the last signal readings before a failure attached as forensics: 40, 32, 24, gone tells you the link died; 200, 201, 200 tells you to look elsewhere.
 - Signal detection against the learned per-device baselines.
-- Problem lists as real to-do entities, the checkbox as the acknowledgment, recovery deleting the item; notifications about additions only, with quiet hours and per-device priority piercing for the freezer at 3 AM.
-- The exclude list (entity, device, label, area, integration) with pickers populated from what was detected.
+- The engines behind the problem list and the notification settings, both of which are already built and waiting: the checkbox as the acknowledgment, recovery deleting the item, notifications about additions only, quiet hours, and high priority piercing them for the freezer at 3 AM.
+
+## Documentation
+
+The [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki) is the full documentation. Worth starting with:
+
+- [How Device Sentinel Learns](https://github.com/TheThinkingHome/device_sentinel/wiki/How-Device-Sentinel-Learns): the rhythm, the windows, and why there is no fixed timeout anywhere.
+- [Notifications](https://github.com/TheThinkingHome/device_sentinel/wiki/Notifications): the one thing to configure, so alerts reach your phone.
+- [The Device Page](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Device-Page): what every sensor and button means.
+- [FAQ and Troubleshooting](https://github.com/TheThinkingHome/device_sentinel/wiki/FAQ-and-Troubleshooting)
+
+Every configuration screen also explains itself and links to its own page.
 
 ## Requirements
 
