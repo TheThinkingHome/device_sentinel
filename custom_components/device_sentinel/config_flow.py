@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.11 (2026-07-16)
+#   Version: 0.3.12 (2026-07-17)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -183,10 +183,19 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show the top-level menu."""
+        """Show the top-level menu.
+
+        Notifications leads because it is the one section a new
+        installation must visit for alerts to reach a phone; the
+        description says so and sends people here first. The
+        description also names the Signal, Freeze, and Recovery
+        sections that have no screens yet, so the shape of the whole
+        surface is visible before the parts exist; each joins this
+        list when its screen is built.
+        """
         return self.async_show_menu(
             step_id="init",
-            menu_options=["exclusions", "battery", "notifications"],
+            menu_options=["notifications", "exclusions", "battery"],
         )
 
     async def async_step_battery(
