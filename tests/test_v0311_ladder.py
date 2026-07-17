@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.11 (2026-07-16)
+#   Version: 0.3.13 (2026-07-17)
 
 """0.3.11 tests: the exclusion priority ladder and the area retirement.
 
@@ -357,6 +357,37 @@ async def test_dead_option_keys_are_cleared_at_setup(hass: HomeAssistant):
     for key in DEAD_OPTION_KEYS:
         assert key not in entry.options
     # Only the retired keys go; live settings are untouched.
+    assert entry.options[CONF_EXCLUDED_LABELS] == ["ice"]
+
+
+async def test_retired_notification_keys_are_cleared(hass: HomeAssistant):
+    """The 0.3.3 notification shapes that 0.3.4 replaced. They read as
+    live settings in every diagnostics download for nine releases,
+    which is the rot ruling 49 exists to stop. Cleared at 0.3.13.
+    """
+    entry = await _setup(
+        hass,
+        options={
+            "notify_targets": ["notify.old"],
+            "quiet_start": "22:00:00",
+            "quiet_end": "07:00:00",
+            "reminder_time": "08:00:00",
+            "high_priority_pierces_quiet": True,
+            "quiet_hours_start": "23:00:00",
+            CONF_EXCLUDED_LABELS: ["ice"],
+        },
+    )
+    await hass.async_block_till_done()
+    for key in (
+        "notify_targets",
+        "quiet_start",
+        "quiet_end",
+        "reminder_time",
+        "high_priority_pierces_quiet",
+    ):
+        assert key not in entry.options, key
+    # The shapes that replaced them are live settings and stay.
+    assert entry.options["quiet_hours_start"] == "23:00:00"
     assert entry.options[CONF_EXCLUDED_LABELS] == ["ice"]
 
 
