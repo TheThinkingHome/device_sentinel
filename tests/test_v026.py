@@ -6,7 +6,6 @@
 
 """0.2.6 tests: the trimmed-maximum preview and Markdown rendering."""
 
-import os
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
