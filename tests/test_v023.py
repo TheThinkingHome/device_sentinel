@@ -214,11 +214,11 @@ async def test_enable_assist(hass: HomeAssistant):
     assert ent_reg.async_get(plain.entity_id).disabled_by is not None
 
     # Button exists and presses without error.
-    state = hass.states.get("button.device_sentinel_enable_signal_entities")
+    state = hass.states.get("button.device_sentinel_scan_and_enable_signal_and_last_seen_entities")
     assert state is not None
     await hass.services.async_call(
         "button", "press",
-        {"entity_id": "button.device_sentinel_enable_signal_entities"},
+        {"entity_id": "button.device_sentinel_scan_and_enable_signal_and_last_seen_entities"},
         blocking=True,
     )
 
