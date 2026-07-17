@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 DOMAIN = "device_sentinel"
-LIST_ENTITY = "todo.device_sentinel"
+LIST_ENTITY = "todo.device_sentinel_problem_list"
 
 
 async def _setup(hass):
