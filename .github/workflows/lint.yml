@@ -1,0 +1,27 @@
+name: Lint
+
+# A rule nobody checks is not a rule. Four unused imports sat in
+# todo.py from 0.3.9 to 0.3.13 because the tests, hassfest, and HACS
+# validation all passed and nothing else was looking. This job is what
+# was missing: dead imports, unused variables, and unsafe names turn
+# the build red the way a failing test does.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Pinned rather than floating: a linter that changes its mind on
+      # its own schedule turns an unrelated push red for reasons the
+      # author did not cause and cannot see in their own diff.
+      - name: Install ruff
+        run: pip install ruff==0.15.22
+      - name: Lint the integration and its tests
+        run: ruff check custom_components/ tests/
