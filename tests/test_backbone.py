@@ -59,7 +59,11 @@ async def test_setup_creates_status_sensor(hass: HomeAssistant):
 
     state = hass.states.get("sensor.device_sentinel_status")
     assert state is not None
-    assert state.state == "1"
+    # Status answers its own name. With no device yet established, a
+    # fresh install reads learning; the setup count that used to be
+    # the state now rides as an attribute, still proving persistence.
+    assert state.state == "learning"
+    assert state.attributes["setup_count"] == 1
     assert state.attributes["sentinel_type"] == "status"
     assert state.attributes["sentinel_version"] == MANIFEST_VERSION
     assert state.attributes["storage_healthy"] is True
@@ -84,7 +88,8 @@ async def test_restart_increments_count_and_keeps_first_installed(
     await hass.async_block_till_done()
 
     state = hass.states.get("sensor.device_sentinel_status")
-    assert state.state == "2"
+    assert state.state == "learning"
+    assert state.attributes["setup_count"] == 2
     assert state.attributes["first_installed"] == first
     assert hass_storage[STORAGE_KEY]["data"]["setup_count"] == 2
     assert hass_storage[STORAGE_KEY]["data"]["first_installed"] == first
