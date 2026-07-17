@@ -492,11 +492,13 @@ async def test_options_flow_hides_covered_devices(hass: HomeAssistant):
     assert device.id not in offered
 
 
-async def test_options_flow_menu_is_ladder_ordered(hass: HomeAssistant):
+async def test_options_flow_menu_is_work_ordered(hass: HomeAssistant):
+    """Notifications leads from 0.3.12: it is the one section a new
+    installation must visit for alerts to reach a phone."""
     entry = await _setup(hass)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["menu_options"] == [
+        "notifications",
         "exclusions",
         "battery",
-        "notifications",
     ]
