@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.12 (2026-07-17)
+#   Version: 0.3.14 (2026-07-17)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -39,7 +39,10 @@ the narrower picks it erased.
 
 Each step's description carries a wiki_link placeholder rather than
 a literal URL, because hassfest rejects URLs in the translation
-files and asks for description placeholders instead.
+files and asks for description placeholders instead. Every step
+supplies its own link, so Full documentation lands on the page for
+the screen the reader is standing on rather than on the wiki's
+front door for them to navigate from.
 """
 
 from __future__ import annotations
@@ -84,7 +87,9 @@ from .const import (
     REMINDER_MODE_DAILY,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
-    WIKI_LINK_MARKDOWN,
+    WIKI_LINK_BATTERY,
+    WIKI_LINK_EXCLUSIONS,
+    WIKI_LINK_NOTIFICATIONS,
 )
 
 # The notify domain exposes one service per target; the persistent
@@ -247,7 +252,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         )
         return self.async_show_form(
             step_id="battery",
-            description_placeholders={"wiki_link": WIKI_LINK_MARKDOWN},
+            description_placeholders={"wiki_link": WIKI_LINK_BATTERY},
             data_schema=vol.Schema(
                 {
                     vol.Required(
@@ -402,7 +407,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         ]
         return self.async_show_form(
             step_id="exclusions",
-            description_placeholders={"wiki_link": WIKI_LINK_MARKDOWN},
+            description_placeholders={"wiki_link": WIKI_LINK_EXCLUSIONS},
             data_schema=vol.Schema(
                 {
                     vol.Optional(
@@ -531,7 +536,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
 
         return self.async_show_form(
             step_id="notifications",
-            description_placeholders={"wiki_link": WIKI_LINK_MARKDOWN},
+            description_placeholders={"wiki_link": WIKI_LINK_NOTIFICATIONS},
             data_schema=vol.Schema(
                 {
                     vol.Optional(
