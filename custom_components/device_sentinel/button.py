@@ -3,6 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+#   Version: 0.3.12 (2026-07-17)
 
 """Button platform for the Device Sentinel integration.
 
@@ -35,10 +36,23 @@ async def async_setup_entry(
 
 
 class DeviceSentinelEnableSignalsButton(ButtonEntity):
-    """Enable disabled last_seen and signal entities on watched devices."""
+    """Enable disabled last_seen and signal entities on watched devices.
+
+    The name says scan and enable because that is both halves of what
+    the press does: it walks the entity registry for signal and
+    last_seen entities an integration shipped turned off, and turns
+    them on. It does not discover devices; discovery is automatic and
+    continuous through registry listeners, so a name promising a
+    search would promise something that never needed asking for.
+
+    Last-seen is named alongside signal deliberately. It is protocol
+    truth, the clock freeze detection trusts most, and a user who
+    reads only "signal" has no reason to press a button that would
+    strengthen their freeze detection.
+    """
 
     _attr_has_entity_name = True
-    _attr_name = "Enable signal entities"
+    _attr_name = "Scan and Enable Signal and Last-Seen Entities"
     _attr_icon = "mdi:signal"
     _attr_entity_category = EntityCategory.CONFIG
 
