@@ -3,6 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+#   Version: 0.3.12 (2026-07-17)
 
 """Number platform for the Device Sentinel integration.
 
@@ -46,7 +47,7 @@ class DeviceSentinelBatteryThresholdNumber(NumberEntity):
     """The battery low threshold, adjustable from any dashboard."""
 
     _attr_has_entity_name = True
-    _attr_name = "Battery low threshold"
+    _attr_name = "Battery Low Threshold"
     _attr_icon = "mdi:battery-alert-variant"
     _attr_entity_category = EntityCategory.CONFIG
     _attr_native_min_value = 1
