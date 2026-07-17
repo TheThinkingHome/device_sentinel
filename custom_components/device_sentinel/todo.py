@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.12 (2026-07-17)
+#   Version: 0.3.13 (2026-07-17)
 
 """Todo platform for the Device Sentinel integration.
 
@@ -35,7 +35,6 @@ this is a system-maintained problem list, not a personal one.
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 from homeassistant.components.todo import (
     TodoItem,
@@ -54,9 +53,6 @@ from .const import (
     DOMAIN,
     SENTINEL_TYPE_PROBLEM_LIST,
     TODO_DESCRIPTION,
-    TODO_KIND,
-    TODO_OURS,
-    TODO_SORT_NAME,
     TODO_STATUS,
     TODO_SUMMARY,
     TODO_UID,
