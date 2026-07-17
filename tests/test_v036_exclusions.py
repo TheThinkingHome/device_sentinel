@@ -165,7 +165,7 @@ async def test_classification_shows_excluded(hass: HomeAssistant):
 
 async def test_todo_identity_attributes(hass: HomeAssistant):
     await _setup(hass)
-    state = hass.states.get("todo.device_sentinel")
+    state = hass.states.get("todo.device_sentinel_problem_list")
     assert state is not None
     assert state.attributes["sentinel_type"] == "problem_list"
     # Assert identity is present, not a pinned number: a version bump
