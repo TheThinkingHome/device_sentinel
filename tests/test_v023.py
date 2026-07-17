@@ -237,7 +237,7 @@ async def test_taint_log_reports_bad_state(
     reg = er.async_get(hass).async_get_or_create(
         "sensor", "test", "logdev", device_id=device.id, config_entry=source
     )
-    entry = await _setup(hass)
+    await _setup(hass)
     freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 5))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
