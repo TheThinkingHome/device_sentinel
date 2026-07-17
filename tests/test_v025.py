@@ -3,6 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+#   Version: 0.3.14 (2026-07-17)
 
 """0.2.5 tests: the diagnostic files."""
 
@@ -72,6 +73,13 @@ async def test_reports_written_at_setup_and_midnight(
     )
     freezer.move_to(nxt + timedelta(seconds=1))
     async_fire_time_changed(hass)
-    await hass.async_block_till_done()
+    # Home Assistant runs time-change listeners as background tasks
+    # (async_run_hass_job(..., background=True) in _TrackUTCTimeChange),
+    # and async_block_till_done skips background tasks by default. So
+    # the plain call returned while the rollover was still writing its
+    # report, and the assert below raced the file: about one run in ten
+    # lost. Waiting for background tasks is what makes the midnight
+    # path deterministic here.
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert os.path.isfile(tele)
     assert os.path.isfile(clas)
