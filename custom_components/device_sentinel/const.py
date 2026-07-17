@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.11 (2026-07-16)
+#   Version: 0.3.12 (2026-07-17)
 
 """Constants for the Device Sentinel integration."""
 
@@ -267,3 +267,27 @@ WIKI_LINK_MARKDOWN = (
     "[Device Sentinel wiki]"
     "(https://github.com/TheThinkingHome/device_sentinel/wiki)"
 )
+
+
+# The device page's vocabulary. Home Assistant gives entities no
+# helper text there, so a name and its state are the whole
+# explanation; units exist so a card reads "125 devices" rather than
+# a bare number (ruled 2026-07-17).
+UNIT_DEVICES = "devices"
+UNIT_BATTERIES = "batteries"
+
+# The status sensor's states. Learning shows only until the first
+# device establishes a rhythm: partial learning is permanent, not a
+# phase, so keying it to "any device unlearned" would read Learning
+# forever.
+STATUS_WATCHING = "watching"
+STATUS_LEARNING = "learning"
+STATUS_PROBLEM = "problem"
+
+ATTR_SETUP_COUNT = "setup_count"
+
+# Entities from retired surfaces. Deleting the code does not remove
+# the registry entry, so a retired sensor would linger on the device
+# page as an unavailable row. Removed once at setup, the same
+# treatment DEAD_OPTION_KEYS gets.
+DEAD_ENTITY_SENTINEL_TYPES = (SENTINEL_TYPE_CLOCK_SOURCE,)
