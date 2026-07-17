@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.12 (2026-07-17)
+#   Version: 0.3.13 (2026-07-17)
 
 """Constants for the Device Sentinel integration."""
 
@@ -241,7 +241,25 @@ CONF_EXCLUDED_INTEGRATIONS = "excluded_integrations"
 # Option keys no longer read by any code path. Cleared once at setup
 # so a retired surface cannot linger in diagnostics and read as a
 # live setting.
-DEAD_OPTION_KEYS = ("excluded_areas",)
+#
+# excluded_areas is the area exclusion kind retired at 0.3.11. The
+# rest are the 0.3.3 notification shapes that 0.3.4 replaced when the
+# surface was rebuilt to mirror Sentinel Notify: notify_targets became
+# the high and normal priority pair, quiet_start and quiet_end became
+# quiet_hours_start and quiet_hours_end, reminder_time became
+# daily_reminder_time, and high_priority_pierces_quiet became
+# unconditional (high priority always pierces, so the knob had nothing
+# left to decide). They survived in stored options for nine releases,
+# reading as live settings in every diagnostics download, which is the
+# exact rot ruling 49 was made to stop.
+DEAD_OPTION_KEYS = (
+    "excluded_areas",
+    "notify_targets",
+    "quiet_start",
+    "quiet_end",
+    "reminder_time",
+    "high_priority_pierces_quiet",
+)
 
 SENTINEL_TYPE_PROBLEM_LIST = "problem_list"
 
