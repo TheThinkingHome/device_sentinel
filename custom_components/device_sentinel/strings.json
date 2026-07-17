@@ -15,19 +15,19 @@
     "step": {
       "init": {
         "title": "Device Sentinel Tuning",
-        "description": "Everything here is optional: Device Sentinel runs on sensible defaults from the moment it is installed. Work top to bottom when you do configure.\n\n**Exclusions**: choose what is never judged or reported. Excluded items keep learning, so undoing costs nothing.\n\n**Battery**: the low threshold, and which batteries are watched (exclude phones and tablets here).\n\n**Notifications**: where alerts will go, quiet hours, and the daily reminder. Stored now, used once detection notifications arrive.\n\nBoth exclude screens run the same ladder, broadest first: integration, then label, then device, then entity. A broader exclusion wins and erases the narrower picks it covers, so pick at the level you mean.",
+        "description": "Device Sentinel's default settings are good to get you started. When you begin tailoring the integration to your system, work from top to bottom. If you want alerts to reach your phone, begin in Notifications.\n\n**Notifications**: where alerts go, quiet hours, and the daily reminder.\n\n**Global Exclusions**: hardware you never want judged or reported, by anything. To silence just one kind of report for a device, use that section's own exclude list instead.\n\n**Low Battery**: the low threshold, and battery-only excludes.\n\n**Signal Strength**: how weakening radio links are judged. Coming; learning already runs.\n\n**Freeze Detection**: sensitivity for silent-but-healthy-looking devices, and freeze-only excludes. Coming; learning already runs.\n\n**Recovery**: experimental and off by default. Attempts to revive frozen or offline devices.",
         "menu_options": {
-          "exclusions": "Exclusions",
-          "battery": "Battery",
-          "notifications": "Notifications"
+          "notifications": "Notifications",
+          "exclusions": "Global Exclusions",
+          "battery": "Low Battery"
         }
       },
       "notifications": {
         "title": "Notifications",
-        "description": "Two target lists. High-priority targets are for phones that should always be reached: they bypass Do Not Disturb and quiet hours. Normal-priority targets get standard delivery and are held during quiet hours. Either list may be empty, and a target in both is treated as high. These settings are stored now and used once detection notifications are built; nothing is sent yet.\n\nFull documentation: {wiki_link}",
+        "description": "Configure notifications here. Device Sentinel can send notifications to any phone, tablet, computer, or other device that has a notify service.\n\nThere are two notification lists, by priority. High-priority targets will always receive notifications: they bypass Do Not Disturb and quiet hours. Normal-priority targets get standard delivery and are held during quiet hours. Either list may be empty.\n\nFull documentation: {wiki_link}",
         "data": {
-          "high_priority_targets": "High-priority push targets",
-          "normal_priority_targets": "Normal-priority push targets",
+          "high_priority_targets": "High-priority targets",
+          "normal_priority_targets": "Normal-priority targets",
           "persistent_enabled": "Create a persistent notification",
           "quiet_hours_enabled": "Enable quiet hours",
           "quiet_hours_start": "Quiet hours start",
@@ -36,19 +36,19 @@
           "daily_reminder_time": "Reminder time"
         },
         "data_description": {
-          "high_priority_targets": "Notify targets that receive high-priority pushes. High priority bypasses Do Not Disturb and pierces quiet hours. Leave empty for none.",
-          "normal_priority_targets": "Notify targets that receive normal pushes. Standard delivery, held during quiet hours. A target in both lists is treated as high. Leave empty for none.",
-          "persistent_enabled": "Also maintain a persistent notification in the UI, replaced in place so it never stacks.",
-          "quiet_hours_enabled": "When on, normal-priority pushes are held during the window below; high-priority targets still fire, and the lists and state keep updating.",
+          "high_priority_targets": "Notify targets that receive high-priority push notifications. High priority bypasses Do Not Disturb and quiet hours. Leave empty for none.",
+          "normal_priority_targets": "Notify targets that receive normal push notifications. Normal priority respects Do Not Disturb and quiet hours.",
+          "persistent_enabled": "Enable persistent notification in the Home Assistant UI.",
+          "quiet_hours_enabled": "When on, normal-priority push notifications are held. High-priority targets still fire.",
           "quiet_hours_start": "When the quiet window begins. A start later than the end crosses midnight.",
-          "quiet_hours_end": "When the quiet window ends. Nothing fires at this time; it only defines the window.",
+          "quiet_hours_end": "When the quiet window ends.",
           "daily_reminder_mode": "None: notify only on new items. Overnight changes: only if something appeared during quiet hours. Daily summary: every day, with an all-clear when nothing is flagged.",
-          "daily_reminder_time": "When the daily send is owed. The time is only a wake-up; a send missed during a reboot is caught up on the next run."
+          "daily_reminder_time": "When the daily reminder is sent."
         }
       },
       "exclusions": {
-        "title": "Exclusions",
-        "description": "Exclusion suppresses judgment, not observation: excluded devices and entities are never reported, but they keep their clocks and learned statistics, so undoing an exclusion is instant and nothing is lost. An excluded entity still counts as activity for its device. Excluding an integration catches only devices it owns, never hardware it merely sees (a router tracking a camera does not drag the camera with it).\n\nThe four kinds run broadest to narrowest: integration, label, device, entity. Each list shows only what the ones above it have not already caught. A label is the one you can set without opening this dialog: tag a device or entity from its own page and it is excluded here.\n\nThe ladder erases what it covers. Exclude an integration and any device or entity you had picked from it is dropped, not parked, because the integration already covers them. Undo that integration later and those picks do not come back; they are watched again until you re-pick them. So exclude at the level you mean: use the broad kinds for things you are done with, and the narrow ones for fine tuning you want to keep.\n\nFull documentation: {wiki_link}",
+        "title": "Global Exclusions",
+        "description": "Globally excluded items are never reported, by any part of Device Sentinel, but they are still watched and their habits are learned, so undoing an exclusion is instant and nothing is lost.\n\nThe four lists run broad to narrow: integration, label, device, entity. When you exclude at a higher level and save, everything it covers disappears as a choice from the lists below it: exclude an integration and its devices and entities no longer appear and do not need to be removed individually, because the integration already covers them.\n\nFull documentation: {wiki_link}",
         "data": {
           "excluded_entities": "Excluded entities",
           "excluded_devices": "Excluded devices",
@@ -56,27 +56,27 @@
           "excluded_integrations": "Excluded integrations"
         },
         "data_description": {
-          "excluded_entities": "These entities are never reported themselves, but still count as activity for their device.",
-          "excluded_devices": "These devices are never judged or listed.",
-          "excluded_labels": "Devices and entities carrying these labels are excluded.",
-          "excluded_integrations": "Devices owned by these integrations are excluded. Hardware an integration merely sees (a router tracking a camera) is not caught."
+          "excluded_entities": "These entities are never reported.",
+          "excluded_devices": "These devices are never reported.",
+          "excluded_labels": "Devices and entities carrying these labels are excluded. This is the one exclusion you can set without opening this dialog: tag the device or entity from its own page.",
+          "excluded_integrations": "Excludes every device the integration owns. Hardware it merely sees but does not own is not caught: a router tracking a camera does not drag the camera with it."
         }
       },
       "battery": {
-        "title": "Battery",
+        "title": "Low Battery",
         "data": {
           "low_threshold": "Battery low threshold (%)",
-          "battery_excluded_devices": "Exclude from battery detection",
-          "battery_excluded_integrations": "Exclude whole integrations from battery detection",
+          "battery_excluded_devices": "Battery-excluded devices",
+          "battery_excluded_integrations": "Battery-excluded integrations",
           "battery_excluded_labels": "Battery-excluded labels"
         },
         "data_description": {
-          "low_threshold": "A battery at or below this level is flagged low. It clears once it climbs 2 points above the threshold.",
-          "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery judgment only; everything else about them stays watched.",
-          "battery_excluded_integrations": "One tick covers every battery that integration owns, present and future (phones under mobile_app, for example).",
-          "battery_excluded_labels": "Any device carrying one of these labels stops being judged for battery. Set the label on the device's own page and it applies here without opening this dialog."
+          "low_threshold": "A battery at or below this level is flagged low.",
+          "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery reporting.",
+          "battery_excluded_integrations": "One tick covers every battery that integration owns (phones under mobile_app, for example).",
+          "battery_excluded_labels": "Any device carrying one of these labels stops being reported for a low battery. Set the label on the device's own page and it applies here without opening this dialog."
         },
-        "description": "Every battery Device Sentinel finds is watched by default. Where a device has both a percentage battery and a low-battery flag, the percentage is used. A battery is flagged at or below the threshold and clears once it climbs 2 points above it, so a cell at the line never flaps, and the time it crossed is kept across restarts. Excluding a battery stops battery reports for that device only; everything else about it stays watched.\n\nThe excludes here run the same ladder as the Exclusions screen, minus entities: integration, label, device. There is no entity pick because battery judgment belongs to the device, and a device that swaps its battery entity would slip an entity pick.\n\nThe ladder erases what it covers. Exclude an integration and any device or entity you had picked from it is dropped, not parked, because the integration already covers them. Undo that integration later and those picks do not come back; they are watched again until you re-pick them. So exclude at the level you mean: use the broad kinds for things you are done with, and the narrow ones for fine tuning you want to keep.\n\nFull documentation: {wiki_link}"
+        "description": "Every battery Device Sentinel finds is watched by default. A battery is flagged when it is at or below the threshold. Excluding a battery here stops battery reports for that device only; everything else about it stays watched.\n\nThe three lists run broad to narrow: integration, label, device. They work like the Global Exclusions lists: exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.\n\nFull documentation: {wiki_link}"
       }
     }
   },
