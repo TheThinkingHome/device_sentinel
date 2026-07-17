@@ -66,7 +66,11 @@ async def test_preview_in_report(hass: HomeAssistant):
     text = open(
         hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
-    row = next(l for l in text.splitlines() if "Signal Preview Device" in l)
+    row = next(
+        line
+        for line in text.splitlines()
+        if "Signal Preview Device" in line
+    )
     assert row.rstrip().endswith("| - | - | - |")
 
     # Seventh day with one anomaly: floor trims it, danger = floor/2.
@@ -75,5 +79,9 @@ async def test_preview_in_report(hass: HomeAssistant):
     text = open(
         hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
-    row = next(l for l in text.splitlines() if "Signal Preview Device" in l)
+    row = next(
+        line
+        for line in text.splitlines()
+        if "Signal Preview Device" in line
+    )
     assert "| 117 | LQI | 58.5 |" in row
