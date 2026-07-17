@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.13 (2026-07-17)
+#   Version: 0.3.14 (2026-07-17)
 
 """Constants for the Device Sentinel integration."""
 
@@ -276,15 +276,48 @@ CONF_BATTERY_EXCLUDED_INTEGRATIONS = "battery_excluded_integrations"
 CONF_BATTERY_EXCLUDED_LABELS = "battery_excluded_labels"
 
 
-# The documentation link the options screens append to their step
-# descriptions. It lives here rather than inside the translation
+# The documentation links the options screens append to their step
+# descriptions. They live here rather than inside the translation
 # files because hassfest rejects a literal URL in strings.json and
 # directs integrations to pass links in as description placeholders,
 # which the flow supplies at render time.
-WIKI_LINK_MARKDOWN = (
-    "[Device Sentinel wiki]"
-    "(https://github.com/TheThinkingHome/device_sentinel/wiki)"
-)
+#
+# One per wiki page, including the pages whose screens do not exist
+# yet (ruled 2026-07-17). The set is a map of the wiki rather than a
+# list of what happens to be wired today, so a screen built later
+# finds its link already waiting.
+#
+# The link text stays the same on every screen while the target
+# differs: a description reading "Full documentation: Device Sentinel
+# wiki" says what the link is, and where it lands is the screen's own
+# business.
+WIKI_BASE_URL = "https://github.com/TheThinkingHome/device_sentinel/wiki"
+
+
+def _wiki_link(page: str | None = None) -> str:
+    """Return the markdown link a step description renders.
+
+    Page names are the wiki's own titles with spaces as hyphens,
+    which is how GitHub builds a wiki URL from a page title. A name
+    that does not match a real page yields a link to a page-not-found
+    screen rather than an error, so these are checked against the
+    live wiki rather than trusted.
+    """
+    url = f"{WIKI_BASE_URL}/{page}" if page else WIKI_BASE_URL
+    return f"[Device Sentinel wiki]({url})"
+
+
+WIKI_LINK_HOME = _wiki_link()
+WIKI_LINK_NOTIFICATIONS = _wiki_link("Notifications")
+WIKI_LINK_EXCLUSIONS = _wiki_link("Global-Exclusions")
+WIKI_LINK_BATTERY = _wiki_link("Low-Battery")
+WIKI_LINK_SIGNAL = _wiki_link("Signal-Strength")
+WIKI_LINK_FREEZE = _wiki_link("Freeze-Detection")
+WIKI_LINK_RECOVERY = _wiki_link("Recovery")
+WIKI_LINK_LEARNING = _wiki_link("How-Device-Sentinel-Learns")
+WIKI_LINK_DEVICE_PAGE = _wiki_link("The-Device-Page")
+WIKI_LINK_REPORTS = _wiki_link("The-Reports")
+WIKI_LINK_FAQ = _wiki_link("FAQ-and-Troubleshooting")
 
 
 # The device page's vocabulary. Home Assistant gives entities no
