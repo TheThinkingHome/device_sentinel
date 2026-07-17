@@ -12,7 +12,6 @@ entities keep clocks and statistics and never appear in reporting.
 
 from datetime import timedelta
 
-import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
