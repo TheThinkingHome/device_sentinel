@@ -312,23 +312,26 @@ async def test_coverage_sensors(hass: HomeAssistant):
     coord._notify()
     await hass.async_block_till_done()
 
-    coverage = hass.states.get("sensor.device_sentinel_coverage")
+    coverage = hass.states.get("sensor.device_sentinel_devices_watched")
     assert coverage is not None
     assert int(coverage.state) == coord.watched_count
     assert coverage.attributes["set_aside"] == coord.set_aside_count
     assert coverage.attributes["learning"]["observing"] >= 2
 
-    classification = hass.states.get("sensor.device_sentinel_classification")
+    classification = hass.states.get("sensor.device_sentinel_service_devices_ignored")
     assert classification is not None
     assert classification.attributes["by_integration"]["test"]["watched"] == 2
     assert (
         classification.attributes["by_integration"]["test"]["set_aside"] == 1
     )
 
-    clock = hass.states.get("sensor.device_sentinel_clock_source")
-    assert clock is not None
-    assert int(clock.state) == coord.clock_source_split["without_last_seen"]
+    # Clock source was retired at 0.3.12: it counted devices lacking
+    # protocol truth, so a higher number read better while meaning
+    # worse, and its soak question closed. The split it published is
+    # still computed and still reaches diagnostics.
+    assert hass.states.get("sensor.device_sentinel_clock_source") is None
+    assert coord.clock_source_split["without_last_seen"] >= 0
 
-    learning = hass.states.get("sensor.device_sentinel_learning_progress")
+    learning = hass.states.get("sensor.device_sentinel_devices_learned")
     assert learning is not None
     assert learning.state == "0"
