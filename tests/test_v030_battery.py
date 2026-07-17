@@ -7,9 +7,7 @@
 
 """0.3.0 tests: battery detection."""
 
-from datetime import timedelta
 
-import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
