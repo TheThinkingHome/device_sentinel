@@ -3,20 +3,35 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+#   Version: 0.3.12 (2026-07-17)
 
 """Sensor platform for the Device Sentinel integration.
 
-Step 2 ships five entities: the Step 1 status sensor, the coverage
-and learning-progress pair, and the two soak diagnostics
-(classification and clock source) per ruling 14. Identity attributes
-on all, per blueprint precedent.
+Every name here has to stand alone: Home Assistant gives entities no
+helper text on the device page, so a label and its state are the
+whole explanation a user gets. Names are title-cased per ruling 48,
+counts carry a unit so a card reads "125 devices" rather than "125",
+and any sensor whose state a user could not act on was renamed or
+retired at 0.3.12.
+
+Clock source was retired there. It counted watched devices lacking a
+last_seen entity, so a higher number read as better while meaning
+worse, and it existed to answer a soak question that closed on
+2026-07-18. Its registry entry is removed at setup rather than left
+to linger unavailable.
+
+Identity attributes on all, per blueprint precedent.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
@@ -25,18 +40,23 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import DeviceSentinelConfigEntry
 from .const import (
     ATTR_FIRST_INSTALLED,
-    BATTERY_CLEAR_MARGIN,
     ATTR_SENTINEL_TYPE,
+    ATTR_SETUP_COUNT,
     ATTR_SENTINEL_VERSION,
     ATTR_STORAGE_HEALTHY,
+    BATTERY_CLEAR_MARGIN,
     DOMAIN,
     SENTINEL_TYPE_BATTERY_COUNT,
     SENTINEL_TYPE_BATTERY_LIST,
     SENTINEL_TYPE_CLASSIFICATION,
-    SENTINEL_TYPE_CLOCK_SOURCE,
     SENTINEL_TYPE_COVERAGE,
     SENTINEL_TYPE_LEARNING,
     SENTINEL_TYPE_STATUS,
+    STATUS_LEARNING,
+    STATUS_PROBLEM,
+    STATUS_WATCHING,
+    UNIT_BATTERIES,
+    UNIT_DEVICES,
 )
 from .coordinator import DeviceSentinelCoordinator
 
@@ -54,7 +74,6 @@ async def async_setup_entry(
             DeviceSentinelCoverageSensor(coordinator),
             DeviceSentinelLearningSensor(coordinator),
             DeviceSentinelClassificationSensor(coordinator),
-            DeviceSentinelClockSourceSensor(coordinator),
             DeviceSentinelBatteryLowCountSensor(coordinator),
             DeviceSentinelBatteryLowListSensor(coordinator),
         ]
@@ -102,16 +121,34 @@ class DeviceSentinelBaseSensor(SensorEntity):
 
 
 class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
-    """The status sensor: setup count as the persistence proof."""
+    """The status sensor: is Device Sentinel alive and fine.
+
+    Through 0.3.11 this published the setup count, which proved the
+    Step 1 storage round-trip and meant nothing to anyone else. A
+    sensor named Status must answer its own name, so the count moved
+    to an attribute, where it still proves persistence.
+
+    Learning shows only until the first device establishes a rhythm.
+    Partial learning is permanent rather than a phase (every new
+    device starts unlearned), so keying the word to "any device
+    unlearned" would read Learning forever and mean nothing. Devices
+    Learned carries the per-device detail.
+    """
 
     _attr_name = "Status"
     _attr_icon = "mdi:shield-check-outline"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [STATUS_WATCHING, STATUS_LEARNING, STATUS_PROBLEM]
     sentinel_type = SENTINEL_TYPE_STATUS
 
     @property
-    def native_value(self) -> int:
-        """Return the setup count as the state."""
-        return self._coordinator.setup_count
+    def native_value(self) -> str:
+        """Return the state a person would want to read."""
+        if not self._coordinator.storage_healthy:
+            return STATUS_PROBLEM
+        if self._coordinator.learning_buckets["established"] == 0:
+            return STATUS_LEARNING
+        return STATUS_WATCHING
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -120,14 +157,22 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
             **self._identity(),
             ATTR_FIRST_INSTALLED: self._coordinator.first_installed,
             ATTR_STORAGE_HEALTHY: self._coordinator.storage_healthy,
+            ATTR_SETUP_COUNT: self._coordinator.setup_count,
         }
 
 
 class DeviceSentinelCoverageSensor(DeviceSentinelBaseSensor):
-    """The coverage sensor: watched X of Y devices with Z set aside."""
+    """How many devices Device Sentinel is watching.
 
-    _attr_name = "Coverage"
+    Named for what it counts rather than for the abstraction:
+    "Coverage: 125" left a user to guess the unit and the population.
+    The rest of the split rides in attributes.
+    """
+
+    _attr_name = "Devices Watched"
     _attr_icon = "mdi:radar"
+    _attr_native_unit_of_measurement = UNIT_DEVICES
+    _attr_state_class = SensorStateClass.MEASUREMENT
     sentinel_type = SENTINEL_TYPE_COVERAGE
 
     @property
@@ -151,10 +196,21 @@ class DeviceSentinelCoverageSensor(DeviceSentinelBaseSensor):
 
 
 class DeviceSentinelLearningSensor(DeviceSentinelBaseSensor):
-    """The learning-progress sensor: devices past the arming floor."""
+    """Devices whose rhythm is established, past the arming floor.
 
-    _attr_name = "Learning progress"
+    An integer rather than "115 of 125" by ruling: a string state
+    cannot be compared in an automation and forfeits the state class.
+
+    This is not expected to reach Devices Watched. Devices with no
+    heartbeat (buttons, remotes) never establish a rhythm and are
+    never judged frozen, by design, so a permanent gap between the
+    two counts is the system working.
+    """
+
+    _attr_name = "Devices Learned"
     _attr_icon = "mdi:school-outline"
+    _attr_native_unit_of_measurement = UNIT_DEVICES
+    _attr_state_class = SensorStateClass.MEASUREMENT
     sentinel_type = SENTINEL_TYPE_LEARNING
 
     @property
@@ -171,7 +227,9 @@ class DeviceSentinelLearningSensor(DeviceSentinelBaseSensor):
 class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):
     """Soak diagnostic: the per-integration classification breakdown."""
 
-    _attr_name = "Classification"
+    _attr_name = "Service Devices Ignored"
+    _attr_native_unit_of_measurement = UNIT_DEVICES
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:filter-outline"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     sentinel_type = SENTINEL_TYPE_CLASSIFICATION
@@ -190,25 +248,6 @@ class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):
         }
 
 
-class DeviceSentinelClockSourceSensor(DeviceSentinelBaseSensor):
-    """Soak diagnostic: watched devices without a last_seen entity."""
-
-    _attr_name = "Clock source"
-    _attr_icon = "mdi:clock-check-outline"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    sentinel_type = SENTINEL_TYPE_CLOCK_SOURCE
-
-    @property
-    def native_value(self) -> int:
-        """Return the count of devices on the recorded clock."""
-        return self._coordinator.clock_source_split["without_last_seen"]
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the clock-source split."""
-        return {**self._identity(), **self._coordinator.clock_source_split}
-
-
 class DeviceSentinelBatteryLowCountSensor(DeviceSentinelBaseSensor):
     """Step 3 detection: how many devices are battery-low right now.
 
@@ -217,8 +256,10 @@ class DeviceSentinelBatteryLowCountSensor(DeviceSentinelBaseSensor):
     dashboards and automations.
     """
 
-    _attr_name = "Battery low count"
+    _attr_name = "Battery Low Count"
     _attr_icon = "mdi:battery-alert"
+    _attr_native_unit_of_measurement = UNIT_BATTERIES
+    _attr_state_class = SensorStateClass.MEASUREMENT
     sentinel_type = SENTINEL_TYPE_BATTERY_COUNT
 
     @property
@@ -245,8 +286,10 @@ class DeviceSentinelBatteryLowListSensor(DeviceSentinelBaseSensor):
     list unchanged.
     """
 
-    _attr_name = "Battery low list"
+    _attr_name = "Battery Low List"
     _attr_icon = "mdi:battery-alert-variant-outline"
+    _attr_native_unit_of_measurement = UNIT_BATTERIES
+    _attr_state_class = SensorStateClass.MEASUREMENT
     sentinel_type = SENTINEL_TYPE_BATTERY_LIST
 
     @property
