@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.11 (2026-07-16)
+#   Version: 0.4.0 (2026-07-18)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -82,12 +82,19 @@ from .const import (
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
     DEV_LAST_ACTIVITY,
+    DEV_SIGNAL_BELOW_SINCE,
+    DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DWELL_DAILY,
+    DEV_SIGNAL_RAIL_SINCE,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     DEV_TODAY_MAX,
     SIGNAL_NAME_TERMS,
+    SIGNAL_RAIL_LQI,
+    SIGNAL_RAIL_RSSI,
+    SIGNAL_RAIL_STUCK_SECONDS,
     STATS_EPOCH,
     LEARNING_MIN_DAYS,
     LOGGER,
@@ -107,8 +114,7 @@ from .const import (
     TODO_SORT_NAME,
     TODO_STATUS,
     TODO_SUMMARY,
-    TODO_UID,
-)
+    TODO_UID,)
 
 BAD_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 
@@ -125,6 +131,10 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_SIGNAL_VALUE: None,
         DEV_SIGNAL_TODAY_MIN: None,
         DEV_SIGNAL_DAILY_MIN: [],
+        DEV_SIGNAL_BELOW_SINCE: None,
+        DEV_SIGNAL_BELOW_TODAY: 0.0,
+        DEV_SIGNAL_DWELL_DAILY: [],
+        DEV_SIGNAL_RAIL_SINCE: None,
         DEV_BATTERY_LOW: False,
         DEV_BATTERY_SINCE: None,
         DEV_BATTERY_VALUE: None,
@@ -219,6 +229,10 @@ class DeviceSentinelCoordinator:
                 record[DEV_SIGNAL_VALUE] = None
                 record[DEV_SIGNAL_TODAY_MIN] = None
                 record[DEV_SIGNAL_DAILY_MIN] = []
+                record[DEV_SIGNAL_BELOW_SINCE] = None
+                record[DEV_SIGNAL_BELOW_TODAY] = 0.0
+                record[DEV_SIGNAL_DWELL_DAILY] = []
+                record[DEV_SIGNAL_RAIL_SINCE] = None
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
                 record.setdefault(DEV_BATTERY_VALUE, None)
@@ -236,6 +250,10 @@ class DeviceSentinelCoordinator:
                 record.setdefault(DEV_SIGNAL_VALUE, None)
                 record.setdefault(DEV_SIGNAL_TODAY_MIN, None)
                 record.setdefault(DEV_SIGNAL_DAILY_MIN, [])
+                record.setdefault(DEV_SIGNAL_BELOW_SINCE, None)
+                record.setdefault(DEV_SIGNAL_BELOW_TODAY, 0.0)
+                record.setdefault(DEV_SIGNAL_DWELL_DAILY, [])
+                record.setdefault(DEV_SIGNAL_RAIL_SINCE, None)
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
                 record.setdefault(DEV_BATTERY_VALUE, None)
@@ -609,10 +627,7 @@ class DeviceSentinelCoordinator:
             except ValueError:
                 value = None
             if value is not None:
-                record[DEV_SIGNAL_VALUE] = value
-                today_min = record.get(DEV_SIGNAL_TODAY_MIN)
-                if today_min is None or value < today_min:
-                    record[DEV_SIGNAL_TODAY_MIN] = value
+                self._feed_signal(record, value, now)
 
         storm = self._storm_feed(entry_id, device_id, now)
         grace = now < self._grace_until
@@ -649,6 +664,129 @@ class DeviceSentinelCoordinator:
         self._dirty = True
 
     # ----------------------------------------------------------- storms
+
+    def _roll_dwell(self, record: dict[str, Any], now: float) -> None:
+        """Close the day's dwell into the rolling daily percentages.
+
+        An open below-timer closes at now rather than freezing at its
+        last reading: a link that dies below the line was below the
+        line the whole silence, so its day reads 100 percent, which is
+        the truth (the completed-gap principle turned inside out,
+        ruled 2026-07-18). A device still below at midnight is
+        re-stamped so the new day keeps accumulating without a seam.
+
+        The percentage is against the full day. Recording starts from
+        day one while the floor is still settling; the early numbers
+        are provisional the same way rhythm floors were before day 7,
+        and are recorded anyway rather than gated (ruled 2026-07-18).
+        """
+        below_since = record.get(DEV_SIGNAL_BELOW_SINCE)
+        accumulated = float(record.get(DEV_SIGNAL_BELOW_TODAY) or 0.0)
+        if below_since is not None:
+            accumulated += max(0.0, now - below_since)
+            record[DEV_SIGNAL_BELOW_SINCE] = now
+        had_line = self._danger_line(record) is not None
+        if had_line:
+            pct = min(100.0, 100.0 * accumulated / 86400.0)
+            record.setdefault(DEV_SIGNAL_DWELL_DAILY, []).append(
+                round(pct, 2)
+            )
+            del record[DEV_SIGNAL_DWELL_DAILY][:-DAILY_MAX_KEEP]
+        record[DEV_SIGNAL_BELOW_TODAY] = 0.0
+
+    def _feed_signal(
+        self, record: dict[str, Any], value: float, now: float
+    ) -> None:
+        """Route one signal reading: rail to the stuck detector,
+        everything real to the floor and the dwell timer.
+
+        A rail reading (flat type-extreme fill value, ruled
+        2026-07-18) is not a measurement: it never feeds the floor,
+        never feeds the dwell timer, and instead opens the rail clock
+        the stuck detector reads. Any real reading closes that clock,
+        which is how a recovered device clears itself without anyone's
+        help.
+        """
+        if value in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI):
+            if record.get(DEV_SIGNAL_RAIL_SINCE) is None:
+                record[DEV_SIGNAL_RAIL_SINCE] = now
+            return
+        record[DEV_SIGNAL_RAIL_SINCE] = None
+        record[DEV_SIGNAL_VALUE] = value
+        today_min = record.get(DEV_SIGNAL_TODAY_MIN)
+        if today_min is None or value < today_min:
+            record[DEV_SIGNAL_TODAY_MIN] = value
+        self._feed_dwell(record, value, now)
+
+    def _feed_dwell(
+        self, record: dict[str, Any], value: float, now: float
+    ) -> None:
+        """Run the below-the-line timer for one real reading.
+
+        Signal is reported as dwell, not crossings (ruled 2026-07-18):
+        a battery moves one direction, but signal is noisy and always
+        recovering, so the unit is time spent below the danger line,
+        accumulated by a timer and rolled into a daily percentage. A
+        momentary dip that recovers never counts for more than the
+        moment it lasted.
+
+        No line exists until the floor does, so a device inside its
+        signal arming days accumulates nothing; its early dwell is
+        absent rather than measured against a floor still moving.
+        """
+        line = self._danger_line(record)
+        below_since = record.get(DEV_SIGNAL_BELOW_SINCE)
+        if line is None:
+            record[DEV_SIGNAL_BELOW_SINCE] = None
+            return
+        if value < line:
+            if below_since is None:
+                record[DEV_SIGNAL_BELOW_SINCE] = now
+        elif below_since is not None:
+            record[DEV_SIGNAL_BELOW_TODAY] = (
+                float(record.get(DEV_SIGNAL_BELOW_TODAY) or 0.0)
+                + max(0.0, now - below_since)
+            )
+            record[DEV_SIGNAL_BELOW_SINCE] = None
+
+    def _danger_line(self, record: dict[str, Any]) -> float | None:
+        """Return this device's danger line, or None while unarmed.
+
+        Two formulas because the scales are physically different
+        (ruled 2026-07-18): LQI is a near-linear index, so the line is
+        a fraction of the device's own floor; RSSI is logarithmic dBm,
+        so the line is a fixed decibel offset below it. Starting
+        values hold until a week of dwell data justifies a default;
+        the sensitivity slider maps onto these then, not before.
+        """
+        signal_days = record.get(DEV_SIGNAL_DAILY_MIN) or []
+        if len(signal_days) < SIGNAL_ARMING_DAYS:
+            return None
+        floor = self._trimmed_minimum(signal_days)
+        if floor is None:
+            return None
+        if floor >= 0:
+            return floor * SIGNAL_LQI_DANGER_FACTOR
+        return floor - SIGNAL_RSSI_DANGER_OFFSET
+
+    def signal_rail_stuck(self, record: dict[str, Any]) -> bool:
+        """Return whether this device's signal is stuck at the rail.
+
+        Stuck means only rail values for a full day: long enough that
+        a sleepy end device carrying a stale attribute through a nap
+        is not accused, short enough that the nightly report names it
+        the day it happens. Four of five stuck devices recovered by
+        hand on 2026-07-18; the ladder is force a report, then power
+        cycle or battery pull, then re-interview or re-bind. Removal
+        from tracking is a manual act only.
+        """
+        rail_since = record.get(DEV_SIGNAL_RAIL_SINCE)
+        if rail_since is None:
+            return False
+        return (
+            dt_util.utcnow().timestamp() - rail_since
+            >= SIGNAL_RAIL_STUCK_SECONDS
+        )
 
     def _storm_feed(
         self, entry_id: str | None, device_id: str, now: float
@@ -741,6 +879,7 @@ class DeviceSentinelCoordinator:
 
     async def _on_midnight(self, _now: Any) -> None:
         """Roll today's maxima into the bounded daily set."""
+        now = dt_util.utcnow().timestamp()
         pushed = 0
         for record in self.data[DATA_DEVICES].values():
             if record[DEV_TODAY_MAX] is not None:
@@ -754,6 +893,7 @@ class DeviceSentinelCoordinator:
                 )
                 del record[DEV_SIGNAL_DAILY_MIN][:-DAILY_MAX_KEEP]
                 record[DEV_SIGNAL_TODAY_MIN] = None
+            self._roll_dwell(record, now)
         if pushed:
             self._dirty = True
             await self._store.async_save(self.data)
@@ -947,7 +1087,14 @@ class DeviceSentinelCoordinator:
             f"candidate line, display-only until ruled: LQI flags "
             f"below floor x {SIGNAL_LQI_DANGER_FACTOR:g}, RSSI below "
             f"floor - {SIGNAL_RSSI_DANGER_OFFSET:g} dB; blank until "
-            f"a device has {SIGNAL_ARMING_DAYS} signal days.",
+            f"a device has {SIGNAL_ARMING_DAYS} signal days. DWELL% is the "
+f"share of each day spent below the danger line, newest first: "
+f"most devices should sit in low single digits, and the "
+f"outliers are the story (outliers clustered in one room mean "
+f"that room needs a router). STUCK marks a signal flat at the "
+f"rail for a full day: the reading is stale, not the link; "
+f"force a report, power cycle or pull the battery, then "
+f"re-interview.",
             "",
             f"Rule: the window basis is the **trimmed maximum** of "
             f"the rolling daily maxima: the top {TRIM_TOP_K} value(s) "
@@ -963,8 +1110,8 @@ class DeviceSentinelCoordinator:
             "",
             "| DEVICE | DAYS | WINDOW BASIS | GAPS (newest first) | "
             "CLOCK | EVENTS | SIGNAL | SIG MIN | FLOOR | FAMILY | "
-            "DANGER |",
-            "|---|---|---|---|---|---|---|---|---|---|---|",
+            "DANGER | DWELL% (newest first) | STUCK |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
         for device_id, record in self.data[DATA_DEVICES].items():
@@ -1008,6 +1155,8 @@ class DeviceSentinelCoordinator:
                     signal_floor,
                     family,
                     danger_line,
+                    list(record.get(DEV_SIGNAL_DWELL_DAILY) or []),
+                    self.signal_rail_stuck(record),
                 )
             )
         rows.sort(key=lambda row: (row[2] is None, -(row[2] or 0)))
@@ -1023,6 +1172,8 @@ class DeviceSentinelCoordinator:
             signal_floor,
             family,
             danger_line,
+            dwell_daily,
+            rail_stuck,
         ) in rows:
             signal_text = "-" if signal_value is None else f"{signal_value:g}"
             signal_minimum_text = (
@@ -1031,12 +1182,20 @@ class DeviceSentinelCoordinator:
             floor_text = "-" if signal_floor is None else f"{signal_floor:g}"
             family_text = family or "-"
             danger_text = "-" if danger_line is None else f"{danger_line:g}"
+            # Newest first, matching the gaps column; RSSI rows are
+            # provisional until their floors have been seen for real.
+            dwell_text = (
+                " ".join(f"{pct:g}" for pct in reversed(dwell_daily))
+                if dwell_daily
+                else "-"
+            )
+            stuck_text = "STUCK" if rail_stuck else "-"
             lines.append(
                 f"| {device_name} | {day_count} | "
                 f"{self._fmt_gap(operative)} | {maxima_cell} | "
                 f"{clock_source} | {event_count} | {signal_text} | "
                 f"{signal_minimum_text} | {floor_text} | {family_text} | "
-                f"{danger_text} |"
+                f"{danger_text} | {dwell_text} | {stuck_text} |"
             )
         lines.append("")
         lines.append(f"{len(rows)} watched devices.")
