@@ -1,0 +1,41 @@
+name: CodeQL
+
+# Security scanning, added while the codebase is small so the first
+# scan is a short list rather than a flood late in development, the
+# same reasoning that put lint in early. CodeQL is GitHub's own
+# analyzer: it looks for vulnerability patterns (injection, unsafe
+# deserialization, path traversal, hardcoded secrets) that lint and
+# the tests do not. A finding turns the build red the way a failing
+# test does.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # A weekly run catches vulnerabilities disclosed after a commit
+    # lands, which a push-only trigger would never revisit.
+    - cron: "24 3 * * 1"
+
+jobs:
+  analyze:
+    name: Analyze Python
+    runs-on: ubuntu-latest
+    permissions:
+      # CodeQL writes its findings to the Security tab through this.
+      security-events: write
+      contents: read
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          # Security-extended adds lower-severity security queries on
+          # top of the default set; worth it for a small codebase
+          # where the extra runtime costs nothing.
+          queries: security-extended
+      - name: Run CodeQL analysis
+        uses: github/codeql-action/analyze@v3
