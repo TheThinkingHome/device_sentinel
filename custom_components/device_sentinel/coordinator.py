@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.1 (2026-07-18)
+#   Version: 0.4.2 (2026-07-18)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -77,6 +77,7 @@ from .const import (
     DATA_SETUP_COUNT,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
+    DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
@@ -140,6 +141,7 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_BATTERY_LOW: False,
         DEV_BATTERY_SINCE: None,
         DEV_BATTERY_VALUE: None,
+        DEV_BATTERY_DAILY: [],
     }
 
 
@@ -239,6 +241,7 @@ class DeviceSentinelCoordinator:
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
                 record.setdefault(DEV_BATTERY_VALUE, None)
+                record.setdefault(DEV_BATTERY_DAILY, [])
                 wiped += 1
             loaded[DATA_STATS_EPOCH] = STATS_EPOCH
             LOGGER.info(
@@ -261,6 +264,7 @@ class DeviceSentinelCoordinator:
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
                 record.setdefault(DEV_BATTERY_VALUE, None)
+                record.setdefault(DEV_BATTERY_DAILY, [])
         self.data = loaded
         await self._store.async_save(self.data)
         self.storage_healthy = True
@@ -535,6 +539,13 @@ class DeviceSentinelCoordinator:
         parsed = dt_util.parse_datetime(state.state)
         if parsed is None:
             return None
+        # A naive datetime (no offset in the source string) would have
+        # .timestamp() assume local time, so a last_seen from an
+        # integration that omits the zone could seed the clock wrong
+        # by the UTC offset. Anchor any naive value to UTC, matching
+        # the UTC discipline every stored timestamp already follows.
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt_util.UTC)
         return parsed.timestamp()
 
     @callback
@@ -668,6 +679,24 @@ class DeviceSentinelCoordinator:
         self._dirty = True
 
     # ----------------------------------------------------------- storms
+
+    def _roll_battery(self, record: dict[str, Any]) -> None:
+        """Append today's battery level to the daily discharge series.
+
+        One point per day, sampled here at the rollover: the value,
+        not the delta, so the series is self-describing (89, 89, 88,
+        80, 65) and a missed midnight leaves a gap the velocity flag
+        can later divide across rather than a false cliff. Only records
+        when there is a level to record, so a device without a battery
+        keeps an empty series. The velocity judgment waits until this
+        history has depth, the way the dwell danger line waited on the
+        floor; today this only records.
+        """
+        level = record.get(DEV_BATTERY_VALUE)
+        if level is None:
+            return
+        record.setdefault(DEV_BATTERY_DAILY, []).append(level)
+        del record[DEV_BATTERY_DAILY][:-DAILY_MAX_KEEP]
 
     def _roll_dwell(self, record: dict[str, Any], now: float) -> None:
         """Close the day's dwell into the rolling daily percentages.
@@ -921,6 +950,7 @@ class DeviceSentinelCoordinator:
                 del record[DEV_SIGNAL_DAILY_MIN][:-DAILY_MAX_KEEP]
                 record[DEV_SIGNAL_TODAY_MIN] = None
             self._roll_dwell(record, now)
+            self._roll_battery(record)
         if pushed:
             self._dirty = True
             await self._store.async_save(self.data)
