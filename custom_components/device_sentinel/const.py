@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.14 (2026-07-17)
+#   Version: 0.4.0 (2026-07-18)
 
 """Constants for the Device Sentinel integration."""
 
@@ -78,6 +78,20 @@ DATA_STATS_EPOCH = "stats_epoch"
 DEV_SIGNAL_VALUE = "signal_value"
 DEV_SIGNAL_TODAY_MIN = "signal_today_min"
 DEV_SIGNAL_DAILY_MIN = "signal_daily_min"
+# The dwell recorder (0.4.0). Two clocks per device: below_since is
+# the open timer stamped when a reading crosses under the danger
+# line, and below_today_seconds is the day's accumulated time under
+# it. The rolling daily history keeps the percentage of each day
+# spent below, beside the daily minimum that feeds the floor: the
+# minimum says how bad the worst moment was, the dwell says how long
+# the bad lasted, and neither can stand in for the other.
+DEV_SIGNAL_BELOW_SINCE = "signal_below_since"
+DEV_SIGNAL_BELOW_TODAY = "signal_below_today_seconds"
+DEV_SIGNAL_DWELL_DAILY = "signal_dwell_daily_pct"
+# The stuck detector: rail_since is stamped by a rail reading when no
+# real reading is open, cleared by any real reading. Stuck is a
+# rail_since older than SIGNAL_RAIL_STUCK_SECONDS.
+DEV_SIGNAL_RAIL_SINCE = "signal_rail_since"
 
 # Signal-entity recognition terms (Z2M sets no device class on
 # linkquality; ZHA/Z-Wave use device_class signal_strength).
@@ -157,8 +171,35 @@ SENTINEL_TYPE_BATTERY_LIST = "battery_low_list"
 # formulas are previewed in device_telemetry.md and ruled from real
 # data before any detection acts on them.
 SIGNAL_ARMING_DAYS = 7
-SIGNAL_LQI_DANGER_FACTOR = 0.5
-SIGNAL_RSSI_DANGER_OFFSET = 10.0
+
+# The danger lines (ruled 2026-07-18, starting values for the dwell
+# soak; a default is set only after a week of dwell data). Two
+# formulas because the scales are physically different: LQI is a
+# near-linear 0-255 index, so its line is a fraction of the device's
+# own floor (a fixed offset or a multiplier both break at the ends of
+# the real 32-224 range); RSSI is logarithmic dBm, where every 10 dB
+# is a tenfold power change, so its line is a fixed decibel offset
+# below the floor. The 1-10 sensitivity slider maps onto these once
+# the soak justifies its curve; until then they are constants.
+SIGNAL_LQI_DANGER_FACTOR = 0.70
+SIGNAL_RSSI_DANGER_OFFSET = 8.0
+
+# The rails (ruled 2026-07-18). A rail is a value that is flat and at
+# the type's extreme: healthy LQI across the fleet tops out at 224,
+# so a flat 255 is the fill value of a field the device never
+# populated, not a reading. -128 is the dBm rail on the RSSI side.
+# Rail readings never feed the floor and never feed the dwell timer;
+# they feed the stuck detector instead. Recovery was validated by
+# hand (force a report, then power cycle or battery pull, then
+# re-interview or re-bind); removal from tracking is manual only.
+SIGNAL_RAIL_LQI = 255.0
+SIGNAL_RAIL_RSSI = -128.0
+
+# A device is reported stuck once it has shown only rail values for a
+# full day: long enough that a sleepy end device carrying a stale
+# attribute through a nap is not accused, short enough that the
+# nightly report names it the day it happens.
+SIGNAL_RAIL_STUCK_SECONDS = 24 * 3600
 
 # Notification backbone (0.3.3, mirrored to Sentinel Notify at 0.3.4).
 # The configuration surface only: where high and normal pushes go,
