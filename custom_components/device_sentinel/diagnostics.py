@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.0 (2026-07-18)
+#   Version: 0.4.1 (2026-07-18)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -106,7 +106,10 @@ async def async_get_config_entry_diagnostics(
             "signal_below_today_seconds": record.get(
                 "signal_below_today_seconds"
             ),
-            "signal_rail_stuck": coordinator.signal_rail_stuck(record),
+            "signal_frozen": coordinator.signal_frozen(record),
+            "signal_frozen_at_rail": coordinator.signal_frozen_at_rail(
+                record
+            ),
         }
 
     return {
