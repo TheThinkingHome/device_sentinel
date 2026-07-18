@@ -12,7 +12,7 @@ Somewhere in your house right now, a sensor may be lying to you. It froze, and H
 
 Device Sentinel is a Home Assistant custom integration that watches for exactly that: frozen devices wearing healthy values, unavailable devices, low batteries, and weak radio links.
 
-**Status: pre-release (0.3.x). Not ready for use.** Battery detection is live; freeze, unavailability, and signal detection, problem lists, and notifications arrive in later steps. Until public release, the [Sentinel blueprints](https://github.com/TheThinkingHome/Automations/tree/main/blueprints) remain the supported tools.
+**Status: pre-release. Not ready for use.** Battery and signal detection are live and recording; freeze detection, unavailability, and notifications arrive in later steps. Until public release, the [Sentinel blueprints](https://github.com/TheThinkingHome/Automations/tree/main/blueprints) remain the supported tools.
 
 ## Why an integration
 
@@ -30,7 +30,8 @@ The learning defends itself. One anomalous day is set aside and moves nothing; a
 
 - Watches all devices by default; non-hardware devices (Sun, add-ons, dashboard plugins) classify themselves out, and the integration refuses to watch itself.
 - Learns per-device rhythms and per-device signal baselines with anomaly-trimmed rolling histories, and reports Devices Watched and Devices Learned through its own entities.
-- Detects low batteries: percentage elected over the binary flag, a threshold on a dashboard slider applied live, hysteresis so a cell at the line never flaps, below-threshold-since carried across restarts.
+- Detects low batteries: percentage elected over the binary flag, a threshold on a dashboard slider applied live, hysteresis so a cell at the line never flaps, below-threshold-since carried across restarts. Records each battery's daily level too, the groundwork for warning when a cell is discharging fast, before it hits the threshold.
+- Watches signal strength against each device's own learned baseline, reporting how much of each day a device spent below its danger line (dwell), and flagging a signal frozen at a stale value while the device keeps reporting. Signals Tracked and Signals Frozen ride as their own entities. Recording and reporting now; alerting comes with the notification engine.
 - Scan and Enable: one press turns on the last_seen and signal entities that integrations ship disabled, respecting anything a user disabled personally.
 - Exclusions on a priority ladder (integration, label, device, entity), with pickers populated from what was actually detected, and a battery-only list beside them. Exclusion suppresses judgment, not observation: an excluded device keeps learning, so undoing costs nothing.
 - Writes two human-readable diagnostic files nightly: the learned-rhythms table and the watched-versus-set-aside audit.
@@ -39,7 +40,6 @@ The learning defends itself. One anomalous day is set aside and moves nothing; a
 
 - Frozen-device detection at device level, any entity's activity vouching for its siblings, each window armed per device from its own learned rhythm.
 - Unavailable, unknown, and never-reported detection at entity level, with the last signal readings before a failure attached as forensics: 40, 32, 24, gone tells you the link died; 200, 201, 200 tells you to look elsewhere.
-- Signal detection against the learned per-device baselines.
 - The engines behind the problem list and the notification settings, both of which are already built and waiting: the checkbox as the acknowledgment, recovery deleting the item, notifications about additions only, quiet hours, and high priority piercing them for the freezer at 3 AM.
 
 ## Documentation
