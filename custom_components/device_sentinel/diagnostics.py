@@ -3,6 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+#   Version: 0.4.0 (2026-07-18)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -93,6 +94,19 @@ async def async_get_config_entry_diagnostics(
             "window_basis": window_basis,
             "set_aside_indices": sorted(set_aside_indices),
             "signal_floor": signal_floor,
+            # The dwell soak (0.4.0): the danger line the timer runs
+            # against, yesterday's percent-below history, and the
+            # stuck flag. RSSI rows (negative floors) are provisional:
+            # eleven devices and barely-seen floors do not yet justify
+            # trusting the offset.
+            "signal_danger_line": coordinator._danger_line(record),
+            "signal_dwell_daily_pct": list(
+                record.get("signal_dwell_daily_pct") or []
+            ),
+            "signal_below_today_seconds": record.get(
+                "signal_below_today_seconds"
+            ),
+            "signal_rail_stuck": coordinator.signal_rail_stuck(record),
         }
 
     return {
