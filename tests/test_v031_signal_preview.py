@@ -3,6 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+#   Version: 0.4.0 (2026-07-18)
 
 """0.3.1 tests: the signal floor and danger-line preview."""
 
@@ -12,7 +13,11 @@ from homeassistant.helpers import entity_registry as er
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.device_sentinel.const import DEV_SIGNAL_DAILY_MIN
+from custom_components.device_sentinel.const import (
+    DEV_SIGNAL_DAILY_MIN,
+    SIGNAL_LQI_DANGER_FACTOR,
+    SIGNAL_RSSI_DANGER_OFFSET,
+)
 from custom_components.device_sentinel.coordinator import (
     DeviceSentinelCoordinator as C,
 )
@@ -33,10 +38,15 @@ def test_trimmed_minimum_rule():
 
 
 def test_family_and_danger():
+    """Asserted through the constants rather than literals: the line
+    values are ruled from soak data (0.70 and 8.0 as of 2026-07-18,
+    ruling 58) and will move again when the dwell soak settles."""
     family, danger = C._signal_family_and_danger(120.0)
-    assert family == "LQI" and danger == 60.0
+    assert family == "LQI"
+    assert danger == 120.0 * SIGNAL_LQI_DANGER_FACTOR
     family, danger = C._signal_family_and_danger(-70.0)
-    assert family == "RSSI" and danger == -80.0
+    assert family == "RSSI"
+    assert danger == -70.0 - SIGNAL_RSSI_DANGER_OFFSET
 
 
 async def test_preview_in_report(hass: HomeAssistant):
@@ -84,4 +94,5 @@ async def test_preview_in_report(hass: HomeAssistant):
         for line in text.splitlines()
         if "Signal Preview Device" in line
     )
-    assert "| 117 | LQI | 58.5 |" in row
+    expected = f"| 117 | LQI | {117 * SIGNAL_LQI_DANGER_FACTOR:g} |"
+    assert expected in row
