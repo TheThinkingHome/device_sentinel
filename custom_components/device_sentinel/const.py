@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.0 (2026-07-18)
+#   Version: 0.4.1 (2026-07-18)
 
 """Constants for the Device Sentinel integration."""
 
@@ -88,10 +88,14 @@ DEV_SIGNAL_DAILY_MIN = "signal_daily_min"
 DEV_SIGNAL_BELOW_SINCE = "signal_below_since"
 DEV_SIGNAL_BELOW_TODAY = "signal_below_today_seconds"
 DEV_SIGNAL_DWELL_DAILY = "signal_dwell_daily_pct"
-# The stuck detector: rail_since is stamped by a rail reading when no
-# real reading is open, cleared by any real reading. Stuck is a
-# rail_since older than SIGNAL_RAIL_STUCK_SECONDS.
-DEV_SIGNAL_RAIL_SINCE = "signal_rail_since"
+# The frozen detector. last_change is when the signal value last
+# actually moved; a value that stays put while the device keeps
+# reporting is frozen once the gap since last_change passes
+# SIGNAL_FROZEN_SECONDS. The rail flag records whether the frozen
+# value is a fill value (255, -128), which raises confidence that the
+# freeze is a fault rather than a genuinely steady link.
+DEV_SIGNAL_LAST_CHANGE = "signal_last_change"
+DEV_SIGNAL_FROZEN_AT = "signal_frozen_at"
 
 # Signal-entity recognition terms (Z2M sets no device class on
 # linkquality; ZHA/Z-Wave use device_class signal_strength).
@@ -160,6 +164,8 @@ DEV_BATTERY_VALUE = "battery_value"
 
 SENTINEL_TYPE_BATTERY_COUNT = "battery_low_count"
 SENTINEL_TYPE_BATTERY_LIST = "battery_low_list"
+SENTINEL_TYPE_SIGNAL_TRACKED = "signal_tracked"
+SENTINEL_TYPE_SIGNAL_FROZEN = "signal_frozen"
 
 # Signal preview (0.3.1, display-only). The floor is the trimmed
 # minimum of the rolling daily signal minima (mirror of the gap
@@ -195,11 +201,17 @@ SIGNAL_RSSI_DANGER_OFFSET = 8.0
 SIGNAL_RAIL_LQI = 255.0
 SIGNAL_RAIL_RSSI = -128.0
 
-# A device is reported stuck once it has shown only rail values for a
-# full day: long enough that a sleepy end device carrying a stale
-# attribute through a nap is not accused, short enough that the
-# nightly report names it the day it happens.
-SIGNAL_RAIL_STUCK_SECONDS = 24 * 3600
+# A signal is frozen once its value has not changed for this long
+# while the device kept reporting (last_seen advancing). A signal
+# that never moves is not reporting, whatever value it is frozen at:
+# the rail values (255, -128) are the obvious case, but a value stuck
+# at a plausible reading is the more dangerous one, because nothing
+# looks wrong. The window is a full day: long enough that a genuinely
+# rock-steady link or a sleepy end device is not accused, short
+# enough that the nightly report names a real freeze the day it
+# happens. Ruled 2026-07-18, generalized from the rail case the same
+# day when five sensors proved a frozen attribute reads healthy.
+SIGNAL_FROZEN_SECONDS = 24 * 3600
 
 # Notification backbone (0.3.3, mirrored to Sentinel Notify at 0.3.4).
 # The configuration surface only: where high and normal pushes go,
@@ -367,6 +379,7 @@ WIKI_LINK_FAQ = _wiki_link("FAQ-and-Troubleshooting")
 # a bare number (ruled 2026-07-17).
 UNIT_DEVICES = "devices"
 UNIT_BATTERIES = "batteries"
+UNIT_SIGNALS = "signals"
 
 # The status sensor's states. Learning shows only until the first
 # device establishes a rhythm: partial learning is permanent, not a
