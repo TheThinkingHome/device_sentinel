@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.0 (2026-07-18)
+#   Version: 0.4.1 (2026-07-18)
 
 """0.4.0 tests: the signal dwell recorder and the rail-stuck detector.
 
@@ -36,13 +36,14 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DWELL_DAILY,
-    DEV_SIGNAL_RAIL_SINCE,
+    DEV_SIGNAL_FROZEN_AT,
+    DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     SIGNAL_LQI_DANGER_FACTOR,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
-    SIGNAL_RAIL_STUCK_SECONDS,
+    SIGNAL_FROZEN_SECONDS,
     SIGNAL_RSSI_DANGER_OFFSET,
 )
 from custom_components.device_sentinel.coordinator import (
@@ -191,54 +192,117 @@ async def test_unarmed_device_rolls_no_percentage(hass: HomeAssistant):
 # The rails and the stuck detector (#60).
 
 
-async def test_rail_feeds_nothing_but_the_rail_clock(hass: HomeAssistant):
+async def test_rail_feeds_neither_floor_nor_dwell(hass: HomeAssistant):
+    """A rail value is not a measurement: it never touches the floor
+    or the dwell timer. But it is still a reading, so it stamps the
+    signal value and starts the frozen clock like any other."""
     coord = await _coordinator(hass)
     record = _armed_lqi_record()
     coord._feed_signal(record, SIGNAL_RAIL_LQI, 1000.0)
-    assert record[DEV_SIGNAL_RAIL_SINCE] == 1000.0
     assert record[DEV_SIGNAL_TODAY_MIN] is None
-    assert record[DEV_SIGNAL_VALUE] is None
     assert record[DEV_SIGNAL_BELOW_SINCE] is None
+    assert record[DEV_SIGNAL_VALUE] == SIGNAL_RAIL_LQI
+    assert record[DEV_SIGNAL_LAST_CHANGE] == 1000.0
 
 
-async def test_rssi_rail_is_also_a_rail(hass: HomeAssistant):
+async def test_rssi_rail_does_not_poison_the_floor(hass: HomeAssistant):
     """James S24+ hit -128 once inside real readings; that spike must
-    open the rail clock, not poison the floor."""
+    not feed the floor. It is still a reading for the frozen clock."""
     coord = await _coordinator(hass)
     record = _armed_rssi_record()
     coord._feed_signal(record, SIGNAL_RAIL_RSSI, 1000.0)
-    assert record[DEV_SIGNAL_RAIL_SINCE] == 1000.0
     assert record[DEV_SIGNAL_TODAY_MIN] is None
+    assert record[DEV_SIGNAL_VALUE] == SIGNAL_RAIL_RSSI
 
 
-async def test_a_real_reading_clears_the_rail_clock(hass: HomeAssistant):
+async def test_a_changed_reading_moves_the_frozen_clock(
+    hass: HomeAssistant,
+):
     """The recovered-by-hand case: the moment a revived sensor sends a
-    real value, it clears itself without anyone's help."""
+    different value, last_change advances and it is no longer flat."""
     coord = await _coordinator(hass)
     record = _armed_lqi_record()
     coord._feed_signal(record, SIGNAL_RAIL_LQI, 1000.0)
     coord._feed_signal(record, 116.0, 2000.0)
-    assert record[DEV_SIGNAL_RAIL_SINCE] is None
+    assert record[DEV_SIGNAL_LAST_CHANGE] == 2000.0
     assert record[DEV_SIGNAL_VALUE] == 116.0
     assert record[DEV_SIGNAL_TODAY_MIN] == 116.0
 
 
-async def test_stuck_needs_a_full_day_of_rail(hass: HomeAssistant):
+async def test_frozen_needs_a_full_day_flat_on_a_live_device(
+    hass: HomeAssistant,
+):
     import homeassistant.util.dt as dt_util
+
+    from custom_components.device_sentinel.const import DEV_LAST_ACTIVITY
 
     coord = await _coordinator(hass)
     record = _armed_lqi_record()
     now = dt_util.utcnow().timestamp()
-    record[DEV_SIGNAL_RAIL_SINCE] = now - 3600  # railed one hour
-    assert coord.signal_rail_stuck(record) is False
-    record[DEV_SIGNAL_RAIL_SINCE] = now - SIGNAL_RAIL_STUCK_SECONDS - 1
-    assert coord.signal_rail_stuck(record) is True
+    # Value flat an hour, device reporting: not yet frozen.
+    record[DEV_SIGNAL_LAST_CHANGE] = now - 3600
+    record[DEV_LAST_ACTIVITY] = now - 60
+    assert coord.signal_frozen(record) is False
+    # Value flat a full day while the device keeps reporting: frozen.
+    record[DEV_SIGNAL_LAST_CHANGE] = now - SIGNAL_FROZEN_SECONDS - 1
+    record[DEV_LAST_ACTIVITY] = now - 60
+    assert coord.signal_frozen(record) is True
 
 
-async def test_never_railed_is_never_stuck(hass: HomeAssistant):
+async def test_frozen_requires_a_live_device(hass: HomeAssistant):
+    """A flat value on a silent device is a device freeze, not a
+    frozen signal: last_activity must be newer than last_change."""
+    import homeassistant.util.dt as dt_util
+
+    from custom_components.device_sentinel.const import DEV_LAST_ACTIVITY
+
     coord = await _coordinator(hass)
     record = _armed_lqi_record()
-    assert coord.signal_rail_stuck(record) is False
+    now = dt_util.utcnow().timestamp()
+    record[DEV_SIGNAL_LAST_CHANGE] = now - SIGNAL_FROZEN_SECONDS - 1
+    record[DEV_LAST_ACTIVITY] = now - SIGNAL_FROZEN_SECONDS - 1
+    assert coord.signal_frozen(record) is False
+
+
+async def test_frozen_at_a_real_value_is_frozen_but_not_rail(
+    hass: HomeAssistant,
+):
+    """The dangerous case: stuck at a plausible number. Frozen, but
+    flagged apart from a rail freeze so a user can weigh it."""
+    import homeassistant.util.dt as dt_util
+
+    from custom_components.device_sentinel.const import DEV_LAST_ACTIVITY
+
+    coord = await _coordinator(hass)
+    record = _armed_lqi_record()
+    now = dt_util.utcnow().timestamp()
+    record[DEV_SIGNAL_VALUE] = 80.0
+    record[DEV_SIGNAL_LAST_CHANGE] = now - SIGNAL_FROZEN_SECONDS - 1
+    record[DEV_LAST_ACTIVITY] = now - 60
+    assert coord.signal_frozen(record) is True
+    assert coord.signal_frozen_at_rail(record) is False
+
+
+async def test_frozen_at_rail_is_flagged(hass: HomeAssistant):
+    import homeassistant.util.dt as dt_util
+
+    from custom_components.device_sentinel.const import DEV_LAST_ACTIVITY
+
+    coord = await _coordinator(hass)
+    record = _armed_lqi_record()
+    now = dt_util.utcnow().timestamp()
+    record[DEV_SIGNAL_VALUE] = SIGNAL_RAIL_LQI
+    record[DEV_SIGNAL_LAST_CHANGE] = now - SIGNAL_FROZEN_SECONDS - 1
+    record[DEV_LAST_ACTIVITY] = now - 60
+    assert coord.signal_frozen_at_rail(record) is True
+
+
+async def test_a_moving_signal_is_never_frozen(hass: HomeAssistant):
+    coord = await _coordinator(hass)
+    record = _armed_lqi_record()
+    coord._feed_signal(record, 80.0, 1000.0)
+    coord._feed_signal(record, 96.0, 2000.0)
+    assert coord.signal_frozen(record) is False
 
 
 # Persistence: the timers survive a restart.
@@ -284,7 +348,8 @@ async def test_pre_040_storage_gains_the_new_fields(hass: HomeAssistant):
         DEV_SIGNAL_BELOW_SINCE,
         DEV_SIGNAL_BELOW_TODAY,
         DEV_SIGNAL_DWELL_DAILY,
-        DEV_SIGNAL_RAIL_SINCE,
+        DEV_SIGNAL_LAST_CHANGE,
+        DEV_SIGNAL_FROZEN_AT,
     ):
         old.pop(key, None)
     await coord._store.async_save(coord.data)
@@ -297,4 +362,5 @@ async def test_pre_040_storage_gains_the_new_fields(hass: HomeAssistant):
     assert migrated[DEV_SIGNAL_BELOW_SINCE] is None
     assert migrated[DEV_SIGNAL_BELOW_TODAY] == 0.0
     assert migrated[DEV_SIGNAL_DWELL_DAILY] == []
-    assert migrated[DEV_SIGNAL_RAIL_SINCE] is None
+    assert migrated[DEV_SIGNAL_LAST_CHANGE] is None
+    assert migrated[DEV_SIGNAL_FROZEN_AT] is None
