@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.0 (2026-07-18)
+#   Version: 0.4.1 (2026-07-18)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -86,15 +86,16 @@ from .const import (
     DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DWELL_DAILY,
-    DEV_SIGNAL_RAIL_SINCE,
+    DEV_SIGNAL_FROZEN_AT,
+    DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     DEV_TODAY_MAX,
     SIGNAL_NAME_TERMS,
+    SIGNAL_FROZEN_SECONDS,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
-    SIGNAL_RAIL_STUCK_SECONDS,
     STATS_EPOCH,
     LEARNING_MIN_DAYS,
     LOGGER,
@@ -134,7 +135,8 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_SIGNAL_BELOW_SINCE: None,
         DEV_SIGNAL_BELOW_TODAY: 0.0,
         DEV_SIGNAL_DWELL_DAILY: [],
-        DEV_SIGNAL_RAIL_SINCE: None,
+        DEV_SIGNAL_LAST_CHANGE: None,
+        DEV_SIGNAL_FROZEN_AT: None,
         DEV_BATTERY_LOW: False,
         DEV_BATTERY_SINCE: None,
         DEV_BATTERY_VALUE: None,
@@ -232,7 +234,8 @@ class DeviceSentinelCoordinator:
                 record[DEV_SIGNAL_BELOW_SINCE] = None
                 record[DEV_SIGNAL_BELOW_TODAY] = 0.0
                 record[DEV_SIGNAL_DWELL_DAILY] = []
-                record[DEV_SIGNAL_RAIL_SINCE] = None
+                record[DEV_SIGNAL_LAST_CHANGE] = None
+                record[DEV_SIGNAL_FROZEN_AT] = None
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
                 record.setdefault(DEV_BATTERY_VALUE, None)
@@ -253,7 +256,8 @@ class DeviceSentinelCoordinator:
                 record.setdefault(DEV_SIGNAL_BELOW_SINCE, None)
                 record.setdefault(DEV_SIGNAL_BELOW_TODAY, 0.0)
                 record.setdefault(DEV_SIGNAL_DWELL_DAILY, [])
-                record.setdefault(DEV_SIGNAL_RAIL_SINCE, None)
+                record.setdefault(DEV_SIGNAL_LAST_CHANGE, None)
+                record.setdefault(DEV_SIGNAL_FROZEN_AT, None)
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
                 record.setdefault(DEV_BATTERY_VALUE, None)
@@ -697,22 +701,24 @@ class DeviceSentinelCoordinator:
     def _feed_signal(
         self, record: dict[str, Any], value: float, now: float
     ) -> None:
-        """Route one signal reading: rail to the stuck detector,
-        everything real to the floor and the dwell timer.
+        """Route one signal reading, and track whether it moves.
 
-        A rail reading (flat type-extreme fill value, ruled
-        2026-07-18) is not a measurement: it never feeds the floor,
-        never feeds the dwell timer, and instead opens the rail clock
-        the stuck detector reads. Any real reading closes that clock,
-        which is how a recovered device clears itself without anyone's
-        help.
+        The floor and the dwell timer see only real readings; a rail
+        value (255, -128) is the type's fill value, not a measurement,
+        so it feeds neither (ruled 2026-07-18). But every reading,
+        rail or real, updates the frozen clock, because a signal that
+        never changes is not reporting whatever value it is frozen at.
+        last_change advances only when the value actually differs, so
+        the gap since last_change is how long the signal has been
+        flat while the device kept reporting.
         """
-        if value in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI):
-            if record.get(DEV_SIGNAL_RAIL_SINCE) is None:
-                record[DEV_SIGNAL_RAIL_SINCE] = now
-            return
-        record[DEV_SIGNAL_RAIL_SINCE] = None
+        previous = record.get(DEV_SIGNAL_VALUE)
+        if previous is None or value != previous:
+            record[DEV_SIGNAL_LAST_CHANGE] = now
         record[DEV_SIGNAL_VALUE] = value
+
+        if value in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI):
+            return
         today_min = record.get(DEV_SIGNAL_TODAY_MIN)
         if today_min is None or value < today_min:
             record[DEV_SIGNAL_TODAY_MIN] = value
@@ -769,23 +775,44 @@ class DeviceSentinelCoordinator:
             return floor * SIGNAL_LQI_DANGER_FACTOR
         return floor - SIGNAL_RSSI_DANGER_OFFSET
 
-    def signal_rail_stuck(self, record: dict[str, Any]) -> bool:
-        """Return whether this device's signal is stuck at the rail.
+    def signal_frozen(self, record: dict[str, Any]) -> bool:
+        """Return whether this device's signal is frozen.
 
-        Stuck means only rail values for a full day: long enough that
-        a sleepy end device carrying a stale attribute through a nap
-        is not accused, short enough that the nightly report names it
-        the day it happens. Four of five stuck devices recovered by
-        hand on 2026-07-18; the ladder is force a report, then power
-        cycle or battery pull, then re-interview or re-bind. Removal
-        from tracking is a manual act only.
+        Frozen means the value has not moved for a full day while the
+        device kept reporting (ruled 2026-07-18). A signal that never
+        changes is not reporting, whatever value it holds: the rail
+        values are the obvious case, but a value stuck at a plausible
+        reading is the dangerous one because nothing looks wrong.
+
+        The device must be otherwise alive for this to fire. A device
+        that has genuinely gone silent is a freeze for the freeze
+        detector to catch, not a frozen signal; here the tell is a
+        still signal on a talking device, which is exactly the
+        stuck-attribute signature five sensors showed by hand, their
+        last_seen advancing while the reading sat pegged.
         """
-        rail_since = record.get(DEV_SIGNAL_RAIL_SINCE)
-        if rail_since is None:
+        last_change = record.get(DEV_SIGNAL_LAST_CHANGE)
+        last_activity = record.get(DEV_LAST_ACTIVITY)
+        if last_change is None or last_activity is None:
             return False
-        return (
-            dt_util.utcnow().timestamp() - rail_since
-            >= SIGNAL_RAIL_STUCK_SECONDS
+        # The device must have reported since the value last moved,
+        # otherwise its silence is a device freeze, not a stuck signal.
+        if last_activity <= last_change:
+            return False
+        return dt_util.utcnow().timestamp() - last_change >= SIGNAL_FROZEN_SECONDS
+
+    def signal_frozen_at_rail(self, record: dict[str, Any]) -> bool:
+        """Return whether a frozen signal is stuck at a fill value.
+
+        A freeze at the rail (255, -128) is near-certainly a fault; a
+        freeze at a real value could be a genuinely steady link. The
+        report shows both, flagged, so a user can weigh them.
+        """
+        if not self.signal_frozen(record):
+            return False
+        return record.get(DEV_SIGNAL_VALUE) in (
+            SIGNAL_RAIL_LQI,
+            SIGNAL_RAIL_RSSI,
         )
 
     def _storm_feed(
@@ -1091,10 +1118,11 @@ class DeviceSentinelCoordinator:
 f"share of each day spent below the danger line, newest first: "
 f"most devices should sit in low single digits, and the "
 f"outliers are the story (outliers clustered in one room mean "
-f"that room needs a router). STUCK marks a signal flat at the "
-f"rail for a full day: the reading is stale, not the link; "
-f"force a report, power cycle or pull the battery, then "
-f"re-interview.",
+f"that room needs a router). FROZEN marks a signal whose value "
+f"has not moved in a day while the device kept reporting: the "
+f"reading is stale, not the link, and (rail) means it froze at "
+f"the fill value 255 or -128, a near-certain fault. Force a "
+f"report, power cycle or pull the battery, then re-interview.",
             "",
             f"Rule: the window basis is the **trimmed maximum** of "
             f"the rolling daily maxima: the top {TRIM_TOP_K} value(s) "
@@ -1110,7 +1138,7 @@ f"re-interview.",
             "",
             "| DEVICE | DAYS | WINDOW BASIS | GAPS (newest first) | "
             "CLOCK | EVENTS | SIGNAL | SIG MIN | FLOOR | FAMILY | "
-            "DANGER | DWELL% (newest first) | STUCK |",
+            "DANGER | DWELL% (newest first) | FROZEN |",
             "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
@@ -1156,7 +1184,8 @@ f"re-interview.",
                     family,
                     danger_line,
                     list(record.get(DEV_SIGNAL_DWELL_DAILY) or []),
-                    self.signal_rail_stuck(record),
+                    self.signal_frozen(record),
+                    self.signal_frozen_at_rail(record),
                 )
             )
         rows.sort(key=lambda row: (row[2] is None, -(row[2] or 0)))
@@ -1173,7 +1202,8 @@ f"re-interview.",
             family,
             danger_line,
             dwell_daily,
-            rail_stuck,
+            frozen,
+            frozen_rail,
         ) in rows:
             signal_text = "-" if signal_value is None else f"{signal_value:g}"
             signal_minimum_text = (
@@ -1189,13 +1219,18 @@ f"re-interview.",
                 if dwell_daily
                 else "-"
             )
-            stuck_text = "STUCK" if rail_stuck else "-"
+            if not frozen:
+                frozen_text = "-"
+            elif frozen_rail:
+                frozen_text = "FROZEN (rail)"
+            else:
+                frozen_text = "FROZEN"
             lines.append(
                 f"| {device_name} | {day_count} | "
                 f"{self._fmt_gap(operative)} | {maxima_cell} | "
                 f"{clock_source} | {event_count} | {signal_text} | "
                 f"{signal_minimum_text} | {floor_text} | {family_text} | "
-                f"{danger_text} | {dwell_text} | {stuck_text} |"
+                f"{danger_text} | {dwell_text} | {frozen_text} |"
             )
         lines.append("")
         lines.append(f"{len(rows)} watched devices.")
@@ -1375,6 +1410,62 @@ f"re-interview.",
             else:
                 buckets["established"] += 1
         return buckets
+
+    @property
+    def signal_tracked(self) -> dict[str, int]:
+        """Return counts of devices with a learned signal baseline.
+
+        Tracked means the device has an established signal floor and
+        so a live danger line: the signal analogue of Devices Learned.
+        Split by scale because LQI and RSSI are judged by different
+        formulas, and RSSI is the smaller, less trusted cohort. Still
+        learning counts devices that report signal but have not yet
+        reached their floor.
+        """
+        counts = {"lqi": 0, "rssi": 0, "learning": 0}
+        for record in self.data.get(DATA_DEVICES, {}).values():
+            line = self._danger_line(record)
+            if line is None:
+                if record.get(DEV_SIGNAL_VALUE) is not None:
+                    counts["learning"] += 1
+                continue
+            floor = self._trimmed_minimum(
+                record.get(DEV_SIGNAL_DAILY_MIN) or []
+            )
+            if floor is not None and floor >= 0:
+                counts["lqi"] += 1
+            else:
+                counts["rssi"] += 1
+        return counts
+
+    @property
+    def signal_frozen_list(self) -> list[dict[str, Any]]:
+        """Return the devices whose signal is frozen right now.
+
+        A frozen signal is a value that has not moved in a day while
+        the device kept reporting: not reporting, whatever value it
+        holds. Named for a dashboard and an automation, the rail flag
+        carried per row so a near-certain fault (frozen at 255 or
+        -128) reads apart from a merely steady value.
+        """
+        frozen: list[dict[str, Any]] = []
+        for device_id, record in self.data.get(DATA_DEVICES, {}).items():
+            if not self.signal_frozen(record):
+                continue
+            frozen.append(
+                {
+                    "name": self._device_names.get(device_id),
+                    "value": record.get(DEV_SIGNAL_VALUE),
+                    "at_rail": self.signal_frozen_at_rail(record),
+                }
+            )
+        frozen.sort(key=lambda row: (not row["at_rail"], row["name"] or ""))
+        return frozen
+
+    @property
+    def signal_frozen_count(self) -> int:
+        """Return how many signals are frozen right now."""
+        return len(self.signal_frozen_list)
 
     @property
     def classification_breakdown(self) -> dict[str, dict[str, int]]:
