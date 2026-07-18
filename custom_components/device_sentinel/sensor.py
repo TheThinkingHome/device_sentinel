@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.12 (2026-07-17)
+#   Version: 0.4.1 (2026-07-18)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -48,6 +48,8 @@ from .const import (
     DOMAIN,
     SENTINEL_TYPE_BATTERY_COUNT,
     SENTINEL_TYPE_BATTERY_LIST,
+    SENTINEL_TYPE_SIGNAL_FROZEN,
+    SENTINEL_TYPE_SIGNAL_TRACKED,
     SENTINEL_TYPE_CLASSIFICATION,
     SENTINEL_TYPE_COVERAGE,
     SENTINEL_TYPE_LEARNING,
@@ -56,6 +58,7 @@ from .const import (
     STATUS_PROBLEM,
     STATUS_WATCHING,
     UNIT_BATTERIES,
+    UNIT_SIGNALS,
     UNIT_DEVICES,
 )
 from .coordinator import DeviceSentinelCoordinator
@@ -76,6 +79,8 @@ async def async_setup_entry(
             DeviceSentinelClassificationSensor(coordinator),
             DeviceSentinelBatteryLowCountSensor(coordinator),
             DeviceSentinelBatteryLowListSensor(coordinator),
+            DeviceSentinelSignalTrackedSensor(coordinator),
+            DeviceSentinelSignalFrozenSensor(coordinator),
         ]
     )
 
@@ -303,4 +308,73 @@ class DeviceSentinelBatteryLowListSensor(DeviceSentinelBaseSensor):
         return {
             **self._identity(),
             "devices": self._coordinator.battery_low_list,
+        }
+
+
+class DeviceSentinelSignalTrackedSensor(DeviceSentinelBaseSensor):
+    """How many devices have a learned signal baseline.
+
+    The signal analogue of Devices Learned: a device is tracked once
+    it has an established floor and so a live danger line. Not
+    expected to reach Devices Watched, since devices with no signal
+    entity never arm. Watch-only in 0.4.x: the count is real, the
+    detections it will feed are still soaking.
+    """
+
+    _attr_name = "Signals Tracked"
+    _attr_icon = "mdi:access-point-network"
+    _attr_native_unit_of_measurement = UNIT_SIGNALS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    sentinel_type = SENTINEL_TYPE_SIGNAL_TRACKED
+
+    @property
+    def native_value(self) -> int:
+        """Return how many devices have a live danger line."""
+        counts = self._coordinator.signal_tracked
+        return counts["lqi"] + counts["rssi"]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return identity plus the scale split and learning count."""
+        counts = self._coordinator.signal_tracked
+        return {
+            **self._identity(),
+            "lqi": counts["lqi"],
+            "rssi": counts["rssi"],
+            "still_learning": counts["learning"],
+        }
+
+
+class DeviceSentinelSignalFrozenSensor(DeviceSentinelBaseSensor):
+    """How many device signals are frozen right now.
+
+    A frozen signal is a value that has not moved in a day while the
+    device kept reporting: not reporting, whatever value it holds.
+    This is the number that proves the integration's worth, since a
+    frozen signal reads healthy on every ordinary dashboard. The
+    device list rides in attributes, each row flagged for whether it
+    froze at a fill value (a near-certain fault) or a real one (which
+    could be a steady link). Removal from tracking is a manual act, so
+    a resistant device stays counted until recovered or excluded.
+    """
+
+    _attr_name = "Signals Frozen"
+    _attr_icon = "mdi:access-point-off"
+    _attr_native_unit_of_measurement = UNIT_SIGNALS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    sentinel_type = SENTINEL_TYPE_SIGNAL_FROZEN
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of frozen signals."""
+        return self._coordinator.signal_frozen_count
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return identity plus the frozen devices, faults first."""
+        return {
+            **self._identity(),
+            "devices": self._coordinator.signal_frozen_list,
         }
