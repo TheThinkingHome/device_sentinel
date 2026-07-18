@@ -3,6 +3,7 @@
 ![Tests](https://github.com/TheThinkingHome/device_sentinel/actions/workflows/test.yml/badge.svg)
 ![Validate](https://github.com/TheThinkingHome/device_sentinel/actions/workflows/validate.yml/badge.svg)
 ![Lint](https://github.com/TheThinkingHome/device_sentinel/actions/workflows/lint.yml/badge.svg)
+![CodeQL](https://github.com/TheThinkingHome/device_sentinel/actions/workflows/codeql.yml/badge.svg)
 ![Version](https://img.shields.io/github/v/release/TheThinkingHome/device_sentinel)
 ![License](https://img.shields.io/github/license/TheThinkingHome/device_sentinel)
 ![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)
