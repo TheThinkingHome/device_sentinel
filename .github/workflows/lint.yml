@@ -6,6 +6,14 @@ name: Lint
 # was missing: dead imports, unused variables, and unsafe names turn
 # the build red the way a failing test does.
 
+
+# Least privilege: these jobs only read the checked-out code, so
+# the token is held to read-only. CodeQL flags a workflow with no
+# permissions block because it inherits the repository default,
+# which can be broader than the work requires.
+permissions:
+  contents: read
+
 on:
   push:
   pull_request:
