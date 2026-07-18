@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.1 (2026-07-18)
+#   Version: 0.4.2 (2026-07-18)
 
 """Constants for the Device Sentinel integration."""
 
@@ -161,6 +161,19 @@ BATTERY_CLEAR_MARGIN = 2
 DEV_BATTERY_LOW = "battery_low"
 DEV_BATTERY_SINCE = "battery_since"
 DEV_BATTERY_VALUE = "battery_value"
+# The discharge recorder (0.4.2). At each midnight the current battery
+# value is appended here, so the history is a daily series of levels
+# (89, 89, 88, 88, 80, 65). The daily delta the velocity flag will
+# read is derived from consecutive points, which lets a missed day
+# spread its drop across the elapsed time rather than reading as a
+# false cliff. The value is stored, not only the delta, because it is
+# cheap and makes the series self-describing and gap-tolerant. Kept
+# for the same 14 days as every other daily series: at two weeks and
+# a day the oldest point retires, which is the minimum span a lithium
+# cliff needs to show its acceleration. The velocity flag itself
+# waits until this history has depth, the way the dwell danger line
+# waited on the floor.
+DEV_BATTERY_DAILY = "battery_daily_value"
 
 SENTINEL_TYPE_BATTERY_COUNT = "battery_low_count"
 SENTINEL_TYPE_BATTERY_LIST = "battery_low_list"
