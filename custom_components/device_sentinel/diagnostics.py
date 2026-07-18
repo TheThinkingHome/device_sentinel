@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.1 (2026-07-18)
+#   Version: 0.4.2 (2026-07-18)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -110,6 +110,20 @@ async def async_get_config_entry_diagnostics(
             "signal_frozen_at_rail": coordinator.signal_frozen_at_rail(
                 record
             ),
+            # The discharge soak (0.4.2): the daily level series and
+            # the deltas derived from it (a positive delta is a drop).
+            # Provisional and short until it has depth; the velocity
+            # flag reads it in a later release.
+            "battery_daily_value": list(
+                record.get("battery_daily_value") or []
+            ),
+            "battery_daily_delta": [
+                round(a - b, 2)
+                for a, b in zip(
+                    (record.get("battery_daily_value") or [])[:-1],
+                    (record.get("battery_daily_value") or [])[1:],
+                )
+            ],
         }
 
     return {
