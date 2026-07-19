@@ -532,4 +532,5 @@ async def test_options_flow_menu_is_work_ordered(hass: HomeAssistant):
         "notifications",
         "exclusions",
         "battery",
+        "signal",
     ]
