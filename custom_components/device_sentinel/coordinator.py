@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.3 (2026-07-19)
+#   Version: 0.4.4 (2026-07-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 from collections import deque
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
@@ -812,28 +813,46 @@ class DeviceSentinelCoordinator:
         rhythm trim, which drops the highest, because for signal the
         spuriously bad reading is the anomaly to set aside.
         """
-        history = [
+        history = self._signal_history(record)
+        if not history:
+            return None
+        effective_k = self._signal_effective_k(len(history))
+        return sorted(history)[effective_k]
+
+    @staticmethod
+    def _signal_history(record: dict[str, Any]) -> list[float]:
+        """Return the device's daily signal lows with rail values
+        removed. Rails are fill values, not readings, so they never
+        feed the floor and never count toward the trim."""
+        return [
             value
             for value in (record.get(DEV_SIGNAL_DAILY_MIN) or [])
             if value not in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
         ]
-        if not history:
-            return None
-        days = len(history)
+
+    def _signal_slider(self) -> int:
+        """Return the sensitivity slider, clamped to its band. This is
+        the k shown in the SIGNAL LOWS header: it is global, the same
+        for every device, unlike the per-device effective k which also
+        carries each device's ladder rung."""
+        slider = int(
+            self.entry.options.get(
+                CONF_SIGNAL_SENSITIVITY, DEFAULT_SIGNAL_SENSITIVITY
+            )
+        )
+        return max(SIGNAL_SENSITIVITY_MIN, min(slider, SIGNAL_SENSITIVITY_MAX))
+
+    def _signal_effective_k(self, days: int) -> int:
+        """Return how many of the lowest readings the floor trims for
+        a device with this many non-rail days: the ladder rung shifted
+        by the slider, clamped so at least one reading survives."""
         if days >= 2 * SIGNAL_ARMING_DAYS:
             base_k = SIGNAL_TRIM_LADDER_FORTNIGHT
         elif days >= SIGNAL_ARMING_DAYS:
             base_k = SIGNAL_TRIM_LADDER_WEEK
         else:
             base_k = 0
-        slider = int(
-            self.entry.options.get(
-                CONF_SIGNAL_SENSITIVITY, DEFAULT_SIGNAL_SENSITIVITY
-            )
-        )
-        slider = max(SIGNAL_SENSITIVITY_MIN, min(slider, SIGNAL_SENSITIVITY_MAX))
-        effective_k = max(0, min(base_k + slider, days - 1))
-        return sorted(history)[effective_k]
+        return max(0, min(base_k + self._signal_slider(), days - 1))
 
     def signal_frozen(self, record: dict[str, Any]) -> bool:
         """Return whether this device's signal is frozen.
@@ -1044,13 +1063,6 @@ class DeviceSentinelCoordinator:
         ]
         return max(survivors), set_aside_indices
 
-    @staticmethod
-    def _signal_family(floor: float) -> str:
-        """Classify the unit family by sign: LQI-like indexes are
-        positive, dBm is negative. Display only; the dwell rule is
-        identical for both, below the floor is below the floor."""
-        return "LQI" if floor >= 0 else "RSSI"
-
     def _fmt_gap(self, seconds: Any) -> str:
         """Format a gap for the report."""
         if seconds is None:
@@ -1090,6 +1102,98 @@ class DeviceSentinelCoordinator:
                 parts.append(text)
         return ", ".join(parts)
 
+    def _format_signal_lows_cell(self, record: dict[str, Any]) -> str:
+        """Render the daily signal lows newest-first with the marks.
+
+        Three states, and a value is only ever one of them: the floor
+        is bold (the trimmed low that becomes the line), the trimmed-k
+        lowest are struck through (set aside so a spurious bad reading
+        does not define the floor), and rail fill values are italic
+        (seen and shown, but never fed to the floor). The trim here is
+        computed the same way the floor is, so the bolded value is
+        exactly the line the dwell column measures against.
+        """
+        stored = list(record.get(DEV_SIGNAL_DAILY_MIN) or [])
+        if not stored:
+            return "-"
+        rails = (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
+        history = [value for value in stored if value not in rails]
+        # The k lowest non-rail readings are trimmed; the next lowest
+        # is the floor. Mark by identity of position in sorted order,
+        # so repeated values are handled by count, not by equality.
+        floor_index = None
+        trimmed_positions: set[int] = set()
+        if history:
+            effective_k = self._signal_effective_k(len(history))
+            order = sorted(
+                range(len(history)), key=lambda i: history[i]
+            )
+            trimmed_positions = set(order[:effective_k])
+            floor_position = order[effective_k]
+            # Map the floor's position in history back to its position
+            # in the stored series, skipping rails and earlier lows.
+            floor_index = self._nth_non_rail_index(
+                stored, rails, floor_position
+            )
+            trimmed_stored = {
+                self._nth_non_rail_index(stored, rails, pos)
+                for pos in trimmed_positions
+            }
+        else:
+            trimmed_stored = set()
+        parts = []
+        for index in reversed(range(len(stored))):
+            value = stored[index]
+            text = f"{value:g}"
+            if value in rails:
+                parts.append(f"*{text}*")
+            elif index == floor_index:
+                parts.append(f"**{text}**")
+            elif index in trimmed_stored:
+                parts.append(f"~~{text}~~")
+            else:
+                parts.append(text)
+        return " ".join(parts)
+
+    @staticmethod
+    def _nth_non_rail_index(
+        stored: list[float],
+        rails: tuple[float, ...],
+        n: int,
+    ) -> int:
+        """Return the index in the stored series of the nth non-rail
+        value, so a mark computed over the rail-filtered history can
+        be placed back on the right cell in the full display."""
+        seen = 0
+        for index, value in enumerate(stored):
+            if value in rails:
+                continue
+            if seen == n:
+                return index
+            seen += 1
+        return -1
+
+    def _format_battery_cell(self, record: dict[str, Any]) -> str:
+        """Render the daily battery levels newest-first, with any
+        level at or below the low threshold bold. No trim and no
+        strike: every recorded level is a real reading, and the point
+        is the shape of the discharge over days, not an outlier. A
+        healthy battery holds flat then falls; the bold values are the
+        days it spent at or below the line."""
+        levels = list(record.get(DEV_BATTERY_DAILY) or [])
+        if not levels:
+            return "-"
+        threshold = self.low_threshold
+        parts = []
+        for index in reversed(range(len(levels))):
+            level = levels[index]
+            text = f"{level:g}"
+            if level <= threshold:
+                parts.append(f"**{text}**")
+            else:
+                parts.append(text)
+        return " ".join(parts)
+
     def _write_telemetry(
         self, report_directory: str, trigger: str
     ) -> None:
@@ -1115,18 +1219,22 @@ class DeviceSentinelCoordinator:
             f"Written {dt_util.now().isoformat(timespec='seconds')} "
             f"({trigger})",
             "",
-            f"Signal: LINE is the device's trimmed floor and the "
-            f"line is the floor; SIG LOWS are the daily minima it is "
-            f"chosen from (rail values 255/-128 never feed it). The "
+            f"All series read newest first. SIGNAL LOWS are each "
+            f"device's daily signal minima; the floor (the line dwell "
+            f"is measured against) is **bold**, the trimmed lowest "
+            f"readings are ~~struck~~, and rail fill values 255/-128 "
+            f"are *italic* (shown but never fed to the floor). The "
             f"trim grows with the soak (none under {SIGNAL_ARMING_DAYS} "
             f"days, drop 1 lowest at {SIGNAL_ARMING_DAYS}, drop 2 at "
             f"{2 * SIGNAL_ARMING_DAYS}), shifted by the sensitivity "
-            f"setting, which applies to readings going forward only. "
-            f"DWELL% is the share of each day spent at or below the "
-            f"line, newest first: healthy devices brushing their "
-            f"floor read 0-5 percent, which proves the line has "
-            f"teeth; sustained dwell is the anomaly, and outliers "
-            f"clustered in one room mean that room needs a router. "
+            f"setting shown as K in the header, which applies to "
+            f"readings going forward only. DWELL% is the share of "
+            f"each day spent at or below the floor: healthy devices "
+            f"brushing their floor read 0-5 percent, which proves the "
+            f"line has teeth; sustained dwell is the anomaly, and "
+            f"outliers clustered in one room mean that room needs a "
+            f"router. BAT LEVEL is the daily battery level, with any "
+            f"reading at or below the low threshold **bold**. SIG "
             f"FROZEN marks a signal whose value has not moved in a "
             f"day while the device kept reporting: the reading is "
             f"stale, not the link, and (rail) means it froze at the "
@@ -1147,11 +1255,11 @@ class DeviceSentinelCoordinator:
             f"{TAINT_DEBOUNCE_SECONDS} s, arming floor "
             f"{LEARNING_MIN_DAYS} days, keep {DAILY_MAX_KEEP} days.",
             "",
-            "| DEVICE | DAYS | WINDOW BASIS | GAPS (newest first) | "
-            "CLOCK | EVENTS | SIGNAL | SIG MIN | LINE | FAMILY | "
-            "SIG LOWS (newest first) | DWELL% (newest first) | "
-            "FROZEN |",
-            "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+            f"| DEVICE | DAYS | GAPS (K={TRIM_TOP_K}) | CLOCK | "
+            f"EVENTS | SIGNAL LOWS (K={self._signal_slider()}) | "
+            f"DWELL% | BAT LEVEL (floor {self.low_threshold:g}%) | "
+            f"SIG FROZEN |",
+            "|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
         for device_id, record in self.data[DATA_DEVICES].items():
@@ -1163,16 +1271,6 @@ class DeviceSentinelCoordinator:
             )
             daily_maximum_gaps = record.get(DEV_DAILY_MAX) or []
             operative, _ = self._trimmed_maximum(daily_maximum_gaps)
-            signal_minimum_candidates = list(
-                record.get(DEV_SIGNAL_DAILY_MIN) or []
-            )
-            if record.get(DEV_SIGNAL_TODAY_MIN) is not None:
-                signal_minimum_candidates.append(
-                    record[DEV_SIGNAL_TODAY_MIN]
-                )
-            line = self._danger_line(record)
-            family = self._signal_family(line) if line is not None else None
-            signal_lows = list(record.get(DEV_SIGNAL_DAILY_MIN) or [])
             rows.append(
                 (
                     device_name,
@@ -1183,14 +1281,9 @@ class DeviceSentinelCoordinator:
                     if device_id in self._last_seen_entity
                     else "clock",
                     int(record.get(DEV_EVENT_COUNT, 0)),
-                    record.get(DEV_SIGNAL_VALUE),
-                    min(signal_minimum_candidates)
-                    if signal_minimum_candidates
-                    else None,
-                    line,
-                    family,
-                    signal_lows,
+                    self._format_signal_lows_cell(record),
                     list(record.get(DEV_SIGNAL_DWELL_DAILY) or []),
+                    self._format_battery_cell(record),
                     self.signal_frozen(record),
                     self.signal_frozen_at_rail(record),
                     self._signal_excluded(device_id),
@@ -1204,30 +1297,13 @@ class DeviceSentinelCoordinator:
             maxima_cell,
             clock_source,
             event_count,
-            signal_value,
-            signal_minimum,
-            line,
-            family,
-            signal_lows,
+            lows_cell,
             dwell_daily,
+            battery_cell,
             frozen,
             frozen_rail,
             sig_excluded,
         ) in rows:
-            signal_text = "-" if signal_value is None else f"{signal_value:g}"
-            signal_minimum_text = (
-                "-" if signal_minimum is None else f"{signal_minimum:g}"
-            )
-            line_text = "-" if line is None else f"{line:g}"
-            family_text = family or "-"
-            # Newest first, matching the gaps column: the daily lows
-            # the floor is chosen from, visible so the line can be
-            # checked against the readings behind it.
-            lows_text = (
-                " ".join(f"{v:g}" for v in reversed(signal_lows))
-                if signal_lows
-                else "-"
-            )
             dwell_text = (
                 " ".join(f"{pct:g}" for pct in reversed(dwell_daily))
                 if dwell_daily
@@ -1247,9 +1323,8 @@ class DeviceSentinelCoordinator:
             lines.append(
                 f"| {device_name} | {day_count} | "
                 f"{self._fmt_gap(operative)} | {maxima_cell} | "
-                f"{clock_source} | {event_count} | {signal_text} | "
-                f"{signal_minimum_text} | {line_text} | {family_text} | "
-                f"{lows_text} | {dwell_text} | {frozen_text} |"
+                f"{clock_source} | {event_count} | {lows_cell} | "
+                f"{dwell_text} | {battery_cell} | {frozen_text} |"
             )
         lines.append("")
         lines.append(f"{len(rows)} watched devices.")
@@ -1897,23 +1972,28 @@ class DeviceSentinelCoordinator:
             for entity_id, (device_id, _) in self._entity_map.items()
         ]
 
-    async def async_enable_signal_entities(self) -> dict[str, int]:
-        """Enable integration-disabled last_seen and signal entities.
+    def _enable_matching_entities(
+        self,
+        matches: Callable[[er.RegistryEntry], bool],
+        kind: str,
+    ) -> dict[str, int]:
+        """Enable integration-disabled entities a matcher recognizes,
+        on watched devices. User-disabled entities are respected and
+        only counted, never re-enabled: a user who turned something
+        off meant it. Home Assistant reloads the owning config entries
+        automatically a short delay after enabling.
 
-        User-disabled entities are respected and only counted. Home
-        Assistant reloads the owning config entries automatically a
-        short delay after enabling.
+        Split by kind (signals, last_seen, battery) so a user can
+        enable exactly the diagnostic they want without turning on the
+        others. Each kind is its own button, its own press.
         """
         ent_reg = er.async_get(self.hass)
-        enabled_last_seen = 0
-        enabled_signal = 0
+        enabled = 0
         skipped_user = 0
         for ent in list(ent_reg.entities.values()):
             if ent.device_id not in self._watched:
                 continue
-            is_ls = self._is_last_seen(ent)
-            is_sig = self._is_signal(ent)
-            if not (is_ls or is_sig):
+            if not matches(ent):
                 continue
             if ent.disabled_by is None:
                 continue
@@ -1921,23 +2001,46 @@ class DeviceSentinelCoordinator:
                 skipped_user += 1
                 continue
             ent_reg.async_update_entity(ent.entity_id, disabled_by=None)
-            if is_ls:
-                enabled_last_seen += 1
-            else:
-                enabled_signal += 1
+            enabled += 1
         LOGGER.info(
-            "Enable assist: enabled %d last_seen and %d signal "
-            "entities; %d left alone because a user disabled them. "
-            "Home Assistant reloads the owning integrations shortly",
-            enabled_last_seen,
-            enabled_signal,
+            "Enable %s: enabled %d entities; %d left alone because a "
+            "user disabled them. Home Assistant reloads the owning "
+            "integrations shortly",
+            kind,
+            enabled,
             skipped_user,
         )
-        return {
-            "last_seen": enabled_last_seen,
-            "signal": enabled_signal,
-            "skipped_user": skipped_user,
-        }
+        return {"enabled": enabled, "skipped_user": skipped_user}
+
+    async def async_enable_signal_entities(self) -> dict[str, int]:
+        """Enable integration-disabled signal-strength entities."""
+        return self._enable_matching_entities(self._is_signal, "signals")
+
+    async def async_enable_last_seen_entities(self) -> dict[str, int]:
+        """Enable integration-disabled last_seen entities."""
+        return self._enable_matching_entities(
+            self._is_last_seen, "last_seen"
+        )
+
+    async def async_enable_battery_entities(self) -> dict[str, int]:
+        """Enable integration-disabled battery-percentage entities.
+
+        Percentage batteries only (the sensor, not the binary low
+        flag): the percentage is what the discharge series records,
+        and the low flag is caught by the battery threshold whether
+        or not this entity is on.
+        """
+        return self._enable_matching_entities(
+            self._is_battery_percentage, "battery"
+        )
+
+    @staticmethod
+    def _is_battery_percentage(ent: er.RegistryEntry) -> bool:
+        """Recognize a battery-percentage sensor, excluding the binary
+        low flag. The percentage is what feeds the discharge series."""
+        if str(ent.original_device_class or ent.device_class) != "battery":
+            return False
+        return ent.entity_id.startswith("sensor.")
 
     @property
     def clock_source_split(self) -> dict[str, Any]:
