@@ -247,12 +247,21 @@ def _frozen_ready_record():
     )
     import homeassistant.util.dt as dt_util
 
+    from custom_components.device_sentinel.const import (
+        DEV_SIGNAL_VALUE,
+        SIGNAL_RAIL_LQI,
+    )
+
     record = _armed_lqi_record()
     now = dt_util.utcnow().timestamp()
     # A rhythm of ~1 hour (the trimmed maximum of these daily gaps).
     record[DEV_DAILY_MAX] = [3600.0, 3500.0, 3400.0, 3600.0, 3550.0,
                              3400.0, 3600.0]
     record[DEV_LAST_ACTIVITY] = now - 60  # reported a minute ago
+    # Frozen is the rail case only, so a frozen-ready record holds the
+    # rail value; tests that want the not-frozen plausible case set a
+    # real value themselves.
+    record[DEV_SIGNAL_VALUE] = SIGNAL_RAIL_LQI
     return record
 
 
@@ -299,16 +308,18 @@ async def test_frozen_needs_a_learned_rhythm(hass: HomeAssistant):
     assert coord.signal_frozen(record) is False
 
 
-async def test_frozen_at_a_real_value_is_frozen_but_not_rail(
+async def test_a_steady_plausible_value_is_not_frozen(
     hass: HomeAssistant,
 ):
-    """The dangerous case: stuck at a plausible number. Frozen, but
-    flagged apart from a rail freeze so a user can weigh it."""
+    """The plausible-value case was removed (ruled 2026-07-19 eve): a
+    real reading held steady is a healthy stable link, not frozen. A
+    whole family of motion-blind devices proved this by flagging
+    falsely. Only the rail is frozen now."""
     coord = await _coordinator(hass)
     record = _frozen_ready_record()
-    record[DEV_SIGNAL_VALUE] = 80.0
+    record[DEV_SIGNAL_VALUE] = 80.0  # a plausible value, not a rail
     record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
-    assert coord.signal_frozen(record) is True
+    assert coord.signal_frozen(record) is False
     assert coord.signal_frozen_at_rail(record) is False
 
 
@@ -317,6 +328,7 @@ async def test_frozen_at_rail_is_flagged(hass: HomeAssistant):
     record = _frozen_ready_record()
     record[DEV_SIGNAL_VALUE] = SIGNAL_RAIL_LQI
     record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
+    assert coord.signal_frozen(record) is True
     assert coord.signal_frozen_at_rail(record) is True
 
 
@@ -325,12 +337,13 @@ async def test_the_counter_climbs_and_resets(hass: HomeAssistant):
     resets it. Five identical, on a lively device, is frozen."""
     coord = await _coordinator(hass)
     record = _frozen_ready_record()
-    # Same value five times: counter reaches the threshold.
+    # Same rail value five times: counter reaches the threshold and,
+    # because it is the rail, the device reads frozen.
     for tick in range(5):
-        coord._feed_signal(record, 80.0, 1000.0 + tick)
+        coord._feed_signal(record, SIGNAL_RAIL_LQI, 1000.0 + tick)
     assert record[DEV_SIGNAL_REPEAT_COUNT] == 5
     assert coord.signal_frozen(record) is True
-    # A different reading resets the counter to 1: no longer frozen.
+    # A real reading resets the counter and clears the freeze.
     coord._feed_signal(record, 84.0, 2000.0)
     assert record[DEV_SIGNAL_REPEAT_COUNT] == 1
     assert coord.signal_frozen(record) is False
