@@ -18,7 +18,6 @@ through a real options flow, because the helpers are where the ruling
 lives and a schema change should not be able to quietly retire it.
 """
 
-import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -29,14 +28,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.device_sentinel.config_flow import (
     DeviceSentinelOptionsFlow,
     _devices_covered_by,
-    _entities_covered_by,
 )
 from custom_components.device_sentinel.const import (
     CONF_BATTERY_EXCLUDED_DEVICES,
     CONF_BATTERY_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_EXCLUDED_LABELS,
     CONF_EXCLUDED_DEVICES,
-    CONF_EXCLUDED_ENTITIES,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_EXCLUDED_LABELS,
     DEAD_OPTION_KEYS,
@@ -99,37 +96,6 @@ def test_coverage_is_positive_only():
     assert _devices_covered_by(rows, ["spook"], ["ice"]) == set()
 
 
-def test_entity_covered_by_integration_label_or_device():
-    rows = [
-        {
-            "entity_id": "sensor.one",
-            "device_id": "a",
-            "integration": "spook",
-            "labels": frozenset(),
-        },
-        {
-            "entity_id": "sensor.two",
-            "device_id": "b",
-            "integration": "zha",
-            "labels": frozenset({"ice"}),
-        },
-        {
-            "entity_id": "sensor.three",
-            "device_id": "c",
-            "integration": "zha",
-            "labels": frozenset(),
-        },
-        {
-            "entity_id": "sensor.four",
-            "device_id": "d",
-            "integration": "zha",
-            "labels": frozenset(),
-        },
-    ]
-    covered = _entities_covered_by(rows, ["spook"], ["ice"], ["c"])
-    assert covered == {"sensor.one", "sensor.two", "sensor.three"}
-
-
 def test_prune_drops_superseded_device_pick():
     rows = [
         {"device_id": "a", "integration": "spook", "labels": frozenset()},
@@ -139,7 +105,6 @@ def test_prune_drops_superseded_device_pick():
             CONF_EXCLUDED_INTEGRATIONS: ["spook"],
             CONF_EXCLUDED_LABELS: [],
             CONF_EXCLUDED_DEVICES: ["a"],
-            CONF_EXCLUDED_ENTITIES: [],
         },
         rows,
         [],
@@ -166,13 +131,11 @@ def test_prune_settles_the_whole_ladder_in_one_save():
             CONF_EXCLUDED_INTEGRATIONS: ["spook"],
             CONF_EXCLUDED_LABELS: [],
             CONF_EXCLUDED_DEVICES: ["a"],
-            CONF_EXCLUDED_ENTITIES: ["sensor.one"],
         },
         device_rows,
         entity_rows,
     )
     assert pruned[CONF_EXCLUDED_DEVICES] == []
-    assert pruned[CONF_EXCLUDED_ENTITIES] == []
 
 
 def test_prune_keeps_picks_no_broader_kind_covers():
@@ -196,41 +159,11 @@ def test_prune_keeps_picks_no_broader_kind_covers():
             CONF_EXCLUDED_INTEGRATIONS: ["spook"],
             CONF_EXCLUDED_LABELS: [],
             CONF_EXCLUDED_DEVICES: ["a"],
-            CONF_EXCLUDED_ENTITIES: ["sensor.one"],
         },
         device_rows,
         entity_rows,
     )
     assert pruned[CONF_EXCLUDED_DEVICES] == ["a"]
-    assert pruned[CONF_EXCLUDED_ENTITIES] == ["sensor.one"]
-
-
-def test_device_pick_prunes_its_own_entity_picks():
-    """Device is broader than entity, so excluding a device drops any
-    entity pick beneath it."""
-    device_rows = [
-        {"device_id": "a", "integration": "zha", "labels": frozenset()},
-    ]
-    entity_rows = [
-        {
-            "entity_id": "sensor.one",
-            "device_id": "a",
-            "integration": "zha",
-            "labels": frozenset(),
-        },
-    ]
-    pruned = DeviceSentinelOptionsFlow._pruned_exclusion_input(
-        {
-            CONF_EXCLUDED_INTEGRATIONS: [],
-            CONF_EXCLUDED_LABELS: [],
-            CONF_EXCLUDED_DEVICES: ["a"],
-            CONF_EXCLUDED_ENTITIES: ["sensor.one"],
-        },
-        device_rows,
-        entity_rows,
-    )
-    assert pruned[CONF_EXCLUDED_DEVICES] == ["a"]
-    assert pruned[CONF_EXCLUDED_ENTITIES] == []
 
 
 def test_battery_prune_drops_superseded_device_pick():
@@ -425,76 +358,12 @@ async def test_options_flow_prunes_on_save(hass: HomeAssistant):
             CONF_EXCLUDED_INTEGRATIONS: ["test"],
             CONF_EXCLUDED_LABELS: [],
             CONF_EXCLUDED_DEVICES: [device.id],
-            CONF_EXCLUDED_ENTITIES: [],
         },
     )
     await hass.async_block_till_done()
     assert result["type"] == "create_entry"
     assert entry.options[CONF_EXCLUDED_DEVICES] == []
     assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == ["test"]
-
-
-async def test_options_flow_prunes_picks_made_in_the_same_save(
-    hass: HomeAssistant,
-):
-    """The half render-time filtering cannot reach: the form offered
-    the entity because nothing covered it when it was drawn, and the
-    same submission then excludes its integration. Only the prune on
-    save catches this, which is why the prune exists rather than
-    trusting the frontend to withhold the field.
-    """
-    source = MockConfigEntry(domain="test")
-    source.add_to_hass(hass)
-    device, entity_id = _device(hass, source, 8)
-    entry = await _setup(hass)
-
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "exclusions"}
-    )
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {
-            CONF_EXCLUDED_INTEGRATIONS: ["test"],
-            CONF_EXCLUDED_LABELS: [],
-            CONF_EXCLUDED_DEVICES: [device.id],
-            CONF_EXCLUDED_ENTITIES: [entity_id],
-        },
-    )
-    await hass.async_block_till_done()
-    assert result["type"] == "create_entry"
-    assert entry.options[CONF_EXCLUDED_DEVICES] == []
-    assert entry.options[CONF_EXCLUDED_ENTITIES] == []
-
-
-async def test_entity_picker_refuses_a_covered_entity(
-    hass: HomeAssistant,
-):
-    """exclude_entities is a validator, not merely a UI filter: the
-    picker rejects an entity a standing exclusion already covers, so
-    the ladder holds even against a hand-built submission."""
-    import voluptuous as vol
-
-    source = MockConfigEntry(domain="test")
-    source.add_to_hass(hass)
-    device, entity_id = _device(hass, source, 9)
-    entry = await _setup(
-        hass, options={CONF_EXCLUDED_INTEGRATIONS: ["test"]}
-    )
-
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "exclusions"}
-    )
-    with pytest.raises(vol.Invalid):
-        result["data_schema"](
-            {
-                CONF_EXCLUDED_INTEGRATIONS: ["test"],
-                CONF_EXCLUDED_LABELS: [],
-                CONF_EXCLUDED_DEVICES: [],
-                CONF_EXCLUDED_ENTITIES: [entity_id],
-            }
-        )
 
 
 async def test_options_flow_hides_covered_devices(hass: HomeAssistant):
