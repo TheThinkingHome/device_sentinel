@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.5 (2026-07-19)
+#   Version: 0.4.6 (2026-07-19)
 
 """Constants for the Device Sentinel integration."""
 
@@ -266,6 +266,11 @@ SIGNAL_RAIL_RSSI = -128.0
 SIGNAL_FROZEN_REPEAT_COUNT = 5
 SIGNAL_FROZEN_LIVELY_MULTIPLE = 2
 DEV_SIGNAL_REPEAT_COUNT = "signal_repeat_count"
+# The last frozen verdict published for this device, kept so the feed
+# can refresh the Signals Frozen entity only when the verdict actually
+# flips, not on every reading. Without this the entity showed stale
+# counts between the unrelated refreshes that happened to fire.
+DEV_SIGNAL_FROZEN_VERDICT = "signal_frozen_verdict"
 
 # Notification backbone (0.3.3, mirrored to Sentinel Notify at 0.3.4).
 # The configuration surface only: where high and normal pushes go,
