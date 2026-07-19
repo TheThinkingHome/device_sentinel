@@ -49,15 +49,13 @@
       },
       "exclusions": {
         "title": "Global Exclusions",
-        "description": "Globally excluded items are never reported, by any part of Device Sentinel, but they are still watched and their habits are learned, so undoing an exclusion is instant and nothing is lost.\n\nThe four lists run broad to narrow: integration, label, device, entity. When you exclude at a higher level and save, everything it covers disappears as a choice from the lists below it: exclude an integration and its devices and entities no longer appear and do not need to be removed individually, because the integration already covers them.\n\nFull documentation: {wiki_link}",
+        "description": "Globally excluded items are never reported, by any part of Device Sentinel, but they are still watched and their habits are learned, so undoing an exclusion is instant and nothing is lost.\n\nThe three lists run broad to narrow: integration, label, device. When you exclude at a higher level and save, everything it covers disappears as a choice from the lists below it: exclude an integration and its devices no longer appear and do not need to be removed individually, because the integration already covers them.\n\nFull documentation: {wiki_link}",
         "data": {
-          "excluded_entities": "Excluded entities",
           "excluded_devices": "Excluded devices",
           "excluded_labels": "Excluded labels",
           "excluded_integrations": "Excluded integrations"
         },
         "data_description": {
-          "excluded_entities": "These entities are never reported.",
           "excluded_devices": "These devices are never reported.",
           "excluded_labels": "Devices and entities carrying these labels are excluded. This is the one exclusion you can set without opening this dialog: tag the device or entity from its own page.",
           "excluded_integrations": "Excludes every device the integration owns. Hardware it merely sees but does not own is not caught: a router tracking a camera does not drag the camera with it."
