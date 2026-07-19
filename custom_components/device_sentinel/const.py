@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.3 (2026-07-19)
+#   Version: 0.4.5 (2026-07-19)
 
 """Constants for the Device Sentinel integration."""
 
@@ -249,17 +249,23 @@ CONF_SIGNAL_EXCLUDED_LABELS = "signal_excluded_labels"
 SIGNAL_RAIL_LQI = 255.0
 SIGNAL_RAIL_RSSI = -128.0
 
-# A signal is frozen once its value has not changed for this long
-# while the device kept reporting (last_seen advancing). A signal
-# that never moves is not reporting, whatever value it is frozen at:
-# the rail values (255, -128) are the obvious case, but a value stuck
-# at a plausible reading is the more dangerous one, because nothing
-# looks wrong. The window is a full day: long enough that a genuinely
-# rock-steady link or a sleepy end device is not accused, short
-# enough that the nightly report names a real freeze the day it
-# happens. Ruled 2026-07-18, generalized from the rail case the same
-# day when five sensors proved a frozen attribute reads healthy.
-SIGNAL_FROZEN_SECONDS = 24 * 3600
+# A signal is frozen when two things are true (ruled 2026-07-19,
+# replacing the fixed 24-hour window that could not tell a fast
+# reporter from a slow one). First, the device is lively by its own
+# rhythm: it has reported within SIGNAL_FROZEN_LIVELY_MULTIPLE times
+# its learned window basis, so a device that has genuinely gone quiet
+# is a device freeze, not a signal freeze. Second, the signal value
+# has been identical across the last SIGNAL_FROZEN_REPEAT_COUNT
+# reports. Counting reports rather than elapsed time is what makes
+# one rule fit both a sensor reporting every few seconds and one
+# reporting every few hours: a real LQI wobbles a point or two every
+# reading, so several identical readings in a row is stuck whatever
+# the interval between them. Rail values (255, -128) reach the count
+# the same way and are the clearest frozen case; a plausible value
+# stuck is the dangerous one because nothing looks wrong.
+SIGNAL_FROZEN_REPEAT_COUNT = 5
+SIGNAL_FROZEN_LIVELY_MULTIPLE = 2
+DEV_SIGNAL_REPEAT_COUNT = "signal_repeat_count"
 
 # Notification backbone (0.3.3, mirrored to Sentinel Notify at 0.3.4).
 # The configuration surface only: where high and normal pushes go,
