@@ -25,9 +25,10 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.device_sentinel.const import (
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_MIN,
-    DEV_SIGNAL_LAST_CHANGE,
+    DEV_DAILY_MAX,
+    DEV_SIGNAL_REPEAT_COUNT,
     DEV_SIGNAL_VALUE,
-    SIGNAL_FROZEN_SECONDS,
+    SIGNAL_FROZEN_REPEAT_COUNT,
     SIGNAL_RAIL_LQI,
     UNIT_SIGNALS,
 )
@@ -95,7 +96,11 @@ async def test_frozen_counts_and_lists_faults_first(hass: HomeAssistant):
         record = coord.data["devices"][device.id]
         record[DEV_SIGNAL_DAILY_MIN] = [80, 96, 88, 80, 104, 92, 80]
         record[DEV_SIGNAL_VALUE] = value
-        record[DEV_SIGNAL_LAST_CHANGE] = now - SIGNAL_FROZEN_SECONDS - 1
+        # Frozen under the new rule: the repeat count at the threshold,
+        # a learned rhythm, and lively recent activity.
+        record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
+        record[DEV_DAILY_MAX] = [3600.0, 3500.0, 3400.0, 3600.0,
+                                 3550.0, 3400.0, 3600.0]
         record[DEV_LAST_ACTIVITY] = now - 60
     coord._notify()
     await hass.async_block_till_done()
