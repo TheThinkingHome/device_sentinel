@@ -164,7 +164,7 @@ async def test_excluded_device_still_records_but_is_not_reported(
 ):
     """The living room router plug case: excluded from reporting, but
     its floor and dwell keep accumulating in storage so re-including
-    it is instant. The report shows excl; the frozen list skips it."""
+    it is instant. The report shows excl; the problem list skips it."""
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device = dr.async_get(hass).async_get_or_create(
@@ -190,7 +190,7 @@ async def test_excluded_device_still_records_but_is_not_reported(
     # Not judged: absent from the frozen list regardless of state.
     assert all(
         row["name"] != "LR Router Plug"
-        for row in coord.signal_frozen_list
+        for row in coord.signal_problem_list
     )
     # The report marks it excl in the dwell and frozen columns.
     await hass.async_add_executor_job(coord._write_reports)
@@ -200,8 +200,8 @@ async def test_excluded_device_still_records_but_is_not_reported(
     row = next(
         line for line in text.splitlines() if "LR Router Plug" in line
     )
-    # excl in the dwell and SIG FROZEN columns; the battery column
-    # between them is "-" since this plug reports no battery.
-    assert "| excl | - | excl |" in row
+    # excl in the dwell column; the battery column after is "-"
+    # since this plug reports no battery. There is no frozen column.
+    assert "| excl | - |" in row
     # But the daily lows are still shown, floor bold: not hidden.
     assert "88 96 **80**" in row
