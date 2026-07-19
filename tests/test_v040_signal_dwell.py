@@ -35,16 +35,12 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_BELOW_SINCE,
     DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_DAILY_MIN,
-    DEV_SIGNAL_REPEAT_COUNT,
     DEV_SIGNAL_DWELL_DAILY,
-    DEV_SIGNAL_FROZEN_AT,
     DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
-    SIGNAL_FROZEN_LIVELY_MULTIPLE,
-    SIGNAL_FROZEN_REPEAT_COUNT,
 )
 from custom_components.device_sentinel.coordinator import (
     _new_device_record,
@@ -236,127 +232,6 @@ async def test_a_changed_reading_moves_the_frozen_clock(
     assert record[DEV_SIGNAL_TODAY_MIN] == 116.0
 
 
-def _frozen_ready_record():
-    """A record set up to be judgeable for freeze: an established
-    signal floor, a learned rhythm so Check 1 can run, and lively
-    recent activity. The repeat counter is left for each test to set.
-    """
-    from custom_components.device_sentinel.const import (
-        DEV_DAILY_MAX,
-        DEV_LAST_ACTIVITY,
-    )
-    import homeassistant.util.dt as dt_util
-
-    from custom_components.device_sentinel.const import (
-        DEV_SIGNAL_VALUE,
-        SIGNAL_RAIL_LQI,
-    )
-
-    record = _armed_lqi_record()
-    now = dt_util.utcnow().timestamp()
-    # A rhythm of ~1 hour (the trimmed maximum of these daily gaps).
-    record[DEV_DAILY_MAX] = [3600.0, 3500.0, 3400.0, 3600.0, 3550.0,
-                             3400.0, 3600.0]
-    record[DEV_LAST_ACTIVITY] = now - 60  # reported a minute ago
-    # Frozen is the rail case only, so a frozen-ready record holds the
-    # rail value; tests that want the not-frozen plausible case set a
-    # real value themselves.
-    record[DEV_SIGNAL_VALUE] = SIGNAL_RAIL_LQI
-    return record
-
-
-async def test_frozen_needs_the_repeat_count_on_a_live_device(
-    hass: HomeAssistant,
-):
-    """One below the repeat threshold is not frozen; at the threshold,
-    on a lively device, it is."""
-    coord = await _coordinator(hass)
-    record = _frozen_ready_record()
-    record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT - 1
-    assert coord.signal_frozen(record) is False
-    record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
-    assert coord.signal_frozen(record) is True
-
-
-async def test_frozen_requires_a_live_device(hass: HomeAssistant):
-    """A stuck value on a device gone quiet beyond its own rhythm is a
-    device freeze, not a signal freeze: Check 1 fails."""
-    import homeassistant.util.dt as dt_util
-
-    from custom_components.device_sentinel.const import DEV_LAST_ACTIVITY
-
-    coord = await _coordinator(hass)
-    record = _frozen_ready_record()
-    record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
-    now = dt_util.utcnow().timestamp()
-    # Quiet for well beyond the lively multiple of the ~1h rhythm.
-    record[DEV_LAST_ACTIVITY] = now - (
-        SIGNAL_FROZEN_LIVELY_MULTIPLE * 3600 + 3600
-    )
-    assert coord.signal_frozen(record) is False
-
-
-async def test_frozen_needs_a_learned_rhythm(hass: HomeAssistant):
-    """With no rhythm yet, the device cannot be judged lively, so it
-    is never called frozen, the conservative default."""
-    from custom_components.device_sentinel.const import DEV_DAILY_MAX
-
-    coord = await _coordinator(hass)
-    record = _frozen_ready_record()
-    record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
-    record[DEV_DAILY_MAX] = []  # no learned rhythm
-    assert coord.signal_frozen(record) is False
-
-
-async def test_a_steady_plausible_value_is_not_frozen(
-    hass: HomeAssistant,
-):
-    """The plausible-value case was removed (ruled 2026-07-19 eve): a
-    real reading held steady is a healthy stable link, not frozen. A
-    whole family of motion-blind devices proved this by flagging
-    falsely. Only the rail is frozen now."""
-    coord = await _coordinator(hass)
-    record = _frozen_ready_record()
-    record[DEV_SIGNAL_VALUE] = 80.0  # a plausible value, not a rail
-    record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
-    assert coord.signal_frozen(record) is False
-    assert coord.signal_frozen_at_rail(record) is False
-
-
-async def test_frozen_at_rail_is_flagged(hass: HomeAssistant):
-    coord = await _coordinator(hass)
-    record = _frozen_ready_record()
-    record[DEV_SIGNAL_VALUE] = SIGNAL_RAIL_LQI
-    record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
-    assert coord.signal_frozen(record) is True
-    assert coord.signal_frozen_at_rail(record) is True
-
-
-async def test_the_counter_climbs_and_resets(hass: HomeAssistant):
-    """Identical readings climb the counter; a different reading
-    resets it. Five identical, on a lively device, is frozen."""
-    coord = await _coordinator(hass)
-    record = _frozen_ready_record()
-    # Same rail value five times: counter reaches the threshold and,
-    # because it is the rail, the device reads frozen.
-    for tick in range(5):
-        coord._feed_signal(record, SIGNAL_RAIL_LQI, 1000.0 + tick)
-    assert record[DEV_SIGNAL_REPEAT_COUNT] == 5
-    assert coord.signal_frozen(record) is True
-    # A real reading resets the counter and clears the freeze.
-    coord._feed_signal(record, 84.0, 2000.0)
-    assert record[DEV_SIGNAL_REPEAT_COUNT] == 1
-    assert coord.signal_frozen(record) is False
-
-
-async def test_a_moving_signal_is_never_frozen(hass: HomeAssistant):
-    coord = await _coordinator(hass)
-    record = _frozen_ready_record()
-    coord._feed_signal(record, 80.0, 1000.0)
-    coord._feed_signal(record, 96.0, 2000.0)
-    assert coord.signal_frozen(record) is False
-
-
 # Persistence: the timers survive a restart.
 
 
@@ -401,8 +276,7 @@ async def test_pre_040_storage_gains_the_new_fields(hass: HomeAssistant):
         DEV_SIGNAL_BELOW_TODAY,
         DEV_SIGNAL_DWELL_DAILY,
         DEV_SIGNAL_LAST_CHANGE,
-        DEV_SIGNAL_FROZEN_AT,
-    ):
+        ):
         old.pop(key, None)
     await coord._store.async_save(coord.data)
 
@@ -415,4 +289,3 @@ async def test_pre_040_storage_gains_the_new_fields(hass: HomeAssistant):
     assert migrated[DEV_SIGNAL_BELOW_TODAY] == 0.0
     assert migrated[DEV_SIGNAL_DWELL_DAILY] == []
     assert migrated[DEV_SIGNAL_LAST_CHANGE] is None
-    assert migrated[DEV_SIGNAL_FROZEN_AT] is None
