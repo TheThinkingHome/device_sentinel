@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.6 (2026-07-19)
+#   Version: 0.4.8 (2026-07-19)
 
 """Constants for the Device Sentinel integration."""
 
@@ -88,14 +88,10 @@ DEV_SIGNAL_DAILY_MIN = "signal_daily_min"
 DEV_SIGNAL_BELOW_SINCE = "signal_below_since"
 DEV_SIGNAL_BELOW_TODAY = "signal_below_today_seconds"
 DEV_SIGNAL_DWELL_DAILY = "signal_dwell_daily_pct"
-# The frozen detector. last_change is when the signal value last
-# actually moved; a value that stays put while the device keeps
-# reporting is frozen once the gap since last_change passes
-# SIGNAL_FROZEN_SECONDS. The rail flag records whether the frozen
-# value is a fill value (255, -128), which raises confidence that the
-# freeze is a fault rather than a genuinely steady link.
+# last_change is when the signal value last actually moved. Kept for
+# the dwell timer and diagnostics; the rail detector reads the daily
+# low series, not this.
 DEV_SIGNAL_LAST_CHANGE = "signal_last_change"
-DEV_SIGNAL_FROZEN_AT = "signal_frozen_at"
 
 # Signal-entity recognition terms (Z2M sets no device class on
 # linkquality; ZHA/Z-Wave use device_class signal_strength).
@@ -175,10 +171,12 @@ DEV_BATTERY_VALUE = "battery_value"
 # waited on the floor.
 DEV_BATTERY_DAILY = "battery_daily_value"
 
-SENTINEL_TYPE_BATTERY_COUNT = "battery_low_count"
-SENTINEL_TYPE_BATTERY_LIST = "battery_low_list"
-SENTINEL_TYPE_SIGNAL_TRACKED = "signal_tracked"
-SENTINEL_TYPE_SIGNAL_FROZEN = "signal_frozen"
+SENTINEL_TYPE_LOW_BATTERIES = "low_batteries"
+SENTINEL_TYPE_SIGNAL_PROBLEMS = "signal_problems"
+SENTINEL_TYPE_FROZEN_DEVICES = "frozen_devices"
+SENTINEL_TYPE_TRACKED_SIGNALS = "tracked_signals"
+SENTINEL_TYPE_TRACKED_BATTERIES = "tracked_batteries"
+SENTINEL_TYPE_TRACKED_DEVICES = "tracked_devices"
 
 # Signal preview (0.3.1, display-only). The floor is the trimmed
 # minimum of the rolling daily signal minima (mirror of the gap
@@ -249,28 +247,15 @@ CONF_SIGNAL_EXCLUDED_LABELS = "signal_excluded_labels"
 SIGNAL_RAIL_LQI = 255.0
 SIGNAL_RAIL_RSSI = -128.0
 
-# A signal is frozen when two things are true (ruled 2026-07-19,
-# replacing the fixed 24-hour window that could not tell a fast
-# reporter from a slow one). First, the device is lively by its own
-# rhythm: it has reported within SIGNAL_FROZEN_LIVELY_MULTIPLE times
-# its learned window basis, so a device that has genuinely gone quiet
-# is a device freeze, not a signal freeze. Second, the signal value
-# has been identical across the last SIGNAL_FROZEN_REPEAT_COUNT
-# reports. Counting reports rather than elapsed time is what makes
-# one rule fit both a sensor reporting every few seconds and one
-# reporting every few hours: a real LQI wobbles a point or two every
-# reading, so several identical readings in a row is stuck whatever
-# the interval between them. Rail values (255, -128) reach the count
-# the same way and are the clearest frozen case; a plausible value
-# stuck is the dangerous one because nothing looks wrong.
-SIGNAL_FROZEN_REPEAT_COUNT = 5
-SIGNAL_FROZEN_LIVELY_MULTIPLE = 2
-DEV_SIGNAL_REPEAT_COUNT = "signal_repeat_count"
-# The last frozen verdict published for this device, kept so the feed
-# can refresh the Signals Frozen entity only when the verdict actually
-# flips, not on every reading. Without this the entity showed stale
-# counts between the unrelated refreshes that happened to fire.
-DEV_SIGNAL_FROZEN_VERDICT = "signal_frozen_verdict"
+# A signal is railed when its daily low sits at the fill value (255,
+# -128) for this many consecutive days (ruled 2026-07-19 evening). The
+# live repeat counter that preceded this was removed with the frozen
+# rework: it could not tell a stuck signal from a healthy steady link,
+# because some devices report the same value for hours. Reading the
+# daily-low series instead means a rail that comes and goes within a
+# day never confirms, while one that holds across days does, with no
+# per-reading state to keep.
+RAIL_CONFIRM_DAYS = 3
 
 # Notification backbone (0.3.3, mirrored to Sentinel Notify at 0.3.4).
 # The configuration surface only: where high and normal pushes go,
@@ -345,7 +330,6 @@ TODO_KIND_SIGNAL = "signal"
 # letting it also switch off monitoring means a room reorganization
 # silently changes what is watched. A label carries one meaning and
 # is set for one reason, which is what this surface needs.
-CONF_EXCLUDED_ENTITIES = "excluded_entities"
 CONF_EXCLUDED_DEVICES = "excluded_devices"
 CONF_EXCLUDED_LABELS = "excluded_labels"
 CONF_EXCLUDED_INTEGRATIONS = "excluded_integrations"
