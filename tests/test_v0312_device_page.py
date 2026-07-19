@@ -130,8 +130,9 @@ async def test_renamed_entities_exist_at_their_new_ids(
         "sensor.device_sentinel_devices_learned",
         "sensor.device_sentinel_service_devices_ignored",
         "todo.device_sentinel_problem_list",
-        "button.device_sentinel_scan_and_enable_signal_and"
-        "_last_seen_entities",
+        "button.device_sentinel_enable_signals",
+        "button.device_sentinel_enable_last_seen",
+        "button.device_sentinel_enable_battery",
     ):
         assert hass.states.get(entity_id) is not None, entity_id
 
@@ -143,7 +144,8 @@ async def test_old_entity_ids_are_gone(hass: HomeAssistant):
         "sensor.device_sentinel_learning_progress",
         "sensor.device_sentinel_classification",
         "todo.device_sentinel",
-        "button.device_sentinel_enable_signal_entities",
+        "button.device_sentinel_scan_and_enable_signal_and"
+        "_last_seen_entities",
     ):
         assert hass.states.get(entity_id) is None, entity_id
 
