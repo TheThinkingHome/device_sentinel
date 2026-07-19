@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.2 (2026-07-18)
+#   Version: 0.4.3 (2026-07-19)
 
 """Constants for the Device Sentinel integration."""
 
@@ -191,17 +191,52 @@ SENTINEL_TYPE_SIGNAL_FROZEN = "signal_frozen"
 # data before any detection acts on them.
 SIGNAL_ARMING_DAYS = 7
 
-# The danger lines (ruled 2026-07-18, starting values for the dwell
-# soak; a default is set only after a week of dwell data). Two
-# formulas because the scales are physically different: LQI is a
-# near-linear 0-255 index, so its line is a fraction of the device's
-# own floor (a fixed offset or a multiplier both break at the ends of
-# the real 32-224 range); RSSI is logarithmic dBm, where every 10 dB
-# is a tenfold power change, so its line is a fixed decibel offset
-# below the floor. The 1-10 sensitivity slider maps onto these once
-# the soak justifies its curve; until then they are constants.
-SIGNAL_LQI_DANGER_FACTOR = 0.70
-SIGNAL_RSSI_DANGER_OFFSET = 8.0
+# The floor is the line (ruled 2026-07-19, replacing the 70 percent
+# factor and the dB offset after the first clean dwell day read
+# near-zero across the whole fleet). Dwell counts time spent at or
+# below the device's own trimmed floor. A line set below the floor
+# could only catch catastrophe, so it read zero on every healthy day
+# and proved nothing; a line at the trimmed floor is brushed by a
+# healthy device on its bad moments (the small 0 to 5 percent that
+# proves the detector has teeth) and clearly exceeded by a device
+# living at its lows (the anomaly). One rule for both scales: below
+# is below, whether the number is an LQI index or negative dBm.
+#
+# The floor is chosen by a trim ladder that grows with the soak:
+# under a week no reading is dropped, at a week the single lowest is,
+# at two weeks the two lowest are, so the floor settles from "worst
+# ever seen" to "typical worst" as the history earns trust. The trim
+# drops the LOWEST values, the opposite of the rhythm trim which
+# drops the highest, because for signal the spuriously bad reading is
+# the anomaly to set aside.
+SIGNAL_TRIM_LADDER_WEEK = 1
+SIGNAL_TRIM_LADDER_FORTNIGHT = 2
+
+# The user's sensitivity adjustment, added to the ladder's k and
+# clamped so the effective k always leaves at least one reading to be
+# the floor. Left (negative) trims less: the floor sits at the rawest
+# low and is rarely crossed. Right (positive) trims more: the floor
+# sits higher and is brushed more often. Not retroactive: a change
+# recomputes the floor for readings that follow; time already counted
+# stays counted, so a full clean day is needed to see its true
+# effect, which is why this lives on the config screen rather than as
+# a live entity.
+CONF_SIGNAL_SENSITIVITY = "signal_sensitivity"
+DEFAULT_SIGNAL_SENSITIVITY = 0
+SIGNAL_SENSITIVITY_MIN = -2
+SIGNAL_SENSITIVITY_MAX = 2
+
+# Signal-only excludes, the same broad-to-narrow ladder as battery:
+# integration, label, device. Exclusion suppresses judgment, not
+# observation: an excluded device keeps recording its floor and dwell
+# in storage, so re-including it is instant and arrives with history;
+# it simply stops being reported. This is the manual removal from
+# tracking the frozen-signal ruling requires, given a surface: a
+# device that resists every recovery (the development system's living
+# room router plug) can be silenced without blinding the watcher.
+CONF_SIGNAL_EXCLUDED_DEVICES = "signal_excluded_devices"
+CONF_SIGNAL_EXCLUDED_INTEGRATIONS = "signal_excluded_integrations"
+CONF_SIGNAL_EXCLUDED_LABELS = "signal_excluded_labels"
 
 # The rails (ruled 2026-07-18). A rail is a value that is flat and at
 # the type's extreme: healthy LQI across the fleet tops out at 224,
