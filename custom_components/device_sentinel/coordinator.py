@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.4 (2026-07-19)
+#   Version: 0.4.5 (2026-07-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -97,12 +97,14 @@ from .const import (
     DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_FROZEN_AT,
     DEV_SIGNAL_LAST_CHANGE,
+    DEV_SIGNAL_REPEAT_COUNT,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     DEV_TODAY_MAX,
     SIGNAL_NAME_TERMS,
-    SIGNAL_FROZEN_SECONDS,
+    SIGNAL_FROZEN_LIVELY_MULTIPLE,
+    SIGNAL_FROZEN_REPEAT_COUNT,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
     STATS_EPOCH,
@@ -145,6 +147,7 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_SIGNAL_BELOW_TODAY: 0.0,
         DEV_SIGNAL_DWELL_DAILY: [],
         DEV_SIGNAL_LAST_CHANGE: None,
+        DEV_SIGNAL_REPEAT_COUNT: 0,
         DEV_SIGNAL_FROZEN_AT: None,
         DEV_BATTERY_LOW: False,
         DEV_BATTERY_SINCE: None,
@@ -245,6 +248,7 @@ class DeviceSentinelCoordinator:
                 record[DEV_SIGNAL_BELOW_TODAY] = 0.0
                 record[DEV_SIGNAL_DWELL_DAILY] = []
                 record[DEV_SIGNAL_LAST_CHANGE] = None
+                record[DEV_SIGNAL_REPEAT_COUNT] = 0
                 record[DEV_SIGNAL_FROZEN_AT] = None
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
@@ -268,6 +272,7 @@ class DeviceSentinelCoordinator:
                 record.setdefault(DEV_SIGNAL_BELOW_TODAY, 0.0)
                 record.setdefault(DEV_SIGNAL_DWELL_DAILY, [])
                 record.setdefault(DEV_SIGNAL_LAST_CHANGE, None)
+                record.setdefault(DEV_SIGNAL_REPEAT_COUNT, 0)
                 record.setdefault(DEV_SIGNAL_FROZEN_AT, None)
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
@@ -752,6 +757,14 @@ class DeviceSentinelCoordinator:
         previous = record.get(DEV_SIGNAL_VALUE)
         if previous is None or value != previous:
             record[DEV_SIGNAL_LAST_CHANGE] = now
+            record[DEV_SIGNAL_REPEAT_COUNT] = 1
+        else:
+            # Same value again: count the repeat. Five identical
+            # readings in a row is the stuck-signal tell, since a live
+            # link wobbles a point or two every report.
+            record[DEV_SIGNAL_REPEAT_COUNT] = (
+                record.get(DEV_SIGNAL_REPEAT_COUNT, 0) + 1
+            )
         record[DEV_SIGNAL_VALUE] = value
 
         if value in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI):
@@ -855,30 +868,38 @@ class DeviceSentinelCoordinator:
         return max(0, min(base_k + self._signal_slider(), days - 1))
 
     def signal_frozen(self, record: dict[str, Any]) -> bool:
-        """Return whether this device's signal is frozen.
+        """Return whether this device's signal is frozen, judged live.
 
-        Frozen means the value has not moved for a full day while the
-        device kept reporting (ruled 2026-07-18). A signal that never
-        changes is not reporting, whatever value it holds: the rail
-        values are the obvious case, but a value stuck at a plausible
-        reading is the dangerous one because nothing looks wrong.
-
-        The device must be otherwise alive for this to fire. A device
-        that has genuinely gone silent is a freeze for the freeze
-        detector to catch, not a frozen signal; here the tell is a
-        still signal on a talking device, which is exactly the
-        stuck-attribute signature five sensors showed by hand, their
-        last_seen advancing while the reading sat pegged.
+        Two checks, both must hold (ruled 2026-07-19). Check 1, the
+        device is lively by its own rhythm: it has reported within
+        SIGNAL_FROZEN_LIVELY_MULTIPLE times its learned window basis.
+        A device quieter than that has genuinely gone silent, which is
+        a device freeze for the freeze detector, not a stuck signal;
+        the tell here is a still signal on a talking device. A device
+        with no learned rhythm yet is not judged at all, the
+        conservative default. Check 2, the signal is stuck: the last
+        SIGNAL_FROZEN_REPEAT_COUNT readings were identical. Counting
+        readings rather than elapsed time fits a device reporting
+        every few seconds and one reporting every few hours alike,
+        because a live link wobbles a point or two every reading, so
+        several identical readings in a row is stuck whatever the
+        interval. This is judged whenever it is asked, so the entity
+        reading it is live and the nightly report is a snapshot of the
+        same judgment.
         """
-        last_change = record.get(DEV_SIGNAL_LAST_CHANGE)
+        # Check 2 first, it is the cheaper test.
+        if record.get(DEV_SIGNAL_REPEAT_COUNT, 0) < SIGNAL_FROZEN_REPEAT_COUNT:
+            return False
+        # Check 1: lively by the device's own rhythm.
         last_activity = record.get(DEV_LAST_ACTIVITY)
-        if last_change is None or last_activity is None:
+        if last_activity is None:
             return False
-        # The device must have reported since the value last moved,
-        # otherwise its silence is a device freeze, not a stuck signal.
-        if last_activity <= last_change:
+        rhythm, _ = self._trimmed_maximum(record.get(DEV_DAILY_MAX) or [])
+        if rhythm is None:
+            # No learned rhythm yet: not judged frozen (conservative).
             return False
-        return dt_util.utcnow().timestamp() - last_change >= SIGNAL_FROZEN_SECONDS
+        quiet = dt_util.utcnow().timestamp() - last_activity
+        return quiet <= SIGNAL_FROZEN_LIVELY_MULTIPLE * rhythm
 
     def signal_frozen_at_rail(self, record: dict[str, Any]) -> bool:
         """Return whether a frozen signal is stuck at a fill value.
@@ -1106,41 +1127,36 @@ class DeviceSentinelCoordinator:
         """Render the daily signal lows newest-first with the marks.
 
         Three states, and a value is only ever one of them: the floor
-        is bold (the trimmed low that becomes the line), the trimmed-k
-        lowest are struck through (set aside so a spurious bad reading
-        does not define the floor), and rail fill values are italic
-        (seen and shown, but never fed to the floor). The trim here is
-        computed the same way the floor is, so the bolded value is
-        exactly the line the dwell column measures against.
+        is bold, values strictly below the floor are struck through
+        (the trimmed lows, set aside so a spurious bad reading does
+        not define the line), and rail fill values are italic (seen
+        and shown, but never fed to the floor).
+
+        Two rules make repeated values read cleanly (ruled 2026-07-19,
+        after a flat button series showed one 48 bold, one struck, and
+        two plain). The floor mark lands on the EARLIEST recorded
+        occurrence of the floor value, so a reader sees when the
+        device first reached its low. And a value equal to the floor
+        is never struck: only values strictly below the floor are
+        trimmed, so the same number is never both the line and an
+        outlier. This can leave more than k values struck when the
+        trimmed lows repeat, or fewer, which is correct: the marks now
+        describe the values, not the positions the trim happened to
+        pick.
         """
         stored = list(record.get(DEV_SIGNAL_DAILY_MIN) or [])
         if not stored:
             return "-"
         rails = (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
-        history = [value for value in stored if value not in rails]
-        # The k lowest non-rail readings are trimmed; the next lowest
-        # is the floor. Mark by identity of position in sorted order,
-        # so repeated values are handled by count, not by equality.
+        floor = self._danger_line(record)
+        # The earliest (lowest stored index) occurrence of the floor
+        # value is the one to bold, so its first appearance is marked.
         floor_index = None
-        trimmed_positions: set[int] = set()
-        if history:
-            effective_k = self._signal_effective_k(len(history))
-            order = sorted(
-                range(len(history)), key=lambda i: history[i]
-            )
-            trimmed_positions = set(order[:effective_k])
-            floor_position = order[effective_k]
-            # Map the floor's position in history back to its position
-            # in the stored series, skipping rails and earlier lows.
-            floor_index = self._nth_non_rail_index(
-                stored, rails, floor_position
-            )
-            trimmed_stored = {
-                self._nth_non_rail_index(stored, rails, pos)
-                for pos in trimmed_positions
-            }
-        else:
-            trimmed_stored = set()
+        if floor is not None:
+            for index, value in enumerate(stored):
+                if value == floor:
+                    floor_index = index
+                    break
         parts = []
         for index in reversed(range(len(stored))):
             value = stored[index]
@@ -1149,29 +1165,14 @@ class DeviceSentinelCoordinator:
                 parts.append(f"*{text}*")
             elif index == floor_index:
                 parts.append(f"**{text}**")
-            elif index in trimmed_stored:
+            elif floor is not None and value < floor:
+                # Strictly below the floor: a trimmed low. A value
+                # equal to the floor is never struck.
                 parts.append(f"~~{text}~~")
             else:
                 parts.append(text)
         return " ".join(parts)
 
-    @staticmethod
-    def _nth_non_rail_index(
-        stored: list[float],
-        rails: tuple[float, ...],
-        n: int,
-    ) -> int:
-        """Return the index in the stored series of the nth non-rail
-        value, so a mark computed over the rail-filtered history can
-        be placed back on the right cell in the full display."""
-        seen = 0
-        for index, value in enumerate(stored):
-            if value in rails:
-                continue
-            if seen == n:
-                return index
-            seen += 1
-        return -1
 
     def _format_battery_cell(self, record: dict[str, Any]) -> str:
         """Render the daily battery levels newest-first, with any
@@ -1322,7 +1323,7 @@ class DeviceSentinelCoordinator:
                 frozen_text = "excl"
             lines.append(
                 f"| {device_name} | {day_count} | "
-                f"{self._fmt_gap(operative)} | {maxima_cell} | "
+                f"{maxima_cell} | "
                 f"{clock_source} | {event_count} | {lows_cell} | "
                 f"{dwell_text} | {battery_cell} | {frozen_text} |"
             )
