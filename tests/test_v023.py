@@ -204,23 +204,36 @@ async def test_enable_assist(hass: HomeAssistant):
     entry = await _setup(hass)
     coord = entry.runtime_data
 
+    # Signals: the linkquality entity is user-disabled, so it is
+    # skipped, not enabled. Each kind is now its own method.
     result = await coord.async_enable_signal_entities()
-    assert result == {"last_seen": 1, "signal": 0, "skipped_user": 1}
-    assert ent_reg.async_get(int_disabled.entity_id).disabled_by is None
+    assert result == {"enabled": 0, "skipped_user": 1}
     assert (
         ent_reg.async_get(user_disabled.entity_id).disabled_by
         is er.RegistryEntryDisabler.USER
     )
+
+    # Last seen: the integration-disabled last_seen entity is enabled.
+    result = await coord.async_enable_last_seen_entities()
+    assert result == {"enabled": 1, "skipped_user": 0}
+    assert ent_reg.async_get(int_disabled.entity_id).disabled_by is None
+
+    # The plain temperature sensor is neither, so it stays disabled
+    # through both presses.
     assert ent_reg.async_get(plain.entity_id).disabled_by is not None
 
-    # Button exists and presses without error.
-    state = hass.states.get("button.device_sentinel_scan_and_enable_signal_and_last_seen_entities")
-    assert state is not None
-    await hass.services.async_call(
-        "button", "press",
-        {"entity_id": "button.device_sentinel_scan_and_enable_signal_and_last_seen_entities"},
-        blocking=True,
-    )
+    # The three buttons exist and press without error.
+    for entity_id in (
+        "button.device_sentinel_enable_signals",
+        "button.device_sentinel_enable_last_seen",
+        "button.device_sentinel_enable_battery",
+    ):
+        assert hass.states.get(entity_id) is not None, entity_id
+        await hass.services.async_call(
+            "button", "press",
+            {"entity_id": entity_id},
+            blocking=True,
+        )
 
 
 async def test_taint_log_reports_bad_state(
