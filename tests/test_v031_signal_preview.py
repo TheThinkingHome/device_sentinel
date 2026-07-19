@@ -21,18 +21,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.device_sentinel.const import (
     DEV_SIGNAL_DAILY_MIN,
 )
-from custom_components.device_sentinel.coordinator import (
-    DeviceSentinelCoordinator as C,
-)
 
 DOMAIN = "device_sentinel"
-
-
-def test_signal_family_by_sign():
-    """LQI-like indexes are positive, dBm is negative; display only,
-    the dwell rule is identical for both."""
-    assert C._signal_family(120.0) == "LQI"
-    assert C._signal_family(-70.0) == "RSSI"
 
 
 async def test_line_in_report(hass: HomeAssistant):
@@ -75,7 +65,9 @@ async def test_line_in_report(hass: HomeAssistant):
         for line in text.splitlines()
         if "Signal Preview Device" in line
     )
-    assert "| 117 | LQI |" in row
+    # k=0 under a week: the floor is the plain lowest, 117, shown
+    # bold. Nothing is trimmed yet, so no strikethrough.
+    assert "**117** 121 119 122 118 120" in row
 
     # Seventh day brings an anomalous 40: the ladder steps to k=1,
     # the 40 is dropped, and the line is the second lowest, 117.
@@ -89,7 +81,7 @@ async def test_line_in_report(hass: HomeAssistant):
         for line in text.splitlines()
         if "Signal Preview Device" in line
     )
-    assert "| 117 | LQI |" in row
-    # The daily lows column shows the history newest first, so the
-    # anomalous 40 leads and the line can be checked against it.
-    assert "40 117 121 119 122 118 120" in row
+    # k=1 at a week: the anomalous 40 is trimmed (struck), and the
+    # floor is the second lowest, 117, bold. Newest first, so the 40
+    # leads and the marks show the line against the readings behind it.
+    assert "~~40~~ **117** 121 119 122 118 120" in row
