@@ -19,7 +19,8 @@
         "menu_options": {
           "notifications": "Notifications",
           "exclusions": "Global Exclusions",
-          "battery": "Low Battery"
+          "battery": "Low Battery",
+          "signal": "Signal strength"
         }
       },
       "notifications": {
@@ -77,6 +78,22 @@
           "battery_excluded_labels": "Any device carrying one of these labels stops being reported for a low battery. Set the label on the device's own page and it applies here without opening this dialog."
         },
         "description": "Every battery Device Sentinel finds is watched by default. A battery is flagged when it is at or below the threshold. Excluding a battery here stops battery reports for that device only; everything else about it stays watched.\n\nThe three lists run broad to narrow: integration, label, device. They work like the Global Exclusions lists: exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.\n\nFull documentation: {wiki_link}"
+      },
+      "signal": {
+        "title": "Signal strength",
+        "description": "How sharply weakening radio links are flagged, and which devices are left out of signal reporting. The goal: some of your devices should show small readings in the 0-5 percent range, so a real problem stands out as big and obvious. Changes apply to readings going forward; a full day shows their true effect. [How signal strength is judged]({wiki_link}).",
+        "data": {
+          "signal_sensitivity": "Sensitivity",
+          "signal_excluded_integrations": "Integrations excluded from signal reporting",
+          "signal_excluded_labels": "Labels excluded from signal reporting",
+          "signal_excluded_devices": "Devices excluded from signal reporting"
+        },
+        "data_description": {
+          "signal_sensitivity": "Left is less sensitive: fewer, only-severe flags. Right is more sensitive: weak moments register sooner.",
+          "signal_excluded_integrations": "Every device from a ticked integration stops being reported for signal.",
+          "signal_excluded_labels": "Devices carrying a ticked label stop being reported for signal.",
+          "signal_excluded_devices": "A ticked device stops being reported for signal. It keeps recording, so re-including it brings its history back instantly."
+        }
       }
     }
   },
