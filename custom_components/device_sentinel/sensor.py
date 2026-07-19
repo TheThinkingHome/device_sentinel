@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.7 (2026-07-19)
+#   Version: 0.4.8 (2026-07-19)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -46,10 +46,12 @@ from .const import (
     ATTR_STORAGE_HEALTHY,
     BATTERY_CLEAR_MARGIN,
     DOMAIN,
-    SENTINEL_TYPE_BATTERY_COUNT,
-    SENTINEL_TYPE_BATTERY_LIST,
-    SENTINEL_TYPE_SIGNAL_FROZEN,
-    SENTINEL_TYPE_SIGNAL_TRACKED,
+    SENTINEL_TYPE_FROZEN_DEVICES,
+    SENTINEL_TYPE_LOW_BATTERIES,
+    SENTINEL_TYPE_SIGNAL_PROBLEMS,
+    SENTINEL_TYPE_TRACKED_BATTERIES,
+    SENTINEL_TYPE_TRACKED_DEVICES,
+    SENTINEL_TYPE_TRACKED_SIGNALS,
     SENTINEL_TYPE_CLASSIFICATION,
     SENTINEL_TYPE_COVERAGE,
     SENTINEL_TYPE_LEARNING,
@@ -77,10 +79,12 @@ async def async_setup_entry(
             DeviceSentinelCoverageSensor(coordinator),
             DeviceSentinelLearningSensor(coordinator),
             DeviceSentinelClassificationSensor(coordinator),
-            DeviceSentinelBatteryLowCountSensor(coordinator),
-            DeviceSentinelBatteryLowListSensor(coordinator),
-            DeviceSentinelSignalTrackedSensor(coordinator),
-            DeviceSentinelSignalFrozenSensor(coordinator),
+            DeviceSentinelTrackedSignalsSensor(coordinator),
+            DeviceSentinelTrackedBatteriesSensor(coordinator),
+            DeviceSentinelTrackedDevicesSensor(coordinator),
+            DeviceSentinelSignalProblemsSensor(coordinator),
+            DeviceSentinelLowBatteriesSensor(coordinator),
+            DeviceSentinelFrozenDevicesSensor(coordinator),
         ]
     )
 
@@ -253,90 +257,30 @@ class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):
         }
 
 
-class DeviceSentinelBatteryLowCountSensor(DeviceSentinelBaseSensor):
-    """Step 3 detection: how many devices are battery-low right now.
+class DeviceSentinelTrackedSignalsSensor(DeviceSentinelBaseSensor):
+    """How many devices we watch for signal, after signal excludes.
 
-    Value-only by ruling: an unavailable battery is Step 4's business,
-    so this count never folds liveness in and stays clean for
-    dashboards and automations.
+    A device is tracked once it has a learned floor and so a live
+    danger line, minus the signal-excluded. The signal member of the
+    Tracked family. The scale split and the still-learning count ride
+    in attributes.
     """
 
-    _attr_name = "Battery Low Count"
-    _attr_icon = "mdi:battery-alert"
-    _attr_native_unit_of_measurement = UNIT_BATTERIES
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    sentinel_type = SENTINEL_TYPE_BATTERY_COUNT
-
-    @property
-    def native_value(self) -> int:
-        """Return the number of battery-low devices."""
-        return self._coordinator.battery_low_count
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return identity plus the thresholds in effect."""
-        return {
-            **self._identity(),
-            "low_threshold": self._coordinator.low_threshold,
-            "clear_margin": BATTERY_CLEAR_MARGIN,
-        }
-
-
-class DeviceSentinelBatteryLowListSensor(DeviceSentinelBaseSensor):
-    """The battery low list: one row per device, area then name.
-
-    Row shape follows the Battery Sentinel 1.2.0 contract (name,
-    entity_id, area, level, since, last_seen, age, kind) so any
-    dashboard or notifier written against the blueprint reads this
-    list unchanged.
-    """
-
-    _attr_name = "Battery Low List"
-    _attr_icon = "mdi:battery-alert-variant-outline"
-    _attr_native_unit_of_measurement = UNIT_BATTERIES
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    sentinel_type = SENTINEL_TYPE_BATTERY_LIST
-
-    @property
-    def native_value(self) -> int:
-        """Return the row count as the state."""
-        return self._coordinator.battery_low_count
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return identity plus the device rows."""
-        return {
-            **self._identity(),
-            "devices": self._coordinator.battery_low_list,
-        }
-
-
-class DeviceSentinelSignalTrackedSensor(DeviceSentinelBaseSensor):
-    """How many devices have a learned signal baseline.
-
-    The signal analogue of Devices Learned: a device is tracked once
-    it has an established floor and so a live danger line. Not
-    expected to reach Devices Watched, since devices with no signal
-    entity never arm. Watch-only in 0.4.x: the count is real, the
-    detections it will feed are still soaking.
-    """
-
-    _attr_name = "Signals Tracked"
+    _attr_name = "Tracked Signals"
     _attr_icon = "mdi:access-point-network"
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    sentinel_type = SENTINEL_TYPE_SIGNAL_TRACKED
+    sentinel_type = SENTINEL_TYPE_TRACKED_SIGNALS
 
     @property
     def native_value(self) -> int:
-        """Return how many devices have a live danger line."""
-        counts = self._coordinator.signal_tracked
-        return counts["lqi"] + counts["rssi"]
+        """Return how many devices we watch for signal."""
+        return self._coordinator.signal_tracked_count
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return identity plus the scale split and learning count."""
+        """Return the scale split and the still-learning count."""
         counts = self._coordinator.signal_tracked
         return {
             **self._identity(),
@@ -346,41 +290,154 @@ class DeviceSentinelSignalTrackedSensor(DeviceSentinelBaseSensor):
         }
 
 
-class DeviceSentinelSignalFrozenSensor(DeviceSentinelBaseSensor):
-    """How many device signals are stuck at the rail right now.
+class DeviceSentinelTrackedBatteriesSensor(DeviceSentinelBaseSensor):
+    """How many devices we watch for battery, after battery excludes.
 
-    A rail freeze is a signal held at its type's fill value, 255 for
-    LQI or -128 for RSSI, across its last five reports while the
-    device keeps reporting: the empty value of a field the device
-    stopped populating, which reads as perfect signal and is the
-    opposite. Judged live, so this number updates as reports arrive
-    rather than only at the nightly report. It reads healthy on every
-    ordinary dashboard, which is the point of catching it. The device
-    list rides in attributes. Removal from tracking is a manual act,
-    so a resistant device stays counted until recovered or excluded.
-
-    The plausible-value case, a real reading that stops moving, was
-    tried and removed: it could not be told from a healthy steady
-    link. The project document records why and what would be needed
-    to bring it back.
+    A device is battery-tracked when a battery entity was elected for
+    it and it is not battery-excluded. The battery member of the
+    Tracked family. The devices ride in attributes.
     """
 
-    _attr_name = "Signals Frozen"
+    _attr_name = "Tracked Batteries"
+    _attr_icon = "mdi:battery-heart-outline"
+    _attr_native_unit_of_measurement = UNIT_BATTERIES
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    sentinel_type = SENTINEL_TYPE_TRACKED_BATTERIES
+
+    @property
+    def native_value(self) -> int:
+        """Return how many devices we watch for battery."""
+        return self._coordinator.battery_tracked_count
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the tracked devices."""
+        return {
+            **self._identity(),
+            "devices": self._coordinator.battery_tracked_list,
+        }
+
+
+class DeviceSentinelTrackedDevicesSensor(DeviceSentinelBaseSensor):
+    """How many devices are eligible for freeze detection.
+
+    A device with a learned rhythm, minus the global device excludes.
+    The freeze member of the Tracked family. Freeze detection (Step 6)
+    is not built; this counts the set it will act on, surfaced ahead
+    of the engine. The devices ride in attributes.
+    """
+
+    _attr_name = "Tracked Devices"
+    _attr_icon = "mdi:heart-pulse"
+    _attr_native_unit_of_measurement = UNIT_DEVICES
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    sentinel_type = SENTINEL_TYPE_TRACKED_DEVICES
+
+    @property
+    def native_value(self) -> int:
+        """Return how many devices are freeze-eligible."""
+        return self._coordinator.freeze_tracked_count
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the freeze-eligible devices."""
+        return {
+            **self._identity(),
+            "devices": self._coordinator.freeze_tracked_list,
+        }
+
+
+class DeviceSentinelSignalProblemsSensor(DeviceSentinelBaseSensor):
+    """How many devices have a signal problem right now.
+
+    The signal member of the Problems family. State is the count;
+    attributes carry the devices, each tagged by kind: a rail (stuck
+    at the fill value for three days, a fault) or a low (dwelling
+    below the danger line, a weak link). The low kind stays quiet
+    until the dwell danger line is ruled, so today this reports rails.
+    """
+
+    _attr_name = "Signal Problems"
     _attr_icon = "mdi:access-point-off"
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    sentinel_type = SENTINEL_TYPE_SIGNAL_FROZEN
+    sentinel_type = SENTINEL_TYPE_SIGNAL_PROBLEMS
 
     @property
     def native_value(self) -> int:
-        """Return the number of frozen signals."""
-        return self._coordinator.signal_frozen_count
+        """Return how many devices have a signal problem."""
+        return self._coordinator.signal_problem_count
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return identity plus the frozen devices, faults first."""
+        """Return the problem devices, rail kind first."""
         return {
             **self._identity(),
-            "devices": self._coordinator.signal_frozen_list,
+            "devices": self._coordinator.signal_problem_list,
+        }
+
+
+class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
+    """How many devices have a low battery right now.
+
+    The battery member of the Problems family, merging the former
+    Battery Low Count and Battery Low List into one sensor: state is
+    the count, the device rows ride in attributes. Value-only by
+    ruling: an unavailable battery is a freeze matter, not a low one,
+    so this stays clean for dashboards and automations.
+    """
+
+    _attr_name = "Low Batteries"
+    _attr_icon = "mdi:battery-alert"
+    _attr_native_unit_of_measurement = UNIT_BATTERIES
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    sentinel_type = SENTINEL_TYPE_LOW_BATTERIES
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of battery-low devices."""
+        return self._coordinator.battery_low_count
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the device rows and the thresholds in effect."""
+        return {
+            **self._identity(),
+            "devices": self._coordinator.battery_low_list,
+            "low_threshold": self._coordinator.low_threshold,
+            "clear_margin": BATTERY_CLEAR_MARGIN,
+        }
+
+
+class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
+    """How many devices are frozen, unknown, or unavailable.
+
+    The freeze member of the Problems family, and a placeholder: the
+    Step 6 freeze engine is not built, so this reads zero and its
+    device list is empty. The shape ships ahead of the engine so the
+    engine fills a surface that already exists rather than adding a
+    new one. Each row will carry a category once the engine runs.
+    """
+
+    _attr_name = "Frozen Devices"
+    _attr_icon = "mdi:snowflake-alert"
+    _attr_native_unit_of_measurement = UNIT_DEVICES
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    sentinel_type = SENTINEL_TYPE_FROZEN_DEVICES
+
+    @property
+    def native_value(self) -> int:
+        """Return how many devices are frozen; zero until Step 6."""
+        return self._coordinator.frozen_devices_count
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the frozen devices (empty until Step 6)."""
+        return {
+            **self._identity(),
+            "devices": self._coordinator.frozen_devices_list,
         }
