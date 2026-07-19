@@ -106,6 +106,23 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     assert "FAMILY" not in header
     assert "SIG MIN" not in header
 
+    # Every data row must have exactly as many cells as the header,
+    # nine, so a dropped column can never leave the rows misaligned.
+    def _cells(line: str) -> int:
+        return len([c for c in line.strip().strip("|").split("|")])
+
+    header_cells = _cells(header)
+    assert header_cells == 9, header_cells
+    data_rows = [
+        line
+        for line in text.splitlines()
+        if line.startswith("| ")
+        and "DEVICE | DAYS" not in line
+        and not line.startswith("|---")
+    ]
+    for line in data_rows:
+        assert _cells(line) == header_cells, line
+
 
 async def test_three_enable_buttons_exist_and_press(hass: HomeAssistant):
     """The enable assist is three buttons now, one per diagnostic
