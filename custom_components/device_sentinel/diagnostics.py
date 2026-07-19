@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.2 (2026-07-18)
+#   Version: 0.4.3 (2026-07-19)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -71,12 +71,10 @@ async def async_get_config_entry_diagnostics(
         window_basis, set_aside_indices = coordinator._trimmed_maximum(
             daily_maximum_gaps
         )
-        signal_daily_minima = record.get("signal_daily_min") or []
-        signal_floor = (
-            coordinator._trimmed_minimum(signal_daily_minima)
-            if len(signal_daily_minima) >= SIGNAL_ARMING_DAYS
-            else None
-        )
+        # The floor is the line (0.4.3): one computation, rails
+        # filtered, the trim ladder applied. signal_floor is kept as
+        # a key for reader continuity and equals the line.
+        signal_line = coordinator._danger_line(record)
         devices[device_id] = {
             "name": (
                 (device.name_by_user or device.name)
@@ -93,19 +91,20 @@ async def async_get_config_entry_diagnostics(
             "statistics": record,
             "window_basis": window_basis,
             "set_aside_indices": sorted(set_aside_indices),
-            "signal_floor": signal_floor,
+            "signal_floor": signal_line,
             # The dwell soak (0.4.0): the danger line the timer runs
             # against, yesterday's percent-below history, and the
             # stuck flag. RSSI rows (negative floors) are provisional:
             # eleven devices and barely-seen floors do not yet justify
             # trusting the offset.
-            "signal_danger_line": coordinator._danger_line(record),
+            "signal_danger_line": signal_line,
             "signal_dwell_daily_pct": list(
                 record.get("signal_dwell_daily_pct") or []
             ),
             "signal_below_today_seconds": record.get(
                 "signal_below_today_seconds"
             ),
+            "signal_excluded": coordinator._signal_excluded(device_id),
             "signal_frozen": coordinator.signal_frozen(record),
             "signal_frozen_at_rail": coordinator.signal_frozen_at_rail(
                 record
