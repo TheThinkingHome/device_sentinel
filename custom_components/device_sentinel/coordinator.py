@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.5 (2026-07-19)
+#   Version: 0.4.6 (2026-07-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -97,6 +97,7 @@ from .const import (
     DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_FROZEN_AT,
     DEV_SIGNAL_LAST_CHANGE,
+    DEV_SIGNAL_FROZEN_VERDICT,
     DEV_SIGNAL_REPEAT_COUNT,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
@@ -148,6 +149,7 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_SIGNAL_DWELL_DAILY: [],
         DEV_SIGNAL_LAST_CHANGE: None,
         DEV_SIGNAL_REPEAT_COUNT: 0,
+        DEV_SIGNAL_FROZEN_VERDICT: False,
         DEV_SIGNAL_FROZEN_AT: None,
         DEV_BATTERY_LOW: False,
         DEV_BATTERY_SINCE: None,
@@ -249,6 +251,7 @@ class DeviceSentinelCoordinator:
                 record[DEV_SIGNAL_DWELL_DAILY] = []
                 record[DEV_SIGNAL_LAST_CHANGE] = None
                 record[DEV_SIGNAL_REPEAT_COUNT] = 0
+                record[DEV_SIGNAL_FROZEN_VERDICT] = False
                 record[DEV_SIGNAL_FROZEN_AT] = None
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
@@ -273,6 +276,7 @@ class DeviceSentinelCoordinator:
                 record.setdefault(DEV_SIGNAL_DWELL_DAILY, [])
                 record.setdefault(DEV_SIGNAL_LAST_CHANGE, None)
                 record.setdefault(DEV_SIGNAL_REPEAT_COUNT, 0)
+                record.setdefault(DEV_SIGNAL_FROZEN_VERDICT, False)
                 record.setdefault(DEV_SIGNAL_FROZEN_AT, None)
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
@@ -656,6 +660,7 @@ class DeviceSentinelCoordinator:
                 value = None
             if value is not None:
                 self._feed_signal(record, value, now)
+                self._refresh_on_frozen_flip(device_id, record)
 
         storm = self._storm_feed(entry_id, device_id, now)
         grace = now < self._grace_until
@@ -900,6 +905,30 @@ class DeviceSentinelCoordinator:
             return False
         quiet = dt_util.utcnow().timestamp() - last_activity
         return quiet <= SIGNAL_FROZEN_LIVELY_MULTIPLE * rhythm
+
+    def _refresh_on_frozen_flip(
+        self, device_id: str, record: dict[str, Any]
+    ) -> None:
+        """Refresh the Signals Frozen entity only when this device's
+        frozen verdict actually changes.
+
+        The verdict is judged live, but the entity only reflected it
+        when some unrelated event happened to fire a refresh, so
+        between those it could show a stale count (a frozen verdict
+        held while the counter had already fallen back). Recomputing
+        here on every signal reading is cheap; the refresh itself, the
+        part that re-renders entities, fires only on a flip, so a
+        healthy fleet with no freezes never notifies and a real freeze
+        starting or clearing shows at once. Excluded devices are not
+        judged, so a change in their readings never flips a verdict.
+        """
+        if self._signal_excluded(device_id):
+            return
+        verdict = self.signal_frozen(record)
+        if verdict != record.get(DEV_SIGNAL_FROZEN_VERDICT, False):
+            record[DEV_SIGNAL_FROZEN_VERDICT] = verdict
+            self._dirty = True
+            self._notify()
 
     def signal_frozen_at_rail(self, record: dict[str, Any]) -> bool:
         """Return whether a frozen signal is stuck at a fill value.
