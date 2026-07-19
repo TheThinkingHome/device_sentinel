@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.2 (2026-07-18)
+#   Version: 0.4.3 (2026-07-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -57,6 +57,11 @@ from .const import (
     CONF_BATTERY_EXCLUDED_DEVICES,
     CONF_BATTERY_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_EXCLUDED_LABELS,
+    CONF_SIGNAL_EXCLUDED_DEVICES,
+    CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
+    CONF_SIGNAL_EXCLUDED_LABELS,
+    CONF_SIGNAL_SENSITIVITY,
+    DEFAULT_SIGNAL_SENSITIVITY,
     CONF_EXCLUDED_LABELS,
     DATA_TODO_ITEMS,
     CONF_LOW_THRESHOLD,
@@ -68,8 +73,10 @@ from .const import (
     REPORT_STALE_FILES,
     REPORT_TELEMETRY,
     SIGNAL_ARMING_DAYS,
-    SIGNAL_LQI_DANGER_FACTOR,
-    SIGNAL_RSSI_DANGER_OFFSET,
+    SIGNAL_SENSITIVITY_MAX,
+    SIGNAL_SENSITIVITY_MIN,
+    SIGNAL_TRIM_LADDER_FORTNIGHT,
+    SIGNAL_TRIM_LADDER_WEEK,
     TRIM_MIN_SAMPLES,
     TRIM_TOP_K,
     DATA_DEVICES,
@@ -765,16 +772,18 @@ class DeviceSentinelCoordinator:
         momentary dip that recovers never counts for more than the
         moment it lasted.
 
-        No line exists until the floor does, so a device inside its
-        signal arming days accumulates nothing; its early dwell is
-        absent rather than measured against a floor still moving.
+        At the floor counts as below it: a device sitting exactly on
+        its trimmed floor is living at its lows, which is the thing
+        being measured. The line exists from the first recorded day
+        (k=0, floor = lowest real reading) and simply settles as the
+        trim ladder matures.
         """
         line = self._danger_line(record)
         below_since = record.get(DEV_SIGNAL_BELOW_SINCE)
         if line is None:
             record[DEV_SIGNAL_BELOW_SINCE] = None
             return
-        if value < line:
+        if value <= line:
             if below_since is None:
                 record[DEV_SIGNAL_BELOW_SINCE] = now
         elif below_since is not None:
@@ -785,24 +794,46 @@ class DeviceSentinelCoordinator:
             record[DEV_SIGNAL_BELOW_SINCE] = None
 
     def _danger_line(self, record: dict[str, Any]) -> float | None:
-        """Return this device's danger line, or None while unarmed.
+        """Return this device's line: its trimmed floor, or None with
+        no history.
 
-        Two formulas because the scales are physically different
-        (ruled 2026-07-18): LQI is a near-linear index, so the line is
-        a fraction of the device's own floor; RSSI is logarithmic dBm,
-        so the line is a fixed decibel offset below it. Starting
-        values hold until a week of dwell data justifies a default;
-        the sensitivity slider maps onto these then, not before.
+        The floor is the line (ruled 2026-07-19). Rail values never
+        feed it: a device whose whole history is rail has no floor at
+        all rather than a false one, which was the Door Laundry bug
+        (a floor of 255 from the stuck period made a garbage line).
+
+        The trim ladder grows with the soak: under a week nothing is
+        dropped and the floor is the lowest real reading, so the line
+        exists from the first day; at a week the single lowest is
+        dropped; at two weeks the two lowest are. The user's
+        sensitivity setting shifts k (left calmer, right twitchier),
+        clamped so at least one reading always survives to be the
+        floor. Dropping the LOWEST values is the opposite of the
+        rhythm trim, which drops the highest, because for signal the
+        spuriously bad reading is the anomaly to set aside.
         """
-        signal_days = record.get(DEV_SIGNAL_DAILY_MIN) or []
-        if len(signal_days) < SIGNAL_ARMING_DAYS:
+        history = [
+            value
+            for value in (record.get(DEV_SIGNAL_DAILY_MIN) or [])
+            if value not in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
+        ]
+        if not history:
             return None
-        floor = self._trimmed_minimum(signal_days)
-        if floor is None:
-            return None
-        if floor >= 0:
-            return floor * SIGNAL_LQI_DANGER_FACTOR
-        return floor - SIGNAL_RSSI_DANGER_OFFSET
+        days = len(history)
+        if days >= 2 * SIGNAL_ARMING_DAYS:
+            base_k = SIGNAL_TRIM_LADDER_FORTNIGHT
+        elif days >= SIGNAL_ARMING_DAYS:
+            base_k = SIGNAL_TRIM_LADDER_WEEK
+        else:
+            base_k = 0
+        slider = int(
+            self.entry.options.get(
+                CONF_SIGNAL_SENSITIVITY, DEFAULT_SIGNAL_SENSITIVITY
+            )
+        )
+        slider = max(SIGNAL_SENSITIVITY_MIN, min(slider, SIGNAL_SENSITIVITY_MAX))
+        effective_k = max(0, min(base_k + slider, days - 1))
+        return sorted(history)[effective_k]
 
     def signal_frozen(self, record: dict[str, Any]) -> bool:
         """Return whether this device's signal is frozen.
@@ -962,41 +993,6 @@ class DeviceSentinelCoordinator:
         )
         await self.hass.async_add_executor_job(self._write_reports)
 
-    @staticmethod
-    def _trimmed_minimum(
-        daily_minimum_signals: list[float],
-    ) -> float | None:
-        """Return the signal floor: the trimmed minimum of the daily
-        minima, the exact mirror of the gap rule. The bottom
-        TRIM_TOP_K values are set aside as anomalies once
-        TRIM_MIN_SAMPLES days exist; below that, the plain minimum.
-        One anomalous bad-signal day moves nothing; a recurring drop
-        counts as real degradation."""
-        if not daily_minimum_signals:
-            return None
-        if len(daily_minimum_signals) < TRIM_MIN_SAMPLES:
-            return min(daily_minimum_signals)
-        survivors = sorted(daily_minimum_signals)[TRIM_TOP_K:]
-        return min(survivors)
-
-    @staticmethod
-    def _signal_family_and_danger(floor: float) -> tuple[str, float]:
-        """Classify the unit family by sign and return the candidate
-        danger line (preview only, ruled from real data before any
-        detection acts on it): LQI-like positives flag below
-        floor * factor; dBm negatives flag below floor - offset."""
-        if floor >= 0:
-            return "LQI", floor * SIGNAL_LQI_DANGER_FACTOR
-        return "RSSI", floor - SIGNAL_RSSI_DANGER_OFFSET
-
-    def _fmt_gap(self, seconds: Any) -> str:
-        """Format a gap for the report."""
-        if seconds is None:
-            return "-"
-        if seconds >= 3600:
-            return f"{seconds / 3600:.2f}h"
-        return f"{seconds:.0f}s"
-
     def _write_reports(self, trigger: str = "manual") -> None:
         """Write both diagnostic files to /config/device_sentinel/.
 
@@ -1049,31 +1045,11 @@ class DeviceSentinelCoordinator:
         return max(survivors), set_aside_indices
 
     @staticmethod
-    def _trimmed_minimum(
-        daily_minimum_signals: list[float],
-    ) -> float | None:
-        """Return the signal floor: the trimmed minimum of the daily
-        minima, the exact mirror of the gap rule. The bottom
-        TRIM_TOP_K values are set aside as anomalies once
-        TRIM_MIN_SAMPLES days exist; below that, the plain minimum.
-        One anomalous bad-signal day moves nothing; a recurring drop
-        counts as real degradation."""
-        if not daily_minimum_signals:
-            return None
-        if len(daily_minimum_signals) < TRIM_MIN_SAMPLES:
-            return min(daily_minimum_signals)
-        survivors = sorted(daily_minimum_signals)[TRIM_TOP_K:]
-        return min(survivors)
-
-    @staticmethod
-    def _signal_family_and_danger(floor: float) -> tuple[str, float]:
-        """Classify the unit family by sign and return the candidate
-        danger line (preview only, ruled from real data before any
-        detection acts on it): LQI-like positives flag below
-        floor * factor; dBm negatives flag below floor - offset."""
-        if floor >= 0:
-            return "LQI", floor * SIGNAL_LQI_DANGER_FACTOR
-        return "RSSI", floor - SIGNAL_RSSI_DANGER_OFFSET
+    def _signal_family(floor: float) -> str:
+        """Classify the unit family by sign: LQI-like indexes are
+        positive, dBm is negative. Display only; the dwell rule is
+        identical for both, below the floor is below the floor."""
+        return "LQI" if floor >= 0 else "RSSI"
 
     def _fmt_gap(self, seconds: Any) -> str:
         """Format a gap for the report."""
@@ -1139,20 +1115,25 @@ class DeviceSentinelCoordinator:
             f"Written {dt_util.now().isoformat(timespec='seconds')} "
             f"({trigger})",
             "",
-            f"Signal preview: FLOOR is the trimmed minimum of the "
-            f"daily signal minima (same trim rule); DANGER is the "
-            f"candidate line, display-only until ruled: LQI flags "
-            f"below floor x {SIGNAL_LQI_DANGER_FACTOR:g}, RSSI below "
-            f"floor - {SIGNAL_RSSI_DANGER_OFFSET:g} dB; blank until "
-            f"a device has {SIGNAL_ARMING_DAYS} signal days. DWELL% is the "
-f"share of each day spent below the danger line, newest first: "
-f"most devices should sit in low single digits, and the "
-f"outliers are the story (outliers clustered in one room mean "
-f"that room needs a router). FROZEN marks a signal whose value "
-f"has not moved in a day while the device kept reporting: the "
-f"reading is stale, not the link, and (rail) means it froze at "
-f"the fill value 255 or -128, a near-certain fault. Force a "
-f"report, power cycle or pull the battery, then re-interview.",
+            f"Signal: LINE is the device's trimmed floor and the "
+            f"line is the floor; SIG LOWS are the daily minima it is "
+            f"chosen from (rail values 255/-128 never feed it). The "
+            f"trim grows with the soak (none under {SIGNAL_ARMING_DAYS} "
+            f"days, drop 1 lowest at {SIGNAL_ARMING_DAYS}, drop 2 at "
+            f"{2 * SIGNAL_ARMING_DAYS}), shifted by the sensitivity "
+            f"setting, which applies to readings going forward only. "
+            f"DWELL% is the share of each day spent at or below the "
+            f"line, newest first: healthy devices brushing their "
+            f"floor read 0-5 percent, which proves the line has "
+            f"teeth; sustained dwell is the anomaly, and outliers "
+            f"clustered in one room mean that room needs a router. "
+            f"FROZEN marks a signal whose value has not moved in a "
+            f"day while the device kept reporting: the reading is "
+            f"stale, not the link, and (rail) means it froze at the "
+            f"fill value 255 or -128, a near-certain fault. Force a "
+            f"report, power cycle or pull the battery, then "
+            f"re-interview. excl means signal-excluded: still "
+            f"recorded, not judged.",
             "",
             f"Rule: the window basis is the **trimmed maximum** of "
             f"the rolling daily maxima: the top {TRIM_TOP_K} value(s) "
@@ -1167,8 +1148,9 @@ f"report, power cycle or pull the battery, then re-interview.",
             f"{LEARNING_MIN_DAYS} days, keep {DAILY_MAX_KEEP} days.",
             "",
             "| DEVICE | DAYS | WINDOW BASIS | GAPS (newest first) | "
-            "CLOCK | EVENTS | SIGNAL | SIG MIN | FLOOR | FAMILY | "
-            "DANGER | DWELL% (newest first) | FROZEN |",
+            "CLOCK | EVENTS | SIGNAL | SIG MIN | LINE | FAMILY | "
+            "SIG LOWS (newest first) | DWELL% (newest first) | "
+            "FROZEN |",
             "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
@@ -1188,14 +1170,9 @@ f"report, power cycle or pull the battery, then re-interview.",
                 signal_minimum_candidates.append(
                     record[DEV_SIGNAL_TODAY_MIN]
                 )
-            signal_days = record.get(DEV_SIGNAL_DAILY_MIN) or []
-            if len(signal_days) >= SIGNAL_ARMING_DAYS:
-                signal_floor = self._trimmed_minimum(signal_days)
-                family, danger_line = self._signal_family_and_danger(
-                    signal_floor
-                )
-            else:
-                signal_floor, family, danger_line = None, None, None
+            line = self._danger_line(record)
+            family = self._signal_family(line) if line is not None else None
+            signal_lows = list(record.get(DEV_SIGNAL_DAILY_MIN) or [])
             rows.append(
                 (
                     device_name,
@@ -1210,12 +1187,13 @@ f"report, power cycle or pull the battery, then re-interview.",
                     min(signal_minimum_candidates)
                     if signal_minimum_candidates
                     else None,
-                    signal_floor,
+                    line,
                     family,
-                    danger_line,
+                    signal_lows,
                     list(record.get(DEV_SIGNAL_DWELL_DAILY) or []),
                     self.signal_frozen(record),
                     self.signal_frozen_at_rail(record),
+                    self._signal_excluded(device_id),
                 )
             )
         rows.sort(key=lambda row: (row[2] is None, -(row[2] or 0)))
@@ -1228,22 +1206,28 @@ f"report, power cycle or pull the battery, then re-interview.",
             event_count,
             signal_value,
             signal_minimum,
-            signal_floor,
+            line,
             family,
-            danger_line,
+            signal_lows,
             dwell_daily,
             frozen,
             frozen_rail,
+            sig_excluded,
         ) in rows:
             signal_text = "-" if signal_value is None else f"{signal_value:g}"
             signal_minimum_text = (
                 "-" if signal_minimum is None else f"{signal_minimum:g}"
             )
-            floor_text = "-" if signal_floor is None else f"{signal_floor:g}"
+            line_text = "-" if line is None else f"{line:g}"
             family_text = family or "-"
-            danger_text = "-" if danger_line is None else f"{danger_line:g}"
-            # Newest first, matching the gaps column; RSSI rows are
-            # provisional until their floors have been seen for real.
+            # Newest first, matching the gaps column: the daily lows
+            # the floor is chosen from, visible so the line can be
+            # checked against the readings behind it.
+            lows_text = (
+                " ".join(f"{v:g}" for v in reversed(signal_lows))
+                if signal_lows
+                else "-"
+            )
             dwell_text = (
                 " ".join(f"{pct:g}" for pct in reversed(dwell_daily))
                 if dwell_daily
@@ -1255,12 +1239,17 @@ f"report, power cycle or pull the battery, then re-interview.",
                 frozen_text = "FROZEN (rail)"
             else:
                 frozen_text = "FROZEN"
+            if sig_excluded:
+                # Excluded devices keep recording (their lows still
+                # show) but are not judged: no dwell, no frozen call.
+                dwell_text = "excl"
+                frozen_text = "excl"
             lines.append(
                 f"| {device_name} | {day_count} | "
                 f"{self._fmt_gap(operative)} | {maxima_cell} | "
                 f"{clock_source} | {event_count} | {signal_text} | "
-                f"{signal_minimum_text} | {floor_text} | {family_text} | "
-                f"{danger_text} | {dwell_text} | {frozen_text} |"
+                f"{signal_minimum_text} | {line_text} | {family_text} | "
+                f"{lows_text} | {dwell_text} | {frozen_text} |"
             )
         lines.append("")
         lines.append(f"{len(rows)} watched devices.")
@@ -1443,14 +1432,16 @@ f"report, power cycle or pull the battery, then re-interview.",
 
     @property
     def signal_tracked(self) -> dict[str, int]:
-        """Return counts of devices with a learned signal baseline.
+        """Return counts of devices with a learned signal floor.
 
-        Tracked means the device has an established signal floor and
-        so a live danger line: the signal analogue of Devices Learned.
-        Split by scale because LQI and RSSI are judged by different
-        formulas, and RSSI is the smaller, less trusted cohort. Still
-        learning counts devices that report signal but have not yet
-        reached their floor.
+        Tracked means the device has a floor and so a live line: the
+        signal analogue of Devices Learned. Split by scale for the
+        curious; the dwell rule is identical for both. Learning counts
+        devices that report signal but have no floor yet, which since
+        the floor exists from the first recorded day means a device
+        whose history is entirely rail values (a floor of nothing
+        rather than a false one). Excluded devices still count here:
+        exclusion suppresses judgment, not observation.
         """
         counts = {"lqi": 0, "rssi": 0, "learning": 0}
         for record in self.data.get(DATA_DEVICES, {}).values():
@@ -1459,10 +1450,7 @@ f"report, power cycle or pull the battery, then re-interview.",
                 if record.get(DEV_SIGNAL_VALUE) is not None:
                     counts["learning"] += 1
                 continue
-            floor = self._trimmed_minimum(
-                record.get(DEV_SIGNAL_DAILY_MIN) or []
-            )
-            if floor is not None and floor >= 0:
+            if line >= 0:
                 counts["lqi"] += 1
             else:
                 counts["rssi"] += 1
@@ -1480,6 +1468,11 @@ f"report, power cycle or pull the battery, then re-interview.",
         """
         frozen: list[dict[str, Any]] = []
         for device_id, record in self.data.get(DATA_DEVICES, {}).items():
+            # Signal-excluded devices are still observed but never
+            # judged: they keep their history and stay out of this
+            # list until re-included by hand.
+            if self._signal_excluded(device_id):
+                continue
             if not self.signal_frozen(record):
                 continue
             frozen.append(
@@ -1799,6 +1792,26 @@ f"report, power cycle or pull the battery, then re-interview.",
             return True
         return device_id in options.get(CONF_BATTERY_EXCLUDED_DEVICES, [])
 
+    def _signal_excluded(self, device_id: str) -> bool:
+        """Return whether a device is excluded from signal judgment
+        only. The same broad-to-narrow ladder as battery. Exclusion
+        suppresses judgment, not observation: the device keeps
+        recording its floor and dwell in storage, so re-inclusion is
+        instant and arrives with history; it simply stops being
+        reported. This is the manual removal from tracking the
+        frozen-signal ruling requires, for a device that resists
+        every recovery."""
+        options = self.entry.options
+        if self._watched.get(device_id) in options.get(
+            CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []
+        ):
+            return True
+        if self._device_labels.get(device_id, frozenset()) & set(
+            options.get(CONF_SIGNAL_EXCLUDED_LABELS, [])
+        ):
+            return True
+        return device_id in options.get(CONF_SIGNAL_EXCLUDED_DEVICES, [])
+
     @property
     def detected_batteries(self) -> list[dict[str, Any]]:
         """Return every device with an elected battery, for the
@@ -1814,6 +1827,31 @@ f"report, power cycle or pull the battery, then re-interview.",
                 ),
             }
             for device_id, (entity_id, _) in self._battery_entity.items()
+        ]
+        rows.sort(key=lambda row: row["name"].lower())
+        return rows
+
+    @property
+    def detected_signals(self) -> list[dict[str, Any]]:
+        """Return every device with a signal reading, for the signal
+        options picker: pick-from-detected, what you see is what is
+        being judged. Excluded devices are present, because an
+        excluded device is exactly the thing this picker exists to
+        un-tick."""
+        rows = [
+            {
+                "device_id": device_id,
+                "name": self._device_names.get(device_id, device_id),
+                "integration": self._watched.get(device_id, "?"),
+                "labels": self._device_labels.get(
+                    device_id, frozenset()
+                ),
+            }
+            for device_id, record in self.data.get(
+                DATA_DEVICES, {}
+            ).items()
+            if record.get(DEV_SIGNAL_VALUE) is not None
+            or record.get(DEV_SIGNAL_DAILY_MIN)
         ]
         rows.sort(key=lambda row: row["name"].lower())
         return rows
