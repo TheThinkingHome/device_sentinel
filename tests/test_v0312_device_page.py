@@ -31,6 +31,7 @@ from custom_components.device_sentinel.const import (
     STATUS_LEARNING,
     STATUS_WATCHING,
     UNIT_BATTERIES,
+    UNIT_SIGNALS,
     UNIT_DEVICES,
 )
 
@@ -102,8 +103,12 @@ async def test_every_count_sensor_carries_a_unit(hass: HomeAssistant):
         "sensor.device_sentinel_devices_watched": UNIT_DEVICES,
         "sensor.device_sentinel_devices_learned": UNIT_DEVICES,
         "sensor.device_sentinel_service_devices_ignored": UNIT_DEVICES,
-        "sensor.device_sentinel_battery_low_count": UNIT_BATTERIES,
-        "sensor.device_sentinel_battery_low_list": UNIT_BATTERIES,
+        "sensor.device_sentinel_tracked_signals": UNIT_SIGNALS,
+        "sensor.device_sentinel_tracked_batteries": UNIT_BATTERIES,
+        "sensor.device_sentinel_tracked_devices": UNIT_DEVICES,
+        "sensor.device_sentinel_signal_problems": UNIT_SIGNALS,
+        "sensor.device_sentinel_low_batteries": UNIT_BATTERIES,
+        "sensor.device_sentinel_frozen_devices": UNIT_DEVICES,
     }
     for entity_id, unit in expected.items():
         state = hass.states.get(entity_id)
