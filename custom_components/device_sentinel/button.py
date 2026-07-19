@@ -3,17 +3,25 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.12 (2026-07-17)
+#   Version: 0.4.4 (2026-07-19)
 
 """Button platform for the Device Sentinel integration.
 
-One button: the enable assist. Press it and Device Sentinel enables
-every integration-disabled last_seen and signal entity on watched
-devices, so protocol truth flows without hand-enabling entities one
-by one. User-disabled entities are respected.
+Three enable-assist buttons, one per diagnostic kind: signals, last
+seen, and battery. Each walks the entity registry for entities of its
+kind that an integration shipped turned off, and turns them on, on
+watched devices only. User-disabled entities are respected.
+
+Three buttons rather than one so a user can enable exactly the
+diagnostic they want. Battery is its own match rule (a percentage
+sensor with device_class battery), not a widening of the signal
+filter, and it earns its own press because a user reading only
+"signals" has no reason to expect a battery button to be hiding there.
 """
 
 from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import EntityCategory
@@ -31,37 +39,65 @@ async def async_setup_entry(
     entry: DeviceSentinelConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Device Sentinel buttons."""
-    async_add_entities([DeviceSentinelEnableSignalsButton(entry.runtime_data)])
+    """Set up the Device Sentinel enable-assist buttons."""
+    coordinator = entry.runtime_data
+    async_add_entities(
+        [
+            DeviceSentinelEnableButton(
+                coordinator,
+                key="enable_signal_entities",
+                name="Enable Signals",
+                icon="mdi:signal",
+                action=coordinator.async_enable_signal_entities,
+            ),
+            DeviceSentinelEnableButton(
+                coordinator,
+                key="enable_last_seen_entities",
+                name="Enable Last Seen",
+                icon="mdi:clock-check-outline",
+                action=coordinator.async_enable_last_seen_entities,
+            ),
+            DeviceSentinelEnableButton(
+                coordinator,
+                key="enable_battery_entities",
+                name="Enable Battery",
+                icon="mdi:battery-heart-variant",
+                action=coordinator.async_enable_battery_entities,
+            ),
+        ]
+    )
 
 
-class DeviceSentinelEnableSignalsButton(ButtonEntity):
-    """Enable disabled last_seen and signal entities on watched devices.
+class DeviceSentinelEnableButton(ButtonEntity):
+    """Enable integration-disabled entities of one kind on watched
+    devices.
 
-    The name says scan and enable because that is both halves of what
-    the press does: it walks the entity registry for signal and
-    last_seen entities an integration shipped turned off, and turns
-    them on. It does not discover devices; discovery is automatic and
-    continuous through registry listeners, so a name promising a
-    search would promise something that never needed asking for.
-
-    Last-seen is named alongside signal deliberately. It is protocol
-    truth, the clock freeze detection trusts most, and a user who
-    reads only "signal" has no reason to press a button that would
-    strengthen their freeze detection.
+    The press does both halves the name implies: it walks the entity
+    registry for entities of this button's kind that an integration
+    shipped turned off, and turns them on. It does not discover
+    devices; discovery is automatic and continuous through registry
+    listeners, so a name promising a search would promise something
+    that never needed asking for. User-disabled entities are left
+    alone.
     """
 
     _attr_has_entity_name = True
-    _attr_name = "Scan and Enable Signal and Last-Seen Entities"
-    _attr_icon = "mdi:signal"
     _attr_entity_category = EntityCategory.CONFIG
 
-    def __init__(self, coordinator: DeviceSentinelCoordinator) -> None:
-        """Initialize the button."""
+    def __init__(
+        self,
+        coordinator: DeviceSentinelCoordinator,
+        key: str,
+        name: str,
+        icon: str,
+        action: Callable[[], Awaitable[dict[str, int]]],
+    ) -> None:
+        """Initialize one enable button around its coordinator action."""
         self._coordinator = coordinator
-        self._attr_unique_id = (
-            f"{coordinator.entry.entry_id}_enable_signal_entities"
-        )
+        self._action = action
+        self._attr_name = name
+        self._attr_icon = icon
+        self._attr_unique_id = f"{coordinator.entry.entry_id}_{key}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, coordinator.entry.entry_id)},
             name="Device Sentinel",
@@ -75,5 +111,5 @@ class DeviceSentinelEnableSignalsButton(ButtonEntity):
         }
 
     async def async_press(self) -> None:
-        """Run the enable assist."""
-        await self._coordinator.async_enable_signal_entities()
+        """Run this button's enable assist."""
+        await self._action()
