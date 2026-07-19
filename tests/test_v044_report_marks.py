@@ -98,21 +98,22 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
         hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     header = next(line for line in text.splitlines() if "DEVICE | DAYS" in line)
-    assert "SIGNAL LOWS (K=1)" in header
+    assert "SIGNAL (K=1)" in header
     assert "GAPS (K=" in header
     assert "BAT LEVEL (floor 20%)" in header
     # The retired columns are gone.
     assert "LINE" not in header
     assert "FAMILY" not in header
     assert "SIG MIN" not in header
+    assert "SIG FROZEN" not in header
 
     # Every data row must have exactly as many cells as the header,
-    # nine, so a dropped column can never leave the rows misaligned.
+    # eight, so a dropped column can never leave the rows misaligned.
     def _cells(line: str) -> int:
         return len([c for c in line.strip().strip("|").split("|")])
 
     header_cells = _cells(header)
-    assert header_cells == 9, header_cells
+    assert header_cells == 8, header_cells
     data_rows = [
         line
         for line in text.splitlines()
