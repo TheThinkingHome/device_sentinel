@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.7 (2026-07-19)
+#   Version: 0.4.8 (2026-07-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -53,7 +53,6 @@ from homeassistant.util import dt as dt_util
 from .const import (
     BATTERY_CLEAR_MARGIN,
     CONF_EXCLUDED_DEVICES,
-    CONF_EXCLUDED_ENTITIES,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_EXCLUDED_DEVICES,
     CONF_BATTERY_EXCLUDED_INTEGRATIONS,
@@ -95,17 +94,13 @@ from .const import (
     DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DWELL_DAILY,
-    DEV_SIGNAL_FROZEN_AT,
     DEV_SIGNAL_LAST_CHANGE,
-    DEV_SIGNAL_FROZEN_VERDICT,
-    DEV_SIGNAL_REPEAT_COUNT,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     DEV_TODAY_MAX,
     SIGNAL_NAME_TERMS,
-    SIGNAL_FROZEN_LIVELY_MULTIPLE,
-    SIGNAL_FROZEN_REPEAT_COUNT,
+    RAIL_CONFIRM_DAYS,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
     STATS_EPOCH,
@@ -148,9 +143,6 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_SIGNAL_BELOW_TODAY: 0.0,
         DEV_SIGNAL_DWELL_DAILY: [],
         DEV_SIGNAL_LAST_CHANGE: None,
-        DEV_SIGNAL_REPEAT_COUNT: 0,
-        DEV_SIGNAL_FROZEN_VERDICT: False,
-        DEV_SIGNAL_FROZEN_AT: None,
         DEV_BATTERY_LOW: False,
         DEV_BATTERY_SINCE: None,
         DEV_BATTERY_VALUE: None,
@@ -250,9 +242,6 @@ class DeviceSentinelCoordinator:
                 record[DEV_SIGNAL_BELOW_TODAY] = 0.0
                 record[DEV_SIGNAL_DWELL_DAILY] = []
                 record[DEV_SIGNAL_LAST_CHANGE] = None
-                record[DEV_SIGNAL_REPEAT_COUNT] = 0
-                record[DEV_SIGNAL_FROZEN_VERDICT] = False
-                record[DEV_SIGNAL_FROZEN_AT] = None
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
                 record.setdefault(DEV_BATTERY_VALUE, None)
@@ -275,9 +264,6 @@ class DeviceSentinelCoordinator:
                 record.setdefault(DEV_SIGNAL_BELOW_TODAY, 0.0)
                 record.setdefault(DEV_SIGNAL_DWELL_DAILY, [])
                 record.setdefault(DEV_SIGNAL_LAST_CHANGE, None)
-                record.setdefault(DEV_SIGNAL_REPEAT_COUNT, 0)
-                record.setdefault(DEV_SIGNAL_FROZEN_VERDICT, False)
-                record.setdefault(DEV_SIGNAL_FROZEN_AT, None)
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
                 record.setdefault(DEV_BATTERY_VALUE, None)
@@ -396,9 +382,6 @@ class DeviceSentinelCoordinator:
         excluded_device_ids = set(
             options.get(CONF_EXCLUDED_DEVICES, [])
         )
-        excluded_entity_ids = set(
-            options.get(CONF_EXCLUDED_ENTITIES, [])
-        )
         excluded_labels = set(options.get(CONF_EXCLUDED_LABELS, []))
         excluded_integrations = set(
             options.get(CONF_EXCLUDED_INTEGRATIONS, [])
@@ -447,9 +430,12 @@ class DeviceSentinelCoordinator:
             entity_map[ent.entity_id] = (ent.device_id, ent.config_entry_id)
             entity_labels[ent.entity_id] = frozenset(ent.labels or ())
             if excluded_labels & set(ent.labels or ()):
+                # An entity carrying an excluded label does not feed
+                # its device's judgment. This is the label axis, not a
+                # per-entity exclude: the explicit entity exclude was
+                # removed (ruled 2026-07-19 evening) as residue from
+                # the entity-level Entity Sentinel blueprint.
                 excluded_entities[ent.entity_id] = "label"
-            elif ent.entity_id in excluded_entity_ids:
-                excluded_entities[ent.entity_id] = "entity"
             if self._is_last_seen(ent):
                 last_seen_entity[ent.device_id] = ent.entity_id
             if self._is_signal(ent):
@@ -660,7 +646,6 @@ class DeviceSentinelCoordinator:
                 value = None
             if value is not None:
                 self._feed_signal(record, value, now)
-                self._refresh_on_frozen_flip(device_id, record)
 
         storm = self._storm_feed(entry_id, device_id, now)
         grace = now < self._grace_until
@@ -762,14 +747,6 @@ class DeviceSentinelCoordinator:
         previous = record.get(DEV_SIGNAL_VALUE)
         if previous is None or value != previous:
             record[DEV_SIGNAL_LAST_CHANGE] = now
-            record[DEV_SIGNAL_REPEAT_COUNT] = 1
-        else:
-            # Same value again: count the repeat. Five identical
-            # readings in a row is the stuck-signal tell, since a live
-            # link wobbles a point or two every report.
-            record[DEV_SIGNAL_REPEAT_COUNT] = (
-                record.get(DEV_SIGNAL_REPEAT_COUNT, 0) + 1
-            )
         record[DEV_SIGNAL_VALUE] = value
 
         if value in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI):
@@ -872,90 +849,33 @@ class DeviceSentinelCoordinator:
             base_k = 0
         return max(0, min(base_k + self._signal_slider(), days - 1))
 
-    def signal_frozen(self, record: dict[str, Any]) -> bool:
-        """Return whether this device's signal is frozen at the rail.
+    def signal_railed(self, record: dict[str, Any]) -> bool:
+        """Return whether this device's signal is stuck at the rail.
 
-        Frozen is the rail case only (ruled 2026-07-19, evening). A
-        signal held at its type's fill value, 255 for LQI or -128 for
-        RSSI, while the device keeps reporting is a stale reading: the
-        field the device stopped populating, reading as perfect signal
-        when it is the opposite. That is unambiguous and worth
-        flagging.
+        A rail is the type's fill value, 255 for LQI or -128 for RSSI:
+        the empty value of a field the device stopped populating,
+        which reads as perfect signal and is the opposite. It is
+        confirmed over time, not on a single reading: the daily low
+        has sat at a rail for RAIL_CONFIRM_DAYS consecutive days
+        (ruled 2026-07-19 evening, replacing the live repeat counter
+        the frozen rework proved unreliable). Reading the daily-low
+        series the report already keeps means no live counter and no
+        per-reading state: a rail that comes and goes within a day
+        never confirms, while one that holds across days does.
 
-        The plausible-value case, a real reading that stops moving,
-        was tried and removed. It could not be told apart from a
-        healthy steady link: a device with a strong stable connection
-        reports the same value for hours, and a whole family of
-        motion-blind devices did exactly that and flagged falsely. The
-        rabbit hole and why each attempt failed are recorded in the
-        project document; the learned per-device flat-stretch approach
-        that could work is written down there for if it is ever worth
-        building.
-
-        The rail flag stands on three conditions: the value has
-        repeated SIGNAL_FROZEN_REPEAT_COUNT times (so a single stray
-        rail reading does not trip it), the device is still lively by
-        its own rhythm (a silent device is a device freeze for the
-        freeze detector, not a frozen signal), and the held value is a
-        rail. A device with no learned rhythm is not judged, the
-        conservative default.
+        The plausible-value freeze, a real reading that stops moving,
+        is not judged here: a device with a strong steady link reports
+        the same value for hours and cannot be told from a stuck one.
+        The project document records that rabbit hole and the learned
+        flat-stretch approach that could restore it if it is ever
+        worth building.
         """
-        # Cheapest test first: the value must be a rail at all.
-        if record.get(DEV_SIGNAL_VALUE) not in (
-            SIGNAL_RAIL_LQI,
-            SIGNAL_RAIL_RSSI,
-        ):
+        lows = record.get(DEV_SIGNAL_DAILY_MIN) or []
+        if len(lows) < RAIL_CONFIRM_DAYS:
             return False
-        # It must have repeated, so one stray rail reading is ignored.
-        if record.get(DEV_SIGNAL_REPEAT_COUNT, 0) < SIGNAL_FROZEN_REPEAT_COUNT:
-            return False
-        # And the device must be lively by its own rhythm.
-        last_activity = record.get(DEV_LAST_ACTIVITY)
-        if last_activity is None:
-            return False
-        rhythm, _ = self._trimmed_maximum(record.get(DEV_DAILY_MAX) or [])
-        if rhythm is None:
-            return False
-        quiet = dt_util.utcnow().timestamp() - last_activity
-        return quiet <= SIGNAL_FROZEN_LIVELY_MULTIPLE * rhythm
-
-    def _refresh_on_frozen_flip(
-        self, device_id: str, record: dict[str, Any]
-    ) -> None:
-        """Refresh the Signals Frozen entity only when this device's
-        frozen verdict actually changes.
-
-        The verdict is judged live, but the entity only reflected it
-        when some unrelated event happened to fire a refresh, so
-        between those it could show a stale count (a frozen verdict
-        held while the counter had already fallen back). Recomputing
-        here on every signal reading is cheap; the refresh itself, the
-        part that re-renders entities, fires only on a flip, so a
-        healthy fleet with no freezes never notifies and a real freeze
-        starting or clearing shows at once. Excluded devices are not
-        judged, so a change in their readings never flips a verdict.
-        """
-        if self._signal_excluded(device_id):
-            return
-        verdict = self.signal_frozen(record)
-        if verdict != record.get(DEV_SIGNAL_FROZEN_VERDICT, False):
-            record[DEV_SIGNAL_FROZEN_VERDICT] = verdict
-            self._dirty = True
-            self._notify()
-
-    def signal_frozen_at_rail(self, record: dict[str, Any]) -> bool:
-        """Return whether a frozen signal is stuck at a fill value.
-
-        A freeze at the rail (255, -128) is near-certainly a fault; a
-        freeze at a real value could be a genuinely steady link. The
-        report shows both, flagged, so a user can weigh them.
-        """
-        if not self.signal_frozen(record):
-            return False
-        return record.get(DEV_SIGNAL_VALUE) in (
-            SIGNAL_RAIL_LQI,
-            SIGNAL_RAIL_RSSI,
-        )
+        rails = (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
+        recent = lows[-RAIL_CONFIRM_DAYS:]
+        return all(value in rails for value in recent)
 
     def _storm_feed(
         self, entry_id: str | None, device_id: str, now: float
@@ -1299,10 +1219,9 @@ class DeviceSentinelCoordinator:
             f"{LEARNING_MIN_DAYS} days, keep {DAILY_MAX_KEEP} days.",
             "",
             f"| DEVICE | DAYS | GAPS (K={TRIM_TOP_K}) | CLOCK | "
-            f"EVENTS | SIGNAL LOWS (K={self._signal_slider()}) | "
-            f"DWELL% | BAT LEVEL (floor {self.low_threshold:g}%) | "
-            f"SIG FROZEN |",
-            "|---|---|---|---|---|---|---|---|---|",
+            f"EVENTS | SIGNAL (K={self._signal_slider()}) | "
+            f"DWELL% | BAT LEVEL (floor {self.low_threshold:g}%) |",
+            "|---|---|---|---|---|---|---|---|",
         ]
         rows = []
         for device_id, record in self.data[DATA_DEVICES].items():
@@ -1327,8 +1246,7 @@ class DeviceSentinelCoordinator:
                     self._format_signal_lows_cell(record),
                     list(record.get(DEV_SIGNAL_DWELL_DAILY) or []),
                     self._format_battery_cell(record),
-                    self.signal_frozen(record),
-                    self.signal_frozen_at_rail(record),
+                    self.signal_railed(record),
                     self._signal_excluded(device_id),
                 )
             )
@@ -1343,8 +1261,7 @@ class DeviceSentinelCoordinator:
             lows_cell,
             dwell_daily,
             battery_cell,
-            frozen,
-            frozen_rail,
+            railed,
             sig_excluded,
         ) in rows:
             dwell_text = (
@@ -1352,22 +1269,20 @@ class DeviceSentinelCoordinator:
                 if dwell_daily
                 else "-"
             )
-            if not frozen:
-                frozen_text = "-"
-            elif frozen_rail:
-                frozen_text = "FROZEN (rail)"
-            else:
-                frozen_text = "FROZEN"
+            # A confirmed rail (daily low at the fill value for three
+            # days) is marked in the signal cell itself, not a column:
+            # a warning sign ahead of the lows so it reads at a glance.
+            signal_cell = f"\u26a0\ufe0f {lows_cell}" if railed else lows_cell
             if sig_excluded:
                 # Excluded devices keep recording (their lows still
-                # show) but are not judged: no dwell, no frozen call.
+                # show) but are not judged: no dwell, no rail mark.
                 dwell_text = "excl"
-                frozen_text = "excl"
+                signal_cell = lows_cell
             lines.append(
                 f"| {device_name} | {day_count} | "
                 f"{maxima_cell} | "
-                f"{clock_source} | {event_count} | {lows_cell} | "
-                f"{dwell_text} | {battery_cell} | {frozen_text} |"
+                f"{clock_source} | {event_count} | {signal_cell} | "
+                f"{dwell_text} | {battery_cell} |"
             )
         lines.append("")
         lines.append(f"{len(rows)} watched devices.")
@@ -1575,38 +1490,135 @@ class DeviceSentinelCoordinator:
         return counts
 
     @property
-    def signal_frozen_list(self) -> list[dict[str, Any]]:
-        """Return the devices whose signal is frozen right now.
+    def signal_tracked_count(self) -> int:
+        """Return how many devices have a signal line, after excludes.
 
-        A frozen signal is a value that has not moved in a day while
-        the device kept reporting: not reporting, whatever value it
-        holds. Named for a dashboard and an automation, the rail flag
-        carried per row so a near-certain fault (frozen at 255 or
-        -128) reads apart from a merely steady value.
+        The state for Tracked Signals: devices with a floor that are
+        not signal-excluded. Exclusion suppresses judgment, so an
+        excluded device is not something we are watching for signal.
         """
-        frozen: list[dict[str, Any]] = []
-        for device_id, record in self.data.get(DATA_DEVICES, {}).items():
-            # Signal-excluded devices are still observed but never
-            # judged: they keep their history and stay out of this
-            # list until re-included by hand.
-            if self._signal_excluded(device_id):
-                continue
-            if not self.signal_frozen(record):
-                continue
-            frozen.append(
-                {
-                    "name": self._device_names.get(device_id),
-                    "value": record.get(DEV_SIGNAL_VALUE),
-                    "at_rail": self.signal_frozen_at_rail(record),
-                }
-            )
-        frozen.sort(key=lambda row: (not row["at_rail"], row["name"] or ""))
-        return frozen
+        counts = self.signal_tracked
+        watched = counts["lqi"] + counts["rssi"]
+        excluded = sum(
+            1
+            for device_id, record in self.data.get(DATA_DEVICES, {}).items()
+            if self._danger_line(record) is not None
+            and self._signal_excluded(device_id)
+        )
+        return watched - excluded
 
     @property
-    def signal_frozen_count(self) -> int:
-        """Return how many signals are frozen right now."""
-        return len(self.signal_frozen_list)
+    def battery_tracked_count(self) -> int:
+        """Return how many devices we watch for battery, after excludes.
+
+        A device is battery-tracked when a battery entity was elected
+        for it and it is not battery-excluded. The battery analogue of
+        Tracked Signals.
+        """
+        return sum(
+            1
+            for device_id in self._battery_entity
+            if not self._battery_excluded(device_id)
+        )
+
+    @property
+    def battery_tracked_list(self) -> list[dict[str, Any]]:
+        """Return the devices watched for battery, for the attribute."""
+        return sorted(
+            (
+                {"name": self._device_names.get(device_id)}
+                for device_id in self._battery_entity
+                if not self._battery_excluded(device_id)
+            ),
+            key=lambda row: row["name"] or "",
+        )
+
+    @property
+    def freeze_tracked_count(self) -> int:
+        """Return how many devices are eligible for freeze detection.
+
+        A device with a learned rhythm (an established reporting
+        cadence) is freeze-judgeable, minus the global device
+        excludes. The Step 6 engine is not built; this counts the set
+        it will act on, the surfaces-before-engines pattern. A freeze
+        exclude per section joins when that engine ships.
+        """
+        return sum(
+            1
+            for device_id, record in self.data.get(DATA_DEVICES, {}).items()
+            if len(record.get(DEV_DAILY_MAX) or []) >= LEARNING_MIN_DAYS
+            and device_id not in self._excluded_devices
+        )
+
+    @property
+    def freeze_tracked_list(self) -> list[dict[str, Any]]:
+        """Return the freeze-eligible devices, for the attribute."""
+        return sorted(
+            (
+                {"name": self._device_names.get(device_id)}
+                for device_id, record in self.data.get(
+                    DATA_DEVICES, {}
+                ).items()
+                if len(record.get(DEV_DAILY_MAX) or []) >= LEARNING_MIN_DAYS
+                and device_id not in self._excluded_devices
+            ),
+            key=lambda row: row["name"] or "",
+        )
+
+    @property
+    def frozen_devices_list(self) -> list[dict[str, Any]]:
+        """Return devices judged frozen, unknown, or unavailable.
+
+        The Frozen Devices problem sensor. Step 6, the freeze engine,
+        is not built, so this is empty now and the sensor is a
+        placeholder: the shape ships ahead of the engine so the engine
+        is a reader, not a new surface (surfaces before engines). Each
+        row will carry a category (frozen, unknown, unavailable) once
+        the engine fills it.
+        """
+        return []
+
+    @property
+    def frozen_devices_count(self) -> int:
+        """Return how many devices are frozen; zero until Step 6."""
+        return len(self.frozen_devices_list)
+
+    @property
+    def signal_problem_list(self) -> list[dict[str, Any]]:
+        """Return devices with a signal problem, each tagged by kind.
+
+        Two kinds (ruled 2026-07-19 evening). A rail: the daily low
+        has sat at the fill value (255, -128) for three days, a stale
+        reading that shows as perfect signal. A low: the device dwells
+        below its danger line (the dwell judgment, still soaking, so
+        this kind stays quiet until its threshold is ruled). Reported
+        together because both are signal problems a person discovers
+        here and may then exclude, and kept apart by kind because a
+        rail is a fault and a low is a weak link. Signal-excluded
+        devices are observed but never judged, so they stay off this
+        list until re-included by hand.
+        """
+        problems: list[dict[str, Any]] = []
+        for device_id, record in self.data.get(DATA_DEVICES, {}).items():
+            if self._signal_excluded(device_id):
+                continue
+            if self.signal_railed(record):
+                problems.append(
+                    {
+                        "name": self._device_names.get(device_id),
+                        "kind": "rail",
+                        "value": record.get(DEV_SIGNAL_VALUE),
+                    }
+                )
+        # Rail problems first, then by name. The low kind joins here
+        # once the dwell danger line is ruled.
+        problems.sort(key=lambda row: (row["kind"] != "rail", row["name"] or ""))
+        return problems
+
+    @property
+    def signal_problem_count(self) -> int:
+        """Return how many devices have a signal problem."""
+        return len(self.signal_problem_list)
 
     @property
     def classification_breakdown(self) -> dict[str, dict[str, int]]:
