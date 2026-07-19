@@ -69,16 +69,16 @@ async def test_entity_tracks_the_freeze_and_the_clear(
     coord, device_id, signal_id = await _setup(hass)
     _make_lively(coord, device_id)
 
-    # Five identical readings via the real state path drive the freeze.
+    # Five identical rail readings drive the freeze (rail-only rule).
     for _ in range(SIGNAL_FROZEN_REPEAT_COUNT):
-        hass.states.async_set(signal_id, "80")
+        hass.states.async_set(signal_id, "255")
         await hass.async_block_till_done()
     state = hass.states.get("sensor.device_sentinel_signals_frozen")
     assert int(state.state) == 1
     devices = state.attributes["devices"]
     assert devices and devices[0]["name"] == "Frz46 Device"
 
-    # A different reading resets the counter: the entity clears at once.
+    # A real reading resets the counter: the entity clears at once.
     hass.states.async_set(signal_id, "84")
     await hass.async_block_till_done()
     state = hass.states.get("sensor.device_sentinel_signals_frozen")
@@ -93,7 +93,7 @@ async def test_stored_verdict_tracks_the_flip(hass: HomeAssistant):
     rec = _make_lively(coord, device_id)
 
     for _ in range(SIGNAL_FROZEN_REPEAT_COUNT):
-        hass.states.async_set(signal_id, "80")
+        hass.states.async_set(signal_id, "255")
         await hass.async_block_till_done()
     assert rec[DEV_SIGNAL_FROZEN_VERDICT] is True
 
