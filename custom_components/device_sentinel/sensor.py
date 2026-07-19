@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.5 (2026-07-19)
+#   Version: 0.4.7 (2026-07-19)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -347,19 +347,22 @@ class DeviceSentinelSignalTrackedSensor(DeviceSentinelBaseSensor):
 
 
 class DeviceSentinelSignalFrozenSensor(DeviceSentinelBaseSensor):
-    """How many device signals are frozen right now.
+    """How many device signals are stuck at the rail right now.
 
-    A frozen signal is one that reads identical across its last five
-    reports while the device is still lively by its own rhythm: not
-    measuring its link, whatever value it holds. Judged live, so this
-    number updates as reports arrive rather than only at the nightly
-    report. It is the number that proves the integration's worth,
-    since a frozen signal reads healthy on every ordinary dashboard.
-    The device list rides in attributes, each row flagged for whether
-    it froze at a fill value (a near-certain fault) or a real one
-    (which could be a steady link). Removal from tracking is a manual
-    act, so a resistant device stays counted until recovered or
-    excluded.
+    A rail freeze is a signal held at its type's fill value, 255 for
+    LQI or -128 for RSSI, across its last five reports while the
+    device keeps reporting: the empty value of a field the device
+    stopped populating, which reads as perfect signal and is the
+    opposite. Judged live, so this number updates as reports arrive
+    rather than only at the nightly report. It reads healthy on every
+    ordinary dashboard, which is the point of catching it. The device
+    list rides in attributes. Removal from tracking is a manual act,
+    so a resistant device stays counted until recovered or excluded.
+
+    The plausible-value case, a real reading that stops moving, was
+    tried and removed: it could not be told from a healthy steady
+    link. The project document records why and what would be needed
+    to bring it back.
     """
 
     _attr_name = "Signals Frozen"
