@@ -57,7 +57,7 @@ async def test_options_menu_branches(hass: HomeAssistant):
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.MENU
     assert set(result["menu_options"]) == {
-        "exclusions", "battery", "notifications",
+        "exclusions", "battery", "notifications", "signal",
     }
 
 
