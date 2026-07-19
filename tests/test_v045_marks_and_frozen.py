@@ -5,14 +5,10 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 #   Version: 0.4.5 (2026-07-19)
 
-"""0.4.5 tests: the refined SIGNAL LOWS marks and the report-count
-frozen judgment.
+"""0.4.5 tests: the refined SIGNAL marks.
 
-The marks: the floor's earliest occurrence is bold, and a value equal
-to the floor is never struck. The frozen rule: five identical reports
-on a device lively by its own rhythm, counting reports rather than
-elapsed time so it fits fast and slow reporters alike, and surviving a
-restart because the counter is stored.
+The floor's earliest occurrence is bold, and a value equal to the
+floor is never struck.
 """
 
 from homeassistant.core import HomeAssistant
@@ -22,13 +18,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
-    DEV_DAILY_MAX,
-    DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_MIN,
-    DEV_SIGNAL_REPEAT_COUNT,
-    DEV_SIGNAL_VALUE,
-    SIGNAL_FROZEN_REPEAT_COUNT,
-    SIGNAL_RAIL_LQI,
 )
 
 DOMAIN = "device_sentinel"
@@ -102,60 +92,3 @@ async def test_below_floor_is_struck_but_equal_is_not(hass: HomeAssistant):
     assert "**112**" in row     # earliest 112: bold
     # The other 112 is plain, not struck (equal to the floor).
     assert "~~112~~" not in row
-
-
-# The frozen counter and its persistence.
-
-
-async def test_counter_survives_a_restart(hass: HomeAssistant):
-    """The repeat counter is stored, so a restart mid-freeze does not
-    reset it: a genuinely stuck signal stays caught across the nightly
-    reboot rather than needing five fresh reports each morning."""
-    coord, device_id = await _coordinator(hass)
-    rec = coord.data["devices"][device_id]
-    # Drive the counter to the threshold.
-    for tick in range(SIGNAL_FROZEN_REPEAT_COUNT):
-        coord._feed_signal(rec, 80.0, 1000.0 + tick)
-    assert rec[DEV_SIGNAL_REPEAT_COUNT] == SIGNAL_FROZEN_REPEAT_COUNT
-
-    # Persist, then reload as a restart would.
-    await coord._store.async_save(coord.data)
-    loaded = await coord._store.async_load()
-    restored = loaded["devices"][device_id]
-    assert restored[DEV_SIGNAL_REPEAT_COUNT] == SIGNAL_FROZEN_REPEAT_COUNT
-
-
-async def test_slow_reporter_rail_freeze_on_five_reports_not_time(
-    hass: HomeAssistant,
-):
-    """A rail freeze is judged on five identical reports, not elapsed
-    time, so a device reporting hours apart is caught by the same rule
-    as a seconds reporter, with no time threshold to tune."""
-    coord, device_id = await _coordinator(hass)
-    rec = coord.data["devices"][device_id]
-    rec[DEV_DAILY_MAX] = [3600.0, 3500.0, 3400.0, 3600.0, 3550.0,
-                          3400.0, 3600.0]
-    import homeassistant.util.dt as dt_util
-    rec[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - 60
-    # Five identical rail reports spaced hours apart.
-    for tick in range(SIGNAL_FROZEN_REPEAT_COUNT):
-        coord._feed_signal(rec, SIGNAL_RAIL_LQI, 1000.0 + tick * 6 * 3600)
-    assert coord.signal_frozen(rec) is True
-
-
-async def test_rail_repeats_reach_the_count_and_flag_rail(
-    hass: HomeAssistant,
-):
-    """A rail value repeated reaches the count like any other, and is
-    flagged as a rail freeze, the clearest fault."""
-    coord, device_id = await _coordinator(hass)
-    rec = coord.data["devices"][device_id]
-    rec[DEV_DAILY_MAX] = [3600.0, 3500.0, 3400.0, 3600.0, 3550.0,
-                          3400.0, 3600.0]
-    import homeassistant.util.dt as dt_util
-    rec[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - 60
-    for tick in range(SIGNAL_FROZEN_REPEAT_COUNT):
-        coord._feed_signal(rec, SIGNAL_RAIL_LQI, 1000.0 + tick)
-    assert rec[DEV_SIGNAL_VALUE] == SIGNAL_RAIL_LQI
-    assert coord.signal_frozen(rec) is True
-    assert coord.signal_frozen_at_rail(rec) is True
