@@ -177,11 +177,13 @@ async def test_list_shape_and_order(hass: HomeAssistant):
     hass.states.async_set(e2["pct"], "5")
     await hass.async_block_till_done()
 
-    state = hass.states.get("sensor.device_sentinel_battery_low_list")
+    state = hass.states.get("sensor.device_sentinel_low_batteries")
     assert state is not None
     coord._notify()
     await hass.async_block_till_done()
-    state = hass.states.get("sensor.device_sentinel_battery_low_list")
+    # Low Batteries merges the old count and list: state is the count,
+    # rows and thresholds ride in attributes.
+    state = hass.states.get("sensor.device_sentinel_low_batteries")
     assert state.state == "2"
     rows = state.attributes["devices"]
     assert [r["name"] for r in rows] == [
@@ -192,11 +194,8 @@ async def test_list_shape_and_order(hass: HomeAssistant):
     assert row["level"] == 10.0
     assert row["since"] is not None
     assert row["area"] == "Unassigned"
-
-    count = hass.states.get("sensor.device_sentinel_battery_low_count")
-    assert count.state == "2"
-    assert count.attributes["low_threshold"] == 20.0
-    assert count.attributes["clear_margin"] == 2
+    assert state.attributes["low_threshold"] == 20.0
+    assert state.attributes["clear_margin"] == 2
 
 
 async def test_since_survives_reload(hass: HomeAssistant, hass_storage):
