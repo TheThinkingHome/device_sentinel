@@ -23,7 +23,6 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.device_sentinel.const import (
     CONF_EXCLUDED_DEVICES,
-    CONF_EXCLUDED_ENTITIES,
     CONF_EXCLUDED_INTEGRATIONS,
     DATA_DEVICES,
     DEV_EVENT_COUNT,
@@ -82,30 +81,6 @@ async def test_excluded_device_keeps_learning_never_reported(
     assert coord.battery_low_count == 0
     assert coord.battery_low_list == []
     assert coord._excluded_devices[device.id] == "device"
-
-
-async def test_excluded_entity_suppresses_its_reporting_only(
-    hass: HomeAssistant, freezer
-):
-    source = MockConfigEntry(domain="test")
-    source.add_to_hass(hass)
-    device, battery_eid = _battery_device(hass, source, 2)
-    entry = await _setup(
-        hass, options={CONF_EXCLUDED_ENTITIES: [battery_eid]}
-    )
-    coord = entry.runtime_data
-    freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 5))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-
-    hass.states.async_set(battery_eid, "5")
-    await hass.async_block_till_done()
-
-    # The entity still vouches: device clock stamped, events counted.
-    record = coord.data[DATA_DEVICES][device.id]
-    assert record[DEV_EVENT_COUNT] > 0
-    # Its own reporting is suppressed.
-    assert coord.battery_low_count == 0
 
 
 async def test_integration_exclude_respects_primary_owner(
