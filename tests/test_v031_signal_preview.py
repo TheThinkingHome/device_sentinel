@@ -3,9 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.0 (2026-07-18)
+#   Version: 0.4.3 (2026-07-19)
 
-"""0.3.1 tests: the signal floor and danger-line preview."""
+"""Signal line tests: the floor is the line, shown in the report.
+
+Rewritten for 0.4.3, which retired the factor and offset formulas:
+the line is the trimmed floor itself, chosen by the k ladder, and the
+report shows it alongside the daily lows it was chosen from.
+"""
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -15,8 +20,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     DEV_SIGNAL_DAILY_MIN,
-    SIGNAL_LQI_DANGER_FACTOR,
-    SIGNAL_RSSI_DANGER_OFFSET,
 )
 from custom_components.device_sentinel.coordinator import (
     DeviceSentinelCoordinator as C,
@@ -25,31 +28,21 @@ from custom_components.device_sentinel.coordinator import (
 DOMAIN = "device_sentinel"
 
 
-def test_trimmed_minimum_rule():
-    # Below threshold: plain minimum, nothing trimmed.
-    assert C._trimmed_minimum([120.0, 40.0]) == 40.0
-    # At threshold: the single bad day is set aside.
-    week = [120.0, 118.0, 40.0, 122.0, 119.0, 121.0, 117.0]
-    assert C._trimmed_minimum(week) == 117.0
-    # A recurring drop counts: one copy trimmed, the second rules.
-    week = [120.0, 40.0, 41.0, 122.0, 119.0, 121.0, 117.0]
-    assert C._trimmed_minimum(week) == 41.0
-    assert C._trimmed_minimum([]) is None
+def test_signal_family_by_sign():
+    """LQI-like indexes are positive, dBm is negative; display only,
+    the dwell rule is identical for both."""
+    assert C._signal_family(120.0) == "LQI"
+    assert C._signal_family(-70.0) == "RSSI"
 
 
-def test_family_and_danger():
-    """Asserted through the constants rather than literals: the line
-    values are ruled from soak data (0.70 and 8.0 as of 2026-07-18,
-    ruling 58) and will move again when the dwell soak settles."""
-    family, danger = C._signal_family_and_danger(120.0)
-    assert family == "LQI"
-    assert danger == 120.0 * SIGNAL_LQI_DANGER_FACTOR
-    family, danger = C._signal_family_and_danger(-70.0)
-    assert family == "RSSI"
-    assert danger == -70.0 - SIGNAL_RSSI_DANGER_OFFSET
+async def test_line_in_report(hass: HomeAssistant):
+    """The report shows the line, the family, and the daily lows.
 
-
-async def test_preview_in_report(hass: HomeAssistant):
+    With the ladder, six days is still under the week rung, so k=0
+    and the line is the plain lowest; the seventh day crosses to k=1
+    and the single lowest is dropped, which is how a one-day anomaly
+    stops defining the floor.
+    """
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device = dr.async_get(hass).async_get_or_create(
@@ -68,7 +61,8 @@ async def test_preview_in_report(hass: HomeAssistant):
     await hass.async_block_till_done()
     coord = entry.runtime_data
 
-    # Six signal days: preview must stay blank (arming floor is 7).
+    # Six signal days, k=0: the line is the plain lowest, live from
+    # the first day rather than waiting out an arming period.
     coord.data["devices"][device.id][DEV_SIGNAL_DAILY_MIN] = [
         120.0, 118.0, 122.0, 119.0, 121.0, 117.0,
     ]
@@ -81,9 +75,10 @@ async def test_preview_in_report(hass: HomeAssistant):
         for line in text.splitlines()
         if "Signal Preview Device" in line
     )
-    assert row.rstrip().endswith("| - | - | - |")
+    assert "| 117 | LQI |" in row
 
-    # Seventh day with one anomaly: floor trims it, danger = floor/2.
+    # Seventh day brings an anomalous 40: the ladder steps to k=1,
+    # the 40 is dropped, and the line is the second lowest, 117.
     coord.data["devices"][device.id][DEV_SIGNAL_DAILY_MIN].append(40.0)
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
@@ -94,5 +89,7 @@ async def test_preview_in_report(hass: HomeAssistant):
         for line in text.splitlines()
         if "Signal Preview Device" in line
     )
-    expected = f"| 117 | LQI | {117 * SIGNAL_LQI_DANGER_FACTOR:g} |"
-    assert expected in row
+    assert "| 117 | LQI |" in row
+    # The daily lows column shows the history newest first, so the
+    # anomalous 40 leads and the line can be checked against it.
+    assert "40 117 121 119 122 118 120" in row
