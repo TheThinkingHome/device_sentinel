@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.6 (2026-07-19)
+#   Version: 0.4.7 (2026-07-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -873,35 +873,48 @@ class DeviceSentinelCoordinator:
         return max(0, min(base_k + self._signal_slider(), days - 1))
 
     def signal_frozen(self, record: dict[str, Any]) -> bool:
-        """Return whether this device's signal is frozen, judged live.
+        """Return whether this device's signal is frozen at the rail.
 
-        Two checks, both must hold (ruled 2026-07-19). Check 1, the
-        device is lively by its own rhythm: it has reported within
-        SIGNAL_FROZEN_LIVELY_MULTIPLE times its learned window basis.
-        A device quieter than that has genuinely gone silent, which is
-        a device freeze for the freeze detector, not a stuck signal;
-        the tell here is a still signal on a talking device. A device
-        with no learned rhythm yet is not judged at all, the
-        conservative default. Check 2, the signal is stuck: the last
-        SIGNAL_FROZEN_REPEAT_COUNT readings were identical. Counting
-        readings rather than elapsed time fits a device reporting
-        every few seconds and one reporting every few hours alike,
-        because a live link wobbles a point or two every reading, so
-        several identical readings in a row is stuck whatever the
-        interval. This is judged whenever it is asked, so the entity
-        reading it is live and the nightly report is a snapshot of the
-        same judgment.
+        Frozen is the rail case only (ruled 2026-07-19, evening). A
+        signal held at its type's fill value, 255 for LQI or -128 for
+        RSSI, while the device keeps reporting is a stale reading: the
+        field the device stopped populating, reading as perfect signal
+        when it is the opposite. That is unambiguous and worth
+        flagging.
+
+        The plausible-value case, a real reading that stops moving,
+        was tried and removed. It could not be told apart from a
+        healthy steady link: a device with a strong stable connection
+        reports the same value for hours, and a whole family of
+        motion-blind devices did exactly that and flagged falsely. The
+        rabbit hole and why each attempt failed are recorded in the
+        project document; the learned per-device flat-stretch approach
+        that could work is written down there for if it is ever worth
+        building.
+
+        The rail flag stands on three conditions: the value has
+        repeated SIGNAL_FROZEN_REPEAT_COUNT times (so a single stray
+        rail reading does not trip it), the device is still lively by
+        its own rhythm (a silent device is a device freeze for the
+        freeze detector, not a frozen signal), and the held value is a
+        rail. A device with no learned rhythm is not judged, the
+        conservative default.
         """
-        # Check 2 first, it is the cheaper test.
+        # Cheapest test first: the value must be a rail at all.
+        if record.get(DEV_SIGNAL_VALUE) not in (
+            SIGNAL_RAIL_LQI,
+            SIGNAL_RAIL_RSSI,
+        ):
+            return False
+        # It must have repeated, so one stray rail reading is ignored.
         if record.get(DEV_SIGNAL_REPEAT_COUNT, 0) < SIGNAL_FROZEN_REPEAT_COUNT:
             return False
-        # Check 1: lively by the device's own rhythm.
+        # And the device must be lively by its own rhythm.
         last_activity = record.get(DEV_LAST_ACTIVITY)
         if last_activity is None:
             return False
         rhythm, _ = self._trimmed_maximum(record.get(DEV_DAILY_MAX) or [])
         if rhythm is None:
-            # No learned rhythm yet: not judged frozen (conservative).
             return False
         quiet = dt_util.utcnow().timestamp() - last_activity
         return quiet <= SIGNAL_FROZEN_LIVELY_MULTIPLE * rhythm
