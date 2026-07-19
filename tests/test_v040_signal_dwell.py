@@ -40,11 +40,9 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
-    SIGNAL_LQI_DANGER_FACTOR,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
     SIGNAL_FROZEN_SECONDS,
-    SIGNAL_RSSI_DANGER_OFFSET,
 )
 from custom_components.device_sentinel.coordinator import (
     _new_device_record,
@@ -91,38 +89,39 @@ def _armed_rssi_record():
     return record
 
 
-# The danger lines (#58).
+# The line is the trimmed floor (#66, replacing #58).
 
 
-async def test_lqi_danger_line_is_a_fraction_of_the_floor(
+async def test_lqi_line_is_the_trimmed_floor(
     hass: HomeAssistant,
 ):
     coord = await _coordinator(hass)
     record = _armed_lqi_record()
-    # Trimmed minimum of the seven days drops the single worst (80),
-    # leaving a floor of 80 (it repeats), so the line is floor * 0.70.
+    # Seven days is the week rung, k=1: the single lowest 80 is
+    # dropped, and 80 repeats, so the floor and the line are 80.
     line = coord._danger_line(record)
-    assert line == 80 * SIGNAL_LQI_DANGER_FACTOR
+    assert line == 80
 
 
-async def test_rssi_danger_line_is_a_db_offset(hass: HomeAssistant):
+async def test_rssi_line_is_the_trimmed_floor(hass: HomeAssistant):
+    """Same rule as LQI, no offset: below the floor is below the
+    floor whichever sign the scale carries."""
     coord = await _coordinator(hass)
     record = _armed_rssi_record()
     line = coord._danger_line(record)
-    assert line == -70 - SIGNAL_RSSI_DANGER_OFFSET
+    assert line == -70
 
 
-async def test_no_line_before_arming(hass: HomeAssistant):
-    """Dwell measures against a settled floor; a device inside its
-    arming days accumulates nothing rather than being judged against
-    a floor still moving."""
+async def test_line_lives_from_the_first_day(hass: HomeAssistant):
+    """Under a week the ladder's k is 0, so the line is the plain
+    lowest reading and dwell measures from the very first day; there
+    is no arming wait to sit out."""
     coord = await _coordinator(hass)
     record = _new_device_record("2026-07-11T00:00:00+00:00", None)
     record[DEV_SIGNAL_DAILY_MIN] = [80, 96, 88]
-    assert coord._danger_line(record) is None
+    assert coord._danger_line(record) == 80
     coord._feed_signal(record, 5.0, 1000.0)
-    assert record[DEV_SIGNAL_BELOW_SINCE] is None
-    assert record[DEV_SIGNAL_BELOW_TODAY] == 0.0
+    assert record[DEV_SIGNAL_BELOW_SINCE] == 1000.0
 
 
 # The dwell timer (#59).
@@ -181,12 +180,18 @@ async def test_silent_below_reads_the_whole_silence(hass: HomeAssistant):
     assert record[DEV_SIGNAL_BELOW_SINCE] == 1000.0 + 86400.0
 
 
-async def test_unarmed_device_rolls_no_percentage(hass: HomeAssistant):
+async def test_young_device_rolls_a_percentage(hass: HomeAssistant):
+    """With the line live from day one, even a two-day history rolls
+    a dwell percentage; a device with no signal history at all is
+    the only one that rolls nothing."""
     coord = await _coordinator(hass)
     record = _new_device_record("2026-07-11T00:00:00+00:00", None)
     record[DEV_SIGNAL_DAILY_MIN] = [80, 96]
     coord._roll_dwell(record, now=1_000_000.0)
-    assert record[DEV_SIGNAL_DWELL_DAILY] == []
+    assert record[DEV_SIGNAL_DWELL_DAILY] == [0.0]
+    bare = _new_device_record("2026-07-11T00:00:00+00:00", None)
+    coord._roll_dwell(bare, now=1_000_000.0)
+    assert bare[DEV_SIGNAL_DWELL_DAILY] == []
 
 
 # The rails and the stuck detector (#60).
