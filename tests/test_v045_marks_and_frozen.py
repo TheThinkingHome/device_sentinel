@@ -125,21 +125,21 @@ async def test_counter_survives_a_restart(hass: HomeAssistant):
     assert restored[DEV_SIGNAL_REPEAT_COUNT] == SIGNAL_FROZEN_REPEAT_COUNT
 
 
-async def test_slow_reporter_freezes_on_five_reports_not_time(
+async def test_slow_reporter_rail_freeze_on_five_reports_not_time(
     hass: HomeAssistant,
 ):
-    """A device reporting hours apart is judged on five identical
-    reports, not elapsed time: the same rule that catches a seconds
-    reporter catches it, with no time threshold to tune."""
+    """A rail freeze is judged on five identical reports, not elapsed
+    time, so a device reporting hours apart is caught by the same rule
+    as a seconds reporter, with no time threshold to tune."""
     coord, device_id = await _coordinator(hass)
     rec = coord.data["devices"][device_id]
     rec[DEV_DAILY_MAX] = [3600.0, 3500.0, 3400.0, 3600.0, 3550.0,
                           3400.0, 3600.0]
     import homeassistant.util.dt as dt_util
     rec[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - 60
-    # Five identical reports spaced hours apart (timestamps far apart).
+    # Five identical rail reports spaced hours apart.
     for tick in range(SIGNAL_FROZEN_REPEAT_COUNT):
-        coord._feed_signal(rec, 116.0, 1000.0 + tick * 6 * 3600)
+        coord._feed_signal(rec, SIGNAL_RAIL_LQI, 1000.0 + tick * 6 * 3600)
     assert coord.signal_frozen(rec) is True
 
 
