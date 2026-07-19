@@ -85,7 +85,11 @@ async def test_tracked_counts_armed_devices_and_splits_by_scale(
     assert state.attributes["rssi"] == 0
 
 
-async def test_frozen_counts_and_lists_faults_first(hass: HomeAssistant):
+async def test_only_a_rail_freeze_is_counted(hass: HomeAssistant):
+    """Frozen is the rail case only (ruled 2026-07-19 eve). A device
+    at the rail counts; a device holding a plausible value steady does
+    not, because a steady real reading is a healthy stable link. Both
+    are set up identically except for the held value."""
     rail = _register_device(hass, "railed")
     real = _register_device(hass, "flatreal")
     entry = await _setup(hass)
@@ -96,8 +100,6 @@ async def test_frozen_counts_and_lists_faults_first(hass: HomeAssistant):
         record = coord.data["devices"][device.id]
         record[DEV_SIGNAL_DAILY_MIN] = [80, 96, 88, 80, 104, 92, 80]
         record[DEV_SIGNAL_VALUE] = value
-        # Frozen under the new rule: the repeat count at the threshold,
-        # a learned rhythm, and lively recent activity.
         record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
         record[DEV_DAILY_MAX] = [3600.0, 3500.0, 3400.0, 3600.0,
                                  3550.0, 3400.0, 3600.0]
@@ -106,11 +108,11 @@ async def test_frozen_counts_and_lists_faults_first(hass: HomeAssistant):
     await hass.async_block_till_done()
 
     state = hass.states.get("sensor.device_sentinel_signals_frozen")
-    assert int(state.state) == 2
+    # Only the rail device is frozen; the flat plausible one is not.
+    assert int(state.state) == 1
     devices = state.attributes["devices"]
-    # Rail freeze (near-certain fault) sorts ahead of a real-value one.
+    assert len(devices) == 1
     assert devices[0]["at_rail"] is True
-    assert devices[1]["at_rail"] is False
 
 
 async def test_frozen_reads_zero_on_a_healthy_fleet(hass: HomeAssistant):
