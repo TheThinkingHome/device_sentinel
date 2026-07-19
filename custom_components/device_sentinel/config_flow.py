@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.3 (2026-07-19)
+#   Version: 0.4.8 (2026-07-19)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -64,7 +64,6 @@ from .const import (
     CONF_BATTERY_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_EXCLUDED_LABELS,
     CONF_EXCLUDED_DEVICES,
-    CONF_EXCLUDED_ENTITIES,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_EXCLUDED_LABELS,
     CONF_HIGH_PRIORITY_TARGETS,
@@ -145,29 +144,6 @@ def _devices_covered_by(
         if row["integration"] in integrations or (row["labels"] & labels)
     }
 
-
-def _entities_covered_by(
-    rows: list[dict[str, Any]],
-    excluded_integrations: list[str],
-    excluded_labels: list[str],
-    excluded_devices: list[str],
-) -> set[str]:
-    """Return the entity ids a broader exclusion already catches.
-
-    Same positive-coverage rule as the device pass: an entity is named
-    only because its integration, one of its labels, or its device is
-    excluded.
-    """
-    labels = set(excluded_labels)
-    integrations = set(excluded_integrations)
-    devices = set(excluded_devices)
-    return {
-        row["entity_id"]
-        for row in rows
-        if row["integration"] in integrations
-        or (row["labels"] & labels)
-        or row["device_id"] in devices
-    }
 
 
 class DeviceSentinelConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -529,12 +505,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             for device_id in options.get(CONF_EXCLUDED_DEVICES, [])
             if device_id not in covered_devices
         ]
-        covered_entities = _entities_covered_by(
-            entity_rows,
-            excluded_integrations,
-            excluded_labels,
-            surviving_device_picks,
-        )
         device_options = [
             selector.SelectOptionDict(
                 value=row["device_id"],
@@ -574,21 +544,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
-                    vol.Optional(
-                        CONF_EXCLUDED_ENTITIES,
-                        default=[
-                            entity_id
-                            for entity_id in options.get(
-                                CONF_EXCLUDED_ENTITIES, []
-                            )
-                            if entity_id not in covered_entities
-                        ],
-                    ): selector.EntitySelector(
-                        selector.EntitySelectorConfig(
-                            multiple=True,
-                            exclude_entities=sorted(covered_entities),
-                        )
-                    ),
                 }
             ),
         )
@@ -616,17 +571,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             device_id
             for device_id in pruned.get(CONF_EXCLUDED_DEVICES, [])
             if device_id not in covered_devices
-        ]
-        covered_entities = _entities_covered_by(
-            entity_rows,
-            excluded_integrations,
-            excluded_labels,
-            pruned[CONF_EXCLUDED_DEVICES],
-        )
-        pruned[CONF_EXCLUDED_ENTITIES] = [
-            entity_id
-            for entity_id in pruned.get(CONF_EXCLUDED_ENTITIES, [])
-            if entity_id not in covered_entities
         ]
         return pruned
 
