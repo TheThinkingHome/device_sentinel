@@ -35,6 +35,7 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_BELOW_SINCE,
     DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_REPEAT_COUNT,
     DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_FROZEN_AT,
     DEV_SIGNAL_LAST_CHANGE,
@@ -42,7 +43,8 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_VALUE,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
-    SIGNAL_FROZEN_SECONDS,
+    SIGNAL_FROZEN_LIVELY_MULTIPLE,
+    SIGNAL_FROZEN_REPEAT_COUNT,
 )
 from custom_components.device_sentinel.coordinator import (
     _new_device_record,
@@ -234,38 +236,66 @@ async def test_a_changed_reading_moves_the_frozen_clock(
     assert record[DEV_SIGNAL_TODAY_MIN] == 116.0
 
 
-async def test_frozen_needs_a_full_day_flat_on_a_live_device(
-    hass: HomeAssistant,
-):
+def _frozen_ready_record():
+    """A record set up to be judgeable for freeze: an established
+    signal floor, a learned rhythm so Check 1 can run, and lively
+    recent activity. The repeat counter is left for each test to set.
+    """
+    from custom_components.device_sentinel.const import (
+        DEV_DAILY_MAX,
+        DEV_LAST_ACTIVITY,
+    )
     import homeassistant.util.dt as dt_util
 
-    from custom_components.device_sentinel.const import DEV_LAST_ACTIVITY
-
-    coord = await _coordinator(hass)
     record = _armed_lqi_record()
     now = dt_util.utcnow().timestamp()
-    # Value flat an hour, device reporting: not yet frozen.
-    record[DEV_SIGNAL_LAST_CHANGE] = now - 3600
-    record[DEV_LAST_ACTIVITY] = now - 60
+    # A rhythm of ~1 hour (the trimmed maximum of these daily gaps).
+    record[DEV_DAILY_MAX] = [3600.0, 3500.0, 3400.0, 3600.0, 3550.0,
+                             3400.0, 3600.0]
+    record[DEV_LAST_ACTIVITY] = now - 60  # reported a minute ago
+    return record
+
+
+async def test_frozen_needs_the_repeat_count_on_a_live_device(
+    hass: HomeAssistant,
+):
+    """One below the repeat threshold is not frozen; at the threshold,
+    on a lively device, it is."""
+    coord = await _coordinator(hass)
+    record = _frozen_ready_record()
+    record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT - 1
     assert coord.signal_frozen(record) is False
-    # Value flat a full day while the device keeps reporting: frozen.
-    record[DEV_SIGNAL_LAST_CHANGE] = now - SIGNAL_FROZEN_SECONDS - 1
-    record[DEV_LAST_ACTIVITY] = now - 60
+    record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
     assert coord.signal_frozen(record) is True
 
 
 async def test_frozen_requires_a_live_device(hass: HomeAssistant):
-    """A flat value on a silent device is a device freeze, not a
-    frozen signal: last_activity must be newer than last_change."""
+    """A stuck value on a device gone quiet beyond its own rhythm is a
+    device freeze, not a signal freeze: Check 1 fails."""
     import homeassistant.util.dt as dt_util
 
     from custom_components.device_sentinel.const import DEV_LAST_ACTIVITY
 
     coord = await _coordinator(hass)
-    record = _armed_lqi_record()
+    record = _frozen_ready_record()
+    record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
     now = dt_util.utcnow().timestamp()
-    record[DEV_SIGNAL_LAST_CHANGE] = now - SIGNAL_FROZEN_SECONDS - 1
-    record[DEV_LAST_ACTIVITY] = now - SIGNAL_FROZEN_SECONDS - 1
+    # Quiet for well beyond the lively multiple of the ~1h rhythm.
+    record[DEV_LAST_ACTIVITY] = now - (
+        SIGNAL_FROZEN_LIVELY_MULTIPLE * 3600 + 3600
+    )
+    assert coord.signal_frozen(record) is False
+
+
+async def test_frozen_needs_a_learned_rhythm(hass: HomeAssistant):
+    """With no rhythm yet, the device cannot be judged lively, so it
+    is never called frozen, the conservative default."""
+    from custom_components.device_sentinel.const import DEV_DAILY_MAX
+
+    coord = await _coordinator(hass)
+    record = _frozen_ready_record()
+    record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
+    record[DEV_DAILY_MAX] = []  # no learned rhythm
     assert coord.signal_frozen(record) is False
 
 
@@ -274,37 +304,41 @@ async def test_frozen_at_a_real_value_is_frozen_but_not_rail(
 ):
     """The dangerous case: stuck at a plausible number. Frozen, but
     flagged apart from a rail freeze so a user can weigh it."""
-    import homeassistant.util.dt as dt_util
-
-    from custom_components.device_sentinel.const import DEV_LAST_ACTIVITY
-
     coord = await _coordinator(hass)
-    record = _armed_lqi_record()
-    now = dt_util.utcnow().timestamp()
+    record = _frozen_ready_record()
     record[DEV_SIGNAL_VALUE] = 80.0
-    record[DEV_SIGNAL_LAST_CHANGE] = now - SIGNAL_FROZEN_SECONDS - 1
-    record[DEV_LAST_ACTIVITY] = now - 60
+    record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
     assert coord.signal_frozen(record) is True
     assert coord.signal_frozen_at_rail(record) is False
 
 
 async def test_frozen_at_rail_is_flagged(hass: HomeAssistant):
-    import homeassistant.util.dt as dt_util
-
-    from custom_components.device_sentinel.const import DEV_LAST_ACTIVITY
-
     coord = await _coordinator(hass)
-    record = _armed_lqi_record()
-    now = dt_util.utcnow().timestamp()
+    record = _frozen_ready_record()
     record[DEV_SIGNAL_VALUE] = SIGNAL_RAIL_LQI
-    record[DEV_SIGNAL_LAST_CHANGE] = now - SIGNAL_FROZEN_SECONDS - 1
-    record[DEV_LAST_ACTIVITY] = now - 60
+    record[DEV_SIGNAL_REPEAT_COUNT] = SIGNAL_FROZEN_REPEAT_COUNT
     assert coord.signal_frozen_at_rail(record) is True
+
+
+async def test_the_counter_climbs_and_resets(hass: HomeAssistant):
+    """Identical readings climb the counter; a different reading
+    resets it. Five identical, on a lively device, is frozen."""
+    coord = await _coordinator(hass)
+    record = _frozen_ready_record()
+    # Same value five times: counter reaches the threshold.
+    for tick in range(5):
+        coord._feed_signal(record, 80.0, 1000.0 + tick)
+    assert record[DEV_SIGNAL_REPEAT_COUNT] == 5
+    assert coord.signal_frozen(record) is True
+    # A different reading resets the counter to 1: no longer frozen.
+    coord._feed_signal(record, 84.0, 2000.0)
+    assert record[DEV_SIGNAL_REPEAT_COUNT] == 1
+    assert coord.signal_frozen(record) is False
 
 
 async def test_a_moving_signal_is_never_frozen(hass: HomeAssistant):
     coord = await _coordinator(hass)
-    record = _armed_lqi_record()
+    record = _frozen_ready_record()
     coord._feed_signal(record, 80.0, 1000.0)
     coord._feed_signal(record, 96.0, 2000.0)
     assert coord.signal_frozen(record) is False
