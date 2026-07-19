@@ -72,6 +72,7 @@ async def test_markdown_render_marks_trim(hass: HomeAssistant):
     row = next(line for line in text.splitlines() if "Markdown Device" in line)
     assert "~~2.50h~~" in row          # the 9000 s spike, set aside
     assert "**600s**" in row           # the operative rhythm, bold
-    assert "| 600s |" in row           # WINDOW BASIS column
+    # WINDOW BASIS was dropped at 0.4.4: the operative rhythm now
+    # shows only as the bold value inside the GAPS series.
     # Newest first: the newest value (560) appears before the oldest (500).
     assert row.index("560s") < row.index("500s")
