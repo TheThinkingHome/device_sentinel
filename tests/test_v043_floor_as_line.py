@@ -200,6 +200,8 @@ async def test_excluded_device_still_records_but_is_not_reported(
     row = next(
         line for line in text.splitlines() if "LR Router Plug" in line
     )
-    assert "| excl | excl |" in row
-    # But the daily lows are still shown: the history is not hidden.
-    assert "88 96 80" in row
+    # excl in the dwell and SIG FROZEN columns; the battery column
+    # between them is "-" since this plug reports no battery.
+    assert "| excl | - | excl |" in row
+    # But the daily lows are still shown, floor bold: not hidden.
+    assert "88 96 **80**" in row
