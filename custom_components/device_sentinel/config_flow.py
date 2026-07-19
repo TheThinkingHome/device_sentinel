@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.14 (2026-07-17)
+#   Version: 0.4.3 (2026-07-19)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -76,6 +76,10 @@ from .const import (
     CONF_QUIET_START,
     CONF_REMINDER_MODE,
     CONF_REMINDER_TIME,
+    CONF_SIGNAL_EXCLUDED_DEVICES,
+    CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
+    CONF_SIGNAL_EXCLUDED_LABELS,
+    CONF_SIGNAL_SENSITIVITY,
     DEFAULT_LOW_THRESHOLD,
     DEFAULT_PERSISTENT_ENABLED,
     DEFAULT_QUIET_ENABLED,
@@ -83,13 +87,17 @@ from .const import (
     DEFAULT_QUIET_START,
     DEFAULT_REMINDER_MODE,
     DEFAULT_REMINDER_TIME,
+    DEFAULT_SIGNAL_SENSITIVITY,
     DOMAIN,
     REMINDER_MODE_DAILY,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
+    SIGNAL_SENSITIVITY_MAX,
+    SIGNAL_SENSITIVITY_MIN,
     WIKI_LINK_BATTERY,
     WIKI_LINK_EXCLUSIONS,
     WIKI_LINK_NOTIFICATIONS,
+    WIKI_LINK_SIGNAL,
 )
 
 # The notify domain exposes one service per target; the persistent
@@ -200,7 +208,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """
         return self.async_show_menu(
             step_id="init",
-            menu_options=["notifications", "exclusions", "battery"],
+            menu_options=["notifications", "exclusions", "battery", "signal"],
         )
 
     async def async_step_battery(
@@ -330,6 +338,136 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         pruned[CONF_BATTERY_EXCLUDED_DEVICES] = [
             device_id
             for device_id in pruned.get(CONF_BATTERY_EXCLUDED_DEVICES, [])
+            if device_id not in covered
+        ]
+        return pruned
+
+    async def async_step_signal(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """The signal section: sensitivity and the signal-only
+        excludes, together, the family pattern.
+
+        The sensitivity is a whole-fleet setting, one slider for LQI
+        and RSSI alike, and it applies to readings going forward
+        only: time already counted against the old floor stays
+        counted, so its true effect shows after a full clean day.
+        That forward-only nature is why it lives here rather than as
+        a live entity, which would promise an immediacy the setting
+        cannot deliver.
+
+        The excludes run the same priority ladder as battery,
+        broadest first: integration, label, device. Exclusion
+        suppresses judgment, not observation: an excluded device
+        keeps recording, so re-including it is instant and arrives
+        with history.
+        """
+        signal_rows = self.config_entry.runtime_data.detected_signals
+        if user_input is not None:
+            return self.async_create_entry(
+                data={
+                    **self.config_entry.options,
+                    **self._pruned_signal_input(user_input, signal_rows),
+                }
+            )
+        options = self.config_entry.options
+        covered = _devices_covered_by(
+            signal_rows,
+            options.get(CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []),
+            options.get(CONF_SIGNAL_EXCLUDED_LABELS, []),
+        )
+        device_options = [
+            selector.SelectOptionDict(
+                value=row["device_id"],
+                label=row["name"],
+            )
+            for row in signal_rows
+            if row["device_id"] not in covered
+        ]
+        integration_options = sorted(
+            {row["integration"] for row in signal_rows}
+        )
+        return self.async_show_form(
+            step_id="signal",
+            description_placeholders={"wiki_link": WIKI_LINK_SIGNAL},
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_SIGNAL_SENSITIVITY,
+                        default=options.get(
+                            CONF_SIGNAL_SENSITIVITY,
+                            DEFAULT_SIGNAL_SENSITIVITY,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=SIGNAL_SENSITIVITY_MIN,
+                            max=SIGNAL_SENSITIVITY_MAX,
+                            step=1,
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
+                        default=options.get(
+                            CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []
+                        ),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=integration_options,
+                            multiple=True,
+                            custom_value=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_SIGNAL_EXCLUDED_LABELS,
+                        default=options.get(
+                            CONF_SIGNAL_EXCLUDED_LABELS, []
+                        ),
+                    ): selector.LabelSelector(
+                        selector.LabelSelectorConfig(multiple=True)
+                    ),
+                    vol.Optional(
+                        CONF_SIGNAL_EXCLUDED_DEVICES,
+                        default=[
+                            device_id
+                            for device_id in options.get(
+                                CONF_SIGNAL_EXCLUDED_DEVICES, []
+                            )
+                            if device_id not in covered
+                        ],
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=device_options,
+                            multiple=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                }
+            ),
+        )
+
+    @staticmethod
+    def _pruned_signal_input(
+        user_input: dict[str, Any], signal_rows: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Drop device picks the same save's broader excludes cover,
+        and round the slider to the integer it is. Same determinism
+        rule as battery: a superseded pick is gone because this code
+        removed it."""
+        pruned = dict(user_input)
+        if CONF_SIGNAL_SENSITIVITY in pruned:
+            pruned[CONF_SIGNAL_SENSITIVITY] = int(
+                pruned[CONF_SIGNAL_SENSITIVITY]
+            )
+        covered = _devices_covered_by(
+            signal_rows,
+            pruned.get(CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []),
+            pruned.get(CONF_SIGNAL_EXCLUDED_LABELS, []),
+        )
+        pruned[CONF_SIGNAL_EXCLUDED_DEVICES] = [
+            device_id
+            for device_id in pruned.get(CONF_SIGNAL_EXCLUDED_DEVICES, [])
             if device_id not in covered
         ]
         return pruned
