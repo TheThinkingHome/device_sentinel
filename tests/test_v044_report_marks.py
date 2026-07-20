@@ -91,14 +91,15 @@ async def test_battery_column_bolds_at_or_below_threshold(
 
 async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     """The column headers carry the tunables: GAPS its fixed trim k,
-    SIGNAL LOWS the slider value, BAT LEVEL the live threshold."""
+    SIGNAL the sensitivity as a word, BAT LEVEL the live threshold."""
     coord, _ = await _coordinator(hass, {CONF_SIGNAL_SENSITIVITY: 1})
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
         hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     header = next(line for line in text.splitlines() if "DEVICE | DAYS" in line)
-    assert "SIGNAL (K=1)" in header
+    # Slider at +1 renders as the word Watchful, not a number.
+    assert "SIGNAL (Watchful)" in header
     assert "GAPS (K=" in header
     assert "BAT LEVEL (floor 20%)" in header
     # The retired columns are gone.
