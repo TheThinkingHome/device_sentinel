@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.12 (2026-07-19)
+#   Version: 0.4.13 (2026-07-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -860,7 +860,8 @@ class DeviceSentinelCoordinator:
 
     def _signal_slider(self) -> int:
         """Return the sensitivity slider, clamped to its band. This is
-        the k shown in the SIGNAL LOWS header: it is global, the same
+        the k behind the SIGNAL header's sensitivity word: it is global,
+        the same
         for every device, unlike the per-device effective k which also
         carries each device's ladder rung."""
         slider = int(
@@ -869,6 +870,22 @@ class DeviceSentinelCoordinator:
             )
         )
         return max(SIGNAL_SENSITIVITY_MIN, min(slider, SIGNAL_SENSITIVITY_MAX))
+
+    def _signal_slider_label(self) -> str:
+        """Return the sensitivity slider as a word, not a number.
+
+        The report used to show the slider as K, which collided with
+        the trim depth the same report calls k. A word states what the
+        setting does: calmer settings trim fewer lows so the floor
+        sits lower and flags less, sensitive settings the reverse.
+        """
+        return {
+            -2: "Calm",
+            -1: "Stable",
+            0: "Normal",
+            1: "Watchful",
+            2: "Sensitive",
+        }.get(self._signal_slider(), "Normal")
 
     def _signal_effective_k(self, days: int) -> int:
         """Return how many of the lowest readings the floor trims for
@@ -1215,29 +1232,29 @@ class DeviceSentinelCoordinator:
             f"Written {dt_util.now().isoformat(timespec='seconds')} "
             f"({trigger})",
             "",
-            f"All series read newest first. SIGNAL LOWS are each "
-            f"device's daily signal minima; the floor (the line dwell "
-            f"is measured against) is **bold**, the trimmed lowest "
+            f"All series read newest first. SIGNAL is each device's "
+            f"daily signal minima; the floor (the line dwell is "
+            f"measured against) is **bold**, the trimmed lowest "
             f"readings are ~~struck~~, and rail fill values 255/-128 "
-            f"are *italic* (shown but never fed to the floor). The "
-            f"trim grows with the soak (none under {SIGNAL_ARMING_DAYS} "
-            f"days, drop 1 lowest at {SIGNAL_ARMING_DAYS}, drop 2 at "
-            f"{2 * SIGNAL_ARMING_DAYS}), shifted by the sensitivity "
-            f"setting shown as K in the header, which applies to "
-            f"readings going forward only. DWELL% is the share of "
-            f"each day spent at or below the floor: healthy devices "
-            f"brushing their floor read 0-5 percent, which proves the "
-            f"line has teeth; sustained dwell is the anomaly, and "
-            f"outliers clustered in one room mean that room needs a "
-            f"router. BAT LEVEL is the daily battery level, with any "
-            f"reading at or below the low threshold **bold**. SIG "
-            f"FROZEN marks a signal whose value has not moved in a "
-            f"day while the device kept reporting: the reading is "
-            f"stale, not the link, and (rail) means it froze at the "
-            f"fill value 255 or -128, a near-certain fault. Force a "
-            f"report, power cycle or pull the battery, then "
-            f"re-interview. excl means signal-excluded: still "
-            f"recorded, not judged.",
+            f"are *italic* (shown but never fed to the floor). A "
+            f"warning sign at the front of the cell marks a device "
+            f"whose daily low has sat at a rail for three days: a "
+            f"stuck reading that shows as perfect signal and is the "
+            f"opposite, a near-certain fault worth a power cycle or a "
+            f"re-bind. The trim grows with the soak (none under "
+            f"{SIGNAL_ARMING_DAYS} days, drop 1 lowest at "
+            f"{SIGNAL_ARMING_DAYS}, drop 2 at {2 * SIGNAL_ARMING_DAYS}), "
+            f"shifted by the sensitivity word in the header (Calm "
+            f"trims fewer lows so the floor sits lower and flags less, "
+            f"Sensitive the reverse), applied to readings going "
+            f"forward only. DWELL% is the share of each day spent at "
+            f"or below the floor: healthy devices brushing their floor "
+            f"read 0-5 percent, which proves the line has teeth; "
+            f"sustained dwell is the anomaly, and outliers clustered "
+            f"in one room mean that room needs a router. BAT LEVEL is "
+            f"the daily battery level, with any reading at or below "
+            f"the low threshold **bold**. excl means signal-excluded: "
+            f"still recorded, not judged.",
             "",
             f"Rule: the window basis is the **trimmed maximum** of "
             f"the rolling daily maxima: the top {TRIM_TOP_K} value(s) "
@@ -1252,7 +1269,7 @@ class DeviceSentinelCoordinator:
             f"{LEARNING_MIN_DAYS} days, keep {DAILY_MAX_KEEP} days.",
             "",
             f"| DEVICE | DAYS | GAPS (K={TRIM_TOP_K}) | CLOCK | "
-            f"EVENTS | SIGNAL (K={self._signal_slider()}) | "
+            f"EVENTS | SIGNAL ({self._signal_slider_label()}) | "
             f"DWELL% | BAT LEVEL (floor {self.low_threshold:g}%) |",
             "|---|---|---|---|---|---|---|---|",
         ]
