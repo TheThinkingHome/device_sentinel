@@ -103,12 +103,12 @@ async def test_every_count_sensor_carries_a_unit(hass: HomeAssistant):
         "sensor.device_sentinel_devices_watched": UNIT_DEVICES,
         "sensor.device_sentinel_devices_learned": UNIT_DEVICES,
         "sensor.device_sentinel_service_devices_ignored": UNIT_DEVICES,
-        "sensor.device_sentinel_tracked_signals": UNIT_SIGNALS,
-        "sensor.device_sentinel_tracked_batteries": UNIT_BATTERIES,
-        "sensor.device_sentinel_tracked_devices": UNIT_DEVICES,
+        "sensor.device_sentinel_signal_tracked": UNIT_SIGNALS,
+        "sensor.device_sentinel_battery_tracked": UNIT_BATTERIES,
+        "sensor.device_sentinel_device_tracked": UNIT_DEVICES,
         "sensor.device_sentinel_signal_problems": UNIT_SIGNALS,
-        "sensor.device_sentinel_low_batteries": UNIT_BATTERIES,
-        "sensor.device_sentinel_frozen_devices": UNIT_DEVICES,
+        "sensor.device_sentinel_battery_low": UNIT_BATTERIES,
+        "sensor.device_sentinel_device_frozen": UNIT_DEVICES,
     }
     for entity_id, unit in expected.items():
         state = hass.states.get(entity_id)
