@@ -53,7 +53,7 @@ async def _setup(hass):
 
 async def test_tracked_signals_sensor_exists(hass: HomeAssistant):
     await _setup(hass)
-    state = hass.states.get("sensor.device_sentinel_tracked_signals")
+    state = hass.states.get("sensor.device_sentinel_signal_tracked")
     assert state is not None
     assert state.attributes["unit_of_measurement"] == UNIT_SIGNALS
 
@@ -68,7 +68,7 @@ async def test_tracked_counts_armed_devices_and_splits_by_scale(
     record[DEV_SIGNAL_DAILY_MIN] = [80, 96, 88, 80, 104, 92, 80]
     coord._notify()
     await hass.async_block_till_done()
-    state = hass.states.get("sensor.device_sentinel_tracked_signals")
+    state = hass.states.get("sensor.device_sentinel_signal_tracked")
     assert int(state.state) == 1
     assert state.attributes["lqi"] == 1
     assert state.attributes["rssi"] == 0
