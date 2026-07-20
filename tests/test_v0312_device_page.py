@@ -98,7 +98,16 @@ async def test_status_keeps_the_setup_count_as_an_attribute(
 
 
 async def test_every_count_sensor_carries_a_unit(hass: HomeAssistant):
-    await _setup(hass)
+    entry = await _setup(hass)
+    # The three problem sensors are disabled by default; enable them
+    # so their state exists to check.
+    reg = er.async_get(hass)
+    for suffix in ("signal_problems", "low_batteries", "frozen_devices"):
+        eid = reg.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_{suffix}")
+        if eid and reg.async_get(eid).disabled:
+            reg.async_update_entity(eid, disabled_by=None)
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
     expected = {
         "sensor.device_sentinel_devices_watched": UNIT_DEVICES,
         "sensor.device_sentinel_devices_learned": UNIT_DEVICES,
