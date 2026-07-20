@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.8 (2026-07-19)
+#   Version: 0.4.12 (2026-07-19)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -477,23 +477,24 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """
         coordinator = self.config_entry.runtime_data
         device_rows = coordinator.watched_device_rows
-        entity_rows = coordinator.watched_entity_rows
         if user_input is not None:
             return self.async_create_entry(
                 data={
                     **self.config_entry.options,
                     **self._pruned_exclusion_input(
-                        user_input, device_rows, entity_rows
+                        user_input, device_rows
                     ),
                 }
             )
         options = self.config_entry.options
+        # Offer only integrations that own a watched device. An
+        # integration whose devices are all service-type was never
+        # watched, so excluding it would do nothing; listing every
+        # integration in Home Assistant buried the real ones under
+        # service entries. This matches the battery and signal steps,
+        # which already build their picker from their watched rows.
         integration_domains = sorted(
-            {
-                entry.domain
-                for entry in self.hass.config_entries.async_entries()
-                if entry.domain != DOMAIN
-            }
+            {row["integration"] for row in device_rows}
         )
         excluded_integrations = options.get(CONF_EXCLUDED_INTEGRATIONS, [])
         excluded_labels = options.get(CONF_EXCLUDED_LABELS, [])
@@ -552,14 +553,12 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     def _pruned_exclusion_input(
         user_input: dict[str, Any],
         device_rows: list[dict[str, Any]],
-        entity_rows: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Drop device and entity picks the same save's broader
-        excludes cover, top of the ladder downward.
+        """Drop device picks the same save's broader excludes cover.
 
-        Devices are pruned first, then entities are judged against the
-        pruned device list, so one save settles the whole ladder and
-        no pick survives under a parent that hides it.
+        A device an integration or label exclude already reaches is
+        removed from the device list, so one save settles the ladder
+        and no pick survives under a parent that hides it.
         """
         pruned = dict(user_input)
         excluded_integrations = pruned.get(CONF_EXCLUDED_INTEGRATIONS, [])
