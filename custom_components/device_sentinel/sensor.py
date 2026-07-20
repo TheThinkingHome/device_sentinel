@@ -266,7 +266,7 @@ class DeviceSentinelTrackedSignalsSensor(DeviceSentinelBaseSensor):
     in attributes.
     """
 
-    _attr_name = "Tracked Signals"
+    _attr_name = "Signal: Tracked"
     _attr_icon = "mdi:access-point-network"
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -298,7 +298,7 @@ class DeviceSentinelTrackedBatteriesSensor(DeviceSentinelBaseSensor):
     Tracked family. The devices ride in attributes.
     """
 
-    _attr_name = "Tracked Batteries"
+    _attr_name = "Battery: Tracked"
     _attr_icon = "mdi:battery-heart-outline"
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -328,7 +328,7 @@ class DeviceSentinelTrackedDevicesSensor(DeviceSentinelBaseSensor):
     of the engine. The devices ride in attributes.
     """
 
-    _attr_name = "Tracked Devices"
+    _attr_name = "Device: Tracked"
     _attr_icon = "mdi:heart-pulse"
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -359,7 +359,7 @@ class DeviceSentinelSignalProblemsSensor(DeviceSentinelBaseSensor):
     until the dwell danger line is ruled, so today this reports rails.
     """
 
-    _attr_name = "Signal Problems"
+    _attr_name = "Signal: Problems"
     _attr_icon = "mdi:access-point-off"
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -390,7 +390,7 @@ class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
     so this stays clean for dashboards and automations.
     """
 
-    _attr_name = "Low Batteries"
+    _attr_name = "Battery: Low"
     _attr_icon = "mdi:battery-alert"
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -422,7 +422,7 @@ class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
     new one. Each row will carry a category once the engine runs.
     """
 
-    _attr_name = "Frozen Devices"
+    _attr_name = "Device: Frozen"
     _attr_icon = "mdi:snowflake-alert"
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT
