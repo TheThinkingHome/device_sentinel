@@ -15,7 +15,7 @@
     "step": {
       "init": {
         "title": "Device Sentinel Tuning",
-        "description": "Device Sentinel's default settings are good to get you started. When you begin tailoring the integration to your system, work from top to bottom. If you want alerts to reach your phone, begin in Notifications.\n\n**Notifications**: where alerts go, quiet hours, and the daily reminder.\n\n**Global Exclusions**: hardware you never want judged or reported, by anything. To silence just one kind of report for a device, use that section's own exclude list instead.\n\n**Low Battery**: the low threshold, and battery-only excludes.\n\n**Signal Strength**: how weakening radio links are judged. Coming; learning already runs.\n\n**Freeze Detection**: sensitivity for silent-but-healthy-looking devices, and freeze-only excludes. Coming; learning already runs.\n\n**Recovery**: experimental and off by default. Attempts to revive frozen or offline devices.",
+        "description": "Device Sentinel's default settings are good to get you started. When you begin tailoring the integration to your system, work from top to bottom. If you want alerts to reach your phone, begin in Notifications.\n\n**Notifications**: where alerts go, quiet hours, and the daily reminder.\n\n**Global Exclusions**: hardware you never want judged or reported, by anything. To silence just one kind of report for a device, use that section's own exclude list instead.\n\n**Low Battery**: the low threshold, and battery-only excludes.\n\n**Signal Strength**: how weakening radio links are judged. Coming; learning already runs.\n\n**Freeze Detection**: how long a device may go quiet before it is called frozen, set by two grace sliders. Now running.\n\n**Recovery**: experimental and off by default. Attempts to revive frozen or offline devices.",
         "menu_options": {
           "notifications": "Notifications",
           "exclusions": "Global Exclusions",
@@ -91,6 +91,14 @@
           "signal_excluded_integrations": "Every device from a ticked integration stops being reported for signal.",
           "signal_excluded_labels": "Devices carrying a ticked label stop being reported for signal.",
           "signal_excluded_devices": "A ticked device stops being reported for signal. It keeps recording, so re-including it brings its history back instantly."
+        }
+      },
+      "freeze": {
+        "title": "Freeze detection",
+        "description": "How long a device may go silent before it is called frozen. Each device is judged against its own learned rhythm, so you are not setting a single timeout; you are setting the grace on top of each device's normal. Delta low is the grace a fast device gets, delta high the grace a slow one gets, and the curve between them is shaped by the two. Raise delta low if a chatty device is flagged too soon; lower delta high if a slow device should be caught faster. [How freeze detection works]({wiki_link}).",
+        "data": {
+          "freeze_delta_low": "Delta low (fast-device grace, minutes)",
+          "freeze_delta_high": "Delta high (slow-device grace, hours)"
         }
       }
     }
