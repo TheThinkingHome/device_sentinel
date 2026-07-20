@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.5.2 (2026-07-27)
+#   Version: 0.5.3 (2026-07-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -381,6 +381,14 @@ class DeviceSentinelCoordinator:
         )
 
         self._evaluate_all_batteries()
+        # Judge freezes once before the setup report is written, so a
+        # device already down (frozen, unavailable, or never reported)
+        # shows in that first report rather than reading a false
+        # all-clear until the next tick or the midnight rollover.
+        # Verdicts are measured from the stored clock, which survives
+        # the restart, so this is the same judgment the tick reaches,
+        # run early.
+        self._judge_all_devices()
 
         LOGGER.info(
             "Device Sentinel v%s setup complete: setup_count=%s, "
@@ -1220,9 +1228,16 @@ class DeviceSentinelCoordinator:
         dead device whose remaining entities have simply not flipped
         yet.
         """
-        # Freeze-excluded devices keep their clock and rhythm but are
-        # never given a verdict of any kind.
-        if self._freeze_excluded(device_id):
+        # A globally-excluded or freeze-excluded device keeps its
+        # clock and rhythm but is never given a verdict of any kind.
+        # Global exclusion suppresses all judgment, so it is checked
+        # here rather than only filtered from the report: no verdict
+        # is computed or stored for a device the person has told the
+        # integration to ignore.
+        if (
+            device_id in self._excluded_devices
+            or self._freeze_excluded(device_id)
+        ):
             return None
 
         # Never reported: zero lifetime events past the grace window.
@@ -1549,6 +1564,14 @@ class DeviceSentinelCoordinator:
             f"the low threshold **bold**. excl means signal-excluded: "
             f"still recorded, not judged.",
             "",
+            "STATUS is what a device is judged for: reported means "
+            "everything, global means nothing (the global exclude "
+            "suppresses all judgment), and the section tags name what "
+            "is suppressed, BAT battery, SIG signal, FRZ freeze, when "
+            "only some judgment is off. An excluded device keeps "
+            "recording; exclusion suppresses judgment, not "
+            "observation.",
+            "",
             f"Rule: the window basis is the **trimmed maximum** of "
             f"the rolling daily maxima: the top {TRIM_TOP_K} value(s) "
             f"are ~~set aside~~ as suspected anomalies and the basis "
@@ -1564,10 +1587,10 @@ class DeviceSentinelCoordinator:
         ]
         lines.extend(self._frozen_report_lines())
         lines += [
-            f"| DEVICE | DAYS | GAPS (K={TRIM_TOP_K}) | CLOCK | "
+            f"| DEVICE | STATUS | DAYS | GAPS (K={TRIM_TOP_K}) | CLOCK | "
             f"EVENTS | SIGNAL ({self._signal_slider_label()}) | "
             f"DWELL% | BAT LEVEL (floor {self.low_threshold:g}%) |",
-            "|---|---|---|---|---|---|---|---|",
+            "|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
         for device_id, record in self.data[DATA_DEVICES].items():
@@ -1582,6 +1605,7 @@ class DeviceSentinelCoordinator:
             rows.append(
                 (
                     device_name,
+                    self._device_status(device_id),
                     len(daily_maximum_gaps),
                     operative,
                     self._format_maxima_cell(daily_maximum_gaps),
@@ -1596,9 +1620,10 @@ class DeviceSentinelCoordinator:
                     self._signal_excluded(device_id),
                 )
             )
-        rows.sort(key=lambda row: (row[2] is None, -(row[2] or 0)))
+        rows.sort(key=lambda row: (row[3] is None, -(row[3] or 0)))
         for (
             device_name,
+            status,
             day_count,
             operative,
             maxima_cell,
@@ -1625,7 +1650,7 @@ class DeviceSentinelCoordinator:
                 dwell_text = "excl"
                 signal_cell = lows_cell
             lines.append(
-                f"| {device_name} | {day_count} | "
+                f"| {device_name} | {status} | {day_count} | "
                 f"{maxima_cell} | "
                 f"{clock_source} | {event_count} | {signal_cell} | "
                 f"{dwell_text} | {battery_cell} |"
@@ -2334,6 +2359,26 @@ class DeviceSentinelCoordinator:
         ):
             return True
         return device_id in options.get(CONF_BATTERY_EXCLUDED_DEVICES, [])
+
+    def _device_status(self, device_id: str) -> str:
+        """Return a device's exclusion status for the report column.
+
+        Reads as "reported" when nothing excludes it, "global" when
+        the global exclude suppresses all judgment (shown alone,
+        because global covers everything and the section excludes are
+        moot under it), or the sections that exclude it as short tags
+        (BAT, SIG, FRZ) when only some judgment is suppressed.
+        """
+        if device_id in self._excluded_devices:
+            return "global"
+        tags = []
+        if self._battery_excluded(device_id):
+            tags.append("BAT")
+        if self._signal_excluded(device_id):
+            tags.append("SIG")
+        if self._freeze_excluded(device_id):
+            tags.append("FRZ")
+        return " ".join(tags) if tags else "reported"
 
     def _signal_excluded(self, device_id: str) -> bool:
         """Return whether a device is excluded from signal judgment
