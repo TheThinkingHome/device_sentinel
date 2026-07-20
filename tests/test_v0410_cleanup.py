@@ -56,16 +56,24 @@ def test_prune_is_idempotent():
     assert removed == 0
 
 
-def test_retired_types_are_registered_for_sweep():
-    """The 0.4.8-retired unique id suffixes are in the dead-types
-    tuple, so their ghosts sweep on setup."""
-    for suffix in (
+def test_dead_types_tuple_is_the_sweep_source():
+    """The sweep reads its targets from the dead-types tuple. The
+    0.4.8 entries were removed at 0.4.12 once every install was past
+    them (ruling 82); the mechanism stays, holding the clock-source
+    type it still needs."""
+    from custom_components.device_sentinel.const import (
+        SENTINEL_TYPE_CLOCK_SOURCE,
+    )
+    assert SENTINEL_TYPE_CLOCK_SOURCE in DEAD_ENTITY_SENTINEL_TYPES
+    # The satisfied 0.4.8 entries are gone, not lingering as dead
+    # weight.
+    for gone in (
         "signal_frozen",
         "battery_low_count",
         "battery_low_list",
         "signal_tracked",
     ):
-        assert suffix in DEAD_ENTITY_SENTINEL_TYPES
+        assert gone not in DEAD_ENTITY_SENTINEL_TYPES
 
 
 async def test_setup_prunes_stored_legacy_fields(hass: HomeAssistant):
@@ -91,10 +99,10 @@ async def test_retired_ghost_entity_is_removed(hass: HomeAssistant):
     entry = MockConfigEntry(domain=DOMAIN, title="Device Sentinel", data={})
     entry.add_to_hass(hass)
     reg = er.async_get(hass)
-    # Pre-create a ghost: an old signal_frozen sensor for this entry.
+    # Pre-create a ghost under a type still in the sweep tuple.
     ghost = reg.async_get_or_create(
-        "sensor", DOMAIN, f"{entry.entry_id}_signal_frozen",
-        suggested_object_id="device_sentinel_signals_frozen",
+        "sensor", DOMAIN, f"{entry.entry_id}_clock_source",
+        suggested_object_id="device_sentinel_clock_source",
     )
     assert reg.async_get(ghost.entity_id) is not None
 
