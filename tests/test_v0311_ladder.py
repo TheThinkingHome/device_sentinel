@@ -284,7 +284,11 @@ async def test_dead_option_keys_are_cleared_at_setup(hass: HomeAssistant):
     would read as a live setting quietly doing nothing."""
     entry = await _setup(
         hass,
-        options={"excluded_areas": ["area_1"], CONF_EXCLUDED_LABELS: ["ice"]},
+        options={
+            "excluded_areas": ["area_1"],
+            "excluded_entities": ["image.some_screenshot"],
+            CONF_EXCLUDED_LABELS: ["ice"],
+        },
     )
     await hass.async_block_till_done()
     for key in DEAD_OPTION_KEYS:
