@@ -107,24 +107,15 @@ def test_prune_drops_superseded_device_pick():
             CONF_EXCLUDED_DEVICES: ["a"],
         },
         rows,
-        [],
     )
     assert pruned[CONF_EXCLUDED_DEVICES] == []
 
 
 def test_prune_settles_the_whole_ladder_in_one_save():
-    """Devices prune first, then entities judge against the pruned
-    list, so an integration tick clears both levels below it at once."""
+    """An integration tick clears the device pick below it in the same
+    save, so no device pick survives under a parent that hides it."""
     device_rows = [
         {"device_id": "a", "integration": "spook", "labels": frozenset()},
-    ]
-    entity_rows = [
-        {
-            "entity_id": "sensor.one",
-            "device_id": "a",
-            "integration": "spook",
-            "labels": frozenset(),
-        },
     ]
     pruned = DeviceSentinelOptionsFlow._pruned_exclusion_input(
         {
@@ -133,26 +124,17 @@ def test_prune_settles_the_whole_ladder_in_one_save():
             CONF_EXCLUDED_DEVICES: ["a"],
         },
         device_rows,
-        entity_rows,
     )
     assert pruned[CONF_EXCLUDED_DEVICES] == []
 
 
 def test_prune_keeps_picks_no_broader_kind_covers():
-    """The entity here hangs off a device nobody excluded, so nothing
-    above it reaches it and its pick stands. An entity on an excluded
-    device would prune, because device is the broader kind."""
+    """Device 'a' is excluded but no broader kind covers it, so its
+    pick stands. A device an integration exclude reached would prune,
+    because integration is the broader kind."""
     device_rows = [
         {"device_id": "a", "integration": "zha", "labels": frozenset()},
         {"device_id": "b", "integration": "zha", "labels": frozenset()},
-    ]
-    entity_rows = [
-        {
-            "entity_id": "sensor.one",
-            "device_id": "b",
-            "integration": "zha",
-            "labels": frozenset(),
-        },
     ]
     pruned = DeviceSentinelOptionsFlow._pruned_exclusion_input(
         {
@@ -161,7 +143,6 @@ def test_prune_keeps_picks_no_broader_kind_covers():
             CONF_EXCLUDED_DEVICES: ["a"],
         },
         device_rows,
-        entity_rows,
     )
     assert pruned[CONF_EXCLUDED_DEVICES] == ["a"]
 
@@ -225,19 +206,6 @@ async def test_watched_device_rows_carry_cascade_facts(
     assert row["name"] == "Rowed Device"
     assert row["integration"] == "test"
     assert row["labels"] == frozenset({label.label_id})
-
-
-async def test_watched_entity_rows_carry_cascade_facts(
-    hass: HomeAssistant,
-):
-    source = MockConfigEntry(domain="test")
-    source.add_to_hass(hass)
-    device, entity_id = _device(hass, source, 3)
-    entry = await _setup(hass)
-    rows = entry.runtime_data.watched_entity_rows
-    row = next(r for r in rows if r["entity_id"] == entity_id)
-    assert row["device_id"] == device.id
-    assert row["integration"] == "test"
 
 
 async def test_integration_reason_wins_over_device_reason(
