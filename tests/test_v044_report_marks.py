@@ -97,7 +97,7 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     text = open(
         hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
-    header = next(line for line in text.splitlines() if "DEVICE | DAYS" in line)
+    header = next(line for line in text.splitlines() if "DEVICE | STATUS | DAYS" in line)
     # Slider at +1 renders as the word Watchful, not a number.
     assert "SIGNAL (Watchful)" in header
     assert "GAPS (K=" in header
@@ -109,17 +109,17 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     assert "SIG FROZEN" not in header
 
     # Every data row must have exactly as many cells as the header,
-    # eight, so a dropped column can never leave the rows misaligned.
+    # nine, so a dropped column can never leave the rows misaligned.
     def _cells(line: str) -> int:
         return len([c for c in line.strip().strip("|").split("|")])
 
     header_cells = _cells(header)
-    assert header_cells == 8, header_cells
+    assert header_cells == 9, header_cells
     data_rows = [
         line
         for line in text.splitlines()
         if line.startswith("| ")
-        and "DEVICE | DAYS" not in line
+        and "DEVICE | STATUS | DAYS" not in line
         and not line.startswith("|---")
     ]
     for line in data_rows:
