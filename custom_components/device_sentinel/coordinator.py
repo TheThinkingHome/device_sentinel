@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.8 (2026-07-19)
+#   Version: 0.4.10 (2026-07-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -210,6 +210,24 @@ class DeviceSentinelCoordinator:
 
     # ------------------------------------------------------------- setup
 
+    @staticmethod
+    def _prune_legacy_fields(devices: dict[str, dict[str, Any]]) -> int:
+        """Remove stored keys outside the current record schema.
+
+        _new_device_record is the authoritative field set. Any key in
+        a stored record that is not in a fresh record was written by a
+        past version and is dead (the frozen fields the rail rework
+        dropped, for instance). Returns how many keys were removed
+        across all records, zero once storage is clean.
+        """
+        allowed = set(_new_device_record("", None).keys())
+        removed = 0
+        for record in devices.values():
+            for key in [k for k in record if k not in allowed]:
+                del record[key]
+                removed += 1
+        return removed
+
     async def async_setup(self) -> None:
         """Load storage, build the registry view, and start listening."""
         loaded = await self._store.async_load()
@@ -268,6 +286,21 @@ class DeviceSentinelCoordinator:
                 record.setdefault(DEV_BATTERY_SINCE, None)
                 record.setdefault(DEV_BATTERY_VALUE, None)
                 record.setdefault(DEV_BATTERY_DAILY, [])
+        # Strip any keys a past version wrote that the current record
+        # schema no longer holds (0.4.10). _new_device_record is the
+        # one authoritative field set; anything outside it is dead,
+        # like the frozen fields the rail rework removed. The prune is
+        # idempotent: once a record is clean it finds nothing. Any new
+        # field must be added to _new_device_record or this removes it
+        # on the next load.
+        legacy = self._prune_legacy_fields(loaded[DATA_DEVICES])
+        if legacy:
+            LOGGER.info(
+                "Storage prune: removed %d legacy field(s) no longer "
+                "in the record schema",
+                legacy,
+            )
+
         self.data = loaded
         await self._store.async_save(self.data)
         self.storage_healthy = True
