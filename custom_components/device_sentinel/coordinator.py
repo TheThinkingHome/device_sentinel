@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.10 (2026-07-19)
+#   Version: 0.4.12 (2026-07-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -2042,23 +2042,6 @@ class DeviceSentinelCoordinator:
         ]
         rows.sort(key=lambda row: row["name"].lower())
         return rows
-
-    @property
-    def watched_entity_rows(self) -> list[dict[str, Any]]:
-        """Return every entity belonging to a watched device, with the
-        facts the exclusions cascade needs to decide what an upstream
-        exclusion already covers."""
-        return [
-            {
-                "entity_id": entity_id,
-                "device_id": device_id,
-                "integration": self._watched.get(device_id, "?"),
-                "labels": self._entity_labels.get(
-                    entity_id, frozenset()
-                ),
-            }
-            for entity_id, (device_id, _) in self._entity_map.items()
-        ]
 
     def _enable_matching_entities(
         self,
