@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.13 (2026-07-27)
+#   Version: 0.5.0 (2026-07-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -26,6 +26,7 @@ Core rules implemented here, all ruled in the project document:
 
 from __future__ import annotations
 
+import math
 import os
 from collections import deque
 from collections.abc import Callable
@@ -89,6 +90,8 @@ from .const import (
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
+    DEV_FROZEN_CATEGORY,
+    DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_BELOW_SINCE,
     DEV_SIGNAL_BELOW_TODAY,
@@ -105,6 +108,18 @@ from .const import (
     SIGNAL_RAIL_RSSI,
     STATS_EPOCH,
     LEARNING_MIN_DAYS,
+    CONF_FREEZE_DELTA_LOW,
+    CONF_FREEZE_DELTA_HIGH,
+    DEFAULT_FREEZE_DELTA_LOW_MIN,
+    DEFAULT_FREEZE_DELTA_HIGH_HR,
+    FREEZE_REF_RHYTHM_FAST,
+    FREEZE_REF_RHYTHM_SLOW,
+    FREEZE_ARMING_DAYS,
+    FREEZE_CATEGORY_UNAVAILABLE,
+    FREEZE_CATEGORY_FROZEN,
+    FREEZE_CATEGORY_UNKNOWN,
+    FREEZE_CATEGORY_PRIORITY,
+    FREEZE_UNAVAILABLE_DEBOUNCE,
     LOGGER,
     RENDER_TICK_SECONDS,
     STARTUP_GRACE_SECONDS,
@@ -147,6 +162,8 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_BATTERY_SINCE: None,
         DEV_BATTERY_VALUE: None,
         DEV_BATTERY_DAILY: [],
+        DEV_FROZEN_CATEGORY: None,
+        DEV_FROZEN_SINCE: None,
     }
 
 
@@ -714,6 +731,12 @@ class DeviceSentinelCoordinator:
         record[DEV_EVENT_COUNT] = int(record[DEV_EVENT_COUNT]) + 1
         self._dirty = True
 
+        # Recovery is live: a device that reports is alive, so any
+        # standing freeze verdict clears the instant it speaks, and
+        # the device leaves the report at that moment rather than at
+        # the next sweep.
+        self._clear_freeze_verdict(device_id, record)
+
     # ----------------------------------------------------------- storms
 
     def _roll_battery(self, record: dict[str, Any]) -> None:
@@ -1104,6 +1127,233 @@ class DeviceSentinelCoordinator:
             return f"{seconds / 3600:.2f}h"
         return f"{seconds:.0f}s"
 
+    # ------------------------------------------------------ freeze margin
+
+    def _freeze_deltas(self) -> tuple[float, float]:
+        """Return (delta_low, delta_high) in seconds from the options.
+
+        The two freeze-config sliders: delta-low a fast-end grace
+        floor in minutes, delta-high a slow-end grace ceiling in
+        hours. Stored in their slider units, returned in seconds
+        because the margin math is all in seconds.
+        """
+        options = self.entry.options
+        low_min = options.get(
+            CONF_FREEZE_DELTA_LOW, DEFAULT_FREEZE_DELTA_LOW_MIN
+        )
+        high_hr = options.get(
+            CONF_FREEZE_DELTA_HIGH, DEFAULT_FREEZE_DELTA_HIGH_HR
+        )
+        return float(low_min) * 60.0, float(high_hr) * 3600.0
+
+    def _freeze_grace(self, rhythm: float) -> float:
+        """Return the grace margin for a rhythm, in seconds (#85).
+
+        grace = a * rhythm^p, where a and p are solved so the curve
+        passes through delta-low grace at the fast reference rhythm
+        and delta-high grace at the slow one. The two deltas therefore
+        set the whole shape, not just the ends, and the result is
+        clamped to [delta-low, delta-high] so they double as the hard
+        floor and ceiling. The rhythm itself is never touched here: it
+        is the measured trimmed maximum, and grace is only the
+        patience added on top of it.
+        """
+        delta_low, delta_high = self._freeze_deltas()
+        # Solve the power curve through the two reference points.
+        p = math.log(delta_high / delta_low) / math.log(
+            FREEZE_REF_RHYTHM_SLOW / FREEZE_REF_RHYTHM_FAST
+        )
+        a = delta_low / (FREEZE_REF_RHYTHM_FAST**p)
+        grace = a * (rhythm**p)
+        return min(delta_high, max(delta_low, grace))
+
+    def _freeze_window(self, record: dict[str, Any]) -> float | None:
+        """Return the freeze window for a device, in seconds, or None.
+
+        The window is the learned rhythm plus the grace margin. None
+        means the device is not yet armed for freeze: it has too few
+        learned days for a trustworthy rhythm (the arming gate, #27),
+        so it is watched for unavailable and unknown but never called
+        frozen, because there is no window to miss.
+        """
+        daily = record[DEV_DAILY_MAX]
+        if len(daily) < FREEZE_ARMING_DAYS:
+            return None
+        rhythm, _ = self._trimmed_maximum(daily)
+        if rhythm is None or rhythm <= 0:
+            return None
+        return rhythm + self._freeze_grace(rhythm)
+
+    # ------------------------------------------------ device-down judgment
+
+    def _live_entity_states(self, device_id: str) -> list[str]:
+        """Return the current states of a device's live (enabled)
+        entities. A missing state object means the entity is not live
+        and is skipped, so the judgment reads only what a person could
+        see reporting.
+        """
+        states: list[str] = []
+        for entity_id, (owner, _) in self._entity_map.items():
+            if owner != device_id:
+                continue
+            state = self.hass.states.get(entity_id)
+            if state is not None:
+                states.append(state.state)
+        return states
+
+    def _device_down_category(
+        self, device_id: str, record: dict[str, Any], now: float
+    ) -> str | None:
+        """Return the down category for a device, or None if alive.
+
+        The rule (#device-level): if any live entity is fresh, the
+        device is alive, whatever its other entities read. A device is
+        down only when nothing on it is reporting. Then the category
+        is read from what the entities show, and a mix resolves to the
+        most definite state (unavailable dominates frozen dominates
+        unknown), because a device with most entities unavailable is a
+        dead device whose remaining entities have simply not flipped
+        yet.
+        """
+        window = self._freeze_window(record)
+        last = record[DEV_LAST_ACTIVITY]
+
+        # Frozen: armed, and silent past its window while entities
+        # still hold values. Judged first because it is the timer's
+        # own verdict.
+        frozen = (
+            window is not None
+            and last is not None
+            and (now - last) >= window
+        )
+
+        states = self._live_entity_states(device_id)
+        if not states:
+            # No live entities to read. A silent armed device with no
+            # readable state is still a freeze by its clock.
+            return FREEZE_CATEGORY_FROZEN if frozen else None
+
+        any_unavailable = STATE_UNAVAILABLE in states
+        any_unknown = STATE_UNKNOWN in states
+        all_bad = all(s in BAD_STATES for s in states)
+
+        # If every live entity reads bad, the device is down now,
+        # regardless of the clock: this is the unavailable/unknown
+        # path, which needs no arming because it reads present state.
+        if all_bad:
+            present = {
+                FREEZE_CATEGORY_UNAVAILABLE: any_unavailable,
+                FREEZE_CATEGORY_UNKNOWN: any_unknown,
+                FREEZE_CATEGORY_FROZEN: frozen,
+            }
+            for category in FREEZE_CATEGORY_PRIORITY:
+                if present.get(category):
+                    return category
+            return FREEZE_CATEGORY_UNAVAILABLE
+
+        # Some entity is not bad. If the clock says frozen and the
+        # non-bad entities are stale (not fresh), the device is
+        # frozen; a genuinely fresh entity would have re-armed the
+        # timer, so reaching here with frozen True means the values
+        # are held, not live.
+        if frozen:
+            return FREEZE_CATEGORY_FROZEN
+        return None
+
+    def _apply_freeze_verdict(
+        self, device_id: str, record: dict[str, Any], now: float
+    ) -> bool:
+        """Judge one device and store the verdict if it changed.
+
+        Returns True when the verdict flipped, so the caller can
+        refresh the sensor once per flip rather than on every reading
+        (#234). A debounce holds an unavailable or unknown verdict
+        until the device has been down long enough to rule out a
+        mid-transition flip; the frozen verdict needs no debounce
+        because its window already is the wait.
+        """
+        category = self._device_down_category(device_id, record, now)
+        current = record[DEV_FROZEN_CATEGORY]
+
+        if category in (
+            FREEZE_CATEGORY_UNAVAILABLE,
+            FREEZE_CATEGORY_UNKNOWN,
+        ):
+            # Debounce the transition: only publish once the device
+            # has read down for longer than a quick-succession flip.
+            since = record.get(DEV_FROZEN_SINCE)
+            if current is None:
+                if since is None:
+                    record[DEV_FROZEN_SINCE] = now
+                    self._dirty = True
+                    return False
+                if (now - since) < FREEZE_UNAVAILABLE_DEBOUNCE:
+                    return False
+
+        if category == current:
+            return False
+
+        record[DEV_FROZEN_CATEGORY] = category
+        if category is None:
+            record[DEV_FROZEN_SINCE] = None
+        elif current is None:
+            record[DEV_FROZEN_SINCE] = record.get(DEV_FROZEN_SINCE) or now
+        self._dirty = True
+        LOGGER.info(
+            "Device %s freeze verdict: %s",
+            self._device_name(device_id),
+            category or "alive",
+        )
+        return True
+
+    def _clear_freeze_verdict(
+        self, device_id: str, record: dict[str, Any]
+    ) -> None:
+        """Clear a device's freeze verdict on its first real report.
+
+        A device that reports is alive by definition, so its verdict
+        and the down-since stamp are cleared at once. Called from the
+        report path, this is the live-recovery half of detection: the
+        moment a frozen device speaks, it leaves the report.
+        """
+        if record[DEV_FROZEN_CATEGORY] is not None:
+            record[DEV_FROZEN_CATEGORY] = None
+            record[DEV_FROZEN_SINCE] = None
+            self._dirty = True
+            self._notify()
+        elif record.get(DEV_FROZEN_SINCE) is not None:
+            # A pending, un-published down stamp (inside the debounce);
+            # clear it silently, no verdict was ever shown.
+            record[DEV_FROZEN_SINCE] = None
+            self._dirty = True
+
+    def _judge_all_devices(self) -> None:
+        """Judge every watched device for a freeze verdict.
+
+        Runs on a timer tick and at startup. A flip on any device
+        refreshes the sensors once. This is the sweep that fires the
+        frozen verdict when a window closes with no report, and the
+        unavailable/unknown verdict once the debounce clears.
+        """
+        now = dt_util.utcnow().timestamp()
+        flipped = False
+        for device_id in self._watched:
+            record = self.data[DATA_DEVICES].get(device_id)
+            if record is None:
+                continue
+            if self._apply_freeze_verdict(device_id, record, now):
+                flipped = True
+        if flipped:
+            self._notify()
+
+    def _device_name(self, device_id: str) -> str:
+        """Return a device's display name for logging and the report."""
+        registry = dr.async_get(self.hass)
+        device = registry.async_get(device_id)
+        if device is not None and (device.name_by_user or device.name):
+            return device.name_by_user or device.name
+        return device_id
+
     def _format_maxima_cell(self, daily_maximum_gaps: list[float]) -> str:
         """Render the maxima list newest-first with the trim visible.
 
@@ -1268,6 +1518,9 @@ class DeviceSentinelCoordinator:
             f"{TAINT_DEBOUNCE_SECONDS} s, arming floor "
             f"{LEARNING_MIN_DAYS} days, keep {DAILY_MAX_KEEP} days.",
             "",
+        ]
+        lines.extend(self._frozen_report_lines())
+        lines += [
             f"| DEVICE | DAYS | GAPS (K={TRIM_TOP_K}) | CLOCK | "
             f"EVENTS | SIGNAL ({self._signal_slider_label()}) | "
             f"DWELL% | BAT LEVEL (floor {self.low_threshold:g}%) |",
@@ -1445,8 +1698,19 @@ class DeviceSentinelCoordinator:
         LOGGER.info("Classification report written to %s", path)
 
     async def _on_render_tick(self, _now: Any) -> None:
-        """Sweep storms, persist if dirty, refresh the sensors."""
+        """Sweep storms, judge freezes, persist if dirty, refresh.
+
+        The freeze sweep runs here rather than on a per-device timer:
+        at 60-second granularity a window that closes is caught within
+        a minute, which is immaterial against windows of minutes to
+        hours, and one sweep is simpler than 125 scheduled callbacks
+        to cancel and re-arm. Detection is still live in the sense
+        that matters, a freeze shows on the next tick after its window
+        closes, and clears the instant the device reports (that half
+        runs in the report path, not here).
+        """
         self._sweep_storms(dt_util.utcnow().timestamp())
+        self._judge_all_devices()
         if self._dirty:
             await self._store.async_save(self.data)
             self._dirty = False
@@ -1619,19 +1883,75 @@ class DeviceSentinelCoordinator:
     def frozen_devices_list(self) -> list[dict[str, Any]]:
         """Return devices judged frozen, unknown, or unavailable.
 
-        The Frozen Devices problem sensor. Step 6, the freeze engine,
-        is not built, so this is empty now and the sensor is a
-        placeholder: the shape ships ahead of the engine so the engine
-        is a reader, not a new surface (surfaces before engines). Each
-        row will carry a category (frozen, unknown, unavailable) once
-        the engine fills it.
+        The Device: Frozen problem sensor, filled by the Step 6
+        engine. One row per down device, carrying its category (the
+        worst of what its entities show) and the UTC time the verdict
+        began, so a person sees what is down, how, and for how long.
+        Excluded devices are suppressed from the report but keep their
+        verdict, so undoing an exclude shows them again at once.
         """
-        return []
+        rows: list[dict[str, Any]] = []
+        for device_id, record in self.data[DATA_DEVICES].items():
+            if device_id not in self._watched:
+                continue
+            if device_id in self._excluded_devices:
+                continue
+            category = record.get(DEV_FROZEN_CATEGORY)
+            if category is None:
+                continue
+            rows.append(
+                {
+                    "device_id": device_id,
+                    "name": self._device_name(device_id),
+                    "integration": self._watched.get(device_id, "?"),
+                    "category": category,
+                    "since": record.get(DEV_FROZEN_SINCE),
+                }
+            )
+        rows.sort(key=lambda row: (row["category"], row["name"]))
+        return rows
 
     @property
     def frozen_devices_count(self) -> int:
-        """Return how many devices are frozen; zero until Step 6."""
+        """Return how many devices are down (frozen, unavailable, or
+        unknown) right now."""
         return len(self.frozen_devices_list)
+
+    def _frozen_report_lines(self) -> list[str]:
+        """Return the telemetry report's down-devices section.
+
+        Leads the report with what is in trouble now: one line per
+        down device, its category and how long it has been down, worst
+        category first. An all-clear line when nothing is down, so the
+        section always says something a person can read.
+        """
+        rows = self.frozen_devices_list
+        if not rows:
+            return [
+                "## Down devices (0)",
+                "",
+                "Nothing is frozen, unavailable, or unknown right now.",
+                "",
+            ]
+        now = dt_util.utcnow().timestamp()
+        out = [f"## Down devices ({len(rows)})", ""]
+        for row in rows:
+            since = row.get("since")
+            if since is not None:
+                elapsed = now - since
+                for_how_long = (
+                    f"{elapsed / 3600:.1f}h"
+                    if elapsed >= 3600
+                    else f"{elapsed / 60:.0f}m"
+                )
+            else:
+                for_how_long = "?"
+            out.append(
+                f"- **{row['name']}** ({row['category']}) "
+                f"for {for_how_long}"
+            )
+        out.append("")
+        return out
 
     @property
     def signal_problem_list(self) -> list[dict[str, Any]]:
