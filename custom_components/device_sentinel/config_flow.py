@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.5.1 (2026-07-27)
+#   Version: 0.5.3 (2026-07-27)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -157,6 +157,24 @@ def _devices_covered_by(
     }
 
 
+def _globally_excluded(
+    rows: list[dict[str, Any]], options: dict[str, Any]
+) -> set[str]:
+    """Return the device ids the global exclude already reaches.
+
+    The section pickers subtract these: a globally excluded device is
+    judged by nothing, so offering to also exclude it from a section
+    would be redundant. Covers the global integration and label
+    ladder plus the explicit global device list.
+    """
+    covered = _devices_covered_by(
+        rows,
+        options.get(CONF_EXCLUDED_INTEGRATIONS, []),
+        options.get(CONF_EXCLUDED_LABELS, []),
+    )
+    return covered | set(options.get(CONF_EXCLUDED_DEVICES, []))
+
+
 
 class DeviceSentinelConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the Device Sentinel config flow."""
@@ -237,6 +255,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             options.get(CONF_BATTERY_EXCLUDED_INTEGRATIONS, []),
             options.get(CONF_BATTERY_EXCLUDED_LABELS, []),
         )
+        # Also drop devices the global exclude already reaches: a
+        # globally excluded device is judged by nothing, so offering
+        # to battery-exclude it is redundant.
+        globally = _globally_excluded(battery_rows, options)
+        covered = covered | globally
         # The list only ever shows what still needs a decision: a
         # device an integration or label exclude already reaches is
         # gone from it. Options forms are static once rendered, so
@@ -250,7 +273,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             if row["device_id"] not in covered
         ]
         integration_options = sorted(
-            {row["integration"] for row in battery_rows}
+            {
+                row["integration"]
+                for row in battery_rows
+                if row["device_id"] not in globally
+            }
         )
         return self.async_show_form(
             step_id="battery",
@@ -370,6 +397,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             options.get(CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []),
             options.get(CONF_SIGNAL_EXCLUDED_LABELS, []),
         )
+        globally = _globally_excluded(signal_rows, options)
+        covered = covered | globally
         device_options = [
             selector.SelectOptionDict(
                 value=row["device_id"],
@@ -379,7 +408,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             if row["device_id"] not in covered
         ]
         integration_options = sorted(
-            {row["integration"] for row in signal_rows}
+            {
+                row["integration"]
+                for row in signal_rows
+                if row["device_id"] not in globally
+            }
         )
         return self.async_show_form(
             step_id="signal",
@@ -507,6 +540,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             options.get(CONF_FREEZE_EXCLUDED_INTEGRATIONS, []),
             options.get(CONF_FREEZE_EXCLUDED_LABELS, []),
         )
+        globally = _globally_excluded(device_rows, options)
+        covered = covered | globally
         device_options = [
             selector.SelectOptionDict(
                 value=row["device_id"],
@@ -516,7 +551,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             if row["device_id"] not in covered
         ]
         integration_options = sorted(
-            {row["integration"] for row in device_rows}
+            {
+                row["integration"]
+                for row in device_rows
+                if row["device_id"] not in globally
+            }
         )
         return self.async_show_form(
             step_id="freeze",
