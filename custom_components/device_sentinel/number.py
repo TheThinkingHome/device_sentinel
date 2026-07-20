@@ -47,7 +47,7 @@ class DeviceSentinelBatteryThresholdNumber(NumberEntity):
     """The battery low threshold, adjustable from any dashboard."""
 
     _attr_has_entity_name = True
-    _attr_name = "Battery Low Threshold"
+    _attr_name = "Battery: Threshold"
     _attr_icon = "mdi:battery-alert-variant"
     _attr_entity_category = EntityCategory.CONFIG
     _attr_native_min_value = 1
