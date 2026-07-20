@@ -171,6 +171,14 @@ async def test_list_shape_and_order(hass: HomeAssistant):
     d1, e1 = _battery_device(hass, source, 6)
     d2, e2 = _battery_device(hass, source, 7)
     entry = await _setup(hass)
+    # Battery: Low is disabled by default; enable it to read its state.
+    reg = er.async_get(hass)
+    bl = reg.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_low_batteries"
+    )
+    reg.async_update_entity(bl, disabled_by=None)
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
     coord = entry.runtime_data
 
     hass.states.async_set(e1["pct"], "10")
