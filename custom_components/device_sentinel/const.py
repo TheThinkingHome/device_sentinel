@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.12 (2026-07-19)
+#   Version: 0.5.0 (2026-07-27)
 
 """Constants for the Device Sentinel integration."""
 
@@ -110,6 +110,65 @@ LEARNING_MIN_DAYS = 7
 # Storage save cadence: at most one write per render tick when dirty.
 RENDER_TICK_SECONDS = 60
 
+# Step 6: freeze detection. The freeze window is the learned rhythm
+# plus a grace margin, and the margin follows a power curve of the
+# rhythm shaped by two user sliders (ruling 85). grace = a *
+# rhythm^p, where a and p are derived from the two deltas by fitting
+# the curve through delta-low grace at a fast reference rhythm and
+# delta-high grace at a slow one, then clamped to [delta-low,
+# delta-high]. The deltas therefore reshape the whole curve, not just
+# its ends, so a device in the middle of the fleet responds too, and
+# they double as the hard floor and ceiling on grace. At the defaults
+# a one-hour device gets about a two-times window, the knee the curve
+# is normed around. The rhythm underneath is untouched by the sliders
+# (it is measured, not chosen); the sliders tune only the grace.
+CONF_FREEZE_DELTA_LOW = "freeze_delta_low"
+CONF_FREEZE_DELTA_HIGH = "freeze_delta_high"
+# delta-low: the fast-end grace floor, in minutes. A device reporting
+# every few seconds is not called dead for missing a couple of
+# reports. Range 1 to 8, default 3.
+DEFAULT_FREEZE_DELTA_LOW_MIN = 3
+FREEZE_DELTA_LOW_MIN_MIN = 1
+FREEZE_DELTA_LOW_MIN_MAX = 8
+# delta-high: the slow-end grace ceiling, in hours. The slowest
+# devices are still caught in a bounded time. Range 2 to 8, default
+# 6. The tops match at 8 on purpose; each default sits toward the end
+# the user rarely moves.
+DEFAULT_FREEZE_DELTA_HIGH_HR = 6
+FREEZE_DELTA_HIGH_HR_MIN = 2
+FREEZE_DELTA_HIGH_HR_MAX = 8
+# The reference rhythms the two deltas are pinned at when the curve
+# is fit: delta-low grace at 10 seconds, delta-high grace at 24
+# hours. They bracket any real device and are soak-settleable.
+FREEZE_REF_RHYTHM_FAST = 10.0
+FREEZE_REF_RHYTHM_SLOW = 24.0 * 3600.0
+
+# A device is judged for freeze only once it has a learned rhythm
+# (the arming gate, #27): below the arming floor it is watched for
+# unavailable and unknown but never called frozen, because a device
+# with no established rhythm has no window to miss.
+FREEZE_ARMING_DAYS = LEARNING_MIN_DAYS
+
+# The three device-down categories, worst first. When a down device
+# shows a mix (some entities unavailable, some frozen), the most
+# definite category wins: unavailable is the surest sign of a dead
+# device, so it dominates frozen, which dominates unknown.
+FREEZE_CATEGORY_UNAVAILABLE = "unavailable"
+FREEZE_CATEGORY_FROZEN = "frozen"
+FREEZE_CATEGORY_UNKNOWN = "unknown"
+FREEZE_CATEGORY_PRIORITY = (
+    FREEZE_CATEGORY_UNAVAILABLE,
+    FREEZE_CATEGORY_FROZEN,
+    FREEZE_CATEGORY_UNKNOWN,
+)
+
+# A device mid-transition flips its entities to unavailable in quick
+# succession, usually within seconds. This debounce lets that settle
+# before an unavailable or unknown verdict is published, so a device
+# caught mid-flip is not reported in a half-state. Shares the value
+# of the taint debounce.
+FREEZE_UNAVAILABLE_DEBOUNCE = 180.0
+
 # Identity attributes carried on every entity, per blueprint precedent.
 ATTR_SENTINEL_TYPE = "sentinel_type"
 ATTR_SENTINEL_VERSION = "sentinel_version"
@@ -170,6 +229,15 @@ DEV_BATTERY_VALUE = "battery_value"
 # waits until this history has depth, the way the dwell danger line
 # waited on the floor.
 DEV_BATTERY_DAILY = "battery_daily_value"
+
+# Step 6 freeze verdict, stored so it survives a reboot and so the
+# sensor feed can compare and refresh only when it flips, not on
+# every reading (#234 applied to devices). The category is one of the
+# three down states, or None when the device is alive. frozen_since
+# is the UTC timestamp the verdict began, for the report and for
+# "how long".
+DEV_FROZEN_CATEGORY = "frozen_category"
+DEV_FROZEN_SINCE = "frozen_since"
 
 SENTINEL_TYPE_LOW_BATTERIES = "low_batteries"
 SENTINEL_TYPE_SIGNAL_PROBLEMS = "signal_problems"
