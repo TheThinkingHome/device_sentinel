@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.12 (2026-07-19)
+#   Version: 0.5.0 (2026-07-27)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -79,6 +79,14 @@ from .const import (
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
     CONF_SIGNAL_SENSITIVITY,
+    CONF_FREEZE_DELTA_LOW,
+    CONF_FREEZE_DELTA_HIGH,
+    DEFAULT_FREEZE_DELTA_LOW_MIN,
+    DEFAULT_FREEZE_DELTA_HIGH_HR,
+    FREEZE_DELTA_LOW_MIN_MIN,
+    FREEZE_DELTA_LOW_MIN_MAX,
+    FREEZE_DELTA_HIGH_HR_MIN,
+    FREEZE_DELTA_HIGH_HR_MAX,
     DEFAULT_LOW_THRESHOLD,
     DEFAULT_PERSISTENT_ENABLED,
     DEFAULT_QUIET_ENABLED,
@@ -97,6 +105,7 @@ from .const import (
     WIKI_LINK_EXCLUSIONS,
     WIKI_LINK_NOTIFICATIONS,
     WIKI_LINK_SIGNAL,
+    WIKI_LINK_FREEZE,
 )
 
 # The notify domain exposes one service per target; the persistent
@@ -184,7 +193,13 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """
         return self.async_show_menu(
             step_id="init",
-            menu_options=["notifications", "exclusions", "battery", "signal"],
+            menu_options=[
+                "notifications",
+                "exclusions",
+                "battery",
+                "signal",
+                "freeze",
+            ],
         )
 
     async def async_step_battery(
@@ -447,6 +462,79 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             if device_id not in covered
         ]
         return pruned
+
+    async def async_step_freeze(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """The freeze section: the two margin deltas.
+
+        A device is called frozen when it goes silent past its own
+        learned rhythm plus a grace margin. The margin is not a flat
+        multiple, because rhythms span seconds to hours and no single
+        multiple fits both ends; it follows a curve the two deltas
+        shape (#85). delta-low is the grace a fast device gets, the
+        floor in minutes, so a device reporting every few seconds is
+        not called dead for missing a couple of reports. delta-high
+        is the grace a slow device gets, the ceiling in hours, so the
+        slowest devices are still caught in a bounded time. The two
+        reshape the whole curve between them, and they are the hard
+        floor and ceiling on the grace.
+
+        This is a considered setting, not a daily knob, which is why
+        it lives on its own screen. The learned rhythm underneath is
+        never touched here; the deltas tune only the patience.
+        """
+        if user_input is not None:
+            return self.async_create_entry(
+                data={
+                    **self.config_entry.options,
+                    CONF_FREEZE_DELTA_LOW: int(
+                        user_input[CONF_FREEZE_DELTA_LOW]
+                    ),
+                    CONF_FREEZE_DELTA_HIGH: int(
+                        user_input[CONF_FREEZE_DELTA_HIGH]
+                    ),
+                }
+            )
+        options = self.config_entry.options
+        return self.async_show_form(
+            step_id="freeze",
+            description_placeholders={"wiki_link": WIKI_LINK_FREEZE},
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_FREEZE_DELTA_LOW,
+                        default=options.get(
+                            CONF_FREEZE_DELTA_LOW,
+                            DEFAULT_FREEZE_DELTA_LOW_MIN,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=FREEZE_DELTA_LOW_MIN_MIN,
+                            max=FREEZE_DELTA_LOW_MIN_MAX,
+                            step=1,
+                            unit_of_measurement="min",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_FREEZE_DELTA_HIGH,
+                        default=options.get(
+                            CONF_FREEZE_DELTA_HIGH,
+                            DEFAULT_FREEZE_DELTA_HIGH_HR,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=FREEZE_DELTA_HIGH_HR_MIN,
+                            max=FREEZE_DELTA_HIGH_HR_MAX,
+                            step=1,
+                            unit_of_measurement="h",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                }
+            ),
+        )
 
     async def async_step_exclusions(
         self, user_input: dict[str, Any] | None = None
