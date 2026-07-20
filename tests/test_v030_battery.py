@@ -177,13 +177,13 @@ async def test_list_shape_and_order(hass: HomeAssistant):
     hass.states.async_set(e2["pct"], "5")
     await hass.async_block_till_done()
 
-    state = hass.states.get("sensor.device_sentinel_low_batteries")
+    state = hass.states.get("sensor.device_sentinel_battery_low")
     assert state is not None
     coord._notify()
     await hass.async_block_till_done()
     # Low Batteries merges the old count and list: state is the count,
     # rows and thresholds ride in attributes.
-    state = hass.states.get("sensor.device_sentinel_low_batteries")
+    state = hass.states.get("sensor.device_sentinel_battery_low")
     assert state.state == "2"
     rows = state.attributes["devices"]
     assert [r["name"] for r in rows] == [
@@ -231,7 +231,7 @@ async def test_number_entity_sets_threshold_live(hass: HomeAssistant):
     assert coord.battery_low_count == 0
 
     slider = hass.states.get(
-        "number.device_sentinel_battery_low_threshold"
+        "number.device_sentinel_battery_threshold"
     )
     assert slider is not None
     assert float(slider.state) == 20.0
@@ -239,7 +239,7 @@ async def test_number_entity_sets_threshold_live(hass: HomeAssistant):
     await hass.services.async_call(
         "number", "set_value",
         {
-            "entity_id": "number.device_sentinel_battery_low_threshold",
+            "entity_id": "number.device_sentinel_battery_threshold",
             "value": 35,
         },
         blocking=True,
