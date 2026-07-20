@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.8 (2026-07-19)
+#   Version: 0.4.10 (2026-07-19)
 
 """Constants for the Device Sentinel integration."""
 
@@ -438,4 +438,16 @@ ATTR_SETUP_COUNT = "setup_count"
 # the registry entry, so a retired sensor would linger on the device
 # page as an unavailable row. Removed once at setup, the same
 # treatment DEAD_OPTION_KEYS gets.
-DEAD_ENTITY_SENTINEL_TYPES = (SENTINEL_TYPE_CLOCK_SOURCE,)
+# Sentinel-type suffixes retired at 0.4.8, kept as literals because
+# their constants are gone: the frozen sensor was deleted and the two
+# battery sensors and the tracked-signal sensor were renamed to new
+# type strings, orphaning the old unique ids. Listing them here sweeps
+# the leftover unavailable entities on setup. Append to this tuple
+# whenever an entity is retired.
+DEAD_ENTITY_SENTINEL_TYPES = (
+    SENTINEL_TYPE_CLOCK_SOURCE,
+    "signal_frozen",
+    "battery_low_count",
+    "battery_low_list",
+    "signal_tracked",
+)
