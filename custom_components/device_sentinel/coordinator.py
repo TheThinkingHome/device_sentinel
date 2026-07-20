@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.5.0 (2026-07-27)
+#   Version: 0.5.1 (2026-07-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -61,6 +61,9 @@ from .const import (
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
+    CONF_FREEZE_EXCLUDED_DEVICES,
+    CONF_FREEZE_EXCLUDED_INTEGRATIONS,
+    CONF_FREEZE_EXCLUDED_LABELS,
     CONF_SIGNAL_SENSITIVITY,
     DEFAULT_SIGNAL_SENSITIVITY,
     CONF_EXCLUDED_LABELS,
@@ -119,6 +122,8 @@ from .const import (
     FREEZE_CATEGORY_FROZEN,
     FREEZE_CATEGORY_UNKNOWN,
     FREEZE_CATEGORY_PRIORITY,
+    FREEZE_CATEGORY_NOT_REPORTED,
+    FREEZE_NOT_REPORTED_SECONDS,
     FREEZE_UNAVAILABLE_DEBOUNCE,
     LOGGER,
     RENDER_TICK_SECONDS,
@@ -1215,6 +1220,27 @@ class DeviceSentinelCoordinator:
         dead device whose remaining entities have simply not flipped
         yet.
         """
+        # Freeze-excluded devices keep their clock and rhythm but are
+        # never given a verdict of any kind.
+        if self._freeze_excluded(device_id):
+            return None
+
+        # Never reported: zero lifetime events past the grace window.
+        # Checked first because it is categorically different from a
+        # device that reported and stopped, and because such a device
+        # has no rhythm to miss and may have no live entity to read.
+        if record[DEV_EVENT_COUNT] == 0 and record[DEV_LAST_ACTIVITY] is None:
+            first = record.get(DEV_FIRST_OBSERVED)
+            if first is not None:
+                try:
+                    observed = dt_util.parse_datetime(first)
+                    age = now - observed.timestamp() if observed else 0.0
+                except (ValueError, AttributeError):
+                    age = 0.0
+                if age >= FREEZE_NOT_REPORTED_SECONDS:
+                    return FREEZE_CATEGORY_NOT_REPORTED
+            return None
+
         window = self._freeze_window(record)
         last = record[DEV_LAST_ACTIVITY]
 
@@ -2311,6 +2337,27 @@ class DeviceSentinelCoordinator:
         ):
             return True
         return device_id in options.get(CONF_SIGNAL_EXCLUDED_DEVICES, [])
+
+    def _freeze_excluded(self, device_id: str) -> bool:
+        """Return whether a device is excluded from freeze judgment
+        only. The same broad-to-narrow ladder as battery and signal,
+        and the same principle: the device keeps its clock and its
+        learned rhythm, so re-including it is instant and arrives with
+        history; it simply is never given a freeze, unavailable,
+        unknown, or not-reported verdict. This is the release valve
+        for a device that is intermittent by nature, silenced in the
+        freeze report without being hidden from the rest.
+        """
+        options = self.entry.options
+        if self._watched.get(device_id) in options.get(
+            CONF_FREEZE_EXCLUDED_INTEGRATIONS, []
+        ):
+            return True
+        if self._device_labels.get(device_id, frozenset()) & set(
+            options.get(CONF_FREEZE_EXCLUDED_LABELS, [])
+        ):
+            return True
+        return device_id in options.get(CONF_FREEZE_EXCLUDED_DEVICES, [])
 
     @property
     def detected_batteries(self) -> list[dict[str, Any]]:
