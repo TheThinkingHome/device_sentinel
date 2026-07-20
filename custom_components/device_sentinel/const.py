@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.5.0 (2026-07-27)
+#   Version: 0.5.1 (2026-07-27)
 
 """Constants for the Device Sentinel integration."""
 
@@ -162,6 +162,19 @@ FREEZE_CATEGORY_PRIORITY = (
     FREEZE_CATEGORY_UNKNOWN,
 )
 
+# A device that has never reported at all is a different case from
+# one that reported and stopped: it has no rhythm to miss, so the
+# freeze window can never catch it, and it may have no live entity to
+# read as unavailable either (a registry ghost with no entities, a
+# device dead since before install). It is flagged on its own, ahead
+# of the other checks, once it has been watched long enough that
+# silence is not just a slow first report. Forty-eight hours since
+# first-observed clears even a once-a-day device, which will have
+# spoken twice by then, so total silence past it is a device that
+# never started, not one still warming up.
+FREEZE_CATEGORY_NOT_REPORTED = "not_reported"
+FREEZE_NOT_REPORTED_SECONDS = 48.0 * 3600.0
+
 # A device mid-transition flips its entities to unavailable in quick
 # succession, usually within seconds. This debounce lets that settle
 # before an unavailable or unknown verdict is published, so a device
@@ -303,6 +316,17 @@ SIGNAL_SENSITIVITY_MAX = 2
 CONF_SIGNAL_EXCLUDED_DEVICES = "signal_excluded_devices"
 CONF_SIGNAL_EXCLUDED_INTEGRATIONS = "signal_excluded_integrations"
 CONF_SIGNAL_EXCLUDED_LABELS = "signal_excluded_labels"
+
+# Freeze-only excludes, the same three-tier ladder as battery and
+# signal. A device on this list is still watched and clocked, so its
+# rhythm keeps learning and re-including it is instant, but it is
+# never given a freeze, unavailable, unknown, or not-reported verdict.
+# For a device that is intermittent by nature (a car sensor that
+# travels, a seasonal device) this silences the freeze report without
+# hiding the device from everything.
+CONF_FREEZE_EXCLUDED_DEVICES = "freeze_excluded_devices"
+CONF_FREEZE_EXCLUDED_INTEGRATIONS = "freeze_excluded_integrations"
+CONF_FREEZE_EXCLUDED_LABELS = "freeze_excluded_labels"
 
 # The rails (ruled 2026-07-18). A rail is a value that is flat and at
 # the type's extreme: healthy LQI across the fleet tops out at 224,
