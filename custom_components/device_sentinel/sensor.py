@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.9 (2026-07-19)
+#   Version: 0.4.12 (2026-07-19)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -364,6 +364,10 @@ class DeviceSentinelSignalProblemsSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    # Off by default: the todo list is where a person reads trouble
+    # devices. This count is for anyone who wants it on a dashboard or
+    # in an automation, so it is theirs to enable.
+    _attr_entity_registry_enabled_default = False
     sentinel_type = SENTINEL_TYPE_SIGNAL_PROBLEMS
 
     @property
@@ -394,6 +398,11 @@ class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
     _attr_icon = "mdi:battery-alert"
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    # Off by default, and diagnostic like its two siblings: the todo
+    # list carries trouble devices, so the three problem counts are
+    # opt-in rather than shown to everyone.
+    _attr_entity_registry_enabled_default = False
     sentinel_type = SENTINEL_TYPE_LOW_BATTERIES
 
     @property
@@ -427,6 +436,9 @@ class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    # Off by default: trouble devices live in the todo list; this
+    # count is opt-in for dashboards and automations.
+    _attr_entity_registry_enabled_default = False
     sentinel_type = SENTINEL_TYPE_FROZEN_DEVICES
 
     @property
