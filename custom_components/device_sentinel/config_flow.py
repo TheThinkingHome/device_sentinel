@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.5.0 (2026-07-27)
+#   Version: 0.5.1 (2026-07-27)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -81,6 +81,9 @@ from .const import (
     CONF_SIGNAL_SENSITIVITY,
     CONF_FREEZE_DELTA_LOW,
     CONF_FREEZE_DELTA_HIGH,
+    CONF_FREEZE_EXCLUDED_DEVICES,
+    CONF_FREEZE_EXCLUDED_INTEGRATIONS,
+    CONF_FREEZE_EXCLUDED_LABELS,
     DEFAULT_FREEZE_DELTA_LOW_MIN,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
     FREEZE_DELTA_LOW_MIN_MIN,
@@ -483,20 +486,38 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         This is a considered setting, not a daily knob, which is why
         it lives on its own screen. The learned rhythm underneath is
         never touched here; the deltas tune only the patience.
+
+        The excludes run the same broad-to-narrow ladder as battery
+        and signal: integration, label, device. A freeze-excluded
+        device keeps its clock and rhythm and is simply never given a
+        freeze verdict, so a device intermittent by nature can be
+        silenced here without being hidden everywhere.
         """
+        device_rows = self.config_entry.runtime_data.watched_device_rows
         if user_input is not None:
             return self.async_create_entry(
                 data={
                     **self.config_entry.options,
-                    CONF_FREEZE_DELTA_LOW: int(
-                        user_input[CONF_FREEZE_DELTA_LOW]
-                    ),
-                    CONF_FREEZE_DELTA_HIGH: int(
-                        user_input[CONF_FREEZE_DELTA_HIGH]
-                    ),
+                    **self._pruned_freeze_input(user_input, device_rows),
                 }
             )
         options = self.config_entry.options
+        covered = _devices_covered_by(
+            device_rows,
+            options.get(CONF_FREEZE_EXCLUDED_INTEGRATIONS, []),
+            options.get(CONF_FREEZE_EXCLUDED_LABELS, []),
+        )
+        device_options = [
+            selector.SelectOptionDict(
+                value=row["device_id"],
+                label=row["name"],
+            )
+            for row in device_rows
+            if row["device_id"] not in covered
+        ]
+        integration_options = sorted(
+            {row["integration"] for row in device_rows}
+        )
         return self.async_show_form(
             step_id="freeze",
             description_placeholders={"wiki_link": WIKI_LINK_FREEZE},
@@ -532,9 +553,68 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
+                    vol.Optional(
+                        CONF_FREEZE_EXCLUDED_INTEGRATIONS,
+                        default=options.get(
+                            CONF_FREEZE_EXCLUDED_INTEGRATIONS, []
+                        ),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=integration_options,
+                            multiple=True,
+                            custom_value=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_FREEZE_EXCLUDED_LABELS,
+                        default=options.get(
+                            CONF_FREEZE_EXCLUDED_LABELS, []
+                        ),
+                    ): selector.LabelSelector(
+                        selector.LabelSelectorConfig(multiple=True)
+                    ),
+                    vol.Optional(
+                        CONF_FREEZE_EXCLUDED_DEVICES,
+                        default=[
+                            device_id
+                            for device_id in options.get(
+                                CONF_FREEZE_EXCLUDED_DEVICES, []
+                            )
+                            if device_id not in covered
+                        ],
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=device_options,
+                            multiple=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
                 }
             ),
         )
+
+    @staticmethod
+    def _pruned_freeze_input(
+        user_input: dict[str, Any], device_rows: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Round the two deltas and drop device picks a broader freeze
+        exclude already covers, the same determinism rule as signal
+        and battery."""
+        pruned = dict(user_input)
+        pruned[CONF_FREEZE_DELTA_LOW] = int(pruned[CONF_FREEZE_DELTA_LOW])
+        pruned[CONF_FREEZE_DELTA_HIGH] = int(pruned[CONF_FREEZE_DELTA_HIGH])
+        covered = _devices_covered_by(
+            device_rows,
+            pruned.get(CONF_FREEZE_EXCLUDED_INTEGRATIONS, []),
+            pruned.get(CONF_FREEZE_EXCLUDED_LABELS, []),
+        )
+        pruned[CONF_FREEZE_EXCLUDED_DEVICES] = [
+            device_id
+            for device_id in pruned.get(CONF_FREEZE_EXCLUDED_DEVICES, [])
+            if device_id not in covered
+        ]
+        return pruned
 
     async def async_step_exclusions(
         self, user_input: dict[str, Any] | None = None
