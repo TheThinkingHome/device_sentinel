@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.10 (2026-07-19)
+#   Version: 0.4.11 (2026-07-19)
 
 """Constants for the Device Sentinel integration."""
 
@@ -355,6 +355,7 @@ DEAD_OPTION_KEYS = (
     "quiet_end",
     "reminder_time",
     "high_priority_pierces_quiet",
+    "excluded_entities",
 )
 
 SENTINEL_TYPE_PROBLEM_LIST = "problem_list"
