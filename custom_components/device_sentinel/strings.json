@@ -20,7 +20,8 @@
           "notifications": "Notifications",
           "exclusions": "Global Exclusions",
           "battery": "Low Battery",
-          "signal": "Signal strength"
+          "signal": "Signal strength",
+          "freeze": "Freeze detection"
         }
       },
       "notifications": {
@@ -98,7 +99,10 @@
         "description": "How long a device may go silent before it is called frozen. Each device is judged against its own learned rhythm, so you are not setting a single timeout; you are setting the grace on top of each device's normal. Delta low is the grace a fast device gets, delta high the grace a slow one gets, and the curve between them is shaped by the two. Raise delta low if a chatty device is flagged too soon; lower delta high if a slow device should be caught faster. [How freeze detection works]({wiki_link}).",
         "data": {
           "freeze_delta_low": "Delta low (fast-device grace, minutes)",
-          "freeze_delta_high": "Delta high (slow-device grace, hours)"
+          "freeze_delta_high": "Delta high (slow-device grace, hours)",
+          "freeze_excluded_integrations": "Integrations excluded from freeze reporting",
+          "freeze_excluded_labels": "Labels excluded from freeze reporting",
+          "freeze_excluded_devices": "Devices excluded from freeze reporting"
         }
       }
     }
