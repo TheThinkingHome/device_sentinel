@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.5.1 (2026-07-27)
+#   Version: 0.5.2 (2026-07-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -1299,6 +1299,13 @@ class DeviceSentinelCoordinator:
         because its window already is the wait.
         """
         category = self._device_down_category(device_id, record, now)
+        # Pre-0.5.0 records predate the freeze fields, and the storage
+        # prune removes unknown keys but never adds missing ones, so
+        # such a record arrives here without them. Default them before
+        # reading, or the direct read raises KeyError and, with the
+        # sweep's per-device guard, that record is skipped.
+        record.setdefault(DEV_FROZEN_CATEGORY, None)
+        record.setdefault(DEV_FROZEN_SINCE, None)
         current = record[DEV_FROZEN_CATEGORY]
 
         if category in (
@@ -1342,7 +1349,7 @@ class DeviceSentinelCoordinator:
         report path, this is the live-recovery half of detection: the
         moment a frozen device speaks, it leaves the report.
         """
-        if record[DEV_FROZEN_CATEGORY] is not None:
+        if record.get(DEV_FROZEN_CATEGORY) is not None:
             record[DEV_FROZEN_CATEGORY] = None
             record[DEV_FROZEN_SINCE] = None
             self._dirty = True
@@ -1365,10 +1372,20 @@ class DeviceSentinelCoordinator:
         flipped = False
         for device_id in self._watched:
             record = self.data[DATA_DEVICES].get(device_id)
-            if record is None:
+            if not isinstance(record, dict):
                 continue
-            if self._apply_freeze_verdict(device_id, record, now):
-                flipped = True
+            # Guard each device: one malformed record must never kill
+            # the whole sweep, which would stop verdicts, saving, and
+            # refreshing for every device (the 0.5.1 tick crash).
+            try:
+                if self._apply_freeze_verdict(device_id, record, now):
+                    flipped = True
+            except Exception:  # noqa: BLE001
+                LOGGER.info(
+                    "Skipped a device in the freeze sweep after an "
+                    "unexpected error judging it: %s",
+                    self._device_name(device_id),
+                )
         if flipped:
             self._notify()
 
