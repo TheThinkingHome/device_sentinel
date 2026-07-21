@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.13 (2026-07-27)
+# File: test_v0413_labels.py, Version: 0.4.13 (2026-07-27)
 
 """0.4.13 tests: the sensitivity slider renders as a word in the
 report header, across its whole band.
