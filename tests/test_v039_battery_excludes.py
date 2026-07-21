@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.3.9 (2026-07-15)
+# File: test_v039_battery_excludes.py, Version: 0.3.9 (2026-07-15)
 """0.3.9 tests: battery-only exclusions."""
 
 from homeassistant.core import HomeAssistant
