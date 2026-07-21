@@ -3,6 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: test_telemetry.py, Version: 0.1.0 (2026-07-17)
 
 """Step 2 telemetry recorder tests for Device Sentinel."""
 
