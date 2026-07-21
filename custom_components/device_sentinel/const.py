@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.5.1 (2026-07-27)
+# File: const.py, Version: 0.6.0 (2026-07-21)
 
 """Constants for the Device Sentinel integration."""
 
@@ -382,11 +382,16 @@ REMINDER_MODE_NONE = "none"
 REMINDER_MODE_OVERNIGHT = "overnight"
 REMINDER_MODE_DAILY = "daily"
 
-# The problem list (0.3.5). One todo entity, not one per family:
-# the type lives on each item, so a single list matches the
-# novice-first thesis while losing nothing. Items are stored under
-# their own storage key, separate from per-device telemetry, because
-# they are problem records rather than device statistics.
+# The problem list (0.3.5, populated at 0.6.0). One todo entity, not
+# one per family: the type lives on each item, so a single list
+# matches the novice-first thesis while losing nothing. Items are
+# stored under their own storage key, separate from per-device
+# telemetry, because they are problem records rather than device
+# statistics. Since 0.6.0 every item is engine-owned and keyed by
+# device_id: one item per device however many detections tag it, so a
+# device is never duplicated across the frozen, battery, and signal
+# lists. Hand-typed items are gone with the create feature; anything
+# stored without a device_id is purged at setup.
 DATA_TODO_ITEMS = "todo_items"
 
 TODO_UID = "uid"
@@ -394,15 +399,35 @@ TODO_SUMMARY = "summary"
 TODO_DESCRIPTION = "description"
 TODO_STATUS = "status"
 TODO_SORT_NAME = "sort_name"
-TODO_KIND = "kind"
-TODO_OURS = "ours"
+TODO_DEVICE_ID = "device_id"
+# The kind map: detection kind -> since (epoch seconds, or None when
+# the detection carries no start time, as a rail does). One map per
+# item is what makes one-item-per-device work: a frozen device whose
+# battery then dies gains a second key, not a second item.
+TODO_KINDS = "kinds"
+# When the person checked the box, ISO. None while open. Drives the
+# acknowledged block's order: oldest acknowledgment first, so the
+# checked section reads as a history rather than reshuffling.
+TODO_ACKED_AT = "acked_at"
 
-# Item kinds, one per detection family. The engine sets these at
-# Step 5; the backbone only carries them.
+# Item kinds, one per detection family. The freeze family reuses its
+# category strings so the sync can pass a verdict straight through.
 TODO_KIND_BATTERY = "battery"
 TODO_KIND_FROZEN = "frozen"
 TODO_KIND_UNAVAILABLE = "unavailable"
+TODO_KIND_UNKNOWN = "unknown"
+TODO_KIND_NOT_REPORTED = "not_reported"
 TODO_KIND_SIGNAL = "signal"
+
+# The additions journal (0.6.0). Every item added and every kind that
+# joins an existing item is recorded here and announced on the
+# dispatcher signal, so the Step 8 notification engine becomes a pure
+# listener: an addition to the list is the trigger, and newness is
+# never re-derived from raw detections. Bounded so storage stays
+# small; the journal is a feed, not an archive.
+DATA_TODO_JOURNAL = "todo_journal"
+TODO_JOURNAL_KEEP = 100
+SIGNAL_PROBLEM_ADDITION = f"{DOMAIN}_problem_addition"
 
 # The exclude surface (0.3.6). One list, four selectors, governing
 # every detection family present and future. Exclusion suppresses
@@ -504,6 +529,7 @@ WIKI_LINK_FREEZE = _wiki_link("Freeze-Detection")
 WIKI_LINK_RECOVERY = _wiki_link("Recovery")
 WIKI_LINK_LEARNING = _wiki_link("How-Device-Sentinel-Learns")
 WIKI_LINK_DEVICE_PAGE = _wiki_link("The-Device-Page")
+WIKI_LINK_PROBLEM_LIST = _wiki_link("The-Problem-List")
 WIKI_LINK_REPORTS = _wiki_link("The-Reports")
 WIKI_LINK_FAQ = _wiki_link("FAQ-and-Troubleshooting")
 
