@@ -3,38 +3,43 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: todo.py, Version: 0.3.13 (2026-07-17)
+# File: todo.py, Version: 0.6.0 (2026-07-21)
 
 """Todo platform for the Device Sentinel integration.
 
-One list, todo.device_sentinel, holding every problem the integration
-finds: low batteries, frozen devices, unavailable entities, weak
-signals. The type lives on each item rather than in separate lists,
-so a novice has one place to look and loses nothing.
+One list, todo.device_sentinel, holding every problem the detections
+find: frozen, unavailable, unknown, and never-reported devices, low
+batteries, and signal problems. One item per device, keyed by its
+registry id, so a device with two problems carries two kinds on one
+line rather than appearing twice. The sync in the coordinator owns
+the list: items appear the moment a detection fires, follow the
+problems as they come and go, and are deleted the moment the last
+one clears.
 
 The acknowledgment lifecycle, carried from Sentinel Notify:
 
 - Checking an item is the acknowledgment. It stays on the list,
-  marked done, and goes quiet. Checking never means recovered.
-- Recovery deletes the item. One symbol, one meaning.
-- An acknowledged item that recovers and fails again re-arms
-  naturally: the recovery deleted it, the new failure adds it fresh.
-- Items the integration did not create are never touched, so a
-  user's own additions to this list survive every refresh.
+  marked done, and Step 8 will send nothing about it while it sits
+  checked. Checking never means recovered.
+- Recovery deletes the item, acknowledged or not. One symbol, one
+  meaning, and the deletion is the automatic re-arm: the next
+  failure is a new incident and a fresh item.
+- Hand-deleting an item whose device is still down is the hard
+  un-acknowledge: the next sync re-adds and re-announces it.
 
-This is the backbone. Nothing populates the list yet: the engine that
-adds on detection and deletes on recovery arrives with Step 5. The
-list is real, checkable, persistent, and empty until then.
+There is no add box: the list is maintained by detections alone, so
+the create feature is not offered and hand-typed items are gone
+(anything stored without a device id was purged at the 0.6.0
+upgrade). Text edits do not stick either; the sync rewrites the
+wording from the detections.
 
-Order is alphabetical by the device or entity common name, enforced
-on every write, because a readable list beats one ordered by age.
-The integration owns the order, so user reordering does not stick:
-this is a system-maintained problem list, not a personal one.
+Order: open items alphabetical by the device's common name, then the
+acknowledged block in the order the boxes were checked, oldest
+first. Each item's due date is when its earliest problem began, so
+the list shows age natively.
 """
 
 from __future__ import annotations
-
-import uuid
 
 from homeassistant.components.todo import (
     TodoItem,
@@ -45,6 +50,7 @@ from homeassistant.components.todo import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import DeviceSentinelConfigEntry
 from .const import (
@@ -53,6 +59,7 @@ from .const import (
     DOMAIN,
     SENTINEL_TYPE_PROBLEM_LIST,
     TODO_DESCRIPTION,
+    TODO_KINDS,
     TODO_STATUS,
     TODO_SUMMARY,
     TODO_UID,
@@ -70,7 +77,7 @@ async def async_setup_entry(
 
 
 class DeviceSentinelTodoList(TodoListEntity):
-    """The problem list, checkable and persistent."""
+    """The problem list, checkable, persistent, detection-fed."""
 
     _attr_has_entity_name = True
     # Named rather than inheriting the device name: an unnamed
@@ -79,11 +86,14 @@ class DeviceSentinelTodoList(TodoListEntity):
     _attr_name = "Problem List"
     _attr_icon = "mdi:clipboard-alert-outline"
     _attr_should_poll = False
+    # No CREATE: the sync alone maintains the list, so the card shows
+    # no add box and todo.add_item is rejected. No SET_DESCRIPTION:
+    # the sync owns the wording, so offering the edit would only
+    # invite text that reverts on the next pass. UPDATE stays for the
+    # checkbox, DELETE for the hard un-acknowledge.
     _attr_supported_features = (
-        TodoListEntityFeature.CREATE_TODO_ITEM
-        | TodoListEntityFeature.UPDATE_TODO_ITEM
+        TodoListEntityFeature.UPDATE_TODO_ITEM
         | TodoListEntityFeature.DELETE_TODO_ITEM
-        | TodoListEntityFeature.SET_DESCRIPTION_ON_ITEM
     )
 
     def __init__(self, coordinator: DeviceSentinelCoordinator) -> None:
@@ -103,7 +113,7 @@ class DeviceSentinelTodoList(TodoListEntity):
         }
 
     async def async_added_to_hass(self) -> None:
-        """Track coordinator refreshes so engine writes surface."""
+        """Track coordinator refreshes so sync writes surface."""
         self.async_on_remove(
             self._coordinator.async_add_listener(self._handle_refresh)
         )
@@ -112,14 +122,30 @@ class DeviceSentinelTodoList(TodoListEntity):
         """Reflect the stored items."""
         self.async_write_ha_state()
 
+    @staticmethod
+    def _earliest_since(record: dict) -> object:
+        """Return the item's due date: when its earliest problem
+        began, local, so the card shows age natively. None when no
+        kind carries a stamp, which cannot happen for a sync-built
+        item but keeps a malformed record harmless."""
+        stamps = [
+            since
+            for since in (record.get(TODO_KINDS) or {}).values()
+            if since is not None
+        ]
+        if not stamps:
+            return None
+        return dt_util.as_local(dt_util.utc_from_timestamp(min(stamps)))
+
     @property
     def todo_items(self) -> list[TodoItem]:
-        """Return the stored items, already alphabetical."""
+        """Return the stored items, already in display order."""
         return [
             TodoItem(
                 uid=record[TODO_UID],
                 summary=record[TODO_SUMMARY],
                 description=record.get(TODO_DESCRIPTION),
+                due=self._earliest_since(record),
                 status=(
                     TodoItemStatus.COMPLETED
                     if record[TODO_STATUS] == "completed"
@@ -129,32 +155,17 @@ class DeviceSentinelTodoList(TodoListEntity):
             for record in self._coordinator.todo_items
         ]
 
-    async def async_create_todo_item(self, item: TodoItem) -> None:
-        """Add an item a user typed into the list.
-
-        User additions are foreign items: they are marked as not ours
-        so the engine never deletes or rewrites them.
-        """
-        await self._coordinator.async_todo_add(
-            summary=item.summary or "",
-            description=item.description,
-            sort_name=item.summary or "",
-            kind=None,
-            ours=False,
-            uid=item.uid or uuid.uuid4().hex,
-        )
-
     async def async_update_todo_item(self, item: TodoItem) -> None:
-        """Apply a user edit, including the check that acknowledges.
+        """Apply a user edit, meaning the check that acknowledges.
 
-        Checking an item marks it completed and it stays on the list.
-        The engine reads that status as the acknowledgment and goes
-        quiet about it; only a recovery removes it.
+        Checking an item marks it completed and it stays on the list;
+        the coordinator stamps the check time, which orders the
+        acknowledged block. Unchecking reopens it. Summary text sent
+        along with the status is ignored on purpose: the sync owns
+        the wording.
         """
         await self._coordinator.async_todo_update(
             uid=item.uid,
-            summary=item.summary,
-            description=item.description,
             status=(
                 "completed"
                 if item.status == TodoItemStatus.COMPLETED
