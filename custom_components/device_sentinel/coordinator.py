@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.6.2 (2026-07-21)
+# File: coordinator.py, Version: 0.6.3 (2026-07-21)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -671,7 +671,14 @@ class DeviceSentinelCoordinator:
         if new_state is None:
             return
         entity_id = event.data["entity_id"]
-        device_id, entry_id = self._entity_map[entity_id]
+        # Guarded rather than indexed: the filter has already checked
+        # membership, but that safety lives in HA dispatching filter
+        # and handler in one loop turn. The guard makes the invariant
+        # local, so a future dispatch change cannot raise here.
+        mapped = self._entity_map.get(entity_id)
+        if mapped is None:
+            return
+        device_id, entry_id = mapped
         if new_state.state in BAD_STATES:
             # Debounced: note when the absence began, taint only if it
             # lasts. A dead device never recovers, never completes a
@@ -719,7 +726,11 @@ class DeviceSentinelCoordinator:
         if new_state is None or new_state.state in BAD_STATES:
             return
         entity_id = event.data["entity_id"]
-        device_id, entry_id = self._entity_map[entity_id]
+        # Same guard as _on_state_changed, same reason.
+        mapped = self._entity_map.get(entity_id)
+        if mapped is None:
+            return
+        device_id, entry_id = mapped
         self._record_activity(
             device_id, entry_id, entity_id, new_state.state
         )
@@ -1559,6 +1570,21 @@ class DeviceSentinelCoordinator:
                 parts.append(text)
         return " ".join(parts)
 
+    @staticmethod
+    def _report_cell(text: str) -> str:
+        """Return text safe for a Markdown table cell or report line.
+
+        Device names are user-controlled: a pipe in a name would
+        split its table row and a newline would break it entirely.
+        Escaping here, at the single choke point every name passes on
+        its way into a report, keeps the files intact whatever a
+        device is called. Cosmetic hardening, not a security fix; the
+        reports are local files.
+        """
+        return (
+            text.replace("\n", " ").replace("\r", " ").replace("|", "\\|")
+        )
+
     def _write_telemetry(
         self, report_directory: str, trigger: str
     ) -> None:
@@ -1646,7 +1672,7 @@ class DeviceSentinelCoordinator:
                 else device_id
             )
             integration = self._watched.get(device_id, "?")
-            device_label = f"{device_name} ({integration})"
+            device_label = f"{self._report_cell(device_name)} ({integration})"
             daily_maximum_gaps = record.get(DEV_DAILY_MAX) or []
             operative, _ = self._trimmed_maximum(daily_maximum_gaps)
             rows.append(
@@ -1792,7 +1818,8 @@ class DeviceSentinelCoordinator:
             watched_mark = "\u2713" if watched else ""
             set_aside_mark = "\u2713" if set_aside else ""
             lines.append(
-                f"| {name} | {integration} | {watched_mark} | "
+                f"| {self._report_cell(name)} | {integration} | "
+                f"{watched_mark} | "
                 f"{excluded} | {set_aside_mark} | {copies} |"
             )
 
@@ -2113,6 +2140,9 @@ class DeviceSentinelCoordinator:
         def _elapsed(seconds: float | None) -> str:
             if seconds is None:
                 return "?"
+            # Clamped: a since ahead of the clock (an NTP correction
+            # after an offline boot) must not print a negative age.
+            seconds = max(0.0, seconds)
             if seconds >= 3600:
                 return f"{seconds / 3600:.1f}h"
             return f"{seconds / 60:.0f}m"
@@ -2131,8 +2161,11 @@ class DeviceSentinelCoordinator:
             self.frozen_devices_list, key=lambda r: r["name"].lower()
         ):
             tag = self._todo_tag_of(row["device_id"])
+            shown_name = self._report_cell(
+                row["name"] or row["device_id"]
+            )
             freeze_lines.append(
-                f"- **{row['name']}** ({row['category']}) for "
+                f"- **{shown_name}** ({row['category']}) for "
                 f"{_age_from_epoch(row.get('since'))} {tag}"
             )
 
@@ -2150,8 +2183,11 @@ class DeviceSentinelCoordinator:
             else:
                 shown = "low"
             tag = self._todo_tag_of(row["device_id"])
+            shown_name = self._report_cell(
+                row["name"] or row["device_id"]
+            )
             battery_lines.append(
-                f"- **{row['name']}** ({shown}) for "
+                f"- **{shown_name}** ({shown}) for "
                 f"{_age_from_iso(row.get('since'))} {tag}"
             )
 
@@ -2164,8 +2200,11 @@ class DeviceSentinelCoordinator:
             age = _age_from_epoch(
                 self._todo_signal_since(row["device_id"])
             )
+            shown_name = self._report_cell(
+                row["name"] or row["device_id"]
+            )
             signal_lines.append(
-                f"- **{row['name']}** ({row['kind']}) for {age} {tag}"
+                f"- **{shown_name}** ({row['kind']}) for {age} {tag}"
             )
 
         count = len(self._problem_device_ids())
