@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.6.3 (2026-07-21)
+# File: coordinator.py, Version: 0.6.5 (2026-07-21)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -130,6 +130,7 @@ from .const import (
     LOGGER,
     RENDER_TICK_SECONDS,
     STARTUP_GRACE_SECONDS,
+    STORAGE_COALESCE_SECONDS,
     STORAGE_KEY,
     STORAGE_VERSION,
     STORM_DEVICE_THRESHOLD,
@@ -196,6 +197,14 @@ class DeviceSentinelCoordinator:
         self.data: dict[str, Any] = {}
         self.storage_healthy: bool = False
         self._dirty: bool = False
+        # Two-tier persistence (0.6.5, analysis finding E1). _dirty
+        # alone is routine churn (activity clocks) and coalesces into
+        # a delayed save; _critical marks a change a reboot must not
+        # lose (a verdict, a battery flip, a problem-list change) and
+        # forces the immediate save the tick used to do for
+        # everything. Acknowledgments and options changes keep their
+        # own direct awaited saves and never wait for a tick.
+        self._critical: bool = False
 
         # Registry view, rebuilt on registry changes.
         self._entity_map: dict[str, tuple[str, str | None]] = {}
@@ -448,9 +457,10 @@ class DeviceSentinelCoordinator:
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
-        if self._dirty:
+        if self._dirty or self._critical:
             await self._store.async_save(self.data)
             self._dirty = False
+            self._critical = False
 
     # ---------------------------------------------------- registry view
 
@@ -1122,9 +1132,10 @@ class DeviceSentinelCoordinator:
         # fill value), so the sync runs here and the item appears
         # with the rollover rather than a minute behind it.
         self._sync_problem_list()
-        if pushed or self._dirty:
+        if pushed or self._dirty or self._critical:
             await self._store.async_save(self.data)
             self._dirty = False
+            self._critical = False
         LOGGER.info(
             "Day rollover: pushed daily maxima for %d of %d watched devices",
             pushed,
@@ -1398,6 +1409,7 @@ class DeviceSentinelCoordinator:
         elif current is None:
             record[DEV_FROZEN_SINCE] = record.get(DEV_FROZEN_SINCE) or now
         self._dirty = True
+        self._critical = True
         LOGGER.info(
             "Device %s freeze verdict: %s",
             self._device_name(device_id),
@@ -1419,6 +1431,7 @@ class DeviceSentinelCoordinator:
             record[DEV_FROZEN_CATEGORY] = None
             record[DEV_FROZEN_SINCE] = None
             self._dirty = True
+            self._critical = True
             # The moment a down device speaks, its item goes: the
             # recovery half of the lifecycle runs here in the report
             # path, not on the next tick.
@@ -1846,6 +1859,15 @@ class DeviceSentinelCoordinator:
             handle.write("\n".join(lines) + "\n")
         LOGGER.info("Classification report written to %s", path)
 
+    @callback
+    def _data_to_save(self) -> dict[str, Any]:
+        """Return the live data for the store's delayed save.
+
+        A method rather than a lambda so the delayed save always
+        serializes the state at write time, not at schedule time.
+        """
+        return self.data
+
     async def _on_render_tick(self, _now: Any) -> None:
         """Sweep storms, judge freezes, persist if dirty, refresh.
 
@@ -1866,16 +1888,30 @@ class DeviceSentinelCoordinator:
         # same minute it was detected. Idempotent and cheap: a clean
         # pass changes nothing and writes nothing.
         self._sync_problem_list()
-        if self._dirty:
+        if self._critical:
+            # Something a reboot must not lose changed this tick:
+            # save now, exactly as every tick did before 0.6.5.
             await self._store.async_save(self.data)
+            self._critical = False
+            self._dirty = False
+        elif self._dirty:
+            # Routine clock churn only: coalesce. Repeated calls
+            # reschedule the same pending write, so a quiet quarter
+            # hour costs one write instead of fifteen, the E1 fix.
+            # The store flushes pending delayed saves itself at
+            # shutdown's final-write event.
+            self._store.async_delay_save(
+                self._data_to_save, STORAGE_COALESCE_SECONDS
+            )
             self._dirty = False
         self._notify()
 
     async def _on_hass_stop(self, _event: Event) -> None:
         """Flush storage at shutdown."""
-        if self._dirty:
+        if self._dirty or self._critical:
             await self._store.async_save(self.data)
             self._dirty = False
+            self._critical = False
 
     # --------------------------------------------------------- listeners
 
@@ -2591,6 +2627,7 @@ class DeviceSentinelCoordinator:
             self.data[DATA_TODO_ITEMS] = kept
             self._sort_todo_items()
             self._dirty = True
+            self._critical = True
             self._notify()
 
     @property
@@ -2672,7 +2709,10 @@ class DeviceSentinelCoordinator:
         if is_low != was_low:
             # A flag flip reaches the list at once, both ways: the
             # item appears the moment the cell crosses the line and
-            # deletes the moment it clears the margin.
+            # deletes the moment it clears the margin. The flip and
+            # its since stamp must survive a reboot, so it is
+            # critical for the save tier too.
+            self._critical = True
             self._sync_problem_list()
         if changed:
             self._dirty = True
@@ -2701,9 +2741,10 @@ class DeviceSentinelCoordinator:
         # the sync sees the shrunken lists and deletes the items of
         # anything the person just excluded, immediately.
         self._sync_problem_list()
-        if self._dirty:
+        if self._dirty or self._critical:
             await self._store.async_save(self.data)
             self._dirty = False
+            self._critical = False
         self._notify()
 
     @property
