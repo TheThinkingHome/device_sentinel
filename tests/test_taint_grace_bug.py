@@ -3,6 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: test_taint_grace_bug.py, Version: 0.1.0 (2026-07-14)
 
 """Reproduction: a taint set during grace survives a grace recovery."""
 
