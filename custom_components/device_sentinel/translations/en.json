@@ -66,15 +66,15 @@
         "title": "Low Battery",
         "data": {
           "low_threshold": "Battery low threshold (%)",
-          "battery_excluded_devices": "Battery-excluded devices",
           "battery_excluded_integrations": "Battery-excluded integrations",
-          "battery_excluded_labels": "Battery-excluded labels"
+          "battery_excluded_labels": "Battery-excluded labels",
+          "battery_excluded_devices": "Battery-excluded devices"
         },
         "data_description": {
           "low_threshold": "A battery at or below this level is flagged low.",
-          "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery reporting.",
           "battery_excluded_integrations": "One tick covers every battery that integration owns (phones under mobile_app, for example).",
-          "battery_excluded_labels": "Any device carrying one of these labels stops being reported for a low battery. Set the label on the device's own page and it applies here without opening this dialog."
+          "battery_excluded_labels": "Any device carrying one of these labels stops being reported for a low battery. Set the label on the device's own page and it applies here without opening this dialog.",
+          "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery reporting."
         },
         "description": "Every battery Device Sentinel finds is watched by default. A battery is flagged when it is at or below the threshold. Excluding a battery here stops battery reports for that device only; everything else about it stays watched.\n\nThe three lists run broad to narrow: integration, label, device. They work like the Global Exclusions lists: exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.\n\nFull documentation: {wiki_link}"
       },
@@ -103,6 +103,13 @@
           "freeze_excluded_integrations": "Integrations excluded from freeze reporting",
           "freeze_excluded_labels": "Labels excluded from freeze reporting",
           "freeze_excluded_devices": "Devices excluded from freeze reporting"
+        },
+        "data_description": {
+          "freeze_delta_low": "The grace a fast device gets, in minutes: how long past its normal it may go quiet before it counts as frozen.",
+          "freeze_delta_high": "The grace a slow device gets, in hours. The two deltas shape the whole curve between them, so a mid-fleet device sits between these.",
+          "freeze_excluded_integrations": "Every device from a ticked integration stops being called frozen, unavailable, or not reported.",
+          "freeze_excluded_labels": "Devices carrying a ticked label stop being called down. Set the label on the device's own page and it applies here.",
+          "freeze_excluded_devices": "A ticked device is never called down. It keeps its clock and rhythm, so re-including it is instant."
         }
       }
     }
