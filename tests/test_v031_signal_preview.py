@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.3 (2026-07-19)
+# File: test_v031_signal_preview.py, Version: 0.4.3 (2026-07-19)
 
 """Signal line tests: the floor is the line, shown in the report.
 
