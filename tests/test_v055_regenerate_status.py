@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v055_regenerate_status.py, Version: 0.5.5 (2026-07-21)
+# File: test_v055_regenerate_status.py, Version: 0.6.2 (2026-07-21)
 
 """0.5.5 tests: the regenerate-reports button and the STATUS wording.
 
@@ -116,7 +116,7 @@ async def test_regenerate_judges_then_writes(hass: HomeAssistant):
         hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     # Judgment ran, so the ghost is flagged and shows in the report.
-    assert "Down devices (1)" in text
+    assert "Reporting Devices (1)" in text
     assert "As of" in text
     # STATUS column carries the new grammar.
     assert "Reported" in text
