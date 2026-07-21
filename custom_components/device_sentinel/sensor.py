@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.12 (2026-07-19)
+# File: sensor.py, Version: 0.5.4 (2026-07-21)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -323,9 +323,8 @@ class DeviceSentinelTrackedDevicesSensor(DeviceSentinelBaseSensor):
     """How many devices are eligible for freeze detection.
 
     A device with a learned rhythm, minus the global device excludes.
-    The freeze member of the Tracked family. Freeze detection (Step 6)
-    is not built; this counts the set it will act on, surfaced ahead
-    of the engine. The devices ride in attributes.
+    The freeze member of the Tracked family: the set freeze detection
+    judges. The devices ride in attributes.
     """
 
     _attr_name = "Device: Tracked"
@@ -422,13 +421,11 @@ class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
 
 
 class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
-    """How many devices are frozen, unknown, or unavailable.
+    """How many devices are frozen, unavailable, unknown, or not
+    reported.
 
-    The freeze member of the Problems family, and a placeholder: the
-    Step 6 freeze engine is not built, so this reads zero and its
-    device list is empty. The shape ships ahead of the engine so the
-    engine fills a surface that already exists rather than adding a
-    new one. Each row will carry a category once the engine runs.
+    The freeze member of the Problems family. Each device rides in the
+    attributes with its category and how long it has been down.
     """
 
     _attr_name = "Device: Frozen"
@@ -443,12 +440,12 @@ class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
 
     @property
     def native_value(self) -> int:
-        """Return how many devices are frozen; zero until Step 6."""
+        """Return how many devices are down right now."""
         return self._coordinator.frozen_devices_count
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the frozen devices (empty until Step 6)."""
+        """Return the down devices, each with its category."""
         return {
             **self._identity(),
             "devices": self._coordinator.frozen_devices_list,
