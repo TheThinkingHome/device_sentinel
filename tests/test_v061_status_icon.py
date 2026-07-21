@@ -3,16 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v061_status_icon.py, Version: 0.6.1 (2026-07-21)
+# File: test_v061_status_icon.py, Version: 0.6.2 (2026-07-21)
 
-"""0.6.1 tests: the todo icon in STATUS and the journal in diagnostics.
+"""0.6.1's surviving tests: the journal in diagnostics.
 
-A Reported device with a fault carries its problem-list state in the
-STATUS cell: (circle) listed and open, (check) acknowledged, (cross)
-a fault present but no item, the window after a hand delete. A
-healthy Reported device wears no icon. The diagnostics download gains
-the additions journal beside the items, so a download reflects the
-whole todo layer.
+The 0.6.1 STATUS icon lived one release and moved to the Reporting
+Devices section at 0.6.2 (tested in test_v062_reporting_section.py),
+so the icon assertions that named this file are gone. What remains is
+0.6.1's other half, the additions journal surfaced in the diagnostics
+download, plus the exclusion grammar that the revert left untouched.
 """
 
 from homeassistant.core import HomeAssistant
@@ -35,10 +34,6 @@ from custom_components.device_sentinel.diagnostics import (
 
 DOMAIN = "device_sentinel"
 
-OPEN_ICON = "Reported (\u25cb)"
-ACKED_ICON = "Reported (\u2713)"
-ORPHAN_ICON = "Reported (\u2717)"
-
 
 def _register(hass, uid, name):
     source = MockConfigEntry(domain="test", title="Source")
@@ -55,9 +50,10 @@ def _register(hass, uid, name):
     return device, ent.entity_id
 
 
-async def _coordinator(hass, options=None):
+async def _entry(hass, options=None):
     entry = MockConfigEntry(
-        domain=DOMAIN, title="Device Sentinel", data={}, options=options or {}
+        domain=DOMAIN, title="Device Sentinel", data={},
+        options=options or {},
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -73,81 +69,18 @@ def _freeze(coord, device_id, since=1_000_000.0):
     record[DEV_FROZEN_SINCE] = since
 
 
-async def test_healthy_reported_device_has_no_icon(hass: HomeAssistant):
-    device, entity_id = _register(hass, "h1", "Healthy Sensor")
-    entry = await _coordinator(hass)
-    coord = entry.runtime_data
-    hass.states.async_set(entity_id, "on")
-    coord._sync_problem_list()
-    assert coord._device_status(device.id) == "Reported"
-
-
-async def test_open_problem_shows_circle(hass: HomeAssistant):
-    device, entity_id = _register(hass, "o1", "Open Sensor")
-    entry = await _coordinator(hass)
-    coord = entry.runtime_data
-    hass.states.async_set(entity_id, "21.5")
-    _freeze(coord, device.id)
-    coord._sync_problem_list()
-    assert coord._device_status(device.id) == OPEN_ICON
-
-
-async def test_acknowledged_problem_shows_check(hass: HomeAssistant):
-    device, entity_id = _register(hass, "a1", "Acked Sensor")
-    entry = await _coordinator(hass)
-    coord = entry.runtime_data
-    hass.states.async_set(entity_id, "21.5")
-    _freeze(coord, device.id)
-    coord._sync_problem_list()
-    uid = coord.todo_items[0]["uid"]
-    await coord.async_todo_update(uid=uid, status="completed")
-    assert coord._device_status(device.id) == ACKED_ICON
-
-
-async def test_fault_without_item_shows_cross(hass: HomeAssistant):
-    """The hand-delete window: fault present, item gone, before the
-    next sync re-adds it."""
-    device, entity_id = _register(hass, "x1", "Orphan Sensor")
-    entry = await _coordinator(hass)
-    coord = entry.runtime_data
-    hass.states.async_set(entity_id, "21.5")
-    _freeze(coord, device.id)
-    coord._sync_problem_list()
-    uid = coord.todo_items[0]["uid"]
-    await coord.async_todo_delete([uid])
-    # Fault still detected, item now gone: the orphan state.
-    assert coord._device_status(device.id) == ORPHAN_ICON
-
-
 async def test_excluded_device_keeps_its_grammar(hass: HomeAssistant):
-    """An excluded device shows its exclude reason, never an icon,
-    even with a stored verdict."""
+    """An excluded device shows its exclude reason, verdictless."""
     device, entity_id = _register(hass, "e1", "Excluded Sensor")
-    entry = await _coordinator(
-        hass, options={"excluded_devices": [device.id]}
-    )
+    entry = await _entry(hass, options={"excluded_devices": [device.id]})
     coord = entry.runtime_data
     hass.states.async_set(entity_id, "21.5")
     assert coord._device_status(device.id) == "Excluded (GLB)"
 
 
-async def test_icon_reaches_the_written_report(hass: HomeAssistant):
-    device, entity_id = _register(hass, "r1", "Reported In File")
-    entry = await _coordinator(hass)
-    coord = entry.runtime_data
-    hass.states.async_set(entity_id, "21.5")
-    _freeze(coord, device.id)
-    coord._sync_problem_list()
-    await hass.async_add_executor_job(coord._write_reports, "test")
-    path = hass.config.path("device_sentinel", "device_telemetry.md")
-    with open(path, encoding="utf-8") as handle:
-        text = handle.read()
-    assert OPEN_ICON in text
-
-
 async def test_journal_is_in_diagnostics(hass: HomeAssistant):
     device, entity_id = _register(hass, "j1", "Journal Sensor")
-    entry = await _coordinator(hass)
+    entry = await _entry(hass)
     coord = entry.runtime_data
     hass.states.async_set(entity_id, "21.5")
     _freeze(coord, device.id)
@@ -157,7 +90,6 @@ async def test_journal_is_in_diagnostics(hass: HomeAssistant):
     assert any(
         e["device_id"] == device.id for e in diag["todo_journal"]
     )
-    # The items are still there too.
     assert any(
         r["device_id"] == device.id for r in diag["todo_items"]
     )
