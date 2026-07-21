@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: button.py, Version: 0.4.4 (2026-07-19)
+# File: button.py, Version: 0.5.5 (2026-07-21)
 
 """Button platform for the Device Sentinel integration.
 
@@ -17,6 +17,10 @@ diagnostic they want. Battery is its own match rule (a percentage
 sensor with device_class battery), not a widening of the signal
 filter, and it earns its own press because a user reading only
 "signals" has no reason to expect a battery button to be hiding there.
+
+A fourth button regenerates both nightly report files on demand, for a
+person mid-investigation who wants the report to reflect a fix now
+rather than at the next tick.
 """
 
 from __future__ import annotations
@@ -43,42 +47,47 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     async_add_entities(
         [
-            DeviceSentinelEnableButton(
+            DeviceSentinelActionButton(
                 coordinator,
                 key="enable_signal_entities",
                 name="Enable Signals",
                 icon="mdi:signal",
                 action=coordinator.async_enable_signal_entities,
             ),
-            DeviceSentinelEnableButton(
+            DeviceSentinelActionButton(
                 coordinator,
                 key="enable_last_seen_entities",
                 name="Enable Last Seen",
                 icon="mdi:clock-check-outline",
                 action=coordinator.async_enable_last_seen_entities,
             ),
-            DeviceSentinelEnableButton(
+            DeviceSentinelActionButton(
                 coordinator,
                 key="enable_battery_entities",
                 name="Enable Battery",
                 icon="mdi:battery-heart-variant",
                 action=coordinator.async_enable_battery_entities,
             ),
+            DeviceSentinelActionButton(
+                coordinator,
+                key="regenerate_reports",
+                name="Regenerate Reports",
+                icon="mdi:file-refresh-outline",
+                action=coordinator.async_regenerate_reports,
+            ),
         ]
     )
 
 
-class DeviceSentinelEnableButton(ButtonEntity):
-    """Enable integration-disabled entities of one kind on watched
-    devices.
+class DeviceSentinelActionButton(ButtonEntity):
+    """A Device Sentinel button that runs one coordinator action.
 
-    The press does both halves the name implies: it walks the entity
-    registry for entities of this button's kind that an integration
-    shipped turned off, and turns them on. It does not discover
-    devices; discovery is automatic and continuous through registry
-    listeners, so a name promising a search would promise something
-    that never needed asking for. User-disabled entities are left
-    alone.
+    The enable buttons each walk the entity registry for entities of
+    their kind that an integration shipped turned off, and turn them
+    on, on watched devices only, leaving user-disabled entities alone.
+    The regenerate button judges every device and rewrites both report
+    files on demand. Each button is a thin wrapper around the async
+    action it is given; the action carries the behavior.
     """
 
     _attr_has_entity_name = True
