@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.4.8 (2026-07-19)
+# File: diagnostics.py, Version: 0.6.1 (2026-07-21)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -40,6 +40,7 @@ from .const import (
     DATA_DEVICES,
     DATA_STATS_EPOCH,
     DATA_TODO_ITEMS,
+    DATA_TODO_JOURNAL,
     LEARNING_MIN_DAYS,
     SIGNAL_ARMING_DAYS,
     STARTUP_GRACE_SECONDS,
@@ -160,5 +161,6 @@ async def async_get_config_entry_diagnostics(
             "low_list": coordinator.battery_low_list,
         },
         "todo_items": coordinator.data.get(DATA_TODO_ITEMS, []),
+        "todo_journal": coordinator.data.get(DATA_TODO_JOURNAL, []),
         "devices": devices,
     }
