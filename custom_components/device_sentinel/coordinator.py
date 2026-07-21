@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.5.3 (2026-07-27)
+# File: coordinator.py, Version: 0.5.4 (2026-07-21)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -1587,10 +1587,12 @@ class DeviceSentinelCoordinator:
         ]
         lines.extend(self._frozen_report_lines())
         lines += [
-            f"| DEVICE | STATUS | DAYS | GAPS (K={TRIM_TOP_K}) | CLOCK | "
-            f"EVENTS | SIGNAL ({self._signal_slider_label()}) | "
+            "## Learned statistics",
+            "",
+            f"| DEVICE (INTEGRATION) | STATUS | GAPS (K={TRIM_TOP_K}) | "
+            f"CLOCK | EVENTS | SIGNAL ({self._signal_slider_label()}) | "
             f"DWELL% | BAT LEVEL (floor {self.low_threshold:g}%) |",
-            "|---|---|---|---|---|---|---|---|---|",
+            "|---|---|---|---|---|---|---|---|",
         ]
         rows = []
         for device_id, record in self.data[DATA_DEVICES].items():
@@ -1600,14 +1602,14 @@ class DeviceSentinelCoordinator:
                 if device
                 else device_id
             )
+            integration = self._watched.get(device_id, "?")
+            device_label = f"{device_name} ({integration})"
             daily_maximum_gaps = record.get(DEV_DAILY_MAX) or []
             operative, _ = self._trimmed_maximum(daily_maximum_gaps)
             rows.append(
                 (
-                    device_name,
+                    device_label,
                     self._device_status(device_id),
-                    len(daily_maximum_gaps),
-                    operative,
                     self._format_maxima_cell(daily_maximum_gaps),
                     "seen"
                     if device_id in self._last_seen_entity
@@ -1620,12 +1622,15 @@ class DeviceSentinelCoordinator:
                     self._signal_excluded(device_id),
                 )
             )
-        rows.sort(key=lambda row: (row[3] is None, -(row[3] or 0)))
+        # Alphabetical by the device label, case-insensitive: the table
+        # is a reference chart a person scans by name, so strict
+        # alphabetical is what they expect (the descending-gap order
+        # that suited the soak is gone; the Down devices section above
+        # already surfaces what is in trouble).
+        rows.sort(key=lambda row: row[0].lower())
         for (
-            device_name,
+            device_label,
             status,
-            day_count,
-            operative,
             maxima_cell,
             clock_source,
             event_count,
@@ -1650,7 +1655,7 @@ class DeviceSentinelCoordinator:
                 dwell_text = "excl"
                 signal_cell = lows_cell
             lines.append(
-                f"| {device_name} | {status} | {day_count} | "
+                f"| {device_label} | {status} | "
                 f"{maxima_cell} | "
                 f"{clock_source} | {event_count} | {signal_cell} | "
                 f"{dwell_text} | {battery_cell} |"
@@ -1921,9 +1926,8 @@ class DeviceSentinelCoordinator:
 
         A device with a learned rhythm (an established reporting
         cadence) is freeze-judgeable, minus the global device
-        excludes. The Step 6 engine is not built; this counts the set
-        it will act on, the surfaces-before-engines pattern. A freeze
-        exclude per section joins when that engine ships.
+        excludes. This counts the set freeze detection judges; the
+        per-section freeze exclude narrows it further.
         """
         return sum(
             1
@@ -1951,8 +1955,8 @@ class DeviceSentinelCoordinator:
     def frozen_devices_list(self) -> list[dict[str, Any]]:
         """Return devices judged frozen, unknown, or unavailable.
 
-        The Device: Frozen problem sensor, filled by the Step 6
-        engine. One row per down device, carrying its category (the
+        The Device: Frozen problem sensor. One row per down device,
+        carrying its category (the
         worst of what its entities show) and the UTC time the verdict
         began, so a person sees what is down, how, and for how long.
         Excluded devices are suppressed from the report but keep their
@@ -1994,15 +1998,23 @@ class DeviceSentinelCoordinator:
         section always says something a person can read.
         """
         rows = self.frozen_devices_list
+        as_of = dt_util.now().isoformat(timespec="seconds")
         if not rows:
             return [
                 "## Down devices (0)",
                 "",
-                "Nothing is frozen, unavailable, or unknown right now.",
+                f"As of {as_of}, nothing is frozen, unavailable, or "
+                f"unknown.",
                 "",
             ]
         now = dt_util.utcnow().timestamp()
-        out = [f"## Down devices ({len(rows)})", ""]
+        out = [
+            f"## Down devices ({len(rows)})",
+            "",
+            f"As of {as_of}. A duration is how long the device had been "
+            f"down when this was written, not a promise it still is.",
+            "",
+        ]
         for row in rows:
             since = row.get("since")
             if since is not None:
