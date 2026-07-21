@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.6.0 (2026-07-21)
+# File: const.py, Version: 0.6.5 (2026-07-21)
 
 """Constants for the Device Sentinel integration."""
 
@@ -109,6 +109,16 @@ LEARNING_MIN_DAYS = 7
 
 # Storage save cadence: at most one write per render tick when dirty.
 RENDER_TICK_SECONDS = 60
+
+# The routine-save coalescing window (0.6.5, analysis finding E1).
+# Routine activity-clock churn no longer writes the full store every
+# dirty tick; it schedules one delayed write this many seconds out,
+# and repeated ticks reschedule the same pending write. Anything a
+# reboot must not lose (verdicts, battery flips, problem-list
+# changes, acknowledgments) still saves immediately. On a hard crash
+# the worst loss is this window of clock progress, which the next
+# device report corrects naturally; a clean shutdown flushes.
+STORAGE_COALESCE_SECONDS = 900
 
 # Step 6: freeze detection. The freeze window is the learned rhythm
 # plus a grace margin, and the margin follows a power curve of the
