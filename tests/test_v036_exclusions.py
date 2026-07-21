@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v036_exclusions.py, Version: 0.3.6 (2026-07-19)
+# File: test_v036_exclusions.py, Version: 0.5.7 (2026-07-21)
 
 """0.3.6 tests: the exclude surface and the todo identity attributes.
 
@@ -134,8 +134,11 @@ async def test_classification_shows_excluded(hass: HomeAssistant):
     text = open(
         hass.config.path("device_sentinel/classification.md")
     ).read()
-    assert "Excluded from judgment" in text
-    assert "| Excl Device 4 | device | device |" in text
+    # One combined table: the excluded device carries a Watched
+    # check and names why in the EXCLUDED column.
+    assert "WATCHED" in text
+    assert "Global (device)" in text
+    assert "Excl Device 4" in text
 
 
 async def test_todo_identity_attributes(hass: HomeAssistant):
