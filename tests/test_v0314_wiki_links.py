@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v0314_wiki_links.py, Version: 0.3.14 (2026-07-17)
+# File: test_v0314_wiki_links.py, Version: 0.6.0 (2026-07-21)
 
 """0.3.14 tests: every screen links to its own page.
 
@@ -33,6 +33,7 @@ from custom_components.device_sentinel.const import (
     WIKI_LINK_HOME,
     WIKI_LINK_LEARNING,
     WIKI_LINK_NOTIFICATIONS,
+    WIKI_LINK_PROBLEM_LIST,
     WIKI_LINK_RECOVERY,
     WIKI_LINK_REPORTS,
     WIKI_LINK_SIGNAL,
@@ -52,6 +53,7 @@ PUBLISHED_PAGES = {
     "Recovery",
     "How-Device-Sentinel-Learns",
     "The-Device-Page",
+    "The-Problem-List",
     "The-Reports",
     "FAQ-and-Troubleshooting",
 }
@@ -66,6 +68,7 @@ ALL_LINKS = {
     "WIKI_LINK_RECOVERY": WIKI_LINK_RECOVERY,
     "WIKI_LINK_LEARNING": WIKI_LINK_LEARNING,
     "WIKI_LINK_DEVICE_PAGE": WIKI_LINK_DEVICE_PAGE,
+    "WIKI_LINK_PROBLEM_LIST": WIKI_LINK_PROBLEM_LIST,
     "WIKI_LINK_REPORTS": WIKI_LINK_REPORTS,
     "WIKI_LINK_FAQ": WIKI_LINK_FAQ,
 }
