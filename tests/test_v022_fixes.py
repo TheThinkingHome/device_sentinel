@@ -3,6 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: test_v022_fixes.py, Version: 0.2.2 (2026-07-14)
 
 """0.2.2 tests: storm duty-cycle exemption and deterministic attribution."""
 
