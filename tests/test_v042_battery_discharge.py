@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.2 (2026-07-18)
+# File: test_v042_battery_discharge.py, Version: 0.4.2 (2026-07-18)
 
 """0.4.2 tests: the battery discharge recorder and the UTC hardening.
 
