@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.6.1 (2026-07-21)
+# File: coordinator.py, Version: 0.6.2 (2026-07-21)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -1613,11 +1613,7 @@ class DeviceSentinelCoordinator:
             "off), BAT battery, SIG signal, FRZ freeze. GLB shows "
             "alone; the section reasons combine, Excluded (BAT, FRZ). "
             "An excluded device keeps recording; exclusion suppresses "
-            "judgment, not observation. A Reported device with a fault "
-            "shows its problem-list state: (\u25cb) listed and open, "
-            "(\u2713) acknowledged, (\u2717) a fault present but no "
-            "list item, the moment after a hand delete before the sync "
-            "re-adds it.",
+            "judgment, not observation.",
             "",
             f"Rule: the window basis is the **trimmed maximum** of "
             f"the rolling daily maxima: the top {TRIM_TOP_K} value(s) "
@@ -1632,7 +1628,7 @@ class DeviceSentinelCoordinator:
             f"{LEARNING_MIN_DAYS} days, keep {DAILY_MAX_KEEP} days.",
             "",
         ]
-        lines.extend(self._frozen_report_lines())
+        lines.extend(self._reporting_lines())
         lines += [
             "## Learned statistics",
             "",
@@ -1672,8 +1668,8 @@ class DeviceSentinelCoordinator:
         # Alphabetical by the device label, case-insensitive: the table
         # is a reference chart a person scans by name, so strict
         # alphabetical is what they expect (the descending-gap order
-        # that suited the soak is gone; the Down devices section above
-        # already surfaces what is in trouble).
+        # that suited the soak is gone; the Reporting Devices section
+        # above already surfaces what is in trouble).
         rows.sort(key=lambda row: row[0].lower())
         for (
             device_label,
@@ -2065,48 +2061,139 @@ class DeviceSentinelCoordinator:
             f"{hour_12}:{when.minute:02d} {meridiem}"
         )
 
-    def _frozen_report_lines(self) -> list[str]:
-        """Return the telemetry report's down-devices section.
+    def _todo_tag_of(self, device_id: str) -> str:
+        """Return the todo-state tag for a device with a fault.
 
-        Leads the report with what is in trouble now: one line per
-        down device, its category and how long it has been down, worst
-        category first. An all-clear line when nothing is down, so the
-        section always says something a person can read.
+        The same three states the sync produces, worded for a
+        diagnostics reader: open, acknowledged, or removed from the
+        list by hand while the fault persists. A device has one todo
+        item covering all its faults, so both lines of a two-fault
+        device carry the same tag.
         """
-        rows = self.frozen_devices_list
-        as_of = self._format_report_time(dt_util.now())
-        if not rows:
-            return [
-                "## Down devices (0)",
-                "",
-                f"As of {as_of}, nothing is frozen, unavailable, or "
-                f"unknown.",
-                "",
-            ]
+        status = self._todo_status_of(device_id)
+        if status == "needs_action":
+            return "[\u25cb open]"
+        if status == "completed":
+            return "[\u2713 acknowledged]"
+        return "[\u2717 removed from list]"
+
+    def _todo_signal_since(self, device_id: str) -> float | None:
+        """Return when a device's signal fault was added to the list.
+
+        A rail carries no physical start time (it is derived from the
+        daily-low series), so its age is measured from the todo item's
+        signal-kind stamp, the moment the sync first listed it. This
+        keeps the section consistent with the list it mirrors.
+        """
+        for record in self.todo_items:
+            if record.get(TODO_DEVICE_ID) == device_id:
+                return (record.get(TODO_KINDS) or {}).get("signal")
+        return None
+
+    def _reporting_lines(self) -> list[str]:
+        """Return the telemetry report's Reporting Devices section.
+
+        Every device with a fault, grouped by family (freeze, then
+        battery, then signal) and alphabetical within each group, so
+        the whole trouble picture reads in one place. This is
+        diagnostics, not notification: an acknowledged item is shown
+        here, tagged acknowledged, because the checkbox silences the
+        phone, never the record of what is wrong. A device in two
+        families appears in both, each line carrying that family's
+        own age. The header count is distinct devices, so it can be
+        smaller than the number of lines.
+
+        Age source per family: freeze from its frozen-since, battery
+        from its below-threshold-since, signal from when the sync
+        listed it (a rail has no stored start of its own).
+        """
         now = dt_util.utcnow().timestamp()
-        out = [
-            f"## Down devices ({len(rows)})",
-            "",
-            f"As of {as_of}. A duration is how long the device had been "
-            f"down when this was written, not a promise it still is.",
-            "",
-        ]
-        for row in rows:
-            since = row.get("since")
-            if since is not None:
-                elapsed = now - since
-                for_how_long = (
-                    f"{elapsed / 3600:.1f}h"
-                    if elapsed >= 3600
-                    else f"{elapsed / 60:.0f}m"
+        as_of = self._format_report_time(dt_util.now())
+
+        def _elapsed(seconds: float | None) -> str:
+            if seconds is None:
+                return "?"
+            if seconds >= 3600:
+                return f"{seconds / 3600:.1f}h"
+            return f"{seconds / 60:.0f}m"
+
+        def _age_from_epoch(since: float | None) -> str:
+            return _elapsed(now - since if since is not None else None)
+
+        def _age_from_iso(since: str | None) -> str:
+            if not since:
+                return "?"
+            parsed = dt_util.parse_datetime(since)
+            return _elapsed(now - parsed.timestamp() if parsed else None)
+
+        freeze_lines: list[str] = []
+        for row in sorted(
+            self.frozen_devices_list, key=lambda r: r["name"].lower()
+        ):
+            tag = self._todo_tag_of(row["device_id"])
+            freeze_lines.append(
+                f"- **{row['name']}** ({row['category']}) for "
+                f"{_age_from_epoch(row.get('since'))} {tag}"
+            )
+
+        battery_lines: list[str] = []
+        for row in sorted(
+            self.battery_low_list, key=lambda r: r["name"].lower()
+        ):
+            level = row.get("level")
+            if isinstance(level, (int, float)):
+                shown = (
+                    f"{int(level)}%"
+                    if float(level).is_integer()
+                    else f"{level}%"
                 )
             else:
-                for_how_long = "?"
-            out.append(
-                f"- **{row['name']}** ({row['category']}) "
-                f"for {for_how_long}"
+                shown = "low"
+            tag = self._todo_tag_of(row["device_id"])
+            battery_lines.append(
+                f"- **{row['name']}** ({shown}) for "
+                f"{_age_from_iso(row.get('since'))} {tag}"
             )
-        out.append("")
+
+        signal_lines: list[str] = []
+        for row in sorted(
+            self.signal_problem_list,
+            key=lambda r: (r["name"] or "").lower(),
+        ):
+            tag = self._todo_tag_of(row["device_id"])
+            age = _age_from_epoch(
+                self._todo_signal_since(row["device_id"])
+            )
+            signal_lines.append(
+                f"- **{row['name']}** ({row['kind']}) for {age} {tag}"
+            )
+
+        count = len(self._problem_device_ids())
+        if count == 0:
+            return [
+                "## Reporting Devices (0)",
+                "",
+                f"As of {as_of}, nothing is frozen, unavailable, "
+                f"unknown, low on battery, or railed.",
+                "",
+            ]
+        out = [
+            f"## Reporting Devices ({count})",
+            "",
+            f"As of {as_of}. Every device with a fault, grouped by "
+            f"family. A duration is how long the fault had lasted "
+            f"when this was written. The tag is the problem list "
+            f"state: open, acknowledged (silenced from notifications, "
+            f"still shown here), or removed from the list by hand "
+            f"while the fault persists.",
+            "",
+        ]
+        if freeze_lines:
+            out += ["### Freeze", "", *freeze_lines, ""]
+        if battery_lines:
+            out += ["### Battery", "", *battery_lines, ""]
+        if signal_lines:
+            out += ["### Signal", "", *signal_lines, ""]
         return out
 
     @property
@@ -2711,7 +2798,7 @@ class DeviceSentinelCoordinator:
         return None
 
     def _device_status(self, device_id: str) -> str:
-        """Return a device's status cell for the telemetry report.
+        """Return a device's exclusion status for the report column.
 
         Two states, one grammar: "Reported" when nothing excludes it,
         or "Excluded (...)" naming why. GLB is the global exclude,
@@ -2720,13 +2807,10 @@ class DeviceSentinelCoordinator:
         SIG, and FRZ are the section excludes, listed in column order
         when more than one applies.
 
-        A Reported device that currently has a fault carries a todo
-        icon in parentheses, mirroring the problem list: (\u25cb) the
-        item is open, (\u2713) it is acknowledged, (\u2717) the fault
-        is present but no item exists. The last is the near-instant
-        window after a hand delete, before the next sync re-adds it,
-        so it doubles as a health check: a device sitting at (\u2717)
-        across a nightly report is a sync that stopped re-adding.
+        The 0.6.1 todo icon lived here for one release and moved to
+        the Reporting Devices section at 0.6.2: the same state shown
+        twice was redundant and confusing, and the section is where a
+        fault's whole story reads, list state included.
         """
         if device_id in self._excluded_devices:
             return "Excluded (GLB)"
@@ -2739,13 +2823,6 @@ class DeviceSentinelCoordinator:
             tags.append("FRZ")
         if tags:
             return f"Excluded ({', '.join(tags)})"
-        if device_id in self._problem_device_ids():
-            todo_status = self._todo_status_of(device_id)
-            if todo_status == "needs_action":
-                return "Reported (\u25cb)"
-            if todo_status == "completed":
-                return "Reported (\u2713)"
-            return "Reported (\u2717)"
         return "Reported"
 
     def _signal_excluded(self, device_id: str) -> bool:
