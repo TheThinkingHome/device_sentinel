@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.5.6 (2026-07-21)
+# File: coordinator.py, Version: 0.5.7 (2026-07-21)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -1671,99 +1671,105 @@ class DeviceSentinelCoordinator:
     ) -> None:
         """Write classification.md, the audit view.
 
-        Answers "why is my device not watched" and "why is this thing
-        in my report": every watched device with integration, clock
-        source, and a COPIES count that makes duplicate registry
-        devices (network-tracker ghosts, multi-homed doubles) visible
-        at a glance; every set-aside device with its integration; and
-        the deviceless count.
+        One row per device, so a device's whole standing reads across
+        a single line: whether it is Watched (has hardware, recording)
+        or Set aside (a service device with nothing to watch), and, for
+        a watched device, whether the global exclude has it and why.
+        Every device is watched and recorded; exclusion only suppresses
+        judgment and reporting, so an excluded device still carries a
+        Watched check, with the reason alongside it. COPIES flags a
+        name shared by more than one registry device. Section excludes
+        (battery, signal, freeze) are not shown here; they live in the
+        telemetry STATUS column, because a section-excluded device is
+        still judged for everything else and is not excluded wholesale.
         """
         dev_reg = dr.async_get(self.hass)
-        watched_rows = []
+
         name_copy_counts: dict[str, int] = {}
         for device_id, integration_domain in self._watched.items():
             device = dev_reg.async_get(device_id)
-            device_name = (
+            name = (
                 (device.name_by_user or device.name or device_id)
                 if device
                 else device_id
             )
-            clock_source = (
-                "seen" if device_id in self._last_seen_entity else "clock"
+            name_copy_counts[name] = name_copy_counts.get(name, 0) + 1
+
+        # Build one row per device, watched and set-aside together, so
+        # the table reads as a single audit.
+        rows: list[tuple[str, str, str, str, str, str]] = []
+        for device_id, integration_domain in self._watched.items():
+            device = dev_reg.async_get(device_id)
+            name = (
+                (device.name_by_user or device.name or device_id)
+                if device
+                else device_id
             )
-            watched_rows.append(
-                (device_name, integration_domain, clock_source)
+            reason = self._excluded_devices.get(device_id)
+            excluded_cell = f"Global ({reason})" if reason else ""
+            copies = name_copy_counts.get(name, 1)
+            rows.append(
+                (
+                    name,
+                    integration_domain,
+                    "yes",  # watched
+                    excluded_cell,
+                    "",  # set aside
+                    str(copies) if copies > 1 else "",
+                )
             )
-            name_copy_counts[device_name] = (
-                name_copy_counts.get(device_name, 0) + 1
+        for name, integration_domain in self._set_aside.values():
+            rows.append(
+                (name, integration_domain, "", "", "yes", "")
             )
+        rows.sort(key=lambda row: row[0].lower())
+
+        total = len(self._watched) + len(self._set_aside)
         lines = [
             f"# Device Sentinel v{self.version} classification",
             "",
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
             "",
-            f"Watching {len(self._watched)} of "
-            f"{len(self._watched) + len(self._set_aside)} devices; "
-            f"{len(self._set_aside)} set aside (entry_type service); "
-            f"{self.deviceless_count} deviceless entities visible only "
-            f"at entity level. COPIES above 1 means duplicate registry "
-            f"devices sharing a name (network-tracker ghosts, "
-            f"multi-homed doubles): exclude-list candidates.",
+            f"One row per device. Watching {len(self._watched)} of "
+            f"{total}; {len(self._set_aside)} set aside (service "
+            f"devices with no hardware to watch); {self.deviceless_count} "
+            f"deviceless entities visible only at entity level. Every "
+            f"device is watched and recorded; EXCLUDED only suppresses "
+            f"judgment and reporting, and names why. COPIES above 1 is a "
+            f"name shared by more than one registry device (a "
+            f"network-tracker ghost or a multi-homed double).",
             "",
-            f"## Watched ({len(self._watched)})",
-            "",
-            "| DEVICE | INTEGRATION | CLOCK | COPIES |",
-            "|---|---|---|---|",
+            "| DEVICE | INTEGRATION | WATCHED | EXCLUDED | SET ASIDE | "
+            "COPIES |",
+            "|---|---|---|---|---|---|",
         ]
-        for device_name, integration_domain, clock_source in sorted(
-            watched_rows
-        ):
+        for name, integration, watched, excluded, set_aside, copies in rows:
+            watched_mark = "\u2713" if watched else ""
+            set_aside_mark = "\u2713" if set_aside else ""
             lines.append(
-                f"| {device_name} | {integration_domain} | "
-                f"{clock_source} | {name_copy_counts[device_name]} |"
+                f"| {name} | {integration} | {watched_mark} | "
+                f"{excluded} | {set_aside_mark} | {copies} |"
             )
-        if self._excluded_devices or self._excluded_entities:
+
+        if self._excluded_entities:
             lines.append("")
             lines.append(
-                f"## Excluded from judgment "
-                f"({len(self._excluded_devices)} devices, "
-                f"{len(self._excluded_entities)} entities)"
+                f"## Excluded entities ({len(self._excluded_entities)})"
             )
             lines.append("")
             lines.append(
-                "Exclusion suppresses judgment, not observation: these "
-                "keep their clocks and statistics and never appear in "
-                "detections. An excluded entity still vouches for its "
-                "device."
+                "Individual entities excluded from judgment. An "
+                "excluded entity still vouches for its device."
             )
             lines.append("")
-            lines.append("| ITEM | KIND | REASON |")
-            lines.append("|---|---|---|")
-            for device_id, reason in sorted(
-                self._excluded_devices.items(),
-                key=lambda pair: pair[0],
-            ):
-                device = dev_reg.async_get(device_id)
-                item_name = (
-                    (device.name_by_user or device.name or device_id)
-                    if device
-                    else device_id
-                )
-                lines.append(f"| {item_name} | device | {reason} |")
+            lines.append("| ENTITY | REASON |")
+            lines.append("|---|---|")
             for entity_id, reason in sorted(
                 self._excluded_entities.items()
             ):
-                lines.append(f"| {entity_id} | entity | {reason} |")
-        lines.append("")
-        lines.append(f"## Set aside ({len(self._set_aside)})")
-        lines.append("")
-        lines.append("| DEVICE | INTEGRATION |")
-        lines.append("|---|---|")
-        for device_name, integration_domain in sorted(
-            self._set_aside.values()
-        ):
-            lines.append(f"| {device_name} | {integration_domain} |")
+                lines.append(f"| {entity_id} | {reason} |")
+
         path = os.path.join(report_directory, REPORT_CLASSIFICATION)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
