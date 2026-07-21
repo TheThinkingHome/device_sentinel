@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v053_exclusions_status.py, Version: 0.5.4 (2026-07-21)
+# File: test_v053_exclusions_status.py, Version: 0.5.5 (2026-07-21)
 
 """0.5.3 tests: exclusion relationship and the STATUS column.
 
@@ -78,8 +78,8 @@ async def test_status_reads_the_exclusion_state(hass: HomeAssistant):
     excluded (alone), and the section tags otherwise."""
     device = _register(hass, "st", "Status Device")
     coord = await _coordinator(hass)
-    # Nothing excludes: reported.
-    assert coord._device_status(device.id) == "reported"
+    # Nothing excludes: Reported.
+    assert coord._device_status(device.id) == "Reported"
 
     # Section excludes: tags, no global.
     hass.config_entries.async_update_entry(
@@ -90,8 +90,8 @@ async def test_status_reads_the_exclusion_state(hass: HomeAssistant):
         },
     )
     status = coord._device_status(device.id)
-    assert "BAT" in status and "FRZ" in status and "SIG" not in status
-    assert "global" not in status
+    assert status == "Excluded (BAT, FRZ)"
+    assert "GLB" not in status
 
     # Global exclude wins and shows alone.
     hass.config_entries.async_update_entry(
@@ -102,7 +102,7 @@ async def test_status_reads_the_exclusion_state(hass: HomeAssistant):
         },
     )
     coord._excluded_devices[device.id] = "device"
-    assert coord._device_status(device.id) == "global"
+    assert coord._device_status(device.id) == "Excluded (GLB)"
 
 
 async def test_report_has_status_column(hass: HomeAssistant):
