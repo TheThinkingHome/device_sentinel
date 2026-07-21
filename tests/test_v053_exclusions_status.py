@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.5.3 (2026-07-27)
+# File: test_v053_exclusions_status.py, Version: 0.5.4 (2026-07-21)
 
 """0.5.3 tests: exclusion relationship and the STATUS column.
 
@@ -117,7 +117,7 @@ async def test_report_has_status_column(hass: HomeAssistant):
         hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     header = next(
-        line for line in text.splitlines() if "DEVICE | STATUS" in line
+        line for line in text.splitlines() if "DEVICE (INTEGRATION) | STATUS" in line
     )
     assert "STATUS" in header
     # The legend explains the tags.
