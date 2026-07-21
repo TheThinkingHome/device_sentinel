@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.5.4 (2026-07-21)
+# File: coordinator.py, Version: 0.5.5 (2026-07-21)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -30,7 +30,7 @@ import math
 import os
 from collections import deque
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -1564,13 +1564,12 @@ class DeviceSentinelCoordinator:
             f"the low threshold **bold**. excl means signal-excluded: "
             f"still recorded, not judged.",
             "",
-            "STATUS is what a device is judged for: reported means "
-            "everything, global means nothing (the global exclude "
-            "suppresses all judgment), and the section tags name what "
-            "is suppressed, BAT battery, SIG signal, FRZ freeze, when "
-            "only some judgment is off. An excluded device keeps "
-            "recording; exclusion suppresses judgment, not "
-            "observation.",
+            "STATUS is Reported (judged for everything) or Excluded "
+            "with the reason in parentheses: GLB global (all judgment "
+            "off), BAT battery, SIG signal, FRZ freeze. GLB shows "
+            "alone; the section reasons combine, Excluded (BAT, FRZ). "
+            "An excluded device keeps recording; exclusion suppresses "
+            "judgment, not observation.",
             "",
             f"Rule: the window basis is the **trimmed maximum** of "
             f"the rolling daily maxima: the top {TRIM_TOP_K} value(s) "
@@ -1989,6 +1988,23 @@ class DeviceSentinelCoordinator:
         unknown) right now."""
         return len(self.frozen_devices_list)
 
+    @staticmethod
+    def _format_report_time(when: datetime) -> str:
+        """Return a local time a person reads at a glance, like
+        'July 21, 2026 at 7:19 AM'. Built without strftime's platform
+        specific %-d and %-I so it is the same on every host: the
+        month name and AM/PM come from strftime, the day and hour are
+        integers so they carry no leading zero.
+        """
+        month = when.strftime("%B")
+        hour_24 = when.hour
+        hour_12 = hour_24 % 12 or 12
+        meridiem = "AM" if hour_24 < 12 else "PM"
+        return (
+            f"{month} {when.day}, {when.year} at "
+            f"{hour_12}:{when.minute:02d} {meridiem}"
+        )
+
     def _frozen_report_lines(self) -> list[str]:
         """Return the telemetry report's down-devices section.
 
@@ -1998,7 +2014,7 @@ class DeviceSentinelCoordinator:
         section always says something a person can read.
         """
         rows = self.frozen_devices_list
-        as_of = dt_util.now().isoformat(timespec="seconds")
+        as_of = self._format_report_time(dt_util.now())
         if not rows:
             return [
                 "## Down devices (0)",
@@ -2375,14 +2391,15 @@ class DeviceSentinelCoordinator:
     def _device_status(self, device_id: str) -> str:
         """Return a device's exclusion status for the report column.
 
-        Reads as "reported" when nothing excludes it, "global" when
-        the global exclude suppresses all judgment (shown alone,
-        because global covers everything and the section excludes are
-        moot under it), or the sections that exclude it as short tags
-        (BAT, SIG, FRZ) when only some judgment is suppressed.
+        Two states, one grammar: "Reported" when nothing excludes it,
+        or "Excluded (...)" naming why. GLB is the global exclude,
+        shown alone because it covers everything and a globally
+        excluded device is never offered to the section lists. BAT,
+        SIG, and FRZ are the section excludes, listed in column order
+        when more than one applies.
         """
         if device_id in self._excluded_devices:
-            return "global"
+            return "Excluded (GLB)"
         tags = []
         if self._battery_excluded(device_id):
             tags.append("BAT")
@@ -2390,7 +2407,9 @@ class DeviceSentinelCoordinator:
             tags.append("SIG")
         if self._freeze_excluded(device_id):
             tags.append("FRZ")
-        return " ".join(tags) if tags else "reported"
+        if tags:
+            return f"Excluded ({', '.join(tags)})"
+        return "Reported"
 
     def _signal_excluded(self, device_id: str) -> bool:
         """Return whether a device is excluded from signal judgment
@@ -2544,6 +2563,21 @@ class DeviceSentinelCoordinator:
     async def async_enable_signal_entities(self) -> dict[str, int]:
         """Enable integration-disabled signal-strength entities."""
         return self._enable_matching_entities(self._is_signal, "signals")
+
+    async def async_regenerate_reports(self) -> dict[str, int]:
+        """Judge every device now, then rewrite both report files.
+
+        For a person hunting a problem: fix a frozen device, press
+        this, and the report reflects the fix at once rather than at
+        the next tick or the nightly write. Judgment runs first so the
+        down-devices section and the verdicts are current, then both
+        files are written with a fresh timestamp that confirms the run.
+        """
+        self._judge_all_devices()
+        await self.hass.async_add_executor_job(
+            self._write_reports, "manual"
+        )
+        return {"regenerated": 2}
 
     async def async_enable_last_seen_entities(self) -> dict[str, int]:
         """Enable integration-disabled last_seen entities."""
