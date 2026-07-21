@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-#   Version: 0.4.1 (2026-07-18)
+# File: test_v040_signal_dwell.py, Version: 0.4.1 (2026-07-18)
 
 """0.4.0 tests: the signal dwell recorder and the rail-stuck detector.
 
