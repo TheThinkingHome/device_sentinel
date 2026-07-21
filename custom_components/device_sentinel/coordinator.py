@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.6.5 (2026-07-21)
+# File: coordinator.py, Version: 0.6.6 (2026-07-21)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -205,6 +205,16 @@ class DeviceSentinelCoordinator:
         # everything. Acknowledgments and options changes keep their
         # own direct awaited saves and never wait for a tick.
         self._critical: bool = False
+        # Whether a delayed routine save is already scheduled. The
+        # 0.6.5 flaw, caught by the storage watch within its first
+        # hour: async_delay_save reschedules on every call, so a
+        # dirty tick every minute pushed the 900-second deadline
+        # forward forever and the routine write never fired. The
+        # delayed save is now scheduled only when none is pending;
+        # the flag clears when the write fires (inside
+        # _data_to_save) and at every immediate save, since a direct
+        # save cancels the store's pending delayed write.
+        self._delay_pending: bool = False
 
         # Registry view, rebuilt on registry changes.
         self._entity_map: dict[str, tuple[str, str | None]] = {}
@@ -458,9 +468,7 @@ class DeviceSentinelCoordinator:
             unsub()
         self._unsubs.clear()
         if self._dirty or self._critical:
-            await self._store.async_save(self.data)
-            self._dirty = False
-            self._critical = False
+            await self._save_now()
 
     # ---------------------------------------------------- registry view
 
@@ -1133,9 +1141,7 @@ class DeviceSentinelCoordinator:
         # with the rollover rather than a minute behind it.
         self._sync_problem_list()
         if pushed or self._dirty or self._critical:
-            await self._store.async_save(self.data)
-            self._dirty = False
-            self._critical = False
+            await self._save_now()
         LOGGER.info(
             "Day rollover: pushed daily maxima for %d of %d watched devices",
             pushed,
@@ -1865,8 +1871,25 @@ class DeviceSentinelCoordinator:
 
         A method rather than a lambda so the delayed save always
         serializes the state at write time, not at schedule time.
+        Running means the pending delayed write is firing right now,
+        so the pending flag clears here and the next dirty tick may
+        schedule the next window.
         """
+        self._delay_pending = False
         return self.data
+
+    async def _save_now(self) -> None:
+        """The single immediate-save path.
+
+        Every direct save runs through here so the bookkeeping can
+        never be missed at one of the scattered sites: both tier
+        flags clear, and the pending flag clears because the store
+        cancels its pending delayed write when a direct save lands.
+        """
+        await self._store.async_save(self.data)
+        self._dirty = False
+        self._critical = False
+        self._delay_pending = False
 
     async def _on_render_tick(self, _now: Any) -> None:
         """Sweep storms, judge freezes, persist if dirty, refresh.
@@ -1891,27 +1914,30 @@ class DeviceSentinelCoordinator:
         if self._critical:
             # Something a reboot must not lose changed this tick:
             # save now, exactly as every tick did before 0.6.5.
-            await self._store.async_save(self.data)
-            self._critical = False
-            self._dirty = False
-        elif self._dirty:
-            # Routine clock churn only: coalesce. Repeated calls
-            # reschedule the same pending write, so a quiet quarter
-            # hour costs one write instead of fifteen, the E1 fix.
-            # The store flushes pending delayed saves itself at
-            # shutdown's final-write event.
+            await self._save_now()
+        elif self._dirty and not self._delay_pending:
+            # Routine clock churn only: coalesce. Scheduled once per
+            # window, never rescheduled by later dirty ticks, because
+            # async_delay_save restarts its timer on every call and
+            # a fleet that is always dirty would push the deadline
+            # forward forever (the 0.6.6 fix). The store flushes
+            # pending delayed saves itself at shutdown's final-write
+            # event.
+            self._delay_pending = True
             self._store.async_delay_save(
                 self._data_to_save, STORAGE_COALESCE_SECONDS
             )
+            self._dirty = False
+        elif self._dirty:
+            # A window is already pending; its write will carry this
+            # tick's churn since the data serializes at fire time.
             self._dirty = False
         self._notify()
 
     async def _on_hass_stop(self, _event: Event) -> None:
         """Flush storage at shutdown."""
         if self._dirty or self._critical:
-            await self._store.async_save(self.data)
-            self._dirty = False
-            self._critical = False
+            await self._save_now()
 
     # --------------------------------------------------------- listeners
 
@@ -2388,7 +2414,7 @@ class DeviceSentinelCoordinator:
                 )
             break
         self._sort_todo_items()
-        await self._store.async_save(self.data)
+        await self._save_now()
         self._notify()
 
     async def async_todo_delete(self, uids: list[str]) -> None:
@@ -2404,7 +2430,7 @@ class DeviceSentinelCoordinator:
             for record in self.data[DATA_TODO_ITEMS]
             if record[TODO_UID] not in uids
         ]
-        await self._store.async_save(self.data)
+        await self._save_now()
         self._notify()
 
     # ------------------------------------------- the problem-list sync
@@ -2742,9 +2768,7 @@ class DeviceSentinelCoordinator:
         # anything the person just excluded, immediately.
         self._sync_problem_list()
         if self._dirty or self._critical:
-            await self._store.async_save(self.data)
-            self._dirty = False
-            self._critical = False
+            await self._save_now()
         self._notify()
 
     @property
