@@ -12,7 +12,7 @@ Somewhere in your house right now, a sensor may be lying to you. It froze, and H
 
 Device Sentinel is a Home Assistant custom integration that watches for exactly that: frozen devices wearing healthy values, unavailable devices, low batteries, and weak radio links.
 
-**Status: pre-release. Not ready for use.** Battery and signal detection are live and recording; freeze detection, unavailability, and notifications arrive in later steps. Until public release, the [Sentinel blueprints](https://github.com/TheThinkingHome/Automations/tree/main/blueprints) remain the supported tools.
+**Status: pre-release.** Learning, low battery, signal recording, and freeze detection (frozen, unavailable, unknown, and never-reported) are all live. Notifications and recovery arrive in later steps. Until public release, the [Sentinel blueprints](https://github.com/TheThinkingHome/Automations/tree/main/blueprints) remain the supported tools.
 
 ## Why an integration
 
@@ -34,13 +34,14 @@ The learning defends itself. One anomalous day is set aside and moves nothing; a
 - Watches signal strength against each device's own learned floor, reporting how much of each day a device spent at or below that floor (dwell), and flagging a signal stuck at the rail (the 255 or -128 fill value) when its daily low holds there for three days running. A config screen sets fleet-wide sensitivity and can exclude a stubborn device from signal reporting without blinding the watcher. Tracked Signals counts what is watched; Signal Problems reports what has a fault, rail now, weak-link dwell once its danger line is ruled. Recording and reporting now; alerting comes with the notification engine.
 - Enable Signals, Enable Last Seen, Enable Battery: three buttons, one per diagnostic kind, each turning on the entities that integrations ship disabled, respecting anything a user disabled personally.
 - Exclusions on a priority ladder (integration, label, device), with pickers populated from what was actually detected, and per-section lists beside the global one. Device Sentinel judges devices, not entities, so there is no per-entity exclude; a label on an entity still keeps it from feeding its device. Exclusion suppresses judgment, not observation: an excluded device keeps learning, so undoing costs nothing.
-- Writes two human-readable diagnostic files nightly: the learned-rhythms table and the watched-versus-set-aside audit.
+- Detects frozen, unavailable, unknown, and never-reported devices at the device level, any entity's activity vouching for its siblings. Each freeze window is armed per device from its own learned rhythm plus a grace margin set by two sliders. A device silent past its window while wearing a stale value is frozen; a device whose live entities all read unavailable or unknown is that; a device that has produced nothing at all for 48 hours since install is never-reported. The verdict survives a reboot (measured from the stored clock) and clears the instant the device reports. Device: Frozen counts what is down, each row carrying its category and how long it has been down.
+- Writes two human-readable diagnostic files nightly: the learned-rhythms table (alphabetical, with each device's integration and exclusion status) and the watched-versus-set-aside audit. The down-devices summary leads the first file, stamped with when it was taken.
 
 ## What is coming
 
-- Frozen-device detection at device level, any entity's activity vouching for its siblings, each window armed per device from its own learned rhythm.
-- Unavailable and unknown detection, device level like the freeze it sits beside, with the last signal readings before a failure attached as forensics: 40, 32, 24, gone tells you the link died; 200, 201, 200 tells you to look elsewhere. Frozen Devices already rides as an entity, empty until this engine fills it.
-- The engines behind the problem list and the notification settings, both of which are already built and waiting: the checkbox as the acknowledgment, recovery deleting the item, notifications about additions only, quiet hours, and high priority piercing them for the freezer at 3 AM.
+- The signal forensics trail: the last signal readings before a device went dark attached to its alert, 40, 32, 24, gone tells you the link died; 200, 201, 200 tells you to look elsewhere. The rule is specified; the trail is the next signal step.
+- A battery discharge-velocity flag: catching a cell dropping fast before it reaches the threshold, from the daily-level history already being recorded.
+- The engines behind the problem list and the notification settings, both already built and waiting: the checkbox as the acknowledgment, recovery deleting the item, notifications about additions only, quiet hours, and high priority piercing them for the freezer at 3 AM.
 
 ## Documentation
 
@@ -72,3 +73,4 @@ The full story: [From Blueprints to Integration: Why Device Sentinel Exists](htt
 ## License
 
 GPL-3.0-or-later. Copyright (C) 2026 James Lander, The Thinking Home.
+
