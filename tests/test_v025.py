@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v025.py, Version: 0.3.14 (2026-07-17)
+# File: test_v025.py, Version: 0.5.7 (2026-07-21)
 
 """0.2.5 tests: the diagnostic files."""
 
@@ -63,7 +63,8 @@ async def test_reports_written_at_setup_and_midnight(
     assert "| COPIES |" in clas_text
     assert "Report Device" in clas_text
     assert "Service Thing" in clas_text
-    assert "Set aside" in clas_text
+    assert "SET ASIDE" in clas_text
+    assert "WATCHED" in clas_text
 
     # Rewritten at midnight, carrying the new maxima.
     os.remove(tele)
