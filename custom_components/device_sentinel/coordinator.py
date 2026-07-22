@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.7.3 (2026-07-22)
+# File: coordinator.py, Version: 0.7.4 (2026-07-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -2085,6 +2085,11 @@ class DeviceSentinelCoordinator:
             return f"{base}, {cause}" if cause else base
         if event == INCIDENT_ACKNOWLEDGED:
             return "acknowledged"
+        if kind == "battery":
+            # Borrowed from the composer so the table and the prose
+            # cannot disagree about the same event (#120): the level
+            # belongs in both or neither.
+            return self._battery_phrase(row[INC_DEVICE_ID], False)
         wording = {
             "frozen": "stopped reporting",
             "not_reported": "has never reported",
@@ -2096,7 +2101,9 @@ class DeviceSentinelCoordinator:
             return "battery fell low"
         return wording.get(kind, kind)
 
-    def _brief_now_rows(self) -> list[tuple[str, str, float, str]]:
+    def _brief_now_rows(
+        self,
+    ) -> list[tuple[str, str, float, str, str]]:
         """Return the standing state: what is wrong right now.
 
         Read from the problem list rather than recomputed, so the
@@ -2124,7 +2131,7 @@ class DeviceSentinelCoordinator:
                 }.get(kind, kind)
                 if acked:
                     problem = f"{problem} (acknowledged)"
-                rows.append((name, problem, since or now, kind))
+                rows.append((name, problem, since or now, kind, device_id))
         rows.sort(key=lambda row: row[2])
         return rows
 
@@ -2201,6 +2208,54 @@ class DeviceSentinelCoordinator:
             candidate -= timedelta(days=1)
         return candidate.timestamp()
 
+    def _brief_prose(
+        self,
+        incidents: list[dict[str, Any]],
+        now_rows: list[tuple[str, str, float, str, str]],
+        window_start: float,
+    ) -> list[str]:
+        """Return the brief's opening prose.
+
+        The same composer that will speak to a phone, read as
+        paragraphs (#122): history first in the order it happened,
+        then what is standing right now. The tables below stay for
+        scanning and for exact times; this is for reading. Every
+        sentence comes from the composer, so the prose, the tables,
+        and a future notification cannot describe one event three
+        ways.
+        """
+        told: list[str] = []
+        for row in sorted(incidents, key=lambda item: item[INC_WHEN]):
+            told.append(self._compose_event(row))
+        standing: list[str] = []
+        for _name, _problem, _since, _kind, device_id in now_rows:
+            line = self._compose_device_line(device_id)
+            if line is None:
+                continue
+            record = next(
+                (
+                    item
+                    for item in self.todo_items
+                    if item.get(TODO_DEVICE_ID) == device_id
+                ),
+                None,
+            )
+            if record and record.get(TODO_STATUS) == "completed":
+                line = f"{line[:-1]}, acknowledged."
+            if line not in standing:
+                standing.append(line)
+        lines = ["## In short", ""]
+        since_text = self._brief_moment(window_start)
+        if told:
+            lines += [f"Since {since_text}: " + " ".join(told), ""]
+        else:
+            lines += [f"Nothing has happened since {since_text}.", ""]
+        if standing:
+            lines += ["Right now: " + " ".join(standing), ""]
+        else:
+            lines += ["Nothing needs attention right now.", ""]
+        return lines
+
     def _write_brief(
         self,
         report_directory: str,
@@ -2251,9 +2306,9 @@ class DeviceSentinelCoordinator:
             "",
             scope,
             "",
-            "## Now",
-            "",
         ]
+        lines += self._brief_prose(incidents, now_rows, window_start)
+        lines += ["## Now", ""]
         if not now_rows:
             lines += ["Nothing needs attention.", ""]
         else:
@@ -2275,7 +2330,7 @@ class DeviceSentinelCoordinator:
                 "| DEVICE | PROBLEM | SINCE | FOR |",
                 "|---|---|---|---|",
             ]
-            for name, problem, since, kind in now_rows:
+            for name, problem, since, kind, _device_id in now_rows:
                 # A device that has never reported has no last-seen
                 # time; the stamp is when it was discovered in the
                 # registry, and saying so stops a reader taking it
