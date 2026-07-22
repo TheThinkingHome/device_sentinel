@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.6.8 (2026-07-22)
+# File: const.py, Version: 0.7.0 (2026-07-22)
 
 """Constants for the Device Sentinel integration."""
 
@@ -461,6 +461,45 @@ DATA_TODO_JOURNAL = "todo_journal"
 # device measured in hours. Expressed as a share of grace, the
 # threshold scales with the patience each device has earned.
 EPISODE_OPEN_SHARE = 0.5
+# The incident log (0.7.0, #107). The Step 7 journal recorded only
+# openings, which was enough to trigger a notification and not
+# enough to tell a story: a brief built on it could announce that a
+# device broke and never that it came back, so a night of problems
+# that opened and healed while the house slept would read as
+# nothing at all. The log widens it to the whole life of a problem,
+# and every renderer (phone, brief, email, voice) reads this and
+# nothing else.
+DATA_INCIDENTS = "incidents"
+INCIDENT_KEEP_DAYS = 14
+INC_DEVICE_ID = "device_id"
+INC_NAME = "name"
+INC_KIND = "kind"
+INC_EVENT = "event"
+INC_WHEN = "when"
+INC_CAUSE = "cause"
+INC_DURATION = "duration"
+# Event types. ACTION is reserved for Step 9: a recovery attempt and
+# its outcome belong on the same timeline as the problem it answers,
+# so the brief can one day say what was tried as well as what broke.
+INCIDENT_OPENED = "opened"
+INCIDENT_RESOLVED = "resolved"
+INCIDENT_ACKNOWLEDGED = "acknowledged"
+INCIDENT_ACTION = "action"
+
+# The kinds whose recovery can name a cause. Only a silence has a
+# lever to credit: a battery rising or a rail clearing has no
+# reconnect or restart behind it, so those resolutions stay silent
+# about why rather than guessing.
+FREEZE_KINDS_FOR_CAUSE = frozenset(
+    {"frozen", "unavailable", "unknown", "not_reported"}
+)
+
+# The daily brief (#116). One file per day beside the other reports,
+# written for a person rather than a maintainer: what is wrong now,
+# what happened in the last 24 hours, plain language, no machinery.
+REPORT_BRIEF_PREFIX = "daily_brief_"
+BRIEF_KEEP_DAYS = 14
+
 DATA_EPISODES = "silence_episodes"
 EPISODE_KEEP_DAYS = 14
 EP_DEVICE_ID = "device_id"
@@ -475,6 +514,12 @@ EP_LEARNED = "learned"
 EPISODE_ENDED_RESUMED = "resumed"
 EPISODE_ENDED_REBOOT = "intervention (reboot)"
 EPISODE_ENDED_RECONNECT = "intervention (bridge reconnect)"
+# A storm inside startup grace is the restart itself: every device
+# reports at once when Home Assistant returns, which looks exactly
+# like a bridge reconnecting. Naming it correctly matters because
+# the two are different rungs of the recovery ladder, and the brief
+# quotes the cause verbatim (0.7.0).
+EPISODE_ENDED_RESTART = "intervention (restart)"
 TODO_JOURNAL_KEEP = 100
 SIGNAL_PROBLEM_ADDITION = f"{DOMAIN}_problem_addition"
 
