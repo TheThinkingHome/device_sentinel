@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.7.1 (2026-07-22)
+# File: const.py, Version: 0.7.2 (2026-07-22)
 
 """Constants for the Device Sentinel integration."""
 
@@ -490,6 +490,25 @@ EPISODE_OPEN_SHARE = 0.5
 # nothing at all. The log widens it to the whole life of a problem,
 # and every renderer (phone, brief, email, voice) reads this and
 # nothing else.
+# The outbox (0.7.2, #120). Every message the notification engine
+# would send is composed and recorded here before any engine exists
+# to send it. Two reasons: the sentences can be read and criticized
+# for days before one reaches a phone, and composition lives in one
+# module that the phone, the brief, and a future voice answer all
+# call, so the same event can never be described three different
+# ways by three different renderers.
+DATA_OUTBOX = "outbox"
+OUTBOX_KEEP = 50
+OUT_WHEN = "when"
+OUT_DEVICE_ID = "device_id"
+OUT_TEXT = "text"
+OUT_SHAPE = "shape"
+# An event sentence is history: what happened, and when. A device
+# line is status: what is wrong with this device now, which is what
+# a phone holds, one per device, replaced in place (#108).
+OUTBOX_SHAPE_EVENT = "event"
+OUTBOX_SHAPE_DEVICE = "device"
+
 DATA_INCIDENTS = "incidents"
 INCIDENT_KEEP_DAYS = 14
 INC_DEVICE_ID = "device_id"
