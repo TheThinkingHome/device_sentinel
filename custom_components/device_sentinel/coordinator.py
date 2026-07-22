@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.7.0 (2026-07-22)
+# File: coordinator.py, Version: 0.7.1 (2026-07-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -151,7 +151,14 @@ from .const import (
     INC_KIND,
     INC_NAME,
     INC_WHEN,
-    EPISODE_OPEN_SHARE,
+    COALESCE_MINUTES_MAX,
+    COALESCE_MINUTES_MIN,
+    CONF_COALESCE_MINUTES,
+    CONF_EPISODE_SHARE,
+    DEFAULT_COALESCE_MINUTES,
+    DEFAULT_EPISODE_SHARE_PCT,
+    SHARE_PCT_MAX,
+    SHARE_PCT_MIN,
     EP_AT,
     EP_BASIS,
     EP_DEVICE_ID,
@@ -161,7 +168,6 @@ from .const import (
     EP_NAME,
     EP_SINCE,
     EP_WINDOW,
-    STORAGE_COALESCE_SECONDS,
     STORAGE_KEY,
     STORAGE_VERSION,
     STORM_DEVICE_THRESHOLD,
@@ -1555,7 +1561,7 @@ class DeviceSentinelCoordinator:
         """Open an episode for any device well into its own patience.
 
         The threshold is basis plus a share of that device's grace
-        (#105): the silence has spent EPISODE_OPEN_SHARE of the
+        (#105, configurable since #117): the silence has spent that share of the
         distance from the rhythm to the freeze line. Basis alone,
         shipped at 0.6.7, was too sensitive at the fast end, where a
         rhythm of seconds is exceeded constantly and trivial silences
@@ -1601,7 +1607,7 @@ class DeviceSentinelCoordinator:
                 continue
             window = self._freeze_window(record)
             grace = (window - basis) if window is not None else 0.0
-            if now - last <= basis + EPISODE_OPEN_SHARE * grace:
+            if now - last <= basis + self.episode_share * grace:
                 continue
             if self._open_episode_for(device_id) is not None:
                 continue
@@ -2096,7 +2102,7 @@ class DeviceSentinelCoordinator:
                 }.get(kind, kind)
                 if acked:
                     problem = f"{problem} (acknowledged)"
-                rows.append((name, problem, since or now, ""))
+                rows.append((name, problem, since or now, kind))
         rows.sort(key=lambda row: row[2])
         return rows
 
@@ -2112,6 +2118,42 @@ class DeviceSentinelCoordinator:
             )
             return f"battery {shown}"
         return "battery low"
+
+    @property
+    def episode_share(self) -> float:
+        """Return the configured episode-opening share, as a fraction.
+
+        Live from options (#117): a silence opens an episode once it
+        has spent this much of the distance from the device's rhythm
+        to its freeze line. Clamped to the same band the screen
+        offers, so a hand-edited entry cannot produce a threshold
+        that records everything or nothing.
+        """
+        raw = int(
+            self.entry.options.get(
+                CONF_EPISODE_SHARE, DEFAULT_EPISODE_SHARE_PCT
+            )
+        )
+        return min(SHARE_PCT_MAX, max(SHARE_PCT_MIN, raw)) / 100.0
+
+    @property
+    def coalesce_seconds(self) -> float:
+        """Return the routine-save interval in seconds.
+
+        Live from options (#117), clamped to the offered band. Only
+        routine activity waits: verdicts, battery flips, list changes
+        and acknowledgments always write immediately, so this governs
+        wear and crash-window, never correctness.
+        """
+        raw = int(
+            self.entry.options.get(
+                CONF_COALESCE_MINUTES, DEFAULT_COALESCE_MINUTES
+            )
+        )
+        minutes = min(
+            COALESCE_MINUTES_MAX, max(COALESCE_MINUTES_MIN, raw)
+        )
+        return minutes * 60.0
 
     def _brief_window_start(self, now: float) -> float:
         """Return the start of the current brief window.
@@ -2196,10 +2238,14 @@ class DeviceSentinelCoordinator:
             devices = len({row[0] for row in now_rows})
             summary = (
                 f"{devices} device{'s' if devices != 1 else ''} "
-                f"need{'' if devices != 1 else 's'} attention."
+                f"need{'' if devices != 1 else 's'} attention"
             )
-            if acked_now:
-                summary += f" {acked_now} acknowledged."
+            if acked_now == 1:
+                summary += ", one of them acknowledged."
+            elif acked_now > 1:
+                summary += f", {acked_now} of them acknowledged."
+            else:
+                summary += "."
             now = dt_util.utcnow().timestamp()
             lines += [
                 summary,
@@ -2207,10 +2253,19 @@ class DeviceSentinelCoordinator:
                 "| DEVICE | PROBLEM | SINCE | FOR |",
                 "|---|---|---|---|",
             ]
-            for name, problem, since, _ in now_rows:
+            for name, problem, since, kind in now_rows:
+                # A device that has never reported has no last-seen
+                # time; the stamp is when it was discovered in the
+                # registry, and saying so stops a reader taking it
+                # for the moment the device broke (#118).
+                when = (
+                    f"discovered {self._brief_moment(since)}"
+                    if kind == "not_reported"
+                    else self._brief_moment(since)
+                )
                 lines.append(
                     f"| {self._report_cell(name)} | {problem} "
-                    f"| {self._brief_moment(since)} "
+                    f"| {when} "
                     f"| {self._human_span(now - since)} |"
                 )
             lines.append("")
@@ -2500,7 +2555,7 @@ class DeviceSentinelCoordinator:
             # event.
             self._delay_pending = True
             self._store.async_delay_save(
-                self._data_to_save, STORAGE_COALESCE_SECONDS
+                self._data_to_save, self.coalesce_seconds
             )
             self._dirty = False
         elif self._dirty:
