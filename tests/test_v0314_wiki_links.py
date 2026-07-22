@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v0314_wiki_links.py, Version: 0.6.0 (2026-07-21)
+# File: test_v0314_wiki_links.py, Version: 0.7.1 (2026-07-22)
 
 """0.3.14 tests: every screen links to its own page.
 
@@ -45,7 +45,8 @@ DOMAIN = "device_sentinel"
 # a space in a page title into a URL.
 PUBLISHED_PAGES = {
     "Home",
-    "Notifications",
+    "Notifications-and-Daily-Brief",
+    "Advanced",
     "Global-Exclusions",
     "Low-Battery",
     "Signal-Strength",
@@ -130,7 +131,8 @@ def test_home_link_has_no_page_suffix():
 async def test_each_screen_supplies_its_own_page(hass: HomeAssistant):
     entry = await _setup(hass)
     expected = {
-        "notifications": "Notifications",
+        "notifications": "Notifications-and-Daily-Brief",
+        "advanced": "Advanced",
         "exclusions": "Global-Exclusions",
         "battery": "Low-Battery",
     }
