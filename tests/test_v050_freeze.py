@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v050_freeze.py, Version: 0.6.2 (2026-07-21)
+# File: test_v050_freeze.py, Version: 0.6.7 (2026-07-22)
 
 """0.5.0 tests: the freeze, unavailable, and unknown detector.
 
@@ -96,13 +96,15 @@ async def test_margin_curve_hits_the_ruling_85_anchors(
     hass: HomeAssistant,
 ):
     """The default curve passes through its anchors: a 1-hour device
-    gets about a 2x window, and the grace is clamped to the deltas."""
+    gets a bit over a 2x window, and the grace is clamped to the
+    deltas. The band moved at 0.6.7 with the delta-high default (6h
+    to 8h, #102), which lifts the whole midrange."""
     coord = await _coordinator(hass)
     one_hour = 3600.0
     grace = coord._freeze_grace(one_hour)
     window = one_hour + grace
-    # 1 hr -> ~2x window (grace near 1 hr).
-    assert 1.9 <= window / one_hour <= 2.3
+    # 1 hr -> ~2.35x window on the 0.6.7 defaults.
+    assert 2.1 <= window / one_hour <= 2.6
 
 
 async def test_margin_clamps_to_the_two_deltas(hass: HomeAssistant):
