@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.7.2 (2026-07-22)
+# File: coordinator.py, Version: 0.7.3 (2026-07-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -144,9 +144,12 @@ from .const import (
     INCIDENT_KEEP_DAYS,
     INCIDENT_OPENED,
     OUTBOX_KEEP,
+    OUTBOX_REASON_EVENT,
+    OUTBOX_REASON_RECONCILE,
     OUTBOX_SHAPE_DEVICE,
     OUTBOX_SHAPE_EVENT,
     OUT_DEVICE_ID,
+    OUT_REASON,
     OUT_SHAPE,
     OUT_TEXT,
     OUT_WHEN,
@@ -1198,6 +1201,15 @@ class DeviceSentinelCoordinator:
             len(self._grace_devices),
             len(self._grace_taints),
         )
+        # The clocks have settled and the list reflects reality, so
+        # restate everything standing: a problem that predates this
+        # start would otherwise never be described (#121).
+        spoken = self.reconcile_device_lines()
+        if spoken:
+            LOGGER.info(
+                "Reconciled %d standing problem(s) into the outbox",
+                spoken,
+            )
 
     async def _on_midnight(self, _now: Any) -> None:
         """Roll today's maxima into the bounded daily set."""
@@ -3326,6 +3338,40 @@ class DeviceSentinelCoordinator:
         )
         return f"{name} {clause}{tail}."
 
+    def reconcile_device_lines(self) -> int:
+        """Restate every standing problem, whether or not it moved.
+
+        The composer speaks on transitions, which leaves a hole the
+        field found immediately (#121): a device already broken when
+        the engine starts never transitions, so nothing would ever
+        describe it and a phone would show an empty board beside a
+        problem list with three items on it. This pass says what is
+        true rather than what just changed, and it is idempotent, so
+        it can run at startup, at quiet-hours end, and after any
+        interruption without inventing anything.
+
+        Acknowledged devices are skipped: the phone shows what is
+        wrong and unacknowledged right now (#109).
+        """
+        spoken = 0
+        for record in self.todo_items:
+            device_id = record.get(TODO_DEVICE_ID)
+            if not device_id:
+                continue
+            if record.get(TODO_STATUS) == "completed":
+                continue
+            line = self._compose_device_line(device_id)
+            if line is None:
+                continue
+            self._note_outbox(
+                device_id,
+                line,
+                OUTBOX_SHAPE_DEVICE,
+                OUTBOX_REASON_RECONCILE,
+            )
+            spoken += 1
+        return spoken
+
     def _flush_outbox_lines(self) -> None:
         """Compose the device line for every device touched this pass.
 
@@ -3344,7 +3390,11 @@ class DeviceSentinelCoordinator:
         self._outbox_pending.clear()
 
     def _note_outbox(
-        self, device_id: str, text: str, shape: str
+        self,
+        device_id: str,
+        text: str,
+        shape: str,
+        reason: str = OUTBOX_REASON_EVENT,
     ) -> None:
         """Record a composed message without sending it.
 
@@ -3352,7 +3402,7 @@ class DeviceSentinelCoordinator:
         engine would say is logged and kept where it can be read and
         argued with for days before the first one reaches a phone.
         """
-        LOGGER.info("Would send (%s): %s", shape, text)
+        LOGGER.info("Would send (%s, %s): %s", shape, reason, text)
         outbox = self.data.setdefault(DATA_OUTBOX, [])
         outbox.append(
             {
@@ -3360,6 +3410,7 @@ class DeviceSentinelCoordinator:
                 OUT_DEVICE_ID: device_id,
                 OUT_TEXT: text,
                 OUT_SHAPE: shape,
+                OUT_REASON: reason,
             }
         )
         del outbox[:-OUTBOX_KEEP]
