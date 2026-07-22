@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.6.7 (2026-07-22)
+# File: coordinator.py, Version: 0.6.8 (2026-07-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -135,6 +135,7 @@ from .const import (
     EPISODE_ENDED_RECONNECT,
     EPISODE_ENDED_RESUMED,
     EPISODE_KEEP_DAYS,
+    EPISODE_OPEN_SHARE,
     EP_AT,
     EP_BASIS,
     EP_DEVICE_ID,
@@ -1511,15 +1512,32 @@ class DeviceSentinelCoordinator:
         return None
 
     def _note_silences(self, now: float) -> None:
-        """Open an episode for any device silent past its own basis.
+        """Open an episode for any device well into its own patience.
 
-        The basis, not the window: a silence becomes interesting when
-        it exceeds what the device has taught us to expect, well
-        before it is judged frozen. Devices reporting within their
-        rhythm never appear, which is what keeps the file to a
-        readable handful of rows on a 125-device fleet.
+        The threshold is basis plus a share of that device's grace
+        (#105): the silence has spent EPISODE_OPEN_SHARE of the
+        distance from the rhythm to the freeze line. Basis alone,
+        shipped at 0.6.7, was too sensitive at the fast end, where a
+        rhythm of seconds is exceeded constantly and trivial silences
+        filled the file, while the same rule was properly selective
+        for a device measured in hours. A share of grace scales with
+        the patience each device has earned, so a 36-second device
+        opens at minutes and an hours-long device opens at hours,
+        both a clear distance short of judgment.
+
+        Devices whose freeze judgment is suppressed are skipped
+        (#106). Exclusion suppresses judgment and reporting while
+        observation continues, and this file exists to explain
+        verdicts: a device that can never be judged frozen has no
+        verdict to explain, so its silences are noise here. A device
+        excluded only for battery or signal is still judged for
+        freeze and still belongs.
         """
         for device_id in self._watched:
+            if device_id in self._excluded_devices or self._freeze_excluded(
+                device_id
+            ):
+                continue
             record = self.data[DATA_DEVICES].get(device_id)
             if not isinstance(record, dict):
                 continue
@@ -1532,11 +1550,12 @@ class DeviceSentinelCoordinator:
             basis, _ = self._trimmed_maximum(daily)
             if basis is None or basis <= 0:
                 continue
-            if now - last <= basis:
+            window = self._freeze_window(record)
+            grace = (window - basis) if window is not None else 0.0
+            if now - last <= basis + EPISODE_OPEN_SHARE * grace:
                 continue
             if self._open_episode_for(device_id) is not None:
                 continue
-            window = self._freeze_window(record)
             self.data.setdefault(DATA_EPISODES, []).append(
                 {
                     EP_DEVICE_ID: device_id,
