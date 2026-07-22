@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.7.0 (2026-07-22)
+# File: const.py, Version: 0.7.1 (2026-07-22)
 
 """Constants for the Device Sentinel integration."""
 
@@ -384,6 +384,11 @@ CONF_PERSISTENT_ENABLED = "persistent_enabled"
 CONF_QUIET_ENABLED = "quiet_hours_enabled"
 CONF_QUIET_START = "quiet_hours_start"
 CONF_QUIET_END = "quiet_hours_end"
+# The brief's targets and mode. The two reminder keys keep their
+# original names (0.7.1): they now drive the daily brief rather than
+# Sentinel Notify's reminder, but renaming a stored key costs a
+# migration for a cosmetic gain, so only the visible labels changed.
+CONF_BRIEF_TARGETS = "brief_document_targets"
 CONF_REMINDER_MODE = "daily_reminder_mode"
 CONF_REMINDER_TIME = "daily_reminder_time"
 
@@ -393,6 +398,22 @@ DEFAULT_QUIET_START = "22:00:00"
 DEFAULT_QUIET_END = "08:00:00"
 DEFAULT_REMINDER_MODE = "none"
 DEFAULT_REMINDER_TIME = "08:00:00"
+
+# The Advanced screen (0.7.1, #117): settings a person may change and
+# most never will, exposed rather than buried as constants. Each is a
+# share of something the device already earned, or a plain interval,
+# so no value here can produce a nonsensical result.
+CONF_SETTLE_SHARE = "settle_share_pct"
+DEFAULT_SETTLE_SHARE_PCT = 30
+CONF_EPISODE_SHARE = "episode_share_pct"
+DEFAULT_EPISODE_SHARE_PCT = 50
+SHARE_PCT_MIN = 10
+SHARE_PCT_MAX = 90
+SHARE_PCT_STEP = 10
+CONF_COALESCE_MINUTES = "storage_write_minutes"
+DEFAULT_COALESCE_MINUTES = 15
+COALESCE_MINUTES_MIN = 1
+COALESCE_MINUTES_MAX = 60
 
 # Daily reminder modes, semantics carried from Sentinel Notify.
 REMINDER_MODE_NONE = "none"
@@ -615,7 +636,8 @@ def _wiki_link(page: str | None = None) -> str:
 
 
 WIKI_LINK_HOME = _wiki_link()
-WIKI_LINK_NOTIFICATIONS = _wiki_link("Notifications")
+WIKI_LINK_NOTIFICATIONS = _wiki_link("Notifications-and-Daily-Brief")
+WIKI_LINK_ADVANCED = _wiki_link("Advanced")
 WIKI_LINK_EXCLUSIONS = _wiki_link("Global-Exclusions")
 WIKI_LINK_BATTERY = _wiki_link("Low-Battery")
 WIKI_LINK_SIGNAL = _wiki_link("Signal-Strength")
