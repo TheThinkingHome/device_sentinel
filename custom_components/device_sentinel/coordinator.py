@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.6.8 (2026-07-22)
+# File: coordinator.py, Version: 0.7.0 (2026-07-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -27,6 +27,7 @@ Core rules implemented here, all ruled in the project document:
 from __future__ import annotations
 
 import math
+import contextlib
 import os
 import uuid
 from collections import deque
@@ -73,9 +74,11 @@ from .const import (
     CONF_LOW_THRESHOLD,
     DAILY_MAX_KEEP,
     DEFAULT_LOW_THRESHOLD,
+    DEFAULT_REMINDER_TIME,
     DATA_STATS_EPOCH,
     REPORT_CLASSIFICATION,
     REPORT_DIR,
+    REPORT_BRIEF_PREFIX,
     REPORT_EPISODES,
     REPORT_STALE_FILES,
     REPORT_TELEMETRY,
@@ -133,8 +136,21 @@ from .const import (
     STARTUP_GRACE_SECONDS,
     EPISODE_ENDED_REBOOT,
     EPISODE_ENDED_RECONNECT,
+    EPISODE_ENDED_RESTART,
     EPISODE_ENDED_RESUMED,
     EPISODE_KEEP_DAYS,
+    FREEZE_KINDS_FOR_CAUSE,
+    INCIDENT_ACKNOWLEDGED,
+    INCIDENT_KEEP_DAYS,
+    INCIDENT_OPENED,
+    INCIDENT_RESOLVED,
+    INC_CAUSE,
+    INC_DEVICE_ID,
+    INC_DURATION,
+    INC_EVENT,
+    INC_KIND,
+    INC_NAME,
+    INC_WHEN,
     EPISODE_OPEN_SHARE,
     EP_AT,
     EP_BASIS,
@@ -154,7 +170,10 @@ from .const import (
     STORM_RELEASE_SECONDS,
     STORM_WINDOW_SECONDS,
     TAINT_DEBOUNCE_SECONDS,
+    BRIEF_KEEP_DAYS,
+    CONF_REMINDER_TIME,
     DATA_EPISODES,
+    DATA_INCIDENTS,
     DATA_TODO_JOURNAL,
     SIGNAL_PROBLEM_ADDITION,
     TODO_ACKED_AT,
@@ -313,6 +332,7 @@ class DeviceSentinelCoordinator:
         loaded.setdefault(DATA_TODO_ITEMS, [])
         loaded.setdefault(DATA_TODO_JOURNAL, [])
         loaded.setdefault(DATA_EPISODES, [])
+        loaded.setdefault(DATA_INCIDENTS, [])
         # 0.6.0: the list is engine-owned. Anything stored without a
         # device_id is a hand-typed item from the pre-sync backbone
         # (the create feature is gone with this release) and is
@@ -1106,8 +1126,17 @@ class DeviceSentinelCoordinator:
                 # A storm is a radio-level event, most often a bridge
                 # or hub reconnecting: it can revive a wedged device,
                 # so any silence running now is truncated, not
-                # completed, exactly as a reboot truncates one.
-                self._stamp_intervention(EPISODE_ENDED_RECONNECT, now)
+                # completed, exactly as a reboot truncates one. Inside
+                # startup grace the storm is the restart itself, and
+                # is named as such: the brief quotes this cause, and
+                # crediting a reconnect for a restart's work would
+                # mislead the recovery ladder later.
+                self._stamp_intervention(
+                    EPISODE_ENDED_RESTART
+                    if now < self._grace_until
+                    else EPISODE_ENDED_RECONNECT,
+                    now,
+                )
             else:
                 storm["last_met"] = now
         elif storm is not None and now - storm["last_met"] > (
@@ -1204,6 +1233,17 @@ class DeviceSentinelCoordinator:
         self._write_telemetry(report_directory, trigger)
         self._write_classification(report_directory, trigger)
         self._write_episodes(report_directory, trigger)
+        # The brief's window runs from the last brief time to now, so
+        # a regenerate mid-day writes the in-progress one and the
+        # scheduled write at the brief hour closes the day (#116).
+        now = dt_util.utcnow().timestamp()
+        self._write_brief(
+            report_directory,
+            trigger,
+            self._brief_window_start(now),
+            now,
+            complete=trigger == "daily brief",
+        )
 
     @staticmethod
     def _trimmed_maximum(
@@ -1533,6 +1573,15 @@ class DeviceSentinelCoordinator:
         excluded only for battery or signal is still judged for
         freeze and still belongs.
         """
+        if now < self._grace_until:
+            # Startup grace: every stored clock is stale by however
+            # long the system was down, so opening episodes here
+            # would manufacture a batch of rows that the startup
+            # storm closes seconds later, all of them describing the
+            # restart rather than any device. Silences that matter
+            # are still open in the record from before the restart,
+            # and new ones open once grace closes (0.7.0).
+            return
         for device_id in self._watched:
             if device_id in self._excluded_devices or self._freeze_excluded(
                 device_id
@@ -1967,6 +2016,248 @@ class DeviceSentinelCoordinator:
         return dt_util.as_local(
             dt_util.utc_from_timestamp(epoch)
         ).strftime("%b %d %H:%M")
+
+    @staticmethod
+    def _human_span(seconds: float | None) -> str:
+        """Return a duration in the units a person thinks in."""
+        if seconds is None:
+            return "?"
+        seconds = max(0.0, seconds)
+        if seconds >= 86400:
+            return f"{seconds / 86400:.1f}d"
+        if seconds >= 3600:
+            return f"{seconds / 3600:.1f}h"
+        if seconds >= 60:
+            return f"{seconds / 60:.0f}m"
+        return f"{seconds:.0f}s"
+
+    @staticmethod
+    def _brief_moment(epoch: float) -> str:
+        """Return a readable local time for the brief."""
+        return dt_util.as_local(
+            dt_util.utc_from_timestamp(epoch)
+        ).strftime("%b %-d, %-I:%M %p")
+
+    def _brief_phrase(self, row: dict[str, Any]) -> str:
+        """Return one incident as a sentence a person would write.
+
+        Plain language, never category names: a reader should not
+        need to know what "frozen" means inside this integration to
+        understand that a device stopped reporting. A resolution
+        carries how long it lasted and what ended it in the same
+        phrase, which over a fortnight is the column that says
+        whether a device recovers on its own or only when levered.
+        """
+        kind = row[INC_KIND]
+        event = row[INC_EVENT]
+        if event == INCIDENT_RESOLVED:
+            span = self._human_span(row.get(INC_DURATION))
+            cause = row.get(INC_CAUSE)
+            base = f"recovered after {span}"
+            return f"{base}, {cause}" if cause else base
+        if event == INCIDENT_ACKNOWLEDGED:
+            return "acknowledged"
+        wording = {
+            "frozen": "stopped reporting",
+            "not_reported": "has never reported",
+            "unavailable": "went unavailable",
+            "unknown": "went unknown",
+            "signal": "signal railed",
+        }
+        if kind == "battery":
+            return "battery fell low"
+        return wording.get(kind, kind)
+
+    def _brief_now_rows(self) -> list[tuple[str, str, float, str]]:
+        """Return the standing state: what is wrong right now.
+
+        Read from the problem list rather than recomputed, so the
+        brief and the list can never disagree. Excluded devices are
+        absent because this is a report, and acknowledged items are
+        present but marked, because a record shows what a person
+        chose to live with.
+        """
+        now = dt_util.utcnow().timestamp()
+        rows: list[tuple[str, str, float, str]] = []
+        for record in self.todo_items:
+            device_id = record.get(TODO_DEVICE_ID)
+            if not device_id or device_id in self._excluded_devices:
+                continue
+            name = record.get(TODO_SORT_NAME) or device_id
+            acked = record.get(TODO_STATUS) == "completed"
+            for kind, since in (record.get(TODO_KINDS) or {}).items():
+                problem = {
+                    "frozen": "stopped reporting",
+                    "not_reported": "never reported",
+                    "unavailable": "unavailable",
+                    "unknown": "unknown",
+                    "signal": "signal railed",
+                    "battery": self._brief_battery_text(device_id),
+                }.get(kind, kind)
+                if acked:
+                    problem = f"{problem} (acknowledged)"
+                rows.append((name, problem, since or now, ""))
+        rows.sort(key=lambda row: row[2])
+        return rows
+
+    def _brief_battery_text(self, device_id: str) -> str:
+        """Return the battery cell with its level where known."""
+        record = self.data[DATA_DEVICES].get(device_id) or {}
+        level = record.get(DEV_BATTERY_VALUE)
+        if isinstance(level, (int, float)):
+            shown = (
+                f"{int(level)}%"
+                if float(level).is_integer()
+                else f"{level}%"
+            )
+            return f"battery {shown}"
+        return "battery low"
+
+    def _brief_window_start(self, now: float) -> float:
+        """Return the start of the current brief window.
+
+        The most recent brief hour at or before now, so the window
+        always runs brief-to-brief rather than by calendar day: an
+        overnight problem stays in one report instead of being split
+        across two. A user who wants calendar days sets the brief
+        time to midnight.
+        """
+        local_now = dt_util.as_local(dt_util.utc_from_timestamp(now))
+        raw = str(
+            self.entry.options.get(CONF_REMINDER_TIME, DEFAULT_REMINDER_TIME)
+        )
+        try:
+            hour, minute = (int(part) for part in raw.split(":")[:2])
+        except ValueError:
+            hour, minute = 8, 0
+        candidate = local_now.replace(
+            hour=hour, minute=minute, second=0, microsecond=0
+        )
+        if candidate > local_now:
+            candidate -= timedelta(days=1)
+        return candidate.timestamp()
+
+    def _write_brief(
+        self,
+        report_directory: str,
+        trigger: str,
+        window_start: float,
+        window_end: float,
+        complete: bool,
+    ) -> None:
+        """Write the daily brief for a window.
+
+        The one report written for a person rather than a maintainer
+        (#116): what is wrong now, what happened in the last 24
+        hours, plain language, human units, no basis or window or
+        lag or exclusion reasoning. Regenerating mid-day writes the
+        in-progress brief with its scope stated and marked
+        incomplete, replacing itself until the real brief publishes
+        and starts a new day.
+        """
+        now_rows = self._brief_now_rows()
+        incidents = [
+            row
+            for row in (self.data.get(DATA_INCIDENTS) or [])
+            if window_start <= row[INC_WHEN] <= window_end
+            and row[INC_DEVICE_ID] not in self._excluded_devices
+        ]
+        incidents.sort(key=lambda row: row[INC_WHEN], reverse=True)
+        opened = sum(
+            1 for row in incidents if row[INC_EVENT] == INCIDENT_OPENED
+        )
+        resolved = sum(
+            1 for row in incidents if row[INC_EVENT] == INCIDENT_RESOLVED
+        )
+        acked_now = sum(
+            1
+            for record in self.todo_items
+            if record.get(TODO_STATUS) == "completed"
+        )
+        scope = (
+            f"{self._brief_moment(window_end)}. Covering the 24 hours "
+            f"since {self._brief_moment(window_start)}."
+            if complete
+            else f"In progress. From "
+            f"{self._brief_moment(window_start)} to "
+            f"{self._brief_moment(window_end)} (incomplete)."
+        )
+        lines = [
+            "# Device Sentinel daily brief",
+            "",
+            scope,
+            "",
+            "## Now",
+            "",
+        ]
+        if not now_rows:
+            lines += ["Nothing needs attention.", ""]
+        else:
+            devices = len({row[0] for row in now_rows})
+            summary = (
+                f"{devices} device{'s' if devices != 1 else ''} "
+                f"need{'' if devices != 1 else 's'} attention."
+            )
+            if acked_now:
+                summary += f" {acked_now} acknowledged."
+            now = dt_util.utcnow().timestamp()
+            lines += [
+                summary,
+                "",
+                "| DEVICE | PROBLEM | SINCE | FOR |",
+                "|---|---|---|---|",
+            ]
+            for name, problem, since, _ in now_rows:
+                lines.append(
+                    f"| {self._report_cell(name)} | {problem} "
+                    f"| {self._brief_moment(since)} "
+                    f"| {self._human_span(now - since)} |"
+                )
+            lines.append("")
+        lines += ["## Last 24 hours", ""]
+        if not incidents:
+            lines += ["Nothing happened.", ""]
+        else:
+            lines += [
+                f"{len(incidents)} event"
+                f"{'s' if len(incidents) != 1 else ''}. "
+                f"{opened} problem{'s' if opened != 1 else ''} "
+                f"started, {resolved} ended.",
+                "",
+                "| TIME | DEVICE | WHAT HAPPENED |",
+                "|---|---|---|",
+            ]
+            for row in incidents:
+                lines.append(
+                    f"| {self._brief_moment(row[INC_WHEN])} "
+                    f"| {self._report_cell(row[INC_NAME])} "
+                    f"| {self._brief_phrase(row)} |"
+                )
+            lines.append("")
+        stamp = dt_util.as_local(
+            dt_util.utc_from_timestamp(window_end)
+        ).strftime("%Y-%m-%d")
+        path = os.path.join(
+            report_directory, f"{REPORT_BRIEF_PREFIX}{stamp}.md"
+        )
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines))
+        self._trim_briefs(report_directory)
+
+    def _trim_briefs(self, report_directory: str) -> None:
+        """Keep the most recent briefs, drop the rest."""
+        try:
+            names = sorted(
+                name
+                for name in os.listdir(report_directory)
+                if name.startswith(REPORT_BRIEF_PREFIX)
+                and name.endswith(".md")
+            )
+        except OSError:
+            return
+        for name in names[:-BRIEF_KEEP_DAYS]:
+            with contextlib.suppress(OSError):
+                os.remove(os.path.join(report_directory, name))
 
     def _write_episodes(self, report_directory: str, trigger: str) -> None:
         """Write the silence-episode report.
@@ -2705,6 +2996,18 @@ class DeviceSentinelCoordinator:
                     if status == "completed"
                     else None
                 )
+                # The checkbox lands on the timeline too: a brief
+                # that says a device recovered should also be able
+                # to say when someone decided to live with it.
+                if status == "completed":
+                    for kind in record.get(TODO_KINDS, {}):
+                        self._record_incident(
+                            device_id=record[TODO_DEVICE_ID],
+                            name=record.get(TODO_SORT_NAME)
+                            or record[TODO_DEVICE_ID],
+                            kind=kind,
+                            event=INCIDENT_ACKNOWLEDGED,
+                        )
             break
         self._sort_todo_items()
         await self._save_now()
@@ -2818,6 +3121,108 @@ class DeviceSentinelCoordinator:
                 lines.append(f"{word.capitalize()}.")
         return summary, " ".join(lines)
 
+    def _record_incident(
+        self,
+        device_id: str,
+        name: str,
+        kind: str,
+        event: str,
+        cause: str | None = None,
+        duration: float | None = None,
+    ) -> None:
+        """Append one event to the incident log.
+
+        The whole life of a problem on one timeline: opened when a
+        detection first names it, resolved when it clears (with the
+        cause and the duration where we know them), acknowledged when
+        a person checks the box. Renderers read this and nothing
+        else, so what the phone says, what the brief says, and what
+        a future voice answer says can never disagree.
+        """
+        entry = {
+            INC_DEVICE_ID: device_id,
+            INC_NAME: name,
+            INC_KIND: kind,
+            INC_EVENT: event,
+            INC_WHEN: dt_util.utcnow().timestamp(),
+            INC_CAUSE: cause,
+            INC_DURATION: duration,
+        }
+        incidents = self.data.setdefault(DATA_INCIDENTS, [])
+        incidents.append(entry)
+        cutoff = (
+            dt_util.utcnow().timestamp() - INCIDENT_KEEP_DAYS * 86400.0
+        )
+        self.data[DATA_INCIDENTS] = [
+            row for row in incidents if row[INC_WHEN] >= cutoff
+        ]
+        self._dirty = True
+
+    def _incident_opened_at(
+        self, device_id: str, kind: str
+    ) -> float | None:
+        """Return when this device's current problem of a kind began.
+
+        The most recent opening with no resolution after it. Used to
+        compute a resolution's duration, so the brief can say how
+        long a problem lasted without the renderer doing arithmetic
+        on a raw log.
+        """
+        opened: float | None = None
+        for row in self.data.get(DATA_INCIDENTS) or []:
+            if row[INC_DEVICE_ID] != device_id or row[INC_KIND] != kind:
+                continue
+            if row[INC_EVENT] == INCIDENT_OPENED:
+                opened = row[INC_WHEN]
+            elif row[INC_EVENT] == INCIDENT_RESOLVED:
+                opened = None
+        return opened
+
+    def _recovery_cause(self, device_id: str) -> str | None:
+        """Return how a device's silence ended, if the record says.
+
+        Borrowed from the episode record rather than guessed: an
+        episode closed by an intervention names the lever, and one
+        the device closed itself says so. Only silences carry a
+        cause; a battery or a rail recovering has no lever to name.
+        """
+        for episode in reversed(self.data.get(DATA_EPISODES) or []):
+            if episode[EP_DEVICE_ID] != device_id:
+                continue
+            ended = episode[EP_ENDED]
+            if ended is None:
+                return None
+            if ended == EPISODE_ENDED_RESUMED:
+                return "on its own"
+            return ended.replace("intervention (", "").rstrip(")")
+        return None
+
+    def _resolve_incident(
+        self, device_id: str, name: str, kind: str, now: float
+    ) -> None:
+        """Close one problem on the incident timeline.
+
+        Carries the duration, computed from the matching opening, and
+        the cause where the episode record knows it. A resolution
+        with no opening behind it (a problem that predates the log)
+        is still recorded, simply without a duration.
+        """
+        opened = self._incident_opened_at(device_id, kind)
+        duration = (now - opened) if opened is not None else None
+        cause = (
+            self._recovery_cause(device_id)
+            if kind in FREEZE_KINDS_FOR_CAUSE
+            else None
+        )
+        self._record_incident(
+            device_id,
+            name,
+            kind,
+            INCIDENT_RESOLVED,
+            cause=cause,
+            duration=duration,
+        )
+
     def _journal_addition(
         self, device_id: str, name: str, kind: str
     ) -> None:
@@ -2880,7 +3285,16 @@ class DeviceSentinelCoordinator:
             problem = problems.pop(device_id, None)
             if problem is None:
                 # Every kind cleared: the recovery deletes the item,
-                # acknowledged or not.
+                # acknowledged or not. Each kind resolves on the
+                # incident timeline first, so the brief can tell the
+                # end of the story as well as its beginning.
+                for kind in record.get(TODO_KINDS, {}):
+                    self._resolve_incident(
+                        device_id,
+                        record.get(TODO_SORT_NAME) or device_id,
+                        kind,
+                        now,
+                    )
                 changed = True
                 continue
             stored_kinds: dict[str, float | None] = record.get(
@@ -2901,6 +3315,14 @@ class DeviceSentinelCoordinator:
                     new_kinds[kind] = since if since is not None else now
                     self._journal_addition(
                         device_id, problem["name"], kind
+                    )
+                    self._record_incident(
+                        device_id, problem["name"], kind, INCIDENT_OPENED
+                    )
+            for kind in stored_kinds:
+                if kind not in new_kinds:
+                    self._resolve_incident(
+                        device_id, problem["name"], kind, now
                     )
             summary, description = self._problem_item_text(
                 problem["name"], new_kinds, problem["level"]
@@ -2940,6 +3362,9 @@ class DeviceSentinelCoordinator:
             )
             for kind in kinds:
                 self._journal_addition(device_id, problem["name"], kind)
+                self._record_incident(
+                    device_id, problem["name"], kind, INCIDENT_OPENED
+                )
             changed = True
 
         if changed:
