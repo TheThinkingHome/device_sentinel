@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v0311_ladder.py, Version: 0.3.13 (2026-07-17)
+# File: test_v0311_ladder.py, Version: 0.7.1 (2026-07-22)
 
 """0.3.11 tests: the exclusion priority ladder and the area retirement.
 
@@ -375,4 +375,5 @@ async def test_options_flow_menu_is_work_ordered(hass: HomeAssistant):
         "battery",
         "signal",
         "freeze",
+        "advanced",
     ]
