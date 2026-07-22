@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.6.6 (2026-07-21)
+# File: coordinator.py, Version: 0.6.7 (2026-07-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -76,6 +76,7 @@ from .const import (
     DATA_STATS_EPOCH,
     REPORT_CLASSIFICATION,
     REPORT_DIR,
+    REPORT_EPISODES,
     REPORT_STALE_FILES,
     REPORT_TELEMETRY,
     SIGNAL_ARMING_DAYS,
@@ -130,6 +131,19 @@ from .const import (
     LOGGER,
     RENDER_TICK_SECONDS,
     STARTUP_GRACE_SECONDS,
+    EPISODE_ENDED_REBOOT,
+    EPISODE_ENDED_RECONNECT,
+    EPISODE_ENDED_RESUMED,
+    EPISODE_KEEP_DAYS,
+    EP_AT,
+    EP_BASIS,
+    EP_DEVICE_ID,
+    EP_ENDED,
+    EP_LAG,
+    EP_LEARNED,
+    EP_NAME,
+    EP_SINCE,
+    EP_WINDOW,
     STORAGE_COALESCE_SECONDS,
     STORAGE_KEY,
     STORAGE_VERSION,
@@ -139,6 +153,7 @@ from .const import (
     STORM_RELEASE_SECONDS,
     STORM_WINDOW_SECONDS,
     TAINT_DEBOUNCE_SECONDS,
+    DATA_EPISODES,
     DATA_TODO_JOURNAL,
     SIGNAL_PROBLEM_ADDITION,
     TODO_ACKED_AT,
@@ -296,6 +311,7 @@ class DeviceSentinelCoordinator:
         loaded.setdefault(DATA_DEVICES, {})
         loaded.setdefault(DATA_TODO_ITEMS, [])
         loaded.setdefault(DATA_TODO_JOURNAL, [])
+        loaded.setdefault(DATA_EPISODES, [])
         # 0.6.0: the list is engine-owned. Anything stored without a
         # device_id is a hand-typed item from the pre-sync backbone
         # (the create feature is gone with this release) and is
@@ -806,6 +822,20 @@ class DeviceSentinelCoordinator:
             if record[DEV_TODAY_MAX] is None or gap > record[DEV_TODAY_MAX]:
                 record[DEV_TODAY_MAX] = gap
 
+        # The episode's verdict, decided by which branch above ran:
+        # a gap this stamp completed cleanly is learned, anything the
+        # exclusions caught says so and why. A lever-ended gap
+        # measures the lever, not the device (#104).
+        if grace:
+            learned = "no (startup grace)"
+        elif storm is not None:
+            learned = "no (storm)"
+        elif tainted:
+            learned = "no (taint, unavailable)"
+        else:
+            learned = "yes"
+        self._close_episode(device_id, now, learned)
+
         record[DEV_LAST_ACTIVITY] = now
         record[DEV_EVENT_COUNT] = int(record[DEV_EVENT_COUNT]) + 1
         self._dirty = True
@@ -1072,6 +1102,11 @@ class DeviceSentinelCoordinator:
                     "devices": set(),
                 }
                 self._storm_active[entry_id] = storm
+                # A storm is a radio-level event, most often a bridge
+                # or hub reconnecting: it can revive a wedged device,
+                # so any silence running now is truncated, not
+                # completed, exactly as a reboot truncates one.
+                self._stamp_intervention(EPISODE_ENDED_RECONNECT, now)
             else:
                 storm["last_met"] = now
         elif storm is not None and now - storm["last_met"] > (
@@ -1167,6 +1202,7 @@ class DeviceSentinelCoordinator:
                 os.remove(stale_path)
         self._write_telemetry(report_directory, trigger)
         self._write_classification(report_directory, trigger)
+        self._write_episodes(report_directory, trigger)
 
     @staticmethod
     def _trimmed_maximum(
@@ -1449,6 +1485,142 @@ class DeviceSentinelCoordinator:
             record[DEV_FROZEN_SINCE] = None
             self._dirty = True
 
+    # ------------------------------------------------ silence episodes
+
+    def _open_episode_for(self, device_id: str) -> dict[str, Any] | None:
+        """Return a device's episode still awaiting its lag, if any.
+
+        Awaiting means either fully open (no end recorded) or ended by
+        an intervention whose lag cannot be known until the device
+        speaks again. Both are completed by the same next report. A
+        resumed episode is finished and carries no lag by design (it
+        had no lever to measure from), so it never blocks the next
+        episode for that device.
+        """
+        for episode in reversed(self.data.get(DATA_EPISODES) or []):
+            if episode[EP_DEVICE_ID] != device_id:
+                continue
+            if episode[EP_ENDED] is None:
+                return episode
+            if (
+                episode[EP_ENDED] != EPISODE_ENDED_RESUMED
+                and episode[EP_LAG] is None
+            ):
+                return episode
+            return None
+        return None
+
+    def _note_silences(self, now: float) -> None:
+        """Open an episode for any device silent past its own basis.
+
+        The basis, not the window: a silence becomes interesting when
+        it exceeds what the device has taught us to expect, well
+        before it is judged frozen. Devices reporting within their
+        rhythm never appear, which is what keeps the file to a
+        readable handful of rows on a 125-device fleet.
+        """
+        for device_id in self._watched:
+            record = self.data[DATA_DEVICES].get(device_id)
+            if not isinstance(record, dict):
+                continue
+            last = record.get(DEV_LAST_ACTIVITY)
+            if last is None:
+                continue
+            daily = record.get(DEV_DAILY_MAX) or []
+            if len(daily) < FREEZE_ARMING_DAYS:
+                continue
+            basis, _ = self._trimmed_maximum(daily)
+            if basis is None or basis <= 0:
+                continue
+            if now - last <= basis:
+                continue
+            if self._open_episode_for(device_id) is not None:
+                continue
+            window = self._freeze_window(record)
+            self.data.setdefault(DATA_EPISODES, []).append(
+                {
+                    EP_DEVICE_ID: device_id,
+                    EP_NAME: self._device_name(device_id),
+                    EP_SINCE: last,
+                    EP_BASIS: basis,
+                    EP_WINDOW: window,
+                    EP_ENDED: None,
+                    EP_AT: None,
+                    EP_LAG: None,
+                    EP_LEARNED: None,
+                }
+            )
+            self._dirty = True
+
+    def _close_episode(
+        self, device_id: str, now: float, learned: str | None
+    ) -> None:
+        """Complete a device's episode when it genuinely reports.
+
+        Two shapes complete here. A still-open episode closes as
+        resumed: the device chose to speak, and the learned column
+        says whether its gap reached the statistics. An episode
+        already stamped by an intervention gains only its lag, the
+        time from the lever to the first genuine report, which is the
+        column that separates a wedge (seconds) from a device that
+        was merely quiet (hours).
+        """
+        episode = self._open_episode_for(device_id)
+        if episode is None:
+            return
+        if episode[EP_ENDED] is None:
+            episode[EP_ENDED] = EPISODE_ENDED_RESUMED
+            episode[EP_AT] = now
+            episode[EP_LEARNED] = learned
+        else:
+            episode[EP_LAG] = max(0.0, now - (episode[EP_AT] or now))
+            if episode[EP_LEARNED] is None:
+                episode[EP_LEARNED] = learned
+        self._dirty = True
+
+    def _stamp_intervention(self, cause: str, now: float) -> None:
+        """Mark every open episode as ended by an intervention.
+
+        A reboot or a bridge reconnect truncates a silence: we know
+        the device had been quiet at least this long, never how much
+        longer it would have stayed quiet. The row keeps that honesty
+        by recording the cause and waiting for the lag.
+        """
+        stamped = 0
+        for episode in self.data.get(DATA_EPISODES) or []:
+            if episode[EP_ENDED] is None:
+                episode[EP_ENDED] = cause
+                episode[EP_AT] = now
+                stamped += 1
+        if stamped:
+            self._dirty = True
+            LOGGER.info(
+                "Stamped %d open silence episode(s) as %s", stamped, cause
+            )
+
+    def _trim_episodes(self, now: float) -> None:
+        """Drop episodes older than the statistics window.
+
+        Fourteen days by timestamp, matching the daily-maxima series
+        the file exists to explain. An episode still awaiting its lag
+        survives the boundary: an unfinished story is not old news.
+        """
+        cutoff = now - EPISODE_KEEP_DAYS * 86400.0
+        episodes = self.data.get(DATA_EPISODES) or []
+        kept = [
+            episode
+            for episode in episodes
+            if episode[EP_SINCE] >= cutoff
+            or episode[EP_ENDED] is None
+            or (
+                episode[EP_ENDED] != EPISODE_ENDED_RESUMED
+                and episode[EP_LAG] is None
+            )
+        ]
+        if len(kept) != len(episodes):
+            self.data[DATA_EPISODES] = kept
+            self._dirty = True
+
     def _judge_all_devices(self) -> None:
         """Judge every watched device for a freeze verdict.
 
@@ -1458,6 +1630,8 @@ class DeviceSentinelCoordinator:
         unavailable/unknown verdict once the debounce clears.
         """
         now = dt_util.utcnow().timestamp()
+        self._note_silences(now)
+        self._trim_episodes(now)
         flipped = False
         for device_id in self._watched:
             record = self.data[DATA_DEVICES].get(device_id)
@@ -1755,6 +1929,97 @@ class DeviceSentinelCoordinator:
             handle.write("\n".join(lines) + "\n")
         LOGGER.info("Telemetry report written to %s", path)
 
+    @staticmethod
+    def _episode_duration(seconds: float | None) -> str:
+        """Return a duration in the report's mixed units."""
+        if seconds is None:
+            return ""
+        seconds = max(0.0, seconds)
+        if seconds >= 3600:
+            return f"{seconds / 3600:.2f}h"
+        if seconds >= 60:
+            return f"{seconds / 60:.0f}m"
+        return f"{seconds:.0f}s"
+
+    def _episode_stamp(self, epoch: float | None) -> str:
+        """Return a local timestamp for an episode column."""
+        if epoch is None:
+            return ""
+        return dt_util.as_local(
+            dt_util.utc_from_timestamp(epoch)
+        ).strftime("%b %d %H:%M")
+
+    def _write_episodes(self, report_directory: str, trigger: str) -> None:
+        """Write the silence-episode report.
+
+        The forensic file (#103). One row per episode, newest first,
+        recording what the other two reports cannot: whether a long
+        silence ended because the device chose to speak or because
+        something made it speak. That distinction is the difference
+        between a rhythm the statistics should learn and a wedge no
+        amount of patience would have fixed, and it is invisible in
+        any per-device summary because a device produces one episode
+        per occurrence, not one number.
+        """
+        episodes = list(self.data.get(DATA_EPISODES) or [])
+        episodes.sort(key=lambda row: row[EP_SINCE], reverse=True)
+        now = dt_util.utcnow().timestamp()
+        open_count = sum(1 for row in episodes if row[EP_ENDED] is None)
+        lines = [
+            f"# Device Sentinel v{self.version} silence episodes",
+            "",
+            f"Written {self._format_report_time(dt_util.now())} "
+            f"({trigger})",
+            "",
+            "One row per episode: a device whose silence passed its "
+            "own learned basis. Devices reporting within their rhythm "
+            "never appear. An episode closes when the device reports "
+            "again (resumed) or when something intervened (a reboot, "
+            "a bridge reconnect), which truncates the silence at a "
+            "lower bound. LAG is how long after an intervention the "
+            "device took to speak: seconds means the intervention "
+            "revived it, hours means it was never stuck. LEARNED says "
+            "whether the completed gap reached the statistics, and "
+            "why not when it did not. Kept "
+            f"{EPISODE_KEEP_DAYS} days; {len(episodes)} episode(s), "
+            f"{open_count} still open.",
+            "",
+        ]
+        if not episodes:
+            lines += [
+                "No device has been silent past its own rhythm since "
+                "this record began.",
+                "",
+            ]
+        else:
+            lines += [
+                "| SILENT SINCE | DEVICE | BASIS | WINDOW | SILENCE | "
+                "ENDED | AT | LAG | LEARNED |",
+                "|---|---|---|---|---|---|---|---|---|",
+            ]
+            for row in episodes:
+                end_epoch = row[EP_AT]
+                silence = (
+                    (end_epoch - row[EP_SINCE])
+                    if end_epoch is not None
+                    else (now - row[EP_SINCE])
+                )
+                lines.append(
+                    f"| {self._episode_stamp(row[EP_SINCE])} "
+                    f"| {self._report_cell(row[EP_NAME] or row[EP_DEVICE_ID])} "
+                    f"| {self._episode_duration(row[EP_BASIS])} "
+                    f"| {self._episode_duration(row[EP_WINDOW])} "
+                    f"| {self._episode_duration(silence)} "
+                    f"| {row[EP_ENDED] or 'open'} "
+                    f"| {self._episode_stamp(end_epoch)} "
+                    f"| {self._episode_duration(row[EP_LAG])} "
+                    f"| {row[EP_LEARNED] or ''} |"
+                )
+            lines.append("")
+        path = os.path.join(report_directory, REPORT_EPISODES)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines))
+
     def _write_classification(
         self, report_directory: str, trigger: str
     ) -> None:
@@ -1935,7 +2200,16 @@ class DeviceSentinelCoordinator:
         self._notify()
 
     async def _on_hass_stop(self, _event: Event) -> None:
-        """Flush storage at shutdown."""
+        """Stamp open silences as intervention-ended, then flush.
+
+        A restart is an intervention: it can revive a wedged radio,
+        so any silence running when it happens is truncated rather
+        than completed. Stamping here, before the flush, is what
+        makes the distinction survive into the next boot.
+        """
+        self._stamp_intervention(
+            EPISODE_ENDED_REBOOT, dt_util.utcnow().timestamp()
+        )
         if self._dirty or self._critical:
             await self._save_now()
 
