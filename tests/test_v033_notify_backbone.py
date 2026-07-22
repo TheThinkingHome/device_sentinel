@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v033_notify_backbone.py, Version: 0.3.10 (2026-07-16)
+# File: test_v033_notify_backbone.py, Version: 0.7.1 (2026-07-22)
 
 """Notification backbone tests (config surface only, no engine).
 
@@ -21,6 +21,7 @@ from custom_components.device_sentinel.config_flow import (
     _discover_notify_targets,
 )
 from custom_components.device_sentinel.const import (
+    CONF_BRIEF_TARGETS,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_NORMAL_PRIORITY_TARGETS,
     CONF_PERSISTENT_ENABLED,
@@ -58,6 +59,7 @@ async def test_options_menu_branches(hass: HomeAssistant):
     assert result["type"] is FlowResultType.MENU
     assert set(result["menu_options"]) == {
         "exclusions", "battery", "notifications", "signal", "freeze",
+        "advanced",
     }
 
 
@@ -77,17 +79,26 @@ async def test_two_lists_and_both_means_high(hass: HomeAssistant):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            CONF_HIGH_PRIORITY_TARGETS: [
-                "notify.mobile_app_mine",
-                "notify.mobile_app_wife",
-            ],
-            CONF_NORMAL_PRIORITY_TARGETS: ["notify.mobile_app_wife"],
-            CONF_PERSISTENT_ENABLED: True,
-            CONF_QUIET_ENABLED: True,
-            CONF_QUIET_START: "22:00:00",
-            "quiet_hours_end": "07:00:00",
-            CONF_REMINDER_MODE: "overnight",
-            CONF_REMINDER_TIME: "08:00:00",
+            "instant": {
+                CONF_HIGH_PRIORITY_TARGETS: [
+                    "notify.mobile_app_mine",
+                    "notify.mobile_app_wife",
+                ],
+                CONF_NORMAL_PRIORITY_TARGETS: [
+                    "notify.mobile_app_wife"
+                ],
+                CONF_PERSISTENT_ENABLED: True,
+            },
+            "quiet": {
+                CONF_QUIET_ENABLED: True,
+                CONF_QUIET_START: "22:00:00",
+                "quiet_hours_end": "07:00:00",
+            },
+            "brief": {
+                CONF_REMINDER_MODE: "overnight",
+                CONF_REMINDER_TIME: "08:00:00",
+                CONF_BRIEF_TARGETS: [],
+            },
         },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -110,14 +121,21 @@ async def test_empty_lists_allowed(hass: HomeAssistant):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            CONF_HIGH_PRIORITY_TARGETS: [],
-            CONF_NORMAL_PRIORITY_TARGETS: [],
-            CONF_PERSISTENT_ENABLED: False,
-            CONF_QUIET_ENABLED: False,
-            CONF_QUIET_START: "22:00:00",
-            "quiet_hours_end": "08:00:00",
-            CONF_REMINDER_MODE: "none",
-            CONF_REMINDER_TIME: "08:00:00",
+            "instant": {
+                CONF_HIGH_PRIORITY_TARGETS: [],
+                CONF_NORMAL_PRIORITY_TARGETS: [],
+                CONF_PERSISTENT_ENABLED: False,
+            },
+            "quiet": {
+                CONF_QUIET_ENABLED: False,
+                CONF_QUIET_START: "22:00:00",
+                "quiet_hours_end": "08:00:00",
+            },
+            "brief": {
+                CONF_REMINDER_MODE: "none",
+                CONF_REMINDER_TIME: "08:00:00",
+                CONF_BRIEF_TARGETS: [],
+            },
         },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
