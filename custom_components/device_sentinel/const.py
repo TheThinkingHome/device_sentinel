@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.6.7 (2026-07-22)
+# File: const.py, Version: 0.6.8 (2026-07-22)
 
 """Constants for the Device Sentinel integration."""
 
@@ -451,6 +451,16 @@ DATA_TODO_JOURNAL = "todo_journal"
 # ended because the device chose to speak (a rhythm the statistics
 # should learn) or because a reboot or bridge reconnect made it
 # speak (a wedge that patience would never have fixed).
+# The share of a device's patience that must be spent before its
+# silence opens an episode (0.6.8, #105). A row opens at basis plus
+# this fraction of the device's grace, which is the same as saying
+# the silence has used this much of the multiplier between rhythm
+# and freeze line. Basis alone was too sensitive at the fast end: a
+# 36-second rhythm exceeds itself constantly, so trivial silences
+# filled the file, while the same rule was properly selective for a
+# device measured in hours. Expressed as a share of grace, the
+# threshold scales with the patience each device has earned.
+EPISODE_OPEN_SHARE = 0.5
 DATA_EPISODES = "silence_episodes"
 EPISODE_KEEP_DAYS = 14
 EP_DEVICE_ID = "device_id"
