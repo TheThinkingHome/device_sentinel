@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.7.2 (2026-07-22)
+# File: const.py, Version: 0.7.3 (2026-07-22)
 
 """Constants for the Device Sentinel integration."""
 
@@ -503,6 +503,13 @@ OUT_WHEN = "when"
 OUT_DEVICE_ID = "device_id"
 OUT_TEXT = "text"
 OUT_SHAPE = "shape"
+OUT_REASON = "reason"
+# Why a message was composed. An event is a transition just observed;
+# a reconcile is the engine restating what is already true, which is
+# how a device that was already broken before the engine started
+# gets described at all (0.7.3, #121).
+OUTBOX_REASON_EVENT = "event"
+OUTBOX_REASON_RECONCILE = "reconcile"
 # An event sentence is history: what happened, and when. A device
 # line is status: what is wrong with this device now, which is what
 # a phone holds, one per device, replaced in place (#108).
