@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.6.5 (2026-07-21)
+# File: const.py, Version: 0.6.7 (2026-07-22)
 
 """Constants for the Device Sentinel integration."""
 
@@ -144,9 +144,15 @@ FREEZE_DELTA_LOW_MIN_MAX = 8
 # devices are still caught in a bounded time. Range 2 to 8, default
 # 6. The tops match at 8 on purpose; each default sits toward the end
 # the user rarely moves.
-DEFAULT_FREEZE_DELTA_HIGH_HR = 6
-FREEZE_DELTA_HIGH_HR_MIN = 2
-FREEZE_DELTA_HIGH_HR_MAX = 8
+# Widened at 0.6.7 (#102). The old 2 to 8 range was asymmetric: it
+# allowed halving the ceiling but barely raising it, and the ceiling
+# anchors the whole grace curve, so the midrange devices (a learned
+# rhythm of hours) were stuck near 1.6x patience. The floor of 2
+# hours produced a curve too twitchy to be useful and is gone; the
+# default moves to 8 so a fresh install starts with midrange cover.
+DEFAULT_FREEZE_DELTA_HIGH_HR = 8
+FREEZE_DELTA_HIGH_HR_MIN = 4
+FREEZE_DELTA_HIGH_HR_MAX = 12
 # The reference rhythms the two deltas are pinned at when the curve
 # is fit: delta-low grace at 10 seconds, delta-high grace at 24
 # hours. They bracket any real device and are soak-settleable.
@@ -212,6 +218,7 @@ SENTINEL_TYPE_CLOCK_SOURCE = "clock_source"
 REPORT_DIR = "device_sentinel"
 REPORT_TELEMETRY = "device_telemetry.md"
 REPORT_CLASSIFICATION = "classification.md"
+REPORT_EPISODES = "silence_episodes.md"
 REPORT_STALE_FILES = ("device_telemetry.txt", "classification.txt")
 
 # The trimmed maximum, previewed in the telemetry report (display
@@ -436,6 +443,28 @@ TODO_KIND_SIGNAL = "signal"
 # never re-derived from raw detections. Bounded so storage stays
 # small; the journal is a feed, not an archive.
 DATA_TODO_JOURNAL = "todo_journal"
+
+# The silence-episode record (0.6.7, #103). One entry per episode: a
+# device whose silence passed its own learned basis, closed when it
+# reported again or when something intervened. The file it feeds
+# answers a question no other record can: whether a long silence
+# ended because the device chose to speak (a rhythm the statistics
+# should learn) or because a reboot or bridge reconnect made it
+# speak (a wedge that patience would never have fixed).
+DATA_EPISODES = "silence_episodes"
+EPISODE_KEEP_DAYS = 14
+EP_DEVICE_ID = "device_id"
+EP_NAME = "name"
+EP_SINCE = "since"
+EP_BASIS = "basis"
+EP_WINDOW = "window"
+EP_ENDED = "ended"
+EP_AT = "at"
+EP_LAG = "lag"
+EP_LEARNED = "learned"
+EPISODE_ENDED_RESUMED = "resumed"
+EPISODE_ENDED_REBOOT = "intervention (reboot)"
+EPISODE_ENDED_RECONNECT = "intervention (bridge reconnect)"
 TODO_JOURNAL_KEEP = 100
 SIGNAL_PROBLEM_ADDITION = f"{DOMAIN}_problem_addition"
 
