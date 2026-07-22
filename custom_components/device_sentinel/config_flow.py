@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.5.4 (2026-07-21)
+# File: config_flow.py, Version: 0.7.1 (2026-07-22)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -57,15 +57,26 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers import selector
 
 from .const import (
+    COALESCE_MINUTES_MAX,
+    COALESCE_MINUTES_MIN,
     CONF_BATTERY_EXCLUDED_DEVICES,
     CONF_BATTERY_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_EXCLUDED_LABELS,
+    CONF_BRIEF_TARGETS,
+    CONF_COALESCE_MINUTES,
+    CONF_EPISODE_SHARE,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_EXCLUDED_LABELS,
+    CONF_FREEZE_DELTA_HIGH,
+    CONF_FREEZE_DELTA_LOW,
+    CONF_FREEZE_EXCLUDED_DEVICES,
+    CONF_FREEZE_EXCLUDED_INTEGRATIONS,
+    CONF_FREEZE_EXCLUDED_LABELS,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_LOW_THRESHOLD,
     CONF_NORMAL_PRIORITY_TARGETS,
@@ -75,21 +86,15 @@ from .const import (
     CONF_QUIET_START,
     CONF_REMINDER_MODE,
     CONF_REMINDER_TIME,
+    CONF_SETTLE_SHARE,
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
     CONF_SIGNAL_SENSITIVITY,
-    CONF_FREEZE_DELTA_LOW,
-    CONF_FREEZE_DELTA_HIGH,
-    CONF_FREEZE_EXCLUDED_DEVICES,
-    CONF_FREEZE_EXCLUDED_INTEGRATIONS,
-    CONF_FREEZE_EXCLUDED_LABELS,
-    DEFAULT_FREEZE_DELTA_LOW_MIN,
+    DEFAULT_COALESCE_MINUTES,
+    DEFAULT_EPISODE_SHARE_PCT,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
-    FREEZE_DELTA_LOW_MIN_MIN,
-    FREEZE_DELTA_LOW_MIN_MAX,
-    FREEZE_DELTA_HIGH_HR_MIN,
-    FREEZE_DELTA_HIGH_HR_MAX,
+    DEFAULT_FREEZE_DELTA_LOW_MIN,
     DEFAULT_LOW_THRESHOLD,
     DEFAULT_PERSISTENT_ENABLED,
     DEFAULT_QUIET_ENABLED,
@@ -97,18 +102,27 @@ from .const import (
     DEFAULT_QUIET_START,
     DEFAULT_REMINDER_MODE,
     DEFAULT_REMINDER_TIME,
+    DEFAULT_SETTLE_SHARE_PCT,
     DEFAULT_SIGNAL_SENSITIVITY,
     DOMAIN,
+    FREEZE_DELTA_HIGH_HR_MAX,
+    FREEZE_DELTA_HIGH_HR_MIN,
+    FREEZE_DELTA_LOW_MIN_MAX,
+    FREEZE_DELTA_LOW_MIN_MIN,
     REMINDER_MODE_DAILY,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
+    SHARE_PCT_MAX,
+    SHARE_PCT_MIN,
+    SHARE_PCT_STEP,
     SIGNAL_SENSITIVITY_MAX,
     SIGNAL_SENSITIVITY_MIN,
+    WIKI_LINK_ADVANCED,
     WIKI_LINK_BATTERY,
     WIKI_LINK_EXCLUSIONS,
+    WIKI_LINK_FREEZE,
     WIKI_LINK_NOTIFICATIONS,
     WIKI_LINK_SIGNAL,
-    WIKI_LINK_FREEZE,
 )
 
 # The notify domain exposes one service per target; the persistent
@@ -220,6 +234,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 "battery",
                 "signal",
                 "freeze",
+                "advanced",
             ],
         )
 
@@ -783,30 +798,35 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     async def async_step_notifications(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """The notification backbone, mirrored to Sentinel Notify.
+        """Who hears about a problem, and when.
 
-        Two target lists: high-priority targets bypass Do Not Disturb
-        and pierce quiet hours; normal-priority targets get standard
-        delivery and are held during quiet hours. Either may be empty.
-        A target in both is normalized to high on save, so the Step 5
-        engine inherits the rule rather than re-deriving it. Also the
-        persistent card, the quiet-hours window, and the daily
-        reminder mode and time.
+        Three sections on one screen (#117): the instant messages, the
+        quiet window, and the daily brief. High-priority targets get a
+        message when a device develops a problem and the brief with
+        its history; normal-priority targets get the brief alone. A
+        target in both is normalized to high on save, so the engine
+        inherits the rule rather than re-deriving it. The brief's own
+        target list carries the whole document, which is why it is
+        separate: the payload differs, not the urgency.
 
-        Everything here is stored and inert until the engine reads it.
+        Quiet hours suppress both tiers (#111); nothing pierces, and
+        the brief reports what was missed.
         """
         if user_input is not None:
-            high = list(user_input.get(CONF_HIGH_PRIORITY_TARGETS, []))
-            normal = [
+            flat: dict[str, Any] = {}
+            for key, value in user_input.items():
+                if isinstance(value, dict):
+                    flat.update(value)
+                else:
+                    flat[key] = value
+            high = list(flat.get(CONF_HIGH_PRIORITY_TARGETS, []))
+            flat[CONF_NORMAL_PRIORITY_TARGETS] = [
                 target
-                for target in user_input.get(
-                    CONF_NORMAL_PRIORITY_TARGETS, []
-                )
+                for target in flat.get(CONF_NORMAL_PRIORITY_TARGETS, [])
                 if target not in high
             ]
-            user_input[CONF_NORMAL_PRIORITY_TARGETS] = normal
             return self.async_create_entry(
-                data={**self.config_entry.options, **user_input}
+                data={**self.config_entry.options, **flat}
             )
         options = self.config_entry.options
         discovered = _discover_notify_targets(self.hass)
@@ -822,70 +842,154 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 )
             )
 
+        instant_section = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_HIGH_PRIORITY_TARGETS,
+                    default=options.get(CONF_HIGH_PRIORITY_TARGETS, []),
+                ): target_selector(),
+                vol.Optional(
+                    CONF_NORMAL_PRIORITY_TARGETS,
+                    default=options.get(
+                        CONF_NORMAL_PRIORITY_TARGETS, []
+                    ),
+                ): target_selector(),
+                vol.Required(
+                    CONF_PERSISTENT_ENABLED,
+                    default=options.get(
+                        CONF_PERSISTENT_ENABLED,
+                        DEFAULT_PERSISTENT_ENABLED,
+                    ),
+                ): selector.BooleanSelector(),
+            }
+        )
+        quiet_section = vol.Schema(
+            {
+                vol.Required(
+                    CONF_QUIET_ENABLED,
+                    default=options.get(
+                        CONF_QUIET_ENABLED, DEFAULT_QUIET_ENABLED
+                    ),
+                ): selector.BooleanSelector(),
+                vol.Required(
+                    CONF_QUIET_START,
+                    default=options.get(
+                        CONF_QUIET_START, DEFAULT_QUIET_START
+                    ),
+                ): selector.TimeSelector(),
+                vol.Required(
+                    CONF_QUIET_END,
+                    default=options.get(CONF_QUIET_END, DEFAULT_QUIET_END),
+                ): selector.TimeSelector(),
+            }
+        )
+        brief_section = vol.Schema(
+            {
+                vol.Required(
+                    CONF_REMINDER_TIME,
+                    default=options.get(
+                        CONF_REMINDER_TIME, DEFAULT_REMINDER_TIME
+                    ),
+                ): selector.TimeSelector(),
+                vol.Required(
+                    CONF_REMINDER_MODE,
+                    default=options.get(
+                        CONF_REMINDER_MODE, DEFAULT_REMINDER_MODE
+                    ),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            REMINDER_MODE_DAILY,
+                            REMINDER_MODE_OVERNIGHT,
+                            REMINDER_MODE_NONE,
+                        ],
+                        translation_key="reminder_mode",
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(
+                    CONF_BRIEF_TARGETS,
+                    default=options.get(CONF_BRIEF_TARGETS, []),
+                ): target_selector(),
+            }
+        )
         return self.async_show_form(
             step_id="notifications",
             description_placeholders={"wiki_link": WIKI_LINK_NOTIFICATIONS},
             data_schema=vol.Schema(
                 {
-                    vol.Optional(
-                        CONF_HIGH_PRIORITY_TARGETS,
-                        default=options.get(
-                            CONF_HIGH_PRIORITY_TARGETS, []
-                        ),
-                    ): target_selector(),
-                    vol.Optional(
-                        CONF_NORMAL_PRIORITY_TARGETS,
-                        default=options.get(
-                            CONF_NORMAL_PRIORITY_TARGETS, []
-                        ),
-                    ): target_selector(),
+                    vol.Required("instant"): section(instant_section, {}),
+                    vol.Required("quiet"): section(
+                        quiet_section, {"collapsed": True}
+                    ),
+                    vol.Required("brief"): section(
+                        brief_section, {"collapsed": True}
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_advanced(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Settings a person may change and most never will (#117).
+
+        Each is a share of something the device already earned, or a
+        plain interval, so no value here can produce a nonsensical
+        result: the bands are enforced by the selectors and clamped
+        again where they are read. One sentence each on the screen and
+        the reasoning on the wiki page, per the standing rule that
+        configuration says what a setting does and the wiki says why.
+        """
+        if user_input is not None:
+            return self.async_create_entry(
+                data={**self.config_entry.options, **user_input}
+            )
+        options = self.config_entry.options
+
+        def share_selector() -> selector.NumberSelector:
+            """A ten-to-ninety percent slider in steps of ten."""
+            return selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=SHARE_PCT_MIN,
+                    max=SHARE_PCT_MAX,
+                    step=SHARE_PCT_STEP,
+                    unit_of_measurement="%",
+                    mode=selector.NumberSelectorMode.SLIDER,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="advanced",
+            description_placeholders={"wiki_link": WIKI_LINK_ADVANCED},
+            data_schema=vol.Schema(
+                {
                     vol.Required(
-                        CONF_PERSISTENT_ENABLED,
+                        CONF_SETTLE_SHARE,
                         default=options.get(
-                            CONF_PERSISTENT_ENABLED,
-                            DEFAULT_PERSISTENT_ENABLED,
+                            CONF_SETTLE_SHARE, DEFAULT_SETTLE_SHARE_PCT
                         ),
-                    ): selector.BooleanSelector(),
+                    ): share_selector(),
                     vol.Required(
-                        CONF_QUIET_ENABLED,
+                        CONF_EPISODE_SHARE,
                         default=options.get(
-                            CONF_QUIET_ENABLED, DEFAULT_QUIET_ENABLED
+                            CONF_EPISODE_SHARE, DEFAULT_EPISODE_SHARE_PCT
                         ),
-                    ): selector.BooleanSelector(),
+                    ): share_selector(),
                     vol.Required(
-                        CONF_QUIET_START,
+                        CONF_COALESCE_MINUTES,
                         default=options.get(
-                            CONF_QUIET_START, DEFAULT_QUIET_START
+                            CONF_COALESCE_MINUTES, DEFAULT_COALESCE_MINUTES
                         ),
-                    ): selector.TimeSelector(),
-                    vol.Required(
-                        CONF_QUIET_END,
-                        default=options.get(
-                            CONF_QUIET_END, DEFAULT_QUIET_END
-                        ),
-                    ): selector.TimeSelector(),
-                    vol.Required(
-                        CONF_REMINDER_MODE,
-                        default=options.get(
-                            CONF_REMINDER_MODE, DEFAULT_REMINDER_MODE
-                        ),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                REMINDER_MODE_NONE,
-                                REMINDER_MODE_OVERNIGHT,
-                                REMINDER_MODE_DAILY,
-                            ],
-                            translation_key="reminder_mode",
-                            mode=selector.SelectSelectorMode.DROPDOWN,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=COALESCE_MINUTES_MIN,
+                            max=COALESCE_MINUTES_MAX,
+                            step=1,
+                            unit_of_measurement="min",
+                            mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
-                    vol.Required(
-                        CONF_REMINDER_TIME,
-                        default=options.get(
-                            CONF_REMINDER_TIME, DEFAULT_REMINDER_TIME
-                        ),
-                    ): selector.TimeSelector(),
                 }
             ),
         )
