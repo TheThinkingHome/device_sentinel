@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.7.1 (2026-07-22)
+# File: coordinator.py, Version: 0.7.2 (2026-07-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -143,6 +143,13 @@ from .const import (
     INCIDENT_ACKNOWLEDGED,
     INCIDENT_KEEP_DAYS,
     INCIDENT_OPENED,
+    OUTBOX_KEEP,
+    OUTBOX_SHAPE_DEVICE,
+    OUTBOX_SHAPE_EVENT,
+    OUT_DEVICE_ID,
+    OUT_SHAPE,
+    OUT_TEXT,
+    OUT_WHEN,
     INCIDENT_RESOLVED,
     INC_CAUSE,
     INC_DEVICE_ID,
@@ -180,6 +187,7 @@ from .const import (
     CONF_REMINDER_TIME,
     DATA_EPISODES,
     DATA_INCIDENTS,
+    DATA_OUTBOX,
     DATA_TODO_JOURNAL,
     SIGNAL_PROBLEM_ADDITION,
     TODO_ACKED_AT,
@@ -290,6 +298,7 @@ class DeviceSentinelCoordinator:
         self._grace_stamps: int = 0
         self._grace_devices: set[str] = set()
         self._grace_taints: set[str] = set()
+        self._outbox_pending: set[str] = set()
         self._storm_feed_q: dict[str, deque[tuple[float, str]]] = {}
         self._storm_active: dict[str, dict[str, Any]] = {}
         self._storm_history: dict[str, deque[float]] = {}
@@ -339,6 +348,7 @@ class DeviceSentinelCoordinator:
         loaded.setdefault(DATA_TODO_JOURNAL, [])
         loaded.setdefault(DATA_EPISODES, [])
         loaded.setdefault(DATA_INCIDENTS, [])
+        loaded.setdefault(DATA_OUTBOX, [])
         # 0.6.0: the list is engine-owned. Anything stored without a
         # device_id is a hand-typed item from the pre-sync backbone
         # (the create feature is gone with this release) and is
@@ -3065,6 +3075,7 @@ class DeviceSentinelCoordinator:
                         )
             break
         self._sort_todo_items()
+        self._flush_outbox_lines()
         await self._save_now()
         self._notify()
 
@@ -3176,6 +3187,184 @@ class DeviceSentinelCoordinator:
                 lines.append(f"{word.capitalize()}.")
         return summary, " ".join(lines)
 
+    # ------------------------------------------------ message composer
+
+    # How bad a problem is, worst first. A device with several
+    # problems is described by its worst one, because a phone line
+    # has room for one fact and the reader needs the one that
+    # matters. Silence outranks battery and signal: a device that
+    # cannot be heard from cannot be trusted to report either.
+    _KIND_SEVERITY = (
+        "unavailable",
+        "frozen",
+        "unknown",
+        "not_reported",
+        "battery",
+        "signal",
+    )
+
+    _EVENT_WORDING = {
+        "frozen": "stopped reporting",
+        "unavailable": "went unavailable",
+        "unknown": "went unknown",
+        "signal": "signal railed",
+    }
+
+    _STATE_WORDING = {
+        "frozen": "stopped reporting",
+        "unavailable": "has been unavailable",
+        "unknown": "has been unknown",
+        "signal": "signal has been railed",
+    }
+
+    @staticmethod
+    def _clock(epoch: float) -> str:
+        """Return a bare local time, as a person would say it."""
+        return dt_util.as_local(
+            dt_util.utc_from_timestamp(epoch)
+        ).strftime("%-I:%M %p")
+
+    def _battery_phrase(self, device_id: str, state: bool) -> str:
+        """Return the battery clause with its level where known."""
+        record = self.data[DATA_DEVICES].get(device_id) or {}
+        level = record.get(DEV_BATTERY_VALUE)
+        if isinstance(level, (int, float)):
+            shown = f"{level:g}%"
+            return (
+                f"battery is at {shown}"
+                if state
+                else f"battery fell to {shown}"
+            )
+        return "battery is low" if state else "battery fell low"
+
+    def _compose_event(self, row: dict[str, Any]) -> str:
+        """Return one incident as a sentence of history.
+
+        Used by the log today, and by the brief and a future spoken
+        answer later: one composer, so the same event can never be
+        described three different ways by three different renderers.
+        """
+        name = row[INC_NAME]
+        kind = row[INC_KIND]
+        when = self._clock(row[INC_WHEN])
+        event = row[INC_EVENT]
+        if event == INCIDENT_ACKNOWLEDGED:
+            return f"{name} acknowledged at {when}."
+        if event == INCIDENT_RESOLVED:
+            span = self._human_span(row.get(INC_DURATION))
+            cause = row.get(INC_CAUSE)
+            tail = ""
+            if cause == "on its own":
+                tail = ", on its own"
+            elif cause:
+                tail = f", revived by a {cause}"
+            if row.get(INC_DURATION) is None:
+                return f"{name} recovered at {when}{tail}."
+            return f"{name} recovered at {when} after {span}{tail}."
+        if kind == "not_reported":
+            return f"{name} has never reported since it was discovered."
+        if kind == "battery":
+            phrase = self._battery_phrase(row[INC_DEVICE_ID], False)
+            return f"{name} {phrase} at {when}."
+        wording = self._EVENT_WORDING.get(kind, kind)
+        return f"{name} {wording} at {when}."
+
+    def _compose_device_line(self, device_id: str) -> str | None:
+        """Return what is wrong with one device, right now.
+
+        The shape a phone holds: one line per device, replaced in
+        place as things change (#108), so it describes a state rather
+        than an event and carries no timestamp. Several problems at
+        once are named by the worst with the rest counted, because
+        the line has room for one fact.
+        """
+        record = next(
+            (
+                item
+                for item in self.todo_items
+                if item.get(TODO_DEVICE_ID) == device_id
+            ),
+            None,
+        )
+        if record is None:
+            return None
+        kinds = record.get(TODO_KINDS) or {}
+        if not kinds:
+            return None
+        ordered = sorted(
+            kinds,
+            key=lambda kind: (
+                self._KIND_SEVERITY.index(kind)
+                if kind in self._KIND_SEVERITY
+                else len(self._KIND_SEVERITY)
+            ),
+        )
+        worst = ordered[0]
+        name = record.get(TODO_SORT_NAME) or device_id
+        since = kinds.get(worst)
+        ago = (
+            self._human_span(dt_util.utcnow().timestamp() - since)
+            if since
+            else None
+        )
+        if worst == "not_reported":
+            clause = (
+                f"has never reported in {ago}"
+                if ago
+                else "has never reported"
+            )
+        elif worst == "battery":
+            clause = self._battery_phrase(device_id, True)
+        else:
+            wording = self._STATE_WORDING.get(worst, worst)
+            clause = f"{wording} {ago} ago" if ago else wording
+        extra = len(ordered) - 1
+        tail = (
+            f", and {extra} more problem{'s' if extra != 1 else ''}"
+            if extra
+            else ""
+        )
+        return f"{name} {clause}{tail}."
+
+    def _flush_outbox_lines(self) -> None:
+        """Compose the device line for every device touched this pass.
+
+        Deferred until the problem list has settled, because the line
+        is a statement about the device's current state rather than
+        about any one event. A device whose problems all cleared
+        produces no line: the phone clears silently (#109), and there
+        is nothing to say.
+        """
+        for device_id in sorted(self._outbox_pending):
+            line = self._compose_device_line(device_id)
+            if line is not None:
+                self._note_outbox(
+                    device_id, line, OUTBOX_SHAPE_DEVICE
+                )
+        self._outbox_pending.clear()
+
+    def _note_outbox(
+        self, device_id: str, text: str, shape: str
+    ) -> None:
+        """Record a composed message without sending it.
+
+        The dry run (#120): nothing sends yet, so every sentence the
+        engine would say is logged and kept where it can be read and
+        argued with for days before the first one reaches a phone.
+        """
+        LOGGER.info("Would send (%s): %s", shape, text)
+        outbox = self.data.setdefault(DATA_OUTBOX, [])
+        outbox.append(
+            {
+                OUT_WHEN: dt_util.utcnow().timestamp(),
+                OUT_DEVICE_ID: device_id,
+                OUT_TEXT: text,
+                OUT_SHAPE: shape,
+            }
+        )
+        del outbox[:-OUTBOX_KEEP]
+        self._dirty = True
+
     def _record_incident(
         self,
         device_id: str,
@@ -3205,6 +3394,14 @@ class DeviceSentinelCoordinator:
         }
         incidents = self.data.setdefault(DATA_INCIDENTS, [])
         incidents.append(entry)
+        # The event sentence can be composed here: it describes what
+        # just happened. The device line cannot, because it describes
+        # the device's whole state and the problem list has not
+        # settled yet, so it is deferred to the flush below (#120).
+        self._note_outbox(
+            device_id, self._compose_event(entry), OUTBOX_SHAPE_EVENT
+        )
+        self._outbox_pending.add(device_id)
         cutoff = (
             dt_util.utcnow().timestamp() - INCIDENT_KEEP_DAYS * 86400.0
         )
@@ -3428,6 +3625,8 @@ class DeviceSentinelCoordinator:
             self._dirty = True
             self._critical = True
             self._notify()
+        # The list is settled, so a device line now describes reality.
+        self._flush_outbox_lines()
 
     @property
     def low_threshold(self) -> float:
