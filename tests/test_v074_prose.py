@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v074_prose.py, Version: 0.7.4 (2026-07-22)
+# File: test_v074_prose.py, Version: 0.7.5 (2026-07-23)
 
 """0.7.4 tests: the brief opens in prose.
 
@@ -66,11 +66,20 @@ async def _coordinator(hass):
 
 
 def _brief_text(hass):
-    stamp = dt_util.now().strftime("%Y-%m-%d")
-    with open(
-        hass.config.path("device_sentinel", f"daily_brief_{stamp}.md"),
-        encoding="utf-8",
-    ) as handle:
+    """Return the brief that was written, whatever its name.
+
+    Named for the day its window opened, which is not today's date
+    when the window began before the brief hour (0.7.5).
+    """
+    import glob
+
+    written = sorted(
+        glob.glob(
+            hass.config.path("device_sentinel", "daily_brief_*.md")
+        )
+    )
+    assert written, "no daily brief was written"
+    with open(written[0], encoding="utf-8") as handle:
         return handle.read()
 
 
@@ -122,9 +131,12 @@ async def test_history_reads_oldest_first(hass: HomeAssistant):
     assert prose.index("Early Sensor") < prose.index("Later Sensor")
 
 
-async def test_acknowledged_devices_are_marked_in_the_prose(
+async def test_acknowledged_devices_are_absent_from_the_prose(
     hass: HomeAssistant,
 ):
+    """#123: acknowledging a problem is the statement that the person
+    knows about it, so it leaves the brief rather than being listed
+    with a mark."""
     device, entity_id = _register(hass, "a1", "Acked Sensor")
     coord = await _coordinator(hass)
     hass.states.async_set(entity_id, "on")
@@ -137,7 +149,9 @@ async def test_acknowledged_devices_are_marked_in_the_prose(
     await coord.async_todo_update(uid=uid, status="completed")
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = _brief_text(hass)
-    assert ", acknowledged." in text
+    assert "Acked Sensor" not in text
+    assert "acknowledged" not in text
+    assert "Nothing needs attention right now." in text
 
 
 async def test_battery_level_agrees_everywhere(hass: HomeAssistant):
