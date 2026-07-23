@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.8.0 (2026-07-23)
+# File: coordinator.py, Version: 0.8.1 (2026-07-23)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -32,7 +32,7 @@ import os
 import uuid
 from collections import deque
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -54,6 +54,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from .reports import ReportWritingMixin
 from .const import (
     BATTERY_CLEAR_MARGIN,
     CONF_EXCLUDED_DEVICES,
@@ -82,7 +83,6 @@ from .const import (
     LEGACY_CAUSE_UNOBSERVED,
     RECOVERY_CAUSE_UNOBSERVED,
     REPORT_BRIEF_PREFIX,
-    REPORT_EPISODES,
     REPORT_STALE_FILES,
     REPORT_TELEMETRY,
     SIGNAL_ARMING_DAYS,
@@ -236,7 +236,7 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
     }
 
 
-class DeviceSentinelCoordinator:
+class DeviceSentinelCoordinator(ReportWritingMixin):
     """Owns Device Sentinel's storage, registry view, and telemetry."""
 
     def __init__(
@@ -1411,16 +1411,6 @@ class DeviceSentinelCoordinator:
         ]
         return max(survivors), set_aside_indices
 
-    def _fmt_gap(self, seconds: Any) -> str:
-        """Format a gap for the report."""
-        if seconds is None:
-            return "-"
-        if seconds >= 3600:
-            return f"{seconds / 3600:.2f}h"
-        return f"{seconds:.0f}s"
-
-    # ------------------------------------------------------ freeze margin
-
     def _freeze_deltas(self) -> tuple[float, float]:
         """Return (delta_low, delta_high) in seconds from the options.
 
@@ -1978,21 +1968,6 @@ class DeviceSentinelCoordinator:
                 parts.append(text)
         return " ".join(parts)
 
-    @staticmethod
-    def _report_cell(text: str) -> str:
-        """Return text safe for a Markdown table cell or report line.
-
-        Device names are user-controlled: a pipe in a name would
-        split its table row and a newline would break it entirely.
-        Escaping here, at the single choke point every name passes on
-        its way into a report, keeps the files intact whatever a
-        device is called. Cosmetic hardening, not a security fix; the
-        reports are local files.
-        """
-        return (
-            text.replace("\n", " ").replace("\r", " ").replace("|", "\\|")
-        )
-
     def _write_telemetry(
         self, report_directory: str, trigger: str
     ) -> None:
@@ -2143,40 +2118,6 @@ class DeviceSentinelCoordinator:
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
         LOGGER.info("Telemetry report written to %s", path)
-
-    @staticmethod
-    def _episode_duration(seconds: float | None) -> str:
-        """Return a duration in the report's mixed units."""
-        if seconds is None:
-            return ""
-        seconds = max(0.0, seconds)
-        if seconds >= 3600:
-            return f"{seconds / 3600:.2f}h"
-        if seconds >= 60:
-            return f"{seconds / 60:.0f}m"
-        return f"{seconds:.0f}s"
-
-    def _episode_stamp(self, epoch: float | None) -> str:
-        """Return a local timestamp for an episode column."""
-        if epoch is None:
-            return ""
-        return dt_util.as_local(
-            dt_util.utc_from_timestamp(epoch)
-        ).strftime("%b %d %H:%M")
-
-    @staticmethod
-    def _human_span(seconds: float | None) -> str:
-        """Return a duration in the units a person thinks in."""
-        if seconds is None:
-            return "?"
-        seconds = max(0.0, seconds)
-        if seconds >= 86400:
-            return f"{seconds / 86400:.1f}d"
-        if seconds >= 3600:
-            return f"{seconds / 3600:.1f}h"
-        if seconds >= 60:
-            return f"{seconds / 60:.0f}m"
-        return f"{seconds:.0f}s"
 
     @staticmethod
     def _brief_moment(epoch: float) -> str:
@@ -2540,77 +2481,6 @@ class DeviceSentinelCoordinator:
         for name in names[:-BRIEF_KEEP_DAYS]:
             with contextlib.suppress(OSError):
                 os.remove(os.path.join(report_directory, name))
-
-    def _write_episodes(self, report_directory: str, trigger: str) -> None:
-        """Write the silence-episode report.
-
-        The forensic file (#103). One row per episode, newest first,
-        recording what the other two reports cannot: whether a long
-        silence ended because the device chose to speak or because
-        something made it speak. That distinction is the difference
-        between a rhythm the statistics should learn and a wedge no
-        amount of patience would have fixed, and it is invisible in
-        any per-device summary because a device produces one episode
-        per occurrence, not one number.
-        """
-        episodes = list(self.data.get(DATA_EPISODES) or [])
-        episodes.sort(key=lambda row: row[EP_SINCE], reverse=True)
-        now = dt_util.utcnow().timestamp()
-        open_count = sum(1 for row in episodes if row[EP_ENDED] is None)
-        lines = [
-            f"# Device Sentinel v{self.version} silence episodes",
-            "",
-            f"Written {self._format_report_time(dt_util.now())} "
-            f"({trigger})",
-            "",
-            "One row per episode: a device whose silence passed its "
-            "own learned basis. Devices reporting within their rhythm "
-            "never appear. An episode closes when the device reports "
-            "again (resumed) or when something intervened (a reboot, "
-            "a bridge reconnect), which truncates the silence at a "
-            "lower bound. LAG is how long after an intervention the "
-            "device took to speak: seconds means the intervention "
-            "revived it, hours means it was never stuck. LEARNED says "
-            "whether the completed gap reached the statistics, and "
-            "why not when it did not. Kept "
-            f"{EPISODE_KEEP_DAYS} days; {len(episodes)} episode(s), "
-            f"{open_count} still open.",
-            "",
-        ]
-        if not episodes:
-            lines += [
-                "No device has been silent past its own rhythm since "
-                "this record began.",
-                "",
-            ]
-        else:
-            lines += [
-                "| SILENT SINCE | DEVICE | BASIS | WINDOW | SILENCE | "
-                "ENDED | AT | LAG | LEARNED |",
-                "|---|---|---|---|---|---|---|---|---|",
-            ]
-            for row in episodes:
-                end_epoch = row[EP_AT]
-                silence = (
-                    (end_epoch - row[EP_SINCE])
-                    if end_epoch is not None
-                    else (now - row[EP_SINCE])
-                )
-                lines.append(
-                    f"| {self._episode_stamp(row[EP_SINCE])} "
-                    f"| {self._report_cell(row[EP_NAME] or row[EP_DEVICE_ID])} "
-                    f"| {self._episode_duration(row[EP_BASIS])} "
-                    f"| {self._episode_duration(row[EP_WINDOW])} "
-                    f"| {self._episode_duration(silence)} "
-                    f"| {row[EP_ENDED] or 'open'} "
-                    f"| {self._episode_stamp(end_epoch)} "
-                    f"| {self._episode_duration(row[EP_LAG])} "
-                    f"| {row[EP_LEARNED] or ''} |"
-                )
-            lines.append("")
-        path = os.path.join(report_directory, REPORT_EPISODES)
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write("\n".join(lines))
 
     def _write_classification(
         self, report_directory: str, trigger: str
@@ -2998,23 +2868,6 @@ class DeviceSentinelCoordinator:
         """Return how many devices are down (frozen, unavailable, or
         unknown) right now."""
         return len(self.frozen_devices_list)
-
-    @staticmethod
-    def _format_report_time(when: datetime) -> str:
-        """Return a local time a person reads at a glance, like
-        'July 21, 2026 at 7:19 AM'. Built without strftime's platform
-        specific %-d and %-I so it is the same on every host: the
-        month name and AM/PM come from strftime, the day and hour are
-        integers so they carry no leading zero.
-        """
-        month = when.strftime("%B")
-        hour_24 = when.hour
-        hour_12 = hour_24 % 12 or 12
-        meridiem = "AM" if hour_24 < 12 else "PM"
-        return (
-            f"{month} {when.day}, {when.year} at "
-            f"{hour_12}:{when.minute:02d} {meridiem}"
-        )
 
     def _todo_tag_of(self, device_id: str) -> str:
         """Return the todo-state tag for a device with a fault.
