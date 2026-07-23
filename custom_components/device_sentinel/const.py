@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.8.0 (2026-07-23)
+# File: const.py, Version: 0.8.5 (2026-07-23)
 
 """Constants for the Device Sentinel integration."""
 
@@ -448,13 +448,20 @@ TODO_KINDS = "kinds"
 # checked section reads as a history rather than reshuffling.
 TODO_ACKED_AT = "acked_at"
 
-# Item kinds, one per detection family. The freeze family reuses its
-# category strings so the sync can pass a verdict straight through.
+# Item kinds, one per detection family. The freeze family's kinds are
+# its verdict strings: the sync passes a verdict straight through as
+# a kind, so these alias the categories rather than restating them
+# (0.8.5). Aliasing rather than repeating means each string is
+# defined once, and it puts the verdict-becomes-kind relationship at
+# the definition instead of leaving it implied at every use site.
+# Everything that turns a kind into words keys off these names, so a
+# rename fails at import rather than quietly printing a raw kind
+# into somebody's daily brief.
 TODO_KIND_BATTERY = "battery"
-TODO_KIND_FROZEN = "frozen"
-TODO_KIND_UNAVAILABLE = "unavailable"
-TODO_KIND_UNKNOWN = "unknown"
-TODO_KIND_NOT_REPORTED = "not_reported"
+TODO_KIND_FROZEN = FREEZE_CATEGORY_FROZEN
+TODO_KIND_UNAVAILABLE = FREEZE_CATEGORY_UNAVAILABLE
+TODO_KIND_UNKNOWN = FREEZE_CATEGORY_UNKNOWN
+TODO_KIND_NOT_REPORTED = FREEZE_CATEGORY_NOT_REPORTED
 TODO_KIND_SIGNAL = "signal"
 
 # The additions journal (0.6.0). Every item added and every kind that
