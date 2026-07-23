@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.8.4 (2026-07-23)
+# File: narrative.py, Version: 0.8.5 (2026-07-23)
 
 """What happened, and how to say it: the memory and the composer.
 
@@ -78,6 +78,12 @@ from .const import (
     RECOVERY_CAUSE_UNOBSERVED,
     TODO_DEVICE_ID,
     TODO_KINDS,
+    TODO_KIND_BATTERY,
+    TODO_KIND_FROZEN,
+    TODO_KIND_NOT_REPORTED,
+    TODO_KIND_SIGNAL,
+    TODO_KIND_UNAVAILABLE,
+    TODO_KIND_UNKNOWN,
     TODO_SORT_NAME,
     TODO_STATUS,
 )
@@ -96,19 +102,19 @@ class NarrativeMixin:
     # matters. Silence outranks battery and signal: a device that
     # cannot be heard from cannot be trusted to report either.
     _KIND_SEVERITY = (
-        "unavailable",
-        "frozen",
-        "unknown",
-        "not_reported",
-        "battery",
-        "signal",
+        TODO_KIND_UNAVAILABLE,
+        TODO_KIND_FROZEN,
+        TODO_KIND_UNKNOWN,
+        TODO_KIND_NOT_REPORTED,
+        TODO_KIND_BATTERY,
+        TODO_KIND_SIGNAL,
     )
 
     _EVENT_WORDING = {
-        "frozen": "stopped reporting",
-        "unavailable": "went unavailable",
-        "unknown": "went unknown",
-        "signal": "signal railed",
+        TODO_KIND_FROZEN: "stopped reporting",
+        TODO_KIND_UNAVAILABLE: "went unavailable",
+        TODO_KIND_UNKNOWN: "went unknown",
+        TODO_KIND_SIGNAL: "signal railed",
     }
 
     # Each kind carries its own duration template rather than sharing
@@ -117,13 +123,16 @@ class NarrativeMixin:
     # which is how "has been unavailable 4.0h ago" reached a live
     # brief. The second form is used when no duration is known.
     _STATE_TEMPLATE = {
-        "frozen": ("stopped reporting {ago} ago", "stopped reporting"),
-        "unavailable": (
+        TODO_KIND_FROZEN: (
+            "stopped reporting {ago} ago",
+            "stopped reporting",
+        ),
+        TODO_KIND_UNAVAILABLE: (
             "has been unavailable for {ago}",
             "is unavailable",
         ),
-        "unknown": ("has been unknown for {ago}", "is unknown"),
-        "signal": (
+        TODO_KIND_UNKNOWN: ("has been unknown for {ago}", "is unknown"),
+        TODO_KIND_SIGNAL: (
             "signal has been railed for {ago}",
             "signal is railed",
         ),
@@ -174,9 +183,9 @@ class NarrativeMixin:
             if row.get(INC_DURATION) is None:
                 return f"{name} recovered at {when}{tail}."
             return f"{name} recovered at {when} after {span}{tail}."
-        if kind == "not_reported":
+        if kind == TODO_KIND_NOT_REPORTED:
             return f"{name} has never reported since it was discovered."
-        if kind == "battery":
+        if kind == TODO_KIND_BATTERY:
             phrase = self._battery_phrase(row[INC_DEVICE_ID], False)
             return f"{name} {phrase} at {when}."
         wording = self._EVENT_WORDING.get(kind, kind)
@@ -220,13 +229,13 @@ class NarrativeMixin:
             if since
             else None
         )
-        if worst == "not_reported":
+        if worst == TODO_KIND_NOT_REPORTED:
             clause = (
                 f"has never reported in {ago}"
                 if ago
                 else "has never reported"
             )
-        elif worst == "battery":
+        elif worst == TODO_KIND_BATTERY:
             clause = self._battery_phrase(device_id, True)
         else:
             with_age, without_age = self._STATE_TEMPLATE.get(
@@ -617,4 +626,3 @@ class NarrativeMixin:
             if record.get(TODO_STATUS) == "completed"
             and record.get(TODO_DEVICE_ID)
         }
-
