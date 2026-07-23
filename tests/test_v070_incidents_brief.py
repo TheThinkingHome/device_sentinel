@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v070_incidents_brief.py, Version: 0.7.0 (2026-07-22)
+# File: test_v070_incidents_brief.py, Version: 0.7.5 (2026-07-23)
 
 """0.7.0 tests: the incident log and the daily brief document.
 
@@ -77,6 +77,24 @@ async def _coordinator(hass, options=None):
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry.runtime_data
+
+
+def _brief_text(hass):
+    """Return the brief that was written, whatever its name.
+
+    Named for the day its window opened, which is not today's date
+    when the window began before the brief hour (0.7.5).
+    """
+    import glob
+
+    written = sorted(
+        glob.glob(
+            hass.config.path("device_sentinel", "daily_brief_*.md")
+        )
+    )
+    assert written, "no daily brief was written"
+    with open(written[0], encoding="utf-8") as handle:
+        return handle.read()
 
 
 def _freeze(coord, device_id, hours_ago=4.0):
@@ -184,12 +202,7 @@ async def test_brief_has_both_sections_in_plain_language(
     coord._sync_problem_list()
     await hass.async_add_executor_job(coord._write_reports, "test")
 
-    stamp = dt_util.now().strftime("%Y-%m-%d")
-    path = hass.config.path(
-        "device_sentinel", f"daily_brief_{stamp}.md"
-    )
-    with open(path, encoding="utf-8") as handle:
-        text = handle.read()
+    text = _brief_text(hass)
     assert "# Device Sentinel daily brief" in text
     assert "## Now" in text and "## Last 24 hours" in text
     assert "Brief Sensor" in text
@@ -203,12 +216,7 @@ async def test_regenerated_brief_says_it_is_incomplete(
 ):
     coord = await _coordinator(hass)
     await hass.async_add_executor_job(coord._write_reports, "manual")
-    stamp = dt_util.now().strftime("%Y-%m-%d")
-    path = hass.config.path(
-        "device_sentinel", f"daily_brief_{stamp}.md"
-    )
-    with open(path, encoding="utf-8") as handle:
-        text = handle.read()
+    text = _brief_text(hass)
     assert "(incomplete)" in text
     assert "Nothing needs attention." in text
 
@@ -226,12 +234,7 @@ async def test_excluded_devices_never_reach_the_brief(
         device.id, "Hidden Sensor", "frozen", INCIDENT_OPENED
     )
     await hass.async_add_executor_job(coord._write_reports, "test")
-    stamp = dt_util.now().strftime("%Y-%m-%d")
-    with open(
-        hass.config.path("device_sentinel", f"daily_brief_{stamp}.md"),
-        encoding="utf-8",
-    ) as handle:
-        text = handle.read()
+    text = _brief_text(hass)
     assert "Hidden Sensor" not in text
 
 
