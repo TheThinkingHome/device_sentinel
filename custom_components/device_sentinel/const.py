@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.7.3 (2026-07-22)
+# File: const.py, Version: 0.7.6 (2026-07-23)
 
 """Constants for the Device Sentinel integration."""
 
@@ -544,6 +544,20 @@ FREEZE_KINDS_FOR_CAUSE = frozenset(
 # The daily brief (#116). One file per day beside the other reports,
 # written for a person rather than a maintainer: what is wrong now,
 # what happened in the last 24 hours, plain language, no machinery.
+# What a recovery says when no lever was observed (0.7.6). Not "on
+# its own": the integration sees restarts and reconnects, and sees
+# nothing at all when a person rebinds a device or pulls a battery,
+# so the absence of a known lever is not evidence of self-recovery.
+# A rebind by hand read as "on its own" in a live brief on
+# 2026-07-23, which is exactly the claim the wedge-versus-quiet
+# reading rests on.
+# The trigger that closes a brief's window rather than opening one.
+# Named once, because the writer and the scheduler have to agree and
+# a typo between them would silently leave every brief in progress,
+# which is the fault this constant exists to prevent recurring.
+BRIEF_TRIGGER = "daily brief"
+RECOVERY_CAUSE_UNOBSERVED = "no intervention recorded"
+
 REPORT_BRIEF_PREFIX = "daily_brief_"
 BRIEF_KEEP_DAYS = 14
 
