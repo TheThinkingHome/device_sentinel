@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.7.6 (2026-07-23)
+# File: coordinator.py, Version: 0.8.0 (2026-07-23)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -79,6 +79,7 @@ from .const import (
     REPORT_CLASSIFICATION,
     REPORT_DIR,
     BRIEF_TRIGGER,
+    LEGACY_CAUSE_UNOBSERVED,
     RECOVERY_CAUSE_UNOBSERVED,
     REPORT_BRIEF_PREFIX,
     REPORT_EPISODES,
@@ -356,6 +357,14 @@ class DeviceSentinelCoordinator:
         loaded.setdefault(DATA_EPISODES, [])
         loaded.setdefault(DATA_INCIDENTS, [])
         loaded.setdefault(DATA_OUTBOX, [])
+        # 0.7.6 renamed the cause an unobserved recovery carries, and
+        # the entries already stored kept the old wording, which the
+        # composer then failed to recognize and rendered as "revived
+        # by a on its own". Rewritten here so the fleet's history
+        # speaks one vocabulary rather than two.
+        for entry in loaded.get(DATA_INCIDENTS) or []:
+            if entry.get(INC_CAUSE) == LEGACY_CAUSE_UNOBSERVED:
+                entry[INC_CAUSE] = RECOVERY_CAUSE_UNOBSERVED
         # 0.6.0: the list is engine-owned. Anything stored without a
         # device_id is a hand-typed item from the pre-sync backbone
         # (the create feature is gone with this release) and is
@@ -722,6 +731,42 @@ class DeviceSentinelCoordinator:
             return False
         return ent.entity_id.startswith(("sensor.", "binary_sensor."))
 
+    def _contact_stamp(self, device_id: str, now: float) -> float | None:
+        """Return when this device was last actually heard, or None.
+
+        Protocol truth where the integration publishes it (#124). The
+        value is the coordinator's own record of contact, and a
+        republish carries it unchanged, so a replayed payload cannot
+        advance the clock and the gap keeps accumulating with no
+        exclusion rule involved. That is the whole point: the data is
+        honest without being filtered into honesty.
+
+        None means we have such a clock and it has not moved, or the
+        entity itself is unavailable, which is information rather
+        than a missing value: Door Master's read unavailable for the
+        ten hours it was wedged, and falling back to arrival time
+        there would have erased the evidence.
+
+        A device with no such entity falls back to arrival time
+        (#125), because the moment we heard something is then the
+        only evidence there is.
+        """
+        entity_id = self._last_seen_entity.get(device_id)
+        if entity_id is None:
+            return now
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in BAD_STATES:
+            return None
+        parsed = dt_util.parse_datetime(state.state)
+        if parsed is None:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt_util.UTC)
+        # Never ahead of now: a device clock running fast would
+        # otherwise push our clock into the future and suppress every
+        # gap behind it.
+        return min(parsed.timestamp(), now)
+
     def _seed_from_last_seen(self, device_id: str) -> float | None:
         """Seed a new device's clock from its last_seen entity, if any."""
         entity_id = self._last_seen_entity.get(device_id)
@@ -851,56 +896,62 @@ class DeviceSentinelCoordinator:
 
         storm = self._storm_feed(entry_id, device_id, now)
         grace = now < self._grace_until
+        if grace:
+            self._grace_stamps += 1
+            self._grace_devices.add(device_id)
+        if storm is not None:
+            storm["stamps"] += 1
+            storm["devices"].add(device_id)
 
-        # A taint is consumed by any real-value stamp: the outage ended
-        # here, and the spanning gap is excluded by whichever rule
-        # applies. Exclusions are independent, not exclusive.
+        last = record[DEV_LAST_ACTIVITY]
+        stamp = self._contact_stamp(device_id, now)
+        if stamp is None or (last is not None and stamp <= last):
+            # The protocol clock has not moved, so this event carries
+            # no evidence that the device spoke: a republish, a
+            # restored state, or an entity of ours reacting to
+            # something else. Count it as seen and change nothing
+            # about liveness. The silence keeps running, which is
+            # what makes the exclusion rules unnecessary here.
+            record[DEV_EVENT_COUNT] = int(record[DEV_EVENT_COUNT]) + 1
+            self._dirty = True
+            return
+
+        # A taint is consumed by a stamp the protocol vouches for:
+        # the outage ended here, and the spanning gap is excluded
+        # because it covers time we could not observe.
         tainted = record[DEV_TAINTED]
         if tainted:
             record[DEV_TAINTED] = False
             self._taint_consumed_at[device_id] = now
-
-        last = record[DEV_LAST_ACTIVITY]
-        if grace:
-            self._grace_stamps += 1
-            self._grace_devices.add(device_id)
-        elif storm is not None:
-            storm["stamps"] += 1
-            storm["devices"].add(device_id)
-        elif tainted:
             if last is not None:
                 LOGGER.info(
                     "Completed gap of %.0f s on a tainted device excluded "
                     "from learning (spanned an unavailable stretch)",
-                    now - last,
+                    stamp - last,
                 )
         elif last is not None:
-            gap = now - last
+            gap = stamp - last
             if record[DEV_TODAY_MAX] is None or gap > record[DEV_TODAY_MAX]:
                 record[DEV_TODAY_MAX] = gap
 
-        # The episode's verdict, decided by which branch above ran:
-        # a gap this stamp completed cleanly is learned, anything the
-        # exclusions caught says so and why. A lever-ended gap
-        # measures the lever, not the device (#104).
-        if grace:
-            learned = "no (startup grace)"
-        elif storm is not None:
-            learned = "no (storm)"
-        elif tainted:
-            learned = "no (taint, unavailable)"
-        else:
-            learned = "yes"
-        self._close_episode(device_id, now, learned)
+        # Taint is the only surviving exclusion (#124, #125). Grace
+        # and storm are gone: for a device with a protocol clock they
+        # were never needed, since a replayed payload cannot advance
+        # it, and for a device without one they were discarding the
+        # only evidence there was, which is what kept the quiet
+        # devices' baselines describing half a night.
+        learned = "no (taint, unavailable)" if tainted else "yes"
+        self._close_episode(device_id, stamp, learned)
 
-        record[DEV_LAST_ACTIVITY] = now
+        record[DEV_LAST_ACTIVITY] = stamp
         record[DEV_EVENT_COUNT] = int(record[DEV_EVENT_COUNT]) + 1
         self._dirty = True
 
-        # Recovery is live: a device that reports is alive, so any
-        # standing freeze verdict clears the instant it speaks, and
-        # the device leaves the report at that moment rather than at
-        # the next sweep.
+        # Recovery is live: a device the protocol has heard from is
+        # alive, so any standing freeze verdict clears the instant it
+        # speaks. A republish no longer clears one, which is the
+        # behaviour that let a four-second bridge blip erase a
+        # nine-hour silence.
         self._clear_freeze_verdict(device_id, record)
 
     # ----------------------------------------------------------- storms
