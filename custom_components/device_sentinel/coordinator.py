@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.7.5 (2026-07-23)
+# File: coordinator.py, Version: 0.7.6 (2026-07-23)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -78,6 +78,8 @@ from .const import (
     DATA_STATS_EPOCH,
     REPORT_CLASSIFICATION,
     REPORT_DIR,
+    BRIEF_TRIGGER,
+    RECOVERY_CAUSE_UNOBSERVED,
     REPORT_BRIEF_PREFIX,
     REPORT_EPISODES,
     REPORT_STALE_FILES,
@@ -310,6 +312,7 @@ class DeviceSentinelCoordinator:
 
         self._listeners: list[Any] = []
         self._unsubs: list[Any] = []
+        self._brief_unsub: Any | None = None
 
     # ------------------------------------------------------------- setup
 
@@ -468,6 +471,7 @@ class DeviceSentinelCoordinator:
                 self.hass, self._on_midnight, hour=0, minute=0, second=0
             )
         )
+        self._schedule_brief()
         self._unsubs.append(
             async_track_time_interval(
                 self.hass,
@@ -524,6 +528,12 @@ class DeviceSentinelCoordinator:
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
+        # The brief schedule is held separately so a changed brief
+        # time can re-arm it without disturbing the others, which
+        # also means it has to be cancelled by name here.
+        if self._brief_unsub is not None:
+            self._brief_unsub()
+            self._brief_unsub = None
         if self._dirty or self._critical:
             await self._save_now()
 
@@ -1219,6 +1229,37 @@ class DeviceSentinelCoordinator:
                 spoken,
             )
 
+    def _schedule_brief(self) -> None:
+        """Arm the daily write that closes the brief's window.
+
+        Ruling 116 specified a write at the brief hour and no caller
+        ever made one, so every brief ever written said "in progress"
+        and no window was finished before its file was replaced. The
+        schedule is separate from the rest because the brief time is
+        a live option: changing it re-arms here rather than waiting
+        for a restart.
+        """
+        if self._brief_unsub is not None:
+            self._brief_unsub()
+            self._brief_unsub = None
+        hour, minute = self._brief_hour_minute()
+        self._brief_unsub = async_track_time_change(
+            self.hass,
+            self._on_brief_time,
+            hour=hour,
+            minute=minute,
+            second=0,
+        )
+        LOGGER.info(
+            "Daily brief will be written at %02d:%02d local", hour, minute
+        )
+
+    async def _on_brief_time(self, _now: Any) -> None:
+        """Close the day's brief and start a new window."""
+        await self.hass.async_add_executor_job(
+            self._write_reports, BRIEF_TRIGGER
+        )
+
     async def _on_midnight(self, _now: Any) -> None:
         """Roll today's maxima into the bounded daily set."""
         now = dt_util.utcnow().timestamp()
@@ -1270,15 +1311,21 @@ class DeviceSentinelCoordinator:
         self._write_classification(report_directory, trigger)
         self._write_episodes(report_directory, trigger)
         # The brief's window runs from the last brief time to now, so
-        # a regenerate mid-day writes the in-progress one and the
-        # scheduled write at the brief hour closes the day (#116).
-        now = dt_util.utcnow().timestamp()
+        # a regenerate mid-day writes the in-progress one. The
+        # scheduled write closes the day instead, covering the window
+        # that just ended rather than the one just beginning (#116).
+        closing = trigger == BRIEF_TRIGGER
+        if closing:
+            window_start, window_end = self._brief_close_bounds()
+        else:
+            window_end = dt_util.utcnow().timestamp()
+            window_start = self._brief_window_start(window_end)
         self._write_brief(
             report_directory,
             trigger,
-            self._brief_window_start(now),
-            now,
-            complete=trigger == "daily brief",
+            window_start,
+            window_end,
+            complete=closing,
         )
 
     @staticmethod
@@ -2207,6 +2254,40 @@ class DeviceSentinelCoordinator:
         )
         return minutes * 60.0
 
+    def _brief_hour_minute(self) -> tuple[int, int]:
+        """Return the configured brief time, as hour and minute."""
+        raw = str(
+            self.entry.options.get(CONF_REMINDER_TIME, DEFAULT_REMINDER_TIME)
+        )
+        try:
+            hour, minute = (int(part) for part in raw.split(":")[:2])
+        except ValueError:
+            return 8, 0
+        return hour, minute
+
+    def _brief_close_bounds(self) -> tuple[float, float]:
+        """Return the window that closes at this brief hour.
+
+        The scheduled write finishes the day that just ended rather
+        than opening the one just starting, so the completed brief
+        covers brief hour to brief hour and is named for the day it
+        began. Computed from the configured time rather than from the
+        clock, so a callback firing a moment early still closes the
+        window it was meant to close.
+        """
+        local_now = dt_util.now()
+        hour, minute = self._brief_hour_minute()
+        end_local = local_now.replace(
+            hour=hour, minute=minute, second=0, microsecond=0
+        )
+        if end_local > local_now:
+            end_local -= timedelta(days=1)
+        previous = end_local.date() - timedelta(days=1)
+        start_local = end_local.replace(
+            year=previous.year, month=previous.month, day=previous.day
+        )
+        return start_local.timestamp(), end_local.timestamp()
+
     def _brief_window_start(self, now: float) -> float:
         """Return the start of the current brief window.
 
@@ -2217,13 +2298,7 @@ class DeviceSentinelCoordinator:
         time to midnight.
         """
         local_now = dt_util.as_local(dt_util.utc_from_timestamp(now))
-        raw = str(
-            self.entry.options.get(CONF_REMINDER_TIME, DEFAULT_REMINDER_TIME)
-        )
-        try:
-            hour, minute = (int(part) for part in raw.split(":")[:2])
-        except ValueError:
-            hour, minute = 8, 0
+        hour, minute = self._brief_hour_minute()
         candidate = local_now.replace(
             hour=hour, minute=minute, second=0, microsecond=0
         )
@@ -3356,8 +3431,8 @@ class DeviceSentinelCoordinator:
             span = self._human_span(row.get(INC_DURATION))
             cause = row.get(INC_CAUSE)
             tail = ""
-            if cause == "on its own":
-                tail = ", on its own"
+            if cause == RECOVERY_CAUSE_UNOBSERVED:
+                tail = f", {cause}"
             elif cause:
                 tail = f", revived by a {cause}"
             if row.get(INC_DURATION) is None:
@@ -3588,7 +3663,7 @@ class DeviceSentinelCoordinator:
             if ended is None:
                 return None
             if ended == EPISODE_ENDED_RESUMED:
-                return "on its own"
+                return RECOVERY_CAUSE_UNOBSERVED
             return ended.replace("intervention (", "").rstrip(")")
         return None
 
@@ -3877,6 +3952,7 @@ class DeviceSentinelCoordinator:
             len(self._excluded_devices),
             len(self._excluded_entities),
         )
+        self._schedule_brief()
         self._evaluate_all_batteries()
         # Exclusions changed here remove verdicts at the source, so
         # the sync sees the shrunken lists and deletes the items of
