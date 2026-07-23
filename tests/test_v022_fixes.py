@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v022_fixes.py, Version: 0.2.2 (2026-07-14)
+# File: test_v022_fixes.py, Version: 0.8.0 (2026-07-23)
 
 """0.2.2 tests: storm duty-cycle exemption and deterministic attribution."""
 
@@ -96,8 +96,14 @@ async def test_synchronized_poller_exempted(hass: HomeAssistant, freezer, caplog
     assert all(v is not None and v == pytest.approx(30, abs=2) for v in learned)
 
 
-async def test_rare_storm_still_excludes(hass: HomeAssistant, freezer):
-    """A single reconnect-style burst still storms and still excludes."""
+async def test_rare_storm_still_storms_without_excluding(
+    hass: HomeAssistant, freezer
+):
+    """A single reconnect-style burst still storms and is still not
+    exempt from the duty cycle. Since 0.8.0 it no longer discards the
+    gaps it completes (#124, #125): a device with a last-contact
+    entity is protected by the timestamp, which a republish carries
+    unchanged, and a device without one has nothing else to go on."""
     source = MockConfigEntry(domain="zigbee_like")
     source.add_to_hass(hass)
     fleet = _fleet(hass, source, STORM_DEVICE_THRESHOLD + 2)
@@ -125,7 +131,7 @@ async def test_rare_storm_still_excludes(hass: HomeAssistant, freezer):
         coord.data[DATA_DEVICES][dev.id][DEV_TODAY_MAX]
         for dev, _ in fleet[STORM_DEVICE_THRESHOLD - 1 :]
     ]
-    assert all(v is None for v in tail)
+    assert all(v is not None for v in tail)
 
 
 async def test_attribution_uses_primary_config_entry(hass: HomeAssistant):
