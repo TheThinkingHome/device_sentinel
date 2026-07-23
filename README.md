@@ -12,7 +12,7 @@ Somewhere in your house right now, a sensor may be lying to you. It froze, and H
 
 Device Sentinel is a Home Assistant custom integration that watches for exactly that: frozen devices wearing healthy values, unavailable devices, low batteries, and weak radio links.
 
-**Status: pre-release.** Learning, low battery, signal recording, and freeze detection (frozen, unavailable, unknown, and never-reported) are all live, and every detection now feeds a problem list you act on. Notifications and recovery arrive in later steps. Until public release, the [Sentinel blueprints](https://github.com/TheThinkingHome/Automations/tree/main/blueprints) remain the supported tools.
+**Status: pre-release.** Learning, low battery, signal recording, and freeze detection (frozen, unavailable, unknown, and never-reported) are all live. Every detection feeds a problem list you act on, every problem's whole life is recorded, and a daily brief writes it up in plain language. Sending that brief to a phone or an email is the next step, and recovery follows it. Until public release, the [Sentinel blueprints](https://github.com/TheThinkingHome/Automations/tree/main/blueprints) remain the supported tools.
 
 ## Why an integration
 
@@ -36,22 +36,28 @@ The learning defends itself. One anomalous day is set aside and moves nothing; a
 - Exclusions on a priority ladder (integration, label, device), with pickers populated from what was actually detected, and per-section lists beside the global one. Device Sentinel judges devices, not entities, so there is no per-entity exclude; a label on an entity still keeps it from feeding its device. Exclusion suppresses judgment, not observation: an excluded device keeps learning, so undoing costs nothing.
 - Detects frozen, unavailable, unknown, and never-reported devices at the device level, any entity's activity vouching for its siblings. Each freeze window is armed per device from its own learned rhythm plus a grace margin set by two sliders. A device silent past its window while wearing a stale value is frozen; a device whose live entities all read unavailable or unknown is that; a device that has produced nothing at all for 48 hours since install is never-reported. The verdict survives a reboot (measured from the stored clock) and clears the instant the device reports. Device: Frozen counts what is down, each row carrying its category and how long it has been down.
 - Gathers every detection into one problem list, a standard Home Assistant to-do entity, so there is a single place to see what is wrong now. A device appears the moment any detection flags it and is deleted the moment the last one clears; a device with two problems shows as one line, name first, carrying both. Checking the box acknowledges a problem: it stays listed, keeps updating, survives reboots checked, and stays silent to the notifications coming next, until it recovers on its own. Open items sort alphabetically, acknowledged items in the order you checked them.
-- Writes two human-readable diagnostic files nightly: the learned-rhythms table (alphabetical, with each device's integration and exclusion status) and a one-row-per-device classification table showing whether each device is watched or set aside, and why any is excluded from judgment. The down-devices summary leads the first file, stamped with when it was taken.
+- Records when a device was genuinely last heard from, rather than when a message about it happened to arrive. Many integrations publish a last-contact time, and where one exists Device Sentinel reads it on every check, so a bridge republishing its stored state cannot make a silent device look alive. Where no such time exists, a report is a report, including the one a device makes when the system restarts: a nightly restart is part of a home's rhythm, not interference to filter out.
+- Records the whole life of every problem: when it opened, when it cleared, how long it lasted, what revived it where that is knowable, and when you acknowledged it. This is the memory a blueprint cannot have, and it is what lets a report say a device broke at 1:02 AM and came back two hours later rather than only that something is wrong now.
+- Writes a daily brief in plain language, one file per day: two paragraphs saying what happened and what is still wrong, then tables with the exact times. It is written whether or not anything is configured to send it, and it is deliberately free of the integration's own machinery, no rhythms, no windows, no thresholds.
+- Writes three diagnostic files nightly for whoever maintains the system: the learned-rhythms table (alphabetical, with each device's integration and exclusion status), a one-row-per-device classification table showing whether each device is watched or set aside and why any is excluded from judgment, and a silence-episode record. That last one answers a question nothing else can: when a device goes quiet far longer than usual and then speaks again, did it choose to speak, or did a restart or a reconnect make it speak?
+- An Advanced screen for the settings most people never need: how long a problem must persist before it is sent, how quiet a device must be before its silence is recorded for study, and how often routine activity is written to disk, which matters on an SD card.
 
 ## What is coming
 
 - The signal forensics trail: the last signal readings before a device went dark attached to its alert, 40, 32, 24, gone tells you the link died; 200, 201, 200 tells you to look elsewhere. The rule is specified; the trail is the next signal step.
 - A battery discharge-velocity flag: catching a cell dropping fast before it reaches the threshold, from the daily-level history already being recorded.
-- The notification engine behind the settings already built and waiting: pushes about additions to the problem list only, quiet hours, and high priority piercing them for the freezer at 3 AM. The list is the single source of truth it watches.
+- The sending engine behind the settings already built and waiting. The messages are already written and recorded, one per device, plain sentences, so what will be sent can be read in the daily brief before anything is sent at all. Nothing pierces quiet hours, not even high priority: a problem at 3 AM is recorded, kept, and told to you in the morning brief rather than waking the house, and the phone is brought up to date the moment quiet hours end.
+- Recovery: attempting to revive a stuck device rather than only reporting it.
 
 ## Documentation
 
 The [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki) is the full documentation. Worth starting with:
 
 - [How Device Sentinel Learns](https://github.com/TheThinkingHome/device_sentinel/wiki/How-Device-Sentinel-Learns): the rhythm, the windows, and why there is no fixed timeout anywhere.
-- [Notifications](https://github.com/TheThinkingHome/device_sentinel/wiki/Notifications): the one thing to configure, so alerts reach your phone.
+- [Notifications and Daily Brief](https://github.com/TheThinkingHome/device_sentinel/wiki/Notifications-and-Daily-Brief): the one thing to configure, so alerts reach your phone.
 - [The Device Page](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Device-Page): what every sensor and button means.
 - [The Problem List](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Problem-List): how detections reach the list, and what the checkbox does.
+- [The Reports](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Reports): the daily brief, and the three diagnostic files behind it.
 - [FAQ and Troubleshooting](https://github.com/TheThinkingHome/device_sentinel/wiki/FAQ-and-Troubleshooting)
 
 Every configuration screen also explains itself and links to its own page.
