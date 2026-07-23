@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.7.6 (2026-07-23)
+# File: const.py, Version: 0.8.0 (2026-07-23)
 
 """Constants for the Device Sentinel integration."""
 
@@ -557,6 +557,11 @@ FREEZE_KINDS_FOR_CAUSE = frozenset(
 # which is the fault this constant exists to prevent recurring.
 BRIEF_TRIGGER = "daily brief"
 RECOVERY_CAUSE_UNOBSERVED = "no intervention recorded"
+# The wording this replaced, still sitting in stored incidents from
+# before 0.7.6. Migrated at load rather than left to age out, because
+# the composer tests for the current string and would otherwise write
+# "revived by a on its own" for a fortnight (0.8.0).
+LEGACY_CAUSE_UNOBSERVED = "on its own"
 
 REPORT_BRIEF_PREFIX = "daily_brief_"
 BRIEF_KEEP_DAYS = 14
