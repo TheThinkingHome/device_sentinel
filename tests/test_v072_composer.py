@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v072_composer.py, Version: 0.7.2 (2026-07-22)
+# File: test_v072_composer.py, Version: 0.7.6 (2026-07-23)
 
 """0.7.2 tests: the message composer and the dry run.
 
@@ -44,6 +44,7 @@ from custom_components.device_sentinel.const import (
     OUTBOX_SHAPE_EVENT,
     OUT_SHAPE,
     OUT_TEXT,
+    RECOVERY_CAUSE_UNOBSERVED,
 )
 
 DOMAIN = "device_sentinel"
@@ -116,9 +117,9 @@ async def test_recovery_sentence_carries_span_and_cause(
 
     text = _row(
         coord, "d", "Leak Washer", "frozen", INCIDENT_RESOLVED,
-        duration=1320.0, cause="on its own",
+        duration=1320.0, cause=RECOVERY_CAUSE_UNOBSERVED,
     )
-    assert "after 22m, on its own." in text
+    assert "after 22m, no intervention recorded." in text
 
     # A problem that predates the log resolves without a duration.
     text = _row(
