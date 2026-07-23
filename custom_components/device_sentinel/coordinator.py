@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.7.4 (2026-07-22)
+# File: coordinator.py, Version: 0.7.5 (2026-07-23)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -285,6 +285,7 @@ class DeviceSentinelCoordinator:
         self._excluded_entities: dict[str, str] = {}  # entity_id -> reason
         self._set_aside: dict[str, tuple[str, str]] = {}  # id -> (name, domain)
         self._last_seen_entity: dict[str, str] = {}  # device_id -> entity_id
+        self._device_entries: dict[str, set[str]] = {}
         self._signal_entities: set[str] = set()
         self._signal_devices: set[str] = set()
         # device_id -> (entity_id, is_binary). Election prefers the
@@ -591,6 +592,7 @@ class DeviceSentinelCoordinator:
         entity_map: dict[str, tuple[str, str | None]] = {}
         entity_labels: dict[str, frozenset[str]] = {}
         last_seen_entity: dict[str, str] = {}
+        device_entries: dict[str, set[str]] = {}
         signal_entities: set[str] = set()
         signal_devices: set[str] = set()
         battery_entity: dict[str, tuple[str, bool]] = {}
@@ -602,6 +604,10 @@ class DeviceSentinelCoordinator:
             if ent.device_id not in watched:
                 continue
             entity_map[ent.entity_id] = (ent.device_id, ent.config_entry_id)
+            if ent.config_entry_id is not None:
+                device_entries.setdefault(ent.device_id, set()).add(
+                    ent.config_entry_id
+                )
             entity_labels[ent.entity_id] = frozenset(ent.labels or ())
             if excluded_labels & set(ent.labels or ()):
                 # An entity carrying an excluded label does not feed
@@ -635,6 +641,7 @@ class DeviceSentinelCoordinator:
         self._entity_map = entity_map
         self._entity_labels = entity_labels
         self._last_seen_entity = last_seen_entity
+        self._device_entries = device_entries
         self._signal_entities = signal_entities
         self._signal_devices = signal_devices
         self._battery_entity = battery_entity
@@ -1155,6 +1162,7 @@ class DeviceSentinelCoordinator:
                     if now < self._grace_until
                     else EPISODE_ENDED_RECONNECT,
                     now,
+                    entry_id=entry_id,
                 )
             else:
                 storm["last_met"] = now
@@ -1674,20 +1682,33 @@ class DeviceSentinelCoordinator:
                 episode[EP_LEARNED] = learned
         self._dirty = True
 
-    def _stamp_intervention(self, cause: str, now: float) -> None:
-        """Mark every open episode as ended by an intervention.
+    def _stamp_intervention(
+        self, cause: str, now: float, entry_id: str | None = None
+    ) -> None:
+        """Mark open episodes as ended by an intervention.
 
         A reboot or a bridge reconnect truncates a silence: we know
         the device had been quiet at least this long, never how much
         longer it would have stayed quiet. The row keeps that honesty
         by recording the cause and waiting for the lag.
+
+        Scoped by entry_id where the intervention belongs to one
+        integration. A Zigbee bridge reconnecting cannot revive a
+        HomeKit accessory, and crediting it with one puts a false
+        cause in the brief, which is what happened on 2026-07-23.
+        A restart carries no entry_id, because it touches everything.
         """
         stamped = 0
         for episode in self.data.get(DATA_EPISODES) or []:
-            if episode[EP_ENDED] is None:
-                episode[EP_ENDED] = cause
-                episode[EP_AT] = now
-                stamped += 1
+            if episode[EP_ENDED] is not None:
+                continue
+            if entry_id is not None and entry_id not in (
+                self._device_entries.get(episode[EP_DEVICE_ID]) or set()
+            ):
+                continue
+            episode[EP_ENDED] = cause
+            episode[EP_AT] = now
+            stamped += 1
         if stamped:
             self._dirty = True
             LOGGER.info(
@@ -2108,9 +2129,12 @@ class DeviceSentinelCoordinator:
 
         Read from the problem list rather than recomputed, so the
         brief and the list can never disagree. Excluded devices are
-        absent because this is a report, and acknowledged items are
-        present but marked, because a record shows what a person
-        chose to live with.
+        absent because this is a report, and so are acknowledged ones
+        (#123): the brief is a notification that happens to be a file,
+        and acknowledging a problem is the statement that the person
+        knows about it and does not want reminding. The diagnostics
+        keep every acknowledged fault, which is where an audit
+        belongs.
         """
         now = dt_util.utcnow().timestamp()
         rows: list[tuple[str, str, float, str]] = []
@@ -2118,8 +2142,9 @@ class DeviceSentinelCoordinator:
             device_id = record.get(TODO_DEVICE_ID)
             if not device_id or device_id in self._excluded_devices:
                 continue
+            if record.get(TODO_STATUS) == "completed":
+                continue
             name = record.get(TODO_SORT_NAME) or device_id
-            acked = record.get(TODO_STATUS) == "completed"
             for kind, since in (record.get(TODO_KINDS) or {}).items():
                 problem = {
                     "frozen": "stopped reporting",
@@ -2129,8 +2154,6 @@ class DeviceSentinelCoordinator:
                     "signal": "signal railed",
                     "battery": self._brief_battery_text(device_id),
                 }.get(kind, kind)
-                if acked:
-                    problem = f"{problem} (acknowledged)"
                 rows.append((name, problem, since or now, kind, device_id))
         rows.sort(key=lambda row: row[2])
         return rows
@@ -2208,6 +2231,21 @@ class DeviceSentinelCoordinator:
             candidate -= timedelta(days=1)
         return candidate.timestamp()
 
+    def _acknowledged_devices(self) -> set[str]:
+        """Return the devices a person has checked off.
+
+        Acknowledgment ends at recovery, because the item is deleted
+        when its last problem clears (#123 with #114). So a device is
+        in this set only while it is both broken and acknowledged,
+        and its eventual recovery is reported as the news it is.
+        """
+        return {
+            record[TODO_DEVICE_ID]
+            for record in self.todo_items
+            if record.get(TODO_STATUS) == "completed"
+            and record.get(TODO_DEVICE_ID)
+        }
+
     def _brief_prose(
         self,
         incidents: list[dict[str, Any]],
@@ -2232,16 +2270,6 @@ class DeviceSentinelCoordinator:
             line = self._compose_device_line(device_id)
             if line is None:
                 continue
-            record = next(
-                (
-                    item
-                    for item in self.todo_items
-                    if item.get(TODO_DEVICE_ID) == device_id
-                ),
-                None,
-            )
-            if record and record.get(TODO_STATUS) == "completed":
-                line = f"{line[:-1]}, acknowledged."
             if line not in standing:
                 standing.append(line)
         lines = ["## In short", ""]
@@ -2275,11 +2303,13 @@ class DeviceSentinelCoordinator:
         and starts a new day.
         """
         now_rows = self._brief_now_rows()
+        silenced = self._acknowledged_devices()
         incidents = [
             row
             for row in (self.data.get(DATA_INCIDENTS) or [])
             if window_start <= row[INC_WHEN] <= window_end
             and row[INC_DEVICE_ID] not in self._excluded_devices
+            and row[INC_DEVICE_ID] not in silenced
         ]
         incidents.sort(key=lambda row: row[INC_WHEN], reverse=True)
         opened = sum(
@@ -2287,11 +2317,6 @@ class DeviceSentinelCoordinator:
         )
         resolved = sum(
             1 for row in incidents if row[INC_EVENT] == INCIDENT_RESOLVED
-        )
-        acked_now = sum(
-            1
-            for record in self.todo_items
-            if record.get(TODO_STATUS) == "completed"
         )
         scope = (
             f"{self._brief_moment(window_end)}. Covering the 24 hours "
@@ -2317,12 +2342,7 @@ class DeviceSentinelCoordinator:
                 f"{devices} device{'s' if devices != 1 else ''} "
                 f"need{'' if devices != 1 else 's'} attention"
             )
-            if acked_now == 1:
-                summary += ", one of them acknowledged."
-            elif acked_now > 1:
-                summary += f", {acked_now} of them acknowledged."
-            else:
-                summary += "."
+            summary += "."
             now = dt_util.utcnow().timestamp()
             lines += [
                 summary,
@@ -2366,8 +2386,12 @@ class DeviceSentinelCoordinator:
                     f"| {self._brief_phrase(row)} |"
                 )
             lines.append("")
+        # Named for the day the window opened, not the moment of
+        # writing. Naming by "now" renamed the in-progress brief at
+        # midnight, so one window produced two files describing
+        # overlapping periods, and neither was ever completed.
         stamp = dt_util.as_local(
-            dt_util.utc_from_timestamp(window_end)
+            dt_util.utc_from_timestamp(window_start)
         ).strftime("%Y-%m-%d")
         path = os.path.join(
             report_directory, f"{REPORT_BRIEF_PREFIX}{stamp}.md"
@@ -3277,11 +3301,22 @@ class DeviceSentinelCoordinator:
         "signal": "signal railed",
     }
 
-    _STATE_WORDING = {
-        "frozen": "stopped reporting",
-        "unavailable": "has been unavailable",
-        "unknown": "has been unknown",
-        "signal": "signal has been railed",
+    # Each kind carries its own duration template rather than sharing
+    # a suffix. The wordings differ in tense (one past, three present
+    # perfect) and only the past-tense one joins correctly with "ago",
+    # which is how "has been unavailable 4.0h ago" reached a live
+    # brief. The second form is used when no duration is known.
+    _STATE_TEMPLATE = {
+        "frozen": ("stopped reporting {ago} ago", "stopped reporting"),
+        "unavailable": (
+            "has been unavailable for {ago}",
+            "is unavailable",
+        ),
+        "unknown": ("has been unknown for {ago}", "is unknown"),
+        "signal": (
+            "signal has been railed for {ago}",
+            "signal is railed",
+        ),
     }
 
     @staticmethod
@@ -3383,8 +3418,10 @@ class DeviceSentinelCoordinator:
         elif worst == "battery":
             clause = self._battery_phrase(device_id, True)
         else:
-            wording = self._STATE_WORDING.get(worst, worst)
-            clause = f"{wording} {ago} ago" if ago else wording
+            with_age, without_age = self._STATE_TEMPLATE.get(
+                worst, ("{ago}", worst)
+            )
+            clause = with_age.format(ago=ago) if ago else without_age
         extra = len(ordered) - 1
         tail = (
             f", and {extra} more problem{'s' if extra != 1 else ''}"
