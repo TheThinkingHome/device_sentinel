@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.8.4 (2026-07-23)
+# File: reports.py, Version: 0.8.5 (2026-07-23)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -85,6 +85,12 @@ from .const import (
     TAINT_DEBOUNCE_SECONDS,
     TODO_DEVICE_ID,
     TODO_KINDS,
+    TODO_KIND_BATTERY,
+    TODO_KIND_FROZEN,
+    TODO_KIND_NOT_REPORTED,
+    TODO_KIND_SIGNAL,
+    TODO_KIND_UNAVAILABLE,
+    TODO_KIND_UNKNOWN,
     TODO_SORT_NAME,
     TODO_STATUS,
     TRIM_MIN_SAMPLES,
@@ -849,20 +855,18 @@ class ReportWritingMixin:
             return f"{base}, {cause}" if cause else base
         if event == INCIDENT_ACKNOWLEDGED:
             return "acknowledged"
-        if kind == "battery":
+        if kind == TODO_KIND_BATTERY:
             # Borrowed from the composer so the table and the prose
             # cannot disagree about the same event (#120): the level
             # belongs in both or neither.
             return self._battery_phrase(row[INC_DEVICE_ID], False)
         wording = {
-            "frozen": "stopped reporting",
-            "not_reported": "has never reported",
-            "unavailable": "went unavailable",
-            "unknown": "went unknown",
-            "signal": "signal railed",
+            TODO_KIND_FROZEN: "stopped reporting",
+            TODO_KIND_NOT_REPORTED: "has never reported",
+            TODO_KIND_UNAVAILABLE: "went unavailable",
+            TODO_KIND_UNKNOWN: "went unknown",
+            TODO_KIND_SIGNAL: "signal railed",
         }
-        if kind == "battery":
-            return "battery fell low"
         return wording.get(kind, kind)
 
     def _brief_now_rows(
@@ -890,12 +894,12 @@ class ReportWritingMixin:
             name = record.get(TODO_SORT_NAME) or device_id
             for kind, since in (record.get(TODO_KINDS) or {}).items():
                 problem = {
-                    "frozen": "stopped reporting",
-                    "not_reported": "never reported",
-                    "unavailable": "unavailable",
-                    "unknown": "unknown",
-                    "signal": "signal railed",
-                    "battery": self._brief_battery_text(device_id),
+                    TODO_KIND_FROZEN: "stopped reporting",
+                    TODO_KIND_NOT_REPORTED: "never reported",
+                    TODO_KIND_UNAVAILABLE: "unavailable",
+                    TODO_KIND_UNKNOWN: "unknown",
+                    TODO_KIND_SIGNAL: "signal railed",
+                    TODO_KIND_BATTERY: self._brief_battery_text(device_id),
                 }.get(kind, kind)
                 rows.append((name, problem, since or now, kind, device_id))
         rows.sort(key=lambda row: row[2])
@@ -1012,7 +1016,7 @@ class ReportWritingMixin:
                 # for the moment the device broke (#118).
                 when = (
                     f"discovered {self._brief_moment(since)}"
-                    if kind == "not_reported"
+                    if kind == TODO_KIND_NOT_REPORTED
                     else self._brief_moment(since)
                 )
                 lines.append(
