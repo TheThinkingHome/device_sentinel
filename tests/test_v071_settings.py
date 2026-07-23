@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v071_settings.py, Version: 0.7.1 (2026-07-22)
+# File: test_v071_settings.py, Version: 0.7.5 (2026-07-23)
 
 """0.7.1 tests: the reorganized settings and the brief wording.
 
@@ -40,6 +40,24 @@ from custom_components.device_sentinel.const import (
 )
 
 DOMAIN = "device_sentinel"
+
+
+def _brief_text(hass):
+    """Return the brief that was written, whatever its name.
+
+    Named for the day its window opened, which is not today's date
+    when the window began before the brief hour (0.7.5).
+    """
+    import glob
+
+    written = sorted(
+        glob.glob(
+            hass.config.path("device_sentinel", "daily_brief_*.md")
+        )
+    )
+    assert written, "no daily brief was written"
+    with open(written[0], encoding="utf-8") as handle:
+        return handle.read()
 
 
 async def _setup(hass, options=None):
@@ -164,12 +182,7 @@ async def test_brief_says_discovered_for_never_reported(
     coord._judge_all_devices()
     coord._sync_problem_list()
     await hass.async_add_executor_job(coord._write_reports, "test")
-    stamp = dt_util.now().strftime("%Y-%m-%d")
-    with open(
-        hass.config.path("device_sentinel", f"daily_brief_{stamp}.md"),
-        encoding="utf-8",
-    ) as handle:
-        text = handle.read()
+    text = _brief_text(hass)
     assert "discovered" in text
     assert "Silent From Birth" in text
 
@@ -214,10 +227,8 @@ async def test_counts_line_reads_naturally(hass: HomeAssistant):
     uid = coord.todo_items[0]["uid"]
     await coord.async_todo_update(uid=uid, status="completed")
     await hass.async_add_executor_job(coord._write_reports, "test")
-    stamp = dt_util.now().strftime("%Y-%m-%d")
-    with open(
-        hass.config.path("device_sentinel", f"daily_brief_{stamp}.md"),
-        encoding="utf-8",
-    ) as handle:
-        text = handle.read()
-    assert "2 devices need attention, one of them acknowledged." in text
+    text = _brief_text(hass)
+    # #123: the acknowledged device leaves the brief entirely, so the
+    # count is of what the reader still needs to act on.
+    assert "1 device needs attention." in text
+    assert "acknowledged" not in text
