@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_telemetry.py, Version: 0.1.0 (2026-07-17)
+# File: test_telemetry.py, Version: 0.8.0 (2026-07-23)
 
 """Step 2 telemetry recorder tests for Device Sentinel."""
 
@@ -94,7 +94,7 @@ async def test_classification_sets_service_devices_aside(
     assert own.id not in coord.data[DATA_DEVICES]
 
 
-async def test_grace_stamps_but_does_not_learn(hass: HomeAssistant, freezer):
+async def test_grace_now_learns_its_gaps(hass: HomeAssistant, freezer):
     """Events inside the startup grace never complete gaps."""
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
@@ -110,8 +110,13 @@ async def test_grace_stamps_but_does_not_learn(hass: HomeAssistant, freezer):
     hass.states.async_set(eid, "2")
     await hass.async_block_till_done()
 
+    # 0.8.0 (#125) reverses this. The nightly restart is a permanent
+    # feature of a home, not contamination, and discarding the gaps
+    # it completes left the quiet devices with baselines describing
+    # half a night. A device with no protocol clock has nothing but
+    # the moment we heard it, so that moment counts.
     assert rec[DEV_LAST_ACTIVITY] is not None
-    assert rec[DEV_TODAY_MAX] is None
+    assert rec[DEV_TODAY_MAX] == 60.0
     assert rec[DEV_EVENT_COUNT] == 2
 
 
@@ -170,8 +175,13 @@ async def test_taint_excludes_outage_gap(hass: HomeAssistant, freezer):
     assert rec[DEV_TODAY_MAX] == pytest.approx(90, abs=1)
 
 
-async def test_storm_excludes_republish(hass: HomeAssistant, freezer):
-    """A many-device burst on one entry is a storm; its stamps don't learn."""
+async def test_storm_is_detected_but_no_longer_excludes(
+    hass: HomeAssistant, freezer
+):
+    """A many-device burst on one entry is still a storm, and the
+    detector still matters: it names an intervention on the episode
+    record and exempts the duty cycle. What it no longer does is
+    discard the gaps it completes (#124, #125)."""
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     devices = [
@@ -197,12 +207,15 @@ async def test_storm_excludes_republish(hass: HomeAssistant, freezer):
     await hass.async_block_till_done()
 
     assert coord._storm_active  # a storm was declared
-    tainted_learning = [
+    learned = [
         coord.data[DATA_DEVICES][dev.id][DEV_TODAY_MAX]
         for dev, _ in devices[STORM_DEVICE_THRESHOLD - 1 :]
     ]
-    # Devices stamped at or after the declaration learned nothing.
-    assert all(v is None for v in tainted_learning)
+    # These devices publish no last-contact entity, so the moment we
+    # heard them is the only evidence there is and it counts (#125).
+    # A device that does publish one is protected by the timestamp
+    # itself rather than by this rule.
+    assert all(v is not None for v in learned)
 
     # Quiet releases the storm; the next organic gap learns again.
     freezer.tick(timedelta(seconds=30))
