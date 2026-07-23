@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v070_incidents_brief.py, Version: 0.7.5 (2026-07-23)
+# File: test_v070_incidents_brief.py, Version: 0.7.6 (2026-07-23)
 
 """0.7.0 tests: the incident log and the daily brief document.
 
@@ -41,6 +41,7 @@ from custom_components.device_sentinel.const import (
     INC_EVENT,
     INC_KIND,
     INC_NAME,
+    RECOVERY_CAUSE_UNOBSERVED,
 )
 
 DOMAIN = "device_sentinel"
@@ -172,7 +173,9 @@ async def test_resolution_borrows_its_cause(hass: HomeAssistant):
 
     resolved = _events(coord, INCIDENT_RESOLVED)
     assert resolved
-    assert resolved[-1][INC_CAUSE] == "on its own"
+    # 0.7.6: not "on its own". We saw no lever, which is not the same
+    # as there having been none.
+    assert resolved[-1][INC_CAUSE] == RECOVERY_CAUSE_UNOBSERVED
 
 
 async def test_battery_resolution_has_no_cause(hass: HomeAssistant):
