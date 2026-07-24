@@ -81,6 +81,3 @@ The full story: [From Blueprints to Integration: Why Device Sentinel Exists](htt
 ## License
 
 GPL-3.0-or-later. Copyright (C) 2026 James Lander, The Thinking Home.
-## License
-
-GPL-3.0-or-later. Copyright (C) 2026 James Lander, The Thinking Home.
