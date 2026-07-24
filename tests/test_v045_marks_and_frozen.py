@@ -62,7 +62,7 @@ async def test_repeated_floor_bolds_the_earliest_and_strikes_none_equal(
     ]
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
-        hass.config.path("device_sentinel/device_telemetry.md")
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
     ).read()
     row = next(
         line for line in text.splitlines() if "Marks45 Device" in line
@@ -83,7 +83,7 @@ async def test_below_floor_is_struck_but_equal_is_not(hass: HomeAssistant):
     ]
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
-        hass.config.path("device_sentinel/device_telemetry.md")
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
     ).read()
     row = next(
         line for line in text.splitlines() if "Marks45 Device" in line
