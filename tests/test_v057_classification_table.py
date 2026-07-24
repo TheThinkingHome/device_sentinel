@@ -46,7 +46,7 @@ async def _coordinator(hass, options=None):
 
 def _class_rows(hass):
     text = open(
-        hass.config.path("device_sentinel/classification.md")
+        hass.config.path("device_sentinel/diagnostics/classification.md")
     ).read()
     return [
         line
