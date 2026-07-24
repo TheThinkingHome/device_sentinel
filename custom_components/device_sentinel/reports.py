@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.8.10 (2026-07-24)
+# File: reports.py, Version: 0.9.0 (2026-07-24)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -201,7 +201,7 @@ class ReportWritingMixin:
         now = dt_util.utcnow().timestamp()
         open_count = sum(1 for row in episodes if row[EP_ENDED] is None)
         lines = [
-            f"# Device Sentinel v{self.version} silence episodes",
+            f"# Device Sentinel v{self.version} Silence Episodes",
             "",
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
@@ -546,7 +546,7 @@ class ReportWritingMixin:
             f"tell an outlier from the rhythm)."
         )
         lines = [
-            f"# Device Sentinel v{self.version} learned statistics",
+            f"# Device Sentinel v{self.version} Learned Statistics",
             "",
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
@@ -598,7 +598,7 @@ class ReportWritingMixin:
         ]
         lines.extend(self._reporting_lines())
         lines += [
-            "## Learned statistics",
+            "## Learned Statistics",
             "",
             f"| DEVICE (INTEGRATION) | STATUS | GAPS (K={TRIM_TOP_K}) | "
             f"CLOCK | EVENTS | SIGNAL ({self._signal_slider_label()}) | "
@@ -740,7 +740,7 @@ class ReportWritingMixin:
 
         total = len(self._watched) + len(self._set_aside)
         lines = [
-            f"# Device Sentinel v{self.version} classification",
+            f"# Device Sentinel v{self.version} Classification",
             "",
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
@@ -770,7 +770,7 @@ class ReportWritingMixin:
         if self._excluded_entities:
             lines.append("")
             lines.append(
-                f"## Excluded entities ({len(self._excluded_entities)})"
+                f"## Excluded Entities ({len(self._excluded_entities)})"
             )
             lines.append("")
             lines.append(
@@ -940,16 +940,22 @@ class ReportWritingMixin:
         """Return the brief's opening prose.
 
         The same composer that will speak to a phone, read as
-        paragraphs (#122): history first in the order it happened,
-        then what is standing right now. The tables below stay for
+        paragraphs (#122): history first, then what is standing
+        right now. History is told as episodes rather than events
+        (#134), so a device stopping and the same device recovering
+        are one sentence, ordered by when each episode began. The tables below stay for
         scanning and for exact times; this is for reading. Every
         sentence comes from the composer, so the prose, the tables,
         and a future notification cannot describe one event three
         ways.
         """
         told: list[str] = []
-        for row in sorted(incidents, key=lambda item: item[INC_WHEN]):
-            told.append(self._compose_event(row))
+        for opened, resolved in self._pair_incidents(incidents):
+            told.append(
+                self._compose_episode(opened, resolved)
+                if resolved is not None
+                else self._compose_event(opened)
+            )
         standing: list[str] = []
         for _name, _problem, _since, _kind, device_id in now_rows:
             line = self._compose_device_line(device_id)
@@ -957,7 +963,7 @@ class ReportWritingMixin:
                 continue
             if line not in standing:
                 standing.append(line)
-        lines = ["## In short", ""]
+        lines = ["## In Short", ""]
         since_text = self._brief_moment(window_start)
         if told:
             lines += [f"Since {since_text}: " + " ".join(told), ""]
@@ -976,8 +982,14 @@ class ReportWritingMixin:
         window_start: float,
         window_end: float,
         complete: bool,
-    ) -> None:
-        """Write the daily brief for a window.
+    ) -> str | None:
+        """Write the daily brief for a window, and return it when done.
+
+        The text comes back only for a completed brief, which is the
+        one the email carries (#135). Returning it rather than
+        re-reading the file guarantees the document sent is the
+        document written, byte for byte, with no second read that
+        could catch a half-written file.
 
         The one report written for a person rather than a maintainer
         (#116): what is wrong now, what happened in the last 24
@@ -1011,7 +1023,7 @@ class ReportWritingMixin:
             f"{self._brief_moment(window_end)} (in progress)."
         )
         lines = [
-            "# Device Sentinel daily brief",
+            "# Device Sentinel Daily Brief",
             "",
             scope,
             "",
@@ -1050,7 +1062,7 @@ class ReportWritingMixin:
                     f"| {self._human_span(now - since)} |"
                 )
             lines.append("")
-        lines += ["## Last 24 hours", ""]
+        lines += ["## Last 24 Hours", ""]
         if not incidents:
             lines += ["Nothing happened.", ""]
         else:
@@ -1080,9 +1092,11 @@ class ReportWritingMixin:
         path = os.path.join(
             report_directory, f"{REPORT_BRIEF_PREFIX}{stamp}.md"
         )
+        text = "\n".join(lines)
         with open(path, "w", encoding="utf-8") as handle:
-            handle.write("\n".join(lines))
+            handle.write(text)
         self._trim_briefs(report_directory)
+        return text if complete else None
 
     def _trim_briefs(self, report_directory: str) -> None:
         """Keep the most recent briefs, drop the rest."""
@@ -1099,8 +1113,8 @@ class ReportWritingMixin:
             with contextlib.suppress(OSError):
                 os.remove(os.path.join(report_directory, name))
 
-    def _write_reports(self, trigger: str = "manual") -> None:
-        """Write both diagnostic files to /config/device_sentinel/.
+    def _write_reports(self, trigger: str = "manual") -> str | None:
+        """Write the report files, and return a closed brief if one.
 
         They live under /config because custom_components is code and
         is overwritten on every update (a ruled decision). Written at
@@ -1136,7 +1150,7 @@ class ReportWritingMixin:
         else:
             window_end = dt_util.utcnow().timestamp()
             window_start = self._brief_window_start(window_end)
-        self._write_brief(
+        return self._write_brief(
             report_directory,
             trigger,
             window_start,
