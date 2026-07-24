@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.8.9 (2026-07-24)
+# File: diagnostics.py, Version: 0.9.1 (2026-07-24)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -54,7 +54,10 @@ from .const import (
     STORM_EXEMPT_PER_HOUR,
     STORM_RELEASE_SECONDS,
     STORM_WINDOW_SECONDS,
-    TAINT_DEBOUNCE_SECONDS,
+    DEFAULT_TAINT_FLOOR_MINUTES,
+    DEFAULT_TAINT_SHARE_PCT,
+    CONF_TAINT_FLOOR,
+    CONF_TAINT_SHARE,
     TRIM_MIN_SAMPLES,
     TRIM_TOP_K,
 )
@@ -149,7 +152,12 @@ async def async_get_config_entry_diagnostics(
             "storm_window_seconds": STORM_WINDOW_SECONDS,
             "storm_release_seconds": STORM_RELEASE_SECONDS,
             "storm_exempt_per_hour": STORM_EXEMPT_PER_HOUR,
-            "taint_debounce_seconds": TAINT_DEBOUNCE_SECONDS,
+            "taint_floor_minutes": entry.options.get(
+                CONF_TAINT_FLOOR, DEFAULT_TAINT_FLOOR_MINUTES
+            ),
+            "taint_share_pct": entry.options.get(
+                CONF_TAINT_SHARE, DEFAULT_TAINT_SHARE_PCT
+            ),
             "daily_max_keep": DAILY_MAX_KEEP,
             "learning_min_days": LEARNING_MIN_DAYS,
             "trim_top_k": TRIM_TOP_K,
