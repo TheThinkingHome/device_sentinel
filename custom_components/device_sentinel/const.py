@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.8.9 (2026-07-24)
+# File: const.py, Version: 0.9.0 (2026-07-24)
 
 """Constants for the Device Sentinel integration."""
 
@@ -452,6 +452,17 @@ CONF_QUIET_END = "quiet_hours_end"
 # Sentinel Notify's reminder, but renaming a stored key costs a
 # migration for a cosmetic gain, so only the visible labels changed.
 CONF_BRIEF_TARGETS = "brief_document_targets"
+# Where a target name is parsed rather than merely stored. Both moved
+# here from config_flow at 0.9.0: the sending engine has to read a
+# stored target and turn it back into a service call, and a module
+# that composes messages should not import the configuration screens
+# to learn how a target is spelled.
+NOTIFY_DOMAIN = "notify"
+PERSISTENT_TARGET = "persistent_notification"
+PERSISTENT_CREATE = "create"
+# The email's subject, and the brief's own title, kept as one string
+# so the document and the message it arrives in cannot disagree.
+BRIEF_TITLE = "Device Sentinel Daily Brief"
 CONF_REMINDER_MODE = "daily_reminder_mode"
 CONF_REMINDER_TIME = "daily_reminder_time"
 
