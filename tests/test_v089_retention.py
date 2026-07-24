@@ -201,3 +201,21 @@ async def test_the_slider_reaches_the_advanced_screen(
     assert entry.options[CONF_RETENTION_DAYS] == 180
     assert entry.runtime_data.retention_days == 180
     assert RETENTION_DAYS_STEP == 30
+
+
+async def test_the_report_states_the_retention_in_force(
+    hass: HomeAssistant,
+):
+    """The tunables line said "keep 14 days" after retention became a
+    setting, telling a reader it kept a fortnight while keeping three
+    months (0.8.10)."""
+    _register(hass, "t1", "Tunable Sensor")
+    entry = await _entry(hass, {CONF_RETENTION_DAYS: 180})
+    coord = entry.runtime_data
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    with open(
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md"),
+        encoding="utf-8",
+    ) as handle:
+        text = handle.read()
+    assert f"judge on {DAILY_MAX_KEEP} days, keep 180 days." in text
