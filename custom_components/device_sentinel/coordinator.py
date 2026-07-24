@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.8.4 (2026-07-23)
+# File: coordinator.py, Version: 0.8.6 (2026-07-24)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -73,6 +73,7 @@ from .const import (
     DATA_TODO_ITEMS,
     CONF_LOW_THRESHOLD,
     DAILY_MAX_KEEP,
+    LONG_SERIES_KEEP,
     DEFAULT_LOW_THRESHOLD,
     DATA_STATS_EPOCH,
     BRIEF_TRIGGER,
@@ -933,7 +934,7 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
         if level is None:
             return
         record.setdefault(DEV_BATTERY_DAILY, []).append(level)
-        del record[DEV_BATTERY_DAILY][:-DAILY_MAX_KEEP]
+        del record[DEV_BATTERY_DAILY][:-LONG_SERIES_KEEP]
 
     def _roll_dwell(self, record: dict[str, Any], now: float) -> None:
         """Close the day's dwell into the rolling daily percentages.
@@ -961,7 +962,7 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
             record.setdefault(DEV_SIGNAL_DWELL_DAILY, []).append(
                 round(pct, 2)
             )
-            del record[DEV_SIGNAL_DWELL_DAILY][:-DAILY_MAX_KEEP]
+            del record[DEV_SIGNAL_DWELL_DAILY][:-LONG_SERIES_KEEP]
         record[DEV_SIGNAL_BELOW_TODAY] = 0.0
 
     def _feed_signal(
@@ -1052,10 +1053,21 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
     def _signal_history(record: dict[str, Any]) -> list[float]:
         """Return the device's daily signal lows with rail values
         removed. Rails are fill values, not readings, so they never
-        feed the floor and never count toward the trim."""
+        feed the floor and never count toward the trim.
+
+        Only the most recent DAILY_MAX_KEEP days are read, however
+        many are stored. The series is kept for ninety days so a
+        season of it can be studied, but the floor is the third
+        lowest of what it sees, and the third lowest of ninety days
+        is lower than the third lowest of fourteen, so reading the
+        whole series would quietly slacken every floor on the fleet.
+        Storage and judgment are deliberately separated here (#126).
+        """
         return [
             value
-            for value in (record.get(DEV_SIGNAL_DAILY_MIN) or [])
+            for value in (record.get(DEV_SIGNAL_DAILY_MIN) or [])[
+                -DAILY_MAX_KEEP:
+            ]
             if value not in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
         ]
 
@@ -1286,7 +1298,7 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
                 record[DEV_SIGNAL_DAILY_MIN].append(
                     record[DEV_SIGNAL_TODAY_MIN]
                 )
-                del record[DEV_SIGNAL_DAILY_MIN][:-DAILY_MAX_KEEP]
+                del record[DEV_SIGNAL_DAILY_MIN][:-LONG_SERIES_KEEP]
                 record[DEV_SIGNAL_TODAY_MIN] = None
             self._roll_dwell(record, now)
             self._roll_battery(record)
