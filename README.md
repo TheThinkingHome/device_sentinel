@@ -40,7 +40,7 @@ The learning defends itself. One anomalous day is set aside and moves nothing; a
 - Records the whole life of every problem: when it opened, when it cleared, how long it lasted, what revived it where that is knowable, and when you acknowledged it. This is the memory a blueprint cannot have, and it is what lets a report say a device broke at 1:02 AM and came back two hours later rather than only that something is wrong now.
 - Writes a daily brief in plain language, one file per day: two paragraphs saying what happened and what is still wrong, then tables with the exact times. It is written whether or not anything is configured to send it, and it is deliberately free of the integration's own machinery, no rhythms, no windows, no thresholds.
 - Writes three diagnostic files nightly for whoever maintains the system: the learned-rhythms table (alphabetical, with each device's integration and exclusion status), a one-row-per-device classification table showing whether each device is watched or set aside and why any is excluded from judgment, and a silence-episode record. That last one answers a question nothing else can: when a device goes quiet far longer than usual and then speaks again, did it choose to speak, or did a restart or a reconnect make it speak?
-- An Advanced screen for the settings most people never need: how long a problem must persist before it is sent, how quiet a device must be before its silence is recorded for study, and how often routine activity is written to disk, which matters on an SD card.
+- An Advanced screen for the settings most people never need: how long a problem must persist before it is sent, how quiet a device must be before its silence is recorded for study, how often routine activity is written to disk, and how many days of history to keep, from a month to a year. That last one is about memory rather than judgment: detection always reads the most recent two weeks, so a Raspberry Pi keeping thirty days finds exactly what a fast machine keeping a year finds.
 
 ## What is coming
 
@@ -78,6 +78,9 @@ Or by hand: HACS, the three-dot menu, Custom repositories, paste `https://github
 
 The full story: [From Blueprints to Integration: Why Device Sentinel Exists](https://xeazy.com/reliable-home-assistant-dead-sensor-detection/) on xeazy.com. Blueprints live in the [Automations](https://github.com/TheThinkingHome/Automations) repository.
 
+## License
+
+GPL-3.0-or-later. Copyright (C) 2026 James Lander, The Thinking Home.
 ## License
 
 GPL-3.0-or-later. Copyright (C) 2026 James Lander, The Thinking Home.
