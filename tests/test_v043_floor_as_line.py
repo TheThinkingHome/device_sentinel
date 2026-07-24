@@ -195,7 +195,7 @@ async def test_excluded_device_still_records_but_is_not_reported(
     # The report marks it excl in the dwell and frozen columns.
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
-        hass.config.path("device_sentinel/device_telemetry.md")
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
     ).read()
     row = next(
         line for line in text.splitlines() if "LR Router Plug" in line
