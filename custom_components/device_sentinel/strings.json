@@ -137,12 +137,14 @@
         "data": {
           "settle_share_pct": "Notification settle delay",
           "episode_share_pct": "Episode recording threshold",
-          "storage_write_minutes": "Storage write interval"
+          "storage_write_minutes": "Storage write interval",
+          "history_days": "How much history to keep"
         },
         "data_description": {
           "settle_share_pct": "How much of a device's patience must pass before its problem is sent. Higher means fewer messages about brief hiccups.",
           "episode_share_pct": "How quiet a device must be before its silence is recorded for later study. Lower records more, including silences that recover on their own.",
-          "storage_write_minutes": "How long routine activity is held before saving, in minutes. Longer is kinder to SD cards; shorter loses less in a power cut."
+          "storage_write_minutes": "How long routine activity is held before saving, in minutes. Longer is kinder to SD cards; shorter loses less in a power cut.",
+          "history_days": "How many days of battery levels, signal readings and reporting gaps to keep, for studying long trends. Detection always uses the most recent two weeks whatever this is set to. More history means a larger stored file, which matters on an SD card. Reducing it takes effect at the next midnight rather than at once."
         }
       }
     }
