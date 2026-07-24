@@ -49,8 +49,8 @@ async def test_reports_written_at_setup_and_midnight(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    tele = hass.config.path("device_sentinel/device_telemetry.md")
-    clas = hass.config.path("device_sentinel/classification.md")
+    tele = hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
+    clas = hass.config.path("device_sentinel/diagnostics/classification.md")
 
     # Written at setup.
     assert os.path.isfile(tele)
