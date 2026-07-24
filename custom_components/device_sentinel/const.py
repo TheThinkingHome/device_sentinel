@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.8.5 (2026-07-23)
+# File: const.py, Version: 0.8.6 (2026-07-24)
 
 """Constants for the Device Sentinel integration."""
 
@@ -101,6 +101,16 @@ SIGNAL_NAME_TERMS = ("linkquality", "lqi", "rssi")
 # more than the rolling window will need, so the window-length
 # tunable can be settled from soak data without re-collecting.
 DAILY_MAX_KEEP = 14
+# The long series (0.8.6). Fourteen days is right for a rhythm,
+# because a device's rhythm changes and stale days should not
+# dominate. A battery is the opposite: the slow trend is the whole
+# signal, and on a real fleet nothing measurably discharges in a
+# fortnight, so cutting there throws away the only thing worth
+# measuring. Signal rides along at the same length so its dwell and
+# floor history can be studied over a season, but the floor itself
+# still reads only the most recent DAILY_MAX_KEEP days, so detection
+# is unchanged by the extra history (#126).
+LONG_SERIES_KEEP = 90
 
 # Provisional arming floor: a device with at least this many daily
 # maxima counts as rhythm-established for the learning-progress
@@ -216,6 +226,12 @@ SENTINEL_TYPE_CLOCK_SOURCE = "clock_source"
 # can carry emphasis (set-aside outliers struck through, the window
 # basis bold).
 REPORT_DIR = "device_sentinel"
+# The three maintainer files live in a subfolder (0.8.6), so the
+# folder a person opens holds the daily briefs and nothing else.
+# Files written before this sit abandoned in the parent and can be
+# deleted by hand; migrating them would be code that exists once and
+# then rots.
+REPORT_DIAGNOSTIC_DIR = "diagnostics"
 REPORT_TELEMETRY = "device_telemetry.md"
 REPORT_CLASSIFICATION = "classification.md"
 REPORT_EPISODES = "silence_episodes.md"
