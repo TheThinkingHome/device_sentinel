@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.8.8 (2026-07-24)
+# File: coordinator.py, Version: 0.8.9 (2026-07-24)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -75,7 +75,10 @@ from .const import (
     DATA_TODO_ITEMS,
     CONF_LOW_THRESHOLD,
     DAILY_MAX_KEEP,
-    LONG_SERIES_KEEP,
+    CONF_RETENTION_DAYS,
+    DEFAULT_RETENTION_DAYS,
+    RETENTION_DAYS_MAX,
+    RETENTION_DAYS_MIN,
     DEFAULT_LOW_THRESHOLD,
     DATA_STATS_EPOCH,
     BRIEF_TRIGGER,
@@ -960,7 +963,7 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
         if level is None:
             return
         record.setdefault(DEV_BATTERY_DAILY, []).append(level)
-        del record[DEV_BATTERY_DAILY][:-LONG_SERIES_KEEP]
+        del record[DEV_BATTERY_DAILY][:-self.retention_days]
 
     def _roll_dwell(self, record: dict[str, Any], now: float) -> None:
         """Close the day's dwell into the rolling daily percentages.
@@ -988,7 +991,7 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
             record.setdefault(DEV_SIGNAL_DWELL_DAILY, []).append(
                 round(pct, 2)
             )
-            del record[DEV_SIGNAL_DWELL_DAILY][:-LONG_SERIES_KEEP]
+            del record[DEV_SIGNAL_DWELL_DAILY][:-self.retention_days]
         record[DEV_SIGNAL_BELOW_TODAY] = 0.0
 
     def _feed_signal(
@@ -1317,14 +1320,14 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
         for record in self.data[DATA_DEVICES].values():
             if record[DEV_TODAY_MAX] is not None:
                 record[DEV_DAILY_MAX].append(record[DEV_TODAY_MAX])
-                del record[DEV_DAILY_MAX][:-DAILY_MAX_KEEP]
+                del record[DEV_DAILY_MAX][:-self.retention_days]
                 record[DEV_TODAY_MAX] = None
                 pushed += 1
             if record.get(DEV_SIGNAL_TODAY_MIN) is not None:
                 record[DEV_SIGNAL_DAILY_MIN].append(
                     record[DEV_SIGNAL_TODAY_MIN]
                 )
-                del record[DEV_SIGNAL_DAILY_MIN][:-LONG_SERIES_KEEP]
+                del record[DEV_SIGNAL_DAILY_MIN][:-self.retention_days]
                 record[DEV_SIGNAL_TODAY_MIN] = None
             self._roll_dwell(record, now)
             self._roll_battery(record)
@@ -1355,7 +1358,17 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
         the survivors and correctly raises the rhythm. Below
         TRIM_MIN_SAMPLES days nothing is trimmed: with so few samples
         an apparent outlier cannot be told from the true rhythm.
+
+        Only the most recent DAILY_MAX_KEEP days are read, however
+        many are stored (0.8.9). The trimmed maximum of ninety days
+        is higher than of fourteen, because more days mean more
+        chances at a long gap, so reading the whole series would
+        quietly widen every freeze window on the fleet. Sliced here,
+        in the one place the rhythm is computed, so no caller can
+        forget; the two callers that use the returned indices to
+        style a cell slice their own copy to match.
         """
+        daily_maximum_gaps = daily_maximum_gaps[-DAILY_MAX_KEEP:]
         if not daily_maximum_gaps:
             return None, set()
         if len(daily_maximum_gaps) < TRIM_MIN_SAMPLES:
@@ -2438,6 +2451,27 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
             self._notify()
         # The list is settled, so a device line now describes reality.
         self._flush_outbox_lines()
+
+    @property
+    def retention_days(self) -> int:
+        """Return how many days of the long series to keep.
+
+        The user's, and about memory rather than judgment: every
+        verdict is computed from the most recent DAILY_MAX_KEEP days
+        whatever this says (#131). The floor of thirty is what makes
+        that safe, since no setting can starve a fourteen-day window.
+        """
+        return max(
+            RETENTION_DAYS_MIN,
+            min(
+                RETENTION_DAYS_MAX,
+                int(
+                    self.entry.options.get(
+                        CONF_RETENTION_DAYS, DEFAULT_RETENTION_DAYS
+                    )
+                ),
+            ),
+        )
 
     @property
     def low_threshold(self) -> float:
