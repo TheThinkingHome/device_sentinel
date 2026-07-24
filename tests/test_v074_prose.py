@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v074_prose.py, Version: 0.7.5 (2026-07-23)
+# File: test_v074_prose.py, Version: 0.9.0 (2026-07-24)
 
 """0.7.4 tests: the brief opens in prose.
 
@@ -95,7 +95,7 @@ async def test_brief_opens_with_prose(hass: HomeAssistant):
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = _brief_text(hass)
 
-    assert text.index("## In short") < text.index("## Now")
+    assert text.index("## In Short") < text.index("## Now")
     assert "Prose Sensor stopped reporting at " in text   # history
     assert "Prose Sensor stopped reporting 1.0h ago." in text  # standing
     assert "Right now:" in text
@@ -127,7 +127,7 @@ async def test_history_reads_oldest_first(hass: HomeAssistant):
 
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = _brief_text(hass)
-    prose = text[text.index("## In short"): text.index("## Now")]
+    prose = text[text.index("## In Short"): text.index("## Now")]
     assert prose.index("Early Sensor") < prose.index("Later Sensor")
 
 
