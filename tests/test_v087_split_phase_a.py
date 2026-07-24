@@ -177,3 +177,42 @@ async def test_the_backup_copies_and_never_overwrites(
         assert json.load(handle)["data"]["devices"] == {"d": {}}
     os.remove(source)
     os.remove(backup)
+
+async def test_the_shadow_exists_from_the_first_moment(
+    hass: HomeAssistant, hass_storage
+):
+    """0.8.8: setup writes storage directly rather than through
+    _save_now, so without an explicit write here the clocks file did
+    not appear until the first coalesced save up to a window later,
+    and a system restarting inside that window never produced one.
+
+    It mirrors whatever storage held at that instant, so on a fresh
+    install it is legitimately empty and on an existing one it
+    carries every device from the first moment.
+    """
+    _register(hass, "s1", "Immediate Sensor")
+    entry = await _entry(hass)
+    assert STORAGE_CLOCKS_KEY in hass_storage
+    assert "clocks" in hass_storage[STORAGE_CLOCKS_KEY]["data"]
+
+    # Once devices are known, the next save carries them.
+    await entry.runtime_data._save_now()
+    assert hass_storage[STORAGE_CLOCKS_KEY]["data"]["clocks"]
+
+
+async def test_the_split_state_reaches_diagnostics(
+    hass: HomeAssistant,
+):
+    """It was confirmable only from a terminal, which is no way to
+    verify a release (0.8.8)."""
+    from custom_components.device_sentinel.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
+
+    _register(hass, "d1", "Diag Sensor")
+    entry = await _entry(hass)
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    split = diag["split"]
+    assert split["pre_split_backup_taken"] is True
+    assert set(split["clock_fields"]) == set(CLOCK_FIELDS)
+    assert split["clock_devices"] >= 1
