@@ -132,7 +132,7 @@ async def test_classification_shows_excluded(hass: HomeAssistant):
     coord = entry.runtime_data
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
-        hass.config.path("device_sentinel/classification.md")
+        hass.config.path("device_sentinel/diagnostics/classification.md")
     ).read()
     # One combined table: the excluded device carries a Watched
     # check and names why in the EXCLUDED column.
