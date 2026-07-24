@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.8.7 (2026-07-24)
+# File: coordinator.py, Version: 0.8.8 (2026-07-24)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -424,6 +424,13 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
 
         self.data = loaded
         await self._store.async_save(self.data)
+        # The shadow is written here too (0.8.8), not only on later
+        # saves. Setup writes storage directly rather than through
+        # _save_now, so without this the clocks file did not exist
+        # until the first coalesced write up to a window later, and a
+        # system restarting inside that window would never produce
+        # one at all.
+        await self._clock_store.async_save(self._clocks_to_save())
         self.storage_healthy = True
 
         self._grace_until = (
