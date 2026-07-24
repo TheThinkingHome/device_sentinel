@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v086_long_series.py, Version: 0.8.6 (2026-07-24)
+# File: test_v086_long_series.py, Version: 0.8.9 (2026-07-24)
 
 """0.8.6 tests: ninety days kept, a fortnight judged.
 
@@ -27,7 +27,7 @@ from custom_components.device_sentinel.const import (
     DAILY_MAX_KEEP,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_TODAY_MIN,
-    LONG_SERIES_KEEP,
+    DEFAULT_RETENTION_DAYS,
     REPORT_DIAGNOSTIC_DIR,
 )
 
@@ -92,7 +92,7 @@ async def test_the_signal_series_keeps_ninety_days(
     # The trim happens when a day is appended, so roll one.
     record[DEV_SIGNAL_TODAY_MIN] = 42.0
     await coord._on_midnight(None)
-    assert len(record[DEV_SIGNAL_DAILY_MIN]) == LONG_SERIES_KEEP
+    assert len(record[DEV_SIGNAL_DAILY_MIN]) == DEFAULT_RETENTION_DAYS
     assert record[DEV_SIGNAL_DAILY_MIN][-1] == 42.0
 
 
@@ -103,7 +103,7 @@ async def test_the_columns_show_the_same_fortnight_as_before(
     device = _register(hass, "c1", "Column Sensor")
     coord = await _coordinator(hass)
     record = coord.data["devices"][device.id]
-    record[DEV_SIGNAL_DAILY_MIN] = [50.0 + n for n in range(LONG_SERIES_KEEP)]
+    record[DEV_SIGNAL_DAILY_MIN] = [50.0 + n for n in range(DEFAULT_RETENTION_DAYS)]
     cell = coord._format_signal_lows_cell(record)
     assert len(cell.split()) == DAILY_MAX_KEEP
 
