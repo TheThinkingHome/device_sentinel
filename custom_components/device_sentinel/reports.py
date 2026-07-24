@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.9.0 (2026-07-24)
+# File: reports.py, Version: 0.9.1 (2026-07-24)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -54,6 +54,7 @@ from .const import (
     EP_ENDED,
     EP_LAG,
     EP_LEARNED,
+    EP_TAINT_SECONDS,
     EP_NAME,
     EP_SINCE,
     EP_WINDOW,
@@ -83,7 +84,10 @@ from .const import (
     STORM_DEVICE_THRESHOLD,
     STORM_EXEMPT_PER_HOUR,
     STORM_WINDOW_SECONDS,
-    TAINT_DEBOUNCE_SECONDS,
+    CONF_TAINT_FLOOR,
+    CONF_TAINT_SHARE,
+    DEFAULT_TAINT_FLOOR_MINUTES,
+    DEFAULT_TAINT_SHARE_PCT,
     TODO_DEVICE_ID,
     TODO_KINDS,
     TODO_KIND_BATTERY,
@@ -215,7 +219,7 @@ class ReportWritingMixin:
             "device took to speak: seconds means the intervention "
             "revived it, hours means it was never stuck. LEARNED says "
             "whether the completed gap reached the statistics, and "
-            "why not when it did not. Kept "
+            "why not when it did not. UNAVAIL is how long the device read unavailable when a taint excluded the gap, recorded so the debounce can be tuned from real spread rather than a guess. Kept "
             f"{EPISODE_KEEP_DAYS} days; {len(episodes)} episode(s), "
             f"{open_count} still open.",
             "",
@@ -229,8 +233,8 @@ class ReportWritingMixin:
         else:
             lines += [
                 "| SILENT SINCE | DEVICE | BASIS | WINDOW | SILENCE | "
-                "ENDED | AT | LAG | LEARNED |",
-                "|---|---|---|---|---|---|---|---|---|",
+                "ENDED | AT | LAG | LEARNED | UNAVAIL |",
+                "|---|---|---|---|---|---|---|---|---|---|",
             ]
             for row in episodes:
                 end_epoch = row[EP_AT]
@@ -248,7 +252,8 @@ class ReportWritingMixin:
                     f"| {row[EP_ENDED] or 'open'} "
                     f"| {self._episode_stamp(end_epoch)} "
                     f"| {self._episode_duration(row[EP_LAG])} "
-                    f"| {row[EP_LEARNED] or ''} |"
+                    f"| {row[EP_LEARNED] or ''} "
+                    f"| {self._episode_duration(row.get(EP_TAINT_SECONDS))} |"
                 )
             lines.append("")
         path = os.path.join(report_directory, REPORT_EPISODES)
@@ -591,7 +596,9 @@ class ReportWritingMixin:
             f"{STORM_DEVICE_THRESHOLD} devices/"
             f"{STORM_WINDOW_SECONDS:g} s (exempt at "
             f"{STORM_EXEMPT_PER_HOUR}/h), taint debounce "
-            f"{TAINT_DEBOUNCE_SECONDS} s, arming floor "
+            f"{self.entry.options.get(CONF_TAINT_FLOOR, DEFAULT_TAINT_FLOOR_MINUTES)}"
+            f" min + {self.entry.options.get(CONF_TAINT_SHARE, DEFAULT_TAINT_SHARE_PCT)}"
+            f"% of window, arming floor "
             f"{LEARNING_MIN_DAYS} days, judge on {DAILY_MAX_KEEP} "
             f"days, keep {self.retention_days} days.",
             "",
