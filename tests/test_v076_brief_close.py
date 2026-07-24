@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v076_brief_close.py, Version: 0.7.6 (2026-07-23)
+# File: test_v076_brief_close.py, Version: 0.8.10 (2026-07-24)
 
 """0.7.6 tests: finishing the day, and not overclaiming a recovery.
 
@@ -77,8 +77,7 @@ async def test_a_scheduled_write_completes_the_brief(
         dt_util.utc_from_timestamp(start)
     ).strftime("daily_brief_%Y-%m-%d.md")
     text = _text(hass.config.path("device_sentinel", closed))
-    assert "(incomplete)" not in text
-    assert "In progress" not in text
+    assert "(in progress)" not in text
     assert "Covering the 24 hours since" in text
 
 
@@ -86,7 +85,10 @@ async def test_a_manual_write_stays_in_progress(hass: HomeAssistant):
     coord = await _coordinator(hass)
     await hass.async_add_executor_job(coord._write_reports, "manual")
     text = _text(_briefs(hass)[0])
-    assert "(incomplete)" in text
+    # One marker, not two: the line used to open "In progress" and
+    # close "(incomplete)", saying the same thing twice (0.8.10).
+    assert "(in progress)" in text
+    assert "In progress" not in text
 
 
 async def test_the_closed_window_is_the_one_that_just_ended(
