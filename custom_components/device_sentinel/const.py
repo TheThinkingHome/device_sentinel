@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.8.7 (2026-07-24)
+# File: const.py, Version: 0.8.9 (2026-07-24)
 
 """Constants for the Device Sentinel integration."""
 
@@ -120,16 +120,28 @@ SIGNAL_NAME_TERMS = ("linkquality", "lqi", "rssi")
 # more than the rolling window will need, so the window-length
 # tunable can be settled from soak data without re-collecting.
 DAILY_MAX_KEEP = 14
-# The long series (0.8.6). Fourteen days is right for a rhythm,
-# because a device's rhythm changes and stale days should not
-# dominate. A battery is the opposite: the slow trend is the whole
-# signal, and on a real fleet nothing measurably discharges in a
-# fortnight, so cutting there throws away the only thing worth
-# measuring. Signal rides along at the same length so its dwell and
-# floor history can be studied over a season, but the floor itself
-# still reads only the most recent DAILY_MAX_KEEP days, so detection
-# is unchanged by the extra history (#126).
-LONG_SERIES_KEEP = 90
+# DAILY_MAX_KEEP above is the judgment window, and it governs every
+# verdict: the freeze rhythm and the signal floor are both computed
+# from the most recent fourteen days however many are stored. It is
+# not a user setting, because a threshold that moved with a storage
+# preference would mean two systems detecting differently for no
+# reason anyone chose (#131).
+#
+# How much is kept is a separate question and is the user's (0.8.9).
+# Long series exist because a fortnight is far too short to see what
+# they measure: nothing measurably discharges in two weeks, a signal
+# floor wants a season, and three months of gap history is what will
+# eventually let the fourteen-day window itself be questioned rather
+# than assumed. The floor of thirty days is what makes the setting
+# safe to expose, since no choice can starve a fourteen-day window.
+CONF_RETENTION_DAYS = "history_days"
+DEFAULT_RETENTION_DAYS = 90
+RETENTION_DAYS_MIN = 30
+RETENTION_DAYS_MAX = 360
+RETENTION_DAYS_STEP = 30
+# What the diagnostics download emits per series, so an issue report
+# stays a readable size at any retention.
+DIAGNOSTIC_SERIES_CAP = 30
 
 # Provisional arming floor: a device with at least this many daily
 # maxima counts as rhythm-established for the learning-progress
