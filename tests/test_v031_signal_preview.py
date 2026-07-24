@@ -58,7 +58,7 @@ async def test_line_in_report(hass: HomeAssistant):
     ]
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
-        hass.config.path("device_sentinel/device_telemetry.md")
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
     ).read()
     row = next(
         line
@@ -74,7 +74,7 @@ async def test_line_in_report(hass: HomeAssistant):
     coord.data["devices"][device.id][DEV_SIGNAL_DAILY_MIN].append(40.0)
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
-        hass.config.path("device_sentinel/device_telemetry.md")
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
     ).read()
     row = next(
         line
