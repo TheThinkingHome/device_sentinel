@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v044_report_marks.py, Version: 0.5.4 (2026-07-21)
+# File: test_v044_report_marks.py, Version: 0.8.6 (2026-07-24)
 
 """0.4.4 tests: the marked report columns and the three buttons.
 
@@ -22,6 +22,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.device_sentinel.const import (
     CONF_SIGNAL_SENSITIVITY,
     DEV_BATTERY_DAILY,
+    DEV_BATTERY_VALUE,
     DEV_SIGNAL_DAILY_MIN,
 )
 
@@ -53,7 +54,7 @@ async def _coordinator(hass, options=None):
 
 def _row(hass, name="Marks Device"):
     text = open(
-        hass.config.path("device_sentinel/device_telemetry.md")
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
     ).read()
     return next(
         line for line in text.splitlines() if name in line
@@ -74,19 +75,55 @@ async def test_signal_lows_shows_all_three_marks(hass: HomeAssistant):
     assert "**87** 91 89 92 ~~40~~ *255* 90 88" in row
 
 
-async def test_battery_column_bolds_at_or_below_threshold(
+async def test_battery_column_summarises_rather_than_listing(
     hass: HomeAssistant,
 ):
-    """The battery series, newest first, with any level at or below
-    the low threshold bold. Default threshold is 20, so 18 and 15 are
-    bold and 22 is not."""
+    """Ninety levels will not fit in a cell, so the column carries the
+    level and the changes the history supports (0.8.6). Five days is
+    short of a week, so neither change appears yet, and the level is
+    bold because it is at or below the threshold."""
     coord, device_id = await _coordinator(hass)
-    coord.data["devices"][device_id][DEV_BATTERY_DAILY] = [
-        95.0, 60.0, 22.0, 18.0, 15.0,
-    ]
+    record = coord.data["devices"][device_id]
+    record[DEV_BATTERY_DAILY] = [95.0, 60.0, 22.0, 18.0, 15.0]
+    record[DEV_BATTERY_VALUE] = 15.0
     await hass.async_add_executor_job(coord._write_reports)
     row = _row(hass)
-    assert "**15** **18** 22 60 95" in row
+    assert "**15%**" in row
+    assert "/wk" not in row and "/mo" not in row
+
+
+async def test_battery_column_adds_each_change_when_earned(
+    hass: HomeAssistant,
+):
+    """A fresh install shows a bare level, gains the weekly change
+    after a week and the monthly one after a month."""
+    coord, device_id = await _coordinator(hass)
+    record = coord.data["devices"][device_id]
+    record[DEV_BATTERY_DAILY] = [90.0 - n * 0.5 for n in range(8)]
+    record[DEV_BATTERY_VALUE] = record[DEV_BATTERY_DAILY][-1]
+    await hass.async_add_executor_job(coord._write_reports)
+    row = _row(hass)
+    assert "-3.5/wk" in row
+    assert "/mo" not in row
+
+    record[DEV_BATTERY_DAILY] = [90.0 - n * 0.5 for n in range(31)]
+    record[DEV_BATTERY_VALUE] = record[DEV_BATTERY_DAILY][-1]
+    await hass.async_add_executor_job(coord._write_reports)
+    row = _row(hass)
+    assert "-3.5/wk" in row and "-15/mo" in row
+
+
+async def test_a_reading_outside_the_scale_says_so(
+    hass: HomeAssistant,
+):
+    """LUX Outdoors reports around 198. That is recorded like any
+    other value (#128) and classified here, at rendering."""
+    coord, device_id = await _coordinator(hass)
+    record = coord.data["devices"][device_id]
+    record[DEV_BATTERY_DAILY] = [198.0, 194.0, 198.0]
+    record[DEV_BATTERY_VALUE] = 198.0
+    await hass.async_add_executor_job(coord._write_reports)
+    assert "198 out of range" in _row(hass)
 
 
 async def test_headers_show_k_and_threshold(hass: HomeAssistant):
@@ -95,7 +132,7 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     coord, _ = await _coordinator(hass, {CONF_SIGNAL_SENSITIVITY: 1})
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
-        hass.config.path("device_sentinel/device_telemetry.md")
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
     ).read()
     header = next(line for line in text.splitlines() if "DEVICE (INTEGRATION) | STATUS" in line)
     # Slider at +1 renders as the word Watchful, not a number.
