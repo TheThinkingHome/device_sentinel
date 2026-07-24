@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v056_written_header.py, Version: 0.5.6 (2026-07-21)
+# File: test_v056_written_header.py, Version: 0.8.6 (2026-07-24)
 
 """0.5.6 fix: the report 'Written' header is a readable local time.
 
@@ -44,7 +44,9 @@ async def test_written_header_is_readable_on_both_reports(
     coord = await _coordinator(hass)
     await hass.async_add_executor_job(coord._write_reports, "manual")
     for name in ("device_telemetry.md", "classification.md"):
-        text = open(hass.config.path(f"device_sentinel/{name}")).read()
+        text = open(
+            hass.config.path(f"device_sentinel/diagnostics/{name}")
+        ).read()
         written = next(
             line
             for line in text.splitlines()
