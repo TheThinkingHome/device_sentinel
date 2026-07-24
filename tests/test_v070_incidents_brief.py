@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v070_incidents_brief.py, Version: 0.8.10 (2026-07-24)
+# File: test_v070_incidents_brief.py, Version: 0.9.0 (2026-07-24)
 
 """0.7.0 tests: the incident log and the daily brief document.
 
@@ -206,8 +206,8 @@ async def test_brief_has_both_sections_in_plain_language(
     await hass.async_add_executor_job(coord._write_reports, "test")
 
     text = _brief_text(hass)
-    assert "# Device Sentinel daily brief" in text
-    assert "## Now" in text and "## Last 24 hours" in text
+    assert "# Device Sentinel Daily Brief" in text
+    assert "## Now" in text and "## Last 24 Hours" in text
     assert "Brief Sensor" in text
     assert "stopped reporting" in text     # never the raw category
     assert "frozen" not in text
