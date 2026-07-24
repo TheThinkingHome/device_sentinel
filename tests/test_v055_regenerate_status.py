@@ -113,7 +113,7 @@ async def test_regenerate_judges_then_writes(hass: HomeAssistant):
     assert result == {"regenerated": 2}
 
     text = open(
-        hass.config.path("device_sentinel/device_telemetry.md")
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
     ).read()
     # Judgment ran, so the ghost is flagged and shows in the report.
     assert "Reporting Devices (1)" in text
