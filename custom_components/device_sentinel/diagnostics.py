@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.8.8 (2026-07-24)
+# File: diagnostics.py, Version: 0.8.9 (2026-07-24)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -43,6 +43,7 @@ from .const import (
     DATA_EPISODES,
     DATA_INCIDENTS,
     CLOCK_FIELDS,
+    DIAGNOSTIC_SERIES_CAP,
     DATA_OUTBOX,
     DATA_SPLIT_BACKUP,
     DATA_TODO_JOURNAL,
@@ -73,7 +74,11 @@ async def async_get_config_entry_diagnostics(
     devices: dict[str, Any] = {}
     for device_id, record in coordinator.data[DATA_DEVICES].items():
         device = device_registry.async_get(device_id)
-        daily_maximum_gaps = record.get("daily_max") or []
+        # The judgment window, so the indices returned line up with
+        # what a reader sees rather than with the whole series.
+        daily_maximum_gaps = (record.get("daily_max") or [])[
+            -DAILY_MAX_KEEP:
+        ]
         window_basis, set_aside_indices = coordinator._trimmed_maximum(
             daily_maximum_gaps
         )
@@ -105,7 +110,7 @@ async def async_get_config_entry_diagnostics(
             # trusting the offset.
             "signal_danger_line": signal_line,
             "signal_dwell_daily_pct": list(
-                record.get("signal_dwell_daily_pct") or []
+                (record.get("signal_dwell_daily_pct") or [])[-DIAGNOSTIC_SERIES_CAP:]
             ),
             "signal_below_today_seconds": record.get(
                 "signal_below_today_seconds"
@@ -119,13 +124,13 @@ async def async_get_config_entry_diagnostics(
             # Provisional and short until it has depth; the velocity
             # flag reads it in a later release.
             "battery_daily_value": list(
-                record.get("battery_daily_value") or []
+                (record.get("battery_daily_value") or [])[-DIAGNOSTIC_SERIES_CAP:]
             ),
             "battery_daily_delta": [
                 round(a - b, 2)
                 for a, b in zip(
-                    (record.get("battery_daily_value") or [])[:-1],
-                    (record.get("battery_daily_value") or [])[1:],
+                    ((record.get("battery_daily_value") or [])[-DIAGNOSTIC_SERIES_CAP:])[:-1],
+                    ((record.get("battery_daily_value") or [])[-DIAGNOSTIC_SERIES_CAP:])[1:],
                 )
             ],
         }
