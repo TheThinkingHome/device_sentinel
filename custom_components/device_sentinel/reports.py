@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.8.9 (2026-07-24)
+# File: reports.py, Version: 0.8.10 (2026-07-24)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -592,7 +592,8 @@ class ReportWritingMixin:
             f"{STORM_WINDOW_SECONDS:g} s (exempt at "
             f"{STORM_EXEMPT_PER_HOUR}/h), taint debounce "
             f"{TAINT_DEBOUNCE_SECONDS} s, arming floor "
-            f"{LEARNING_MIN_DAYS} days, keep {DAILY_MAX_KEEP} days.",
+            f"{LEARNING_MIN_DAYS} days, judge on {DAILY_MAX_KEEP} "
+            f"days, keep {self.retention_days} days.",
             "",
         ]
         lines.extend(self._reporting_lines())
@@ -1006,9 +1007,8 @@ class ReportWritingMixin:
             f"{self._brief_moment(window_end)}. Covering the 24 hours "
             f"since {self._brief_moment(window_start)}."
             if complete
-            else f"In progress. From "
-            f"{self._brief_moment(window_start)} to "
-            f"{self._brief_moment(window_end)} (incomplete)."
+            else f"From {self._brief_moment(window_start)} to "
+            f"{self._brief_moment(window_end)} (in progress)."
         )
         lines = [
             "# Device Sentinel daily brief",
