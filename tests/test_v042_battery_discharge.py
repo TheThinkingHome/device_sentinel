@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v042_battery_discharge.py, Version: 0.8.6 (2026-07-24)
+# File: test_v042_battery_discharge.py, Version: 0.8.9 (2026-07-24)
 
 """0.4.2 tests: the battery discharge recorder and the UTC hardening.
 
@@ -28,7 +28,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
-    LONG_SERIES_KEEP,
+    DEFAULT_RETENTION_DAYS,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
 )
@@ -94,13 +94,13 @@ async def test_series_is_bounded(hass: HomeAssistant):
     """
     coord = await _coordinator(hass)
     record = _record()
-    for level in range(LONG_SERIES_KEEP + 5):
+    for level in range(DEFAULT_RETENTION_DAYS + 5):
         record[DEV_BATTERY_VALUE] = float(100 - level)
         coord._roll_battery(record)
-    assert len(record[DEV_BATTERY_DAILY]) == LONG_SERIES_KEEP
+    assert len(record[DEV_BATTERY_DAILY]) == DEFAULT_RETENTION_DAYS
     # The newest values survived; the oldest fell off.
     assert record[DEV_BATTERY_DAILY][-1] == float(
-        100 - (LONG_SERIES_KEEP + 4)
+        100 - (DEFAULT_RETENTION_DAYS + 4)
     )
 
 
