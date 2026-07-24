@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.9.0 (2026-07-24)
+# File: config_flow.py, Version: 0.9.1 (2026-07-24)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -92,6 +92,8 @@ from .const import (
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
     CONF_SIGNAL_SENSITIVITY,
+    CONF_TAINT_FLOOR,
+    CONF_TAINT_SHARE,
     DEFAULT_COALESCE_MINUTES,
     DEFAULT_EPISODE_SHARE_PCT,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
@@ -106,6 +108,8 @@ from .const import (
     DEFAULT_RETENTION_DAYS,
     DEFAULT_SETTLE_SHARE_PCT,
     DEFAULT_SIGNAL_SENSITIVITY,
+    DEFAULT_TAINT_FLOOR_MINUTES,
+    DEFAULT_TAINT_SHARE_PCT,
     DOMAIN,
     FREEZE_DELTA_HIGH_HR_MAX,
     FREEZE_DELTA_HIGH_HR_MIN,
@@ -124,6 +128,8 @@ from .const import (
     SHARE_PCT_STEP,
     SIGNAL_SENSITIVITY_MAX,
     SIGNAL_SENSITIVITY_MIN,
+    TAINT_FLOOR_MINUTES_MAX,
+    TAINT_FLOOR_MINUTES_MIN,
     WIKI_LINK_ADVANCED,
     WIKI_LINK_BATTERY,
     WIKI_LINK_EXCLUSIONS,
@@ -979,6 +985,26 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         CONF_EPISODE_SHARE,
                         default=options.get(
                             CONF_EPISODE_SHARE, DEFAULT_EPISODE_SHARE_PCT
+                        ),
+                    ): share_selector(),
+                    vol.Required(
+                        CONF_TAINT_FLOOR,
+                        default=options.get(
+                            CONF_TAINT_FLOOR, DEFAULT_TAINT_FLOOR_MINUTES
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=TAINT_FLOOR_MINUTES_MIN,
+                            max=TAINT_FLOOR_MINUTES_MAX,
+                            step=1,
+                            unit_of_measurement="min",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_TAINT_SHARE,
+                        default=options.get(
+                            CONF_TAINT_SHARE, DEFAULT_TAINT_SHARE_PCT
                         ),
                     ): share_selector(),
                     vol.Required(
