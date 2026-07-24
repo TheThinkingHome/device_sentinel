@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.8.6 (2026-07-24)
+# File: reports.py, Version: 0.8.9 (2026-07-24)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -381,6 +381,10 @@ class ReportWritingMixin:
         be the same value styled twice, because the operative rhythm
         is by definition chosen after the outliers are removed.
         """
+        # The series holds up to a year; this cell shows the same
+        # fortnight it always has, and the indices below are into
+        # that fortnight (0.8.9).
+        daily_maximum_gaps = list(daily_maximum_gaps)[-DAILY_MAX_KEEP:]
         if not daily_maximum_gaps:
             return "-"
         operative, set_aside_indices = self._trimmed_maximum(
