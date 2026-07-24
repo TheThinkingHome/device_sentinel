@@ -137,12 +137,16 @@
         "data": {
           "settle_share_pct": "Notification settle delay",
           "episode_share_pct": "Episode recording threshold",
+          "taint_floor_minutes": "Blip tolerance",
+          "taint_share_pct": "Blip tolerance share",
           "storage_write_minutes": "Storage write interval",
           "history_days": "How much history to keep"
         },
         "data_description": {
           "settle_share_pct": "How much of a device's patience must pass before its problem is sent. Higher means fewer messages about brief hiccups.",
           "episode_share_pct": "How quiet a device must be before its silence is recorded for later study. Lower records more, including silences that recover on their own.",
+          "taint_floor_minutes": "How briefly a device can be unreachable before that time counts as real downtime rather than a hiccup. A silence around a hiccup is still learned; a silence around real downtime is not. This is the floor, in minutes.",
+          "taint_share_pct": "Added to the blip tolerance as a share of each device's own freeze window, so a device that reports slowly is given proportionally more before an outage counts as real. A fast device keeps the floor alone.",
           "storage_write_minutes": "How long routine activity is held before saving, in minutes. Longer is kinder to SD cards; shorter loses less in a power cut.",
           "history_days": "How many days of battery levels, signal readings and reporting gaps to keep, for studying long trends. Detection always uses the most recent two weeks whatever this is set to. More history means a larger stored file, which matters on an SD card. Reducing it takes effect at the next midnight rather than at once."
         }
