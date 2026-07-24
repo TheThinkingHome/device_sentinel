@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v037_diagnostics.py, Version: 0.3.7 (2026-07-14)
+# File: test_v037_diagnostics.py, Version: 0.9.1 (2026-07-24)
 
 """0.3.7 tests: the diagnostics download."""
 
@@ -58,7 +58,8 @@ async def test_diagnostics_carry_the_learned_state(hass: HomeAssistant):
 
     assert result["version"]
     assert result["storage"]["setup_count"] >= 1
-    assert result["tunables"]["taint_debounce_seconds"] == 180
+    assert result["tunables"]["taint_floor_minutes"] == 10
+    assert result["tunables"]["taint_share_pct"] == 10
     assert result["tunables"]["trim_top_k"] == 1
     assert result["classification"]["watched"] == 1
     assert result["battery"]["low_count"] == 0
