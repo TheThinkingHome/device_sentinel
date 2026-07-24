@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.8.5 (2026-07-23)
+# File: reports.py, Version: 0.8.6 (2026-07-24)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -71,6 +71,7 @@ from .const import (
     LOGGER,
     REPORT_BRIEF_PREFIX,
     REPORT_CLASSIFICATION,
+    REPORT_DIAGNOSTIC_DIR,
     REPORT_DIR,
     REPORT_EPISODES,
     REPORT_STALE_FILES,
@@ -283,24 +284,37 @@ class ReportWritingMixin:
         return "Reported"
 
     def _format_battery_cell(self, record: dict[str, Any]) -> str:
-        """Render the daily battery levels newest-first, with any
-        level at or below the low threshold bold. No trim and no
-        strike: every recorded level is a real reading, and the point
-        is the shape of the discharge over days, not an outlier. A
-        healthy battery holds flat then falls; the bold values are the
-        days it spent at or below the line."""
+        """Render the battery as a level and its recent trend.
+
+        Ninety daily levels will not fit in a table cell and would not
+        be read if they did (0.8.6). What this column is for is
+        whether a cell is falling and how fast, which is the level
+        plus two changes: over the last week and over the last month.
+
+        Each figure appears only once there is history to support it,
+        so a fresh install shows a bare level, gains the weekly change
+        after a week and the monthly one after a month. An empty
+        placeholder for a month would be punctuation rather than
+        information.
+
+        A reading outside nought to a hundred is shown as what it is
+        rather than dressed as a percentage. It is still recorded
+        (#128): the classification belongs here, at rendering, and
+        never at the recorder, where a discarded value costs ninety
+        days to recover.
+        """
         levels = list(record.get(DEV_BATTERY_DAILY) or [])
-        if not levels:
-            return "-"
-        threshold = self.low_threshold
-        parts = []
-        for index in reversed(range(len(levels))):
-            level = levels[index]
-            text = f"{level:g}"
-            if level <= threshold:
-                parts.append(f"**{text}**")
-            else:
-                parts.append(text)
+        level = record.get(DEV_BATTERY_VALUE)
+        if level is None:
+            return "-" if not levels else f"{levels[-1]:g} (stale)"
+        if level > 100 or level < 0:
+            return f"{level:g} out of range"
+        parts = [f"{level:g}%"]
+        if level <= self.low_threshold:
+            parts = [f"**{level:g}%**"]
+        for days, label in ((7, "wk"), (30, "mo")):
+            if len(levels) >= days + 1:
+                parts.append(f"{levels[-1] - levels[-1 - days]:+g}/{label}")
         return " ".join(parts)
 
     def _format_signal_lows_cell(self, record: dict[str, Any]) -> str:
@@ -324,7 +338,12 @@ class ReportWritingMixin:
         describe the values, not the positions the trim happened to
         pick.
         """
-        stored = list(record.get(DEV_SIGNAL_DAILY_MIN) or [])
+        # The series holds ninety days; this column shows the same
+        # fortnight it always has, so the report is unchanged by the
+        # longer retention (0.8.6).
+        stored = list(record.get(DEV_SIGNAL_DAILY_MIN) or [])[
+            -DAILY_MAX_KEEP:
+        ]
         if not stored:
             return "-"
         rails = (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
@@ -603,7 +622,9 @@ class ReportWritingMixin:
                     else "clock",
                     int(record.get(DEV_EVENT_COUNT, 0)),
                     self._format_signal_lows_cell(record),
-                    list(record.get(DEV_SIGNAL_DWELL_DAILY) or []),
+                    list(record.get(DEV_SIGNAL_DWELL_DAILY) or [])[
+                        -DAILY_MAX_KEEP:
+                    ],
                     self._format_battery_cell(record),
                     self.signal_railed(record),
                     self._signal_excluded(device_id),
@@ -1090,9 +1111,17 @@ class ReportWritingMixin:
             stale_path = os.path.join(report_directory, stale_name)
             if os.path.isfile(stale_path):
                 os.remove(stale_path)
-        self._write_telemetry(report_directory, trigger)
-        self._write_classification(report_directory, trigger)
-        self._write_episodes(report_directory, trigger)
+        # The three maintainer files go one level down (0.8.6), so the
+        # folder a person opens holds the daily briefs and nothing
+        # else. Copies written before this stay where they were and
+        # can be deleted by hand.
+        diagnostic_directory = os.path.join(
+            report_directory, REPORT_DIAGNOSTIC_DIR
+        )
+        os.makedirs(diagnostic_directory, exist_ok=True)
+        self._write_telemetry(diagnostic_directory, trigger)
+        self._write_classification(diagnostic_directory, trigger)
+        self._write_episodes(diagnostic_directory, trigger)
         # The brief's window runs from the last brief time to now, so
         # a regenerate mid-day writes the in-progress one. The
         # scheduled write closes the day instead, covering the window
