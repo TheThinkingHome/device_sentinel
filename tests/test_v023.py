@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v023.py, Version: 0.2.3 (2026-07-19)
+# File: test_v023.py, Version: 0.9.1 (2026-07-24)
 
 """0.2.3 tests: taint debounce, epoch reset, signal recording, assist."""
 
@@ -34,7 +34,7 @@ from custom_components.device_sentinel.const import (
     STARTUP_GRACE_SECONDS,
     STATS_EPOCH,
     STORAGE_KEY,
-    TAINT_DEBOUNCE_SECONDS,
+    DEFAULT_TAINT_FLOOR_MINUTES,
 )
 
 DOMAIN = "device_sentinel"
@@ -80,11 +80,14 @@ async def test_long_outage_taints_short_blip_does_not(
     await hass.async_block_till_done()
     assert rec[DEV_TODAY_MAX] == pytest.approx(40, abs=1)
 
-    # Long outage: >= debounce -> taint applies, gap excluded.
+    # Long outage: past the debounce floor -> taint applies, gap
+    # excluded. This device is unarmed (no learned window), so its
+    # debounce is the floor alone (#137); the outage must exceed it.
+    floor = DEFAULT_TAINT_FLOOR_MINUTES * 60
     freezer.tick(timedelta(seconds=20))
     hass.states.async_set(eid, "unavailable")
     await hass.async_block_till_done()
-    freezer.tick(timedelta(seconds=TAINT_DEBOUNCE_SECONDS + 400))
+    freezer.tick(timedelta(seconds=floor + 120))
     hass.states.async_set(eid, "3")
     await hass.async_block_till_done()
     assert rec[DEV_TODAY_MAX] == pytest.approx(40, abs=1)  # unchanged
@@ -258,7 +261,7 @@ async def test_taint_log_reports_bad_state(
 
     hass.states.async_set(reg.entity_id, "unavailable")
     await hass.async_block_till_done()
-    freezer.tick(timedelta(seconds=TAINT_DEBOUNCE_SECONDS + 60))
+    freezer.tick(timedelta(seconds=DEFAULT_TAINT_FLOOR_MINUTES * 60 + 60))
     hass.states.async_set(reg.entity_id, "-42")
     await hass.async_block_till_done()
 
@@ -300,7 +303,7 @@ async def test_taint_episode_dedupes_across_siblings(
     for eid in entity_ids:
         hass.states.async_set(eid, "unavailable")
     await hass.async_block_till_done()
-    freezer.tick(timedelta(seconds=TAINT_DEBOUNCE_SECONDS + 600))
+    freezer.tick(timedelta(seconds=DEFAULT_TAINT_FLOOR_MINUTES * 60 + 120))
     for eid in entity_ids:
         hass.states.async_set(eid, "2")
     await hass.async_block_till_done()
