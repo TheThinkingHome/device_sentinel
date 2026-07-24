@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v070_incidents_brief.py, Version: 0.7.6 (2026-07-23)
+# File: test_v070_incidents_brief.py, Version: 0.8.10 (2026-07-24)
 
 """0.7.0 tests: the incident log and the daily brief document.
 
@@ -220,7 +220,7 @@ async def test_regenerated_brief_says_it_is_incomplete(
     coord = await _coordinator(hass)
     await hass.async_add_executor_job(coord._write_reports, "manual")
     text = _brief_text(hass)
-    assert "(incomplete)" in text
+    assert "(in progress)" in text
     assert "Nothing needs attention." in text
 
 
