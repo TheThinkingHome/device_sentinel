@@ -191,7 +191,7 @@ async def test_section_reaches_the_written_report(hass: HomeAssistant):
     _freeze(coord, device.id)
     coord._sync_problem_list()
     await hass.async_add_executor_job(coord._write_reports, "test")
-    path = hass.config.path("device_sentinel", "device_telemetry.md")
+    path = hass.config.path("device_sentinel", "diagnostics", "device_telemetry.md")
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     assert "## Reporting Devices (1)" in text
