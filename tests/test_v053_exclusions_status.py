@@ -114,7 +114,7 @@ async def test_report_has_status_column(hass: HomeAssistant):
     )
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = open(
-        hass.config.path("device_sentinel/device_telemetry.md")
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
     ).read()
     header = next(
         line for line in text.splitlines() if "DEVICE (INTEGRATION) | STATUS" in line
