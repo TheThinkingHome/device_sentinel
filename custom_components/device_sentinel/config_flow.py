@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.8.9 (2026-07-24)
+# File: config_flow.py, Version: 0.9.0 (2026-07-24)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -111,6 +111,8 @@ from .const import (
     FREEZE_DELTA_HIGH_HR_MIN,
     FREEZE_DELTA_LOW_MIN_MAX,
     FREEZE_DELTA_LOW_MIN_MIN,
+    NOTIFY_DOMAIN,
+    PERSISTENT_TARGET,
     REMINDER_MODE_DAILY,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
@@ -133,8 +135,6 @@ from .const import (
 # The notify domain exposes one service per target; the persistent
 # notification is always available. These are what the engine will
 # eventually call, discovered live so the picker shows real targets.
-NOTIFY_DOMAIN = "notify"
-PERSISTENT_TARGET = "persistent_notification"
 
 
 def _discover_notify_targets(hass: Any) -> list[str]:
