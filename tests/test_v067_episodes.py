@@ -174,7 +174,7 @@ async def test_report_written_and_readable(hass: HomeAssistant):
     _armed_and_silent(coord, device.id, 2.0)
     coord._judge_all_devices()
     await hass.async_add_executor_job(coord._write_reports, "test")
-    path = hass.config.path("device_sentinel", "silence_episodes.md")
+    path = hass.config.path("device_sentinel", "diagnostics", "silence_episodes.md")
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     assert "silence episodes" in text
@@ -186,7 +186,7 @@ async def test_report_written_and_readable(hass: HomeAssistant):
 async def test_empty_report_says_so(hass: HomeAssistant):
     coord = await _coordinator(hass)
     await hass.async_add_executor_job(coord._write_reports, "test")
-    path = hass.config.path("device_sentinel", "silence_episodes.md")
+    path = hass.config.path("device_sentinel", "diagnostics", "silence_episodes.md")
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     assert "No device has been silent past its own rhythm" in text
