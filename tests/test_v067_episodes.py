@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v067_episodes.py, Version: 0.6.7 (2026-07-22)
+# File: test_v067_episodes.py, Version: 0.9.0 (2026-07-24)
 
 """0.6.7 tests: silence episodes and the widened delta-high range.
 
@@ -177,7 +177,7 @@ async def test_report_written_and_readable(hass: HomeAssistant):
     path = hass.config.path("device_sentinel", "diagnostics", "silence_episodes.md")
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
-    assert "silence episodes" in text
+    assert "Silence Episodes" in text
     assert "Written Sensor" in text
     assert "| SILENT SINCE | DEVICE |" in text
     assert "open" in text
