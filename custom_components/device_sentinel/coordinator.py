@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.9.0 (2026-07-24)
+# File: coordinator.py, Version: 0.9.1 (2026-07-24)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -163,7 +163,10 @@ from .const import (
     STORM_HISTORY_SECONDS,
     STORM_RELEASE_SECONDS,
     STORM_WINDOW_SECONDS,
-    TAINT_DEBOUNCE_SECONDS,
+    CONF_TAINT_FLOOR,
+    CONF_TAINT_SHARE,
+    DEFAULT_TAINT_FLOOR_MINUTES,
+    DEFAULT_TAINT_SHARE_PCT,
     DATA_EPISODES,
     DATA_INCIDENTS,
     DATA_OUTBOX,
@@ -282,6 +285,10 @@ class DeviceSentinelCoordinator(
         self._battery_entity_reverse: dict[str, str] = {}
         self._pending_unavailable: dict[str, tuple[float, str]] = {}
         self._taint_consumed_at: dict[str, float] = {}
+        # The unavailable duration that set each device's live
+        # taint, held until the recovery stamp writes it onto the
+        # episode (#137). Transient, not persisted on the record.
+        self._taint_duration: dict[str, float] = {}
         self.deviceless_count: int = 0
 
         # Grace and storm state.
@@ -825,10 +832,16 @@ class DeviceSentinelCoordinator(
             same_episode = began <= self._taint_consumed_at.get(
                 device_id, 0.0
             )
-            if gone >= TAINT_DEBOUNCE_SECONDS and not same_episode:
-                record = self.data[DATA_DEVICES].get(device_id)
+            record = self.data[DATA_DEVICES].get(device_id)
+            debounce = (
+                self._taint_debounce(record)
+                if record is not None
+                else DEFAULT_TAINT_FLOOR_MINUTES * 60.0
+            )
+            if gone >= debounce and not same_episode:
                 if record is not None and not record[DEV_TAINTED]:
                     record[DEV_TAINTED] = True
+                    self._taint_duration[device_id] = gone
                     self._dirty = True
                     if dt_util.utcnow().timestamp() < self._grace_until:
                         self._grace_taints.add(device_id)
@@ -914,8 +927,10 @@ class DeviceSentinelCoordinator(
         # the outage ended here, and the spanning gap is excluded
         # because it covers time we could not observe.
         tainted = record[DEV_TAINTED]
+        taint_seconds = None
         if tainted:
             record[DEV_TAINTED] = False
+            taint_seconds = self._taint_duration.pop(device_id, None)
             self._taint_consumed_at[device_id] = now
             if last is not None:
                 LOGGER.info(
@@ -935,7 +950,7 @@ class DeviceSentinelCoordinator(
         # only evidence there was, which is what kept the quiet
         # devices' baselines describing half a night.
         learned = "no (taint, unavailable)" if tainted else "yes"
-        self._close_episode(device_id, stamp, learned)
+        self._close_episode(device_id, stamp, learned, taint_seconds)
 
         record[DEV_LAST_ACTIVITY] = stamp
         record[DEV_EVENT_COUNT] = int(record[DEV_EVENT_COUNT]) + 1
@@ -1451,6 +1466,39 @@ class DeviceSentinelCoordinator(
         if rhythm is None or rhythm <= 0:
             return None
         return rhythm + self._freeze_grace(rhythm)
+
+    def _taint_debounce(self, record: dict[str, Any]) -> float:
+        """Return the unavailable a device tolerates before a taint (#137).
+
+        A blip under this is a hiccup and the surrounding silence is
+        learned; an unavailable at or over it is real downtime and
+        the completed gap is discarded. The value is a floor plus a
+        share of the device's own freeze window, so a fast device
+        keeps the floor while a slow one earns proportionally more
+        patience. An unarmed device has no window yet, so it falls
+        back to the floor alone, which is correct: with nothing
+        learned there is no grace to take a share of.
+        """
+        floor = (
+            float(
+                self.entry.options.get(
+                    CONF_TAINT_FLOOR, DEFAULT_TAINT_FLOOR_MINUTES
+                )
+            )
+            * 60.0
+        )
+        share = (
+            float(
+                self.entry.options.get(
+                    CONF_TAINT_SHARE, DEFAULT_TAINT_SHARE_PCT
+                )
+            )
+            / 100.0
+        )
+        window = self._freeze_window(record)
+        if window is None:
+            return floor
+        return floor + window * share
 
     # ------------------------------------------------ device-down judgment
 
