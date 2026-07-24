@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.8.9 (2026-07-24)
+# File: coordinator.py, Version: 0.9.0 (2026-07-24)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -54,6 +54,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from .messenger import MessengerMixin
 from .narrative import NarrativeMixin
 from .reports import ReportWritingMixin
 from .const import (
@@ -208,7 +209,9 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
     }
 
 
-class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
+class DeviceSentinelCoordinator(
+    ReportWritingMixin, NarrativeMixin, MessengerMixin
+):
     """Owns Device Sentinel's storage, registry view, and telemetry."""
 
     def __init__(
@@ -1308,10 +1311,18 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
         )
 
     async def _on_brief_time(self, _now: Any) -> None:
-        """Close the day's brief and start a new window."""
-        await self.hass.async_add_executor_job(
+        """Close the day's brief, start a new window, and send it.
+
+        The send hangs off this one caller rather than the writer,
+        because this is the only write that closes a window (#135):
+        a regenerate or a midnight rewrite produces an in-progress
+        document, and mailing one of those would deliver the same
+        day several times, each incomplete.
+        """
+        text = await self.hass.async_add_executor_job(
             self._write_reports, BRIEF_TRIGGER
         )
+        await self.async_send_brief(text)
 
     async def _on_midnight(self, _now: Any) -> None:
         """Roll today's maxima into the bounded daily set."""
