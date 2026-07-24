@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.7.1 (2026-07-22)
+# File: config_flow.py, Version: 0.8.9 (2026-07-24)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -86,6 +86,7 @@ from .const import (
     CONF_QUIET_START,
     CONF_REMINDER_MODE,
     CONF_REMINDER_TIME,
+    CONF_RETENTION_DAYS,
     CONF_SETTLE_SHARE,
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
@@ -102,6 +103,7 @@ from .const import (
     DEFAULT_QUIET_START,
     DEFAULT_REMINDER_MODE,
     DEFAULT_REMINDER_TIME,
+    DEFAULT_RETENTION_DAYS,
     DEFAULT_SETTLE_SHARE_PCT,
     DEFAULT_SIGNAL_SENSITIVITY,
     DOMAIN,
@@ -112,6 +114,9 @@ from .const import (
     REMINDER_MODE_DAILY,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
+    RETENTION_DAYS_MAX,
+    RETENTION_DAYS_MIN,
+    RETENTION_DAYS_STEP,
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
     SHARE_PCT_STEP,
@@ -987,6 +992,20 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             max=COALESCE_MINUTES_MAX,
                             step=1,
                             unit_of_measurement="min",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_RETENTION_DAYS,
+                        default=options.get(
+                            CONF_RETENTION_DAYS, DEFAULT_RETENTION_DAYS
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=RETENTION_DAYS_MIN,
+                            max=RETENTION_DAYS_MAX,
+                            step=RETENTION_DAYS_STEP,
+                            unit_of_measurement="days",
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
