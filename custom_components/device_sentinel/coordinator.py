@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.8.6 (2026-07-24)
+# File: coordinator.py, Version: 0.8.7 (2026-07-24)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -27,6 +27,8 @@ Core rules implemented here, all ruled in the project document:
 from __future__ import annotations
 
 import math
+import os
+import shutil
 import uuid
 from collections import deque
 from collections.abc import Callable
@@ -145,6 +147,11 @@ from .const import (
     DEFAULT_EPISODE_SHARE_PCT,
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
+    BACKUP_SUFFIX_PRE_SPLIT,
+    CLOCK_FIELDS,
+    DATA_SPLIT_BACKUP,
+    STORAGE_CLOCKS_KEY,
+    STORAGE_CLOCKS_VERSION,
     STORAGE_KEY,
     STORAGE_VERSION,
     STORM_DEVICE_THRESHOLD,
@@ -210,6 +217,15 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
         self.version = version
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, STORAGE_KEY
+        )
+        # The storage split, phase A: written on the same cadence as
+        # the store above and never read (#101). The running system
+        # goes on loading everything from the file above, so nothing
+        # here can affect detection, the reports, or the soak. It is
+        # here to be compared against the real thing until the two
+        # are known to agree.
+        self._clock_store: Store[dict[str, Any]] = Store(
+            hass, STORAGE_CLOCKS_VERSION, STORAGE_CLOCKS_KEY
         )
         self.data: dict[str, Any] = {}
         self.storage_healthy: bool = False
@@ -395,6 +411,9 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
         # idempotent: once a record is clean it finds nothing. Any new
         # field must be added to _new_device_record or this removes it
         # on the next load.
+        if not loaded.get(DATA_SPLIT_BACKUP):
+            if await self._take_pre_split_backup():
+                loaded[DATA_SPLIT_BACKUP] = True
         legacy = self._prune_legacy_fields(loaded[DATA_DEVICES])
         if legacy:
             LOGGER.info(
@@ -1676,6 +1695,50 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
         self._delay_pending = False
         return self.data
 
+    def _clocks_to_save(self) -> dict[str, Any]:
+        """Return only the fields an ordinary report changes.
+
+        Nine of them, taken from what _record_activity and the signal
+        path actually write. Everything else is cold.
+        """
+        clocks: dict[str, Any] = {}
+        for device_id, record in self.data[DATA_DEVICES].items():
+            if not isinstance(record, dict):
+                continue
+            clocks[device_id] = {
+                field: record.get(field) for field in CLOCK_FIELDS
+            }
+        return {"clocks": clocks}
+
+    async def _take_pre_split_backup(self) -> bool:
+        """Copy storage once, before the split ever writes anything.
+
+        The restore point for the whole phased split (#101): this
+        file plus the previous version's tag puts the system exactly
+        where it was. The copy refuses to overwrite, so retaking it
+        is harmless, which is why the marker needs no save of its
+        own: setup persists it moments later, and losing it to a
+        crash costs one redundant attempt that finds the file already
+        there.
+        """
+        source = self.hass.config.path(".storage", STORAGE_KEY)
+        target = source + BACKUP_SUFFIX_PRE_SPLIT
+
+        def _copy() -> bool:
+            if not os.path.isfile(source) or os.path.isfile(target):
+                return False
+            shutil.copyfile(source, target)
+            return True
+
+        try:
+            taken = await self.hass.async_add_executor_job(_copy)
+        except OSError as err:
+            LOGGER.warning("Pre-split backup failed: %s", err)
+            return False
+        if taken:
+            LOGGER.info("Pre-split backup written to %s", target)
+        return True
+
     async def _save_now(self) -> None:
         """The single immediate-save path.
 
@@ -1685,6 +1748,9 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
         cancels its pending delayed write when a direct save lands.
         """
         await self._store.async_save(self.data)
+        # Phase A writes the shadow on exactly the same triggers, so
+        # the two cadences can be compared side by side.
+        await self._clock_store.async_save(self._clocks_to_save())
         self._dirty = False
         self._critical = False
         self._delay_pending = False
@@ -1724,6 +1790,9 @@ class DeviceSentinelCoordinator(ReportWritingMixin, NarrativeMixin):
             self._delay_pending = True
             self._store.async_delay_save(
                 self._data_to_save, self.coalesce_seconds
+            )
+            self._clock_store.async_delay_save(
+                self._clocks_to_save, self.coalesce_seconds
             )
             self._dirty = False
         elif self._dirty:
