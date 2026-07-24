@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.9.0 (2026-07-24)
+# File: narrative.py, Version: 0.9.1 (2026-07-24)
 
 """What happened, and how to say it: the memory and the composer.
 
@@ -47,6 +47,7 @@ from .const import (
     EP_DEVICE_ID,
     EP_ENDED,
     EP_LAG,
+    EP_TAINT_SECONDS,
     EP_LEARNED,
     EP_NAME,
     EP_SINCE,
@@ -501,12 +502,17 @@ class NarrativeMixin:
                     EP_AT: None,
                     EP_LAG: None,
                     EP_LEARNED: None,
+                    EP_TAINT_SECONDS: None,
                 }
             )
             self._dirty = True
 
     def _close_episode(
-        self, device_id: str, now: float, learned: str | None
+        self,
+        device_id: str,
+        now: float,
+        learned: str | None,
+        taint_seconds: float | None = None,
     ) -> None:
         """Complete a device's episode when it genuinely reports.
 
@@ -529,6 +535,8 @@ class NarrativeMixin:
             episode[EP_LAG] = max(0.0, now - (episode[EP_AT] or now))
             if episode[EP_LEARNED] is None:
                 episode[EP_LEARNED] = learned
+        if taint_seconds is not None:
+            episode[EP_TAINT_SECONDS] = taint_seconds
         self._dirty = True
 
     def _stamp_intervention(
