@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.8.6 (2026-07-24)
+# File: const.py, Version: 0.8.7 (2026-07-24)
 
 """Constants for the Device Sentinel integration."""
 
@@ -22,6 +22,25 @@ LOGGER = logging.getLogger(DOMAIN)
 # never in custom_components (code, overwritten on every update).
 STORAGE_KEY = f"{DOMAIN}.storage"
 STORAGE_VERSION = 1
+
+# The storage split, phase A (0.8.7, #101 and #130). The clocks file
+# holds only the fields that change on an ordinary device report.
+# Every routine write rewrites the whole storage file to update a
+# handful of timestamps, and that file is heading for roughly 300 KB
+# as the ninety-day series fill, so the fifteen-minute cadence costs
+# about 28 MB a day. Split, the same cadence costs under one.
+#
+# In this phase the file is written and never read. The running
+# system loads and uses the single existing storage file exactly as
+# before, so a wholly wrong shadow writer cannot affect detection,
+# the reports, or the soak. It exists to be compared against the
+# real thing until the two are known to agree.
+STORAGE_CLOCKS_KEY = f"{DOMAIN}.clocks"
+STORAGE_CLOCKS_VERSION = 1
+BACKUP_SUFFIX_PRE_SPLIT = ".pre-split.bak"
+DATA_SPLIT_BACKUP = "pre_split_backup_taken"
+
+
 
 # Storage field names.
 DATA_FIRST_INSTALLED = "first_installed"
@@ -284,6 +303,22 @@ DEV_BATTERY_DAILY = "battery_daily_value"
 # "how long".
 DEV_FROZEN_CATEGORY = "frozen_category"
 DEV_FROZEN_SINCE = "frozen_since"
+
+# The hot set, read from the code rather than assumed: these are the
+# fields _record_activity and the signal path write on an ordinary
+# report. Everything else (learned series, verdicts, todo, incidents,
+# outbox) is cold and stays where it is.
+CLOCK_FIELDS = (
+    DEV_LAST_ACTIVITY,
+    DEV_EVENT_COUNT,
+    DEV_TAINTED,
+    DEV_TODAY_MAX,
+    DEV_SIGNAL_VALUE,
+    DEV_SIGNAL_TODAY_MIN,
+    DEV_SIGNAL_BELOW_SINCE,
+    DEV_SIGNAL_BELOW_TODAY,
+    DEV_SIGNAL_LAST_CHANGE,
+)
 
 SENTINEL_TYPE_LOW_BATTERIES = "low_batteries"
 SENTINEL_TYPE_SIGNAL_PROBLEMS = "signal_problems"
