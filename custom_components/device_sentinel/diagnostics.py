@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.7.2 (2026-07-22)
+# File: diagnostics.py, Version: 0.8.8 (2026-07-24)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -42,7 +42,9 @@ from .const import (
     DATA_TODO_ITEMS,
     DATA_EPISODES,
     DATA_INCIDENTS,
+    CLOCK_FIELDS,
     DATA_OUTBOX,
+    DATA_SPLIT_BACKUP,
     DATA_TODO_JOURNAL,
     LEARNING_MIN_DAYS,
     SIGNAL_ARMING_DAYS,
@@ -174,5 +176,15 @@ async def async_get_config_entry_diagnostics(
         # What the engine would have said, composed but never sent
         # while the dry run lasts (#120).
         "outbox": coordinator.data.get(DATA_OUTBOX, []),
+        # The storage split, so its state travels with an issue
+        # report rather than needing a terminal (0.8.8).
+        "split": {
+            "pre_split_backup_taken": bool(
+                coordinator.data.get(DATA_SPLIT_BACKUP)
+            ),
+            "clock_fields": list(CLOCK_FIELDS),
+            "clock_devices": len(coordinator.data.get(DATA_DEVICES, {})),
+            "phase": "A: written, not read",
+        },
         "devices": devices,
     }
