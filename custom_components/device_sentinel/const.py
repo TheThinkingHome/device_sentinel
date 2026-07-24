@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.9.0 (2026-07-24)
+# File: const.py, Version: 0.9.1 (2026-07-24)
 
 """Constants for the Device Sentinel integration."""
 
@@ -82,9 +82,25 @@ STORM_EXEMPT_PER_HOUR = 10
 STORM_HISTORY_SECONDS = 3600
 
 # Taint debounce: an unavailable or unknown shorter than this is a
-# hiccup, not an outage; it sets no taint. Matches the blueprints'
-# three-minute unavailable debounce. Provisional per the soak.
-TAINT_DEBOUNCE_SECONDS = 180
+# hiccup, not an outage; it sets no taint (#137). The threshold is
+# per device, floor + a share of the device's freeze window, so a
+# fleet whose windows range from seconds to hours is fitted rather
+# than held to one number. The floor is deliberate though #127 struck
+# one for the settle delay: a blip is noise rather than a share of
+# anything the device earned, so a minimum below which an absence
+# cannot count as real is not the fixed number #127 refused. An
+# unarmed device with no learned window falls back to the floor
+# alone. Starting values are soak-settled tunables, exposed on the
+# Advanced screen.
+TAINT_DEBOUNCE_FLOOR_SECONDS = 600
+TAINT_DEBOUNCE_SHARE_PCT = 10
+CONF_TAINT_FLOOR = "taint_floor_minutes"
+CONF_TAINT_SHARE = "taint_share_pct"
+DEFAULT_TAINT_FLOOR_MINUTES = 10
+DEFAULT_TAINT_SHARE_PCT = 10
+TAINT_FLOOR_MINUTES_MIN = 1
+TAINT_FLOOR_MINUTES_MAX = 60
+# Shares reuse the existing SHARE_PCT bounds (10 to 90, step 10).
 
 # Statistics epoch: when storage carries an older epoch, learned
 # statistics (daily maxima, event counts, signal minima) are wiped
@@ -658,6 +674,12 @@ EP_ENDED = "ended"
 EP_AT = "at"
 EP_LAG = "lag"
 EP_LEARNED = "learned"
+# The unavailable duration that tainted this episode, in seconds, or
+# None if it was not tainted by an unavailable stretch (#137). Recorded
+# so the rig can measure the real spread the floor-plus-share defaults
+# were guessed from, the recorder-then-flag pattern: record now, rule
+# the defaults after the soak.
+EP_TAINT_SECONDS = "taint_seconds"
 EPISODE_ENDED_RESUMED = "resumed"
 EPISODE_ENDED_REBOOT = "intervention (reboot)"
 EPISODE_ENDED_RECONNECT = "intervention (bridge reconnect)"
