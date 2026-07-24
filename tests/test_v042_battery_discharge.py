@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v042_battery_discharge.py, Version: 0.4.2 (2026-07-18)
+# File: test_v042_battery_discharge.py, Version: 0.8.6 (2026-07-24)
 
 """0.4.2 tests: the battery discharge recorder and the UTC hardening.
 
@@ -28,7 +28,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
-    DAILY_MAX_KEEP,
+    LONG_SERIES_KEEP,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
 )
@@ -86,16 +86,22 @@ async def test_a_device_without_a_battery_records_nothing(
 
 
 async def test_series_is_bounded(hass: HomeAssistant):
-    """Kept to the same window as every daily series, so at two weeks
-    and a day the oldest point retires."""
+    """Bounded at ninety days rather than fourteen (0.8.6).
+
+    A fortnight is right for a rhythm and wrong for a battery: on a
+    real fleet nothing measurably discharges in two weeks, so the
+    fortnight window threw away the only thing worth measuring.
+    """
     coord = await _coordinator(hass)
     record = _record()
-    for level in range(DAILY_MAX_KEEP + 5):
+    for level in range(LONG_SERIES_KEEP + 5):
         record[DEV_BATTERY_VALUE] = float(100 - level)
         coord._roll_battery(record)
-    assert len(record[DEV_BATTERY_DAILY]) == DAILY_MAX_KEEP
+    assert len(record[DEV_BATTERY_DAILY]) == LONG_SERIES_KEEP
     # The newest values survived; the oldest fell off.
-    assert record[DEV_BATTERY_DAILY][-1] == float(100 - (DAILY_MAX_KEEP + 4))
+    assert record[DEV_BATTERY_DAILY][-1] == float(
+        100 - (LONG_SERIES_KEEP + 4)
+    )
 
 
 async def test_lithium_cliff_is_visible_in_the_series(
