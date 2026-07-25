@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v096_notifier.py, Version: 0.9.6 (2026-07-25)
+# File: test_v096_notifier.py, Version: 0.9.7 (2026-07-25)
 
 """0.9.6 tests: the event notification engine.
 
@@ -50,11 +50,12 @@ def test_quiet_hours_disabled_is_never_quiet():
 class _Harness(NotifierMixin):
     """A minimal object carrying only what the notifier reads."""
 
-    def __init__(self, high_targets, battery=None, signal=None, freeze=None):
+    def __init__(self, high_targets, battery=None, signal=None, freeze=None, acknowledged=None):
         self._high = high_targets
         self._battery = battery or []
         self._signal = signal or []
         self._freeze = freeze or []
+        self._acknowledged = set(acknowledged or [])
         self.sent = []
         self.entry = type("E", (), {"options": {}})()
         self.hass = type(
@@ -65,6 +66,9 @@ class _Harness(NotifierMixin):
             self.sent.append((domain, service, payload))
 
         self.hass.services.async_call = async_call
+
+    def _acknowledged_devices(self):
+        return self._acknowledged
 
     def _high_priority_targets(self):
         return self._high
@@ -225,3 +229,84 @@ async def test_full_path_battery_fault_fires_and_updates_card(hass, freezer):
     assert pushes, "expected a high-priority battery push"
     assert "Battery X" in pushes[0]["message"]
     assert cards, "expected the persistent card to refresh"
+
+
+def test_signal_summary_says_railed_not_low():
+    """A railed device must read railed, not low: the signal list tags
+    rows by kind='rail', and the card must not call a rail a low. This
+    is the fleet bug from 2026-07-25 where Window Living Room Left
+    (signal_railed True, value 255) showed on the card as low."""
+    h = _Harness(
+        ["notify.phone"],
+        signal=[
+            {"name": "Window Living Room Left", "device_id": "dc7a", "kind": "rail", "value": 255},
+        ],
+    )
+    summary = h._family_summary("signal")
+    assert "Window Living Room Left railed" in summary
+    assert "low" not in summary
+
+
+def test_freeze_summary_uses_system_words():
+    """A never-reported device reads never reported, not the internal
+    not_reported token."""
+    h = _Harness(
+        ["notify.phone"],
+        freeze=[
+            {"name": "Vibration FJ40 Land Cruiser", "device_id": "5dd1", "category": "not_reported"},
+            {"name": "Door X", "device_id": "aaaa", "category": "unavailable"},
+        ],
+    )
+    summary = h._family_summary("freeze")
+    assert "Vibration FJ40 Land Cruiser never reported" in summary
+    assert "Door X unavailable" in summary
+    assert "not_reported" not in summary
+
+
+def test_acknowledged_device_is_hidden_from_summary():
+    """An acknowledged problem is invisible to humans everywhere,
+    including the card and pushes (#109). This is the fleet case:
+    Window Living Room Left is railed and acknowledged, so it must not
+    appear in the signal summary at all."""
+    h = _Harness(
+        ["notify.phone"],
+        signal=[
+            {"name": "Window Living Room Left", "device_id": "dc7a", "kind": "rail", "value": 255},
+        ],
+        acknowledged={"dc7a"},
+    )
+    summary = h._family_summary("signal")
+    assert summary == "All clear."
+    assert "Window Living Room Left" not in summary
+
+
+def test_acknowledged_hidden_but_others_still_shown():
+    """Acknowledging one device does not hide the others in its
+    family: the summary keeps the unacknowledged ones."""
+    h = _Harness(
+        ["notify.phone"],
+        battery=[
+            {"name": "Battery Acked", "device_id": "a1", "level": 5},
+            {"name": "Battery Live", "device_id": "b2", "level": 12},
+        ],
+        acknowledged={"a1"},
+    )
+    summary = h._family_summary("battery")
+    assert "Battery Acked" not in summary
+    assert "Battery Live 12%" in summary
+
+
+async def test_card_omits_acknowledged_device():
+    """The persistent card, built from the same summaries, must not
+    carry an acknowledged problem."""
+    h = _Harness(
+        ["notify.phone"],
+        freeze=[
+            {"name": "Door Acked", "device_id": "d1", "category": "unavailable"},
+        ],
+        acknowledged={"d1"},
+    )
+    await h.async_update_card()
+    domain, service, payload = h.sent[0]
+    assert "Door Acked" not in payload["message"]
+    assert "All devices reporting" in payload["message"]
