@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.9.1 (2026-07-24)
+# File: const.py, Version: 0.9.3 (2026-07-25)
 
 """Constants for the Device Sentinel integration."""
 
@@ -12,6 +12,24 @@ from __future__ import annotations
 import logging
 
 DOMAIN = "device_sentinel"
+
+# Coordinator stacks Device Sentinel can recognise in a house (#143).
+# Which are present is derived from the registry, never asked, and each
+# later intervention detector attaches only where its stack is found.
+# ZHA, Z-Wave, and Matter are told by their integration domain; Z2M is
+# told by the presence of its bridge device, never the mqtt domain it
+# shares with every other MQTT thing (#139).
+STACK_Z2M = "z2m"
+STACK_ZHA = "zha"
+STACK_ZWAVE = "zwave_js"
+STACK_MATTER = "matter"
+# The portable tell for the Z2M bridge device: Z2M publishes it via
+# MQTT discovery with a name ending "Zigbee2MQTT Bridge", or a model of
+# "Bridge" under manufacturer "Zigbee2MQTT". The name is matched first
+# because it survives whatever coordinator hardware sits behind it.
+Z2M_BRIDGE_NAME_MARK = "Zigbee2MQTT Bridge"
+Z2M_BRIDGE_MODEL = "Bridge"
+Z2M_BRIDGE_MANUFACTURER = "Zigbee2MQTT"
 
 # The literal logger name, per the Sentinel blueprint precedent
 # (battery_sentinel, entity_sentinel). Users configure it under
