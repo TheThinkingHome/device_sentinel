@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.9.1 (2026-07-24)
+# File: coordinator.py, Version: 0.9.3 (2026-07-25)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -58,6 +58,13 @@ from .messenger import MessengerMixin
 from .narrative import NarrativeMixin
 from .reports import ReportWritingMixin
 from .const import (
+    STACK_Z2M,
+    STACK_ZHA,
+    STACK_ZWAVE,
+    STACK_MATTER,
+    Z2M_BRIDGE_NAME_MARK,
+    Z2M_BRIDGE_MODEL,
+    Z2M_BRIDGE_MANUFACTURER,
     BATTERY_CLEAR_MARGIN,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
@@ -261,6 +268,7 @@ class DeviceSentinelCoordinator(
         # Registry view, rebuilt on registry changes.
         self._entity_map: dict[str, tuple[str, str | None]] = {}
         self._watched: dict[str, str] = {}  # device_id -> integration domain
+        self._stacks: set[str] = set()  # coordinator stacks present (#143)
         # Names and labels, cached from the registry at classify
         # time. The options cascade reads them on every form open,
         # and re-walking the registry there would race a rebuild.
@@ -568,6 +576,26 @@ class DeviceSentinelCoordinator(
                 return entry.domain
         return "unknown"
 
+    @staticmethod
+    def _is_z2m_bridge(device: dr.DeviceEntry) -> bool:
+        """Recognise the Zigbee2MQTT bridge device (#143).
+
+        Z2M publishes its bridge through MQTT discovery with a name
+        ending "Zigbee2MQTT Bridge", or a model of "Bridge" under the
+        manufacturer "Zigbee2MQTT". The name is checked first because
+        it holds whatever coordinator hardware sits behind it, so the
+        tell does not depend on any one adapter. This is the clean
+        signal that Z2M is running, since the mqtt domain alone cannot
+        tell Z2M apart from any other MQTT device (#139).
+        """
+        name = device.name_by_user or device.name or ""
+        if Z2M_BRIDGE_NAME_MARK in name:
+            return True
+        return (
+            device.model == Z2M_BRIDGE_MODEL
+            and device.manufacturer == Z2M_BRIDGE_MANUFACTURER
+        )
+
     def _rebuild_registry_view(self, audit: bool = False) -> None:
         """Classify devices and rebuild the entity-to-device map."""
         ent_reg = er.async_get(self.hass)
@@ -588,9 +616,21 @@ class DeviceSentinelCoordinator(
         set_aside: dict[str, tuple[str, str]] = {}
         excluded_devices: dict[str, str] = {}
         excluded_entities: dict[str, str] = {}
+        stacks: set[str] = set()
         for device in dev_reg.devices.values():
             domain = self._primary_domain(device)
             name = device.name_by_user or device.name or device.id
+            # Which coordinator stacks the house runs, read from the
+            # same walk (#143). ZHA, Z-Wave, and Matter by domain; Z2M
+            # by its bridge device, never the shared mqtt domain (#139).
+            if domain == STACK_ZHA:
+                stacks.add(STACK_ZHA)
+            elif domain == STACK_ZWAVE:
+                stacks.add(STACK_ZWAVE)
+            elif domain == STACK_MATTER:
+                stacks.add(STACK_MATTER)
+            elif domain == "mqtt" and self._is_z2m_bridge(device):
+                stacks.add(STACK_Z2M)
             if device.entry_type is dr.DeviceEntryType.SERVICE:
                 set_aside[device.id] = (name, domain)
                 continue
@@ -653,6 +693,7 @@ class DeviceSentinelCoordinator(
                     )
 
         self._watched = watched
+        self._stacks = stacks
         self._device_names = device_names
         self._device_labels = device_labels
         self._set_aside = set_aside
