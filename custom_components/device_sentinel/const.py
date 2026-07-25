@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.9.5 (2026-07-25)
+# File: const.py, Version: 0.9.6 (2026-07-25)
 
 """Constants for the Device Sentinel integration."""
 
@@ -541,6 +541,39 @@ CONF_BRIEF_TARGETS = "brief_document_targets"
 NOTIFY_DOMAIN = "notify"
 PERSISTENT_TARGET = "persistent_notification"
 PERSISTENT_CREATE = "create"
+
+# The notification engine (0.9.6). Three self-overwriting surfaces,
+# each a fixed id so it always replaces its own last message rather
+# than stacking (#479, #487 as reimagined 2026-07-25).
+#
+# The persistent card: one id, always the current home state, re-sent
+# on every change, never gated by quiet hours because a card wakes no
+# one. The per-family high-priority pushes: one id per family so each
+# always shows its most recent event and summary; faults are audible
+# on the device's own system sound, recoveries are sent silently.
+NOTIFY_CARD_ID = "device_sentinel_state"
+NOTIFY_FAMILY_IDS = {
+    "battery": "device_sentinel_battery",
+    "signal": "device_sentinel_signal",
+    "freeze": "device_sentinel_freeze",
+}
+# The freeze family covers every liveness kind; a battery or signal
+# kind maps to its own family, and anything else is a freeze-family
+# event. This is the map from a problem kind to its notification family.
+NOTIFY_KIND_FAMILY = {
+    "battery": "battery",
+    "signal": "signal",
+    "rail": "signal",
+    "frozen": "freeze",
+    "unavailable": "freeze",
+    "unknown": "freeze",
+    "not_reported": "freeze",
+}
+NOTIFY_FAMILY_TITLES = {
+    "battery": "Battery",
+    "signal": "Signal",
+    "freeze": "Device",
+}
 # The email's subject, and the brief's own title, kept as one string
 # so the document and the message it arrives in cannot disagree.
 BRIEF_TITLE = "Device Sentinel Daily Brief"
