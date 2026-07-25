@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.9.6 (2026-07-25)
+# File: notifier.py, Version: 0.9.7 (2026-07-25)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -59,6 +59,18 @@ from .const import (
 _ANDROID_SILENT = {"channel": "Device Sentinel", "importance": "low"}
 _APPLE_SILENT = {"push": {"interruption-level": "passive"}}
 
+# The word the card and pushes use for each internal kind, matching the
+# briefs and the problem list so a device reads the same everywhere. A
+# rail is not a low; a not_reported device reads as never reported.
+_SUMMARY_WORD = {
+    "rail": "railed",
+    "low": "low signal",
+    "frozen": "frozen",
+    "unavailable": "unavailable",
+    "unknown": "unknown",
+    "not_reported": "never reported",
+}
+
 
 def _in_quiet_hours(options: dict[str, Any], now_hms: str) -> bool:
     """Return whether the wall clock is inside the quiet-hours window.
@@ -102,13 +114,20 @@ class NotifierMixin:
         """Return a one-line current-state summary for a family.
 
         Reads the same list properties the Problems sensors publish, so
-        the summary can never disagree with what is detected. Each entry
-        is the device name and its current trouble, for example a
-        battery's level or a signal marked railed.
+        the summary can never disagree with what is detected, then drops
+        the devices a person has acknowledged: an acknowledged problem
+        is invisible to humans everywhere, the card and pushes included,
+        exactly as the brief already hides it (#109). Each remaining
+        entry is worded the way the briefs and the list word it: a
+        battery's level, a signal marked railed, a device that is
+        unavailable or never reported.
         """
+        acknowledged = self._acknowledged_devices()
         parts: list[str] = []
         if family == "battery":
             for row in self.battery_low_list:
+                if row.get("device_id") in acknowledged:
+                    continue
                 level = row.get("level")
                 name = row.get("name") or row.get("device_id")
                 if level is not None:
@@ -116,15 +135,22 @@ class NotifierMixin:
                 else:
                     parts.append(f"{name} low")
         elif family == "signal":
+            # The signal list tags each row by kind, not category, and
+            # a rail is not a low: a railed device shows a stale perfect
+            # reading, so the card must say railed, not low (#78).
             for row in self.signal_problem_list:
+                if row.get("device_id") in acknowledged:
+                    continue
                 name = row.get("name") or row.get("device_id")
-                kind = row.get("category") or "low"
-                parts.append(f"{name} {kind}")
+                kind = row.get("kind") or "low"
+                parts.append(f"{name} {_SUMMARY_WORD.get(kind, kind)}")
         elif family == "freeze":
             for row in self.frozen_devices_list:
+                if row.get("device_id") in acknowledged:
+                    continue
                 name = row.get("name") or row.get("device_id")
                 kind = row.get("category") or "down"
-                parts.append(f"{name} {kind}")
+                parts.append(f"{name} {_SUMMARY_WORD.get(kind, kind)}")
         if not parts:
             return "All clear."
         return ", ".join(parts) + "."
