@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.9.1 (2026-07-24)
+# File: config_flow.py, Version: 0.9.2 (2026-07-25)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -428,7 +428,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         device_options = [
             selector.SelectOptionDict(
                 value=row["device_id"],
-                label=row["name"],
+                label=f"{row['name']} ({row['integration']})",
             )
             for row in signal_rows
             if row["device_id"] not in covered
@@ -571,7 +571,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         device_options = [
             selector.SelectOptionDict(
                 value=row["device_id"],
-                label=row["name"],
+                label=f"{row['name']} ({row['integration']})",
             )
             for row in device_rows
             if row["device_id"] not in covered
