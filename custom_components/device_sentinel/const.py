@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.9.4 (2026-07-25)
+# File: const.py, Version: 0.9.5 (2026-07-25)
 
 """Constants for the Device Sentinel integration."""
 
@@ -58,12 +58,25 @@ ATTR_BRIDGE_PERMIT_JOIN_END = "permit_join_end"
 ATTR_BRIDGE_BASE_TOPIC = "base_topic"
 ATTR_BRIDGE_LAST_HEARD = "last_heard"
 
+# How long after a pairing window closes a recovery is still counted as
+# pairing-caused (#145). A device paired near the end of a window may
+# not report until just after it closes, and the observed bridge
+# publish lag makes that a real case. Small and soak-settleable; the
+# episode records when the window was open so this can be tuned from
+# real data rather than guessed.
+PAIRING_GRACE_SECONDS_DEFAULT = 120.0
+# The learned-column value for a gap discarded because the device
+# recovered during pairing. Distinct from the taint discard so the
+# episode report tells a pairing intervention apart from real downtime.
+LEARNED_PAIRING = "no (pairing)"
+
 # The sensinel_type stem for a bridge sensor; the stack is appended so
 # each stack's sensor has a stable unique id.
 SENTINEL_TYPE_BRIDGE = "bridge"
-# Display names per stack. Z2M reads as its full product name to match
-# the wiki and reports.
-BRIDGE_SENSOR_NAMES = {STACK_Z2M: "Zigbee2MQTT Bridge"}
+# Display names per stack. The "Bridge:" prefix groups these with the
+# other family sensors (Signal:, Battery:, Device:) so a house running
+# several coordinators sees them in one block (#81, #149).
+BRIDGE_SENSOR_NAMES = {STACK_Z2M: "Bridge: Zigbee2MQTT"}
 
 # The literal logger name, per the Sentinel blueprint precedent
 # (battery_sentinel, entity_sentinel). Users configure it under
