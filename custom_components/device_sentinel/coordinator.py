@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.9.5 (2026-07-25)
+# File: coordinator.py, Version: 0.9.6 (2026-07-25)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -55,10 +55,12 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .messenger import MessengerMixin
+from .notifier import NotifierMixin
 from .narrative import NarrativeMixin
 from .reports import ReportWritingMixin
 from .bridge import Z2MBridgeReader
 from .const import (
+    NOTIFY_KIND_FAMILY,
     PAIRING_GRACE_SECONDS_DEFAULT,
     LEARNED_PAIRING,
     STACK_Z2M,
@@ -222,8 +224,19 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
     }
 
 
+_EVENT_WORD = {
+    "battery": "low",
+    "signal": "low signal",
+    "rail": "railed",
+    "frozen": "frozen",
+    "unavailable": "unavailable",
+    "unknown": "unknown",
+    "not_reported": "never reporting",
+}
+
+
 class DeviceSentinelCoordinator(
-    ReportWritingMixin, NarrativeMixin, MessengerMixin
+    ReportWritingMixin, NarrativeMixin, MessengerMixin, NotifierMixin
 ):
     """Owns Device Sentinel's storage, registry view, and telemetry."""
 
@@ -308,6 +321,10 @@ class DeviceSentinelCoordinator(
         self._grace_devices: set[str] = set()
         self._grace_taints: set[str] = set()
         self._outbox_pending: set[str] = set()
+        # Family events collected during a sync, fired after it settles
+        # (#479). Each is (family, event_line, recovery). Cleared on
+        # every dispatch so a later sync starts clean.
+        self._pending_events: list[tuple[str, str, bool]] = []
         self._storm_feed_q: dict[str, deque[tuple[float, str]]] = {}
         self._storm_active: dict[str, dict[str, Any]] = {}
         self._storm_history: dict[str, deque[float]] = {}
@@ -2535,6 +2552,45 @@ class DeviceSentinelCoordinator(
         )
 
     @callback
+    def _collect_event(
+        self, kind: str, name: str, recovery: bool
+    ) -> None:
+        """Buffer a family event to fire after the sync settles.
+
+        The kind maps to its family (battery, signal, freeze), and the
+        event line names the device and what happened, timestamped in
+        local wall time so the push reads like a person would write it.
+        A recovery reads recovered; a fault reads the kind. The buffer
+        is fired and cleared by the dispatch after the sync.
+        """
+        family = NOTIFY_KIND_FAMILY.get(kind, "freeze")
+        when = dt_util.now().strftime("%-I:%M %p").lower()
+        if recovery:
+            line = f"At {when}, {name} recovered."
+        else:
+            line = f"At {when}, {name} was detected {_EVENT_WORD.get(kind, kind)}."
+        self._pending_events.append((family, line, recovery))
+
+    def _dispatch_notifications(self) -> None:
+        """Fire the buffered family events and refresh the card.
+
+        Scheduled as a task because the sync is synchronous and the
+        sends are async. The buffer is copied and cleared first, so a
+        sync triggered while a dispatch is in flight does not double-
+        send. The card always refreshes; the events are gated inside
+        async_fire_events by quiet hours and the target list.
+        """
+        events = list(self._pending_events)
+        self._pending_events.clear()
+        self.hass.async_create_task(self._run_dispatch(events))
+
+    async def _run_dispatch(
+        self, events: list[tuple[str, str, bool]]
+    ) -> None:
+        """Await the card refresh and the event pushes."""
+        await self.async_update_card()
+        await self.async_fire_events(events)
+
     def _sync_problem_list(self) -> None:
         """Reconcile the todo against the detections, immediately.
 
@@ -2574,6 +2630,11 @@ class DeviceSentinelCoordinator(
                         kind,
                         now,
                     )
+                    self._collect_event(
+                        kind,
+                        record.get(TODO_SORT_NAME) or device_id,
+                        recovery=True,
+                    )
                 changed = True
                 continue
             stored_kinds: dict[str, float | None] = record.get(
@@ -2598,10 +2659,16 @@ class DeviceSentinelCoordinator(
                     self._record_incident(
                         device_id, problem["name"], kind, INCIDENT_OPENED
                     )
+                    self._collect_event(
+                        kind, problem["name"], recovery=False
+                    )
             for kind in stored_kinds:
                 if kind not in new_kinds:
                     self._resolve_incident(
                         device_id, problem["name"], kind, now
+                    )
+                    self._collect_event(
+                        kind, problem["name"], recovery=True
                     )
             summary, description = self._problem_item_text(
                 problem["name"], new_kinds, problem["level"]
@@ -2644,6 +2711,7 @@ class DeviceSentinelCoordinator(
                 self._record_incident(
                     device_id, problem["name"], kind, INCIDENT_OPENED
                 )
+                self._collect_event(kind, problem["name"], recovery=False)
             changed = True
 
         if changed:
@@ -2654,6 +2722,12 @@ class DeviceSentinelCoordinator(
             self._notify()
         # The list is settled, so a device line now describes reality.
         self._flush_outbox_lines()
+        # Now that the list and its summaries are settled, fire the
+        # collected family events and refresh the persistent card. The
+        # card always updates; the events respect quiet hours and the
+        # high-priority targets. Scheduled as a task because the sync
+        # runs in a sync context and the sends are async.
+        self._dispatch_notifications()
 
     @property
     def retention_days(self) -> int:
