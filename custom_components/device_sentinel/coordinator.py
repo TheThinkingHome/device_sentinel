@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.9.4 (2026-07-25)
+# File: coordinator.py, Version: 0.9.5 (2026-07-25)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -59,6 +59,8 @@ from .narrative import NarrativeMixin
 from .reports import ReportWritingMixin
 from .bridge import Z2MBridgeReader
 from .const import (
+    PAIRING_GRACE_SECONDS_DEFAULT,
+    LEARNED_PAIRING,
     STACK_Z2M,
     STACK_ZHA,
     STACK_ZWAVE,
@@ -1036,6 +1038,23 @@ class DeviceSentinelCoordinator(
         # only evidence there was, which is what kept the quiet
         # devices' baselines describing half a night.
         learned = "no (taint, unavailable)" if tainted else "yes"
+        # A recovery during a pairing window is a hand re-pair, not a
+        # self-recovery, so its gap is discarded whatever the taint
+        # decided (#145). This overrides the debounce because pairing
+        # is a stronger, more specific signal than duration. Guarded so
+        # that if no reader, no bridge, or any failure, the taint
+        # decision above stands and nothing is made worse (#147).
+        if self._recovered_during_pairing(device_id, now):
+            learned = LEARNED_PAIRING
+            if not tainted and last is not None:
+                # Undo the daily-max update this gap just made, so a
+                # pairing gap never widens the learned rhythm.
+                self._retract_today_max(record, stamp - last)
+            LOGGER.info(
+                "Device %s recovered during a Z2M pairing window; gap "
+                "discarded as a pairing intervention",
+                device_id,
+            )
         self._close_episode(device_id, stamp, learned, taint_seconds)
 
         record[DEV_LAST_ACTIVITY] = stamp
@@ -1552,6 +1571,45 @@ class DeviceSentinelCoordinator(
         if rhythm is None or rhythm <= 0:
             return None
         return rhythm + self._freeze_grace(rhythm)
+
+    def _recovered_during_pairing(self, device_id: str, now: float) -> bool:
+        """Return whether this device recovered during a Z2M pairing.
+
+        Permit-join is a coordinator-wide state, so any device behind
+        the Z2M bridge that recovers while pairing is open (or within
+        the grace after it closed) is a pairing candidate (#145). The
+        available per-device signal is the integration domain: a Z2M
+        device carries the mqtt domain. A non-Z2M mqtt device recovering
+        by coincidence during a window would also be caught, but the
+        only cost is a single discarded gap, which is the conservative,
+        fail-safe direction. Everything is guarded: no reader, no
+        bridge, or any failure returns False and the taint decision
+        stands (#147).
+        """
+        reader = self._bridge_readers.get(STACK_Z2M)
+        if reader is None:
+            return False
+        if self._watched.get(device_id) != "mqtt":
+            return False
+        try:
+            return reader.pairing_active_within(
+                PAIRING_GRACE_SECONDS_DEFAULT, now
+            )
+        except Exception:  # noqa: BLE001 - a reader fault falls to the taint
+            return False
+
+    @staticmethod
+    def _retract_today_max(record: dict[str, Any], gap: float) -> None:
+        """Undo a daily-max bump a now-discarded pairing gap just made.
+
+        The gap update runs before the pairing check, so a pairing gap
+        that was the day's largest has to be pulled back out, or it
+        would widen the learned rhythm it should never touch. Only the
+        exact value is retracted, and only when it is the current max,
+        so an unrelated larger gap is left alone.
+        """
+        if record[DEV_TODAY_MAX] is not None and record[DEV_TODAY_MAX] == gap:
+            record[DEV_TODAY_MAX] = None
 
     def _taint_debounce(self, record: dict[str, Any]) -> float:
         """Return the unavailable a device tolerates before a taint (#137).
