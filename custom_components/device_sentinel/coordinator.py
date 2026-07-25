@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.9.3 (2026-07-25)
+# File: coordinator.py, Version: 0.9.4 (2026-07-25)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -57,6 +57,7 @@ from homeassistant.util import dt as dt_util
 from .messenger import MessengerMixin
 from .narrative import NarrativeMixin
 from .reports import ReportWritingMixin
+from .bridge import Z2MBridgeReader
 from .const import (
     STACK_Z2M,
     STACK_ZHA,
@@ -313,6 +314,12 @@ class DeviceSentinelCoordinator(
         self._listeners: list[Any] = []
         self._unsubs: list[Any] = []
         self._brief_unsub: Any | None = None
+        # One bridge reader per detected coordinator stack that can
+        # report its own liveness and pairing state (#145). Populated in
+        # async_setup after the registry view has found the stacks. Z2M
+        # is the only reader today; ZHA and Z-Wave reach their state
+        # through different doors and are added later.
+        self._bridge_readers: dict[str, Any] = {}
 
     # ------------------------------------------------------------- setup
 
@@ -525,6 +532,13 @@ class DeviceSentinelCoordinator(
         # recovery and mass-delete the list at every boot.
         self._sync_problem_list()
 
+        # Start a bridge reader for each detected stack that can report
+        # its own state. This is separate from the sensors that display
+        # it: the reader (and later the pairing detector that consumes
+        # it) runs whether or not a user ever enables the sensor, so
+        # detection never depends on a display choice.
+        await self._start_bridge_readers()
+
         LOGGER.info(
             "Device Sentinel v%s setup complete: setup_count=%s, "
             "first_installed=%s, watching %d of %d devices "
@@ -541,8 +555,39 @@ class DeviceSentinelCoordinator(
             self._write_reports, "setup"
         )
 
+    async def _start_bridge_readers(self) -> None:
+        """Create and start a bridge reader for each capable stack.
+
+        Only Z2M has a reader today. A reader that cannot reach its
+        state (no MQTT, topics absent) starts anyway and reports
+        unknown, so the sensor and the later detector always have
+        something to read. The reader is kept regardless of whether it
+        connected, because MQTT may come up after us.
+        """
+        if STACK_Z2M in self._stacks and STACK_Z2M not in self._bridge_readers:
+            reader = Z2MBridgeReader(self.hass)
+            self._bridge_readers[STACK_Z2M] = reader
+            await reader.async_start()
+
+    def bridge_state(self, stack: str) -> str | None:
+        """Return a stack's bridge state, or None if it has no reader."""
+        reader = self._bridge_readers.get(stack)
+        return reader.state if reader is not None else None
+
+    def bridge_reader(self, stack: str) -> Any | None:
+        """Return the reader for a stack, or None if there is none."""
+        return self._bridge_readers.get(stack)
+
+    @property
+    def bridge_stacks(self) -> list[str]:
+        """Return the stacks that have a bridge reader, sorted."""
+        return sorted(self._bridge_readers)
+
     async def async_shutdown(self) -> None:
         """Stop listening and flush storage."""
+        for reader in self._bridge_readers.values():
+            reader.async_stop()
+        self._bridge_readers.clear()
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
