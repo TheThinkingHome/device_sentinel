@@ -1,13 +1,13 @@
 {
   "domain": "device_sentinel",
   "name": "Device Sentinel",
+  "after_dependencies": [
+    "mqtt"
+  ],
   "codeowners": [
     "@TheThinkingHome"
   ],
   "config_flow": true,
-  "after_dependencies": [
-    "mqtt"
-  ],
   "documentation": "https://github.com/TheThinkingHome/device_sentinel",
   "integration_type": "service",
   "iot_class": "calculated",
