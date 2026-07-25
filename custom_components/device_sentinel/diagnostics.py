@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.9.1 (2026-07-24)
+# File: diagnostics.py, Version: 0.9.3 (2026-07-25)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -170,6 +170,11 @@ async def async_get_config_entry_diagnostics(
             "watched": len(coordinator._watched),
             "set_aside": len(coordinator._set_aside),
             "deviceless_entities": coordinator.deviceless_count,
+            # Coordinator stacks detected in this house (#143). Derived
+            # from the registry each rebuild, the whole visible surface
+            # of stack auto-detection; every later intervention detector
+            # attaches only where its stack appears here.
+            "stacks": sorted(coordinator._stacks),
             "excluded_devices": coordinator._excluded_devices,
             "excluded_entities": coordinator._excluded_entities,
             "storm_exempt_entries": sorted(coordinator._storm_exempt),
