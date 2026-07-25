@@ -5,10 +5,13 @@
     "@TheThinkingHome"
   ],
   "config_flow": true,
+  "after_dependencies": [
+    "mqtt"
+  ],
   "documentation": "https://github.com/TheThinkingHome/device_sentinel",
   "integration_type": "service",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/TheThinkingHome/device_sentinel/issues",
   "single_config_entry": true,
-  "version": "0.9.3"
+  "version": "0.9.4"
 }
