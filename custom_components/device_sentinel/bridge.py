@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: bridge.py, Version: 0.9.4 (2026-07-25)
+# File: bridge.py, Version: 0.9.5 (2026-07-25)
 
 """Reading a coordinator bridge's own liveness and pairing state.
 
@@ -73,6 +73,11 @@ class Z2MBridgeReader:
         self._permit_join: bool = False
         self._permit_join_end: str | None = None
         self._last_heard: str | None = None
+        # When a pairing window last closed, as a UTC timestamp. A
+        # device paired near the end of a window may not report until
+        # just after it closes, so the detector allows a short grace
+        # after this moment (#145). None until a window has closed.
+        self._pairing_closed_at: float | None = None
 
     @property
     def stack(self) -> str:
@@ -124,6 +129,22 @@ class Z2MBridgeReader:
         pairing open even if a stale info payload said permit_join.
         """
         return self.state == BRIDGE_BINDING
+
+    def pairing_active_within(self, grace_seconds: float, now: float) -> bool:
+        """Return whether pairing was open now or within a recent grace.
+
+        The detector asks this when a device recovers: a device that
+        comes back while a pairing window is open, or within a short
+        grace after it closed, recovered because of the pairing, not on
+        its own (#145). Open now is the clear case; the grace covers a
+        device that reports just after the window closes, which the
+        observed publish lag on a real bridge makes a real case.
+        """
+        if self.pairing_open:
+            return True
+        if self._pairing_closed_at is None:
+            return False
+        return (now - self._pairing_closed_at) <= grace_seconds
 
     async def async_start(self) -> bool:
         """Subscribe to the bridge topics once MQTT is available.
@@ -208,7 +229,12 @@ class Z2MBridgeReader:
         data = _load(_decode(msg.payload))
         if not isinstance(data, dict):
             return
+        was_open = self._permit_join
         self._permit_join = bool(data.get("permit_join", False))
+        # Note the moment a window closes, so a device that reports just
+        # after the window can still be attributed to the pairing (#145).
+        if was_open and not self._permit_join:
+            self._pairing_closed_at = dt_util.utcnow().timestamp()
         end = data.get("permit_join_end")
         self._permit_join_end = str(end) if end is not None else None
 
