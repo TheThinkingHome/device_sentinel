@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.9.3 (2026-07-25)
+# File: const.py, Version: 0.9.4 (2026-07-25)
 
 """Constants for the Device Sentinel integration."""
 
@@ -30,6 +30,40 @@ STACK_MATTER = "matter"
 Z2M_BRIDGE_NAME_MARK = "Zigbee2MQTT Bridge"
 Z2M_BRIDGE_MODEL = "Bridge"
 Z2M_BRIDGE_MANUFACTURER = "Zigbee2MQTT"
+
+# Bridge liveness states, shown by the per-stack bridge sensor. The
+# sensor reads what a coordinator publishes about itself; each stack
+# reports only the states it can. Z2M distinguishes all four from its
+# retained bridge/info and bridge/state topics (#145). ZHA and Z-Wave,
+# added later, reach their state through different doors but land on
+# this same vocabulary, since the shared detector only needs to know
+# whether pairing is open.
+BRIDGE_RUNNING = "running"  # online, pairing closed
+BRIDGE_BINDING = "binding"  # online, pairing window open
+BRIDGE_DOWN = "down"  # offline, or the retained state has gone stale
+BRIDGE_UNKNOWN = "unknown"  # nothing heard from the bridge yet
+BRIDGE_STATES = [BRIDGE_RUNNING, BRIDGE_BINDING, BRIDGE_DOWN, BRIDGE_UNKNOWN]
+
+# Z2M bridge topics (relative to the configured base topic). bridge/info
+# is retained and carries permit_join and the absolute permit_join_end;
+# bridge/state carries online/offline. Both arrive on subscribe because
+# they are retained, so a restart mid-window loses nothing (#146).
+Z2M_BASE_TOPIC_DEFAULT = "zigbee2mqtt"
+Z2M_TOPIC_INFO = "bridge/info"
+Z2M_TOPIC_STATE = "bridge/state"
+
+# Bridge sensor attribute keys.
+ATTR_BRIDGE_STACK = "stack"
+ATTR_BRIDGE_PERMIT_JOIN_END = "permit_join_end"
+ATTR_BRIDGE_BASE_TOPIC = "base_topic"
+ATTR_BRIDGE_LAST_HEARD = "last_heard"
+
+# The sensinel_type stem for a bridge sensor; the stack is appended so
+# each stack's sensor has a stable unique id.
+SENTINEL_TYPE_BRIDGE = "bridge"
+# Display names per stack. Z2M reads as its full product name to match
+# the wiki and reports.
+BRIDGE_SENSOR_NAMES = {STACK_Z2M: "Zigbee2MQTT Bridge"}
 
 # The literal logger name, per the Sentinel blueprint precedent
 # (battery_sentinel, entity_sentinel). Users configure it under
