@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.5.4 (2026-07-21)
+# File: sensor.py, Version: 0.9.4 (2026-07-25)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -39,6 +39,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import DeviceSentinelConfigEntry
 from .const import (
+    BRIDGE_STATES,
+    BRIDGE_UNKNOWN,
+    SENTINEL_TYPE_BRIDGE,
+    BRIDGE_SENSOR_NAMES,
+    ATTR_BRIDGE_STACK,
+    ATTR_BRIDGE_PERMIT_JOIN_END,
+    ATTR_BRIDGE_BASE_TOPIC,
+    ATTR_BRIDGE_LAST_HEARD,
     ATTR_FIRST_INSTALLED,
     ATTR_SENTINEL_TYPE,
     ATTR_SETUP_COUNT,
@@ -86,6 +94,14 @@ async def async_setup_entry(
             DeviceSentinelLowBatteriesSensor(coordinator),
             DeviceSentinelFrozenDevicesSensor(coordinator),
         ]
+    )
+    # One bridge sensor per detected coordinator stack, disabled by
+    # default. Created from the readers the coordinator started, so a
+    # house with no capable stack gets none and a house with several
+    # gets one each.
+    async_add_entities(
+        DeviceSentinelBridgeSensor(coordinator, stack)
+        for stack in coordinator.bridge_stacks
     )
 
 
@@ -450,3 +466,63 @@ class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
             **self._identity(),
             "devices": self._coordinator.frozen_devices_list,
         }
+
+
+class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
+    """One per detected coordinator bridge: is it running, in binding
+    mode, or down.
+
+    This is the visible surface of the intervention-detection work and,
+    just as much, the acceptance test for each stack. Reading a stack's
+    pairing state is the hard, stack-specific part; when this sensor
+    flips to binding as a pairing window opens, the reader underneath is
+    proven, and the shared detector that acts on the same state follows
+    (#145).
+
+    Disabled by default. A house may run several coordinators and most
+    users watch one, so the sensors exist but stay off until a person
+    enables the one for their stack. The wiki says which to enable and,
+    importantly, that intervention detection works whether or not any of
+    these is enabled, because the reader and the detector run off the
+    subscription, not off this entity (the NUT-integration lesson: a
+    disabled diagnostic with no documentation is a feature nobody finds).
+    """
+
+    _attr_icon = "mdi:zigbee"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = BRIDGE_STATES
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(
+        self, coordinator: DeviceSentinelCoordinator, stack: str
+    ) -> None:
+        """Initialize the bridge sensor for one stack."""
+        self._stack = stack
+        self.sentinel_type = f"{SENTINEL_TYPE_BRIDGE}_{stack}"
+        super().__init__(coordinator)
+        # A stack-specific display name. Z2M reads as its full product
+        # name to match the wiki and reports; other stacks name their
+        # own coordinator when they arrive.
+        self._attr_name = BRIDGE_SENSOR_NAMES.get(stack, f"{stack} Bridge")
+
+    @property
+    def native_value(self) -> str:
+        """Return the bridge state a person would read."""
+        state = self._coordinator.bridge_state(self._stack)
+        return state if state is not None else BRIDGE_UNKNOWN
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the stack, the pairing window end when open, and the
+        base topic and last-heard time for diagnosis."""
+        reader = self._coordinator.bridge_reader(self._stack)
+        attrs: dict[str, Any] = {
+            **self._identity(),
+            ATTR_BRIDGE_STACK: self._stack,
+        }
+        if reader is not None:
+            attrs[ATTR_BRIDGE_PERMIT_JOIN_END] = reader.permit_join_end
+            attrs[ATTR_BRIDGE_BASE_TOPIC] = reader.base_topic
+            attrs[ATTR_BRIDGE_LAST_HEARD] = reader.last_heard
+        return attrs
