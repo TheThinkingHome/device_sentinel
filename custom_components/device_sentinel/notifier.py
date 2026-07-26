@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.9.7 (2026-07-25)
+# File: notifier.py, Version: 0.9.8 (2026-07-26)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -40,9 +40,11 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_HIGH_PRIORITY_TARGETS,
+    CONF_PERSISTENT_ENABLED,
     CONF_QUIET_ENABLED,
     CONF_QUIET_END,
     CONF_QUIET_START,
+    DEFAULT_PERSISTENT_ENABLED,
     DEFAULT_QUIET_ENABLED,
     DEFAULT_QUIET_END,
     DEFAULT_QUIET_START,
@@ -51,6 +53,7 @@ from .const import (
     NOTIFY_FAMILY_IDS,
     NOTIFY_FAMILY_TITLES,
     PERSISTENT_CREATE,
+    PERSISTENT_DISMISS,
     PERSISTENT_TARGET,
 )
 
@@ -243,7 +246,28 @@ class NotifierMixin:
         current state, sent on every change, never gated by quiet hours.
         A home with no trouble clears the card by writing an all-clear,
         so a stale problem never lingers on it.
+
+        The card is optional. When the Create a persistent notification
+        toggle is off, no card is written, and any card already showing
+        is dismissed so turning the setting off removes it rather than
+        leaving a stale one behind.
         """
+        if not self.entry.options.get(
+            CONF_PERSISTENT_ENABLED, DEFAULT_PERSISTENT_ENABLED
+        ):
+            try:
+                await self.hass.services.async_call(
+                    PERSISTENT_TARGET,
+                    PERSISTENT_DISMISS,
+                    {"notification_id": NOTIFY_CARD_ID},
+                    blocking=True,
+                )
+            except Exception as err:  # noqa: BLE001 - dismiss must never raise
+                LOGGER.warning(
+                    "Device Sentinel could not dismiss the state card: %s",
+                    err,
+                )
+            return
         lines: list[str] = []
         for family in ("freeze", "battery", "signal"):
             summary = self._family_summary(family)
