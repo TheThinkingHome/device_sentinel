@@ -18,14 +18,21 @@ readable Written header, and holds a Reporting Devices section that
 groups every standing fault by family. The STATUS cell reads one
 grammar (Reported or Excluded with reasons), the Regenerate Reports
 button judges then rewrites, and the whole learned state is available
-in the diagnostics download. This file holds the diagnostic reports and
-their surface; the daily brief, which follows its own window rather than
-the calendar day, has its own file.
+in the diagnostics download. A third file, silence_episodes.md, records
+each time a device passed its own basis: a row opens halfway from rhythm
+to freeze line, closes as resumed when the device speaks for itself or
+is stamped by an intervention when a reboot truncates it, with a lag
+column that separates a wedge from a device that was merely quiet, and
+a filter that keeps trivial fast-device silences and freeze-excluded
+devices out of the file. This file holds the diagnostic reports, their
+surface, and the silence episodes; the daily brief, which follows its
+own window rather than the calendar day, has its own file.
 """
 
 import os
 from datetime import timedelta
 
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -43,6 +50,8 @@ from custom_components.device_sentinel.const import (
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_SENSITIVITY,
+    DATA_EPISODES,
+    DEFAULT_FREEZE_DELTA_HIGH_HR,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
@@ -53,8 +62,17 @@ from custom_components.device_sentinel.const import (
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_MIN,
+    EP_ENDED,
+    EP_LAG,
+    EP_LEARNED,
+    EP_NAME,
+    EPISODE_ENDED_REBOOT,
+    EPISODE_ENDED_RESUMED,
+    EPISODE_OPEN_SHARE,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
+    FREEZE_DELTA_HIGH_HR_MAX,
+    FREEZE_DELTA_HIGH_HR_MIN,
 )
 from custom_components.device_sentinel.coordinator import (
     DeviceSentinelCoordinator,
@@ -627,3 +645,242 @@ async def test_section_reaches_the_written_report(hass: HomeAssistant):
     assert "## Reporting Devices (1)" in text
     assert OPEN_TAG in text
     assert "Down devices" not in text
+
+
+# ==================================================================
+# Silence episodes and the widened delta-high range.
+# ==================================================================
+
+def _armed_and_silent(coord, device_id, hours_silent):
+    """Give a device an hourly rhythm and a silence past its basis.
+
+    Startup grace is closed first: these tests are about a running
+    system, and a stamp inside grace is correctly excluded from
+    learning, which would mask what the episode columns are proving.
+    """
+    coord._grace_until = 0.0
+    record = coord.data["devices"][device_id]
+    record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
+    record[DEV_LAST_ACTIVITY] = (
+        dt_util.utcnow().timestamp() - hours_silent * 3600.0
+    )
+
+
+def _episodes(coord):
+    return coord.data[DATA_EPISODES]
+
+
+def _rhythm(coord, device_id, basis_seconds, silent_seconds):
+    coord._grace_until = 0.0
+    record = coord.data["devices"][device_id]
+    record[DEV_DAILY_MAX] = [basis_seconds] * (FREEZE_ARMING_DAYS + 2)
+    record[DEV_LAST_ACTIVITY] = (
+        dt_util.utcnow().timestamp() - silent_seconds
+    )
+
+
+async def test_delta_high_range_widened(hass: HomeAssistant):
+    """#102: the asymmetric 2-to-8 range becomes 4 to 12, default 8."""
+    assert FREEZE_DELTA_HIGH_HR_MIN == 4
+    assert FREEZE_DELTA_HIGH_HR_MAX == 12
+    assert DEFAULT_FREEZE_DELTA_HIGH_HR == 8
+
+
+async def test_quiet_device_never_opens_an_episode(hass: HomeAssistant):
+    """The filter that keeps the file readable: a device inside its
+    rhythm produces no row."""
+    device, entity_id = _register(hass, "q1", "Quiet Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "1")
+    await hass.async_block_till_done()
+    _armed_and_silent(coord, device.id, 0.5)  # half its basis
+    coord._judge_all_devices()
+    assert _episodes(coord) == []
+
+
+async def test_episode_opens_past_basis_and_resumes(
+    hass: HomeAssistant,
+):
+    """Past its rhythm opens a row; speaking for itself closes it as
+    resumed, with the gap learned."""
+    device, entity_id = _register(hass, "r1", "Resuming Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "1")
+    await hass.async_block_till_done()
+    _armed_and_silent(coord, device.id, 2.0)
+    coord._judge_all_devices()
+    assert len(_episodes(coord)) == 1
+    assert _episodes(coord)[0][EP_ENDED] is None
+    assert _episodes(coord)[0][EP_NAME] == "Resuming Sensor"
+
+    coord._record_activity(device.id, None, entity_id, "2")
+    episode = _episodes(coord)[0]
+    assert episode[EP_ENDED] == EPISODE_ENDED_RESUMED
+    assert episode[EP_LEARNED] == "yes"
+    assert episode[EP_LAG] is None  # nothing to measure against
+
+
+async def test_reboot_truncates_and_lag_fills_later(
+    hass: HomeAssistant, freezer
+):
+    """A restart stamps the open episode; the lag arrives with the
+    device's first genuine report, which is the wedge discriminator."""
+    device, entity_id = _register(hass, "i1", "Levered Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "1")
+    await hass.async_block_till_done()
+    _armed_and_silent(coord, device.id, 3.0)
+    coord._judge_all_devices()
+
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
+    await hass.async_block_till_done()
+    episode = _episodes(coord)[0]
+    assert episode[EP_ENDED] == EPISODE_ENDED_REBOOT
+    assert episode[EP_LAG] is None  # still awaiting the resume
+
+    freezer.tick(timedelta(seconds=90))
+    coord._record_activity(device.id, None, entity_id, "2")
+    episode = _episodes(coord)[0]
+    assert 80 <= episode[EP_LAG] <= 100
+    assert episode[EP_ENDED] == EPISODE_ENDED_REBOOT  # unchanged
+
+
+async def test_second_silence_is_a_new_row(hass: HomeAssistant):
+    """One row per occurrence, so a nightly wedge reads as a pattern."""
+    device, entity_id = _register(hass, "s2", "Repeating Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "1")
+    await hass.async_block_till_done()
+    _armed_and_silent(coord, device.id, 2.0)
+    coord._judge_all_devices()
+    coord._record_activity(device.id, None, entity_id, "2")
+    _armed_and_silent(coord, device.id, 2.0)
+    coord._judge_all_devices()
+    assert len(_episodes(coord)) == 2
+
+
+async def test_report_written_and_readable(hass: HomeAssistant):
+    """The file exists, names the device, and shows the columns."""
+    device, entity_id = _register(hass, "we1", "Episode Written Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "1")
+    await hass.async_block_till_done()
+    _armed_and_silent(coord, device.id, 2.0)
+    coord._judge_all_devices()
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    path = hass.config.path("device_sentinel", "diagnostics", "silence_episodes.md")
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    assert "Silence Episodes" in text
+    assert "Episode Written Sensor" in text
+    assert "| SILENT SINCE | DEVICE |" in text
+    assert "open" in text
+
+
+async def test_empty_report_says_so(hass: HomeAssistant):
+    coord = await setup_coordinator(hass)
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    path = hass.config.path("device_sentinel", "diagnostics", "silence_episodes.md")
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    assert "No device has been silent past its own rhythm" in text
+
+
+async def test_episodes_reach_diagnostics(hass: HomeAssistant):
+    device, entity_id = _register(hass, "de1", "Episode Diag Sensor")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(entity_id, "1")
+    await hass.async_block_till_done()
+    _armed_and_silent(coord, device.id, 2.0)
+    coord._judge_all_devices()
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    assert "silence_episodes" in diag
+    assert diag["silence_episodes"][0][EP_NAME] == "Episode Diag Sensor"
+
+
+# ==================================================================
+# What earns a silence-episode row.
+# ==================================================================
+
+async def test_share_is_half(hass: HomeAssistant):
+    """#105: a row opens halfway from rhythm to freeze line."""
+    assert EPISODE_OPEN_SHARE == 0.5
+
+
+async def test_fast_device_ignores_a_trivial_silence(
+    hass: HomeAssistant,
+):
+    """The 0.6.7 noise case: a 36-second rhythm silent for 50
+    seconds is a device behaving normally, not an episode."""
+    device, entity_id = _register(hass, "fd1", "Fast Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "1")
+    await hass.async_block_till_done()
+    _rhythm(coord, device.id, 36.0, 50.0)
+    coord._judge_all_devices()
+    assert coord.data[DATA_EPISODES] == []
+
+
+async def test_fast_device_opens_once_it_spends_its_patience(
+    hass: HomeAssistant,
+):
+    """The same device silent well into its grace does open a row,
+    so the filter suppresses noise without going blind."""
+    device, entity_id = _register(hass, "fd2", "Fast Sensor Two")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "1")
+    await hass.async_block_till_done()
+    record = coord.data["devices"][device.id]
+    record[DEV_DAILY_MAX] = [36.0] * (FREEZE_ARMING_DAYS + 2)
+    window = coord._freeze_window(record)
+    coord._grace_until = 0.0
+    # Silence at three quarters of the way to the freeze line.
+    record[DEV_LAST_ACTIVITY] = (
+        dt_util.utcnow().timestamp() - (36.0 + 0.75 * (window - 36.0))
+    )
+    coord._judge_all_devices()
+    assert len(coord.data[DATA_EPISODES]) == 1
+
+
+async def test_globally_excluded_device_is_skipped(
+    hass: HomeAssistant,
+):
+    """#106: no verdict is possible, so no episode explains one."""
+    device, entity_id = _register(hass, "ge1", "Global Excluded")
+    coord = await setup_coordinator(
+        hass, {CONF_EXCLUDED_DEVICES: [device.id]}
+    )
+    hass.states.async_set(entity_id, "1")
+    await hass.async_block_till_done()
+    _rhythm(coord, device.id, 3600.0, 8 * 3600.0)
+    coord._judge_all_devices()
+    assert coord.data[DATA_EPISODES] == []
+
+
+async def test_freeze_excluded_device_is_skipped(hass: HomeAssistant):
+    device, entity_id = _register(hass, "ze1", "Freeze Excluded")
+    coord = await setup_coordinator(
+        hass, {CONF_FREEZE_EXCLUDED_DEVICES: [device.id]}
+    )
+    hass.states.async_set(entity_id, "1")
+    await hass.async_block_till_done()
+    _rhythm(coord, device.id, 3600.0, 8 * 3600.0)
+    coord._judge_all_devices()
+    assert coord.data[DATA_EPISODES] == []
+
+
+async def test_battery_excluded_device_still_counts(
+    hass: HomeAssistant,
+):
+    """Excluded for battery only: still judged for freeze, so its
+    silences still belong in the file."""
+    device, entity_id = _register(hass, "be1", "Battery Excluded")
+    coord = await setup_coordinator(
+        hass, {CONF_BATTERY_EXCLUDED_DEVICES: [device.id]}
+    )
+    hass.states.async_set(entity_id, "1")
+    await hass.async_block_till_done()
+    _rhythm(coord, device.id, 3600.0, 8 * 3600.0)
+    coord._judge_all_devices()
+    assert len(coord.data[DATA_EPISODES]) == 1
