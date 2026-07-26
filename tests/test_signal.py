@@ -20,6 +20,7 @@ detector, signal exclusion as recorded-not-reported, and the tracked
 count surface.
 """
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -581,3 +582,38 @@ async def test_tracked_counts_armed_devices_and_splits_by_scale(
     assert int(state.state) == 1
     assert state.attributes["lqi"] == 1
     assert state.attributes["rssi"] == 0
+
+
+# ------------------------------------ the sensitivity slider label
+
+async def _slider_coord(hass, sensitivity):
+    """A coordinator at a given signal-sensitivity slider value, for
+    reading the word the report header shows for that setting."""
+    return await setup_coordinator(
+        hass, {CONF_SIGNAL_SENSITIVITY: sensitivity}
+    )
+
+
+@pytest.mark.parametrize(
+    "value,word",
+    [
+        (-2, "Calm"),
+        (-1, "Stable"),
+        (0, "Normal"),
+        (1, "Watchful"),
+        (2, "Sensitive"),
+    ],
+)
+async def test_slider_renders_as_a_word(
+    hass: HomeAssistant, value: int, word: str
+):
+    """Each slider value shows its word in the SIGNAL header."""
+    coord = await _slider_coord(hass, value)
+    assert coord._signal_slider_label() == word
+
+
+async def test_out_of_band_slider_falls_back_to_normal(hass: HomeAssistant):
+    """A slider value outside the band clamps, so its word is a real
+    one, never blank."""
+    coord = await _slider_coord(hass, 99)
+    assert coord._signal_slider_label() == "Sensitive"
