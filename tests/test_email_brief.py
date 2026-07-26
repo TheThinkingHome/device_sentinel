@@ -1290,7 +1290,15 @@ async def test_the_brief_is_emailed_whole(hass: HomeAssistant):
 
 async def test_an_in_progress_brief_is_never_sent(hass: HomeAssistant):
     """#135: a regenerate or a midnight rewrite produces an unfinished
-    document, and mailing those would deliver one day several times."""
+    document, and mailing those would deliver one day several times.
+
+    The guard has to return before the send loop, not merely produce a
+    zero count. If a None text reached the loop, building its payload
+    would raise and the bare except would swallow it, leaving sent at
+    zero and a broken guard looking healthy. So this pins the loop is
+    never entered: _brief_payload is never called for an unfinished
+    brief.
+    """
     calls = _capture(hass)
     coord = await setup_coordinator(
         hass,
@@ -1301,7 +1309,20 @@ async def test_an_in_progress_brief_is_never_sent(hass: HomeAssistant):
     )
     text = await hass.async_add_executor_job(coord._write_reports, "test")
     assert text is None
-    assert await coord.async_send_brief(text) == 0
+
+    payloads = []
+    original = coord._brief_payload
+    coord._brief_payload = lambda target, body: payloads.append(body) or original(
+        target, body
+    )
+    try:
+        assert await coord.async_send_brief(text) == 0
+    finally:
+        coord._brief_payload = original
+    # The loop was never entered, so no payload was ever built. Under
+    # the whole guard this holds; drop the not-text half and the loop
+    # runs, _brief_payload is called with None, and this fails.
+    assert payloads == []
     assert not calls
 
 
