@@ -16,7 +16,10 @@ integration-level exclude so a multi-homed device is caught only by
 its owning domain. The exclude pickers tag each option with its
 integration so two devices sharing a friendly name can be told apart.
 This file holds the exclusion surface, the STATUS column, the live
-application, and the disambiguated pickers.
+application, the disambiguated pickers, and the priority ladder:
+integration over label over device over entity, broadest first, with a
+pick that a broader kind covers pruned on save, plus the retirement of
+dead option keys that no code reads.
 """
 
 from datetime import timedelta
@@ -24,19 +27,27 @@ from datetime import timedelta
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
 
+from custom_components.device_sentinel.config_flow import (
+    DeviceSentinelOptionsFlow,
+    _devices_covered_by,
+)
 from custom_components.device_sentinel.const import (
     CONF_BATTERY_EXCLUDED_DEVICES,
     CONF_BATTERY_EXCLUDED_INTEGRATIONS,
+    CONF_BATTERY_EXCLUDED_LABELS,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
+    CONF_EXCLUDED_LABELS,
     CONF_FREEZE_EXCLUDED_DEVICES,
     DATA_DEVICES,
+    DEAD_OPTION_KEYS,
     DEV_EVENT_COUNT,
     DEV_LAST_ACTIVITY,
     STARTUP_GRACE_SECONDS,
@@ -412,3 +423,336 @@ async def test_exclude_option_labels_disambiguate_by_integration(
     assert "NSPanel Pro Randy (mobile_app)" in panel_labels
     # The bare, ambiguous name is no longer offered on its own.
     assert "NSPanel Pro Randy" not in panel_labels
+
+
+# ==================================================================
+# The exclusion priority ladder and the option-key retirement.
+# ==================================================================
+
+def _ladder_device(hass, source, index, name=None):
+    """A device with a battery entity, for the ladder tests: the
+    picker rows the ladder prunes carry a battery entity so the
+    battery kind can cover them too."""
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", f"ladder{index}")},
+        name=name or f"Ladder Device {index}",
+    )
+    reg = er.async_get(hass).async_get_or_create(
+        "sensor", "test", f"ladder{index}_pct",
+        device_id=device.id, config_entry=source,
+        original_device_class="battery",
+    )
+    return device, reg.entity_id
+
+
+# The pure coverage helpers, where the ruling lives.
+
+
+def test_integration_covers_its_devices():
+    rows = [
+        {"device_id": "a", "integration": "spook", "labels": frozenset()},
+        {"device_id": "b", "integration": "zha", "labels": frozenset()},
+    ]
+    assert _devices_covered_by(rows, ["spook"], []) == {"a"}
+
+
+def test_label_covers_its_bearers():
+    rows = [
+        {"device_id": "a", "integration": "zha", "labels": frozenset({"ice"})},
+        {"device_id": "b", "integration": "zha", "labels": frozenset()},
+    ]
+    assert _devices_covered_by(rows, [], ["ice"]) == {"a"}
+
+
+def test_coverage_is_positive_only():
+    """An id nobody can account for is never named, so a pick is only
+    pruned on proof of coverage, never on absence. A device deleted or
+    owned by an integration that has not loaded yet keeps its pick."""
+    rows = [
+        {"device_id": "a", "integration": "zha", "labels": frozenset()},
+    ]
+    assert _devices_covered_by(rows, ["spook"], ["ice"]) == set()
+
+
+def test_prune_drops_superseded_device_pick():
+    rows = [
+        {"device_id": "a", "integration": "spook", "labels": frozenset()},
+    ]
+    pruned = DeviceSentinelOptionsFlow._pruned_exclusion_input(
+        {
+            CONF_EXCLUDED_INTEGRATIONS: ["spook"],
+            CONF_EXCLUDED_LABELS: [],
+            CONF_EXCLUDED_DEVICES: ["a"],
+        },
+        rows,
+    )
+    assert pruned[CONF_EXCLUDED_DEVICES] == []
+
+
+def test_prune_settles_the_whole_ladder_in_one_save():
+    """An integration tick clears the device pick below it in the same
+    save, so no device pick survives under a parent that hides it."""
+    device_rows = [
+        {"device_id": "a", "integration": "spook", "labels": frozenset()},
+    ]
+    pruned = DeviceSentinelOptionsFlow._pruned_exclusion_input(
+        {
+            CONF_EXCLUDED_INTEGRATIONS: ["spook"],
+            CONF_EXCLUDED_LABELS: [],
+            CONF_EXCLUDED_DEVICES: ["a"],
+        },
+        device_rows,
+    )
+    assert pruned[CONF_EXCLUDED_DEVICES] == []
+
+
+def test_prune_keeps_picks_no_broader_kind_covers():
+    """Device 'a' is excluded but no broader kind covers it, so its
+    pick stands. A device an integration exclude reached would prune,
+    because integration is the broader kind."""
+    device_rows = [
+        {"device_id": "a", "integration": "zha", "labels": frozenset()},
+        {"device_id": "b", "integration": "zha", "labels": frozenset()},
+    ]
+    pruned = DeviceSentinelOptionsFlow._pruned_exclusion_input(
+        {
+            CONF_EXCLUDED_INTEGRATIONS: ["spook"],
+            CONF_EXCLUDED_LABELS: [],
+            CONF_EXCLUDED_DEVICES: ["a"],
+        },
+        device_rows,
+    )
+    assert pruned[CONF_EXCLUDED_DEVICES] == ["a"]
+
+
+def test_battery_prune_drops_superseded_device_pick():
+    rows = [
+        {
+            "device_id": "a",
+            "integration": "mobile_app",
+            "labels": frozenset(),
+            "entity_id": "sensor.phone_battery",
+            "name": "Phone",
+        },
+    ]
+    pruned = DeviceSentinelOptionsFlow._pruned_battery_input(
+        {
+            CONF_BATTERY_EXCLUDED_INTEGRATIONS: ["mobile_app"],
+            CONF_BATTERY_EXCLUDED_LABELS: [],
+            CONF_BATTERY_EXCLUDED_DEVICES: ["a"],
+        },
+        rows,
+    )
+    assert pruned[CONF_BATTERY_EXCLUDED_DEVICES] == []
+
+
+# The live coordinator, where the ruling has to hold.
+
+
+async def test_battery_label_excludes_the_device(hass: HomeAssistant):
+    """A label set from the device's own page reaches battery judgment
+    without this dialog being opened."""
+    label = lr.async_get(hass).async_create("No Battery")
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, _ = _ladder_device(hass, source, 1)
+    dr.async_get(hass).async_update_device(
+        device.id, labels={label.label_id}
+    )
+    entry = await setup_entry(
+        hass, {CONF_BATTERY_EXCLUDED_LABELS: [label.label_id]}
+    )
+    coord = entry.runtime_data
+    assert coord._battery_excluded(device.id)
+    # Battery only: the device keeps every other kind of watching.
+    assert device.id not in coord._excluded_devices
+
+
+async def test_watched_device_rows_carry_cascade_facts(
+    hass: HomeAssistant,
+):
+    label = lr.async_get(hass).async_create("Ice")
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, _ = _ladder_device(hass, source, 2, name="Rowed Device")
+    dr.async_get(hass).async_update_device(
+        device.id, labels={label.label_id}
+    )
+    entry = await setup_entry(hass)
+    rows = entry.runtime_data.watched_device_rows
+    row = next(r for r in rows if r["device_id"] == device.id)
+    assert row["name"] == "Rowed Device"
+    assert row["integration"] == "test"
+    assert row["labels"] == frozenset({label.label_id})
+
+
+async def test_integration_reason_wins_over_device_reason(
+    hass: HomeAssistant,
+):
+    """The reason recorded is the one that survives a prune, so a
+    device picked under an excluded integration reads as integration
+    rather than as a pick that is about to be dropped."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, _ = _ladder_device(hass, source, 4)
+    entry = await setup_entry(
+        hass,
+        {
+            CONF_EXCLUDED_INTEGRATIONS: ["test"],
+            CONF_EXCLUDED_DEVICES: [device.id],
+        },
+    )
+    assert entry.runtime_data._excluded_devices[device.id] == "integration"
+
+
+# The area retirement.
+
+
+async def test_area_is_no_longer_an_exclusion_kind(hass: HomeAssistant):
+    """Area membership is set for dashboards, voice, and automations,
+    so it must not switch off monitoring. A stored area exclusion is
+    inert, and the device it once caught is watched again."""
+    from homeassistant.helpers import area_registry as ar
+
+    area = ar.async_get(hass).async_create("Garage")
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, _ = _ladder_device(hass, source, 5)
+    dr.async_get(hass).async_update_device(device.id, area_id=area.id)
+
+    entry = await setup_entry(hass, {"excluded_areas": [area.id]})
+    await hass.async_block_till_done()
+    assert device.id not in entry.runtime_data._excluded_devices
+
+
+async def test_dead_option_keys_are_cleared_at_setup(hass: HomeAssistant):
+    """A key no code reads must not survive in the options, where it
+    would read as a live setting quietly doing nothing."""
+    entry = await setup_entry(
+        hass,
+        {
+            "excluded_areas": ["area_1"],
+            "excluded_entities": ["image.some_screenshot"],
+            CONF_EXCLUDED_LABELS: ["ice"],
+        },
+    )
+    await hass.async_block_till_done()
+    for key in DEAD_OPTION_KEYS:
+        assert key not in entry.options
+    # Only the retired keys go; live settings are untouched.
+    assert entry.options[CONF_EXCLUDED_LABELS] == ["ice"]
+
+
+async def test_retired_notification_keys_are_cleared(hass: HomeAssistant):
+    """The 0.3.3 notification shapes that 0.3.4 replaced. They read as
+    live settings in every diagnostics download for nine releases,
+    which is the rot ruling 49 exists to stop. Cleared at 0.3.13.
+    """
+    entry = await setup_entry(
+        hass,
+        {
+            "notify_targets": ["notify.old"],
+            "quiet_start": "22:00:00",
+            "quiet_end": "07:00:00",
+            "reminder_time": "08:00:00",
+            "high_priority_pierces_quiet": True,
+            "quiet_hours_start": "23:00:00",
+            CONF_EXCLUDED_LABELS: ["ice"],
+        },
+    )
+    await hass.async_block_till_done()
+    for key in (
+        "notify_targets",
+        "quiet_start",
+        "quiet_end",
+        "reminder_time",
+        "high_priority_pierces_quiet",
+    ):
+        assert key not in entry.options, key
+    # The shapes that replaced them are live settings and stay.
+    assert entry.options["quiet_hours_start"] == "23:00:00"
+    assert entry.options[CONF_EXCLUDED_LABELS] == ["ice"]
+
+
+async def test_setup_survives_when_nothing_is_dead(hass: HomeAssistant):
+    entry = await setup_entry(hass, {CONF_EXCLUDED_LABELS: ["ice"]})
+    assert entry.options[CONF_EXCLUDED_LABELS] == ["ice"]
+
+
+# The real options flow, end to end.
+
+
+async def test_options_flow_prunes_on_save(hass: HomeAssistant):
+    """Drive the actual dialog: a device is picked, then the
+    integration that owns it is excluded in the next save, and the
+    device pick is gone from stored options.
+
+    The entity list is empty here because the standing device pick
+    already covers this device's entities, so the form does not offer
+    them. That is the render-time half of the ladder.
+    """
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, _ = _ladder_device(hass, source, 6)
+    entry = await setup_entry(hass, {CONF_EXCLUDED_DEVICES: [device.id]})
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exclusions"}
+    )
+    assert result["step_id"] == "exclusions"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_EXCLUDED_INTEGRATIONS: ["test"],
+            CONF_EXCLUDED_LABELS: [],
+            CONF_EXCLUDED_DEVICES: [device.id],
+        },
+    )
+    await hass.async_block_till_done()
+    assert result["type"] == "create_entry"
+    assert entry.options[CONF_EXCLUDED_DEVICES] == []
+    assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == ["test"]
+
+
+async def test_options_flow_hides_covered_devices(hass: HomeAssistant):
+    """A device an integration exclude already reaches is gone from
+    the picker, so the list only ever offers a decision still worth
+    making."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, _ = _ladder_device(hass, source, 7)
+    entry = await setup_entry(
+        hass, {CONF_EXCLUDED_INTEGRATIONS: ["test"]}
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exclusions"}
+    )
+    schema = result["data_schema"].schema
+    device_key = next(
+        key for key in schema if str(key) == CONF_EXCLUDED_DEVICES
+    )
+    offered = {
+        option["value"]
+        for option in schema[device_key].config["options"]
+    }
+    assert device.id not in offered
+
+
+async def test_options_flow_menu_is_work_ordered(hass: HomeAssistant):
+    """Notifications leads from 0.3.12: it is the one section a new
+    installation must visit for alerts to reach a phone."""
+    entry = await setup_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["menu_options"] == [
+        "notifications",
+        "exclusions",
+        "battery",
+        "signal",
+        "freeze",
+        "advanced",
+    ]
