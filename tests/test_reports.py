@@ -884,3 +884,44 @@ async def test_battery_excluded_device_still_counts(
     _rhythm(coord, device.id, 3600.0, 8 * 3600.0)
     coord._judge_all_devices()
     assert len(coord.data[DATA_EPISODES]) == 1
+
+
+# ==================================================================
+# The refined SIGNAL marks: earliest floor bold, equal never struck.
+# ==================================================================
+
+async def test_repeated_floor_bolds_the_earliest_and_strikes_none_equal(
+    hass: HomeAssistant,
+):
+    """A flat run at the floor value: the earliest occurrence is bold,
+    the rest are plain, and none of the equal values is struck. This
+    is the flat-button case that read as one bold, one struck, two
+    plain before the fix."""
+    coord, device_id = await _marks_coordinator(hass)
+    # Stored oldest-to-newest; displayed newest-first. Four 48s, k=0
+    # under a week so floor is 48. Earliest 48 (index 1) bolds.
+    coord.data["devices"][device_id][DEV_SIGNAL_DAILY_MIN] = [
+        68.0, 48.0, 48.0, 48.0, 52.0, 48.0, 56.0,
+    ]
+    await hass.async_add_executor_job(coord._write_reports)
+    row = _telemetry_row(hass, "Marks Device")
+    # Exactly one bold, and it is a 48; no struck values at all
+    # (nothing is strictly below the floor of 48).
+    assert row.count("**") == 2  # one bold pair
+    assert "**48**" in row
+    assert "~~" not in row
+
+
+async def test_below_floor_is_struck_but_equal_is_not(hass: HomeAssistant):
+    """A value strictly below the floor is struck; an equal one is
+    not. Floor is 112 here (k=1 at a week trims the 84)."""
+    coord, device_id = await _marks_coordinator(hass)
+    coord.data["devices"][device_id][DEV_SIGNAL_DAILY_MIN] = [
+        116.0, 116.0, 116.0, 120.0, 112.0, 112.0, 116.0, 84.0,
+    ]
+    await hass.async_add_executor_job(coord._write_reports)
+    row = _telemetry_row(hass, "Marks Device")
+    assert "~~84~~" in row      # strictly below floor 112: struck
+    assert "**112**" in row     # earliest 112: bold
+    # The other 112 is plain, not struck (equal to the floor).
+    assert "~~112~~" not in row
