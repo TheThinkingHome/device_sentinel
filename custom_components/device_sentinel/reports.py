@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.9.1 (2026-07-24)
+# File: reports.py, Version: 0.9.9 (2026-07-26)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -1157,10 +1157,28 @@ class ReportWritingMixin:
         else:
             window_end = dt_util.utcnow().timestamp()
             window_start = self._brief_window_start(window_end)
-        return self._write_brief(
+        brief_text = self._write_brief(
             report_directory,
             trigger,
             window_start,
             window_end,
             complete=closing,
         )
+        # A scheduled write closes the day that just ended, but the
+        # day just beginning has no file until something writes the
+        # current window, and nothing does until the next startup or
+        # regenerate. So the file named for today is absent from the
+        # roll until then, which reads as a brief that stopped
+        # publishing (#116, completed here). Open the new window's
+        # in-progress brief now, so today's file exists the moment
+        # the window rolls.
+        if closing:
+            now = dt_util.utcnow().timestamp()
+            self._write_brief(
+                report_directory,
+                trigger,
+                self._brief_window_start(now),
+                now,
+                complete=False,
+            )
+        return brief_text
