@@ -12,21 +12,25 @@ Somewhere in your house right now, a sensor may be lying to you. It froze, and H
 
 Device Sentinel is a Home Assistant custom integration that watches for exactly that: frozen devices wearing healthy values, unavailable devices, low batteries, and weak radio links.
 
-**Status: pre-release.** Learning, low battery, signal recording, and freeze detection (frozen, unavailable, unknown, and never-reported) are all live. Every detection feeds a problem list you act on, every problem's whole life is recorded, a daily brief writes it up in plain language and emails it on its schedule, and phone pushes and a whole-home dashboard card raise a problem the moment it appears. The current work teaches the integration to tell a device you fixed by hand apart from one that recovered on its own, so a hand-fix is not learned as a device's normal rhythm; self-healing recovery follows. Until public release, the [Sentinel blueprints](https://github.com/TheThinkingHome/Automations/tree/main/blueprints) remain the supported tools.
+It does all of it from the moment you install it, on sensible defaults, watching every device in your home. It learns each device's own reporting rhythm, catches the four ways a device goes dark (frozen, unavailable, unknown, and never-reported), watches batteries and radio links, and gathers every fault into one problem list you act on. It records the whole life of each problem, when it started, when it cleared, how long it lasted, and what brought the device back. It writes a plain-language daily brief and emails it on your schedule, and it raises a fault the moment it appears through a whole-home dashboard card and a push to your phone. It runs continuously on the author's own Home Assistant system, a household of around two hundred devices.
 
-## Why an integration
+> **Image placeholder:** the daily brief as it arrives by email.
 
-Device Sentinel is the successor to the Sentinel blueprint series (Battery Sentinel, Entity Sentinel, Sentinel Notify). The blueprints work, and building them exposed two walls. A template blueprint has no storage and no clock that survives a restart: every reboot resets the freeze stopwatch, so a slow-reporting device dying on a frequently-restarted system is invisible to it by construction. And blueprints are complicated to set up: tiers to assign, helper entities to create by hand, a paragraph of documentation per input. A novice meets that wall and reasonably asks why any of it is their job.
+## Why an Integration
+
+Device Sentinel is the successor to the Sentinel blueprint series (Battery Sentinel, Entity Sentinel, Sentinel Notify), which it replaces. The blueprints work, and building them exposed two walls. A template blueprint has no storage and no clock that survives a restart: every reboot resets the freeze stopwatch, so a slow-reporting device dying on a frequently-restarted system is invisible to it by construction. And blueprints are complicated to set up: tiers to assign, helper entities to create by hand, a paragraph of documentation per input. A novice meets that wall and reasonably asks why any of it is their job.
 
 An integration has its own storage and its own clocks, so a device twenty hours into a freeze is still twenty hours frozen after a reboot. And it installs like an integration should: add it and it runs on sensible defaults, watching everything immediately. You configure what you want to configure, notification targets, thresholds, exclusions, tuning knobs for the advanced user, and skip what you do not.
 
-## What makes it different
+## What Makes It Different
 
 It learns the system it is installed in. Every device's reporting rhythm is measured from the event bus, the longest it normally goes silent, tracked daily in restart-proof storage. Each device's freeze window is its own worst normal silence plus a margin. No tiers, no hand-guessed timings. Your chatty motion sensor earns a tight window; your twice-a-day rain gauge earns a generous one; a device added next spring starts its own clock and arms itself when its rhythm is established.
 
 The learning defends itself. One anomalous day is set aside and moves nothing; a repeating anomaly counts as real. A frozen device can never teach the system that freezing is normal, because only silences that end get learned. Restart republishes, restored states, and reconnect storms are recognized by their pattern and excluded, with no hand-kept lists of integration names. Radio links get the same treatment: judged against each device's own learned baseline, because there is no cross-manufacturer LQI standard, so a global threshold would be a lie.
 
-## What it does today
+## What It Does
+
+> **Image placeholder:** the problem list and the whole-home dashboard card, side by side.
 
 - Watches all devices by default; non-hardware devices (Sun, add-ons, dashboard plugins) classify themselves out, and the integration refuses to watch itself.
 - Learns per-device rhythms and per-device signal baselines with anomaly-trimmed rolling histories, and reports Devices Watched and Devices Learned through its own entities.
@@ -44,12 +48,14 @@ The learning defends itself. One anomalous day is set aside and moves nothing; a
 - Writes three diagnostic files nightly for whoever maintains the system: the learned-rhythms table (alphabetical, with each device's integration and exclusion status), a one-row-per-device classification table showing whether each device is watched or set aside and why any is excluded from judgment, and a silence-episode record. That last one answers a question nothing else can: when a device goes quiet far longer than usual and then speaks again, did it choose to speak, or did a restart or a reconnect make it speak? A device that recovers on its own has that quiet time learned as normal, unless it was unreachable long enough for the return to look like someone fixed it by hand, since the integration cannot see a hand on a device and only the length of the outage tells the two apart.
 - An Advanced screen for the settings most people never need: how long a problem must persist before it is sent, how quiet a device must be before its silence is recorded for study, how briefly a device can be unreachable before that counts as real downtime rather than a passing hiccup, how often routine activity is written to disk, and how many days of history to keep, from a month to a year. That last one is about memory rather than judgment: detection always reads the most recent two weeks, so a Raspberry Pi keeping thirty days finds exactly what a fast machine keeping a year finds.
 
-## What is coming
+## On the Roadmap
+
+These are enhancements found while building the core. Some are in progress, some are specified and waiting their turn.
 
 - Pairing-aware intervention detection: where a coordinator exposes its pairing state, a device that recovers while a pairing window is open is recognized as a hand re-pair rather than a self-recovery, so its silence is not learned. Zigbee2MQTT is next; ZHA, Z-Wave, and Matter follow, each reaching its state a different way and each labelled experimental until proven on real hardware.
 - The signal forensics trail: the last signal readings before a device went dark attached to its alert, 40, 32, 24, gone tells you the link died; 200, 201, 200 tells you to look elsewhere. The rule is specified; the trail is the next signal step.
 - A battery discharge-velocity flag: catching a cell dropping fast before it reaches the threshold, from the daily-level history already being recorded.
-- Recovery: attempting to revive a stuck device rather than only reporting it.
+- Recovery: attempting to revive a stuck device rather than only reporting it, walking a ladder from the gentlest nudge to the firmest and reporting what it did either way. Detection comes first, so nothing is fixed until finding things is proven.
 
 ## Documentation
 
@@ -68,7 +74,7 @@ Every configuration screen also explains itself and links to its own page.
 
 - Home Assistant 2026.5 or newer.
 
-## Installation (development)
+## Installation
 
 One click, on a machine with HACS installed:
 
