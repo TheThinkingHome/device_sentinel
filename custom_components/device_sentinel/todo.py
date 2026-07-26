@@ -3,11 +3,11 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: todo.py, Version: 0.6.0 (2026-07-21)
+# File: todo.py, Version: 0.9.8 (2026-07-26)
 
 """Todo platform for the Device Sentinel integration.
 
-One list, todo.device_sentinel, holding every problem the detections
+One list, todo.device_sentinel_problem_list, holding every problem the detections
 find: frozen, unavailable, unknown, and never-reported devices, low
 batteries, and signal problems. One item per device, keyed by its
 registry id, so a device with two problems carries two kinds on one
