@@ -20,17 +20,17 @@
           "notifications": "Notifications and Daily Brief",
           "exclusions": "Global Exclusions",
           "battery": "Low Battery",
-          "signal": "Signal strength",
-          "freeze": "Freeze detection",
+          "signal": "Signal Strength",
+          "freeze": "Freeze Detection",
           "advanced": "Advanced"
         }
       },
       "notifications": {
-        "title": "Notifications and daily brief",
+        "title": "Notifications and Daily Brief",
         "description": "Who hears about a problem, and when. [Notification behavior is documented in the wiki.]({wiki_link})",
         "sections": {
           "instant": {
-            "name": "Instant notifications",
+            "name": "Instant Notifications",
             "data": {
               "high_priority_targets": "High-priority targets",
               "normal_priority_targets": "Normal-priority targets",
@@ -39,11 +39,11 @@
             "data_description": {
               "high_priority_targets": "Sent a message when a device develops a problem, and the daily brief with its history.",
               "normal_priority_targets": "Sent the daily brief only, listing what needs attention now.",
-              "persistent_enabled": "Shows one card per troubled device on the dashboard."
+              "persistent_enabled": "Shows a single card on the dashboard with the current state of the home, grouped by kind."
             }
           },
           "quiet": {
-            "name": "Quiet hours",
+            "name": "Quiet Hours",
             "data": {
               "quiet_hours_enabled": "Enable quiet hours",
               "quiet_hours_start": "Start",
@@ -54,7 +54,7 @@
             }
           },
           "brief": {
-            "name": "Daily brief",
+            "name": "Daily Brief",
             "data": {
               "daily_reminder_time": "When to send it",
               "daily_reminder_mode": "How often",
@@ -98,7 +98,7 @@
         "description": "Every battery Device Sentinel finds is watched by default. A battery is flagged when it is at or below the threshold. Excluding a battery here stops battery reports for that device only; everything else about it stays watched.\n\nThe three lists run broad to narrow: integration, label, device. They work like the Global Exclusions lists: exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.\n\nFull documentation: {wiki_link}"
       },
       "signal": {
-        "title": "Signal strength",
+        "title": "Signal Strength",
         "description": "How sharply weakening radio links are flagged, and which devices are left out of signal reporting. The goal: some of your devices should show small readings in the 0-5 percent range, so a real problem stands out as big and obvious. Changes apply to readings going forward; a full day shows their true effect. [How signal strength is judged]({wiki_link}).",
         "data": {
           "signal_sensitivity": "Sensitivity",
@@ -114,7 +114,7 @@
         }
       },
       "freeze": {
-        "title": "Freeze detection",
+        "title": "Freeze Detection",
         "description": "How long a device may go silent before it is called frozen. Each device is judged against its own learned rhythm, so you are not setting a single timeout; you are setting the grace on top of each device's normal. Delta low is the grace a fast device gets, delta high the grace a slow one gets, and the curve between them is shaped by the two. Raise delta low if a chatty device is flagged too soon; lower delta high if a slow device should be caught faster. [How freeze detection works]({wiki_link}).",
         "data": {
           "freeze_delta_low": "Delta low (fast-device grace, minutes)",
