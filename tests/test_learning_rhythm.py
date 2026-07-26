@@ -16,7 +16,10 @@ the storm exemption, the trimmed maximum and how it renders, the taint
 debounce, the daily epoch rollover, the signal recording that
 rides alongside the same clock, and the contact clock that reads a
 device's own last-contact entity every time rather than stamping the
-moment a payload arrived.
+moment a payload arrived. It also holds the passive recorder beneath
+all of that: how a raw state event becomes a completed gap, how the
+startup grace and the taint debounce decide what feeds learning, and
+how today's maxima roll into the bounded daily set at midnight.
 """
 
 from datetime import timedelta
@@ -651,3 +654,282 @@ async def test_the_legacy_cause_wording_is_migrated(
     assert all(
         row[INC_CAUSE] != LEGACY_CAUSE_UNOBSERVED for row in reloaded
     )
+
+
+# ==================================================================
+# The passive recorder: grace, gaps, taint, storm, rollover.
+# ==================================================================
+
+def _make_device(hass, source_entry, index, *, service=False, n_entities=1):
+    """Create a device with entities; return (device, [entity_ids])."""
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    device = dev_reg.async_get_or_create(
+        config_entry_id=source_entry.entry_id,
+        identifiers={("test", f"dev{index}")},
+        name=f"Test Device {index}",
+        entry_type=dr.DeviceEntryType.SERVICE if service else None,
+    )
+    entity_ids = []
+    for n in range(n_entities):
+        reg_entry = ent_reg.async_get_or_create(
+            "sensor",
+            "test",
+            f"uid_{index}_{n}",
+            device_id=device.id,
+            config_entry=source_entry,
+        )
+        entity_ids.append(reg_entry.entity_id)
+    return device, entity_ids
+
+
+async def _pass_grace(hass, freezer):
+    """Advance past the startup grace."""
+    freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 5))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+
+async def test_grace_now_learns_its_gaps(hass: HomeAssistant, freezer):
+    """Events inside the startup grace never complete gaps."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    _, (eid,) = _make_device(hass, source, 1)
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    rec = coord.data[DATA_DEVICES][list(coord.data[DATA_DEVICES])[0]]
+
+    hass.states.async_set(eid, "1")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=60))
+    hass.states.async_set(eid, "2")
+    await hass.async_block_till_done()
+
+    # 0.8.0 (#125) reverses this. The nightly restart is a permanent
+    # feature of a home, not contamination, and discarding the gaps
+    # it completes left the quiet devices with baselines describing
+    # half a night. A device with no protocol clock has nothing but
+    # the moment we heard it, so that moment counts.
+    assert rec[DEV_LAST_ACTIVITY] is not None
+    assert rec[DEV_TODAY_MAX] == 60.0
+    assert rec[DEV_EVENT_COUNT] == 2
+
+
+async def test_gap_learning_after_grace(hass: HomeAssistant, freezer):
+    """Completed gaps feed today's maximum after the grace."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, (eid,) = _make_device(hass, source, 1)
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    await _pass_grace(hass, freezer)
+
+    hass.states.async_set(eid, "1")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=120))
+    hass.states.async_set(eid, "2")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=45))
+    hass.states.async_set(eid, "2")  # same value: state_reported
+    await hass.async_block_till_done()
+
+    rec = coord.data[DATA_DEVICES][device.id]
+    assert rec[DEV_TODAY_MAX] == pytest.approx(120, abs=1)
+    assert rec[DEV_EVENT_COUNT] == 3
+
+
+async def test_taint_excludes_outage_gap(hass: HomeAssistant, freezer):
+    """A gap spanning unavailability never feeds learning."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, (eid,) = _make_device(hass, source, 1)
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    await _pass_grace(hass, freezer)
+
+    hass.states.async_set(eid, "1")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=30))
+    hass.states.async_set(eid, "unavailable")
+    await hass.async_block_till_done()
+
+    rec = coord.data[DATA_DEVICES][device.id]
+    assert rec[DEV_TAINTED] is False  # debounced: no taint yet
+
+    freezer.tick(timedelta(seconds=3600))
+    hass.states.async_set(eid, "5")  # recovery after a real outage
+    await hass.async_block_till_done()
+    assert rec[DEV_TAINTED] is False  # taint consumed by the same stamp
+    assert rec[DEV_TODAY_MAX] is None
+
+    freezer.tick(timedelta(seconds=90))
+    hass.states.async_set(eid, "6")  # clean gap: learned
+    await hass.async_block_till_done()
+    assert rec[DEV_TODAY_MAX] == pytest.approx(90, abs=1)
+
+
+async def test_storm_is_detected_but_no_longer_excludes(
+    hass: HomeAssistant, freezer
+):
+    """A many-device burst on one entry is still a storm, and the
+    detector still matters: it names an intervention on the episode
+    record and exempts the duty cycle. What it no longer does is
+    discard the gaps it completes (#124, #125)."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    devices = [
+        _make_device(hass, source, i)
+        for i in range(1, STORM_DEVICE_THRESHOLD + 3)
+    ]
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    await _pass_grace(hass, freezer)
+
+    # Give every device a prior stamp, spaced out (organic).
+    for n, (_dev, (eid,)) in enumerate(devices):
+        hass.states.async_set(eid, "1")
+        await hass.async_block_till_done()
+        freezer.tick(timedelta(seconds=7))
+        async_fire_time_changed(hass)
+    freezer.tick(timedelta(seconds=600))
+
+    # Republish: every device writes within the same instant.
+    for _dev, (eid,) in devices:
+        hass.states.async_set(eid, "2")
+    await hass.async_block_till_done()
+
+    assert coord._storm_active  # a storm was declared
+    learned = [
+        coord.data[DATA_DEVICES][dev.id][DEV_TODAY_MAX]
+        for dev, _ in devices[STORM_DEVICE_THRESHOLD - 1 :]
+    ]
+    # These devices publish no last-contact entity, so the moment we
+    # heard them is the only evidence there is and it counts (#125).
+    # A device that does publish one is protected by the timestamp
+    # itself rather than by this rule.
+    assert all(v is not None for v in learned)
+
+    # Quiet releases the storm; the next organic gap learns again.
+    freezer.tick(timedelta(seconds=30))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    dev, (eid,) = devices[0]
+    freezer.tick(timedelta(seconds=50))
+    hass.states.async_set(eid, "3")
+    await hass.async_block_till_done()
+    assert not coord._storm_active
+
+
+async def test_midnight_rollover(hass: HomeAssistant, freezer):
+    """Today's maxima roll into the bounded daily set at midnight."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, (eid,) = _make_device(hass, source, 1)
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    await _pass_grace(hass, freezer)
+
+    hass.states.async_set(eid, "1")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=200))
+    hass.states.async_set(eid, "2")
+    await hass.async_block_till_done()
+
+    rec = coord.data[DATA_DEVICES][device.id]
+    assert rec[DEV_TODAY_MAX] == pytest.approx(200, abs=1)
+
+    now = dt_util.now()
+    next_midnight = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    freezer.move_to(next_midnight + timedelta(seconds=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    assert rec[DEV_TODAY_MAX] is None
+    assert len(rec[DEV_DAILY_MAX]) == 1
+    assert rec[DEV_DAILY_MAX][0] == pytest.approx(200, abs=1)
+
+
+async def test_seeding_from_last_seen(hass: HomeAssistant):
+    """A device with a last_seen entity seeds its clock from it."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    device = dev_reg.async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", "seeded")},
+        name="Seeded Device",
+    )
+    reg_entry = ent_reg.async_get_or_create(
+        "sensor",
+        "test",
+        "seeded_ls",
+        suggested_object_id="seeded_last_seen",
+        device_id=device.id,
+        config_entry=source,
+    )
+    seed = "2026-07-09T12:00:00+00:00"
+    hass.states.async_set(reg_entry.entity_id, seed)
+    await hass.async_block_till_done()
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    rec = coord.data[DATA_DEVICES][device.id]
+    assert rec[DEV_LAST_ACTIVITY] == pytest.approx(
+        dt_util.parse_datetime(seed).timestamp()
+    )
+    assert coord.clock_source_split["with_last_seen"] == 1
+
+
+async def test_grace_recovery_consumes_taint(hass: HomeAssistant, freezer):
+    """A boot-blip taint must be consumed by the in-grace recovery,
+    so the first post-grace gap still feeds learning."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", "blippy")},
+        name="Blippy Door",
+    )
+    reg = er.async_get(hass).async_get_or_create(
+        "binary_sensor", "test", "blippy",
+        device_id=device.id, config_entry=source,
+    )
+    eid = reg.entity_id
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    rec = coord.data[DATA_DEVICES][device.id]
+
+    # Boot blip inside the grace: unavailable, then retained value.
+    hass.states.async_set(eid, "unavailable")
+    await hass.async_block_till_done()
+    assert rec[DEV_TAINTED] is False  # debounced: a blip sets no taint
+    freezer.tick(timedelta(seconds=5))
+    hass.states.async_set(eid, "off")  # recovery, still inside grace
+    await hass.async_block_till_done()
+    assert rec[DEV_TAINTED] is False, "a 5 s blip must never taint"
+
+    # Past the grace: the first real gap must feed learning.
+    freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 10))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    hass.states.async_set(eid, "on")
+    await hass.async_block_till_done()
+    # The gap from the in-grace recovery stamp (grace ended 305 s in,
+    # recovery at 5 s) to this first post-grace event is organic
+    # silence and must be learned: 310 s.
+    assert rec[DEV_TODAY_MAX] == pytest.approx(310, abs=1), (
+        "first post-grace gap must be learned"
+    )
+    freezer.tick(timedelta(seconds=140))
+    hass.states.async_set(eid, "off")
+    await hass.async_block_till_done()
+    assert rec[DEV_TODAY_MAX] == pytest.approx(310, abs=1)

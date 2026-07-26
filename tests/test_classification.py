@@ -13,8 +13,10 @@ primary one, so a camera also seen by a router tracker counts once,
 under the camera. The classification report renders one combined table,
 one row per device, watched and set-aside together and alphabetical,
 where a globally excluded device keeps its watched check and names the
-tier it was excluded at. This file holds that classification behaviour
-and the combined table.
+tier it was excluded at, and the coverage sensors publish the same
+watched and set-aside counts a person reads on the device page. This
+file holds that classification behaviour, the combined table, and the
+coverage sensors.
 """
 
 from homeassistant.core import HomeAssistant
@@ -23,9 +25,14 @@ from homeassistant.helpers import entity_registry as er
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.device_sentinel.const import CONF_EXCLUDED_DEVICES
+from custom_components.device_sentinel.const import (
+    CONF_EXCLUDED_DEVICES,
+    DATA_DEVICES,
+)
 
-from tests.helpers import setup_coordinator
+from tests.helpers import setup_coordinator, setup_entry
+
+DOMAIN = "device_sentinel"
 
 
 async def test_attribution_uses_primary_config_entry(hass: HomeAssistant):
@@ -119,3 +126,83 @@ async def test_global_reason_wording(hass: HomeAssistant):
     await hass.async_add_executor_job(coord._write_reports, "manual")
     row = next(r for r in _class_rows(hass) if "Label Excluded" in r)
     assert "Global (label)" in row
+
+
+# ==================================================================
+# Service devices set aside, and the coverage sensors.
+# ==================================================================
+
+def _coverage_device(hass, source_entry, index, *, service=False):
+    """Create a device with one entity; return the device."""
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    device = dev_reg.async_get_or_create(
+        config_entry_id=source_entry.entry_id,
+        identifiers={("test", f"dev{index}")},
+        name=f"Test Device {index}",
+        entry_type=dr.DeviceEntryType.SERVICE if service else None,
+    )
+    ent_reg.async_get_or_create(
+        "sensor", "test", f"uid_{index}",
+        device_id=device.id, config_entry=source_entry,
+    )
+    return device
+
+
+async def test_classification_sets_service_devices_aside(
+    hass: HomeAssistant,
+):
+    """Service devices get no telemetry records; hardware devices do."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    hw = _coverage_device(hass, source, 1)
+    svc = _coverage_device(hass, source, 2, service=True)
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+
+    assert hw.id in coord.data[DATA_DEVICES]
+    assert svc.id not in coord.data[DATA_DEVICES]
+    assert coord.set_aside_count >= 1
+    # The integration's own device is service-type: it sets itself aside.
+    own = dr.async_get(hass).async_get_device({(DOMAIN, entry.entry_id)})
+    assert own is not None
+    assert own.id not in coord.data[DATA_DEVICES]
+
+
+async def test_coverage_sensors(hass: HomeAssistant):
+    """The coverage and diagnostics sensors render the registry view."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    _coverage_device(hass, source, 1)
+    _coverage_device(hass, source, 2)
+    _coverage_device(hass, source, 3, service=True)
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._notify()
+    await hass.async_block_till_done()
+
+    coverage = hass.states.get("sensor.device_sentinel_devices_watched")
+    assert coverage is not None
+    assert int(coverage.state) == coord.watched_count
+    assert coverage.attributes["set_aside"] == coord.set_aside_count
+    assert coverage.attributes["learning"]["observing"] >= 2
+
+    classification = hass.states.get("sensor.device_sentinel_service_devices_ignored")
+    assert classification is not None
+    assert classification.attributes["by_integration"]["test"]["watched"] == 2
+    assert (
+        classification.attributes["by_integration"]["test"]["set_aside"] == 1
+    )
+
+    # Clock source was retired at 0.3.12: it counted devices lacking
+    # protocol truth, so a higher number read better while meaning
+    # worse, and its soak question closed. The split it published is
+    # still computed and still reaches diagnostics.
+    assert hass.states.get("sensor.device_sentinel_clock_source") is None
+    assert coord.clock_source_split["without_last_seen"] >= 0
+
+    learning = hass.states.get("sensor.device_sentinel_devices_learned")
+    assert learning is not None
+    assert learning.state == "0"

@@ -7,7 +7,10 @@
 
 """Persistence: the write cadence, the split shadow, and retention.
 
-Two tiers of write keep the store honest without thrashing it. Routine
+Per-device statistics survive a reload: a device driven through the
+coordinator writes its record to the store and reads it back intact
+across a restart. Two tiers of write keep the store honest without
+thrashing it. Routine
 activity-clock churn coalesces into one delayed save on the coalesce
 window; anything a reboot must not lose (a verdict, a battery flip, an
 acknowledgment) saves immediately. The delayed write has to actually
@@ -56,6 +59,7 @@ from custom_components.device_sentinel.const import (
     DATA_SPLIT_BACKUP,
     DEFAULT_RETENTION_DAYS,
     DEV_DAILY_MAX,
+    DEV_EVENT_COUNT,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_TODAY_MIN,
@@ -862,3 +866,22 @@ async def test_the_report_states_the_retention_in_force(
     ) as handle:
         text = handle.read()
     assert f"judge on {DAILY_MAX_KEEP} days, keep 180 days." in text
+
+
+async def test_storage_roundtrip_with_devices(hass: HomeAssistant, hass_storage):
+    """Per-device statistics survive a reload."""
+    device, eid = _register(hass, "roundtrip", "Roundtrip Device")
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(eid, "1")
+    await hass.async_block_till_done()
+    await coord._store.async_save(coord.data)
+
+    assert device.id in hass_storage[STORAGE_KEY]["data"][DATA_DEVICES]
+
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    coord2 = entry.runtime_data
+    assert device.id in coord2.data[DATA_DEVICES]
+    assert coord2.data[DATA_DEVICES][device.id][DEV_EVENT_COUNT] == 1
