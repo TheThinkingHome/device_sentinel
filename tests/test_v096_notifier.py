@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v096_notifier.py, Version: 0.9.7 (2026-07-25)
+# File: test_v096_notifier.py, Version: 0.9.8 (2026-07-26)
 
 """0.9.6 tests: the event notification engine.
 
@@ -310,3 +310,52 @@ async def test_card_omits_acknowledged_device():
     domain, service, payload = h.sent[0]
     assert "Door Acked" not in payload["message"]
     assert "All devices reporting" in payload["message"]
+
+
+async def test_card_suppressed_and_dismissed_when_toggle_off():
+    """With the persistent-card toggle off, no card is created and any
+    existing card is dismissed, so turning the setting off removes it
+    (0.9.8, wiring CONF_PERSISTENT_ENABLED)."""
+    from custom_components.device_sentinel.const import (
+        CONF_PERSISTENT_ENABLED,
+        NOTIFY_CARD_ID,
+    )
+
+    h = _Harness(
+        ["notify.phone"],
+        freeze=[{"name": "Door X", "device_id": "d1", "category": "unavailable"}],
+    )
+    h.entry.options = {CONF_PERSISTENT_ENABLED: False}
+    await h.async_update_card()
+    assert len(h.sent) == 1
+    domain, service, payload = h.sent[0]
+    assert domain == "persistent_notification"
+    assert service == "dismiss"
+    assert payload["notification_id"] == NOTIFY_CARD_ID
+    assert "message" not in payload  # a dismiss, not a create
+
+
+async def test_card_created_when_toggle_on():
+    """With the toggle on (the default), the card is created as before."""
+    from custom_components.device_sentinel.const import CONF_PERSISTENT_ENABLED
+
+    h = _Harness(
+        ["notify.phone"],
+        freeze=[{"name": "Door X", "device_id": "d1", "category": "unavailable"}],
+    )
+    h.entry.options = {CONF_PERSISTENT_ENABLED: True}
+    await h.async_update_card()
+    domain, service, payload = h.sent[0]
+    assert (domain, service) == ("persistent_notification", "create")
+    assert "Door X unavailable" in payload["message"]
+
+
+async def test_card_default_on_when_option_absent():
+    """With no option set, the card defaults on and is created."""
+    h = _Harness(
+        ["notify.phone"],
+        freeze=[{"name": "Door X", "device_id": "d1", "category": "unavailable"}],
+    )
+    await h.async_update_card()
+    domain, service, _ = h.sent[0]
+    assert (domain, service) == ("persistent_notification", "create")
