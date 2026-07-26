@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.4.4 (2026-07-19)
+# File: __init__.py, Version: 0.9.8 (2026-07-26)
 
 """The Device Sentinel integration.
 
@@ -96,59 +96,6 @@ def _drop_dead_entities(
             ent_reg.async_remove(entity_id)
 
 
-RENAMED_ENTITY_IDS: dict[str, str] = {
-    "sensor.device_sentinel_coverage": (
-        "sensor.device_sentinel_devices_watched"
-    ),
-    "sensor.device_sentinel_learning_progress": (
-        "sensor.device_sentinel_devices_learned"
-    ),
-    "sensor.device_sentinel_classification": (
-        "sensor.device_sentinel_service_devices_ignored"
-    ),
-    "button.device_sentinel_enable_signals": (
-        "button.device_sentinel_scan_and_enable_signal_and_last_seen_entities"
-    ),
-    "todo.device_sentinel": "todo.device_sentinel_problem_list",
-}
-
-
-def _migrate_renamed_entities(
-    hass: HomeAssistant, entry: DeviceSentinelConfigEntry
-) -> None:
-    """Move entities renamed at 0.3.12 onto their new entity ids.
-
-    A rename changes the entity id a fresh install derives, but never
-    one already in the registry. Left alone that splits the world:
-    installs from before 0.3.12 keep sensor.device_sentinel_coverage
-    while new ones get devices_watched, so no dashboard, wiki page, or
-    example could name an id that is right for everyone. Migrating
-    costs the few existing installs one round of fixing references,
-    which is the price of every install thereafter agreeing (ruled
-    2026-07-17, at one known user, when it is cheapest).
-
-    A target id already in use is left alone rather than fought over,
-    because clobbering someone's entity is worse than an inconsistent
-    name.
-    """
-    ent_reg = er.async_get(hass)
-    for old_entity_id, new_entity_id in RENAMED_ENTITY_IDS.items():
-        existing = ent_reg.async_get(old_entity_id)
-        if existing is None or existing.config_entry_id != entry.entry_id:
-            continue
-        if ent_reg.async_get(new_entity_id) is not None:
-            LOGGER.info(
-                "Not renaming %s: %s already exists",
-                old_entity_id,
-                new_entity_id,
-            )
-            continue
-        LOGGER.info("Renaming %s to %s", old_entity_id, new_entity_id)
-        ent_reg.async_update_entity(
-            old_entity_id, new_entity_id=new_entity_id
-        )
-
-
 async def async_setup_entry(
     hass: HomeAssistant, entry: DeviceSentinelConfigEntry
 ) -> bool:
@@ -160,7 +107,6 @@ async def async_setup_entry(
 
     _drop_dead_options(hass, entry)
     _drop_dead_entities(hass, entry)
-    _migrate_renamed_entities(hass, entry)
 
     coordinator = DeviceSentinelCoordinator(hass, entry, version)
     await coordinator.async_setup()
