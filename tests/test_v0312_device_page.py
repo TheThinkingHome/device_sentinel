@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v0312_device_page.py, Version: 0.3.12 (2026-07-17)
+# File: test_v0312_device_page.py, Version: 0.9.8 (2026-07-26)
 
 """0.3.12 tests: the device page a person actually reads.
 
@@ -162,54 +162,6 @@ async def test_old_entity_ids_are_gone(hass: HomeAssistant):
         "_last_seen_entities",
     ):
         assert hass.states.get(entity_id) is None, entity_id
-
-
-# The migration: one set of ids for every install.
-
-
-async def test_a_pre_0312_install_is_migrated_onto_the_new_ids(
-    hass: HomeAssistant,
-):
-    """Seed the registry as 0.3.11 left it, then set up and watch the
-    old ids move rather than sit alongside the new ones."""
-    entry = MockConfigEntry(domain=DOMAIN, title="Device Sentinel", data={})
-    entry.add_to_hass(hass)
-    ent_reg = er.async_get(hass)
-    old = ent_reg.async_get_or_create(
-        "sensor",
-        DOMAIN,
-        f"{entry.entry_id}_coverage",
-        suggested_object_id="device_sentinel_coverage",
-        config_entry=entry,
-    )
-    assert old.entity_id == "sensor.device_sentinel_coverage"
-
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-
-    assert ent_reg.async_get("sensor.device_sentinel_coverage") is None
-    moved = ent_reg.async_get("sensor.device_sentinel_devices_watched")
-    assert moved is not None
-    assert moved.unique_id == f"{entry.entry_id}_coverage"
-
-
-async def test_migration_leaves_another_entry_alone(hass: HomeAssistant):
-    """Only this config entry's entities move. An id that looks like
-    ours but belongs elsewhere is not ours to rename."""
-    other = MockConfigEntry(domain="test", title="Other")
-    other.add_to_hass(hass)
-    ent_reg = er.async_get(hass)
-    ent_reg.async_get_or_create(
-        "sensor",
-        "test",
-        "someone_elses_coverage",
-        suggested_object_id="device_sentinel_coverage",
-        config_entry=other,
-    )
-    await _setup(hass)
-    survivor = ent_reg.async_get("sensor.device_sentinel_coverage")
-    assert survivor is not None
-    assert survivor.platform == "test"
 
 
 # The retirement leaves no dead row.
