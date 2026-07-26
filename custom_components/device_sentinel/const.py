@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.9.6 (2026-07-25)
+# File: const.py, Version: 0.9.8 (2026-07-26)
 
 """Constants for the Device Sentinel integration."""
 
@@ -541,6 +541,7 @@ CONF_BRIEF_TARGETS = "brief_document_targets"
 NOTIFY_DOMAIN = "notify"
 PERSISTENT_TARGET = "persistent_notification"
 PERSISTENT_CREATE = "create"
+PERSISTENT_DISMISS = "dismiss"
 
 # The notification engine (0.9.6). Three self-overwriting surfaces,
 # each a fixed id so it always replaces its own last message rather
