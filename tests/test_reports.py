@@ -12,9 +12,15 @@ device_telemetry.md, one row per device with its learned rhythm and
 series, and classification.md, which sorts every registry device into
 watched or set aside. Both are written at setup and rewritten at local
 midnight when the daily epoch rolls, so they carry each device's fresh
-daily maximum. This file holds the diagnostic reports; the daily brief,
-which follows its own window rather than the calendar day, has its own
-file.
+daily maximum. The telemetry report marks its SIGNAL LOWS cell (bold
+floor, struck trim, italic rail), carries a battery column and a
+readable Written header, and holds a Reporting Devices section that
+groups every standing fault by family. The STATUS cell reads one
+grammar (Reported or Excluded with reasons), the Regenerate Reports
+button judges then rewrites, and the whole learned state is available
+in the diagnostics download. This file holds the diagnostic reports and
+their surface; the daily brief, which follows its own window rather than
+the calendar day, has its own file.
 """
 
 import os
@@ -30,7 +36,84 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
-from tests.helpers import setup_entry
+from custom_components.device_sentinel.const import (
+    CONF_BATTERY_EXCLUDED_DEVICES,
+    CONF_EXCLUDED_DEVICES,
+    CONF_FREEZE_EXCLUDED_DEVICES,
+    CONF_HIGH_PRIORITY_TARGETS,
+    CONF_SIGNAL_EXCLUDED_DEVICES,
+    CONF_SIGNAL_SENSITIVITY,
+    DEV_BATTERY_DAILY,
+    DEV_BATTERY_LOW,
+    DEV_BATTERY_SINCE,
+    DEV_BATTERY_VALUE,
+    DEV_DAILY_MAX,
+    DEV_EVENT_COUNT,
+    DEV_FROZEN_CATEGORY,
+    DEV_FROZEN_SINCE,
+    DEV_LAST_ACTIVITY,
+    DEV_SIGNAL_DAILY_MIN,
+    FREEZE_ARMING_DAYS,
+    FREEZE_CATEGORY_FROZEN,
+)
+from custom_components.device_sentinel.coordinator import (
+    DeviceSentinelCoordinator,
+    _new_device_record,
+)
+from custom_components.device_sentinel.diagnostics import (
+    async_get_config_entry_diagnostics,
+)
+
+from tests.helpers import setup_coordinator, setup_entry
+
+OPEN_TAG = "[\u25cb open]"
+ACKED_TAG = "[\u2713 acknowledged]"
+REMOVED_TAG = "[\u2717 removed from list]"
+
+
+def _register(hass, uid, name, battery=False):
+    source = MockConfigEntry(domain="test", title="Source")
+    source.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", uid)},
+        name=name,
+    )
+    ent_reg = er.async_get(hass)
+    plain = ent_reg.async_get_or_create(
+        "sensor", "test", f"{uid}_0",
+        device_id=device.id, config_entry=source,
+    )
+    if battery:
+        ent_reg.async_get_or_create(
+            "sensor", "test", f"{uid}_pct",
+            device_id=device.id, config_entry=source,
+            original_device_class="battery",
+        )
+    return device, plain.entity_id
+
+
+def _telemetry_row(hass, name):
+    text = open(
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
+    ).read()
+    return next(line for line in text.splitlines() if name in line)
+
+
+def _freeze(coord, device_id, since=1_000_000.0):
+    record = coord.data["devices"][device_id]
+    record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
+    record[DEV_LAST_ACTIVITY] = since - 10.0
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
+    record[DEV_FROZEN_SINCE] = since
+
+
+def _battery_low(coord, device_id, level=14.0,
+                 since="2026-07-20T15:02:00+00:00"):
+    record = coord.data["devices"][device_id]
+    record[DEV_BATTERY_LOW] = True
+    record[DEV_BATTERY_VALUE] = level
+    record[DEV_BATTERY_SINCE] = since
 
 
 async def test_reports_written_at_setup_and_midnight(
@@ -91,3 +174,456 @@ async def test_reports_written_at_setup_and_midnight(
     await hass.async_block_till_done(wait_background_tasks=True)
     assert os.path.isfile(tele)
     assert os.path.isfile(clas)
+
+
+# ==================================================================
+# The diagnostics download.
+# ==================================================================
+
+async def test_diagnostics_carry_the_learned_state(hass: HomeAssistant):
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", "diag")},
+        name="Diag Device",
+    )
+    er.async_get(hass).async_get_or_create(
+        "sensor", "test", "diag", device_id=device.id, config_entry=source
+    )
+    entry = await setup_entry(
+        hass, {CONF_HIGH_PRIORITY_TARGETS: ["notify.mobile_app_private"]}
+    )
+    coordinator = entry.runtime_data
+
+    # A seven-day history with one spike: the trim must show through.
+    coordinator.data["devices"][device.id][DEV_DAILY_MAX] = [
+        500.0, 550.0, 600.0, 520.0, 9000.0, 580.0, 560.0,
+    ]
+
+    result = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert result["version"]
+    assert result["storage"]["setup_count"] >= 1
+    assert result["tunables"]["taint_floor_minutes"] == 10
+    assert result["tunables"]["taint_share_pct"] == 10
+    assert result["tunables"]["trim_top_k"] == 1
+    assert result["classification"]["watched"] == 1
+    assert result["battery"]["low_count"] == 0
+    assert result["todo_items"] == []
+
+    entry_device = result["devices"][device.id]
+    assert entry_device["name"] == "Diag Device"
+    assert entry_device["integration"] == "test"
+    assert entry_device["clock_source"] == "recorded"
+    assert entry_device["excluded"] is None
+    assert entry_device["window_basis"] == 600.0  # spike set aside
+    assert entry_device["set_aside_indices"] == [4]
+
+    # Notification targets are the user's own device names: redacted.
+    assert (
+        result["entry_options"][CONF_HIGH_PRIORITY_TARGETS] == "**REDACTED**"
+    )
+
+
+async def test_diagnostics_report_exclusions(hass: HomeAssistant):
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", "diagx")},
+        name="Excluded Diag Device",
+    )
+    er.async_get(hass).async_get_or_create(
+        "sensor", "test", "diagx", device_id=device.id, config_entry=source
+    )
+    entry = await setup_entry(hass, {CONF_EXCLUDED_DEVICES: [device.id]})
+
+    result = await async_get_config_entry_diagnostics(hass, entry)
+    assert result["devices"][device.id]["excluded"] == "device"
+    assert result["classification"]["excluded_devices"] == {
+        device.id: "device"
+    }
+
+
+# ==================================================================
+# The marked report columns and the three buttons.
+# ==================================================================
+
+async def _marks_coordinator(hass, options=None):
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", "marks")},
+        name="Marks Device",
+    )
+    er.async_get(hass).async_get_or_create(
+        "sensor", "test", "marks",
+        suggested_object_id="marks_linkquality",
+        device_id=device.id, config_entry=source,
+    )
+    coord = await setup_coordinator(hass, options)
+    return coord, device.id
+
+
+async def test_signal_lows_shows_all_three_marks(hass: HomeAssistant):
+    """One cell, all three states: the floor bold, the trimmed low
+    struck, the rail value italic. Eight readings, one a rail (255)
+    and one an anomaly (40); at a week the ladder trims the single
+    lowest non-rail value, so 40 is struck and 87 is the floor."""
+    coord, device_id = await _marks_coordinator(hass)
+    coord.data["devices"][device_id][DEV_SIGNAL_DAILY_MIN] = [
+        88.0, 90.0, 255.0, 40.0, 92.0, 89.0, 91.0, 87.0,
+    ]
+    await hass.async_add_executor_job(coord._write_reports)
+    row = _telemetry_row(hass, "Marks Device")
+    assert "**87** 91 89 92 ~~40~~ *255* 90 88" in row
+
+
+async def test_battery_column_summarises_rather_than_listing(
+    hass: HomeAssistant,
+):
+    """Ninety levels will not fit in a cell, so the column carries the
+    level and the changes the history supports (0.8.6). Five days is
+    short of a week, so neither change appears yet, and the level is
+    bold because it is at or below the threshold."""
+    coord, device_id = await _marks_coordinator(hass)
+    record = coord.data["devices"][device_id]
+    record[DEV_BATTERY_DAILY] = [95.0, 60.0, 22.0, 18.0, 15.0]
+    record[DEV_BATTERY_VALUE] = 15.0
+    await hass.async_add_executor_job(coord._write_reports)
+    row = _telemetry_row(hass, "Marks Device")
+    assert "**15%**" in row
+    assert "/wk" not in row and "/mo" not in row
+
+
+async def test_battery_column_adds_each_change_when_earned(
+    hass: HomeAssistant,
+):
+    """A fresh install shows a bare level, gains the weekly change
+    after a week and the monthly one after a month."""
+    coord, device_id = await _marks_coordinator(hass)
+    record = coord.data["devices"][device_id]
+    record[DEV_BATTERY_DAILY] = [90.0 - n * 0.5 for n in range(8)]
+    record[DEV_BATTERY_VALUE] = record[DEV_BATTERY_DAILY][-1]
+    await hass.async_add_executor_job(coord._write_reports)
+    row = _telemetry_row(hass, "Marks Device")
+    assert "-3.5/wk" in row
+    assert "/mo" not in row
+
+    record[DEV_BATTERY_DAILY] = [90.0 - n * 0.5 for n in range(31)]
+    record[DEV_BATTERY_VALUE] = record[DEV_BATTERY_DAILY][-1]
+    await hass.async_add_executor_job(coord._write_reports)
+    row = _telemetry_row(hass, "Marks Device")
+    assert "-3.5/wk" in row and "-15/mo" in row
+
+
+async def test_a_reading_outside_the_scale_says_so(
+    hass: HomeAssistant,
+):
+    """LUX Outdoors reports around 198. That is recorded like any
+    other value (#128) and classified here, at rendering."""
+    coord, device_id = await _marks_coordinator(hass)
+    record = coord.data["devices"][device_id]
+    record[DEV_BATTERY_DAILY] = [198.0, 194.0, 198.0]
+    record[DEV_BATTERY_VALUE] = 198.0
+    await hass.async_add_executor_job(coord._write_reports)
+    assert "198 out of range" in _telemetry_row(hass, "Marks Device")
+
+
+async def test_headers_show_k_and_threshold(hass: HomeAssistant):
+    """The column headers carry the tunables: GAPS its fixed trim k,
+    SIGNAL the sensitivity as a word, BAT LEVEL the live threshold."""
+    coord, _ = await _marks_coordinator(hass, {CONF_SIGNAL_SENSITIVITY: 1})
+    await hass.async_add_executor_job(coord._write_reports)
+    text = open(
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
+    ).read()
+    header = next(line for line in text.splitlines() if "DEVICE (INTEGRATION) | STATUS" in line)
+    # Slider at +1 renders as the word Watchful, not a number.
+    assert "SIGNAL (Watchful)" in header
+    assert "GAPS (K=" in header
+    assert "BAT LEVEL (floor 20%)" in header
+    # The retired columns are gone.
+    assert "LINE" not in header
+    assert "FAMILY" not in header
+    assert "SIG MIN" not in header
+    assert "SIG FROZEN" not in header
+
+    # Every data row must have exactly as many cells as the header,
+    # eight, so a dropped column can never leave the rows misaligned.
+    def _cells(line: str) -> int:
+        return len([c for c in line.strip().strip("|").split("|")])
+
+    header_cells = _cells(header)
+    assert header_cells == 8, header_cells
+    data_rows = [
+        line
+        for line in text.splitlines()
+        if line.startswith("| ")
+        and "DEVICE (INTEGRATION) | STATUS" not in line
+        and not line.startswith("|---")
+    ]
+    for line in data_rows:
+        assert _cells(line) == header_cells, line
+
+
+async def test_three_enable_buttons_exist_and_press(hass: HomeAssistant):
+    """The enable assist is three buttons now, one per diagnostic
+    kind, each pressable without error."""
+    await _marks_coordinator(hass)
+    for entity_id in (
+        "button.device_sentinel_enable_signals",
+        "button.device_sentinel_enable_last_seen",
+        "button.device_sentinel_enable_battery",
+    ):
+        assert hass.states.get(entity_id) is not None, entity_id
+        await hass.services.async_call(
+            "button", "press",
+            {"entity_id": entity_id},
+            blocking=True,
+        )
+
+
+# ==================================================================
+# The regenerate-reports button and the STATUS wording.
+# ==================================================================
+
+def _plain_device(hass, uid, name):
+    source = MockConfigEntry(domain="test", title="Source")
+    source.add_to_hass(hass)
+    return dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", uid)},
+        name=name,
+    )
+
+
+async def test_status_grammar(hass: HomeAssistant):
+    """Reported when nothing excludes; Excluded (GLB) alone for a
+    global exclude; Excluded (BAT, SIG, FRZ) in column order when
+    sections combine."""
+    d = _plain_device(hass, "st", "Status Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    assert coord._device_status(d.id) == "Reported"
+
+    hass.config_entries.async_update_entry(
+        coord.entry,
+        options={
+            CONF_BATTERY_EXCLUDED_DEVICES: [d.id],
+            CONF_SIGNAL_EXCLUDED_DEVICES: [d.id],
+            CONF_FREEZE_EXCLUDED_DEVICES: [d.id],
+        },
+    )
+    assert coord._device_status(d.id) == "Excluded (BAT, SIG, FRZ)"
+
+    hass.config_entries.async_update_entry(
+        coord.entry, options={CONF_EXCLUDED_DEVICES: [d.id]}
+    )
+    coord._excluded_devices[d.id] = "device"
+    assert coord._device_status(d.id) == "Excluded (GLB)"
+
+
+def test_readable_timestamp_format():
+    """The report time is a readable local phrase, not an ISO
+    string."""
+    import datetime
+
+    when = datetime.datetime(2026, 7, 21, 7, 19, 5)
+    out = DeviceSentinelCoordinator._format_report_time(when)
+    assert out == "July 21, 2026 at 7:19 AM"
+    # Afternoon crosses to PM with a 12-hour clock.
+    pm = datetime.datetime(2026, 12, 3, 15, 5, 0)
+    assert DeviceSentinelCoordinator._format_report_time(pm) == (
+        "December 3, 2026 at 3:05 PM"
+    )
+    # Midnight and noon read 12, not 0.
+    midnight = datetime.datetime(2026, 1, 1, 0, 0, 0)
+    assert "12:00 AM" in DeviceSentinelCoordinator._format_report_time(
+        midnight
+    )
+
+
+async def test_regenerate_judges_then_writes(hass: HomeAssistant):
+    """The regenerate action judges every device, then writes a fresh
+    report that shows a device already down."""
+    d = _plain_device(hass, "ghost", "Ghost Device")
+    coord = await setup_coordinator(hass)
+    record = _new_device_record("2026-07-08T00:00:00+00:00", None)
+    record[DEV_EVENT_COUNT] = 0
+    record[DEV_LAST_ACTIVITY] = None
+    coord.data["devices"][d.id] = record
+
+    result = await coord.async_regenerate_reports()
+    assert result == {"regenerated": 2}
+
+    text = open(
+        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
+    ).read()
+    # Judgment ran, so the ghost is flagged and shows in the report.
+    assert "Reporting Devices (1)" in text
+    assert "As of" in text
+    # STATUS column carries the new grammar.
+    assert "Reported" in text
+
+
+async def test_regenerate_button_present_and_presses(hass: HomeAssistant):
+    """The Regenerate Reports button exists on the Device Sentinel
+    device and its press runs without error."""
+    coord = await setup_coordinator(hass)
+    reg = er.async_get(hass)
+    buttons = [
+        e
+        for e in reg.entities.values()
+        if e.platform == "device_sentinel" and e.domain == "button"
+    ]
+    # regenerate_reports gives a unique_id ending in "reports".
+    assert any("reports" in e.unique_id for e in buttons)
+    # Pressing it does not raise.
+    await coord.async_regenerate_reports()
+
+
+# ==================================================================
+# The report Written header is a readable local time.
+# ==================================================================
+
+async def test_written_header_is_readable_on_both_reports(
+    hass: HomeAssistant,
+):
+    """Both report headers read a readable local time with the trigger
+    tag, not a raw ISO timestamp."""
+    _plain_device(hass, "wh", "Written Device")
+    coord = await setup_coordinator(hass)
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    for name in ("device_telemetry.md", "classification.md"):
+        text = open(
+            hass.config.path(f"device_sentinel/diagnostics/{name}")
+        ).read()
+        written = next(
+            line
+            for line in text.splitlines()
+            if line.startswith("Written")
+        )
+        assert "(manual)" in written
+        assert " at " in written
+        # No ISO 'T' date-time separator in the timestamp portion.
+        assert "T" not in written.split("(")[0]
+
+
+# ==================================================================
+# The Reporting Devices section and the STATUS revert.
+# ==================================================================
+
+async def test_all_three_families_grouped_and_sorted(
+    hass: HomeAssistant,
+):
+    """Freeze then battery, alphabetical inside each group, the
+    header counting distinct devices."""
+    d1, e1 = _register(hass, "r1", "Zebra Frozen")
+    d2, e2 = _register(hass, "r2", "Apple Frozen")
+    d3, e3 = _register(hass, "r3", "Mango Battery", battery=True)
+    coord = await setup_coordinator(hass)
+    for eid in (e1, e2, e3):
+        hass.states.async_set(eid, "on")
+    _freeze(coord, d1.id)
+    _freeze(coord, d2.id)
+    _battery_low(coord, d3.id)
+    coord._sync_problem_list()
+
+    text = "\n".join(coord._reporting_lines())
+    assert "## Reporting Devices (3)" in text
+    assert text.index("### Freeze") < text.index("### Battery")
+    assert text.index("Apple Frozen") < text.index("Zebra Frozen")
+    assert "(14%)" in text
+    assert text.count(OPEN_TAG) == 3
+
+
+async def test_acknowledged_item_still_shows_tagged(
+    hass: HomeAssistant,
+):
+    """The whole reason for the section: the checkbox silences the
+    phone, never the diagnostics."""
+    device, eid = _register(hass, "a1", "Acked Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    uid = coord.todo_items[0]["uid"]
+    await coord.async_todo_update(uid=uid, status="completed")
+
+    text = "\n".join(coord._reporting_lines())
+    assert "Acked Sensor" in text
+    assert ACKED_TAG in text
+
+
+async def test_hand_deleted_item_shows_removed_tag(
+    hass: HomeAssistant,
+):
+    """Still reporting, removed from the list by a human: the fault
+    stays visible here with the removed tag until the sync re-adds."""
+    device, eid = _register(hass, "x1", "Orphan Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    uid = coord.todo_items[0]["uid"]
+    await coord.async_todo_delete([uid])
+
+    text = "\n".join(coord._reporting_lines())
+    assert "Orphan Sensor" in text
+    assert REMOVED_TAG in text
+
+
+async def test_two_family_device_appears_in_both(hass: HomeAssistant):
+    """One device, two lines, each family carrying its own age, both
+    wearing the device's single todo tag."""
+    device, eid = _register(hass, "b1", "Doubled Sensor", battery=True)
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, "21.5")
+    _freeze(coord, device.id)
+    _battery_low(coord, device.id)
+    coord._sync_problem_list()
+
+    text = "\n".join(coord._reporting_lines())
+    assert "## Reporting Devices (1)" in text  # distinct devices
+    assert text.count("Doubled Sensor") == 2
+    assert "### Freeze" in text and "### Battery" in text
+    assert text.count(OPEN_TAG) == 2
+
+
+async def test_empty_section_is_all_clear(hass: HomeAssistant):
+    coord = await setup_coordinator(hass)
+    coord._sync_problem_list()
+    text = "\n".join(coord._reporting_lines())
+    assert "## Reporting Devices (0)" in text
+    assert "low on battery" in text
+
+
+async def test_status_cell_reverted_to_plain_grammar(
+    hass: HomeAssistant,
+):
+    """The 0.6.1 icon is gone from STATUS: a faulted device reads
+    plain Reported there, and the icon lives in Reporting Devices."""
+    device, eid = _register(hass, "s1", "Plain Status")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    assert coord._device_status(device.id) == "Reported"
+
+
+async def test_section_reaches_the_written_report(hass: HomeAssistant):
+    device, eid = _register(hass, "w1", "Written Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    path = hass.config.path("device_sentinel", "diagnostics", "device_telemetry.md")
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    assert "## Reporting Devices (1)" in text
+    assert OPEN_TAG in text
+    assert "Down devices" not in text
