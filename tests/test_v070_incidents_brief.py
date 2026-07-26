@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_v070_incidents_brief.py, Version: 0.9.0 (2026-07-24)
+# File: test_v070_incidents_brief.py, Version: 0.9.9 (2026-07-26)
 
 """0.7.0 tests: the incident log and the daily brief document.
 
@@ -311,3 +311,51 @@ async def test_no_episodes_open_during_startup_grace(
     coord._grace_until = dt_util.utcnow().timestamp() + 60.0
     coord._judge_all_devices()
     assert coord.data["silence_episodes"] == []
+
+
+async def test_scheduled_roll_opens_todays_in_progress_brief(
+    hass: HomeAssistant, freezer
+):
+    """The 7 AM roll closes yesterday and opens today (#116, 0.9.9).
+
+    Before this, the scheduled write completed the day that ended and
+    left the day just beginning with no file until the next startup,
+    so from the roll onward the file named for today was absent and
+    the outside witness reported the brief missing. The roll now
+    writes today's in-progress brief too, so both files exist."""
+    import glob
+    from custom_components.device_sentinel.const import (
+        BRIEF_TRIGGER,
+        CONF_REMINDER_TIME,
+    )
+
+    # A moment just after the 7 AM brief hour, so the closing window is
+    # yesterday and the newly opened window is today. Pin the zone so
+    # the dates do not depend on the test default: 12:00:01Z is
+    # 07:00:01 local at UTC-5, just past the 07:00 brief hour.
+    await hass.config.async_set_time_zone("America/Guayaquil")  # UTC-5
+    freezer.move_to("2026-07-26T12:00:01+00:00")  # 07:00:01 local
+    coord = await _coordinator(hass, {CONF_REMINDER_TIME: "07:00:00"})
+
+    await hass.async_add_executor_job(coord._write_reports, BRIEF_TRIGGER)
+
+    written = sorted(
+        glob.glob(hass.config.path("device_sentinel", "daily_brief_*.md"))
+    )
+    names = [p.rsplit("/", 1)[-1] for p in written]
+    assert "daily_brief_2026-07-25.md" in names, names  # closed day
+    assert "daily_brief_2026-07-26.md" in names, names  # opened day
+
+    with open(
+        hass.config.path("device_sentinel", "daily_brief_2026-07-25.md"),
+        encoding="utf-8",
+    ) as handle:
+        completed = handle.read()
+    with open(
+        hass.config.path("device_sentinel", "daily_brief_2026-07-26.md"),
+        encoding="utf-8",
+    ) as handle:
+        today = handle.read()
+
+    assert "Covering the 24 hours" in completed  # the closed brief
+    assert "(in progress)" in today              # today's open brief
