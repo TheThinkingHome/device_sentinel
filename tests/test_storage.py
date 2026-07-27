@@ -1122,3 +1122,19 @@ async def test_the_phase_b_backup_is_taken_on_first_load(
     }
     entry = await setup_entry(hass)
     assert entry.runtime_data.data.get(DATA_PHASE_B_BACKUP) is True
+
+
+async def test_setup_stamps_both_files_at_once(
+    hass: HomeAssistant, hass_storage
+):
+    """An unstamped main file beside a stamped hot one is a pair the
+    merge cannot compare, so it declines. Setup writes storage
+    directly rather than through the immediate-save path, so if it
+    left the stamp off, every clock written between the first load
+    and the first critical save would be dropped at the next
+    restart."""
+    await setup_entry(hass)
+    cold = hass_storage[STORAGE_KEY]["data"]
+    hot = hass_storage[STORAGE_CLOCKS_KEY]["data"]
+    assert cold.get(DATA_SAVED_AT) is not None
+    assert hot.get(DATA_SAVED_AT) is not None
