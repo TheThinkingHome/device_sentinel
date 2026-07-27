@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage.py, Version: 0.9.9 (2026-07-26)
+# File: test_storage.py, Version: 0.9.11 (2026-07-27)
 
 """Persistence: the write cadence, the split shadow, and retention.
 
@@ -885,3 +885,24 @@ async def test_storage_roundtrip_with_devices(hass: HomeAssistant, hass_storage)
     coord2 = entry.runtime_data
     assert device.id in coord2.data[DATA_DEVICES]
     assert coord2.data[DATA_DEVICES][device.id][DEV_EVENT_COUNT] == 1
+
+
+async def test_a_stored_outbox_is_dropped_on_load(
+    hass: HomeAssistant, hass_storage
+):
+    """The dry-run outbox was retired at 0.9.11. An install that
+    carried one sheds it on the next load rather than paying for a
+    dead key in every write."""
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {
+            DATA_DEVICES: {},
+            "outbox": [{"text": "a line from the dry run"}],
+        },
+    }
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    assert "outbox" not in coord.data
+
+    await coord._save_now()
+    assert "outbox" not in hass_storage[STORAGE_KEY]["data"]

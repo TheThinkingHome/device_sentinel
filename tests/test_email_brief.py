@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_email_brief.py, Version: 0.9.9 (2026-07-26)
+# File: test_email_brief.py, Version: 0.9.11 (2026-07-27)
 
 """The incident log and the daily brief: the memory and the report.
 
@@ -42,7 +42,6 @@ from custom_components.device_sentinel.const import (
     CONF_REMINDER_TIME,
     DATA_EPISODES,
     DATA_INCIDENTS,
-    DATA_OUTBOX,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
@@ -73,13 +72,6 @@ from custom_components.device_sentinel.const import (
     INC_KIND,
     INC_NAME,
     INC_WHEN,
-    OUTBOX_REASON_EVENT,
-    OUTBOX_REASON_RECONCILE,
-    OUTBOX_SHAPE_DEVICE,
-    OUTBOX_SHAPE_EVENT,
-    OUT_REASON,
-    OUT_SHAPE,
-    OUT_TEXT,
     PERSISTENT_TARGET,
     RECOVERY_CAUSE_UNOBSERVED,
     REMINDER_MODE_DAILY,
@@ -185,15 +177,6 @@ def _row(coord, device_id, name, kind, event, **extra):
         INC_DURATION: extra.get("duration"),
     }
     return coord._compose_event(row)
-
-
-def _lines(coord, reason=None):
-    return [
-        row
-        for row in coord.data[DATA_OUTBOX]
-        if row[OUT_SHAPE] == OUTBOX_SHAPE_DEVICE
-        and (reason is None or row[OUT_REASON] == reason)
-    ]
 
 
 def _open_episode(coord, device_id, name):
@@ -497,150 +480,9 @@ async def test_battery_line_carries_the_level(hass: HomeAssistant):
     )
 
 
-async def test_nothing_sends_but_everything_is_composed(
-    hass: HomeAssistant,
-):
-    """The dry run: an incident produces both shapes in the outbox
-    and no service call anywhere."""
-    device, entity_id, _ = _register(hass, "o1", "Outbox Sensor")
-    coord = await setup_coordinator(hass)
-    hass.states.async_set(entity_id, "on")
-    calls = []
-    hass.bus.async_listen("call_service", lambda event: calls.append(event))
-    record = coord.data["devices"][device.id]
-    record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
-    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
-    record[DEV_FROZEN_SINCE] = dt_util.utcnow().timestamp() - 3600
-    coord._sync_problem_list()
-    await hass.async_block_till_done()
-
-    shapes = [row[OUT_SHAPE] for row in coord.data[DATA_OUTBOX]]
-    assert OUTBOX_SHAPE_EVENT in shapes
-    assert OUTBOX_SHAPE_DEVICE in shapes
-    assert all("Outbox Sensor" in row[OUT_TEXT] for row in coord.data[DATA_OUTBOX])
-    assert not [
-        call for call in calls
-        if call.data.get("domain") == "notify"
-    ]
-
-
-async def test_outbox_is_bounded(hass: HomeAssistant):
-    coord = await setup_coordinator(hass)
-    for index in range(60):
-        coord._note_outbox("d", f"line {index}", OUTBOX_SHAPE_EVENT)
-    assert len(coord.data[DATA_OUTBOX]) == 50
-    assert coord.data[DATA_OUTBOX][-1][OUT_TEXT] == "line 59"
-
-
-async def test_outbox_reaches_diagnostics(hass: HomeAssistant):
-    from custom_components.device_sentinel.diagnostics import (
-        async_get_config_entry_diagnostics,
-    )
-
-    entry = MockConfigEntry(domain=DOMAIN, title="Device Sentinel", data={})
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    entry.runtime_data._note_outbox("d", "a line", OUTBOX_SHAPE_EVENT)
-    diag = await async_get_config_entry_diagnostics(hass, entry)
-    assert diag["outbox"][-1][OUT_TEXT] == "a line"
-
-
 # ==================================================================
 # The reconcile pass: restating what is already true.
 # ==================================================================
-
-async def test_standing_problem_is_restated(hass: HomeAssistant):
-    """The field gap: a device already broken when the engine starts
-    never transitions, so only a reconcile can describe it."""
-    device, entity_id, _ = _register(hass, "r1", "Standing Problem")
-    coord = await setup_coordinator(hass)
-    hass.states.async_set(entity_id, "on")
-    _freeze(coord, device.id)
-    coord._sync_problem_list()
-    coord.data[DATA_OUTBOX].clear()  # forget the transition
-
-    assert coord.reconcile_device_lines() == 1
-    restated = _lines(coord, OUTBOX_REASON_RECONCILE)
-    assert len(restated) == 1
-    assert "Standing Problem" in restated[0][OUT_TEXT]
-
-
-async def test_reconcile_is_idempotent_in_content(
-    hass: HomeAssistant,
-):
-    """Running it twice says the same thing twice, never something
-    different: it states what is true, not what changed."""
-    device, entity_id, _ = _register(hass, "r2", "Twice Sensor")
-    coord = await setup_coordinator(hass)
-    hass.states.async_set(entity_id, "on")
-    _freeze(coord, device.id)
-    coord._sync_problem_list()
-    coord.data[DATA_OUTBOX].clear()
-
-    coord.reconcile_device_lines()
-    first = _lines(coord, OUTBOX_REASON_RECONCILE)[-1][OUT_TEXT]
-    coord.reconcile_device_lines()
-    second = _lines(coord, OUTBOX_REASON_RECONCILE)[-1][OUT_TEXT]
-    assert first == second
-
-
-async def test_acknowledged_devices_are_not_restated(
-    hass: HomeAssistant,
-):
-    """The phone carries what is wrong and unacknowledged (#109)."""
-    device, entity_id, _ = _register(hass, "r3", "Acked Sensor")
-    coord = await setup_coordinator(hass)
-    hass.states.async_set(entity_id, "on")
-    _freeze(coord, device.id)
-    coord._sync_problem_list()
-    uid = coord.todo_items[0]["uid"]
-    await coord.async_todo_update(uid=uid, status="completed")
-    coord.data[DATA_OUTBOX].clear()
-
-    assert coord.reconcile_device_lines() == 0
-
-
-async def test_excluded_devices_are_never_restated(
-    hass: HomeAssistant,
-):
-    device, entity_id, _ = _register(hass, "r4", "Excluded Sensor")
-    coord = await setup_coordinator(
-        hass, {CONF_EXCLUDED_DEVICES: [device.id]}
-    )
-    hass.states.async_set(entity_id, "on")
-    _freeze(coord, device.id)
-    coord._sync_problem_list()
-    coord.data[DATA_OUTBOX].clear()
-    assert coord.reconcile_device_lines() == 0
-
-
-async def test_transitions_are_marked_as_events(hass: HomeAssistant):
-    """A restatement and a piece of news must be distinguishable, so
-    a later engine can replace a line without announcing it."""
-    device, entity_id, _ = _register(hass, "r5", "Marked Sensor")
-    coord = await setup_coordinator(hass)
-    hass.states.async_set(entity_id, "on")
-    _freeze(coord, device.id)
-    coord._sync_problem_list()
-    assert _lines(coord, OUTBOX_REASON_EVENT)
-
-
-async def test_startup_reconcile_runs_when_grace_closes(
-    hass: HomeAssistant,
-):
-    """The hook: once the clocks have settled, everything standing is
-    restated without anything having happened."""
-    device, entity_id, _ = _register(hass, "r6", "Boot Sensor")
-    coord = await setup_coordinator(hass)
-    hass.states.async_set(entity_id, "on")
-    _freeze(coord, device.id)
-    coord._sync_problem_list()
-    coord.data[DATA_OUTBOX].clear()
-
-    coord._on_grace_closed(None)
-    assert len(_lines(coord, OUTBOX_REASON_RECONCILE)) == 1
-
 
 # ==================================================================
 # The brief opens in prose.

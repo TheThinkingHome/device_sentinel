@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.9.9 (2026-07-26)
+# File: test_hardening.py, Version: 0.9.11 (2026-07-27)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -366,3 +366,13 @@ async def test_the_description_still_renders_the_link(hass: HomeAssistant):
     for step in ("notifications", "exclusions", "battery"):
         result = await _open(hass, entry, step)
         assert "wiki_link" in result["description_placeholders"], step
+
+
+def test_the_logger_uses_the_namespace_home_assistant_targets():
+    """Home Assistant's debug-logging toggle, and the logger: block in
+    configuration.yaml, both act on custom_components.device_sentinel.
+    A logger named anything else cannot be turned on the ordinary way,
+    so the button appears to do nothing."""
+    from custom_components.device_sentinel.const import LOGGER
+
+    assert LOGGER.name == "custom_components.device_sentinel"
