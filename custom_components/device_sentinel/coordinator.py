@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.9.10 (2026-07-27)
+# File: coordinator.py, Version: 0.9.11 (2026-07-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -183,7 +183,6 @@ from .const import (
     DEFAULT_TAINT_SHARE_PCT,
     DATA_EPISODES,
     DATA_INCIDENTS,
-    DATA_OUTBOX,
     DATA_TODO_JOURNAL,
     SIGNAL_PROBLEM_ADDITION,
     TODO_ACKED_AT,
@@ -322,7 +321,6 @@ class DeviceSentinelCoordinator(
         self._grace_stamps: int = 0
         self._grace_devices: set[str] = set()
         self._grace_taints: set[str] = set()
-        self._outbox_pending: set[str] = set()
         # Family events collected during a sync, fired after it settles
         # (#479). Each is (family, event_line, recovery). Cleared on
         # every dispatch so a later sync starts clean.
@@ -387,7 +385,11 @@ class DeviceSentinelCoordinator(
         loaded.setdefault(DATA_TODO_JOURNAL, [])
         loaded.setdefault(DATA_EPISODES, [])
         loaded.setdefault(DATA_INCIDENTS, [])
-        loaded.setdefault(DATA_OUTBOX, [])
+        # The dry-run outbox was retired at 0.9.11 once the
+        # notifications it previewed had been sending for
+        # several releases. Drop what an older install stored,
+        # so nobody carries a dead key or its bytes.
+        loaded.pop("outbox", None)
         # 0.7.6 renamed the cause an unobserved recovery carries, and
         # the entries already stored kept the old wording, which the
         # composer then failed to recognize and rendered as "revived
@@ -801,14 +803,16 @@ class DeviceSentinelCoordinator(
                 self._dirty = True
 
         if audit and set_aside:
-            names = "; ".join(
-                f"{name} ({domain})"
-                for name, domain in sorted(set_aside.values())
-            )
             LOGGER.info(
-                "Set aside %d service devices from telemetry: %s",
+                "Set aside %d service devices from telemetry",
                 len(set_aside),
-                names,
+            )
+            LOGGER.debug(
+                "Service devices set aside: %s",
+                "; ".join(
+                    f"{name} ({domain})"
+                    for name, domain in sorted(set_aside.values())
+                ),
             )
 
     @staticmethod
@@ -962,7 +966,7 @@ class DeviceSentinelCoordinator(
                     if dt_util.utcnow().timestamp() < self._grace_until:
                         self._grace_taints.add(device_id)
                     else:
-                        LOGGER.info(
+                        LOGGER.debug(
                             "Device tainted: %s was %s for %.0f s; its "
                             "next completed gap will not feed learning",
                             entity_id,
@@ -1049,7 +1053,7 @@ class DeviceSentinelCoordinator(
             taint_seconds = self._taint_duration.pop(device_id, None)
             self._taint_consumed_at[device_id] = now
             if last is not None:
-                LOGGER.info(
+                LOGGER.debug(
                     "Completed gap of %.0f s on a tainted device excluded "
                     "from learning (spanned an unavailable stretch)",
                     stamp - last,
@@ -1078,7 +1082,7 @@ class DeviceSentinelCoordinator(
                 # Undo the daily-max update this gap just made, so a
                 # pairing gap never widens the learned rhythm.
                 self._retract_today_max(record, stamp - last)
-            LOGGER.info(
+            LOGGER.debug(
                 "Device %s recovered during a Z2M pairing window; gap "
                 "discarded as a pairing intervention",
                 device_id,
@@ -1347,7 +1351,7 @@ class DeviceSentinelCoordinator(
                     entry = self.hass.config_entries.async_get_entry(
                         entry_id
                     )
-                    LOGGER.info(
+                    LOGGER.debug(
                         "Integration %s reclassified as synchronized "
                         "polling (%d storms inside an hour); storm "
                         "exclusion disabled for it, its devices learn "
@@ -1394,7 +1398,7 @@ class DeviceSentinelCoordinator(
         if storm["stamps"]:
             entry = self.hass.config_entries.async_get_entry(entry_id)
             domain = entry.domain if entry else entry_id
-            LOGGER.info(
+            LOGGER.debug(
                 "Storm on %s ended: %d devices, %d stamps excluded from "
                 "learning, %.1f s duration",
                 domain,
@@ -1415,7 +1419,7 @@ class DeviceSentinelCoordinator(
     @callback
     def _on_grace_closed(self, _now: Any) -> None:
         """Log the startup grace summary."""
-        LOGGER.info(
+        LOGGER.debug(
             "Startup grace closed after %d s: %d stamps across %d devices "
             "excluded from learning; %d boot-blip taints aggregated",
             STARTUP_GRACE_SECONDS,
@@ -1423,15 +1427,6 @@ class DeviceSentinelCoordinator(
             len(self._grace_devices),
             len(self._grace_taints),
         )
-        # The clocks have settled and the list reflects reality, so
-        # restate everything standing: a problem that predates this
-        # start would otherwise never be described (#121).
-        spoken = self.reconcile_device_lines()
-        if spoken:
-            LOGGER.info(
-                "Reconciled %d standing problem(s) into the outbox",
-                spoken,
-            )
 
     def _schedule_brief(self) -> None:
         """Arm the daily write that closes the brief's window.
@@ -1454,7 +1449,7 @@ class DeviceSentinelCoordinator(
             minute=minute,
             second=0,
         )
-        LOGGER.info(
+        LOGGER.debug(
             "Daily brief will be written at %02d:%02d local", hour, minute
         )
 
@@ -1496,7 +1491,7 @@ class DeviceSentinelCoordinator(
         self._sync_problem_list()
         if pushed or self._dirty or self._critical:
             await self._save_now()
-        LOGGER.info(
+        LOGGER.debug(
             "Day rollover: pushed daily maxima for %d of %d watched devices",
             pushed,
             len(self.data[DATA_DEVICES]),
@@ -1623,7 +1618,12 @@ class DeviceSentinelCoordinator(
             return reader.pairing_active_within(
                 PAIRING_GRACE_SECONDS_DEFAULT, now
             )
-        except Exception:  # noqa: BLE001 - a reader fault falls to the taint
+        except Exception as err:  # noqa: BLE001 - a fault falls to the taint
+            LOGGER.debug(
+                "Pairing reader for %s faulted, treating as not pairing: %s",
+                device_id,
+                err,
+            )
             return False
 
     @staticmethod
@@ -1823,7 +1823,7 @@ class DeviceSentinelCoordinator(
             record[DEV_FROZEN_SINCE] = record.get(DEV_FROZEN_SINCE) or now
         self._dirty = True
         self._critical = True
-        LOGGER.info(
+        LOGGER.debug(
             "Device %s freeze verdict: %s",
             self._device_name(device_id),
             category or "alive",
@@ -1881,7 +1881,7 @@ class DeviceSentinelCoordinator(
                 if self._apply_freeze_verdict(device_id, record, now):
                     flipped = True
             except Exception:  # noqa: BLE001
-                LOGGER.info(
+                LOGGER.warning(
                     "Skipped a device in the freeze sweep after an "
                     "unexpected error judging it: %s",
                     self._device_name(device_id),
@@ -2489,7 +2489,6 @@ class DeviceSentinelCoordinator(
                         )
             break
         self._sort_todo_items()
-        self._flush_outbox_lines()
         await self._save_now()
         self._notify()
 
@@ -2839,8 +2838,6 @@ class DeviceSentinelCoordinator(
             self._dirty = True
             self._critical = True
             self._notify()
-        # The list is settled, so a device line now describes reality.
-        self._flush_outbox_lines()
         # Now that the list and its summaries are settled, fire the
         # collected family events and refresh the persistent card. The
         # card always updates; the events respect quiet hours and the
@@ -2931,7 +2928,7 @@ class DeviceSentinelCoordinator(
         if is_low and not was_low:
             record[DEV_BATTERY_LOW] = True
             record[DEV_BATTERY_SINCE] = dt_util.utcnow().isoformat()
-            LOGGER.info(
+            LOGGER.debug(
                 "Battery low: %s at %s (threshold %s)",
                 battery_entity_id,
                 "on" if is_binary else level,
@@ -2940,7 +2937,7 @@ class DeviceSentinelCoordinator(
         elif was_low and not is_low:
             record[DEV_BATTERY_LOW] = False
             record[DEV_BATTERY_SINCE] = None
-            LOGGER.info(
+            LOGGER.debug(
                 "Battery recovered: %s at %s",
                 battery_entity_id,
                 "off" if is_binary else level,
@@ -2968,7 +2965,7 @@ class DeviceSentinelCoordinator(
     async def async_options_updated(self) -> None:
         """Re-judge the fleet under new options, live, no restart."""
         self._rebuild_registry_view()
-        LOGGER.info(
+        LOGGER.debug(
             "Options updated: low threshold now %s, %d devices and %d "
             "entities excluded; re-evaluating",
             self.low_threshold,
