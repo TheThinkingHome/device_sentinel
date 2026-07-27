@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.9.9 (2026-07-26)
+# File: test_notifications.py, Version: 0.9.10 (2026-07-27)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -21,14 +21,19 @@ device. This file holds all of that: install, surface, and engine.
 
 import json
 import pathlib
+from datetime import timedelta
 
+import pytest
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.device_sentinel.config_flow import (
     _discover_notify_targets,
@@ -43,6 +48,17 @@ from custom_components.device_sentinel.const import (
     CONF_QUIET_START,
     CONF_REMINDER_MODE,
     CONF_REMINDER_TIME,
+    CONF_SETTLE_SHARE,
+    DATA_DEVICES,
+    DEV_BATTERY_LOW,
+    DEV_BATTERY_SINCE,
+    DEV_BATTERY_VALUE,
+    DEV_DAILY_MAX,
+    DEV_FROZEN_CATEGORY,
+    DEV_FROZEN_SINCE,
+    DEV_LAST_ACTIVITY,
+    FREEZE_ARMING_DAYS,
+    FREEZE_CATEGORY_FROZEN,
     NOTIFY_CARD_ID,
     NOTIFY_FAMILY_IDS,
 )
@@ -659,3 +675,198 @@ async def test_integration_picker_offers_only_watched_integrations(
     # The watched device's integration is present; nothing service-only
     # sneaks in, because service devices never entered watched_device_rows.
     assert all(isinstance(name, str) for name in integrations)
+
+
+# ==================================================================
+# The notification debounce.
+# ==================================================================
+
+def _debounce_device(hass, uid, name, battery=False):
+    """Register a device with one entity under its own source."""
+    source = MockConfigEntry(domain="test", title="Source")
+    source.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", uid)},
+        name=name,
+    )
+    reg = er.async_get(hass)
+    ent = reg.async_get_or_create(
+        "sensor", "test", f"{uid}_0",
+        device_id=device.id, config_entry=source,
+    )
+    if battery:
+        reg.async_get_or_create(
+            "sensor", "test", f"{uid}_pct",
+            device_id=device.id, config_entry=source,
+            original_device_class="battery",
+        )
+    return device, ent.entity_id
+
+
+def _phone_capture(hass, service="phone"):
+    """Register a notify service that records what it was sent."""
+    calls = []
+
+    async def handler(call):
+        calls.append(dict(call.data))
+
+    hass.services.async_register("notify", service, handler)
+    return calls
+
+
+def _learned_freeze(coord, device_id, gap=3600.0, since=1_000_000.0):
+    """Give a device a learned reporting gap and a freeze verdict."""
+    record = coord.data[DATA_DEVICES][device_id]
+    record[DEV_DAILY_MAX] = [gap] * (FREEZE_ARMING_DAYS + 2)
+    record[DEV_LAST_ACTIVITY] = since - 10.0
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
+    record[DEV_FROZEN_SINCE] = since
+
+
+async def test_the_delay_is_a_share_of_the_learned_gap(
+    hass: HomeAssistant,
+):
+    """Thirty percent of an hourly gap is eighteen minutes, and a
+    device with nothing learned has no gap to take a share of."""
+    device, _eid = _debounce_device(hass, "dl1", "Delay Device")
+    entry = await setup_entry(hass, {CONF_SETTLE_SHARE: 30})
+    coord = entry.runtime_data
+    record = coord.data[DATA_DEVICES][device.id]
+
+    record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
+    assert coord._notification_delay(device.id) == pytest.approx(1080.0)
+
+    record[DEV_DAILY_MAX] = []
+    assert coord._notification_delay(device.id) == 0.0
+
+
+async def test_a_learned_fault_waits_then_is_announced(
+    hass: HomeAssistant, freezer
+):
+    """The fault is held for its debounce, then sent with the time it
+    was first seen rather than the time it was released."""
+    device, eid = _debounce_device(hass, "dh1", "Held Device")
+    entry = await setup_entry(
+        hass,
+        {
+            CONF_HIGH_PRIORITY_TARGETS: ["notify.phone"],
+            CONF_SETTLE_SHARE: 30,
+        },
+    )
+    coord = entry.runtime_data
+    calls = _phone_capture(hass)
+    hass.states.async_set(eid, "21.5")
+
+    _learned_freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    assert calls == []  # held, not sent
+    assert coord._held_events
+
+    # Past the eighteen-minute hold, the alert goes out.
+    freezer.tick(timedelta(seconds=1081))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert len(calls) == 1
+    assert "Held Device" in calls[0]["message"]
+    assert not coord._held_events
+
+
+async def test_a_fault_that_heals_inside_the_hold_is_never_announced(
+    hass: HomeAssistant, freezer
+):
+    """The whole point: a problem that fixes itself inside the delay
+    reaches nobody's phone, and its recovery is dropped with it rather
+    than arriving as news about nothing."""
+    device, eid = _debounce_device(hass, "dh2", "Healing Device")
+    entry = await setup_entry(
+        hass,
+        {
+            CONF_HIGH_PRIORITY_TARGETS: ["notify.phone"],
+            CONF_SETTLE_SHARE: 30,
+        },
+    )
+    coord = entry.runtime_data
+    calls = _phone_capture(hass)
+    hass.states.async_set(eid, "21.5")
+
+    _learned_freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    assert calls == []
+
+    # It recovers well inside the hold.
+    freezer.tick(timedelta(seconds=60))
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_FROZEN_CATEGORY] = None
+    record[DEV_FROZEN_SINCE] = None
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    assert coord._held_events == {}
+
+    # And nothing arrives when the original hold would have matured.
+    freezer.tick(timedelta(seconds=1200))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert calls == []
+
+
+async def test_an_acknowledged_fault_is_dropped_at_maturity(
+    hass: HomeAssistant, freezer
+):
+    """Checking the box silences the phone, so a hold that matures
+    after an acknowledgment has nothing left to say."""
+    device, eid = _debounce_device(hass, "dh3", "Acked Device")
+    entry = await setup_entry(
+        hass,
+        {
+            CONF_HIGH_PRIORITY_TARGETS: ["notify.phone"],
+            CONF_SETTLE_SHARE: 30,
+        },
+    )
+    coord = entry.runtime_data
+    calls = _phone_capture(hass)
+    hass.states.async_set(eid, "21.5")
+
+    _learned_freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    assert calls == []
+
+    uid = coord.todo_items[0]["uid"]
+    await coord.async_todo_update(uid=uid, status="completed")
+
+    freezer.tick(timedelta(seconds=1081))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert calls == []
+
+
+async def test_a_device_with_nothing_learned_is_announced_at_once(
+    hass: HomeAssistant,
+):
+    """A share of a gap that does not exist is no delay at all, so a
+    fresh device is never held silent waiting on a number it has not
+    earned."""
+    device, eid = _debounce_device(hass, "dh4", "Fresh Device", battery=True)
+    entry = await setup_entry(
+        hass,
+        {
+            CONF_HIGH_PRIORITY_TARGETS: ["notify.phone"],
+            CONF_SETTLE_SHARE: 30,
+        },
+    )
+    coord = entry.runtime_data
+    calls = _phone_capture(hass)
+    hass.states.async_set(eid, "21.5")
+
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_BATTERY_LOW] = True
+    record[DEV_BATTERY_VALUE] = 12.0
+    record[DEV_BATTERY_SINCE] = "2026-07-20T15:02:00+00:00"
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+
+    assert len(calls) == 1
+    assert coord._held_events == {}
