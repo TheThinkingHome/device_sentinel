@@ -67,13 +67,13 @@ You curate by exception. Exclude a whole integration, a label, or a single devic
 
 ### Warnings Before The Failure
 
-A low battery is caught on the percentage rather than the binary flag, against a threshold you set with a slider. A cell resting exactly on the line does not flap, because it has to climb two points clear before the alert lifts. Every device's daily level is recorded as well, which is the groundwork for telling you a cell is falling unusually fast while it is still nowhere near the threshold.
+A low battery is caught on the percentage rather than the binary flag, against a threshold you set with a slider. Every device's daily level is recorded as well, which is the groundwork for telling you a cell is falling unusually fast while it is still nowhere near the threshold.
 
 A radio link is watched against the floor that device has actually held over the past fortnight, and what gets reported is dwell: how much of the day it spent down at that floor. A link stuck at its rail, the 255 or the minus 128 that means the field was filled in rather than measured, is called out for what it is rather than read as a strong signal.
 
 ### One List Of What Is Actually Wrong
 
-Every fault, whatever kind, lands in one Home Assistant to-do list. A device that is both frozen and low on battery is one line, not two. Tick it to acknowledge: it stays listed and keeps updating, but stops making noise on your phone and on the dashboard card until it recovers on its own.
+Every fault, whatever kind, lands in one Home Assistant to-do list. A device that is both frozen and low on battery is one line, not two. Tick it to acknowledge: it stays listed and keeps updating, but stops making noise on your phone and on the dashboard card until it recovers on its own or by your intervention.
 
 > **Image placeholder:** the problem list and the whole-home dashboard card, side by side.
 
@@ -125,8 +125,6 @@ Three files are written for whoever maintains the system, alongside the daily br
 - **Device telemetry**, one row per device with its learned rhythm, its signal history and its battery trend.
 - **Classification**, showing which devices are watched, which are set aside, and why anything is excluded.
 - **Silence episodes**, recording every time a device went quiet past its own basis, whether it came back on its own or something intervened, and whether the gap was learned. This answers a question nothing else does: did the device recover, or did your restart make it look like it recovered?
-
-To report a problem, download a diagnostics file from **Settings, Devices and Services, Device Sentinel**, the three-dot menu, then **Download Diagnostics**, and attach it to a GitHub issue. It contains the learned state, your settings, and the episode records. Your notification targets are redacted; device names are not, so read it before you post it.
 
 ## Documentation
 
