@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.9.8 (2026-07-26)
+# File: __init__.py, Version: 0.9.11 (2026-07-27)
 
 """The Device Sentinel integration.
 
@@ -89,7 +89,7 @@ def _drop_dead_entities(
             )
             if entity_id is None:
                 continue
-            LOGGER.info(
+            LOGGER.debug(
                 "Removing %s, an entity from a retired surface",
                 entity_id,
             )
@@ -132,6 +132,6 @@ async def async_unload_entry(
     hass: HomeAssistant, entry: DeviceSentinelConfigEntry
 ) -> bool:
     """Unload a Device Sentinel config entry."""
-    LOGGER.info("Device Sentinel unloading")
+    LOGGER.debug("Device Sentinel unloading")
     await entry.runtime_data.async_shutdown()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
