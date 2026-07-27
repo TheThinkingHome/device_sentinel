@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.9.1 (2026-07-24)
+# File: narrative.py, Version: 0.9.11 (2026-07-27)
 
 """What happened, and how to say it: the memory and the composer.
 
@@ -22,8 +22,6 @@ of them into a plain sentence, in the two shapes a reader needs:
 history that carries its time, and a device line that carries its
 state. Every channel calls that composer, so one event cannot be
 described three different ways.
-
-The outbox holds what would be sent while nothing sends yet.
 """
 
 from __future__ import annotations
@@ -36,7 +34,6 @@ from .const import (
     DATA_DEVICES,
     DATA_EPISODES,
     DATA_INCIDENTS,
-    DATA_OUTBOX,
     DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
     DEV_LAST_ACTIVITY,
@@ -66,16 +63,6 @@ from .const import (
     INC_NAME,
     INC_WHEN,
     LOGGER,
-    OUTBOX_KEEP,
-    OUTBOX_REASON_EVENT,
-    OUTBOX_REASON_RECONCILE,
-    OUTBOX_SHAPE_DEVICE,
-    OUTBOX_SHAPE_EVENT,
-    OUT_DEVICE_ID,
-    OUT_REASON,
-    OUT_SHAPE,
-    OUT_TEXT,
-    OUT_WHEN,
     RECOVERY_CAUSE_UNOBSERVED,
     TODO_DEVICE_ID,
     TODO_KINDS,
@@ -336,84 +323,6 @@ class NarrativeMixin:
         )
         return f"{name} {clause}{tail}."
 
-    def _note_outbox(
-        self,
-        device_id: str,
-        text: str,
-        shape: str,
-        reason: str = OUTBOX_REASON_EVENT,
-    ) -> None:
-        """Record a composed message without sending it.
-
-        The dry run (#120): nothing sends yet, so every sentence the
-        engine would say is logged and kept where it can be read and
-        argued with for days before the first one reaches a phone.
-        """
-        LOGGER.info("Would send (%s, %s): %s", shape, reason, text)
-        outbox = self.data.setdefault(DATA_OUTBOX, [])
-        outbox.append(
-            {
-                OUT_WHEN: dt_util.utcnow().timestamp(),
-                OUT_DEVICE_ID: device_id,
-                OUT_TEXT: text,
-                OUT_SHAPE: shape,
-                OUT_REASON: reason,
-            }
-        )
-        del outbox[:-OUTBOX_KEEP]
-        self._dirty = True
-
-    def _flush_outbox_lines(self) -> None:
-        """Compose the device line for every device touched this pass.
-
-        Deferred until the problem list has settled, because the line
-        is a statement about the device's current state rather than
-        about any one event. A device whose problems all cleared
-        produces no line: the phone clears silently (#109), and there
-        is nothing to say.
-        """
-        for device_id in sorted(self._outbox_pending):
-            line = self._compose_device_line(device_id)
-            if line is not None:
-                self._note_outbox(
-                    device_id, line, OUTBOX_SHAPE_DEVICE
-                )
-        self._outbox_pending.clear()
-
-    def reconcile_device_lines(self) -> int:
-        """Restate every standing problem, whether or not it moved.
-
-        The composer speaks on transitions, which leaves a hole the
-        field found immediately (#121): a device already broken when
-        the engine starts never transitions, so nothing would ever
-        describe it and a phone would show an empty board beside a
-        problem list with three items on it. This pass says what is
-        true rather than what just changed, and it is idempotent, so
-        it can run at startup, at quiet-hours end, and after any
-        interruption without inventing anything.
-
-        Acknowledged devices are skipped: the phone shows what is
-        wrong and unacknowledged right now (#109).
-        """
-        spoken = 0
-        for record in self.todo_items:
-            device_id = record.get(TODO_DEVICE_ID)
-            if not device_id:
-                continue
-            if record.get(TODO_STATUS) == "completed":
-                continue
-            line = self._compose_device_line(device_id)
-            if line is None:
-                continue
-            self._note_outbox(
-                device_id,
-                line,
-                OUTBOX_SHAPE_DEVICE,
-                OUTBOX_REASON_RECONCILE,
-            )
-            spoken += 1
-        return spoken
-
     def _open_episode_for(self, device_id: str) -> dict[str, Any] | None:
         """Return a device's episode still awaiting its lag, if any.
 
@@ -568,7 +477,7 @@ class NarrativeMixin:
             stamped += 1
         if stamped:
             self._dirty = True
-            LOGGER.info(
+            LOGGER.debug(
                 "Stamped %d open silence episode(s) as %s", stamped, cause
             )
 
@@ -624,14 +533,6 @@ class NarrativeMixin:
         }
         incidents = self.data.setdefault(DATA_INCIDENTS, [])
         incidents.append(entry)
-        # The event sentence can be composed here: it describes what
-        # just happened. The device line cannot, because it describes
-        # the device's whole state and the problem list has not
-        # settled yet, so it is deferred to the flush below (#120).
-        self._note_outbox(
-            device_id, self._compose_event(entry), OUTBOX_SHAPE_EVENT
-        )
-        self._outbox_pending.add(device_id)
         cutoff = (
             dt_util.utcnow().timestamp() - INCIDENT_KEEP_DAYS * 86400.0
         )
