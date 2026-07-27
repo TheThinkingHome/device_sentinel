@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.9.9 (2026-07-26)
+# File: reports.py, Version: 0.9.11 (2026-07-27)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -685,7 +685,7 @@ class ReportWritingMixin:
         path = os.path.join(report_directory, REPORT_TELEMETRY)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
-        LOGGER.info("Telemetry report written to %s", path)
+        LOGGER.debug("Telemetry report written to %s", path)
 
     def _write_classification(
         self, report_directory: str, trigger: str
@@ -795,7 +795,7 @@ class ReportWritingMixin:
         path = os.path.join(report_directory, REPORT_CLASSIFICATION)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
-        LOGGER.info("Classification report written to %s", path)
+        LOGGER.debug("Classification report written to %s", path)
 
     @staticmethod
     def _brief_moment(epoch: float) -> str:
