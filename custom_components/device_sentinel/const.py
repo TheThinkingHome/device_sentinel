@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.9.11 (2026-07-27)
+# File: const.py, Version: 0.10.0 (2026-07-27)
 
 """Constants for the Device Sentinel integration."""
 
@@ -105,6 +105,29 @@ STORAGE_CLOCKS_KEY = f"{DOMAIN}.clocks"
 STORAGE_CLOCKS_VERSION = 1
 BACKUP_SUFFIX_PRE_SPLIT = ".pre-split.bak"
 DATA_SPLIT_BACKUP = "pre_split_backup_taken"
+
+# A second restore point, taken once when 0.10.0 first loads. The
+# phase A copy above was made days and several releases earlier, so
+# going back to it now would throw away everything learned since.
+# This release is the one that stops writing the main file on every
+# save, so it is the one that earns its own copy: this file plus the
+# 0.9.12 tag puts a system exactly where it was before the change.
+BACKUP_SUFFIX_PHASE_B = ".pre-0.10.0.bak"
+DATA_PHASE_B_BACKUP = "phase_b_backup_taken"
+
+# When each file was last written, stamped into both of them (0.10.0).
+# Phase B stops writing the main file on routine saves, so the hot
+# file is normally the newer of the two and its clocks are the ones to
+# keep. Normally, but not provably: the main file is written first and
+# the hot file second, so a failure between the two leaves a fresh
+# main file beside a stale hot one. Overlaying that backwards would
+# push a device's last-activity into the past, which reads as silence
+# and earns a freeze verdict the device never deserved. The stamp is
+# what lets the merge refuse. It is additive on purpose, so neither
+# store version moves and no migration is owed: a file written before
+# 0.10.0 simply has no stamp, and a load that cannot compare declines
+# to merge, which is safe because the two were written together then.
+DATA_SAVED_AT = "saved_at"
 
 
 
