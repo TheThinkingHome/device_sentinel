@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: bridge.py, Version: 0.9.5 (2026-07-25)
+# File: bridge.py, Version: 0.9.11 (2026-07-27)
 
 """Reading a coordinator bridge's own liveness and pairing state.
 
@@ -158,7 +158,7 @@ class Z2MBridgeReader:
         try:
             await mqtt.async_wait_for_mqtt_client(self._hass)
         except Exception as err:  # noqa: BLE001 - any failure means no MQTT
-            LOGGER.info(
+            LOGGER.warning(
                 "Device Sentinel: MQTT client unavailable, bridge "
                 "state will read unknown (%s)",
                 err,
@@ -180,7 +180,7 @@ class Z2MBridgeReader:
                 )
             )
         except Exception as err:  # noqa: BLE001 - subscribe can fail many ways
-            LOGGER.info(
+            LOGGER.warning(
                 "Device Sentinel: could not subscribe to Z2M bridge "
                 "topics, state will read unknown (%s)",
                 err,
@@ -244,7 +244,8 @@ def _decode(payload: Any) -> str:
     if isinstance(payload, bytes):
         try:
             return payload.decode("utf-8")
-        except Exception:  # noqa: BLE001 - undecodable payload is not fatal
+        except Exception as err:  # noqa: BLE001 - undecodable is not fatal
+            LOGGER.debug("Undecodable MQTT payload ignored: %s", err)
             return ""
     return payload if isinstance(payload, str) else ""
 
@@ -253,5 +254,6 @@ def _load(text: str) -> Any:
     """Parse JSON, returning None rather than raising on bad input."""
     try:
         return json.loads(text)
-    except Exception:  # noqa: BLE001 - malformed payload reads as nothing
+    except Exception as err:  # noqa: BLE001 - malformed reads as nothing
+        LOGGER.debug("Malformed MQTT payload ignored: %s", err)
         return None
