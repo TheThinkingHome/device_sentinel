@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage.py, Version: 0.9.11 (2026-07-27)
+# File: test_storage.py, Version: 0.10.0 (2026-07-27)
 
 """Persistence: the write cadence, the split shadow, and retention.
 
@@ -45,6 +45,8 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.device_sentinel.const import (
+    BACKUP_SUFFIX_PHASE_B,
+    DATA_PHASE_B_BACKUP,
     BACKUP_SUFFIX_PRE_SPLIT,
     BRIEF_KEEP_DAYS,
     CLOCK_FIELDS,
@@ -80,6 +82,11 @@ from custom_components.device_sentinel.const import (
     RETENTION_DAYS_MIN,
     RETENTION_DAYS_STEP,
     STARTUP_GRACE_SECONDS,
+    DATA_SAVED_AT,
+    DATA_STATS_EPOCH,
+    DEV_SIGNAL_VALUE,
+    DEV_TAINTED,
+    STATS_EPOCH,
     STORAGE_CLOCKS_KEY,
     STORAGE_COALESCE_SECONDS,
     STORAGE_KEY,
@@ -89,6 +96,10 @@ from custom_components.device_sentinel.const import (
     TODO_KIND_SIGNAL,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
+)
+
+from custom_components.device_sentinel.coordinator import (
+    _new_device_record,
 )
 
 from tests.helpers import setup_entry
@@ -164,7 +175,8 @@ async def test_routine_churn_coalesces(hass: HomeAssistant, freezer):
     device, entity_id = _register(hass, "r1", "Routine Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
-    spy = _StoreSpy(coord._store)
+    cold = _StoreSpy(coord._store)
+    hot = _StoreSpy(coord._clock_store)
 
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
@@ -172,8 +184,11 @@ async def test_routine_churn_coalesces(hass: HomeAssistant, freezer):
     async_fire_time_changed(hass)
     await hass.async_block_till_done(wait_background_tasks=True)
 
-    assert spy.saves == 0
-    assert spy.delays >= 1
+    assert hot.delays >= 1
+    assert hot.saves == 0
+    # Phase B: churn never touches the main file, which is the saving.
+    assert cold.delays == 0
+    assert cold.saves == 0
 
 
 async def test_verdict_flip_saves_immediately(
@@ -261,7 +276,8 @@ async def test_dirty_ticks_schedule_once_and_the_write_fires(
     device, entity_id = _register(hass, "c1", "Churn Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
-    spy = _StoreSpy(coord._store)
+    spy = _StoreSpy(coord._clock_store)
+    cold = _StoreSpy(coord._store)
 
     freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 5))
     async_fire_time_changed(hass)
@@ -279,12 +295,14 @@ async def test_dirty_ticks_schedule_once_and_the_write_fires(
 
     assert spy.delays == 1          # scheduled once, never rescheduled
     assert spy.saves == 0           # nothing immediate for churn
+    assert cold.delays == 0         # and the main file stays put
+    assert cold.saves == 0
     assert coord._delay_pending is True
 
     # The window elapses: the delayed write fires for real. The
     # store's delayed path writes internally rather than through
     # async_save, so the firing proof is the pending flag clearing,
-    # which only _data_to_save does, and it runs exactly when the
+    # which only _clocks_to_save does, and it runs exactly when the
     # store serializes the delayed write. spy.saves staying at zero
     # proves no immediate save could have cleared it instead.
     freezer.tick(
@@ -315,7 +333,7 @@ async def test_immediate_save_clears_the_pending_window(
     device, entity_id = _register(hass, "c2", "Reset Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
-    spy = _StoreSpy(coord._store)
+    spy = _StoreSpy(coord._clock_store)
 
     freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 5))
     async_fire_time_changed(hass)
@@ -444,14 +462,14 @@ async def test_the_backup_copies_and_never_overwrites(
     with open(source, "w", encoding="utf-8") as handle:
         json.dump({"version": 1, "data": {"devices": {"d": {}}}}, handle)
 
-    assert await coord._take_pre_split_backup()
+    assert await coord._take_backup(BACKUP_SUFFIX_PRE_SPLIT)
     with open(backup, encoding="utf-8") as handle:
         assert "devices" in json.load(handle)["data"]
 
     # A second call finds the file already there and leaves it alone.
     with open(source, "w", encoding="utf-8") as handle:
         json.dump({"version": 1, "data": {"devices": {}}}, handle)
-    assert await coord._take_pre_split_backup()
+    assert await coord._take_backup(BACKUP_SUFFIX_PRE_SPLIT)
     with open(backup, encoding="utf-8") as handle:
         assert json.load(handle)["data"]["devices"] == {"d": {}}
     os.remove(source)
@@ -906,3 +924,201 @@ async def test_a_stored_outbox_is_dropped_on_load(
 
     await coord._save_now()
     assert "outbox" not in hass_storage[STORAGE_KEY]["data"]
+
+
+# ==================================================================
+# The storage split, phase B: the hot file is read back.
+# ==================================================================
+
+def _hot(hass_storage, clocks, saved_at):
+    """Put a hot file on disk with the given clocks and stamp."""
+    hass_storage[STORAGE_CLOCKS_KEY] = {
+        "version": 1,
+        "data": {DATA_SAVED_AT: saved_at, "clocks": clocks},
+    }
+
+
+def _cold(hass_storage, devices, saved_at):
+    """Put a main storage file on disk with the given devices."""
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {
+            DATA_DEVICES: devices,
+            DATA_STATS_EPOCH: STATS_EPOCH,
+            DATA_SAVED_AT: saved_at,
+        },
+    }
+
+
+async def test_the_hot_file_supplies_the_clocks(
+    hass: HomeAssistant, hass_storage
+):
+    """Phase B: a routine save wrote the clocks here and nowhere
+    else, so the load has to take them from here or lose them."""
+    device, _eid = _register(hass, "hot1", "Hot Device")
+    _cold(hass_storage, {device.id: _new_device_record(
+        "2026-07-11T00:00:00+00:00", 1000.0)}, saved_at=1000.0)
+    _hot(hass_storage, {device.id: {
+        DEV_LAST_ACTIVITY: 9000.0, DEV_EVENT_COUNT: 42,
+    }}, saved_at=9000.0)
+
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+    assert record[DEV_LAST_ACTIVITY] == 9000.0
+    assert record[DEV_EVENT_COUNT] == 42
+
+
+async def test_an_older_hot_file_is_refused(
+    hass: HomeAssistant, hass_storage
+):
+    """The reason the stamp exists. The main file is written first
+    and the hot file second, so a failure between them leaves a stale
+    hot file. Merging it would drag a device's last activity
+    backwards, which reads as silence and earns a freeze it never
+    deserved."""
+    device, _eid = _register(hass, "hot2", "Stale Hot Device")
+    fresh = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    fresh[DEV_LAST_ACTIVITY] = 9000.0
+    fresh[DEV_EVENT_COUNT] = 42
+    _cold(hass_storage, {device.id: fresh}, saved_at=9000.0)
+    _hot(hass_storage, {device.id: {
+        DEV_LAST_ACTIVITY: 1000.0, DEV_EVENT_COUNT: 1,
+    }}, saved_at=1000.0)
+
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+    assert record[DEV_LAST_ACTIVITY] == 9000.0
+    assert record[DEV_EVENT_COUNT] == 42
+
+
+async def test_an_unstamped_pair_is_left_alone(
+    hass: HomeAssistant, hass_storage
+):
+    """Every install's first load after upgrading. Before 0.10.0 both
+    files were written together, so the main file is already current
+    and a merge it cannot date is a merge it should not make."""
+    device, _eid = _register(hass, "hot3", "Unstamped Device")
+    old = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    old[DEV_LAST_ACTIVITY] = 5000.0
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {DATA_DEVICES: {device.id: old},
+                 DATA_STATS_EPOCH: STATS_EPOCH},
+    }
+    hass_storage[STORAGE_CLOCKS_KEY] = {
+        "version": 1,
+        "data": {"clocks": {device.id: {DEV_LAST_ACTIVITY: 1.0}}},
+    }
+
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+    assert record[DEV_LAST_ACTIVITY] == 5000.0
+
+
+async def test_a_device_only_the_hot_file_knows_is_skipped(
+    hass: HomeAssistant, hass_storage
+):
+    """Nine fields cannot rebuild a record, so a device the main file
+    has never heard of is not invented here."""
+    device, _eid = _register(hass, "hot4", "Known Device")
+    _cold(hass_storage, {device.id: _new_device_record(
+        "2026-07-11T00:00:00+00:00", 1000.0)}, saved_at=1000.0)
+    _hot(hass_storage, {
+        device.id: {DEV_LAST_ACTIVITY: 9000.0},
+        "a-device-that-is-not-in-the-main-file": {DEV_LAST_ACTIVITY: 9000.0},
+    }, saved_at=9000.0)
+
+    entry = await setup_entry(hass)
+    devices = entry.runtime_data.data[DATA_DEVICES]
+    assert devices[device.id][DEV_LAST_ACTIVITY] == 9000.0
+    assert "a-device-that-is-not-in-the-main-file" not in devices
+
+
+async def test_the_epoch_wipe_still_has_the_last_word(
+    hass: HomeAssistant, hass_storage
+):
+    """The ordering the merge depends on. Six of the nine clock
+    fields are exactly what a statistics epoch wipes, so a merge that
+    ran afterwards would hand them straight back and a declared epoch
+    would quietly fail to take."""
+    device, _eid = _register(hass, "hot5", "Epoch Device")
+    stale = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {
+            DATA_DEVICES: {device.id: stale},
+            DATA_STATS_EPOCH: "an-older-epoch",
+            DATA_SAVED_AT: 1000.0,
+        },
+    }
+    _hot(hass_storage, {device.id: {
+        DEV_SIGNAL_VALUE: 42.0, DEV_TAINTED: True,
+    }}, saved_at=9000.0)
+
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+    assert record[DEV_SIGNAL_VALUE] is None
+    assert record[DEV_TAINTED] is False
+
+
+async def test_shutdown_writes_the_pair_whatever_the_flags_say(
+    hass: HomeAssistant, hass_storage
+):
+    """A routine save writes the hot file alone and clears the dirty
+    flag, so a stop that waited on a flag would leave the main file
+    behind. Writing both here is what makes going back to an older
+    version safe."""
+    _register(hass, "hot6", "Shutdown Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._dirty = False
+    coord._critical = False
+    cold = _StoreSpy(coord._store)
+    hot = _StoreSpy(coord._clock_store)
+
+    await coord.async_shutdown()
+    assert cold.saves == 1
+    assert hot.saves == 1
+
+
+async def test_this_release_takes_its_own_restore_point(
+    hass: HomeAssistant,
+):
+    """The phase A copy was taken days and several releases earlier,
+    so going back to it now would throw away everything learned
+    since. This is the release that stops writing the main file on
+    every save, so it takes a copy of its own before doing so, and
+    the two live side by side under different names."""
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    source = hass.config.path(".storage", STORAGE_KEY)
+    phase_a = source + BACKUP_SUFFIX_PRE_SPLIT
+    phase_b = source + BACKUP_SUFFIX_PHASE_B
+    os.makedirs(os.path.dirname(source), exist_ok=True)
+    for path in (source, phase_a, phase_b):
+        if os.path.isfile(path):
+            os.remove(path)
+    with open(source, "w", encoding="utf-8") as handle:
+        json.dump({"version": 1, "data": {"devices": {"d": {}}}}, handle)
+
+    # An install that already carries the phase A marker still earns
+    # this one, which is the whole point.
+    assert await coord._take_backup(BACKUP_SUFFIX_PHASE_B)
+    assert os.path.isfile(phase_b)
+    assert not os.path.isfile(phase_a)
+    with open(phase_b, encoding="utf-8") as handle:
+        assert json.load(handle)["data"]["devices"] == {"d": {}}
+    os.remove(source)
+    os.remove(phase_b)
+
+
+async def test_the_phase_b_backup_is_taken_on_first_load(
+    hass: HomeAssistant, hass_storage
+):
+    """Taken by setup itself, and marked so it is taken only once."""
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {DATA_DEVICES: {}, DATA_SPLIT_BACKUP: True},
+    }
+    entry = await setup_entry(hass)
+    assert entry.runtime_data.data.get(DATA_PHASE_B_BACKUP) is True
