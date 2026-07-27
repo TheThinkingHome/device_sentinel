@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.9.12 (2026-07-27)
+# File: coordinator.py, Version: 0.10.0 (2026-07-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -165,9 +165,12 @@ from .const import (
     DEFAULT_EPISODE_SHARE_PCT,
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
+    BACKUP_SUFFIX_PHASE_B,
     BACKUP_SUFFIX_PRE_SPLIT,
     CLOCK_FIELDS,
+    DATA_PHASE_B_BACKUP,
     DATA_SPLIT_BACKUP,
+    DATA_SAVED_AT,
     STORAGE_CLOCKS_KEY,
     STORAGE_CLOCKS_VERSION,
     STORAGE_KEY,
@@ -419,6 +422,19 @@ class DeviceSentinelCoordinator(
         for record in engine_items:
             record.setdefault(TODO_KINDS, {})
             record.setdefault(TODO_ACKED_AT, None)
+        # The hot file is merged here, and the position is deliberate.
+        # Six of the nine clock fields are exactly what the statistics
+        # epoch below wipes, so merging after it would hand those
+        # fields straight back and a declared epoch would quietly fail
+        # to take. Merging first means the wipe still has the last
+        # word.
+        merged = self._merge_clocks(loaded, await self._clock_store.async_load())
+        if merged:
+            LOGGER.debug(
+                "Merged activity clocks for %d device(s) from %s",
+                merged,
+                STORAGE_CLOCKS_KEY,
+            )
         if loaded.get(DATA_STATS_EPOCH) != STATS_EPOCH:
             wiped = 0
             for record in loaded[DATA_DEVICES].values():
@@ -467,8 +483,13 @@ class DeviceSentinelCoordinator(
         # field must be added to _new_device_record or this removes it
         # on the next load.
         if not loaded.get(DATA_SPLIT_BACKUP):
-            if await self._take_pre_split_backup():
+            if await self._take_backup(BACKUP_SUFFIX_PRE_SPLIT):
                 loaded[DATA_SPLIT_BACKUP] = True
+        # 0.10.0 is the release that stops writing the main file on
+        # every save, so it takes its own copy before doing so.
+        if not loaded.get(DATA_PHASE_B_BACKUP):
+            if await self._take_backup(BACKUP_SUFFIX_PHASE_B):
+                loaded[DATA_PHASE_B_BACKUP] = True
         legacy = self._prune_legacy_fields(loaded[DATA_DEVICES])
         if legacy:
             LOGGER.info(
@@ -629,8 +650,14 @@ class DeviceSentinelCoordinator(
         if self._brief_unsub is not None:
             self._brief_unsub()
             self._brief_unsub = None
-        if self._dirty or self._critical:
-            await self._save_now()
+        # Unconditional from 0.10.0. A routine save writes the hot
+        # file alone and clears the dirty flag, so a stop that waited
+        # for a flag would leave the main file behind by however long
+        # since the last critical change. Writing the pair here bounds
+        # that to one session and means a clean stop always leaves two
+        # files that agree, which is what makes going back to an older
+        # version safe.
+        await self._save_now()
 
     # ---------------------------------------------------- registry view
 
@@ -2023,45 +2050,104 @@ class DeviceSentinelCoordinator(
 
     @callback
     def _data_to_save(self) -> dict[str, Any]:
-        """Return the live data for the store's delayed save.
+        """Return the live data, stamped, for a save of the main file.
 
-        A method rather than a lambda so the delayed save always
-        serializes the state at write time, not at schedule time.
-        Running means the pending delayed write is firing right now,
-        so the pending flag clears here and the next dirty tick may
-        schedule the next window.
+        A method rather than a lambda so a delayed save serializes the
+        state at write time, not at schedule time. The stamp is what
+        the next load compares against the hot file to decide which
+        holds the newer clocks.
         """
-        self._delay_pending = False
+        self.data[DATA_SAVED_AT] = dt_util.utcnow().timestamp()
         return self.data
+
+    def _merge_clocks(
+        self, loaded: dict[str, Any], hot: dict[str, Any] | None
+    ) -> int:
+        """Overlay the hot file's clocks onto the loaded record set.
+
+        Phase B leaves the main file without the clocks a routine save
+        moved on, so this is how they come back. The hot file wins,
+        but only once it has proved it is the newer of the two: it is
+        written second, so a failure between the two writes leaves it
+        behind, and overlaying a stale clock would push a device's
+        last activity into the past. A device the main file has never
+        heard of is skipped, because nine fields cannot rebuild a
+        record. Returns how many devices took their clocks from here.
+        """
+        if not hot:
+            return 0
+        hot_at = hot.get(DATA_SAVED_AT)
+        cold_at = loaded.get(DATA_SAVED_AT)
+        if hot_at is None or cold_at is None:
+            # One of the pair predates the stamp, which is every
+            # install's first load after upgrading to 0.10.0. Both
+            # files were written together before this release, so the
+            # main file is already current and there is nothing owed.
+            return 0
+        if hot_at < cold_at:
+            LOGGER.warning(
+                "Activity clocks on disk are %.0f s older than the "
+                "main storage file, so they have been left alone; at "
+                "most one save window of clock history is lost",
+                cold_at - hot_at,
+            )
+            return 0
+        devices = loaded.get(DATA_DEVICES) or {}
+        merged = 0
+        for device_id, fields in (hot.get("clocks") or {}).items():
+            record = devices.get(device_id)
+            if record is None or not isinstance(fields, dict):
+                continue
+            for field in CLOCK_FIELDS:
+                if field in fields:
+                    record[field] = fields[field]
+            merged += 1
+        return merged
 
     def _clocks_to_save(self) -> dict[str, Any]:
         """Return only the fields an ordinary report changes.
 
         Nine of them, taken from what _record_activity and the signal
-        path actually write. Everything else is cold.
+        path actually write. Everything else is cold and stays in the
+        main file. From 0.10.0 this is the file a routine save writes
+        by itself, so running here means the pending delayed write is
+        firing and the next dirty tick may schedule another window.
         """
+        self._delay_pending = False
         clocks: dict[str, Any] = {}
         for device_id, record in self.data[DATA_DEVICES].items():
             if not isinstance(record, dict):
                 continue
+            # Only fields the record actually holds. Writing a
+            # missing one as None would put the key in the hot file,
+            # and the merge would then plant that None back on load
+            # ahead of the defaults that fill an old record in, so a
+            # pre-0.4.0 device would come back with None where it
+            # should have gained a zero.
             clocks[device_id] = {
-                field: record.get(field) for field in CLOCK_FIELDS
+                field: record[field]
+                for field in CLOCK_FIELDS
+                if field in record
             }
-        return {"clocks": clocks}
+        return {
+            DATA_SAVED_AT: dt_util.utcnow().timestamp(),
+            "clocks": clocks,
+        }
 
-    async def _take_pre_split_backup(self) -> bool:
-        """Copy storage once, before the split ever writes anything.
+    async def _take_backup(self, suffix: str) -> bool:
+        """Copy storage once, under the given suffix.
 
-        The restore point for the whole phased split (#101): this
-        file plus the previous version's tag puts the system exactly
-        where it was. The copy refuses to overwrite, so retaking it
-        is harmless, which is why the marker needs no save of its
-        own: setup persists it moments later, and losing it to a
-        crash costs one redundant attempt that finds the file already
-        there.
+        A restore point for a step that changes how storage is used
+        (#101): this file plus the previous version's tag puts the
+        system exactly where it was. The copy refuses to overwrite,
+        so retaking it is harmless, which is why the marker needs no
+        save of its own: setup persists it moments later, and losing
+        it to a crash costs one redundant attempt that finds the file
+        already there. Each phase takes its own, because a copy made
+        several releases ago is not a restore point for this one.
         """
         source = self.hass.config.path(".storage", STORAGE_KEY)
-        target = source + BACKUP_SUFFIX_PRE_SPLIT
+        target = source + suffix
 
         def _copy() -> bool:
             if not os.path.isfile(source) or os.path.isfile(target):
@@ -2072,10 +2158,10 @@ class DeviceSentinelCoordinator(
         try:
             taken = await self.hass.async_add_executor_job(_copy)
         except OSError as err:
-            LOGGER.warning("Pre-split backup failed: %s", err)
+            LOGGER.warning("Storage backup failed: %s", err)
             return False
         if taken:
-            LOGGER.info("Pre-split backup written to %s", target)
+            LOGGER.info("Storage backup written to %s", target)
         return True
 
     async def _save_now(self) -> None:
@@ -2086,9 +2172,11 @@ class DeviceSentinelCoordinator(
         flags clear, and the pending flag clears because the store
         cancels its pending delayed write when a direct save lands.
         """
-        await self._store.async_save(self.data)
-        # Phase A writes the shadow on exactly the same triggers, so
-        # the two cadences can be compared side by side.
+        # Order matters. The main file goes first so that if the pair
+        # is ever torn, the survivor is the one holding everything;
+        # the hot file's stamp then tells the next load that it is the
+        # older of the two and must not be merged over the newer.
+        await self._store.async_save(self._data_to_save())
         await self._clock_store.async_save(self._clocks_to_save())
         self._dirty = False
         self._critical = False
@@ -2127,9 +2215,13 @@ class DeviceSentinelCoordinator(
             # pending delayed saves itself at shutdown's final-write
             # event.
             self._delay_pending = True
-            self._store.async_delay_save(
-                self._data_to_save, self.coalesce_seconds
-            )
+            # Phase B (#101): routine churn is nine fields per device,
+            # so it writes the hot file and leaves the main one alone.
+            # On this fleet that is 35 KB rather than 316 KB, which is
+            # the whole point of the split. What the main file then
+            # lacks is only clocks, and the next load merges them back
+            # from here. Anything a reboot must not lose is critical
+            # and took the immediate path above, which writes both.
             self._clock_store.async_delay_save(
                 self._clocks_to_save, self.coalesce_seconds
             )
