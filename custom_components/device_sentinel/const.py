@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.9.8 (2026-07-26)
+# File: const.py, Version: 0.9.11 (2026-07-27)
 
 """Constants for the Device Sentinel integration."""
 
@@ -78,10 +78,11 @@ SENTINEL_TYPE_BRIDGE = "bridge"
 # several coordinators sees them in one block (#81, #149).
 BRIDGE_SENSOR_NAMES = {STACK_Z2M: "Bridge: Zigbee2MQTT"}
 
-# The literal logger name, per the Sentinel blueprint precedent
-# (battery_sentinel, entity_sentinel). Users configure it under
-# this exact name in their logger: settings.
-LOGGER = logging.getLogger(DOMAIN)
+# The package logger. __package__ resolves to
+# custom_components.device_sentinel, which is the namespace Home
+# Assistant's own debug-logging toggle and the logger: YAML block
+# both target, so turning debug on the usual way reaches this.
+LOGGER = logging.getLogger(__package__)
 
 # Persistent storage. Lives in Home Assistant's .storage directory,
 # never in custom_components (code, overwritten on every update).
@@ -399,8 +400,8 @@ DEV_FROZEN_SINCE = "frozen_since"
 
 # The hot set, read from the code rather than assumed: these are the
 # fields _record_activity and the signal path write on an ordinary
-# report. Everything else (learned series, verdicts, todo, incidents,
-# outbox) is cold and stays where it is.
+# report. Everything else (learned series, verdicts, todo,
+# incidents) is cold and stays where it is.
 CLOCK_FIELDS = (
     DEV_LAST_ACTIVITY,
     DEV_EVENT_COUNT,
@@ -686,31 +687,6 @@ EPISODE_OPEN_SHARE = 0.5
 # nothing at all. The log widens it to the whole life of a problem,
 # and every renderer (phone, brief, email, voice) reads this and
 # nothing else.
-# The outbox (0.7.2, #120). Every message the notification engine
-# would send is composed and recorded here before any engine exists
-# to send it. Two reasons: the sentences can be read and criticized
-# for days before one reaches a phone, and composition lives in one
-# module that the phone, the brief, and a future voice answer all
-# call, so the same event can never be described three different
-# ways by three different renderers.
-DATA_OUTBOX = "outbox"
-OUTBOX_KEEP = 50
-OUT_WHEN = "when"
-OUT_DEVICE_ID = "device_id"
-OUT_TEXT = "text"
-OUT_SHAPE = "shape"
-OUT_REASON = "reason"
-# Why a message was composed. An event is a transition just observed;
-# a reconcile is the engine restating what is already true, which is
-# how a device that was already broken before the engine started
-# gets described at all (0.7.3, #121).
-OUTBOX_REASON_EVENT = "event"
-OUTBOX_REASON_RECONCILE = "reconcile"
-# An event sentence is history: what happened, and when. A device
-# line is status: what is wrong with this device now, which is what
-# a phone holds, one per device, replaced in place (#108).
-OUTBOX_SHAPE_EVENT = "event"
-OUTBOX_SHAPE_DEVICE = "device"
 
 DATA_INCIDENTS = "incidents"
 INCIDENT_KEEP_DAYS = 14
