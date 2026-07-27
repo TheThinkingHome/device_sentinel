@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.9.2 (2026-07-25)
+# File: config_flow.py, Version: 0.9.10 (2026-07-27)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -231,11 +231,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
 
         Notifications leads because it is the one section a new
         installation must visit for alerts to reach a phone; the
-        description says so and sends people here first. The
-        description also names the Signal, Freeze, and Recovery
-        sections that have no screens yet, so the shape of the whole
-        surface is visible before the parts exist; each joins this
-        list when its screen is built.
+        description says so and sends people here first. Sections
+        without a screen are not named here; Recovery is on the
+        roadmap and lives in the wiki until it is built.
         """
         return self.async_show_menu(
             step_id="init",
