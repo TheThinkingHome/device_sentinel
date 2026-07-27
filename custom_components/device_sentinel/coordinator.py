@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.9.11 (2026-07-27)
+# File: coordinator.py, Version: 0.9.12 (2026-07-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -1814,6 +1814,23 @@ class DeviceSentinelCoordinator(
                     return False
 
         if category == current:
+            # A blip stamps a down-since before any verdict is
+            # published. If the device came back by republishing a
+            # retained value, its contact clock never advanced, so the
+            # report path never ran and nothing there cleared the
+            # stamp. Clear it here instead: a stamp with no verdict
+            # behind it has nothing left to time, and leaving it dates
+            # the next outage from the old blip, which both overstates
+            # how long the device has been down and skips the debounce
+            # that outage was owed. A published verdict is untouched,
+            # so a republish still cannot erase a standing silence
+            # (#124).
+            if (
+                category is None
+                and record.get(DEV_FROZEN_SINCE) is not None
+            ):
+                record[DEV_FROZEN_SINCE] = None
+                self._dirty = True
             return False
 
         record[DEV_FROZEN_CATEGORY] = category
