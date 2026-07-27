@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.9.0 (2026-07-24)
+# File: messenger.py, Version: 0.9.11 (2026-07-27)
 
 """Sending the daily brief, and nothing else yet.
 
@@ -143,7 +143,7 @@ class MessengerMixin:
         if mode == REMINDER_MODE_NONE:
             return False
         if mode == REMINDER_MODE_OVERNIGHT and not self._brief_now_rows():
-            LOGGER.info(
+            LOGGER.debug(
                 "Daily brief written but not sent: nothing needs "
                 "attention and the mode is problems only"
             )
@@ -209,7 +209,7 @@ class MessengerMixin:
                 )
                 continue
             sent += 1
-        LOGGER.info(
+        LOGGER.debug(
             "Daily brief sent to %d of %d target(s)", sent, len(targets)
         )
         return sent
