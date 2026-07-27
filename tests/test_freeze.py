@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze.py, Version: 0.9.9 (2026-07-26)
+# File: test_freeze.py, Version: 0.9.12 (2026-07-27)
 
 """The freeze, unavailable, unknown, and never-reported detector.
 
@@ -25,15 +25,21 @@ is judged without crashing the sweep. This file holds that detector.
 
 import json
 import pathlib
+from datetime import timedelta
 
 import pytest
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
+    DATA_DEVICES,
+    FREEZE_UNAVAILABLE_DEBOUNCE,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
     CONF_FREEZE_EXCLUDED_DEVICES,
@@ -525,3 +531,162 @@ async def test_every_old_record_in_the_sweep_is_judged(hass: HomeAssistant):
     coord._judge_all_devices()
     assert first_record["frozen_category"] == FREEZE_CATEGORY_NOT_REPORTED
     assert second_record["frozen_category"] == FREEZE_CATEGORY_NOT_REPORTED
+
+
+# ==================================================================
+# A pending down-stamp must not outlive the blip that set it.
+# ==================================================================
+
+def _contact_device(hass, uid):
+    """A device that publishes its own last-contact entity."""
+    source = MockConfigEntry(domain="test", title="Source")
+    source.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", uid)},
+        name=uid,
+    )
+    reg = er.async_get(hass)
+    plain = reg.async_get_or_create(
+        "sensor", "test", f"{uid}_0",
+        device_id=device.id, config_entry=source,
+    )
+    seen = reg.async_get_or_create(
+        "sensor", "test", f"{uid}_last_seen",
+        device_id=device.id, config_entry=source,
+        suggested_object_id=f"{uid}_last_seen",
+    )
+    return device, plain.entity_id, seen.entity_id
+
+
+async def _blip_and_republish(hass, coord, device, eid, seen, heard, freezer):
+    """Take a device down briefly, then bring it back by republishing.
+
+    The republish returns the same last-contact stamp, so the contact
+    clock does not advance and the return is not a report (#124).
+    """
+    record = coord.data[DATA_DEVICES][device.id]
+    freezer.tick(timedelta(seconds=30))
+    hass.states.async_set(seen, STATE_UNAVAILABLE)
+    hass.states.async_set(eid, STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    coord._apply_freeze_verdict(
+        device.id, record, dt_util.utcnow().timestamp()
+    )
+    freezer.tick(timedelta(seconds=20))
+    hass.states.async_set(seen, heard)
+    hass.states.async_set(eid, "on")
+    await hass.async_block_till_done()
+    coord._apply_freeze_verdict(
+        device.id, record, dt_util.utcnow().timestamp()
+    )
+    return record
+
+
+async def test_a_pending_stamp_clears_when_the_device_reads_healthy(
+    hass: HomeAssistant, freezer
+):
+    """A blip stamps a down-since before any verdict is published. If
+    the device comes back by republishing a retained value, the clock
+    does not advance, so the report path never runs and nothing there
+    clears the stamp. It has to clear here instead, or it outlives the
+    blip that set it."""
+    device, eid, seen = _contact_device(hass, "pend1")
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    heard = dt_util.utcnow().isoformat()
+    hass.states.async_set(seen, heard)
+    hass.states.async_set(eid, "on")
+    await hass.async_block_till_done()
+
+    record = await _blip_and_republish(
+        hass, coord, device, eid, seen, heard, freezer
+    )
+    assert record[DEV_FROZEN_CATEGORY] is None
+    assert record[DEV_FROZEN_SINCE] is None
+
+
+async def test_a_later_outage_still_serves_its_full_debounce(
+    hass: HomeAssistant, freezer
+):
+    """The consequence a person would notice. A stale stamp makes the
+    next outage look hours old, so it publishes at once instead of
+    waiting out the debounce, and the brief reports a device that just
+    went down as having been down all along."""
+    device, eid, seen = _contact_device(hass, "pend2")
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    heard = dt_util.utcnow().isoformat()
+    hass.states.async_set(seen, heard)
+    hass.states.async_set(eid, "on")
+    await hass.async_block_till_done()
+
+    record = await _blip_and_republish(
+        hass, coord, device, eid, seen, heard, freezer
+    )
+
+    # Two hours later it goes down for real.
+    freezer.tick(timedelta(hours=2))
+    hass.states.async_set(seen, STATE_UNAVAILABLE)
+    hass.states.async_set(eid, STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    now = dt_util.utcnow().timestamp()
+    assert coord._apply_freeze_verdict(device.id, record, now) is False
+    # The stamp dates from this outage, not from the old blip.
+    assert now - record[DEV_FROZEN_SINCE] < FREEZE_UNAVAILABLE_DEBOUNCE
+
+    # It publishes only once the debounce has actually elapsed.
+    freezer.tick(timedelta(seconds=FREEZE_UNAVAILABLE_DEBOUNCE + 5))
+    assert (
+        coord._apply_freeze_verdict(
+            device.id, record, dt_util.utcnow().timestamp()
+        )
+        is True
+    )
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+
+
+async def test_a_published_verdict_keeps_its_since_while_still_down(
+    hass: HomeAssistant, freezer
+):
+    """The guard on the clearing above. Once a verdict is published,
+    every later sweep sees the same category and returns early. The
+    down-since has to survive those passes: it is what the problem
+    list, the brief and the reports count from, so clearing it would
+    reset a device's outage to zero on the next tick."""
+    device, eid, seen = _contact_device(hass, "held1")
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    hass.states.async_set(seen, dt_util.utcnow().isoformat())
+    hass.states.async_set(eid, "on")
+    await hass.async_block_till_done()
+    record = coord.data[DATA_DEVICES][device.id]
+
+    # Down, stamped, then published once the debounce elapses.
+    hass.states.async_set(seen, STATE_UNAVAILABLE)
+    hass.states.async_set(eid, STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    coord._apply_freeze_verdict(
+        device.id, record, dt_util.utcnow().timestamp()
+    )
+    freezer.tick(timedelta(seconds=FREEZE_UNAVAILABLE_DEBOUNCE + 5))
+    assert (
+        coord._apply_freeze_verdict(
+            device.id, record, dt_util.utcnow().timestamp()
+        )
+        is True
+    )
+    published_since = record[DEV_FROZEN_SINCE]
+    assert published_since is not None
+
+    # Still down an hour later: the sweep returns early and the stamp
+    # is untouched, so the reported age keeps growing.
+    freezer.tick(timedelta(hours=1))
+    assert (
+        coord._apply_freeze_verdict(
+            device.id, record, dt_util.utcnow().timestamp()
+        )
+        is False
+    )
+    assert record[DEV_FROZEN_SINCE] == published_since
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
