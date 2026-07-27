@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.9.8 (2026-07-26)
+# File: notifier.py, Version: 0.9.11 (2026-07-27)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -223,7 +223,7 @@ class NotifierMixin:
             return
         now_hms = dt_util.now().strftime("%H:%M:%S")
         if _in_quiet_hours(self.entry.options, now_hms):
-            LOGGER.info(
+            LOGGER.debug(
                 "Device Sentinel: %d event(s) fell inside quiet hours "
                 "and were not pushed; the card and brief carry them",
                 len(events),
