@@ -8,7 +8,7 @@
 ![License](https://img.shields.io/github/license/TheThinkingHome/device_sentinel)
 ![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)
 
-**Your dashboard cannot tell a quiet device from a dead one. Device Sentinel can.**
+**Your dashboard cannot tell a quiet device from a dead one. Device Sentinel can, and it watches the batteries and radio links that fail first.**
 
 > **Image placeholder:** hero banner, 1200x300. Device Sentinel alongside the Home Assistant and HACS marks.
 
@@ -18,9 +18,16 @@ Home Assistant reacts to what devices tell it. When a device stops telling it an
 
 - A door sensor dies while the door is closed. Your security automations believe that door is shut, indefinitely.
 - A freezer sensor drops off the mesh. The dashboard shows a comfortable minus eighteen while the food spoils.
-- A leak sensor's battery runs out. You find out during the next burst pipe.
+- A leak sensor stops answering. You find out during the next burst pipe.
 
 The usual answer is a fixed timeout: tell me if anything has gone quiet for twenty-four hours. That breaks immediately, because your devices are nothing like each other. A hallway motion sensor reports hundreds of times a day, so twenty-four hours of silence means it died last night and you are hearing about it far too late. A door button might legitimately say nothing for three days, so the same rule cries wolf every week until you mute it.
+
+Worse, the two warnings that arrive *before* a device dies are sitting in plain sight, unread.
+
+- The batteries in your door lock have been falling for a month. Nothing mentions it until the lock stops answering and you are on the wrong side of it.
+- A sensor at the far end of the house has been losing packets for weeks. It mostly works, which is worse than not working, because nothing you build on it can be trusted.
+
+Both numbers are already in Home Assistant. Nobody watches them because neither means anything on its own: twenty percent is a fortnight on one device and Tuesday on another, and radio link quality has no shared scale at all, so the same reading is healthy on one manufacturer's hardware and dying on another's.
 
 > **Image placeholder:** the frozen-sensor problem. A door opens while the dashboard stays on "Closed", then the Device Sentinel alert arrives.
 
@@ -30,9 +37,13 @@ Device Sentinel watches how often each device actually reports, and learns its r
 
 Your chatty motion sensor earns a tight window and gets flagged within minutes of dying. Your twice-a-day rain gauge earns a generous one and is left alone. A device you add next spring starts learning the day you pair it and arms itself once its rhythm is established.
 
+The same idea settles the other two. A radio link is judged against the floor that device has actually held, not a threshold borrowed from another manufacturer's scale. A battery is judged against a level you choose, with enough slack that a cell sitting on the line never flaps between fine and failing.
+
 The learning defends itself. Only silences that end are learned, so a device that freezes can never teach the system that freezing is normal. One anomalous day is set aside rather than widening the window. Restart storms and reconnect floods are recognised by their shape and kept out of the baseline. It runs continuously on the author's own system, a household of around two hundred devices.
 
 ## What It Catches
+
+Four ways a device goes dark:
 
 | Verdict | What it means | Why you care |
 |---|---|---|
@@ -40,6 +51,13 @@ The learning defends itself. Only silences that end are learned, so a device tha
 | **Unavailable** | Every live entity on the device reports unavailable. | Home Assistant knows. You probably do not, until something fails to happen. |
 | **Unknown** | Every live entity reports unknown. | Usually a protocol or integration problem rather than the device itself. |
 | **Never reported** | Known to the registry, but has produced nothing for 48 hours. | Ghost entries, and devices that died before you installed this. |
+
+And two that give you notice beforehand:
+
+| Verdict | What it means | Why you care |
+|---|---|---|
+| **Low battery** | The level falls past your threshold, default twenty percent, and stays there. | Warning while you can still act, rather than a post-mortem once the device has gone quiet. |
+| **Weak or railed signal** | A link spending its day at or below that device's own learned floor, or stuck at the value that means no reading at all. | Links degrade before they fail. This is the part you can fix with a repeater. |
 
 Judgment is made per device, not per entity. If any one entity on a device is still reporting, the device is alive. One sensor with six entities does not become six separate alarms.
 
@@ -49,11 +67,19 @@ Judgment is made per device, not per entity. If any one entity on a device is st
 
 There is no watch list to maintain. Every device in your registry is observed from the start, so the leak sensor you paired last month is already covered and the one you pair tomorrow will be too. Non-hardware entries like Sun, add-ons and dashboard plugins classify themselves out, and the integration refuses to watch itself.
 
+It cannot watch what your integrations ship switched off, and most of them ship battery, signal and last-seen entities disabled. Three buttons turn them on in bulk, one per kind, leaving alone anything you disabled on purpose.
+
 You curate by exception. Exclude a whole integration, a label, or a single device. Excluding stops the judging and the reporting; it does not stop the watching, so a device you un-exclude next year already knows its own rhythm and needs no relearning period.
+
+### Warnings Before The Failure
+
+A low battery is caught on the percentage rather than the binary flag, against a threshold you set with a slider. A cell resting exactly on the line does not flap, because it has to climb two points clear before the alert lifts. Every device's daily level is recorded as well, which is the groundwork for telling you a cell is falling unusually fast while it is still nowhere near the threshold.
+
+A radio link is watched against the floor that device has actually held over the past fortnight, and what gets reported is dwell: how much of the day it spent down at that floor. A link stuck at its rail, the 255 or the minus 128 that means the field was filled in rather than measured, is called out for what it is rather than read as a strong signal.
 
 ### One List Of What Is Actually Wrong
 
-Every fault, whatever kind, lands in one Home Assistant to-do list. One device with two problems is one line, not two. Tick it to acknowledge: it stays listed and keeps updating, but stops making noise on your phone and on the dashboard card until it recovers on its own.
+Every fault, whatever kind, lands in one Home Assistant to-do list. A device that is both frozen and low on battery is one line, not two. Tick it to acknowledge: it stays listed and keeps updating, but stops making noise on your phone and on the dashboard card until it recovers on its own.
 
 > **Image placeholder:** the problem list and the whole-home dashboard card, side by side.
 
@@ -66,12 +92,6 @@ Every fault, whatever kind, lands in one Home Assistant to-do list. One device w
 Quiet hours hold every phone push, while the card and the morning brief still carry what happened. A new fault waits a short, per-device moment before it reaches you, so a problem that fixes itself in thirty seconds never wakes you at all.
 
 > **Image placeholder:** the daily brief as it arrives by email.
-
-### Batteries And Radio Links, Judged Properly
-
-Low battery detection uses the percentage rather than the binary flag, on a threshold you set with a slider. A cell sitting exactly on the line does not flap, because it has to climb two points clear before the alert lifts. Daily levels are recorded too, groundwork for warning you that a cell is falling fast before it reaches the threshold at all.
-
-Signal strength is judged against each device's own learned floor, because there is no cross-manufacturer standard for link quality and a global threshold would be a lie. A link stuck at its rail value, the 255 or the minus 128 that means "no reading", is caught for what it is.
 
 ## Installation
 
@@ -89,7 +109,7 @@ By hand:
 
 **Requires** Home Assistant 2026.5 or newer.
 
-It runs on sensible defaults the moment it is added. The one thing worth setting up is where alerts should go.
+It runs on sensible defaults the moment it is added. The one thing worth setting up is where alerts should go. The one thing worth pressing is the three enable buttons, so the battery and signal data exists to watch.
 
 ## Configuration
 
@@ -99,8 +119,8 @@ Every screen explains itself and links to its own wiki page. Most people change 
 |---|---|
 | **Notifications** | Where alerts go, quiet hours, and when the daily brief is written. The brief's time is also the boundary of its window: a 7 AM brief covers 7 AM to 7 AM. |
 | **Global Exclusions** | Hardware you never want judged, by integration, label, or device. |
-| **Low Battery** | The threshold, and devices to leave out of battery reporting. |
-| **Signal Strength** | Fleet-wide sensitivity, and devices to leave out of signal reporting. |
+| **Low Battery** | The threshold, default twenty percent, and devices to leave out of battery reporting. |
+| **Signal Strength** | How sensitive the fleet-wide judgment is, and devices to leave out of signal reporting. |
 | **Freeze Detection** | Two sliders shaping how much grace a device gets on top of its learned rhythm. Fast devices are governed by the first (1 to 8 minutes, default 3), slow ones by the second (4 to 12 hours, default 8). |
 | **Advanced** | Settings most people never need: how long a fault must persist before your phone hears about it, how long a device may be unreachable before that counts as real downtime, how often work is written to disk, and how much history to keep. |
 
@@ -108,7 +128,7 @@ Every screen explains itself and links to its own wiki page. Most people change 
 
 Three files are written for whoever maintains the system, alongside the daily brief:
 
-- **Device telemetry**, one row per device with its learned rhythm, signal history and battery trend.
+- **Device telemetry**, one row per device with its learned rhythm, its signal history and its battery trend.
 - **Classification**, showing which devices are watched, which are set aside, and why anything is excluded.
 - **Silence episodes**, recording every time a device went quiet past its own basis, whether it came back on its own or something intervened, and whether the gap was learned. This answers a question nothing else does: did the device recover, or did your restart make it look like it recovered?
 
@@ -120,6 +140,8 @@ The [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki) is the full 
 
 - [How Device Sentinel Learns](https://github.com/TheThinkingHome/device_sentinel/wiki/How-Device-Sentinel-Learns)
 - [Notifications and Daily Brief](https://github.com/TheThinkingHome/device_sentinel/wiki/Notifications-and-Daily-Brief)
+- [Low Battery](https://github.com/TheThinkingHome/device_sentinel/wiki/Low-Battery)
+- [Signal Strength](https://github.com/TheThinkingHome/device_sentinel/wiki/Signal-Strength)
 - [The Problem List](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Problem-List)
 - [The Reports](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Reports)
 - [FAQ and Troubleshooting](https://github.com/TheThinkingHome/device_sentinel/wiki/FAQ-and-Troubleshooting)
@@ -130,7 +152,7 @@ Found while building the core, and worked on in this order:
 
 - **Telling a self-recovery from a hand-fix.** Where a coordinator publishes its pairing state, a device that comes back while you are stood at it re-pairing should not have that silence learned as normal.
 - **The signal trail on an alert.** The last few readings before a device went dark, attached to the alert. Forty, thirty-two, twenty-four, gone tells you the link died. Two hundred, two hundred and one, two hundred, gone tells you to look elsewhere.
-- **Discharge velocity.** Catching a cell that is falling fast before it reaches the threshold.
+- **Discharge velocity.** Catching a cell that is falling fast while it is still above the threshold, from the daily levels already being recorded.
 - **Recovery.** Trying to revive a stuck device rather than only reporting it, from the gentlest nudge upward, and saying what it did either way. Detection comes first, because nothing should be fixed automatically until finding things is proven.
 
 ## Why An Integration
