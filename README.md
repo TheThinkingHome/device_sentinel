@@ -20,8 +20,6 @@ Home Assistant reacts to what devices tell it. When a device stops telling it an
 - A freezer sensor drops off the mesh. The dashboard shows a comfortable minus eighteen while the food spoils.
 - A leak sensor stops answering. You find out during the next burst pipe.
 
-The usual answer is a fixed timeout: tell me if anything has gone quiet for twenty-four hours. That breaks immediately, because your devices are nothing like each other. A hallway motion sensor reports hundreds of times a day, so twenty-four hours of silence means it died last night and you are hearing about it far too late. A door button might legitimately say nothing for three days, so the same rule cries wolf every week until you mute it.
-
 Worse, the two warnings that arrive *before* a device dies are sitting in plain sight, unread.
 
 - The batteries in your door lock have been falling for a month. Nothing mentions it until the lock stops answering and you are on the wrong side of it.
@@ -37,9 +35,7 @@ Device Sentinel watches how often each device actually reports, and learns its r
 
 Your chatty motion sensor earns a tight window and gets flagged within minutes of dying. Your twice-a-day rain gauge earns a generous one and is left alone. A device you add next spring starts learning the day you pair it and arms itself once its rhythm is established.
 
-The same idea settles the other two. A radio link is judged against the floor that device has actually held, not a threshold borrowed from another manufacturer's scale. A battery is judged against a level you choose, with enough slack that a cell sitting on the line never flaps between fine and failing.
-
-The learning defends itself. Only silences that end are learned, so a device that freezes can never teach the system that freezing is normal. One anomalous day is set aside rather than widening the window. Restart storms and reconnect floods are recognised by their shape and kept out of the baseline. It runs continuously on the author's own system, a household of around two hundred devices.
+The same idea settles the other two. A radio link is judged against the floor that device has actually held, not a threshold borrowed from another manufacturer's scale. A battery is judged against a level you choose as well as its rate of decay. A AAA battery loses charge slowly and linearly but a lithium does not. It holds almost full charge almost till it fails. Device Sentinel sees and learns each device, from its own learned data.
 
 ## What It Catches
 
@@ -59,17 +55,15 @@ And two that give you notice beforehand:
 | **Low battery** | The level falls past your threshold, default twenty percent, and stays there. | Warning while you can still act, rather than a post-mortem once the device has gone quiet. |
 | **Weak or railed signal** | A link spending its day at or below that device's own learned floor, or stuck at the value that means no reading at all. | Links degrade before they fail. This is the part you can fix with a repeater. |
 
-Judgment is made per device, not per entity. If any one entity on a device is still reporting, the device is alive. One sensor with six entities does not become six separate alarms.
-
 ## What You Get
 
 ### It Watches Everything From The Moment You Install It
 
-There is no watch list to maintain. Every device in your registry is observed from the start, so the leak sensor you paired last month is already covered and the one you pair tomorrow will be too. Non-hardware entries like Sun, add-ons and dashboard plugins classify themselves out, and the integration refuses to watch itself.
+There is no watch list to maintain. Every device in your registry is observed from the start, so the leak sensor you paired last month is already covered and the one you pair tomorrow will be too. Non-hardware entries like Sun, Backup, and HACS classify themselves out.
 
 It cannot watch what your integrations ship switched off, and most of them ship battery, signal and last-seen entities disabled. Three buttons turn them on in bulk, one per kind, leaving alone anything you disabled on purpose.
 
-You curate by exception. Exclude a whole integration, a label, or a single device. Excluding stops the judging and the reporting; it does not stop the watching, so a device you un-exclude next year already knows its own rhythm and needs no relearning period.
+You curate by exception. Exclude a whole integration, a label, or a single device. Excluding stops the judging and the reporting; it does not stop the learning, so a device you un-exclude next year already knows its own rhythm and needs no relearning period.
 
 ### Warnings Before The Failure
 
