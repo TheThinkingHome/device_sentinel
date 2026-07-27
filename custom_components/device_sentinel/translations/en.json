@@ -15,7 +15,7 @@
     "step": {
       "init": {
         "title": "Device Sentinel Tuning",
-        "description": "Device Sentinel's default settings are good to get you started. When you begin tailoring the integration to your system, work from top to bottom. If you want alerts to reach your phone, begin in Notifications.\n\n**Notifications**: where alerts go, quiet hours, and the daily reminder.\n\n**Global Exclusions**: hardware you never want judged or reported, by anything. To silence just one kind of report for a device, use that section's own exclude list instead.\n\n**Low Battery**: the low threshold, and battery-only excludes.\n\n**Signal Strength**: how weakening radio links are judged. Coming; learning already runs.\n\n**Freeze Detection**: how long a device may go quiet before it is called frozen, set by two grace sliders. Now running.\n\n**Recovery**: experimental and off by default. Attempts to revive frozen or offline devices.",
+        "description": "Device Sentinel's default settings are good to get you started. When you begin tailoring the integration to your system, work from top to bottom. If you want alerts to reach your phone, begin in Notifications.\n\n**Notifications**: where alerts go, quiet hours, and the daily reminder.\n\n**Global Exclusions**: hardware you never want judged or reported, by anything. To silence just one kind of report for a device, use that section's own exclude list instead.\n\n**Low Battery**: the low threshold, and battery-only excludes.\n\n**Signal Strength**: how weakening radio links are judged against each device's own floor.\n\n**Freeze Detection**: how long a device may go quiet before it is called frozen, set by two grace sliders. Now running.",
         "menu_options": {
           "notifications": "Notifications and Daily Brief",
           "exclusions": "Global Exclusions",
@@ -135,20 +135,20 @@
         "title": "Advanced",
         "description": "Settings most people never need to change. [Each one is documented in the wiki.]({wiki_link})",
         "data": {
-          "settle_share_pct": "Notification settle delay",
-          "episode_share_pct": "Episode recording threshold",
-          "taint_floor_minutes": "Blip tolerance",
-          "taint_share_pct": "Blip tolerance share",
-          "storage_write_minutes": "Storage write interval",
-          "history_days": "How much history to keep"
+          "settle_share_pct": "Notification Debounce",
+          "episode_share_pct": "Episode Recording Threshold",
+          "taint_floor_minutes": "Unavailable Debounce for Fast Reporting Devices",
+          "taint_share_pct": "Unavailable Debounce for Slow Reporting Devices",
+          "storage_write_minutes": "Storage Write Interval",
+          "history_days": "How Much History to Keep"
         },
         "data_description": {
-          "settle_share_pct": "How much of a device's patience must pass before its problem is sent. Higher means fewer messages about brief hiccups.",
-          "episode_share_pct": "How quiet a device must be before its silence is recorded for later study. Lower records more, including silences that recover on their own.",
-          "taint_floor_minutes": "How briefly a device can be unreachable before that time counts as real downtime rather than a hiccup. A silence around a hiccup is still learned; a silence around real downtime is not. This is the floor, in minutes.",
-          "taint_share_pct": "Added to the blip tolerance as a share of each device's own freeze window, so a device that reports slowly is given proportionally more before an outage counts as real. A fast device keeps the floor alone.",
-          "storage_write_minutes": "How long routine activity is held before saving, in minutes. Longer is kinder to SD cards; shorter loses less in a power cut.",
-          "history_days": "How many days of battery levels, signal readings and reporting gaps to keep, for studying long trends. Detection always uses the most recent two weeks whatever this is set to. More history means a larger stored file, which matters on an SD card. Reducing it takes effect at the next midnight rather than at once."
+          "settle_share_pct": "The amount of time, as a share of a device's learned reporting gap, that a problem must persist before you are notified. It applies to battery, signal, and freeze alike, and delays only the high-priority phone alert. At 30 percent a fast device clears about a minute of hiccups and a slow one about half an hour. Higher means fewer messages about brief problems that fix themselves; lower means you hear sooner.",
+          "episode_share_pct": "Used to build the silence_episodes.md diagnostics file. Influences how far into a device's silence the forensic log opens a row. It is the ratio of the time between a device's learned reporting gap and its freeze window. At 50 percent a silence is logged once it reaches halfway. Lower records more, including brief silences that recover on their own.",
+          "taint_floor_minutes": "Debounce floor in minutes. A device that becomes unreachable and returns within this time is learned. Longer than this is reported as downtime and the recovery a likely human fix, so a repaired device never inflates its own patience.",
+          "taint_share_pct": "Debounce added to the floor as a percentage of the device's freeze window, so a slow-reporting device is given proportionally more and a fast one is governed by the floor alone. A device that becomes unreachable and returns within the combined time is learned. Longer than this is reported as downtime and the recovery a likely human fix, so a repaired device never inflates its own patience.",
+          "storage_write_minutes": "The amount of time routine activity is held in memory before it is written to disk. Set longer for slower hardware and hubs writing data to an SD card. Longer risks losing timer data should your system suffer a power loss. Events are written when they happen, so risk is minimal.",
+          "history_days": "How many days of daily battery, signal, and unavailable and freeze gap records are kept for studying long trends. 30 days is necessary, but some trends can only be seen with longer time periods."
         }
       }
     }
