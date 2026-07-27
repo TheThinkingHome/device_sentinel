@@ -499,13 +499,19 @@ class DeviceSentinelCoordinator(
             )
 
         self.data = loaded
-        await self._store.async_save(self.data)
-        # The shadow is written here too (0.8.8), not only on later
-        # saves. Setup writes storage directly rather than through
-        # _save_now, so without this the clocks file did not exist
-        # until the first coalesced write up to a window later, and a
-        # system restarting inside that window would never produce
-        # one at all.
+        # Both stamped, and stamped here rather than at the first
+        # later save. Setup writes storage directly rather than
+        # through _save_now, and an unstamped main file beside a
+        # stamped hot one is a pair the merge cannot compare, so it
+        # would decline and every clock written between this moment
+        # and the first critical save would be dropped at the next
+        # restart. Writing the stamp now closes that window to
+        # nothing.
+        await self._store.async_save(self._data_to_save())
+        # The hot file is written here too (0.8.8), not only on later
+        # saves, or it did not exist until the first coalesced write
+        # up to a window later and a system restarting inside that
+        # window would never produce one at all.
         await self._clock_store.async_save(self._clocks_to_save())
         self.storage_healthy = True
 
