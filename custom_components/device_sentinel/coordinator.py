@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.9.6 (2026-07-25)
+# File: coordinator.py, Version: 0.9.10 (2026-07-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -90,6 +90,8 @@ from .const import (
     DAILY_MAX_KEEP,
     CONF_RETENTION_DAYS,
     DEFAULT_RETENTION_DAYS,
+    CONF_SETTLE_SHARE,
+    DEFAULT_SETTLE_SHARE_PCT,
     RETENTION_DAYS_MAX,
     RETENTION_DAYS_MIN,
     DEFAULT_LOW_THRESHOLD,
@@ -332,6 +334,10 @@ class DeviceSentinelCoordinator(
 
         self._listeners: list[Any] = []
         self._unsubs: list[Any] = []
+        # Faults waiting out their notification debounce, keyed
+        # by (device_id, kind). A hold is cancelled by its own
+        # recovery, so anything still here is still true.
+        self._held_events: dict[tuple[str, str], Any] = {}
         self._brief_unsub: Any | None = None
         # One bridge reader per detected coordinator stack that can
         # report its own liveness and pairing state (#145). Populated in
@@ -610,6 +616,11 @@ class DeviceSentinelCoordinator(
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
+        # A held fault has a live timer; dropping the coordinator
+        # without cancelling it would fire into a dead entry.
+        for cancel in self._held_events.values():
+            cancel()
+        self._held_events.clear()
         # The brief schedule is held separately so a changed brief
         # time can re-arm it without disturbing the others, which
         # also means it has to be cancelled by name here.
@@ -1904,6 +1915,77 @@ class DeviceSentinelCoordinator(
         return min(SHARE_PCT_MAX, max(SHARE_PCT_MIN, raw)) / 100.0
 
     @property
+    def notification_debounce(self) -> float:
+        """Return the configured notification debounce, as a fraction.
+
+        Live from options (#117): a fault waits this much of the
+        device's own learned reporting gap before it reaches a phone,
+        so a problem that heals inside the delay is never announced at
+        all. Clamped to the band the screen offers, so a hand-edited
+        entry cannot hold an alert for a week.
+        """
+        raw = int(
+            self.entry.options.get(
+                CONF_SETTLE_SHARE, DEFAULT_SETTLE_SHARE_PCT
+            )
+        )
+        return min(SHARE_PCT_MAX, max(SHARE_PCT_MIN, raw)) / 100.0
+
+    def _notification_delay(self, device_id: str) -> float:
+        """Return the seconds a fault on this device waits to be sent.
+
+        The share is of the device's own learned reporting gap, so a
+        chatty device holds for seconds while a twice-a-day one holds
+        for far longer, which is the same per-device reasoning the
+        freeze windows use. A device with nothing learned yet has no
+        gap to take a share of, so its fault goes out at once rather
+        than waiting on a number that does not exist.
+        """
+        record = self.data[DATA_DEVICES].get(device_id)
+        if record is None:
+            return 0.0
+        basis, _ = self._trimmed_maximum(record[DEV_DAILY_MAX])
+        if basis is None or basis <= 0:
+            return 0.0
+        return basis * self.notification_debounce
+
+    def _still_on_the_list(self, device_id: str, kind: str) -> bool:
+        """Return whether a held fault still describes reality.
+
+        The list is the single source of truth, so it is what a
+        matured hold is checked against: a device gone from the list,
+        checked off by hand, or no longer carrying this kind has
+        nothing left to announce.
+        """
+        for record in self.data.get(DATA_TODO_ITEMS, []):
+            if record.get(TODO_DEVICE_ID) != device_id:
+                continue
+            if record.get(TODO_STATUS) == "completed":
+                return False
+            return kind in (record.get(TODO_KINDS) or {})
+        return False
+
+    @callback
+    def _release_held_event(
+        self, key: tuple[str, str], family: str, line: str
+    ) -> None:
+        """Send a held fault whose debounce has elapsed.
+
+        The hold is cancelled by its own recovery, so one that
+        survives to here is still true unless a hand silenced it in
+        the meantime, which the list check catches. The line keeps the
+        timestamp it was written with, so a delayed alert still says
+        when the problem started rather than when it was sent.
+        """
+        self._held_events.pop(key, None)
+        device_id, kind = key
+        if not self._still_on_the_list(device_id, kind):
+            return
+        self.hass.async_create_task(
+            self.async_fire_events([(family, line, False)])
+        )
+
+    @property
     def coalesce_seconds(self) -> float:
         """Return the routine-save interval in seconds.
 
@@ -2553,7 +2635,7 @@ class DeviceSentinelCoordinator(
 
     @callback
     def _collect_event(
-        self, kind: str, name: str, recovery: bool
+        self, kind: str, name: str, recovery: bool, device_id: str
     ) -> None:
         """Buffer a family event to fire after the sync settles.
 
@@ -2562,6 +2644,13 @@ class DeviceSentinelCoordinator(
         local wall time so the push reads like a person would write it.
         A recovery reads recovered; a fault reads the kind. The buffer
         is fired and cleared by the dispatch after the sync.
+
+        A fault is held for its device's notification debounce first,
+        so a problem that heals inside the delay is never announced.
+        Its recovery cancels the hold and goes no further either: a
+        recovery for a fault nobody was told about would be news about
+        nothing. The card, the list and the brief are untouched by any
+        of this, since they carry state rather than announcements.
         """
         family = NOTIFY_KIND_FAMILY.get(kind, "freeze")
         when = dt_util.now().strftime("%-I:%M %p").lower()
@@ -2569,7 +2658,31 @@ class DeviceSentinelCoordinator(
             line = f"At {when}, {name} recovered."
         else:
             line = f"At {when}, {name} was detected {_EVENT_WORD.get(kind, kind)}."
-        self._pending_events.append((family, line, recovery))
+        key = (device_id, kind)
+        if recovery:
+            cancel = self._held_events.pop(key, None)
+            if cancel is not None:
+                cancel()
+                return
+            self._pending_events.append((family, line, recovery))
+            return
+        delay = self._notification_delay(device_id)
+        if delay <= 0:
+            self._pending_events.append((family, line, recovery))
+            return
+        # A second fault of the same kind on the same device replaces
+        # the hold rather than stacking a second timer on it.
+        previous = self._held_events.pop(key, None)
+        if previous is not None:
+            previous()
+
+        @callback
+        def _release(_now: Any) -> None:
+            self._release_held_event(key, family, line)
+
+        self._held_events[key] = async_call_later(
+            self.hass, delay, _release
+        )
 
     def _dispatch_notifications(self) -> None:
         """Fire the buffered family events and refresh the card.
@@ -2634,6 +2747,7 @@ class DeviceSentinelCoordinator(
                         kind,
                         record.get(TODO_SORT_NAME) or device_id,
                         recovery=True,
+                        device_id=device_id,
                     )
                 changed = True
                 continue
@@ -2660,7 +2774,8 @@ class DeviceSentinelCoordinator(
                         device_id, problem["name"], kind, INCIDENT_OPENED
                     )
                     self._collect_event(
-                        kind, problem["name"], recovery=False
+                        kind, problem["name"], recovery=False,
+                        device_id=device_id,
                     )
             for kind in stored_kinds:
                 if kind not in new_kinds:
@@ -2668,7 +2783,8 @@ class DeviceSentinelCoordinator(
                         device_id, problem["name"], kind, now
                     )
                     self._collect_event(
-                        kind, problem["name"], recovery=True
+                        kind, problem["name"], recovery=True,
+                        device_id=device_id,
                     )
             summary, description = self._problem_item_text(
                 problem["name"], new_kinds, problem["level"]
@@ -2711,7 +2827,10 @@ class DeviceSentinelCoordinator(
                 self._record_incident(
                     device_id, problem["name"], kind, INCIDENT_OPENED
                 )
-                self._collect_event(kind, problem["name"], recovery=False)
+                self._collect_event(
+                    kind, problem["name"], recovery=False,
+                    device_id=device_id,
+                )
             changed = True
 
         if changed:
