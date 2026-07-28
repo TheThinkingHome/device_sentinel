@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.1 (2026-07-27)
+# File: const.py, Version: 0.10.4 (2026-07-28)
 
 """Constants for the Device Sentinel integration."""
 
@@ -729,8 +729,23 @@ INC_DURATION = "duration"
 # so the brief can one day say what was tried as well as what broke.
 INCIDENT_OPENED = "opened"
 INCIDENT_RESOLVED = "resolved"
+# Legacy. Retired in 0.10.4 in favour of INCIDENT_ACTION carrying
+# ACTION_ACKNOWLEDGED. Nothing writes it any more; both renderers keep
+# a branch for it so rows already in storage still read correctly.
+# The log keeps 14 days and the last of those rows was written on
+# 2026-07-28, so this constant and both branches can go after
+# 2026-08-11.
 INCIDENT_ACKNOWLEDGED = "acknowledged"
+# One event for everything a person does to the list, with the cause
+# saying which. A person checking a box is not the house producing a
+# fault, and putting item events in the problem timeline made the
+# brief say a device had been discovered at the moment someone
+# deleted a row.
 INCIDENT_ACTION = "action"
+ACTION_ACKNOWLEDGED = "acknowledged"
+ACTION_UNACKNOWLEDGED = "unacknowledged"
+ACTION_DELETED = "deleted"
+ACTION_READDED = "readded"
 
 # The kinds whose recovery can name a cause. Only a silence has a
 # lever to credit: a battery rising or a rail clearing has no
