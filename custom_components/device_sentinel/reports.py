@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.9.11 (2026-07-27)
+# File: reports.py, Version: 0.10.4 (2026-07-28)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -58,7 +58,12 @@ from .const import (
     EP_NAME,
     EP_SINCE,
     EP_WINDOW,
+    ACTION_ACKNOWLEDGED,
+    ACTION_DELETED,
+    ACTION_READDED,
+    ACTION_UNACKNOWLEDGED,
     INCIDENT_ACKNOWLEDGED,
+    INCIDENT_ACTION,
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
     INC_CAUSE,
@@ -886,7 +891,15 @@ class ReportWritingMixin:
             cause = row.get(INC_CAUSE)
             base = f"recovered after {span}"
             return f"{base}, {cause}" if cause else base
+        if event == INCIDENT_ACTION:
+            return {
+                ACTION_ACKNOWLEDGED: "acknowledged",
+                ACTION_UNACKNOWLEDGED: "acknowledgment removed",
+                ACTION_DELETED: "deleted from the list",
+                ACTION_READDED: "re-added, the problem is still there",
+            }.get(row.get(INC_CAUSE) or "", "acknowledged")
         if event == INCIDENT_ACKNOWLEDGED:
+            # Legacy rows only, removable after 2026-08-11.
             return "acknowledged"
         if kind == TODO_KIND_BATTERY:
             # Borrowed from the composer so the table and the prose
