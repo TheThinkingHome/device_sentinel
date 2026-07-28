@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.4 (2026-07-28)
+# File: coordinator.py, Version: 0.10.5 (2026-07-28)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -2117,8 +2117,11 @@ class DeviceSentinelCoordinator(
         if hot_at < cold_at:
             LOGGER.warning(
                 "Activity clocks on disk are %.0f s older than the "
-                "main storage file, so they have been left alone; at "
-                "most one save window of clock history is lost",
+                "main storage file, so they have been left alone. "
+                "While the main file still carries the clocks it is "
+                "the newer source and nothing is lost. From 0.10.5 a "
+                "cold write takes the hot file with it, so seeing "
+                "this at all is worth reporting",
                 cold_at - hot_at,
             )
             return 0
@@ -2160,6 +2163,24 @@ class DeviceSentinelCoordinator(
             return
         self._store.async_delay_save(
             self._data_to_save, COLD_WRITE_DEBOUNCE_SECONDS
+        )
+        # The clocks file goes with it, on the same deadline (0.10.5).
+        # A cold write on its own left the main file newer than the
+        # hot one, and the merge then refuses a hot file it cannot
+        # trust and falls back to the main file's own clocks. Under
+        # phase B that costs nothing, because the main file still
+        # carries them. Under phase C it would cost everything, so
+        # the state is removed rather than tolerated.
+        #
+        # The pending flag matters as much as the call. Without it
+        # the next dirty tick asks for a window one interval out;
+        # Home Assistant keeps the nearer deadline but records the
+        # further one, and the timer defers to it when it fires,
+        # which would push this write back to where it started.
+        self._delay_pending = True
+        self._dirty = False
+        self._clock_store.async_delay_save(
+            self._clocks_to_save, COLD_WRITE_DEBOUNCE_SECONDS
         )
 
     @callback
