@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.2 (2026-07-28)
+# File: coordinator.py, Version: 0.10.4 (2026-07-28)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -152,7 +152,11 @@ from .const import (
     EPISODE_ENDED_REBOOT,
     EPISODE_ENDED_RECONNECT,
     EPISODE_ENDED_RESTART,
-    INCIDENT_ACKNOWLEDGED,
+    ACTION_ACKNOWLEDGED,
+    ACTION_DELETED,
+    ACTION_READDED,
+    ACTION_UNACKNOWLEDGED,
+    INCIDENT_ACTION,
     INCIDENT_OPENED,
     INC_CAUSE,
     COALESCE_MINUTES_MAX,
@@ -279,6 +283,13 @@ class DeviceSentinelCoordinator(
         # _data_to_save) and at every immediate save, since a direct
         # save cancels the store's pending delayed write.
         self._delay_pending: bool = False
+        # Devices whose item a person deleted while the fault was
+        # still standing. The next sync re-adds them, and this is
+        # how it knows to call that a re-add rather than a fresh
+        # detection. Deliberately not persisted: a restart inside
+        # the minute between the two loses only the distinction,
+        # and the row still appears.
+        self._hand_deleted: set[str] = set()
 
         # Registry view, rebuilt on registry changes.
         self._entity_map: dict[str, tuple[str, str | None]] = {}
@@ -2294,7 +2305,7 @@ class DeviceSentinelCoordinator(
             self._delay_pending = True
             # Phase B (#101): routine churn is nine fields per device,
             # so it writes the hot file and leaves the main one alone.
-            # On this fleet that is 35 KB rather than 316 KB, which is
+            # On this fleet that is 45 KB rather than 335 KB, which is
             # the whole point of the split. What the main file then
             # lacks is only clocks, and the next load merges them back
             # from here. Anything a reboot must not lose is critical
@@ -2661,18 +2672,26 @@ class DeviceSentinelCoordinator(
                     if status == "completed"
                     else None
                 )
-                # The checkbox lands on the timeline too: a brief
-                # that says a device recovered should also be able
-                # to say when someone decided to live with it.
-                if status == "completed":
-                    for kind in record.get(TODO_KINDS, {}):
-                        self._record_incident(
-                            device_id=record[TODO_DEVICE_ID],
-                            name=record.get(TODO_SORT_NAME)
-                            or record[TODO_DEVICE_ID],
-                            kind=kind,
-                            event=INCIDENT_ACKNOWLEDGED,
-                        )
+                # The checkbox lands on the timeline in both
+                # directions. Recording only the check left a brief
+                # saying a device was acknowledged and never saying
+                # the acknowledgment had been taken back, so the
+                # record told half the story and read as though the
+                # silence still held.
+                cause = (
+                    ACTION_ACKNOWLEDGED
+                    if status == "completed"
+                    else ACTION_UNACKNOWLEDGED
+                )
+                for kind in record.get(TODO_KINDS, {}):
+                    self._record_incident(
+                        device_id=record[TODO_DEVICE_ID],
+                        name=record.get(TODO_SORT_NAME)
+                        or record[TODO_DEVICE_ID],
+                        kind=kind,
+                        event=INCIDENT_ACTION,
+                        cause=cause,
+                    )
             break
         self._sort_todo_items()
         await self._save_now()
@@ -2685,7 +2704,25 @@ class DeviceSentinelCoordinator(
         un-acknowledge: the next sync re-adds it fresh, and that
         re-add lands in the journal like any other, so Step 8 will
         announce it again.
+
+        Both halves reach the timeline now. Without the deletion on
+        the record, a reader saw the same device detected twice with
+        nothing between, which reads as a flapping fault rather than
+        as somebody clearing a row that came straight back.
         """
+        for record in self.data[DATA_TODO_ITEMS]:
+            if record[TODO_UID] not in uids:
+                continue
+            device_id = record[TODO_DEVICE_ID]
+            self._hand_deleted.add(device_id)
+            for kind in record.get(TODO_KINDS, {}):
+                self._record_incident(
+                    device_id=device_id,
+                    name=record.get(TODO_SORT_NAME) or device_id,
+                    kind=kind,
+                    event=INCIDENT_ACTION,
+                    cause=ACTION_DELETED,
+                )
         self.data[DATA_TODO_ITEMS] = [
             record
             for record in self.data[DATA_TODO_ITEMS]
@@ -3007,8 +3044,25 @@ class DeviceSentinelCoordinator(
                     TODO_KINDS: kinds,
                 }
             )
+            # A row a person deleted while the fault still stood
+            # comes back, and that return is the list re-adding an
+            # item, not the house producing a new fault. Calling it
+            # opened put a second opening on a key that already had
+            # one pending, which orphaned the first and left a real
+            # episode rendering as never resolved.
+            readded = device_id in self._hand_deleted
+            self._hand_deleted.discard(device_id)
             for kind in kinds:
                 self._journal_addition(device_id, problem["name"], kind)
+                if readded:
+                    self._record_incident(
+                        device_id,
+                        problem["name"],
+                        kind,
+                        INCIDENT_ACTION,
+                        cause=ACTION_READDED,
+                    )
+                    continue
                 self._record_incident(
                     device_id, problem["name"], kind, INCIDENT_OPENED
                 )
