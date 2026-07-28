@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze.py, Version: 0.9.12 (2026-07-27)
+# File: test_freeze.py, Version: 0.10.2 (2026-07-28)
 
 """The freeze, unavailable, unknown, and never-reported detector.
 
@@ -39,6 +39,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
+    DATA_SAVED_AT,
     FREEZE_UNAVAILABLE_DEBOUNCE,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
@@ -690,3 +691,134 @@ async def test_a_published_verdict_keeps_its_since_while_still_down(
     )
     assert record[DEV_FROZEN_SINCE] == published_since
     assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+
+
+# ==================================================================
+# #160: silence is judged on what was watched, not the wall clock.
+# ==================================================================
+
+def _freeze_window_of(coord, record):
+    """The device's own window, for asserting the wall clock lies."""
+    return coord._freeze_window(record)
+
+
+async def test_an_outage_is_not_counted_against_a_device(
+    hass: HomeAssistant, freezer
+):
+    """The fault a six-minute power cut exposed. A device that kept
+    reporting to its bridge throughout was blamed for the silence the
+    system could not hear, and the fastest reporters crossed their
+    windows first, purely by arithmetic."""
+    device, entities = register_device(hass, "dt1", entity_count=1)
+    coord = await setup_coordinator(hass)
+    # Settle the entity first: setting a state re-arms the
+    # device's clock, which would overwrite the stamp under test.
+    hass.states.async_set(entities[0], "21.5")
+    await hass.async_block_till_done()
+    now = dt_util.utcnow().timestamp()
+    record = _armed_record(rhythm_seconds=120.0, last_activity=now - 30.0)
+    coord.data[DATA_DEVICES][device.id] = record
+
+    # The system was last listening 30 s after this device reported,
+    # then nothing heard anything for twenty minutes.
+    coord._last_alive = now
+    coord._downtime = 1200.0
+    later = now + 1200.0
+
+    # Wall clock says 20.5 minutes of silence, far past its window.
+    assert (later - record[DEV_LAST_ACTIVITY]) > _freeze_window_of(coord, record)
+    # Observed silence is the 30 s before the stop, and no verdict.
+    assert coord._observed_silence(record, later) == 30.0
+    assert coord._device_down_category(device.id, record, later) is None
+
+
+async def test_a_device_already_silent_is_still_caught_at_once(
+    hass: HomeAssistant, freezer
+):
+    """The credit is an offset, not an amnesty. A device that had
+    already gone quiet before the stop carries that silence into the
+    sum, so a genuinely dead device is caught the instant the system
+    returns rather than being given the outage as cover."""
+    device, entities = register_device(hass, "dt2", entity_count=1)
+    coord = await setup_coordinator(hass)
+    # Settle the entity first: setting a state re-arms the
+    # device's clock, which would overwrite the stamp under test.
+    hass.states.async_set(entities[0], "21.5")
+    await hass.async_block_till_done()
+    now = dt_util.utcnow().timestamp()
+    # Silent for two hours before the stop, window two minutes.
+    record = _armed_record(rhythm_seconds=120.0, last_activity=now - 7200.0)
+    coord.data[DATA_DEVICES][device.id] = record
+
+    coord._last_alive = now
+    coord._downtime = 1200.0
+    later = now + 1200.0
+
+    assert coord._observed_silence(record, later) == 7200.0
+    assert (
+        coord._device_down_category(device.id, record, later)
+        == FREEZE_CATEGORY_FROZEN
+    )
+
+
+async def test_the_credit_lapses_once_the_device_reports(
+    hass: HomeAssistant, freezer
+):
+    """A clock that postdates the outage needs no allowance, so the
+    device is judged normally from its next report onward and a
+    freeze arriving after the restart is caught on time."""
+    device, entities = register_device(hass, "dt3", entity_count=1)
+    coord = await setup_coordinator(hass)
+    # Settle the entity first: setting a state re-arms the
+    # device's clock, which would overwrite the stamp under test.
+    hass.states.async_set(entities[0], "21.5")
+    await hass.async_block_till_done()
+    now = dt_util.utcnow().timestamp()
+    record = _armed_record(rhythm_seconds=120.0, last_activity=now - 30.0)
+    coord.data[DATA_DEVICES][device.id] = record
+    coord._last_alive = now
+    coord._downtime = 1200.0
+
+    # It reports after the restart, so its clock is newer than the
+    # last moment anything was listening.
+    record[DEV_LAST_ACTIVITY] = now + 1200.0
+    window = _freeze_window_of(coord, record)
+    later = now + 1200.0 + window + 60.0
+    # No credit: the whole span since it reported is counted, so a
+    # freeze that begins after the restart is caught on time.
+    # approx: a few hundred seconds added to a 1.7-billion-second
+    # timestamp loses the last digit to float precision.
+    assert coord._observed_silence(record, later) == pytest.approx(
+        window + 60.0
+    )
+    assert (
+        coord._device_down_category(device.id, record, later)
+        == FREEZE_CATEGORY_FROZEN
+    )
+
+
+async def test_downtime_is_read_from_the_newer_file_stamp(
+    hass: HomeAssistant, hass_storage
+):
+    """Both files carry the time they were written, and the newer is
+    the last moment anything was observed. After a clean stop that is
+    exact; after a crash it is early, which credits too much rather
+    than too little."""
+    coord = await setup_coordinator(hass)
+    now = dt_util.utcnow().timestamp()
+    coord._note_downtime(
+        {DATA_SAVED_AT: now - 3600.0}, {DATA_SAVED_AT: now - 600.0}
+    )
+    assert coord._last_alive == now - 600.0
+    assert 590.0 < coord._downtime < 610.0
+
+
+async def test_an_unstamped_pair_credits_nothing(
+    hass: HomeAssistant, hass_storage
+):
+    """Files written before the stamp existed cannot date the outage,
+    so nothing is credited and judgment is exactly as it was."""
+    coord = await setup_coordinator(hass)
+    coord._note_downtime({}, {})
+    assert coord._last_alive is None
+    assert coord._downtime == 0.0
