@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage.py, Version: 0.10.3 (2026-07-28)
+# File: test_storage.py, Version: 0.10.5 (2026-07-28)
 
 """Persistence: the write cadence, the split shadow, and retention.
 
@@ -944,7 +944,16 @@ async def test_the_hot_file_supplies_the_clocks(
 async def test_an_older_hot_file_is_refused(
     hass: HomeAssistant, hass_storage
 ):
-    """The reason the stamp exists. The main file is written first
+    """The reason the stamp exists, and the phase C tripwire.
+
+    This asserts the invariant rather than the mechanism: a load
+    reconstructs the newest clocks available to it. When the hot
+    file is refused, the main file is what supplies them, which
+    holds only while the main file still carries clock fields.
+    Phase C stops writing them there, so this test is expected to
+    fail on the day phase C lands, and that failure is the point.
+
+    The reason the stamp exists. The main file is written first
     and the hot file second, so a failure between them leaves a stale
     hot file. Merging it would drag a device's last activity
     backwards, which reads as silence and earns a freeze it never
@@ -962,6 +971,69 @@ async def test_an_older_hot_file_is_refused(
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
     assert record[DEV_LAST_ACTIVITY] == 9000.0
     assert record[DEV_EVENT_COUNT] == 42
+
+
+async def test_a_cold_write_takes_the_clocks_file_with_it(
+    hass: HomeAssistant, freezer
+):
+    """Both files on one deadline, so the main file can never lead.
+
+    A cold write alone left the main file newer than the hot one for
+    up to a whole save window. The merge then refuses the hot file
+    and falls back, which costs nothing while the main file still
+    carries clocks and would cost everything once it does not.
+    """
+    device, _eid = _register(hass, "pair1", "Paired Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    cold = _StoreSpy(coord._store)
+    hot = _StoreSpy(coord._clock_store)
+
+    coord._record_incident(
+        device_id=device.id,
+        name="Paired Device",
+        kind="unavailable",
+        event=INCIDENT_OPENED,
+    )
+
+    assert cold.delays == 1
+    assert hot.delays == 1, "the clocks file was left behind"
+    assert cold.last_delay == COLD_WRITE_DEBOUNCE_SECONDS
+    assert hot.last_delay == COLD_WRITE_DEBOUNCE_SECONDS
+
+
+async def test_the_pairing_survives_the_next_dirty_tick(
+    hass: HomeAssistant, freezer
+):
+    """The flag matters as much as the call.
+
+    Home Assistant keeps the nearer of two deadlines but records the
+    further one, and defers to it when the timer fires. So a dirty
+    tick asking for a full coalesce window after a cold write would
+    drag the paired write back out to where it started, and the main
+    file would lead again with nothing in the code looking wrong.
+    """
+    device, eid = _register(hass, "pair2", "Ticking Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(eid, "1")
+    await hass.async_block_till_done()
+
+    coord._record_incident(
+        device_id=device.id,
+        name="Ticking Device",
+        kind="unavailable",
+        event=INCIDENT_OPENED,
+    )
+    hot = _StoreSpy(coord._clock_store)
+
+    coord._dirty = True
+    await coord._on_render_tick(None)
+
+    assert hot.delays == 0, (
+        "the tick scheduled a second window and pushed the paired "
+        "write out to it"
+    )
 
 
 async def test_an_unstamped_pair_is_left_alone(
