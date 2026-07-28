@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage.py, Version: 0.10.0 (2026-07-27)
+# File: test_storage.py, Version: 0.10.1 (2026-07-27)
 
 """Persistence: the write cadence, the split shadow, and retention.
 
@@ -27,12 +27,12 @@ the coalesce firing, the split shadow and backup, and retention.
 """
 
 import glob
-import json
 import os
 
 from datetime import timedelta
 from unittest.mock import patch
 
+from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr
@@ -45,11 +45,10 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.device_sentinel.const import (
-    BACKUP_SUFFIX_PHASE_B,
-    DATA_PHASE_B_BACKUP,
-    BACKUP_SUFFIX_PRE_SPLIT,
     BRIEF_KEEP_DAYS,
     CLOCK_FIELDS,
+    COLD_WRITE_CAP_SECONDS,
+    COLD_WRITE_DEBOUNCE_SECONDS,
     CONF_COALESCE_MINUTES,
     CONF_EPISODE_SHARE,
     CONF_RETENTION_DAYS,
@@ -58,10 +57,10 @@ from custom_components.device_sentinel.const import (
     DATA_DEVICES,
     DATA_EPISODES,
     DATA_INCIDENTS,
-    DATA_SPLIT_BACKUP,
     DEFAULT_RETENTION_DAYS,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
+    DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_TODAY_MIN,
@@ -128,6 +127,7 @@ class _StoreSpy:
     def __init__(self, store):
         self.saves = 0
         self.delays = 0
+        self.last_delay = None
         self._real_save = store.async_save
         self._real_delay = store.async_delay_save
         store.async_save = self._save
@@ -139,7 +139,15 @@ class _StoreSpy:
 
     def _delay(self, data_func, delay):
         self.delays += 1
-        assert delay == STORAGE_COALESCE_SECONDS
+        self.last_delay = delay
+        # Two legitimate windows from 0.10.1: the coalesce window a
+        # routine clock write uses, and the shorter cold debounce the
+        # main file uses. Anything else means a delay was passed by
+        # accident rather than chosen.
+        assert delay in (
+            STORAGE_COALESCE_SECONDS,
+            COLD_WRITE_DEBOUNCE_SECONDS,
+        )
         self._real_delay(data_func, delay)
 
 
@@ -439,43 +447,6 @@ async def test_nothing_reads_the_shadow(
     ] == 1234.0
 
 
-async def test_the_backup_marker_is_set_once(hass: HomeAssistant):
-    """The marker means a later start does not try again."""
-    entry = await setup_entry(hass)
-    assert entry.runtime_data.data[DATA_SPLIT_BACKUP] is True
-
-
-async def test_the_backup_copies_and_never_overwrites(
-    hass: HomeAssistant,
-):
-    """The restore point for the whole split. Written from the real
-    file, and refusing to overwrite, which is why retaking it is
-    harmless and needs no save of its own."""
-    entry = await setup_entry(hass)
-    coord = entry.runtime_data
-    source = hass.config.path(".storage", STORAGE_KEY)
-    backup = source + BACKUP_SUFFIX_PRE_SPLIT
-    os.makedirs(os.path.dirname(source), exist_ok=True)
-    for path in (source, backup):
-        if os.path.isfile(path):
-            os.remove(path)
-    with open(source, "w", encoding="utf-8") as handle:
-        json.dump({"version": 1, "data": {"devices": {"d": {}}}}, handle)
-
-    assert await coord._take_backup(BACKUP_SUFFIX_PRE_SPLIT)
-    with open(backup, encoding="utf-8") as handle:
-        assert "devices" in json.load(handle)["data"]
-
-    # A second call finds the file already there and leaves it alone.
-    with open(source, "w", encoding="utf-8") as handle:
-        json.dump({"version": 1, "data": {"devices": {}}}, handle)
-    assert await coord._take_backup(BACKUP_SUFFIX_PRE_SPLIT)
-    with open(backup, encoding="utf-8") as handle:
-        assert json.load(handle)["data"]["devices"] == {"d": {}}
-    os.remove(source)
-    os.remove(backup)
-
-
 async def test_the_shadow_exists_from_the_first_moment(
     hass: HomeAssistant, hass_storage
 ):
@@ -511,7 +482,7 @@ async def test_the_split_state_reaches_diagnostics(
     entry = await setup_entry(hass)
     diag = await async_get_config_entry_diagnostics(hass, entry)
     split = diag["split"]
-    assert split["pre_split_backup_taken"] is True
+    assert split["phase"].startswith("B:")
     assert set(split["clock_fields"]) == set(CLOCK_FIELDS)
     assert split["clock_devices"] >= 1
 
@@ -1081,49 +1052,6 @@ async def test_shutdown_writes_the_pair_whatever_the_flags_say(
     assert hot.saves == 1
 
 
-async def test_this_release_takes_its_own_restore_point(
-    hass: HomeAssistant,
-):
-    """The phase A copy was taken days and several releases earlier,
-    so going back to it now would throw away everything learned
-    since. This is the release that stops writing the main file on
-    every save, so it takes a copy of its own before doing so, and
-    the two live side by side under different names."""
-    entry = await setup_entry(hass)
-    coord = entry.runtime_data
-    source = hass.config.path(".storage", STORAGE_KEY)
-    phase_a = source + BACKUP_SUFFIX_PRE_SPLIT
-    phase_b = source + BACKUP_SUFFIX_PHASE_B
-    os.makedirs(os.path.dirname(source), exist_ok=True)
-    for path in (source, phase_a, phase_b):
-        if os.path.isfile(path):
-            os.remove(path)
-    with open(source, "w", encoding="utf-8") as handle:
-        json.dump({"version": 1, "data": {"devices": {"d": {}}}}, handle)
-
-    # An install that already carries the phase A marker still earns
-    # this one, which is the whole point.
-    assert await coord._take_backup(BACKUP_SUFFIX_PHASE_B)
-    assert os.path.isfile(phase_b)
-    assert not os.path.isfile(phase_a)
-    with open(phase_b, encoding="utf-8") as handle:
-        assert json.load(handle)["data"]["devices"] == {"d": {}}
-    os.remove(source)
-    os.remove(phase_b)
-
-
-async def test_the_phase_b_backup_is_taken_on_first_load(
-    hass: HomeAssistant, hass_storage
-):
-    """Taken by setup itself, and marked so it is taken only once."""
-    hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "data": {DATA_DEVICES: {}, DATA_SPLIT_BACKUP: True},
-    }
-    entry = await setup_entry(hass)
-    assert entry.runtime_data.data.get(DATA_PHASE_B_BACKUP) is True
-
-
 async def test_setup_stamps_both_files_at_once(
     hass: HomeAssistant, hass_storage
 ):
@@ -1138,3 +1066,107 @@ async def test_setup_stamps_both_files_at_once(
     hot = hass_storage[STORAGE_CLOCKS_KEY]["data"]
     assert cold.get(DATA_SAVED_AT) is not None
     assert hot.get(DATA_SAVED_AT) is not None
+
+
+# ==================================================================
+# The cold write: everything the hot file does not carry.
+# ==================================================================
+
+async def test_an_episode_schedules_the_main_file(
+    hass: HomeAssistant, freezer
+):
+    """Phase B left an episode with no write of its own, so it waited
+    for an unrelated critical change. It gets one now, on the shorter
+    cold window rather than the routine one."""
+    device, _eid = _register(hass, "cw1", "Cold Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    spy = _StoreSpy(coord._store)
+
+    # Through the real path, not by calling the marker directly, so
+    # this fails if the wiring is ever undone rather than only if the
+    # marker itself breaks.
+    coord._record_incident(
+        device_id=device.id,
+        name="Cold Device",
+        kind="unavailable",
+        event=INCIDENT_OPENED,
+    )
+
+    assert spy.delays == 1
+    assert spy.last_delay == COLD_WRITE_DEBOUNCE_SECONDS
+
+
+async def test_a_wave_of_cold_changes_costs_one_write(
+    hass: HomeAssistant, freezer
+):
+    """A bridge reconnect opens an episode on every device at once.
+    Sixty full writes in ninety seconds would give back the saving
+    the split exists for, so each change pushes the write out and the
+    wave costs one."""
+    _register(hass, "cw2", "Wave Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    spy = _StoreSpy(coord._store)
+
+    for _ in range(60):
+        coord._mark_cold_dirty()
+        freezer.tick(timedelta(seconds=1))
+
+    # Sixty schedules, but the store coalesces them: the write itself
+    # has not fired, and the burst is still one pending window.
+    assert spy.delays == 60
+    assert spy.saves == 0
+
+
+async def test_the_cap_stops_a_burst_deferring_for_ever(
+    hass: HomeAssistant, freezer
+):
+    """Each change pushing the write out is the point, until it is
+    not: a stream that never pauses would defer the write
+    indefinitely, so past the cap it happens regardless."""
+    _register(hass, "cw3", "Capped Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    spy = _StoreSpy(coord._store)
+
+    coord._mark_cold_dirty()
+    assert spy.saves == 0
+    # Still inside the cap: the window is pushed out, not written.
+    freezer.tick(timedelta(seconds=COLD_WRITE_CAP_SECONDS - 5))
+    coord._mark_cold_dirty()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert spy.saves == 0
+
+    # Past it: the write happens rather than being deferred again.
+    freezer.tick(timedelta(seconds=10))
+    coord._mark_cold_dirty()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert spy.saves == 1
+    assert coord._cold_since is None
+
+
+async def test_a_freeze_stamp_is_critical_not_merely_cold(
+    hass: HomeAssistant, freezer
+):
+    """The stamp starts the unavailable debounce and its clear is the
+    0.9.12 fix. A crash between one reaching disk and the other not
+    is how a device comes back reported down for hours, so neither
+    waits on a window."""
+    device, entity_id = _register(hass, "cw4", "Stamp Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._grace_until = 0.0
+    hass.states.async_set(entity_id, "on")
+    await hass.async_block_till_done()
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - 10
+    coord._critical = False
+
+    hass.states.async_set(entity_id, STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    coord._apply_freeze_verdict(
+        device.id, record, dt_util.utcnow().timestamp()
+    )
+    assert record[DEV_FROZEN_SINCE] is not None
+    assert coord._critical is True
