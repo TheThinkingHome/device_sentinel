@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.10.3 (2026-07-28)
+# File: narrative.py, Version: 0.10.4 (2026-07-28)
 
 """What happened, and how to say it: the memory and the composer.
 
@@ -51,7 +51,12 @@ from .const import (
     EP_WINDOW,
     FREEZE_ARMING_DAYS,
     FREEZE_KINDS_FOR_CAUSE,
+    ACTION_ACKNOWLEDGED,
+    ACTION_DELETED,
+    ACTION_READDED,
+    ACTION_UNACKNOWLEDGED,
     INCIDENT_ACKNOWLEDGED,
+    INCIDENT_ACTION,
     INCIDENT_KEEP_DAYS,
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
@@ -201,7 +206,10 @@ class NarrativeMixin:
         kind = row[INC_KIND]
         when = self._clock(row[INC_WHEN])
         event = row[INC_EVENT]
+        if event == INCIDENT_ACTION:
+            return self._action_sentence(name, row.get(INC_CAUSE), when)
         if event == INCIDENT_ACKNOWLEDGED:
+            # Legacy rows only, removable after 2026-08-11.
             return f"{name} acknowledged at {when}."
         if event == INCIDENT_RESOLVED:
             span = self._human_span(row.get(INC_DURATION))
@@ -212,6 +220,31 @@ class NarrativeMixin:
         if kind == TODO_KIND_NOT_REPORTED:
             return f"{name} has never reported since it was discovered."
         return f"{self._opening_clause(row)}."
+
+    def _action_sentence(
+        self, name: str, cause: str | None, when: str
+    ) -> str:
+        """Return one thing a person did to the list, as a sentence.
+
+        The re-add says why it came back, because the moment a
+        reader meets it is the moment they want to know that
+        deleting a row does not silence anything.
+        """
+        if cause == ACTION_UNACKNOWLEDGED:
+            return f"{name} acknowledgment removed at {when}."
+        if cause == ACTION_DELETED:
+            return f"{name} deleted from the list at {when}."
+        if cause == ACTION_READDED:
+            return (
+                f"{name} re-added to the list at {when} because the "
+                "problem is still there."
+            )
+        if cause == ACTION_ACKNOWLEDGED:
+            return f"{name} acknowledged at {when}."
+        # A cause this renderer has not learned yet. The check is by
+        # far the common case, so it is the safest thing to say, and
+        # a legacy row carries no cause at all.
+        return f"{name} acknowledged at {when}."
 
     def _compose_episode(
         self, opened: dict[str, Any], resolved: dict[str, Any]
@@ -225,6 +258,15 @@ class NarrativeMixin:
         time plus the span already gives it, and the table below
         carries exact times for anyone looking one up.
         """
+        if opened[INC_EVENT] == INCIDENT_ACTION:
+            # A deletion and the re-add that undid it are one thing
+            # that happened, told the way an opening and its
+            # recovery are (#134).
+            when = self._clock(opened[INC_WHEN])
+            return (
+                f"{opened[INC_NAME]} deleted from the list at {when}, "
+                "and re-added because the problem is still there."
+            )
         tail = self._recovery_tail(resolved)
         opening = self._opening_clause(opened)
         if resolved.get(INC_DURATION) is None:
@@ -250,11 +292,21 @@ class NarrativeMixin:
         """
         units: list[tuple[dict[str, Any], dict[str, Any] | None]] = []
         pending: dict[tuple[str, str], int] = {}
+        deleted: dict[tuple[str, str], int] = {}
         for row in sorted(rows, key=lambda item: item[INC_WHEN]):
             key = (row[INC_DEVICE_ID], row[INC_KIND])
             event = row[INC_EVENT]
+            cause = row.get(INC_CAUSE)
             if event == INCIDENT_RESOLVED and key in pending:
                 index = pending.pop(key)
+                units[index] = (units[index][0], row)
+                continue
+            if (
+                event == INCIDENT_ACTION
+                and cause == ACTION_READDED
+                and key in deleted
+            ):
+                index = deleted.pop(key)
                 units[index] = (units[index][0], row)
                 continue
             units.append((row, None))
@@ -262,6 +314,8 @@ class NarrativeMixin:
                 self._PAIRABLE_KINDS
             ):
                 pending[key] = len(units) - 1
+            elif event == INCIDENT_ACTION and cause == ACTION_DELETED:
+                deleted[key] = len(units) - 1
         return units
 
     def _compose_device_line(self, device_id: str) -> str | None:
