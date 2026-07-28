@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.1 (2026-07-27)
+# File: coordinator.py, Version: 0.10.2 (2026-07-28)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -337,6 +337,14 @@ class DeviceSentinelCoordinator(
         # When the current burst of cold changes began, so the
         # debounce can be capped rather than pushed out for ever.
         self._cold_since: float | None = None
+        # What the system could actually watch (#160). Both storage
+        # files carry the time they were written, so the newer of the
+        # two is the last moment anything was observed, and the gap
+        # from there to this start is time no device can be blamed
+        # for: it went on reporting to its bridge with nobody there
+        # to hear it.
+        self._last_alive: float | None = None
+        self._downtime: float = 0.0
         self._brief_unsub: Any | None = None
         # One bridge reader per detected coordinator stack that can
         # report its own liveness and pairing state (#145). Populated in
@@ -426,7 +434,9 @@ class DeviceSentinelCoordinator(
         # fields straight back and a declared epoch would quietly fail
         # to take. Merging first means the wipe still has the last
         # word.
-        merged = self._merge_clocks(loaded, await self._clock_store.async_load())
+        hot_payload = await self._clock_store.async_load()
+        merged = self._merge_clocks(loaded, hot_payload)
+        self._note_downtime(loaded, hot_payload)
         if merged:
             LOGGER.debug(
                 "Merged activity clocks for %d device(s) from %s",
@@ -1760,15 +1770,15 @@ class DeviceSentinelCoordinator(
             return None
 
         window = self._freeze_window(record)
-        last = record[DEV_LAST_ACTIVITY]
 
         # Frozen: armed, and silent past its window while entities
         # still hold values. Judged first because it is the timer's
         # own verdict.
+        silence = self._observed_silence(record, now)
         frozen = (
             window is not None
-            and last is not None
-            and (now - last) >= window
+            and silence is not None
+            and silence >= window
         )
 
         states = self._live_entity_states(device_id)
@@ -2140,6 +2150,66 @@ class DeviceSentinelCoordinator(
         self._store.async_delay_save(
             self._data_to_save, COLD_WRITE_DEBOUNCE_SECONDS
         )
+
+    @callback
+    def _note_downtime(
+        self, loaded: dict[str, Any], hot: dict[str, Any] | None
+    ) -> None:
+        """Record how long nothing was listening before this start.
+
+        The newer of the two file stamps is the last moment the system
+        is known to have been running. After a clean stop that is
+        exact, because shutdown writes both files; after a crash it is
+        up to one hot-file window early, which errs toward crediting
+        too much rather than too little and is the safer direction.
+        """
+        stamps = [
+            v
+            for v in (loaded.get(DATA_SAVED_AT), (hot or {}).get(DATA_SAVED_AT))
+            if isinstance(v, (int, float))
+        ]
+        if not stamps:
+            return
+        self._last_alive = max(stamps)
+        self._downtime = max(
+            0.0, dt_util.utcnow().timestamp() - self._last_alive
+        )
+        if self._downtime > 0.0:
+            LOGGER.debug(
+                "Nothing was listening for %.0f s before this start; "
+                "that silence is not counted against any device",
+                self._downtime,
+            )
+
+    def _observed_silence(
+        self, record: dict[str, Any], now: float
+    ) -> float | None:
+        """How long this device was silent while anyone was listening.
+
+        Wall-clock silence counts the time the system was off, which
+        no device is responsible for. On return the fastest reporters
+        cross their windows first, purely by arithmetic: a six-minute
+        power cut once produced twenty-three frozen verdicts against
+        devices whose windows are two to four minutes, and touched
+        nothing with an hour-scale window (#160). What is counted
+        instead is the silence before the last save plus the silence
+        since this start, so the unwatched middle counts against
+        nobody. The credit lapses the moment a device reports, its
+        clock then postdating the outage, and it needs no cap: a
+        device already silent beforehand carries that silence into
+        the sum and is still caught the instant the system returns.
+        """
+        last = record.get(DEV_LAST_ACTIVITY)
+        if not isinstance(last, (int, float)):
+            return None
+        silence = now - last
+        if (
+            self._downtime > 0.0
+            and self._last_alive is not None
+            and last <= self._last_alive
+        ):
+            silence -= self._downtime
+        return max(0.0, silence)
 
     def _clocks_to_save(self) -> dict[str, Any]:
         """Return only the fields an ordinary report changes.
