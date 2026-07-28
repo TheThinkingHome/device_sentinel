@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: todo.py, Version: 0.9.8 (2026-07-26)
+# File: todo.py, Version: 0.10.4 (2026-07-28)
 
 """Todo platform for the Device Sentinel integration.
 
@@ -164,13 +164,21 @@ class DeviceSentinelTodoList(TodoListEntity):
         along with the status is ignored on purpose: the sync owns
         the wording.
         """
-        await self._coordinator.async_todo_update(
-            uid=item.uid,
-            status=(
+        # A status Home Assistant did not send is not a status of
+        # needs_action. The coordinator already ignores a status of
+        # None; folding None into needs_action here defeated that
+        # guard before it could help, so any future caller that
+        # updates text alone would have silently reopened the item.
+        status: str | None = None
+        if item.status is not None:
+            status = (
                 "completed"
                 if item.status == TodoItemStatus.COMPLETED
                 else "needs_action"
-            ),
+            )
+        await self._coordinator.async_todo_update(
+            uid=item.uid,
+            status=status,
         )
 
     async def async_delete_todo_items(self, uids: list[str]) -> None:
