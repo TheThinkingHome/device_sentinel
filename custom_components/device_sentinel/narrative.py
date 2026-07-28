@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.9.11 (2026-07-27)
+# File: narrative.py, Version: 0.10.1 (2026-07-27)
 
 """What happened, and how to say it: the memory and the composer.
 
@@ -476,7 +476,7 @@ class NarrativeMixin:
             episode[EP_AT] = now
             stamped += 1
         if stamped:
-            self._dirty = True
+            self._mark_cold_dirty()
             LOGGER.debug(
                 "Stamped %d open silence episode(s) as %s", stamped, cause
             )
@@ -502,7 +502,7 @@ class NarrativeMixin:
         ]
         if len(kept) != len(episodes):
             self.data[DATA_EPISODES] = kept
-            self._dirty = True
+            self._mark_cold_dirty()
 
     def _record_incident(
         self,
@@ -539,7 +539,7 @@ class NarrativeMixin:
         self.data[DATA_INCIDENTS] = [
             row for row in incidents if row[INC_WHEN] >= cutoff
         ]
-        self._dirty = True
+        self._mark_cold_dirty()
 
     def _incident_opened_at(
         self, device_id: str, kind: str
