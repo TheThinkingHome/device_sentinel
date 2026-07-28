@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.0 (2026-07-27)
+# File: coordinator.py, Version: 0.10.1 (2026-07-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -27,8 +27,6 @@ Core rules implemented here, all ruled in the project document:
 from __future__ import annotations
 
 import math
-import os
-import shutil
 import uuid
 from collections import deque
 from collections.abc import Callable
@@ -165,11 +163,9 @@ from .const import (
     DEFAULT_EPISODE_SHARE_PCT,
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
-    BACKUP_SUFFIX_PHASE_B,
-    BACKUP_SUFFIX_PRE_SPLIT,
     CLOCK_FIELDS,
-    DATA_PHASE_B_BACKUP,
-    DATA_SPLIT_BACKUP,
+    COLD_WRITE_CAP_SECONDS,
+    COLD_WRITE_DEBOUNCE_SECONDS,
     DATA_SAVED_AT,
     STORAGE_CLOCKS_KEY,
     STORAGE_CLOCKS_VERSION,
@@ -254,12 +250,11 @@ class DeviceSentinelCoordinator(
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, STORAGE_KEY
         )
-        # The storage split, phase A: written on the same cadence as
-        # the store above and never read (#101). The running system
-        # goes on loading everything from the file above, so nothing
-        # here can affect detection, the reports, or the soak. It is
-        # here to be compared against the real thing until the two
-        # are known to agree.
+        # The hot half of the storage split (#101). A routine save
+        # writes this file alone; the store above is written when
+        # something changes that a restart must not lose, and on
+        # every clean stop. The load merges the two, taking the
+        # clocks from here when this file's stamp proves it newer.
         self._clock_store: Store[dict[str, Any]] = Store(
             hass, STORAGE_CLOCKS_VERSION, STORAGE_CLOCKS_KEY
         )
@@ -339,6 +334,9 @@ class DeviceSentinelCoordinator(
         # by (device_id, kind). A hold is cancelled by its own
         # recovery, so anything still here is still true.
         self._held_events: dict[tuple[str, str], Any] = {}
+        # When the current burst of cold changes began, so the
+        # debounce can be capped rather than pushed out for ever.
+        self._cold_since: float | None = None
         self._brief_unsub: Any | None = None
         # One bridge reader per detected coordinator stack that can
         # report its own liveness and pairing state (#145). Populated in
@@ -482,14 +480,11 @@ class DeviceSentinelCoordinator(
         # idempotent: once a record is clean it finds nothing. Any new
         # field must be added to _new_device_record or this removes it
         # on the next load.
-        if not loaded.get(DATA_SPLIT_BACKUP):
-            if await self._take_backup(BACKUP_SUFFIX_PRE_SPLIT):
-                loaded[DATA_SPLIT_BACKUP] = True
-        # 0.10.0 is the release that stops writing the main file on
-        # every save, so it takes its own copy before doing so.
-        if not loaded.get(DATA_PHASE_B_BACKUP):
-            if await self._take_backup(BACKUP_SUFFIX_PHASE_B):
-                loaded[DATA_PHASE_B_BACKUP] = True
+        # The two backup markers were written by 0.9.x and 0.10.0,
+        # whose one-shot copies have long since been taken. Dropping
+        # them here keeps a retired key from riding every save.
+        loaded.pop("pre_split_backup_taken", None)
+        loaded.pop("phase_b_backup_taken", None)
         legacy = self._prune_legacy_fields(loaded[DATA_DEVICES])
         if legacy:
             LOGGER.info(
@@ -829,11 +824,11 @@ class DeviceSentinelCoordinator(
                 devices[device_id] = _new_device_record(
                     now_iso, self._seed_from_last_seen(device_id)
                 )
-                self._dirty = True
+                self._mark_cold_dirty()
         for device_id in list(devices):
             if device_id not in watched:
                 del devices[device_id]
-                self._dirty = True
+                self._mark_cold_dirty()
 
         if audit and set_aside:
             LOGGER.info(
@@ -1842,6 +1837,12 @@ class DeviceSentinelCoordinator(
                 if since is None:
                     record[DEV_FROZEN_SINCE] = now
                     self._dirty = True
+                    # Critical, not merely dirty. This stamp is what
+                    # the debounce counts from, and its clear below is
+                    # the 0.9.12 fix; a crash between one reaching
+                    # disk and the other not is how a device comes
+                    # back reported down for hours.
+                    self._critical = True
                     return False
                 if (now - since) < FREEZE_UNAVAILABLE_DEBOUNCE:
                     return False
@@ -1864,6 +1865,7 @@ class DeviceSentinelCoordinator(
             ):
                 record[DEV_FROZEN_SINCE] = None
                 self._dirty = True
+                self._critical = True
             return False
 
         record[DEV_FROZEN_CATEGORY] = category
@@ -2063,6 +2065,7 @@ class DeviceSentinelCoordinator(
         the next load compares against the hot file to decide which
         holds the newer clocks.
         """
+        self._cold_since = None
         self.data[DATA_SAVED_AT] = dt_util.utcnow().timestamp()
         return self.data
 
@@ -2110,6 +2113,34 @@ class DeviceSentinelCoordinator(
             merged += 1
         return merged
 
+    @callback
+    def _mark_cold_dirty(self) -> None:
+        """Note a change to something the hot file does not carry.
+
+        A routine save writes the nine clock fields and nothing else,
+        so an episode, an incident or a device record had no write of
+        its own and waited for an unrelated critical change. This is
+        that write. It is debounced rather than immediate because a
+        bridge reconnect opens an episode on every device at once,
+        and sixty full writes in ninety seconds would give back the
+        saving the split exists for. Each further change pushes the
+        write out, so a wave costs one write a minute after it ends.
+        The cap is the other half: once a burst has run long enough
+        the write happens anyway, so a stream that never pauses
+        cannot defer it indefinitely.
+        """
+        self._dirty = True
+        now = self.hass.loop.time()
+        if self._cold_since is None:
+            self._cold_since = now
+        elif now - self._cold_since >= COLD_WRITE_CAP_SECONDS:
+            self._cold_since = None
+            self.hass.async_create_task(self._save_now())
+            return
+        self._store.async_delay_save(
+            self._data_to_save, COLD_WRITE_DEBOUNCE_SECONDS
+        )
+
     def _clocks_to_save(self) -> dict[str, Any]:
         """Return only the fields an ordinary report changes.
 
@@ -2139,36 +2170,6 @@ class DeviceSentinelCoordinator(
             DATA_SAVED_AT: dt_util.utcnow().timestamp(),
             "clocks": clocks,
         }
-
-    async def _take_backup(self, suffix: str) -> bool:
-        """Copy storage once, under the given suffix.
-
-        A restore point for a step that changes how storage is used
-        (#101): this file plus the previous version's tag puts the
-        system exactly where it was. The copy refuses to overwrite,
-        so retaking it is harmless, which is why the marker needs no
-        save of its own: setup persists it moments later, and losing
-        it to a crash costs one redundant attempt that finds the file
-        already there. Each phase takes its own, because a copy made
-        several releases ago is not a restore point for this one.
-        """
-        source = self.hass.config.path(".storage", STORAGE_KEY)
-        target = source + suffix
-
-        def _copy() -> bool:
-            if not os.path.isfile(source) or os.path.isfile(target):
-                return False
-            shutil.copyfile(source, target)
-            return True
-
-        try:
-            taken = await self.hass.async_add_executor_job(_copy)
-        except OSError as err:
-            LOGGER.warning("Storage backup failed: %s", err)
-            return False
-        if taken:
-            LOGGER.info("Storage backup written to %s", target)
-        return True
 
     async def _save_now(self) -> None:
         """The single immediate-save path.
