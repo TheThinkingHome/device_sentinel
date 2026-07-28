@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.9.11 (2026-07-27)
+# File: diagnostics.py, Version: 0.10.1 (2026-07-27)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -44,7 +44,7 @@ from .const import (
     DATA_INCIDENTS,
     CLOCK_FIELDS,
     DIAGNOSTIC_SERIES_CAP,
-    DATA_SPLIT_BACKUP,
+    DATA_SAVED_AT,
     DATA_TODO_JOURNAL,
     LEARNING_MIN_DAYS,
     SIGNAL_ARMING_DAYS,
@@ -137,6 +137,14 @@ async def async_get_config_entry_diagnostics(
             ],
         }
 
+    hot = await coordinator._clock_store.async_load()
+    cold_at = coordinator.data.get(DATA_SAVED_AT)
+    hot_at = (hot or {}).get(DATA_SAVED_AT)
+    behind = (
+        round(hot_at - cold_at, 1)
+        if isinstance(cold_at, (int, float)) and isinstance(hot_at, (int, float))
+        else None
+    )
     return {
         "version": coordinator.version,
         "entry_options": async_redact_data(dict(entry.options), TO_REDACT),
@@ -203,12 +211,15 @@ async def async_get_config_entry_diagnostics(
         # The storage split, so its state travels with an issue
         # report rather than needing a terminal (0.8.8).
         "split": {
-            "pre_split_backup_taken": bool(
-                coordinator.data.get(DATA_SPLIT_BACKUP)
-            ),
             "clock_fields": list(CLOCK_FIELDS),
             "clock_devices": len(coordinator.data.get(DATA_DEVICES, {})),
-            "phase": "A: written, not read",
+            "phase": "B: hot file written routinely and read on load",
+            # Both stamps, so this file can answer on its own whether
+            # the split is healthy: the hot one should be the newer,
+            # and the gap is how far the main file is behind.
+            "storage_saved_at": coordinator.data.get(DATA_SAVED_AT),
+            "clocks_saved_at": (hot or {}).get(DATA_SAVED_AT),
+            "main_file_behind_seconds": behind,
         },
         "devices": devices,
     }
