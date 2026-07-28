@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.10.1 (2026-07-27)
+# File: narrative.py, Version: 0.10.3 (2026-07-28)
 
 """What happened, and how to say it: the memory and the composer.
 
@@ -414,7 +414,13 @@ class NarrativeMixin:
                     EP_TAINT_SECONDS: None,
                 }
             )
-            self._dirty = True
+            # The main file, not the routine flag. An episode lives
+            # only in the cold file, so _dirty alone schedules a write
+            # of the clocks file that cannot carry it, and then clears
+            # itself, leaving nothing to remember the row is unwritten
+            # (0.10.3). _mark_cold_dirty raises _dirty too, so nothing
+            # the routine tier did is lost by asking for both.
+            self._mark_cold_dirty()
 
     def _close_episode(
         self,
@@ -446,7 +452,10 @@ class NarrativeMixin:
                 episode[EP_LEARNED] = learned
         if taint_seconds is not None:
             episode[EP_TAINT_SECONDS] = taint_seconds
-        self._dirty = True
+        # The ending, the lag and the learned verdict are all cold
+        # fields, so the close schedules the main file for the same
+        # reason the open does (0.10.3).
+        self._mark_cold_dirty()
 
     def _stamp_intervention(
         self, cause: str, now: float, entry_id: str | None = None
