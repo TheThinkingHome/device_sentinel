@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage.py, Version: 0.10.1 (2026-07-27)
+# File: test_storage.py, Version: 0.10.3 (2026-07-28)
 
 """Persistence: the write cadence, the split shadow, and retention.
 
@@ -65,7 +65,9 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_TODAY_MIN,
     DEV_TODAY_MAX,
+    EP_ENDED,
     EPISODE_ENDED_RESUMED,
+    EPISODE_OPEN_SHARE,
     EPISODE_KEEP_DAYS,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
@@ -1072,12 +1074,19 @@ async def test_setup_stamps_both_files_at_once(
 # The cold write: everything the hot file does not carry.
 # ==================================================================
 
-async def test_an_episode_schedules_the_main_file(
+async def test_an_incident_schedules_the_main_file(
     hass: HomeAssistant, freezer
 ):
-    """Phase B left an episode with no write of its own, so it waited
+    """Phase B left an incident with no write of its own, so it waited
     for an unrelated critical change. It gets one now, on the shorter
-    cold window rather than the routine one."""
+    cold window rather than the routine one.
+
+    Renamed in 0.10.3: this exercises the incident recorder, which is
+    what it always did. Its old name promised episode coverage that
+    its body never gave, and the two episode paths went unwired for
+    three releases behind that promise. The episode tests below are
+    the coverage the old name implied.
+    """
     device, _eid = _register(hass, "cw1", "Cold Device")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -1094,6 +1103,96 @@ async def test_an_episode_schedules_the_main_file(
     )
 
     assert spy.delays == 1
+    assert spy.last_delay == COLD_WRITE_DEBOUNCE_SECONDS
+
+
+def _armed_and_silent(coord, device_id, basis_hours, share):
+    """Arm a device and backdate it to a point inside its window.
+
+    share is where to sit between the episode threshold and the freeze
+    line, so a caller can open an episode without also tripping a
+    verdict. A verdict would resolve an incident on recovery, and that
+    incident marks the main file cold by itself, which would let a
+    broken episode path pass on somebody else's write.
+    """
+    record = coord.data[DATA_DEVICES][device_id]
+    record[DEV_DAILY_MAX] = [basis_hours * 3600.0] * (
+        FREEZE_ARMING_DAYS + 2
+    )
+    window = coord._freeze_window(record)
+    basis = basis_hours * 3600.0
+    opens_at = basis + EPISODE_OPEN_SHARE * (window - basis)
+    silence = opens_at + share * (window - opens_at)
+    record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - silence
+    return record
+
+
+async def test_opening_an_episode_schedules_the_main_file(
+    hass: HomeAssistant, freezer
+):
+    """An episode exists only in the main file, so opening one has to
+    schedule that file.
+
+    Before 0.10.3 it raised the routine flag instead, which writes the
+    clocks file, and the clocks file carries no episodes. The flag was
+    then cleared by that write, so nothing anywhere remembered the row
+    was unwritten and it waited on an unrelated cold change. This is
+    the split's own regression: _dirty meant write everything before
+    Phase B and means write the clocks after it, and this call site
+    was not moved up with its neighbours.
+    """
+    device, eid = _register(hass, "ep1", "Episode Sensor")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(eid, "1")
+    await hass.async_block_till_done()
+
+    coord._grace_until = 0.0
+    _armed_and_silent(coord, device.id, 3.7, 0.5)
+
+    spy = _StoreSpy(coord._store)
+    coord._judge_all_devices()
+
+    assert coord.data.get(DATA_EPISODES), "no episode opened"
+    assert coord.data[DATA_DEVICES][device.id].get(
+        DEV_FROZEN_SINCE
+    ) is None, "the silence tripped a verdict, so this proves nothing"
+    assert spy.delays == 1
+    assert spy.last_delay == COLD_WRITE_DEBOUNCE_SECONDS
+
+
+async def test_closing_an_episode_schedules_the_main_file(
+    hass: HomeAssistant, freezer
+):
+    """The close carries the ending, the lag, and whether the gap was
+    learned, and all three live only in the main file.
+
+    The device recovers on its own with no verdict behind it, which is
+    the exposed case: no incident resolves, no stamp is taken, and
+    nothing else would have scheduled the write.
+    """
+    device, eid = _register(hass, "ep2", "Closing Sensor")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(eid, "1")
+    await hass.async_block_till_done()
+
+    coord._grace_until = 0.0
+    _armed_and_silent(coord, device.id, 3.7, 0.5)
+    coord._judge_all_devices()
+    assert coord.data.get(DATA_EPISODES), "no episode opened"
+
+    spy = _StoreSpy(coord._store)
+    hass.states.async_set(eid, "2")
+    await hass.async_block_till_done()
+
+    closed = [
+        ep
+        for ep in coord.data[DATA_EPISODES]
+        if ep[EP_ENDED] == EPISODE_ENDED_RESUMED
+    ]
+    assert closed, "the episode never closed"
+    assert spy.delays >= 1
     assert spy.last_delay == COLD_WRITE_DEBOUNCE_SECONDS
 
 
