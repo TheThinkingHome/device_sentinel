@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.0 (2026-07-27)
+# File: const.py, Version: 0.10.1 (2026-07-27)
 
 """Constants for the Device Sentinel integration."""
 
@@ -89,31 +89,21 @@ LOGGER = logging.getLogger(__package__)
 STORAGE_KEY = f"{DOMAIN}.storage"
 STORAGE_VERSION = 1
 
-# The storage split, phase A (0.8.7, #101 and #130). The clocks file
+# The storage split (0.8.7 and 0.10.0, #101 and #130). The clocks
 # holds only the fields that change on an ordinary device report.
 # Every routine write rewrites the whole storage file to update a
 # handful of timestamps, and that file is heading for roughly 300 KB
 # as the ninety-day series fill, so the fifteen-minute cadence costs
 # about 28 MB a day. Split, the same cadence costs under one.
 #
-# In this phase the file is written and never read. The running
-# system loads and uses the single existing storage file exactly as
-# before, so a wholly wrong shadow writer cannot affect detection,
-# the reports, or the soak. It exists to be compared against the
-# real thing until the two are known to agree.
+# From 0.10.0 the file is both written and read. A routine save
+# writes it alone; the main file is written when something changes
+# that a restart must not lose, and on every clean stop. The load
+# merges the two, taking the clocks from here when this file's stamp
+# proves it the newer of the pair.
 STORAGE_CLOCKS_KEY = f"{DOMAIN}.clocks"
 STORAGE_CLOCKS_VERSION = 1
-BACKUP_SUFFIX_PRE_SPLIT = ".pre-split.bak"
-DATA_SPLIT_BACKUP = "pre_split_backup_taken"
 
-# A second restore point, taken once when 0.10.0 first loads. The
-# phase A copy above was made days and several releases earlier, so
-# going back to it now would throw away everything learned since.
-# This release is the one that stops writing the main file on every
-# save, so it is the one that earns its own copy: this file plus the
-# 0.9.12 tag puts a system exactly where it was before the change.
-BACKUP_SUFFIX_PHASE_B = ".pre-0.10.0.bak"
-DATA_PHASE_B_BACKUP = "phase_b_backup_taken"
 
 # When each file was last written, stamped into both of them (0.10.0).
 # Phase B stops writing the main file on routine saves, so the hot
@@ -128,6 +118,20 @@ DATA_PHASE_B_BACKUP = "phase_b_backup_taken"
 # 0.10.0 simply has no stamp, and a load that cannot compare declines
 # to merge, which is safe because the two were written together then.
 DATA_SAVED_AT = "saved_at"
+
+# The cold write (0.10.1). Phase B made a routine save write the hot
+# file alone, which left everything else, an episode, an incident, a
+# device record, with no write of its own: it waited for an unrelated
+# critical change, or for midnight, or for a clean stop. This is the
+# write it was missing. Debounced, because a bridge reconnect opens
+# an episode on every device at once and sixty full writes in ninety
+# seconds would undo the saving the split exists for; each change
+# pushes the write further out, so a wave costs one. The cap stops
+# that pushing going on for ever: once a burst has run this long the
+# write happens regardless, which bounds what a power cut can take to
+# the cap rather than to nothing at all.
+COLD_WRITE_DEBOUNCE_SECONDS = 60
+COLD_WRITE_CAP_SECONDS = 300
 
 
 
