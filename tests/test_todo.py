@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.9.9 (2026-07-26)
+# File: test_todo.py, Version: 0.10.4 (2026-07-28)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -40,7 +40,11 @@ from custom_components.device_sentinel.const import (
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
+    DATA_DEVICES,
+    DATA_INCIDENTS,
     DEV_FROZEN_CATEGORY,
+    INCIDENT_OPENED,
+    INC_EVENT,
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     FREEZE_ARMING_DAYS,
@@ -195,6 +199,79 @@ async def test_check_acknowledges_and_delete_removes(hass: HomeAssistant):
     coord._sync_problem_list()
     assert len(coord.todo_items) == 1
     assert coord.todo_items[0]["status"] == "needs_action"
+
+
+async def test_a_missing_status_does_not_reopen_an_item(
+    hass: HomeAssistant,
+):
+    """A status Home Assistant did not send is not needs_action.
+
+    The coordinator already ignores a status of None; the entity
+    used to fold None into needs_action before that guard could
+    help, so a caller updating text alone would silently have
+    thrown away an acknowledgment.
+    """
+    from homeassistant.components.todo import TodoItem
+
+    device, eids = _register_device(hass, "t9", "Guard Sensor")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(eids["plain"], "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+
+    uid = coord.todo_items[0]["uid"]
+    await coord.async_todo_update(uid=uid, status="completed")
+    acked = coord.todo_items[0]["acked_at"]
+    assert acked is not None
+
+    entity = hass.data["entity_components"]["todo"].get_entity(
+        LIST_ENTITY
+    )
+    await entity.async_update_todo_item(
+        TodoItem(uid=uid, summary="anything", status=None)
+    )
+
+    assert coord.todo_items[0]["status"] == "completed"
+    assert coord.todo_items[0]["acked_at"] == acked
+
+
+async def test_a_hand_deletion_does_not_orphan_a_live_episode(
+    hass: HomeAssistant,
+):
+    """The pairing bug this release exists to stop.
+
+    The brief matches each opening to its recovery on a key of
+    device and kind. A second opening on a key that already had one
+    pending overwrote the entry, so the real opening was orphaned
+    and rendered as a fault that never resolved, while the spurious
+    one paired with the eventual recovery.
+    """
+    device, eids = _register_device(hass, "t8", "Episode Sensor")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(eids["plain"], "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+
+    uid = coord.todo_items[0]["uid"]
+    await coord.async_todo_delete([uid])
+    coord._sync_problem_list()
+
+    # The device recovers for real.
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_FROZEN_CATEGORY] = None
+    record[DEV_FROZEN_SINCE] = None
+    coord._sync_problem_list()
+
+    units = coord._pair_incidents(coord.data[DATA_INCIDENTS])
+    unpaired = [
+        first
+        for first, second in units
+        if second is None and first[INC_EVENT] == INCIDENT_OPENED
+    ]
+    assert unpaired == [], "the real opening was orphaned"
 
 
 async def test_items_survive_reload(hass: HomeAssistant):
