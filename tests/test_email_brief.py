@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_email_brief.py, Version: 0.9.11 (2026-07-27)
+# File: test_email_brief.py, Version: 0.10.4 (2026-07-28)
 
 """The incident log and the daily brief: the memory and the report.
 
@@ -62,7 +62,12 @@ from custom_components.device_sentinel.const import (
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     FREEZE_CATEGORY_UNAVAILABLE,
+    ACTION_ACKNOWLEDGED,
+    ACTION_DELETED,
+    ACTION_READDED,
+    ACTION_UNACKNOWLEDGED,
     INCIDENT_ACKNOWLEDGED,
+    INCIDENT_ACTION,
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
     INC_CAUSE,
@@ -222,7 +227,19 @@ async def test_opening_and_resolution_land_on_the_timeline(
     assert resolved[0][INC_DURATION] is not None
 
 
+def _causes(coord, cause):
+    return [
+        row
+        for row in coord.data[DATA_INCIDENTS]
+        if row[INC_EVENT] == INCIDENT_ACTION
+        and row.get(INC_CAUSE) == cause
+    ]
+
+
 async def test_acknowledgement_is_recorded(hass: HomeAssistant):
+    """The check lands on the timeline as an action, not as a
+    problem event. Rewritten in 0.10.4: it used to assert the
+    retired INCIDENT_ACKNOWLEDGED event."""
     device, entity_id, _ = _register(hass, "a1", "Acked Sensor")
     coord = await setup_coordinator(hass)
     hass.states.async_set(entity_id, "21.5")
@@ -230,7 +247,116 @@ async def test_acknowledgement_is_recorded(hass: HomeAssistant):
     coord._sync_problem_list()
     uid = coord.todo_items[0]["uid"]
     await coord.async_todo_update(uid=uid, status="completed")
-    assert len(_events(coord, INCIDENT_ACKNOWLEDGED)) == 1
+    assert len(_causes(coord, ACTION_ACKNOWLEDGED)) == 1
+    assert _events(coord, INCIDENT_ACKNOWLEDGED) == []
+
+
+async def test_unacknowledgement_is_recorded_too(hass: HomeAssistant):
+    """Unticking the box is a thing a person did and the record has
+    to say so. Recording only the check left a brief saying a device
+    was acknowledged with nothing to say it had been taken back."""
+    device, entity_id, _ = _register(hass, "u1", "Unacked Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    uid = coord.todo_items[0]["uid"]
+    await coord.async_todo_update(uid=uid, status="completed")
+    await coord.async_todo_update(uid=uid, status="needs_action")
+
+    assert len(_causes(coord, ACTION_UNACKNOWLEDGED)) == 1
+    assert coord.todo_items[0]["status"] == "needs_action"
+    assert coord.todo_items[0]["acked_at"] is None
+
+
+async def test_the_brief_says_the_acknowledgment_was_removed(
+    hass: HomeAssistant,
+):
+    """The sentence, not just the row: an event the composer has no
+    branch for falls through to the kind wording and would announce
+    a discovery that never happened."""
+    device, entity_id, _ = _register(hass, "u2", "Sentence Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    uid = coord.todo_items[0]["uid"]
+    await coord.async_todo_update(uid=uid, status="completed")
+    await coord.async_todo_update(uid=uid, status="needs_action")
+
+    row = _causes(coord, ACTION_UNACKNOWLEDGED)[0]
+    line = coord._compose_event(row)
+    assert "acknowledgment removed" in line
+    assert "stopped reporting" not in line
+    assert "discovered" not in line
+
+
+async def test_a_hand_deletion_is_recorded(hass: HomeAssistant):
+    """Deleting a row is a thing a person did, and without it on the
+    record the same device simply appears twice."""
+    device, entity_id, _ = _register(hass, "d1", "Deleted Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    uid = coord.todo_items[0]["uid"]
+
+    await coord.async_todo_delete([uid])
+
+    assert len(_causes(coord, ACTION_DELETED)) == 1
+    assert coord.todo_items == []
+
+
+async def test_the_re_add_is_a_re_add_and_not_a_new_detection(
+    hass: HomeAssistant,
+):
+    """The fault never stopped, so nothing opened. Calling the return
+    an opening put a second opening on a key that already had one
+    pending, which orphaned the first and left a real episode
+    rendering as though it had never resolved."""
+    device, entity_id, _ = _register(hass, "d2", "Readded Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    opened_before = len(_events(coord, INCIDENT_OPENED))
+    uid = coord.todo_items[0]["uid"]
+
+    await coord.async_todo_delete([uid])
+    coord._sync_problem_list()
+
+    assert len(coord.todo_items) == 1, "the row did not come back"
+    assert len(_causes(coord, ACTION_READDED)) == 1
+    assert len(_events(coord, INCIDENT_OPENED)) == opened_before
+
+
+async def test_a_deletion_and_its_re_add_are_one_sentence(
+    hass: HomeAssistant,
+):
+    """Told the way an opening and its recovery are, and it says why
+    the row came back, because that is the moment a reader wants to
+    know that deleting does not silence anything."""
+    device, entity_id, _ = _register(hass, "d3", "Folded Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    uid = coord.todo_items[0]["uid"]
+    await coord.async_todo_delete([uid])
+    coord._sync_problem_list()
+
+    rows = [
+        row
+        for row in coord.data[DATA_INCIDENTS]
+        if row[INC_EVENT] == INCIDENT_ACTION
+    ]
+    units = coord._pair_incidents(rows)
+    assert len(units) == 1, "the deletion and its re-add did not fold"
+    opened, second = units[0]
+    assert second is not None
+    line = coord._compose_episode(opened, second)
+    assert "deleted from the list" in line
+    assert "re-added because the problem is still there" in line
 
 
 async def test_resolution_borrows_its_cause(hass: HomeAssistant):
