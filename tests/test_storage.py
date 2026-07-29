@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage.py, Version: 0.10.5 (2026-07-28)
+# File: test_storage.py, Version: 0.10.6 (2026-07-29)
 
 """Persistence: the write cadence, the split shadow, and retention.
 
@@ -56,7 +56,9 @@ from custom_components.device_sentinel.const import (
     DAILY_MAX_KEEP,
     DATA_DEVICES,
     DATA_EPISODES,
+    CONF_LOW_THRESHOLD,
     DATA_INCIDENTS,
+    DATA_SYSTEM_EVENTS,
     DEFAULT_RETENTION_DAYS,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
@@ -76,6 +78,10 @@ from custom_components.device_sentinel.const import (
     FREEZE_CATEGORY_UNKNOWN,
     INCIDENT_KEEP_DAYS,
     INCIDENT_OPENED,
+    SYS_KIND,
+    SYS_OPTIONS_CHANGED,
+    SYS_RESTART,
+    SYS_WHEN,
     INC_WHEN,
     REPORT_BRIEF_PREFIX,
     REPORT_DIAGNOSTIC_DIR,
@@ -1341,3 +1347,123 @@ async def test_a_freeze_stamp_is_critical_not_merely_cold(
     )
     assert record[DEV_FROZEN_SINCE] is not None
     assert coord._critical is True
+
+
+async def test_a_start_records_itself_as_a_system_event(
+    hass: HomeAssistant, freezer
+):
+    """The house's own record, so a device revived by a reboot has a
+    reason above it rather than being a mystery in the brief."""
+    _register(hass, "sys1", "Any Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    starts = [
+        row
+        for row in coord.data[DATA_SYSTEM_EVENTS]
+        if row[SYS_KIND] == SYS_RESTART
+    ]
+    assert len(starts) == 1
+    # Consistency only: the harness clock is frozen, so start-time
+    # and write-time are the same value here and this cannot tell
+    # them apart. The test below is the one that can.
+    assert coord._started_at is not None
+    assert starts[0][SYS_WHEN] == coord._started_at
+
+
+async def test_an_event_can_be_stamped_when_it_happened(
+    hass: HomeAssistant, freezer
+):
+    """Not every event is written the moment it occurs.
+
+    A restart is recorded once setup has succeeded, so that a start
+    which failed halfway leaves no claim the system came back. But it
+    happened earlier, before the first sweep judged anything, and
+    stamped at the write it would sort below the very devices it
+    explains. The brief would print the morning underneath the
+    morning.
+    """
+    _register(hass, "sys5", "Any Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord.data[DATA_SYSTEM_EVENTS] = []
+    earlier = dt_util.utcnow().timestamp() - 600.0
+
+    coord._record_system_event(SYS_RESTART, when=earlier)
+    coord._record_system_event(SYS_RESTART)
+
+    stamped, written = coord.data[DATA_SYSTEM_EVENTS]
+    assert stamped[SYS_WHEN] == earlier, "the given moment was ignored"
+    assert written[SYS_WHEN] > stamped[SYS_WHEN]
+
+
+async def test_system_events_keep_the_retention_the_person_chose(
+    hass: HomeAssistant, freezer
+):
+    """Not the fourteen days an incident keeps.
+
+    An incident older than a fortnight has been fixed or is still
+    standing. How often this house loses power is a question about
+    the house, answerable only over seasons, so these rows live as
+    long as the statistics they explain.
+    """
+    _register(hass, "sys2", "Any Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    keep = coord.retention_days
+    now = dt_util.utcnow().timestamp()
+
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        {SYS_WHEN: now - (keep - 1) * 86400.0, SYS_KIND: "old_but_kept",
+         "scope": "system", "detail": None, "duration": None},
+        {SYS_WHEN: now - (keep + 1) * 86400.0, SYS_KIND: "expired",
+         "scope": "system", "detail": None, "duration": None},
+    ]
+    coord._record_system_event(SYS_RESTART)
+
+    kinds = {row[SYS_KIND] for row in coord.data[DATA_SYSTEM_EVENTS]}
+    assert "old_but_kept" in kinds, "trimmed at the incident window"
+    assert "expired" not in kinds
+    assert keep > 14, "the point of the test is that it outlives an incident"
+
+
+async def test_changing_a_setting_records_which_one(
+    hass: HomeAssistant, freezer
+):
+    """Which setting moved, not merely that one did.
+
+    A row saying something changed cannot answer, months later, why a
+    device started being reported when nothing in the house altered.
+    """
+    _register(hass, "sys3", "Any Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.config_entries.async_update_entry(
+        entry, options={**dict(entry.options), CONF_LOW_THRESHOLD: 42}
+    )
+    await coord.async_options_updated()
+
+    changed = [
+        row
+        for row in coord.data[DATA_SYSTEM_EVENTS]
+        if row[SYS_KIND] == SYS_OPTIONS_CHANGED
+    ]
+    assert len(changed) == 1
+    assert CONF_LOW_THRESHOLD in changed[0]["detail"]
+
+
+async def test_applying_the_same_settings_records_nothing(
+    hass: HomeAssistant, freezer
+):
+    """The options flow can be opened and closed without changing
+    anything, and a row for that is noise in a record kept for
+    months."""
+    _register(hass, "sys4", "Any Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    await coord.async_options_updated()
+
+    assert [
+        row
+        for row in coord.data[DATA_SYSTEM_EVENTS]
+        if row[SYS_KIND] == SYS_OPTIONS_CHANGED
+    ] == []
