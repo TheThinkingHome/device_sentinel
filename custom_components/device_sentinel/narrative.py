@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.10.4 (2026-07-28)
+# File: narrative.py, Version: 0.10.6 (2026-07-29)
 
 """What happened, and how to say it: the memory and the composer.
 
@@ -34,6 +34,7 @@ from .const import (
     DATA_DEVICES,
     DATA_EPISODES,
     DATA_INCIDENTS,
+    DATA_SYSTEM_EVENTS,
     DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
     DEV_LAST_ACTIVITY,
@@ -67,6 +68,12 @@ from .const import (
     INC_KIND,
     INC_NAME,
     INC_WHEN,
+    SYS_DETAIL,
+    SYS_DURATION,
+    SYS_KIND,
+    SYS_SCOPE,
+    SYS_SCOPE_SYSTEM,
+    SYS_WHEN,
     LOGGER,
     RECOVERY_CAUSE_UNOBSERVED,
     TODO_DEVICE_ID,
@@ -601,6 +608,59 @@ class NarrativeMixin:
         )
         self.data[DATA_INCIDENTS] = [
             row for row in incidents if row[INC_WHEN] >= cutoff
+        ]
+        self._mark_cold_dirty()
+
+    def _record_system_event(
+        self,
+        kind: str,
+        scope: str = SYS_SCOPE_SYSTEM,
+        detail: str | None = None,
+        duration: float | None = None,
+        when: float | None = None,
+    ) -> None:
+        """Append one thing that happened to the house, not a device.
+
+        Its own list rather than a fourth kind of incident. A system
+        event has a scope and never a device, so put in the incident
+        log it would leave the device column empty on every row and
+        overload the kind column to carry what happened, and the
+        pairing machinery that matches an opening to its recovery
+        would have rows it could never pair. It also wants a longer
+        memory: an incident is spent after a fortnight, while how
+        often this house loses power is a question worth years.
+
+        Retention follows the person's history setting, so the events
+        that explain the statistics live exactly as long as the
+        statistics they explain.
+        """
+        events = self.data.setdefault(DATA_SYSTEM_EVENTS, [])
+        events.append(
+            {
+                # When it happened, which is not always when the row
+                # is written. A restart is recorded once setup has
+                # succeeded, so a start that failed halfway leaves no
+                # claim the system came back, but it happened before
+                # the first sweep judged anything. Stamped at the
+                # write it would sort below the very devices it
+                # explains.
+                SYS_WHEN: (
+                    when
+                    if when is not None
+                    else dt_util.utcnow().timestamp()
+                ),
+                SYS_KIND: kind,
+                SYS_SCOPE: scope,
+                SYS_DETAIL: detail,
+                SYS_DURATION: duration,
+            }
+        )
+        cutoff = (
+            dt_util.utcnow().timestamp()
+            - self.retention_days * 86400.0
+        )
+        self.data[DATA_SYSTEM_EVENTS] = [
+            row for row in events if row[SYS_WHEN] >= cutoff
         ]
         self._mark_cold_dirty()
 
