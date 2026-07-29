@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.10.6 (2026-07-29)
+# File: diagnostics.py, Version: 0.10.7 (2026-07-29)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -33,6 +33,7 @@ from homeassistant.helpers import device_registry as dr
 
 from . import DeviceSentinelConfigEntry
 from .const import (
+    EP_LEARNED,
     BATTERY_CLEAR_MARGIN,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_NORMAL_PRIORITY_TARGETS,
@@ -65,6 +66,22 @@ from .const import (
 # The notification targets are the user's own device names; they add
 # nothing to a diagnosis and are redacted by default.
 TO_REDACT = {CONF_HIGH_PRIORITY_TARGETS, CONF_NORMAL_PRIORITY_TARGETS}
+
+
+def _taint_reasons(episodes: list[dict[str, Any]]) -> dict[str, int]:
+    """Count the retained episodes by why their gap went unlearned.
+
+    Keyed by the reason as the report prints it, so a reader compares
+    this against silence_episodes.md without translating. Episodes
+    that fed learning are counted under "yes" for the denominator.
+    """
+    counts: dict[str, int] = {}
+    for episode in episodes:
+        learned = episode.get(EP_LEARNED)
+        if learned is None:
+            continue
+        counts[learned] = counts.get(learned, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 async def async_get_config_entry_diagnostics(
@@ -199,6 +216,15 @@ async def async_get_config_entry_diagnostics(
             "low_count": coordinator.battery_low_count,
             "low_list": coordinator.battery_low_list,
         },
+        # What the house's exclusions are actually made of (#164).
+        # Counted from the episode record rather than from the live
+        # flags, because a taint is spent the moment the device
+        # speaks and the standing count is almost always zero, while
+        # the question worth answering is whether a season of
+        # unlearned gaps was the bridge or the devices.
+        "taint_reasons": _taint_reasons(
+            coordinator.data.get(DATA_EPISODES, [])
+        ),
         "todo_items": coordinator.data.get(DATA_TODO_ITEMS, []),
         "todo_journal": coordinator.data.get(DATA_TODO_JOURNAL, []),
         "system_events": coordinator.data.get(
