@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.10.6 (2026-07-29)
+# File: narrative.py, Version: 0.10.7 (2026-07-29)
 
 """What happened, and how to say it: the memory and the composer.
 
@@ -31,6 +31,9 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    TAINT_PROMOTIONS,
+    TAINT_UNAVAILABLE,
+    TAINT_UNKNOWN,
     DATA_DEVICES,
     DATA_EPISODES,
     DATA_INCIDENTS,
@@ -87,6 +90,32 @@ from .const import (
     TODO_SORT_NAME,
     TODO_STATUS,
 )
+
+
+# The taint labels a promotion may replace (#164). Built from the
+# reasons rather than written out, so a reason added later is covered
+# without a second place to remember. Pairing is deliberately absent:
+# it is a hand intervention and more specific than any cause above it.
+_TAINT_LABELS = frozenset(
+    f"no ({reason})" for reason in (TAINT_UNAVAILABLE, TAINT_UNKNOWN)
+)
+
+
+def _promoted_learned(ended: str | None, learned: str | None) -> str | None:
+    """Return the widest cause that fits a tainted gap (#164).
+
+    A device felled by its bridge showed unavailable, which is true
+    and shallow: the row worth reading names the bridge. The episode
+    already knows what ended it, stamped when the intervention
+    happened, so the promotion is resolved here rather than where the
+    label is built, where the storm behind a reconnect has long since
+    released. Anything that is not a taint label passes through, so
+    "yes" and a pairing discard are returned unchanged.
+    """
+    if learned not in _TAINT_LABELS:
+        return learned
+    reason = TAINT_PROMOTIONS.get(ended or "")
+    return f"no ({reason})" if reason else learned
 
 
 class NarrativeMixin:
@@ -510,7 +539,9 @@ class NarrativeMixin:
         else:
             episode[EP_LAG] = max(0.0, now - (episode[EP_AT] or now))
             if episode[EP_LEARNED] is None:
-                episode[EP_LEARNED] = learned
+                episode[EP_LEARNED] = _promoted_learned(
+                    episode[EP_ENDED], learned
+                )
         if taint_seconds is not None:
             episode[EP_TAINT_SECONDS] = taint_seconds
         # The ending, the lag and the learned verdict are all cold
