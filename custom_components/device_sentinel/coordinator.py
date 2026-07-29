@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.5 (2026-07-28)
+# File: coordinator.py, Version: 0.10.6 (2026-07-29)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -61,7 +61,16 @@ from .const import (
     NOTIFY_KIND_FAMILY,
     PAIRING_GRACE_SECONDS_DEFAULT,
     LEARNED_PAIRING,
+    BRIDGE_DOWN,
+    BRIDGE_UNKNOWN,
     STACK_Z2M,
+    SYS_BRIDGE_DOWN,
+    SYS_BRIDGE_UP,
+    SYS_EPOCH_RESET,
+    SYS_OPTIONS_CHANGED,
+    SYS_PAIRING_CLOSED,
+    SYS_PAIRING_OPEN,
+    SYS_RESTART,
     STACK_ZHA,
     STACK_ZWAVE,
     STACK_MATTER,
@@ -186,6 +195,7 @@ from .const import (
     DEFAULT_TAINT_SHARE_PCT,
     DATA_EPISODES,
     DATA_INCIDENTS,
+    DATA_SYSTEM_EVENTS,
     DATA_TODO_JOURNAL,
     SIGNAL_PROBLEM_ADDITION,
     TODO_ACKED_AT,
@@ -356,6 +366,9 @@ class DeviceSentinelCoordinator(
         # to hear it.
         self._last_alive: float | None = None
         self._downtime: float = 0.0
+        # The moment this run began listening, which is
+        # what the restart event is stamped with.
+        self._started_at: float | None = None
         self._brief_unsub: Any | None = None
         # One bridge reader per detected coordinator stack that can
         # report its own liveness and pairing state (#145). Populated in
@@ -363,6 +376,17 @@ class DeviceSentinelCoordinator(
         # is the only reader today; ZHA and Z-Wave reach their state
         # through different doors and are added later.
         self._bridge_readers: dict[str, Any] = {}
+        # The last bridge state and pairing flag seen per
+        # stack, so the tick can tell a transition from a
+        # steady reading. Nothing polls the reader
+        # otherwise: its state is read on demand, so a
+        # bridge could come and go unrecorded.
+        self._bridge_seen: dict[str, str] = {}
+        self._pairing_seen: dict[str, bool] = {}
+        self._bridge_down_at: dict[str, float] = {}
+        self._pairing_open_at: dict[str, float] = {}
+        self._pending_epoch_wipe: int | None = None
+        self._options_seen: dict[str, Any] = dict(entry.options)
 
     # ------------------------------------------------------------- setup
 
@@ -405,6 +429,7 @@ class DeviceSentinelCoordinator(
         loaded.setdefault(DATA_TODO_JOURNAL, [])
         loaded.setdefault(DATA_EPISODES, [])
         loaded.setdefault(DATA_INCIDENTS, [])
+        loaded.setdefault(DATA_SYSTEM_EVENTS, [])
         # The dry-run outbox was retired at 0.9.11 once the
         # notifications it previewed had been sending for
         # several releases. Drop what an older install stored,
@@ -474,6 +499,10 @@ class DeviceSentinelCoordinator(
                 record.setdefault(DEV_BATTERY_DAILY, [])
                 wiped += 1
             loaded[DATA_STATS_EPOCH] = STATS_EPOCH
+            # Only when it actually wiped something. A fresh
+            # install sets the epoch with no devices to reset, which
+            # is an install rather than an event.
+            self._pending_epoch_wipe = wiped or None
             LOGGER.info(
                 "Statistics epoch %s: learned statistics reset for %d "
                 "devices so rhythms are learned under the final rule "
@@ -608,6 +637,21 @@ class DeviceSentinelCoordinator(
         # it) runs whether or not a user ever enables the sensor, so
         # detection never depends on a display choice.
         await self._start_bridge_readers()
+
+        # The house's own record of what happened to it. Written here
+        # rather than at load, so a start that failed halfway leaves
+        # no claim that the system came back.
+        self._record_system_event(
+            SYS_RESTART,
+            duration=self._downtime if self._downtime > 0.0 else None,
+            when=self._started_at,
+        )
+        if self._pending_epoch_wipe is not None:
+            self._record_system_event(
+                SYS_EPOCH_RESET,
+                detail=f"{self._pending_epoch_wipe} devices",
+            )
+            self._pending_epoch_wipe = None
 
         LOGGER.info(
             "Device Sentinel v%s setup complete: setup_count=%s, "
@@ -2183,6 +2227,85 @@ class DeviceSentinelCoordinator(
             self._clocks_to_save, COLD_WRITE_DEBOUNCE_SECONDS
         )
 
+    def _read_bridge(
+        self, stack: str, reader: Any
+    ) -> tuple[str, bool] | None:
+        """Return a reader's state and pairing flag, or None if it
+        faulted.
+
+        A reader that cannot answer is not an event. Following #147:
+        any failure degrades to no reading and says so at debug,
+        rather than being swallowed or allowed to stop the tick that
+        every other judgment runs on.
+        """
+        try:
+            return reader.state, reader.pairing_open
+        except Exception as err:  # noqa: BLE001
+            LOGGER.debug(
+                "Bridge reader for %s faulted, not sampled: %s",
+                stack,
+                err,
+            )
+            return None
+
+    @callback
+    def _sample_bridges(self) -> None:
+        """Record a bridge or a pairing window changing state.
+
+        Nothing else polls the readers: their state is read on demand
+        by the sensors and the pairing check, so a bridge could go
+        down and come back with no trace anywhere. Sampling on the
+        tick gives minute granularity, which is finer than any
+        outage worth writing down.
+
+        The unknown state is never recorded. It means nothing has
+        been heard from the bridge yet, which is the shape of a fresh
+        start rather than of anything happening, and recording it
+        would put a bridge event under every restart.
+        """
+        now = dt_util.utcnow().timestamp()
+        for stack, reader in self._bridge_readers.items():
+            sample = self._read_bridge(stack, reader)
+            if sample is None:
+                continue
+            state, pairing = sample
+            if state == BRIDGE_UNKNOWN:
+                continue
+            was = self._bridge_seen.get(stack)
+            self._bridge_seen[stack] = state
+            if was is not None and was != state:
+                if state == BRIDGE_DOWN:
+                    self._bridge_down_at[stack] = now
+                    self._record_system_event(
+                        SYS_BRIDGE_DOWN, scope=stack
+                    )
+                elif was == BRIDGE_DOWN:
+                    since = self._bridge_down_at.pop(stack, None)
+                    self._record_system_event(
+                        SYS_BRIDGE_UP,
+                        scope=stack,
+                        duration=(
+                            now - since if since is not None else None
+                        ),
+                    )
+            open_was = self._pairing_seen.get(stack)
+            self._pairing_seen[stack] = pairing
+            if open_was is not None and open_was != pairing:
+                if pairing:
+                    self._pairing_open_at[stack] = now
+                    self._record_system_event(
+                        SYS_PAIRING_OPEN, scope=stack
+                    )
+                else:
+                    since = self._pairing_open_at.pop(stack, None)
+                    self._record_system_event(
+                        SYS_PAIRING_CLOSED,
+                        scope=stack,
+                        duration=(
+                            now - since if since is not None else None
+                        ),
+                    )
+
     @callback
     def _note_downtime(
         self, loaded: dict[str, Any], hot: dict[str, Any] | None
@@ -2195,6 +2318,7 @@ class DeviceSentinelCoordinator(
         up to one hot-file window early, which errs toward crediting
         too much rather than too little and is the safer direction.
         """
+        self._started_at = dt_util.utcnow().timestamp()
         stamps = [
             v
             for v in (loaded.get(DATA_SAVED_AT), (hot or {}).get(DATA_SAVED_AT))
@@ -2304,6 +2428,7 @@ class DeviceSentinelCoordinator(
         runs in the report path, not here).
         """
         self._sweep_storms(dt_util.utcnow().timestamp())
+        self._sample_bridges()
         self._judge_all_devices()
         # The sync follows the sweep every tick, so a freeze the
         # sweep just fired, a battery level that drifted, or a rail
@@ -3225,7 +3350,27 @@ class DeviceSentinelCoordinator(
 
     async def async_options_updated(self) -> None:
         """Re-judge the fleet under new options, live, no restart."""
+        # Home Assistant has already replaced the entry's options by
+        # the time this runs, so the comparison is against a copy
+        # taken when they were last applied rather than against the
+        # entry itself, which would compare the new options with
+        # themselves and find nothing.
+        before = self._options_seen
+        after = dict(self.entry.options)
+        self._options_seen = after
         self._rebuild_registry_view()
+        moved = sorted(
+            key for key in set(before) | set(after)
+            if before.get(key) != after.get(key)
+        )
+        if moved:
+            # Which setting moved, not merely that one did. A row
+            # saying something changed cannot answer, months later,
+            # why a device started being reported when nothing in the
+            # house had altered.
+            self._record_system_event(
+                SYS_OPTIONS_CHANGED, detail=", ".join(moved)
+            )
         LOGGER.debug(
             "Options updated: low threshold now %s, %d devices and %d "
             "entities excluded; re-evaluating",
