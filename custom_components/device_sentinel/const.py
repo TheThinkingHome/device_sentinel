@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.4 (2026-07-28)
+# File: const.py, Version: 0.10.6 (2026-07-29)
 
 """Constants for the Device Sentinel integration."""
 
@@ -779,6 +779,43 @@ LEGACY_CAUSE_UNOBSERVED = "on its own"
 
 REPORT_BRIEF_PREFIX = "daily_brief_"
 BRIEF_KEEP_DAYS = 14
+
+# The system events log: what happened to the house rather than to a
+# device. Every other record here is device-scoped, so when a bridge
+# reconnect quiets fifty devices at once the record can only conjugate
+# it through the fifty, and a reader months later sees fifty faults
+# rather than one cause. These rows sit above the device rows and
+# explain them; they never suppress them, because the suppressed
+# evidence is exactly what a person goes looking for afterwards.
+#
+# Kept for the retention the person chose for device statistics
+# rather than the fourteen days an incident keeps. An incident older
+# than a fortnight has been fixed or is still standing, but how often
+# this house loses power is a question about the house, and it is
+# only answerable over seasons.
+DATA_SYSTEM_EVENTS = "system_events"
+SYS_WHEN = "when"
+SYS_KIND = "kind"
+# What the event applies to: the whole system, or one stack, or one
+# integration. A bridge belongs to its stack; a restart belongs to
+# everything.
+SYS_SCOPE = "scope"
+SYS_SCOPE_SYSTEM = "system"
+# The specific thing, where a kind alone is not enough to be useful
+# later: which setting moved, which bridge went quiet.
+SYS_DETAIL = "detail"
+# Present only where the event has a span. A bridge outage lasts; a
+# restart is an instant, and carries instead the time nothing was
+# listening, which is the one number that explains the gaps around it.
+SYS_DURATION = "duration"
+
+SYS_RESTART = "restart"
+SYS_BRIDGE_DOWN = "bridge_down"
+SYS_BRIDGE_UP = "bridge_up"
+SYS_PAIRING_OPEN = "pairing_open"
+SYS_PAIRING_CLOSED = "pairing_closed"
+SYS_EPOCH_RESET = "epoch_reset"
+SYS_OPTIONS_CHANGED = "options_changed"
 
 DATA_EPISODES = "silence_episodes"
 EPISODE_KEEP_DAYS = 14
