@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.10.4 (2026-07-28)
+# File: reports.py, Version: 0.10.6 (2026-07-29)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -40,6 +40,7 @@ from .const import (
     DATA_DEVICES,
     DATA_EPISODES,
     DATA_INCIDENTS,
+    DATA_SYSTEM_EVENTS,
     DEFAULT_REMINDER_TIME,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
@@ -73,6 +74,19 @@ from .const import (
     INC_KIND,
     INC_NAME,
     INC_WHEN,
+    SYS_BRIDGE_DOWN,
+    SYS_BRIDGE_UP,
+    SYS_DETAIL,
+    SYS_DURATION,
+    SYS_EPOCH_RESET,
+    SYS_KIND,
+    SYS_OPTIONS_CHANGED,
+    SYS_PAIRING_CLOSED,
+    SYS_PAIRING_OPEN,
+    SYS_RESTART,
+    SYS_SCOPE,
+    SYS_SCOPE_SYSTEM,
+    SYS_WHEN,
     LEARNING_MIN_DAYS,
     LOGGER,
     REPORT_BRIEF_PREFIX,
@@ -951,11 +965,93 @@ class ReportWritingMixin:
         rows.sort(key=lambda row: row[2])
         return rows
 
+    def _system_event_sentence(self, row: dict[str, Any]) -> str:
+        """One thing that happened to the house, as a sentence.
+
+        Deliberately plain. These sit above the device lines and
+        explain them, so the useful part is the fact and the time,
+        not the telling of it.
+        """
+        when = self._brief_moment(row[SYS_WHEN])
+        scope = row.get(SYS_SCOPE) or SYS_SCOPE_SYSTEM
+        detail = row.get(SYS_DETAIL)
+        span = row.get(SYS_DURATION)
+        held = self._human_span(span) if span else None
+        kind = row.get(SYS_KIND)
+        if kind == SYS_RESTART:
+            if held:
+                return (
+                    f"The system restarted at {when} after {held} "
+                    "with nothing listening."
+                )
+            return f"The system restarted at {when}."
+        if kind == SYS_BRIDGE_DOWN:
+            return f"The {scope} bridge went down at {when}."
+        if kind == SYS_BRIDGE_UP:
+            if held:
+                return (
+                    f"The {scope} bridge came back at {when} after "
+                    f"{held}."
+                )
+            return f"The {scope} bridge came back at {when}."
+        if kind == SYS_PAIRING_OPEN:
+            return f"A {scope} pairing window opened at {when}."
+        if kind == SYS_PAIRING_CLOSED:
+            if held:
+                return (
+                    f"The {scope} pairing window closed at {when} "
+                    f"after {held}."
+                )
+            return f"The {scope} pairing window closed at {when}."
+        if kind == SYS_EPOCH_RESET:
+            extra = f" for {detail}" if detail else ""
+            return f"Learned statistics were reset at {when}{extra}."
+        if kind == SYS_OPTIONS_CHANGED:
+            extra = f": {detail}" if detail else ""
+            return f"Settings changed at {when}{extra}."
+        return f"{kind} at {when}."
+
+    def _system_event_phrase(self, row: dict[str, Any]) -> str:
+        """The same event as a table cell rather than a sentence."""
+        scope = row.get(SYS_SCOPE) or SYS_SCOPE_SYSTEM
+        detail = row.get(SYS_DETAIL)
+        span = row.get(SYS_DURATION)
+        held = self._human_span(span) if span else None
+        kind = row.get(SYS_KIND)
+        if kind == SYS_RESTART:
+            return (
+                f"system restarted, {held} unwatched"
+                if held
+                else "system restarted"
+            )
+        if kind == SYS_BRIDGE_DOWN:
+            return f"{scope} bridge went down"
+        if kind == SYS_BRIDGE_UP:
+            return (
+                f"{scope} bridge came back after {held}"
+                if held
+                else f"{scope} bridge came back"
+            )
+        if kind == SYS_PAIRING_OPEN:
+            return f"{scope} pairing window opened"
+        if kind == SYS_PAIRING_CLOSED:
+            return (
+                f"{scope} pairing window closed after {held}"
+                if held
+                else f"{scope} pairing window closed"
+            )
+        if kind == SYS_EPOCH_RESET:
+            return f"learned statistics reset ({detail})" if detail else "learned statistics reset"
+        if kind == SYS_OPTIONS_CHANGED:
+            return f"settings changed ({detail})" if detail else "settings changed"
+        return str(kind)
+
     def _brief_prose(
         self,
         incidents: list[dict[str, Any]],
         now_rows: list[tuple[str, str, float, str, str]],
         window_start: float,
+        sys_events: list[dict[str, Any]] | None = None,
     ) -> list[str]:
         """Return the brief's opening prose.
 
@@ -985,6 +1081,18 @@ class ReportWritingMixin:
                 standing.append(line)
         lines = ["## In Short", ""]
         since_text = self._brief_moment(window_start)
+        # Above the device lines, not among them. What happened to
+        # the house is the context for what happened to the devices,
+        # and a reader who has it will not read fifty consequences as
+        # fifty faults.
+        house = [
+            self._system_event_sentence(row)
+            for row in sorted(
+                sys_events or [], key=lambda row: row[SYS_WHEN]
+            )
+        ]
+        if house:
+            lines += [" ".join(house), ""]
         if told:
             lines += [f"Since {since_text}: " + " ".join(told), ""]
         else:
@@ -1029,6 +1137,16 @@ class ReportWritingMixin:
             and row[INC_DEVICE_ID] not in silenced
         ]
         incidents.sort(key=lambda row: row[INC_WHEN], reverse=True)
+        # The house's own events, over the same window. Never
+        # filtered by exclusion or acknowledgment: a person silencing
+        # one device has not asked to stop hearing that the power
+        # failed.
+        sys_events = [
+            row
+            for row in (self.data.get(DATA_SYSTEM_EVENTS) or [])
+            if window_start <= row[SYS_WHEN] <= window_end
+        ]
+        sys_events.sort(key=lambda row: row[SYS_WHEN], reverse=True)
         opened = sum(
             1 for row in incidents if row[INC_EVENT] == INCIDENT_OPENED
         )
@@ -1048,7 +1166,9 @@ class ReportWritingMixin:
             scope,
             "",
         ]
-        lines += self._brief_prose(incidents, now_rows, window_start)
+        lines += self._brief_prose(
+            incidents, now_rows, window_start, sys_events
+        )
         lines += ["## Now", ""]
         if not now_rows:
             lines += ["Nothing needs attention.", ""]
@@ -1083,23 +1203,31 @@ class ReportWritingMixin:
                 )
             lines.append("")
         lines += ["## Last 24 Hours", ""]
-        if not incidents:
+        if not incidents and not sys_events:
             lines += ["Nothing happened.", ""]
         else:
             lines += [
-                f"{len(incidents)} event"
-                f"{'s' if len(incidents) != 1 else ''}. "
+                f"{len(incidents) + len(sys_events)} event"
+                f"{'s' if len(incidents) + len(sys_events) != 1 else ''}. "
                 f"{opened} problem{'s' if opened != 1 else ''} "
                 f"started, {resolved} ended.",
                 "",
                 "| TIME | DEVICE | WHAT HAPPENED |",
                 "|---|---|---|",
             ]
-            for row in incidents:
+            merged = [
+                (row[INC_WHEN], self._report_cell(row[INC_NAME]),
+                 self._brief_phrase(row))
+                for row in incidents
+            ] + [
+                (row[SYS_WHEN], "The system",
+                 self._system_event_phrase(row))
+                for row in sys_events
+            ]
+            merged.sort(key=lambda item: item[0], reverse=True)
+            for when, who, what in merged:
                 lines.append(
-                    f"| {self._brief_moment(row[INC_WHEN])} "
-                    f"| {self._report_cell(row[INC_NAME])} "
-                    f"| {self._brief_phrase(row)} |"
+                    f"| {self._brief_moment(when)} | {who} | {what} |"
                 )
             lines.append("")
         # Named for the day the window opened, not the moment of
