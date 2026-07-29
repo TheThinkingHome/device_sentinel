@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_bridge_pairing.py, Version: 0.9.9 (2026-07-26)
+# File: test_bridge_pairing.py, Version: 0.10.6 (2026-07-29)
 
 """Coordinator stacks, the Z2M bridge, and the pairing override.
 
@@ -54,7 +54,14 @@ from custom_components.device_sentinel.const import (
     EP_TAINT_SECONDS,
     FREEZE_ARMING_DAYS,
     STACK_MATTER,
+    DATA_SYSTEM_EVENTS,
     STACK_Z2M,
+    SYS_BRIDGE_DOWN,
+    SYS_BRIDGE_UP,
+    SYS_KIND,
+    SYS_PAIRING_CLOSED,
+    SYS_PAIRING_OPEN,
+    SYS_SCOPE,
     STACK_ZHA,
     STACK_ZWAVE,
     STARTUP_GRACE_SECONDS,
@@ -611,3 +618,122 @@ async def test_pairing_gap_does_not_widen_the_rhythm(
     today = record.get("today_max")
     # The 3h (10800s) pairing gap was retracted, so today_max is not it.
     assert today is None or today < 3.0 * 3600.0
+
+
+def _kinds(coord, kind):
+    return [
+        row
+        for row in coord.data.get(DATA_SYSTEM_EVENTS, [])
+        if row[SYS_KIND] == kind
+    ]
+
+
+async def test_the_bridge_going_down_and_back_is_recorded(
+    hass: HomeAssistant, freezer
+):
+    """One line above fifty device rows, saying why they happened.
+
+    Nothing else polls the reader: its state is read on demand by the
+    sensors and the pairing check, so a bridge could go away and come
+    back leaving no trace anywhere but in the devices it silenced.
+    """
+    coord = await setup_coordinator(hass)
+    reader = _running_reader(hass)
+    coord._bridge_readers[STACK_Z2M] = reader
+    await coord._on_render_tick(None)          # the first, steady reading
+
+    reader._on_state(_msg("offline"))
+    await coord._on_render_tick(None)
+    down = _kinds(coord, SYS_BRIDGE_DOWN)
+    assert len(down) == 1
+    assert down[0][SYS_SCOPE] == STACK_Z2M
+
+    freezer.tick(360)
+    reader._on_state(_msg("online"))
+    await coord._on_render_tick(None)
+    up = _kinds(coord, SYS_BRIDGE_UP)
+    assert len(up) == 1
+    assert up[0]["duration"] >= 300, "the outage lost its span"
+
+
+async def test_a_steady_bridge_records_nothing(
+    hass: HomeAssistant, freezer
+):
+    """Only transitions. A reader sampled every minute all day would
+    otherwise fill the record with the news that nothing changed."""
+    coord = await setup_coordinator(hass)
+    coord._bridge_readers[STACK_Z2M] = _running_reader(hass)
+    for _ in range(4):
+        await coord._on_render_tick(None)
+    assert _kinds(coord, SYS_BRIDGE_DOWN) == []
+    assert _kinds(coord, SYS_BRIDGE_UP) == []
+
+
+class _Stub:
+    """A reader whose state can be set, to drive the sampler alone.
+
+    It carries async_stop because the coordinator's shutdown calls it
+    on every reader, and a stub without it fails the unload, leaves
+    the render tick uncancelled, and turns a passing test into a
+    teardown error.
+    """
+
+    def __init__(self, state, pairing=False):
+        self.state = state
+        self.pairing_open = pairing
+
+    def async_stop(self):
+        return None
+
+
+async def test_a_blip_to_unknown_does_not_lose_the_recovery(
+    hass: HomeAssistant, freezer
+):
+    """Unknown is not a state the bridge is in, it is the absence of
+    news, and treating it as one costs the recovery.
+
+    A bridge that is down, briefly unheard, and then back would
+    otherwise leave the down recorded and the return not, because the
+    sampler would have forgotten it was ever down. The outage would
+    read as permanent for as long as the record is kept.
+    """
+    coord = await setup_coordinator(hass)
+    coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_RUNNING)
+    await coord._on_render_tick(None)
+
+    coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_DOWN)
+    await coord._on_render_tick(None)
+    assert len(_kinds(coord, SYS_BRIDGE_DOWN)) == 1
+
+    coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_UNKNOWN)
+    await coord._on_render_tick(None)
+
+    freezer.tick(120)
+    coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_RUNNING)
+    await coord._on_render_tick(None)
+
+    up = _kinds(coord, SYS_BRIDGE_UP)
+    assert len(up) == 1, "the return was lost across the blip"
+    assert up[0]["duration"] >= 60
+
+
+async def test_a_pairing_window_is_recorded_with_its_span(
+    hass: HomeAssistant, freezer
+):
+    """Pairing already discards gaps (#150); this says when and for
+    how long, so a discarded gap has a visible reason."""
+    coord = await setup_coordinator(hass)
+    reader = _running_reader(hass)
+    coord._bridge_readers[STACK_Z2M] = reader
+    await coord._on_render_tick(None)
+
+    reader._on_info(_msg('{"permit_join": true, "permit_join_end": 1}'))
+    await coord._on_render_tick(None)
+    assert len(_kinds(coord, SYS_PAIRING_OPEN)) == 1
+
+    freezer.tick(120)
+    reader._on_info(_msg('{"permit_join": false}'))
+    await coord._on_render_tick(None)
+    closed = _kinds(coord, SYS_PAIRING_CLOSED)
+    assert len(closed) == 1
+    assert closed[0]["duration"] >= 60
