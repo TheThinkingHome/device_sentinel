@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.7 (2026-07-29)
+# File: coordinator.py, Version: 0.10.8 (2026-07-29)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -2507,16 +2507,34 @@ class DeviceSentinelCoordinator(
     async def _on_hass_stop(self, _event: Event) -> None:
         """Stamp open silences as intervention-ended, then flush.
 
-        A restart is an intervention: it can revive a wedged radio,
+        A restart is an intervention: it can revive a stuck radio,
         so any silence running when it happens is truncated rather
         than completed. Stamping here, before the flush, is what
         makes the distinction survive into the next boot.
+
+        The flush is unconditional, and that is the point of it. It
+        used to run only when something was outstanding, but the
+        stamp above reaches _mark_cold_dirty, whose last act is to
+        clear the very flag that condition read. So a stop with any
+        silence running skipped its own flush, left a scheduled write
+        on each store, and let Home Assistant's final-write stage
+        write them afterwards. That stage stamps each file as it goes
+        and in no fixed order, so the small file could come out the
+        older of the two, and the next start then refuses to merge it
+        (#101). Under the current phase that costs nothing, because
+        the main file still carries the clocks; under the phase that
+        removes them it would leave every device with no clock at all.
+        One write on a stop is not worth a condition.
+
+        Flushing also cancels both scheduled writes, so the stop is
+        the last thing to touch either file. That is what makes the
+        saved stamp the true moment of stopping, which is the value
+        #160 measures observed silence against.
         """
         self._stamp_intervention(
             EPISODE_ENDED_REBOOT, dt_util.utcnow().timestamp()
         )
-        if self._dirty or self._critical:
-            await self._save_now()
+        await self._save_now()
 
     # --------------------------------------------------------- listeners
 
