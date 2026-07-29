@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage.py, Version: 0.10.6 (2026-07-29)
+# File: test_storage.py, Version: 0.10.9 (2026-07-29)
 
 """Persistence: the write cadence, the split shadow, and retention.
 
@@ -47,8 +47,6 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.device_sentinel.const import (
     BRIEF_KEEP_DAYS,
     CLOCK_FIELDS,
-    COLD_WRITE_CAP_SECONDS,
-    COLD_WRITE_DEBOUNCE_SECONDS,
     CONF_COALESCE_MINUTES,
     CONF_EPISODE_SHARE,
     CONF_RETENTION_DAYS,
@@ -154,8 +152,7 @@ class _StoreSpy:
         # accident rather than chosen.
         assert delay in (
             STORAGE_COALESCE_SECONDS,
-            COLD_WRITE_DEBOUNCE_SECONDS,
-        )
+                )
         self._real_delay(data_func, delay)
 
 
@@ -186,24 +183,47 @@ def _clocks(hass_storage):
 # ==================================================================
 
 async def test_routine_churn_coalesces(hass: HomeAssistant, freezer):
-    """Activity alone schedules a delayed write; nothing saves
-    immediately on the tick."""
+    """The first dirty tick opens the window; churn inside it writes
+    nothing; the window closing writes the hot file alone (#165)."""
     device, entity_id = _register(hass, "r1", "Routine Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
+    # Setup discovers this test's device after its own save, which
+    # sets the cold flag legitimately: a new record is a cold change.
+    # Baseline it so the assertions below measure churn alone.
+    await coord._save_now()
     cold = _StoreSpy(coord._store)
     hot = _StoreSpy(coord._clock_store)
 
+    # The baseline opened the window; a dirty tick past its deadline
+    # writes once and starts the next, keeping a session from
+    # silently running a full interval unsaved.
+    freezer.tick(timedelta(seconds=coord.coalesce_seconds))
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 61))
     async_fire_time_changed(hass)
     await hass.async_block_till_done(wait_background_tasks=True)
+    assert hot.saves == 1
+    assert coord._next_routine_save > 0.0
 
-    assert hot.delays >= 1
-    assert hot.saves == 0
+    # Churn inside the window: nothing written.
+    for step in range(5):
+        hass.states.async_set(entity_id, str(step + 2))
+        await hass.async_block_till_done()
+        freezer.tick(timedelta(seconds=60))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert hot.saves == 1
+
+    # The window closes: the hot file goes out alone.
+    freezer.tick(timedelta(seconds=coord.coalesce_seconds))
+    hass.states.async_set(entity_id, "99")
+    await hass.async_block_till_done()
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert hot.saves == 2
     # Phase B: churn never touches the main file, which is the saving.
-    assert cold.delays == 0
     assert cold.saves == 0
 
 
@@ -283,15 +303,21 @@ async def test_shutdown_flushes_pending(hass: HomeAssistant):
 # The coalesced write actually fires.
 # ==================================================================
 
-async def test_dirty_ticks_schedule_once_and_the_write_fires(
+async def test_dirty_ticks_write_once_per_window(
     hass: HomeAssistant, freezer
 ):
-    """Continuous churn: one schedule per window, and the delayed
-    write really executes when the window elapses. This is the test
-    0.6.5 shipped without."""
+    """Continuous churn costs one write per interval, no more.
+
+    This is the 0.6.5 lesson restated for the new scheduler: a fleet
+    that is always dirty must neither write every tick nor push the
+    deadline forward forever. The deadline is a plain float that only
+    the write that satisfies it advances."""
     device, entity_id = _register(hass, "c1", "Churn Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
+    # Baseline: setup discovered this device after its own save, so
+    # the cold flag is legitimately set; clear it with one write.
+    await coord._save_now()
     spy = _StoreSpy(coord._clock_store)
     cold = _StoreSpy(coord._store)
 
@@ -299,9 +325,10 @@ async def test_dirty_ticks_schedule_once_and_the_write_fires(
     async_fire_time_changed(hass)
     await hass.async_block_till_done(wait_background_tasks=True)
 
-    # Ten dirty ticks inside one window: activity each minute.
+    # Twenty dirty ticks, one a minute: churn crossing one or two
+    # 900 s window boundaries from the baseline write.
     value = 0
-    for _ in range(10):
+    for _ in range(20):
         value += 1
         hass.states.async_set(entity_id, str(value))
         await hass.async_block_till_done()
@@ -309,43 +336,17 @@ async def test_dirty_ticks_schedule_once_and_the_write_fires(
         async_fire_time_changed(hass)
         await hass.async_block_till_done(wait_background_tasks=True)
 
-    assert spy.delays == 1          # scheduled once, never rescheduled
-    assert spy.saves == 0           # nothing immediate for churn
-    assert cold.delays == 0         # and the main file stays put
-    assert cold.saves == 0
-    assert coord._delay_pending is True
-
-    # The window elapses: the delayed write fires for real. The
-    # store's delayed path writes internally rather than through
-    # async_save, so the firing proof is the pending flag clearing,
-    # which only _clocks_to_save does, and it runs exactly when the
-    # store serializes the delayed write. spy.saves staying at zero
-    # proves no immediate save could have cleared it instead.
-    freezer.tick(
-        timedelta(seconds=STORAGE_COALESCE_SECONDS + 30)
-    )
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done(wait_background_tasks=True)
-
-    assert spy.saves == 0
-    assert coord._delay_pending is False
-
-    # More churn after the fire: a fresh window schedules again.
-    value += 1
-    hass.states.async_set(entity_id, str(value))
-    await hass.async_block_till_done()
-    freezer.tick(timedelta(seconds=60))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done(wait_background_tasks=True)
-    assert spy.delays == 2
+    # Twenty-five minutes of churn against a 15 minute window is one
+    # or two boundary writes, never twenty.
+    assert 1 <= spy.saves <= 2
+    assert cold.saves == 0          # and the main file stays put
 
 
-async def test_immediate_save_clears_the_pending_window(
+async def test_immediate_save_restarts_the_window(
     hass: HomeAssistant, freezer
 ):
-    """A critical save mid-window resets the pending flag, so the
-    next churn schedules a clean new window instead of assuming one
-    is still coming."""
+    """A critical save mid-window restarts the interval, so churn
+    after it waits a fresh full window rather than writing early."""
     device, entity_id = _register(hass, "c2", "Reset Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -360,27 +361,22 @@ async def test_immediate_save_clears_the_pending_window(
     freezer.tick(timedelta(seconds=60))
     async_fire_time_changed(hass)
     await hass.async_block_till_done(wait_background_tasks=True)
-    assert coord._delay_pending is True
+    before = coord._next_routine_save
 
-    # An acknowledged-style direct save mid-window.
+    # An acknowledgment-style direct save mid-window.
+    freezer.tick(timedelta(seconds=60))
     await coord._save_now()
-    assert coord._delay_pending is False
+    assert coord._next_routine_save > before
     saves_after_direct = spy.saves
 
-    # New churn: a fresh window schedules.
+    # Churn right after it: inside the fresh window, nothing written.
     hass.states.async_set(entity_id, "2")
     await hass.async_block_till_done()
     freezer.tick(timedelta(seconds=60))
     async_fire_time_changed(hass)
     await hass.async_block_till_done(wait_background_tasks=True)
-    assert coord._delay_pending is True
-    assert spy.delays == 2
-    assert spy.saves == saves_after_direct  # churn stayed routine
+    assert spy.saves == saves_after_direct
 
-
-# ==================================================================
-# The storage split, phase A: the shadow and the backup.
-# ==================================================================
 
 async def test_the_clocks_file_is_written(
     hass: HomeAssistant, hass_storage
@@ -979,21 +975,20 @@ async def test_an_older_hot_file_is_refused(
     assert record[DEV_EVENT_COUNT] == 42
 
 
-async def test_a_cold_write_takes_the_clocks_file_with_it(
+async def test_a_cold_change_takes_the_main_file_along(
     hass: HomeAssistant, freezer
 ):
-    """Both files on one deadline, so the main file can never lead.
+    """The interval write carries both files when the flag is set.
 
-    A cold write alone left the main file newer than the hot one for
-    up to a whole save window. The merge then refuses the hot file
-    and falls back, which costs nothing while the main file still
-    carries clocks and would cost everything once it does not.
+    A cold change used to schedule its own write on its own debounce,
+    and two schedules against one pair of files is the race that let
+    the main file lead the clocks file. Now it sets a flag, and the
+    one scheduler writes both at the interval, main file first, so
+    the hot stamp is always the newer of the pair (#165).
     """
     device, _eid = _register(hass, "pair1", "Paired Device")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
-    cold = _StoreSpy(coord._store)
-    hot = _StoreSpy(coord._clock_store)
 
     coord._record_incident(
         device_id=device.id,
@@ -1001,29 +996,44 @@ async def test_a_cold_write_takes_the_clocks_file_with_it(
         kind="unavailable",
         event=INCIDENT_OPENED,
     )
+    assert coord._cold_dirty is True
 
-    assert cold.delays == 1
-    assert hot.delays == 1, "the clocks file was left behind"
-    assert cold.last_delay == COLD_WRITE_DEBOUNCE_SECONDS
-    assert hot.last_delay == COLD_WRITE_DEBOUNCE_SECONDS
+    cold = _StoreSpy(coord._store)
+    hot = _StoreSpy(coord._clock_store)
+    # Nothing was scheduled by the change itself.
+    assert cold.delays == 0 and hot.delays == 0
+
+    # Force the window closed and tick.
+    coord._next_routine_save = 0.0
+    coord._dirty = True
+    await coord._on_render_tick(None)
+
+    assert cold.saves == 1, "the main file was left behind"
+    assert hot.saves == 1
+    assert coord._cold_dirty is False
 
 
-async def test_the_pairing_survives_the_next_dirty_tick(
+async def test_a_dirty_tick_inside_the_window_moves_nothing(
     hass: HomeAssistant, freezer
 ):
-    """The flag matters as much as the call.
+    """One deadline, owned here, that later dirty ticks cannot push.
 
-    Home Assistant keeps the nearer of two deadlines but records the
-    further one, and defers to it when the timer fires. So a dirty
-    tick asking for a full coalesce window after a cold write would
-    drag the paired write back out to where it started, and the main
-    file would lead again with nothing in the code looking wrong.
-    """
+    The old fault class: Home Assistant's delayed-save machinery kept
+    the nearer of two deadlines but recorded the further one, and
+    deferred to it when the timer fired, so a dirty tick could drag a
+    scheduled write out from under a cold change. The deadline is now
+    a plain float on the coordinator, and a dirty tick inside the
+    window neither writes nor moves it."""
     device, eid = _register(hass, "pair2", "Ticking Device")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     hass.states.async_set(eid, "1")
     await hass.async_block_till_done()
+
+    # Open the window with a first write.
+    await coord._save_now()
+    deadline = coord._next_routine_save
+    assert deadline > 0.0
 
     coord._record_incident(
         device_id=device.id,
@@ -1032,14 +1042,15 @@ async def test_the_pairing_survives_the_next_dirty_tick(
         event=INCIDENT_OPENED,
     )
     hot = _StoreSpy(coord._clock_store)
+    cold = _StoreSpy(coord._store)
 
     coord._dirty = True
     await coord._on_render_tick(None)
 
-    assert hot.delays == 0, (
-        "the tick scheduled a second window and pushed the paired "
-        "write out to it"
-    )
+    assert hot.saves == 0 and hot.delays == 0
+    assert cold.saves == 0 and cold.delays == 0
+    assert coord._next_routine_save == deadline
+    assert coord._cold_dirty is True, "the flag must wait for the window"
 
 
 async def test_an_unstamped_pair_is_left_alone(
@@ -1180,8 +1191,8 @@ async def test_an_incident_schedules_the_main_file(
         event=INCIDENT_OPENED,
     )
 
-    assert spy.delays == 1
-    assert spy.last_delay == COLD_WRITE_DEBOUNCE_SECONDS
+    assert spy.delays == 0, "a cold change must not schedule (#165)"
+    assert coord._cold_dirty is True
 
 
 def _armed_and_silent(coord, device_id, basis_hours, share):
@@ -1235,8 +1246,8 @@ async def test_opening_an_episode_schedules_the_main_file(
     assert coord.data[DATA_DEVICES][device.id].get(
         DEV_FROZEN_SINCE
     ) is None, "the silence tripped a verdict, so this proves nothing"
-    assert spy.delays == 1
-    assert spy.last_delay == COLD_WRITE_DEBOUNCE_SECONDS
+    assert spy.delays == 0, "a cold change must not schedule (#165)"
+    assert coord._cold_dirty is True
 
 
 async def test_closing_an_episode_schedules_the_main_file(
@@ -1270,57 +1281,57 @@ async def test_closing_an_episode_schedules_the_main_file(
         if ep[EP_ENDED] == EPISODE_ENDED_RESUMED
     ]
     assert closed, "the episode never closed"
-    assert spy.delays >= 1
-    assert spy.last_delay == COLD_WRITE_DEBOUNCE_SECONDS
+    assert spy.delays == 0, "a cold change must not schedule (#165)"
+    assert coord._cold_dirty is True
 
 
-async def test_a_wave_of_cold_changes_costs_one_write(
+async def test_a_wave_of_cold_changes_costs_one_flag(
     hass: HomeAssistant, freezer
 ):
     """A bridge reconnect opens an episode on every device at once.
     Sixty full writes in ninety seconds would give back the saving
-    the split exists for, so each change pushes the write out and the
-    wave costs one."""
+    the split exists for. Sixty changes now set one flag, schedule
+    nothing, and the next interval write carries them all (#165)."""
     _register(hass, "cw2", "Wave Device")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
+    await coord._save_now()  # baseline: clear setup's registry flag
     spy = _StoreSpy(coord._store)
 
     for _ in range(60):
         coord._mark_cold_dirty()
         freezer.tick(timedelta(seconds=1))
 
-    # Sixty schedules, but the store coalesces them: the write itself
-    # has not fired, and the burst is still one pending window.
-    assert spy.delays == 60
+    assert spy.delays == 0
     assert spy.saves == 0
+    assert coord._cold_dirty is True
 
 
-async def test_the_cap_stops_a_burst_deferring_for_ever(
+async def test_a_cold_change_waits_at_most_one_interval(
     hass: HomeAssistant, freezer
 ):
-    """Each change pushing the write out is the point, until it is
-    not: a stream that never pauses would defer the write
-    indefinitely, so past the cap it happens regardless."""
+    """The old cap bounded how long a burst could defer the cold
+    write. The bound is now structural: the flag cannot be pushed,
+    so the interval write after the change always carries it."""
     _register(hass, "cw3", "Capped Device")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
+    await coord._save_now()  # baseline: clear setup's registry flag
     spy = _StoreSpy(coord._store)
 
     coord._mark_cold_dirty()
-    assert spy.saves == 0
-    # Still inside the cap: the window is pushed out, not written.
-    freezer.tick(timedelta(seconds=COLD_WRITE_CAP_SECONDS - 5))
-    coord._mark_cold_dirty()
-    await hass.async_block_till_done(wait_background_tasks=True)
+    # A burst keeps arriving; nothing defers because nothing schedules.
+    for _ in range(10):
+        freezer.tick(timedelta(seconds=30))
+        coord._mark_cold_dirty()
     assert spy.saves == 0
 
-    # Past it: the write happens rather than being deferred again.
-    freezer.tick(timedelta(seconds=10))
-    coord._mark_cold_dirty()
-    await hass.async_block_till_done(wait_background_tasks=True)
+    # The interval closes: the write happens and the flag clears.
+    freezer.tick(timedelta(seconds=coord.coalesce_seconds))
+    coord._dirty = True
+    await coord._on_render_tick(None)
     assert spy.saves == 1
-    assert coord._cold_since is None
+    assert coord._cold_dirty is False
 
 
 async def test_a_freeze_stamp_is_critical_not_merely_cold(
@@ -1467,3 +1478,108 @@ async def test_applying_the_same_settings_records_nothing(
         for row in coord.data[DATA_SYSTEM_EVENTS]
         if row[SYS_KIND] == SYS_OPTIONS_CHANGED
     ] == []
+
+
+async def test_the_main_file_never_leads_the_clocks_file(
+    hass: HomeAssistant, freezer, hass_storage
+):
+    """The invariant the whole 0.10.9 cadence exists for (#165).
+
+    Cold changes arrive at every offset inside the interval, critical
+    saves land mid-window, and churn runs throughout. After every
+    single write, the main file's stamp is never newer than the
+    clocks file's, because the one scheduler writes cold first and
+    hot second and nothing else writes at all. This is the state the
+    final phase of the split cannot survive, held down structurally.
+    """
+    from custom_components.device_sentinel.const import (
+        DATA_SAVED_AT,
+        STORAGE_CLOCKS_KEY,
+        STORAGE_KEY,
+    )
+
+    device, eid = _register(hass, "inv1", "Invariant Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    await coord._save_now()
+
+    def check(moment):
+        big = ((hass_storage.get(STORAGE_KEY) or {}).get("data") or {}
+               ).get(DATA_SAVED_AT)
+        small = ((hass_storage.get(STORAGE_CLOCKS_KEY) or {}).get("data")
+                 or {}).get(DATA_SAVED_AT)
+        assert small >= big, (
+            f"main file leads by {big - small:.3f}s {moment}"
+        )
+
+    value = 0
+    for minute in range(40):
+        value += 1
+        hass.states.async_set(eid, str(value))
+        await hass.async_block_till_done()
+        # A cold change at every third minute: every offset in the
+        # window gets exercised across the run.
+        if minute % 3 == 0:
+            coord._record_incident(
+                device_id=device.id,
+                name="Invariant Device",
+                kind="unavailable",
+                event=INCIDENT_OPENED,
+            )
+        # A critical save mid-run, as an acknowledgment would.
+        if minute == 17:
+            coord._critical = True
+        freezer.tick(timedelta(seconds=60))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done(wait_background_tasks=True)
+        check(f"at minute {minute}")
+
+    # And a clean stop on top, which must hold the same order.
+    freezer.tick(timedelta(seconds=30))
+    await coord._on_hass_stop(None)
+    check("after the stop")
+
+
+async def test_the_interval_write_puts_the_main_file_first(
+    hass: HomeAssistant, freezer
+):
+    """Within a carried write the main file goes first (#165).
+
+    The stamps cannot prove the order under test, because both files
+    stamp with the same frozen clock, so this watches the calls. If
+    the pair is ever torn mid-write, the survivor must be the main
+    file, whose own clocks are then the newer source; a torn pair
+    the other way round leaves a hot file the merge trusts over a
+    main file that never landed.
+    """
+    device, _eid = _register(hass, "ord1", "Ordered Device")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    await coord._save_now()
+
+    order: list[str] = []
+    real_big = coord._store.async_save
+    real_small = coord._clock_store.async_save
+
+    async def big(data):
+        order.append("main")
+        await real_big(data)
+
+    async def small(data):
+        order.append("clocks")
+        await real_small(data)
+
+    coord._store.async_save = big
+    coord._clock_store.async_save = small
+
+    coord._record_incident(
+        device_id=device.id,
+        name="Ordered Device",
+        kind="unavailable",
+        event=INCIDENT_OPENED,
+    )
+    coord._next_routine_save = 0.0
+    coord._dirty = True
+    await coord._on_render_tick(None)
+
+    assert order == ["main", "clocks"]
