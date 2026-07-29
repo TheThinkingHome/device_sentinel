@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.6 (2026-07-29)
+# File: const.py, Version: 0.10.7 (2026-07-29)
 
 """Constants for the Device Sentinel integration."""
 
@@ -69,6 +69,16 @@ PAIRING_GRACE_SECONDS_DEFAULT = 120.0
 # recovered during pairing. Distinct from the taint discard so the
 # episode report tells a pairing intervention apart from real downtime.
 LEARNED_PAIRING = "no (pairing)"
+
+# A taint records why learning was suppressed, not merely that it was
+# (#164). The device field holds one of these reasons and is falsy
+# when clean, so every truthiness test that read the old boolean
+# still answers "is this tainted". The reasons split into the state
+# the device was actually in and the cause standing above it.
+TAINT_UNAVAILABLE = "unavailable"
+TAINT_UNKNOWN = "unknown"
+TAINT_BRIDGE_DOWN = "bridge down"
+TAINT_REASONS = (TAINT_UNAVAILABLE, TAINT_UNKNOWN, TAINT_BRIDGE_DOWN)
 
 # The sensinel_type stem for a bridge sensor; the stack is appended so
 # each stack's sensor has a stable unique id.
@@ -843,6 +853,17 @@ EPISODE_ENDED_RECONNECT = "intervention (bridge reconnect)"
 # the two are different rungs of the recovery ladder, and the brief
 # quotes the cause verbatim (0.7.0).
 EPISODE_ENDED_RESTART = "intervention (restart)"
+
+# Where more than one reason fits a taint, the widest cause wins
+# (#164): a device felled by its bridge should say so rather than
+# reporting the symptom it showed. The promotion is resolved when the
+# episode closes rather than when the device reports, because the
+# storm that names a reconnect releases after five seconds while the
+# devices behind it trickle back over the following hour: on fourteen
+# days of the development fleet, deciding at the report would have
+# caught two of fifty-six. A reboot is absent deliberately, being an
+# intervention but not a reason a gap goes unlearned.
+TAINT_PROMOTIONS = {EPISODE_ENDED_RECONNECT: TAINT_BRIDGE_DOWN}
 TODO_JOURNAL_KEEP = 100
 SIGNAL_PROBLEM_ADDITION = f"{DOMAIN}_problem_addition"
 
