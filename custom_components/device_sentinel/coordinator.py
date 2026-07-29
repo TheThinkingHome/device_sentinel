@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.6 (2026-07-29)
+# File: coordinator.py, Version: 0.10.7 (2026-07-29)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -209,6 +209,10 @@ from .const import (
     TODO_STATUS,
     TODO_SUMMARY,
     TODO_UID,)
+from .const import (
+    TAINT_UNAVAILABLE,
+    TAINT_UNKNOWN,
+)
 
 BAD_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 
@@ -408,6 +412,23 @@ class DeviceSentinelCoordinator(
                 removed += 1
         return removed
 
+    @staticmethod
+    def _coerce_taint_reasons(devices: dict[str, dict[str, Any]]) -> int:
+        """Give a stored boolean taint the reason it always meant.
+
+        Before #164 the field was true or false, and the only writer
+        was the unavailable path, so a stored true means exactly that.
+        False is left alone: falsy is still how every caller asks
+        whether a device is tainted. Returns how many were converted,
+        zero once storage has been written by this version.
+        """
+        converted = 0
+        for record in devices.values():
+            if record.get(DEV_TAINTED) is True:
+                record[DEV_TAINTED] = TAINT_UNAVAILABLE
+                converted += 1
+        return converted
+
     async def async_setup(self) -> None:
         """Load storage, build the registry view, and start listening."""
         loaded = await self._store.async_load()
@@ -541,6 +562,14 @@ class DeviceSentinelCoordinator(
                 "Storage prune: removed %d legacy field(s) no longer "
                 "in the record schema",
                 legacy,
+            )
+        converted = self._coerce_taint_reasons(loaded[DATA_DEVICES])
+        if converted:
+            LOGGER.info(
+                "Storage upgrade: %d taint(s) carried forward as "
+                "unavailable, the only reason the flag could have "
+                "meant before this version",
+                converted,
             )
 
         self.data = loaded
@@ -1053,7 +1082,16 @@ class DeviceSentinelCoordinator(
             )
             if gone >= debounce and not same_episode:
                 if record is not None and not record[DEV_TAINTED]:
-                    record[DEV_TAINTED] = True
+                    # The reason, not a flag (#164). The state is
+                    # already in hand here and was previously spent
+                    # on the log line below, which is why every
+                    # excluded gap read "unavailable" whatever the
+                    # device had actually done.
+                    record[DEV_TAINTED] = (
+                        TAINT_UNKNOWN
+                        if bad_state == STATE_UNKNOWN
+                        else TAINT_UNAVAILABLE
+                    )
                     self._taint_duration[device_id] = gone
                     self._dirty = True
                     if dt_util.utcnow().timestamp() < self._grace_until:
@@ -1162,7 +1200,7 @@ class DeviceSentinelCoordinator(
         # it, and for a device without one they were discarding the
         # only evidence there was, which is what kept the quiet
         # devices' baselines describing half a night.
-        learned = "no (taint, unavailable)" if tainted else "yes"
+        learned = f"no ({tainted})" if tainted else "yes"
         # A recovery during a pairing window is a hand re-pair, not a
         # self-recovery, so its gap is discarded whatever the taint
         # decided (#145). This overrides the debounce because pairing
