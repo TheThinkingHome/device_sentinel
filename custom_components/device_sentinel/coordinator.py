@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.8 (2026-07-29)
+# File: coordinator.py, Version: 0.10.9 (2026-07-29)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -177,8 +177,6 @@ from .const import (
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
     CLOCK_FIELDS,
-    COLD_WRITE_CAP_SECONDS,
-    COLD_WRITE_DEBOUNCE_SECONDS,
     DATA_SAVED_AT,
     STORAGE_CLOCKS_KEY,
     STORAGE_CLOCKS_VERSION,
@@ -287,16 +285,18 @@ class DeviceSentinelCoordinator(
         # everything. Acknowledgments and options changes keep their
         # own direct awaited saves and never wait for a tick.
         self._critical: bool = False
-        # Whether a delayed routine save is already scheduled. The
-        # 0.6.5 flaw, caught by the storage watch within its first
-        # hour: async_delay_save reschedules on every call, so a
-        # dirty tick every minute pushed the 900-second deadline
-        # forward forever and the routine write never fired. The
-        # delayed save is now scheduled only when none is pending;
-        # the flag clears when the write fires (inside
-        # _data_to_save) and at every immediate save, since a direct
-        # save cancels the store's pending delayed write.
-        self._delay_pending: bool = False
+        # Cold data (episodes, incidents, system events, registry
+        # changes) waiting for the next interval write to carry the
+        # main file (#165). Set by _mark_cold_dirty, cleared inside
+        # _data_to_save so every main-file write satisfies it, and
+        # read only by the render tick's scheduler.
+        self._cold_dirty: bool = False
+        # The one routine-save deadline, on the loop's monotonic
+        # clock (#165). Zero means no window has started, so the
+        # first dirty tick writes at once rather than waiting a full
+        # interval. _save_now restarts it, making a critical save
+        # also the start of a fresh window.
+        self._next_routine_save: float = 0.0
         # Devices whose item a person deleted while the fault was
         # still standing. The next sync re-adds them, and this is
         # how it knows to call that a re-add rather than a fresh
@@ -361,7 +361,6 @@ class DeviceSentinelCoordinator(
         self._held_events: dict[tuple[str, str], Any] = {}
         # When the current burst of cold changes began, so the
         # debounce can be capped rather than pushed out for ever.
-        self._cold_since: float | None = None
         # What the system could actually watch (#160). Both storage
         # files carry the time they were written, so the newer of the
         # two is the last moment anything was observed, and the gap
@@ -2163,12 +2162,12 @@ class DeviceSentinelCoordinator(
     def _data_to_save(self) -> dict[str, Any]:
         """Return the live data, stamped, for a save of the main file.
 
-        A method rather than a lambda so a delayed save serializes the
-        state at write time, not at schedule time. The stamp is what
-        the next load compares against the hot file to decide which
-        holds the newer clocks.
+        The stamp is what the next load compares against the hot
+        file to decide which holds the newer clocks. Serializing the
+        main file is what the cold flag asks for, so it clears here,
+        in the one place every main-file write passes through.
         """
-        self._cold_since = None
+        self._cold_dirty = False
         self.data[DATA_SAVED_AT] = dt_util.utcnow().timestamp()
         return self.data
 
@@ -2223,47 +2222,23 @@ class DeviceSentinelCoordinator(
     def _mark_cold_dirty(self) -> None:
         """Note a change to something the hot file does not carry.
 
-        A routine save writes the nine clock fields and nothing else,
-        so an episode, an incident or a device record had no write of
-        its own and waited for an unrelated critical change. This is
-        that write. It is debounced rather than immediate because a
-        bridge reconnect opens an episode on every device at once,
-        and sixty full writes in ninety seconds would give back the
-        saving the split exists for. Each further change pushes the
-        write out, so a wave costs one write a minute after it ends.
-        The cap is the other half: once a burst has run long enough
-        the write happens anyway, so a stream that never pauses
-        cannot defer it indefinitely.
+        An episode, an incident, a system event, or a device record
+        joining or leaving the registry. Setting the flag is the whole
+        job: the render tick's scheduler reads it when the storage
+        write interval closes and takes the main file along with the
+        hot one, main file first so the hot stamp is always the newer
+        of the pair (#165). Nothing here schedules a write of its own.
+        The old arrangement did, on its own debounce with its own cap,
+        and two independent schedules against one pair of files is the
+        race that produced a main file newer than the clocks file, the
+        state the final phase of the storage split cannot survive.
+
+        The wait this buys is bounded by the interval and is spent on
+        forensic rows alone: anything judgment-bearing is critical and
+        writes both files within the tick that detected it (#100).
         """
+        self._cold_dirty = True
         self._dirty = True
-        now = self.hass.loop.time()
-        if self._cold_since is None:
-            self._cold_since = now
-        elif now - self._cold_since >= COLD_WRITE_CAP_SECONDS:
-            self._cold_since = None
-            self.hass.async_create_task(self._save_now())
-            return
-        self._store.async_delay_save(
-            self._data_to_save, COLD_WRITE_DEBOUNCE_SECONDS
-        )
-        # The clocks file goes with it, on the same deadline (0.10.5).
-        # A cold write on its own left the main file newer than the
-        # hot one, and the merge then refuses a hot file it cannot
-        # trust and falls back to the main file's own clocks. Under
-        # phase B that costs nothing, because the main file still
-        # carries them. Under phase C it would cost everything, so
-        # the state is removed rather than tolerated.
-        #
-        # The pending flag matters as much as the call. Without it
-        # the next dirty tick asks for a window one interval out;
-        # Home Assistant keeps the nearer deadline but records the
-        # further one, and the timer defers to it when it fires,
-        # which would push this write back to where it started.
-        self._delay_pending = True
-        self._dirty = False
-        self._clock_store.async_delay_save(
-            self._clocks_to_save, COLD_WRITE_DEBOUNCE_SECONDS
-        )
 
     def _read_bridge(
         self, stack: str, reader: Any
@@ -2410,11 +2385,8 @@ class DeviceSentinelCoordinator(
 
         Nine of them, taken from what _record_activity and the signal
         path actually write. Everything else is cold and stays in the
-        main file. From 0.10.0 this is the file a routine save writes
-        by itself, so running here means the pending delayed write is
-        firing and the next dirty tick may schedule another window.
+        main file.
         """
-        self._delay_pending = False
         clocks: dict[str, Any] = {}
         for device_id, record in self.data[DATA_DEVICES].items():
             if not isinstance(record, dict):
@@ -2451,7 +2423,9 @@ class DeviceSentinelCoordinator(
         await self._clock_store.async_save(self._clocks_to_save())
         self._dirty = False
         self._critical = False
-        self._delay_pending = False
+        self._next_routine_save = (
+            self.hass.loop.time() + self.coalesce_seconds
+        )
 
     async def _on_render_tick(self, _now: Any) -> None:
         """Sweep storms, judge freezes, persist if dirty, refresh.
@@ -2476,31 +2450,39 @@ class DeviceSentinelCoordinator(
         self._sync_problem_list()
         if self._critical:
             # Something a reboot must not lose changed this tick:
-            # save now, exactly as every tick did before 0.6.5.
+            # save now. _save_now writes both files and restarts the
+            # interval, so a pending cold flag rides along for free.
             await self._save_now()
-        elif self._dirty and not self._delay_pending:
-            # Routine clock churn only: coalesce. Scheduled once per
-            # window, never rescheduled by later dirty ticks, because
-            # async_delay_save restarts its timer on every call and
-            # a fleet that is always dirty would push the deadline
-            # forward forever (the 0.6.6 fix). The store flushes
-            # pending delayed saves itself at shutdown's final-write
-            # event.
-            self._delay_pending = True
-            # Phase B (#101): routine churn is nine fields per device,
-            # so it writes the hot file and leaves the main one alone.
-            # On this fleet that is 45 KB rather than 335 KB, which is
-            # the whole point of the split. What the main file then
-            # lacks is only clocks, and the next load merges them back
-            # from here. Anything a reboot must not lose is critical
-            # and took the immediate path above, which writes both.
-            self._clock_store.async_delay_save(
-                self._clocks_to_save, self.coalesce_seconds
-            )
-            self._dirty = False
         elif self._dirty:
-            # A window is already pending; its write will carry this
-            # tick's churn since the data serializes at fire time.
+            # Routine churn coalesces on one clock (#165): this tick
+            # is the only scheduler, and the deadline is a plain float
+            # here rather than state inside two Store objects. The old
+            # arrangement gave the cold data its own delayed schedule,
+            # and two schedules against one pair of files is the race
+            # that let the main file come out newer than the clocks
+            # file, the state the final phase of the split cannot
+            # survive. A deadline of zero is the first dirty tick of a
+            # session and writes immediately, which keeps the first
+            # window from silently starting a full interval long.
+            now_mono = self.hass.loop.time()
+            if now_mono >= self._next_routine_save:
+                self._next_routine_save = now_mono + self.coalesce_seconds
+                if self._cold_dirty:
+                    # A forensic row is waiting (an episode, an
+                    # incident, a system event, a registry change), so
+                    # the main file goes too, first, keeping the hot
+                    # stamp the newer of the pair. Anything
+                    # judgment-bearing never reaches this branch: it
+                    # is critical and wrote both files within the tick
+                    # that detected it (#100).
+                    await self._store.async_save(self._data_to_save())
+                # Phase B (#101): routine churn is nine fields per
+                # device, so the ordinary window writes the hot file
+                # alone, 45 KB rather than 335 KB on this fleet, which
+                # is the whole point of the split. The main file then
+                # lacks only clocks, and the next load merges them
+                # back from here.
+                await self._clock_store.async_save(self._clocks_to_save())
             self._dirty = False
         self._notify()
 
