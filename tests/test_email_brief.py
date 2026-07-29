@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_email_brief.py, Version: 0.10.4 (2026-07-28)
+# File: test_email_brief.py, Version: 0.10.6 (2026-07-29)
 
 """The incident log and the daily brief: the memory and the report.
 
@@ -795,7 +795,43 @@ async def test_acknowledged_device_leaves_the_whole_brief(
     text = read_brief(hass)
     assert "Quiet Please" not in text
     assert "Nothing needs attention." in text
-    assert "Nothing happened." in text
+    # The device is gone from every surface. The house's own events
+    # remain, because acknowledging one device is not a request to
+    # stop hearing that the system restarted (0.10.6), so the table
+    # is asserted free of the device rather than empty.
+    assert "Nothing has happened since" in text
+    assert "| Quiet Please |" not in text
+
+
+async def test_the_house_speaks_even_on_an_empty_morning(
+    hass: HomeAssistant, read_brief
+):
+    """A restart is worth knowing about with nothing else to report.
+
+    It also explains the rest of the brief: a device revived by a
+    reboot reads as a mystery unless the reboot is written down
+    somewhere a reader will see it.
+    """
+    _register(hass, "h1", "Untroubled")
+    coord = await setup_coordinator(hass)
+    await hass.async_add_executor_job(coord._write_reports, "test")
+
+    text = read_brief(hass)
+    assert "The system restarted" in text
+    assert "Nothing has happened since" in text
+    assert "| The system |" in text
+
+
+async def test_a_fresh_install_does_not_claim_a_statistics_reset(
+    hass: HomeAssistant, read_brief
+):
+    """The epoch is set on a first install with nothing to wipe, and
+    an event that reset nothing would be a fiction on day one."""
+    _register(hass, "h2", "Brand New")
+    coord = await setup_coordinator(hass)
+    await hass.async_add_executor_job(coord._write_reports, "test")
+
+    assert "statistics" not in read_brief(hass).lower()
 
 
 async def test_recovery_of_an_acknowledged_device_is_news(
