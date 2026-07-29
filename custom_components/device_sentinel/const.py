@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.7 (2026-07-29)
+# File: const.py, Version: 0.10.9 (2026-07-29)
 
 """Constants for the Device Sentinel integration."""
 
@@ -129,19 +129,6 @@ STORAGE_CLOCKS_VERSION = 1
 # to merge, which is safe because the two were written together then.
 DATA_SAVED_AT = "saved_at"
 
-# The cold write (0.10.1). Phase B made a routine save write the hot
-# file alone, which left everything else, an episode, an incident, a
-# device record, with no write of its own: it waited for an unrelated
-# critical change, or for midnight, or for a clean stop. This is the
-# write it was missing. Debounced, because a bridge reconnect opens
-# an episode on every device at once and sixty full writes in ninety
-# seconds would undo the saving the split exists for; each change
-# pushes the write further out, so a wave costs one. The cap stops
-# that pushing going on for ever: once a burst has run this long the
-# write happens regardless, which bounds what a power cut can take to
-# the cap rather than to nothing at all.
-COLD_WRITE_DEBOUNCE_SECONDS = 60
-COLD_WRITE_CAP_SECONDS = 300
 
 
 
