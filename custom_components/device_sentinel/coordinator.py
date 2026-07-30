@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.9 (2026-07-29)
+# File: coordinator.py, Version: 0.10.10 (2026-07-30)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -208,11 +208,29 @@ from .const import (
     TODO_SUMMARY,
     TODO_UID,)
 from .const import (
+    RATCHET_FAST_ALLOWANCE,
+    RATCHET_FAST_RHYTHM,
+    RATCHET_SLOW_ALLOWANCE,
+    RATCHET_SLOW_RHYTHM,
     TAINT_UNAVAILABLE,
     TAINT_UNKNOWN,
 )
 
 BAD_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
+
+
+def _span(seconds: float) -> str:
+    """A compact human span for the capped label (#166): 74m, 4.1h, 2.3d.
+
+    Minutes under ninety, hours under two days, days beyond, one
+    decimal where the unit is coarse. The label is read in a table
+    cell, so compactness beats precision.
+    """
+    if seconds < 90 * 60:
+        return f"{seconds / 60:.0f}m"
+    if seconds < 48 * 3600:
+        return f"{seconds / 3600:.1f}h"
+    return f"{seconds / 86400:.1f}d"
 
 
 def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
@@ -1188,10 +1206,37 @@ class DeviceSentinelCoordinator(
                     "from learning (spanned an unavailable stretch)",
                     stamp - last,
                 )
-        elif last is not None:
+        capped_note: str | None = None
+        learned_gap: float | None = None
+        if not tainted and last is not None:
             gap = stamp - last
-            if record[DEV_TODAY_MAX] is None or gap > record[DEV_TODAY_MAX]:
-                record[DEV_TODAY_MAX] = gap
+            learned_gap = gap
+            # The resurrection cap (#166): a gap completing while the
+            # device stands convicted of a freeze may be a hand-fix
+            # nothing can see, so it teaches at most rhythm plus the
+            # ratchet allowance. Judgment and every human-facing
+            # surface keep the true duration; only what learning
+            # stores is capped. Several recoveries in one day each cap
+            # independently, and the comparison below keeps only the
+            # largest.
+            if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_FROZEN:
+                cap = self._resurrection_cap(record)
+                if cap is not None and gap > cap:
+                    learned_gap = cap
+                    capped_note = (
+                        f"capped ({_span(gap)} -> {_span(cap)})"
+                    )
+                    LOGGER.debug(
+                        "Convicted device's completed gap of %.0f s "
+                        "learned as %.0f s under the resurrection cap",
+                        gap,
+                        cap,
+                    )
+            if (
+                record[DEV_TODAY_MAX] is None
+                or learned_gap > record[DEV_TODAY_MAX]
+            ):
+                record[DEV_TODAY_MAX] = learned_gap
 
         # Taint is the only surviving exclusion (#124, #125). Grace
         # and storm are gone: for a device with a protocol clock they
@@ -1199,7 +1244,7 @@ class DeviceSentinelCoordinator(
         # it, and for a device without one they were discarding the
         # only evidence there was, which is what kept the quiet
         # devices' baselines describing half a night.
-        learned = f"no ({tainted})" if tainted else "yes"
+        learned = f"no ({tainted})" if tainted else (capped_note or "yes")
         # A recovery during a pairing window is a hand re-pair, not a
         # self-recovery, so its gap is discarded whatever the taint
         # decided (#145). This overrides the debounce because pairing
@@ -1208,10 +1253,12 @@ class DeviceSentinelCoordinator(
         # decision above stands and nothing is made worse (#147).
         if self._recovered_during_pairing(device_id, now):
             learned = LEARNED_PAIRING
-            if not tainted and last is not None:
+            if not tainted and learned_gap is not None:
                 # Undo the daily-max update this gap just made, so a
-                # pairing gap never widens the learned rhythm.
-                self._retract_today_max(record, stamp - last)
+                # pairing gap never widens the learned rhythm. The
+                # retraction uses what was actually learned, which is
+                # the capped value when the cap bit (#166).
+                self._retract_today_max(record, learned_gap)
             LOGGER.debug(
                 "Device %s recovered during a Z2M pairing window; gap "
                 "discarded as a pairing intervention",
@@ -1707,6 +1754,29 @@ class DeviceSentinelCoordinator(
         a = delta_low / (FREEZE_REF_RHYTHM_FAST**p)
         grace = a * (rhythm**p)
         return min(delta_high, max(delta_low, grace))
+
+    def _resurrection_cap(self, record: dict[str, Any]) -> float | None:
+        """Return the most a convicted device's gap may teach (#166).
+
+        rhythm plus a * rhythm^p, the same power-curve solver as the
+        grace (#85) through the ratchet anchors: fast devices may step
+        half their rhythm, slow ones a tenth, falling continuously
+        between. The rhythm is read as it stands at the moment of
+        recovery, ordinary staleness accepted, no special midnight
+        handling. None means the device is unarmed, and an unarmed
+        device can never stand convicted, so no cap is needed.
+        """
+        daily = record[DEV_DAILY_MAX]
+        if len(daily) < FREEZE_ARMING_DAYS:
+            return None
+        rhythm, _ = self._trimmed_maximum(daily)
+        if rhythm is None or rhythm <= 0:
+            return None
+        p = math.log(RATCHET_SLOW_ALLOWANCE / RATCHET_FAST_ALLOWANCE) / math.log(
+            RATCHET_SLOW_RHYTHM / RATCHET_FAST_RHYTHM
+        )
+        a = RATCHET_FAST_ALLOWANCE / (RATCHET_FAST_RHYTHM**p)
+        return rhythm + a * (rhythm**p)
 
     def _freeze_window(self, record: dict[str, Any]) -> float | None:
         """Return the freeze window for a device, in seconds, or None.
