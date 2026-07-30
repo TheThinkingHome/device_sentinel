@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.9 (2026-07-29)
+# File: const.py, Version: 0.10.10 (2026-07-30)
 
 """Constants for the Device Sentinel integration."""
 
@@ -69,6 +69,26 @@ PAIRING_GRACE_SECONDS_DEFAULT = 120.0
 # recovered during pairing. Distinct from the taint discard so the
 # episode report tells a pairing intervention apart from real downtime.
 LEARNED_PAIRING = "no (pairing)"
+
+# The resurrection cap (#166). A gap completing while the device
+# stands convicted of a freeze is a silent-then-speaks recovery that
+# neither the taint (#137, it never went unavailable) nor the pairing
+# window (#145, no permit-join) can see, so it may be a hand-fix the
+# integration cannot detect (#138). It is learned at most as rhythm
+# plus an allowance, and the allowance is a power curve solved through
+# these two anchors: fifty percent of rhythm at the fast reference,
+# ten percent at the slow one. The fixed anchors are deliberate; they
+# graduate to sliders only once the mechanics are proven in the field.
+# Anchored to the rhythm, the device's own measured fact, rather than
+# the window, because the window is rhythm plus our patience, and
+# learning it back is a feedback loop that diverges on the grace
+# curve. Scope is the frozen verdict alone: an unavailable stretch is
+# attributed silence, the outage explains the gap, and the taint's
+# total discard remains correct for it.
+RATCHET_FAST_RHYTHM = 600.0
+RATCHET_FAST_ALLOWANCE = 300.0
+RATCHET_SLOW_RHYTHM = 43200.0
+RATCHET_SLOW_ALLOWANCE = 4320.0
 
 # A taint records why learning was suppressed, not merely that it was
 # (#164). The device field holds one of these reasons and is falsy
