@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_bridge_pairing.py, Version: 0.10.6 (2026-07-29)
+# File: test_bridge_pairing.py, Version: 0.10.10 (2026-07-30)
 
 """Coordinator stacks, the Z2M bridge, and the pairing override.
 
@@ -597,8 +597,12 @@ async def test_same_recovery_without_binding_is_learned(
 
     ep = _last_episode(coord, device.id)
     assert ep is not None
-    # A 3h self-recovery on a 1h basis, brief unavailable: learned.
-    assert ep[EP_LEARNED] == "yes"
+    # A 3h self-recovery on a 1h basis, brief unavailable: learned,
+    # and since 0.10.10 learned under the resurrection cap (#166),
+    # because the device stood convicted when it spoke. The contrast
+    # with the pairing case holds: a pairing gap is discarded whole,
+    # this one still teaches, bounded.
+    assert ep[EP_LEARNED].startswith("capped (3.0h -> ")
 
 
 async def test_pairing_gap_does_not_widen_the_rhythm(
