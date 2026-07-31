@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage.py, Version: 0.10.9 (2026-07-29)
+# File: test_storage.py, Version: 0.10.11 (2026-07-31)
 
 """Persistence: the write cadence, the split shadow, and retention.
 
@@ -87,6 +87,7 @@ from custom_components.device_sentinel.const import (
     RETENTION_DAYS_MIN,
     RETENTION_DAYS_STEP,
     STARTUP_GRACE_SECONDS,
+    DATA_CLEAN_STOP,
     DATA_SAVED_AT,
     DATA_STATS_EPOCH,
     DEV_SIGNAL_VALUE,
@@ -914,13 +915,21 @@ def _hot(hass_storage, clocks, saved_at):
 
 
 def _cold(hass_storage, devices, saved_at):
-    """Put a main storage file on disk with the given devices."""
+    """Put a main storage file on disk with the given devices.
+
+    Marked as a clean stop, because these tests are about which file
+    supplies the clocks and not about what an unclean stop does to
+    them. Without the marker the load would take the #163 path and
+    reset every clock the merge had just restored, which is correct
+    behaviour and would tell us nothing about the merge.
+    """
     hass_storage[STORAGE_KEY] = {
         "version": 1,
         "data": {
             DATA_DEVICES: devices,
             DATA_STATS_EPOCH: STATS_EPOCH,
             DATA_SAVED_AT: saved_at,
+            DATA_CLEAN_STOP: True,
         },
     }
 
