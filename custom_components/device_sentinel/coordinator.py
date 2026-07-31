@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.10 (2026-07-30)
+# File: coordinator.py, Version: 0.10.11 (2026-07-31)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -58,67 +58,64 @@ from .narrative import NarrativeMixin
 from .reports import ReportWritingMixin
 from .bridge import Z2MBridgeReader
 from .const import (
-    NOTIFY_KIND_FAMILY,
-    PAIRING_GRACE_SECONDS_DEFAULT,
-    LEARNED_PAIRING,
+    ACTION_ACKNOWLEDGED,
+    ACTION_DELETED,
+    ACTION_READDED,
+    ACTION_UNACKNOWLEDGED,
+    BATTERY_CLEAR_MARGIN,
     BRIDGE_DOWN,
     BRIDGE_UNKNOWN,
-    STACK_Z2M,
-    SYS_BRIDGE_DOWN,
-    SYS_BRIDGE_UP,
-    SYS_EPOCH_RESET,
-    SYS_OPTIONS_CHANGED,
-    SYS_PAIRING_CLOSED,
-    SYS_PAIRING_OPEN,
-    SYS_RESTART,
-    STACK_ZHA,
-    STACK_ZWAVE,
-    STACK_MATTER,
-    Z2M_BRIDGE_NAME_MARK,
-    Z2M_BRIDGE_MODEL,
-    Z2M_BRIDGE_MANUFACTURER,
-    BATTERY_CLEAR_MARGIN,
-    CONF_EXCLUDED_DEVICES,
-    CONF_EXCLUDED_INTEGRATIONS,
+    BRIEF_TRIGGER,
+    CLOCK_FIELDS,
+    COALESCE_MINUTES_MAX,
+    COALESCE_MINUTES_MIN,
     CONF_BATTERY_EXCLUDED_DEVICES,
     CONF_BATTERY_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_EXCLUDED_LABELS,
-    CONF_SIGNAL_EXCLUDED_DEVICES,
-    CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
-    CONF_SIGNAL_EXCLUDED_LABELS,
+    CONF_COALESCE_MINUTES,
+    CONF_EPISODE_SHARE,
+    CONF_EXCLUDED_DEVICES,
+    CONF_EXCLUDED_INTEGRATIONS,
+    CONF_EXCLUDED_LABELS,
+    CONF_FREEZE_DELTA_HIGH,
+    CONF_FREEZE_DELTA_LOW,
     CONF_FREEZE_EXCLUDED_DEVICES,
     CONF_FREEZE_EXCLUDED_INTEGRATIONS,
     CONF_FREEZE_EXCLUDED_LABELS,
-    CONF_SIGNAL_SENSITIVITY,
-    DEFAULT_SIGNAL_SENSITIVITY,
-    CONF_EXCLUDED_LABELS,
-    DATA_TODO_ITEMS,
     CONF_LOW_THRESHOLD,
-    DAILY_MAX_KEEP,
     CONF_RETENTION_DAYS,
-    DEFAULT_RETENTION_DAYS,
     CONF_SETTLE_SHARE,
-    DEFAULT_SETTLE_SHARE_PCT,
-    RETENTION_DAYS_MAX,
-    RETENTION_DAYS_MIN,
-    DEFAULT_LOW_THRESHOLD,
-    DATA_STATS_EPOCH,
-    BRIEF_TRIGGER,
-    LEGACY_CAUSE_UNOBSERVED,
-    RECOVERY_CAUSE_UNOBSERVED,
-    SIGNAL_ARMING_DAYS,
-    SIGNAL_SENSITIVITY_MAX,
-    SIGNAL_SENSITIVITY_MIN,
-    SIGNAL_TRIM_LADDER_FORTNIGHT,
-    SIGNAL_TRIM_LADDER_WEEK,
-    TRIM_MIN_SAMPLES,
-    TRIM_TOP_K,
+    CONF_SIGNAL_EXCLUDED_DEVICES,
+    CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
+    CONF_SIGNAL_EXCLUDED_LABELS,
+    CONF_SIGNAL_SENSITIVITY,
+    CONF_TAINT_FLOOR,
+    CONF_TAINT_SHARE,
+    DAILY_MAX_KEEP,
+    DATA_CLEAN_STOP,
     DATA_DEVICES,
+    DATA_EPISODES,
     DATA_FIRST_INSTALLED,
+    DATA_INCIDENTS,
+    DATA_SAVED_AT,
     DATA_SETUP_COUNT,
+    DATA_STATS_EPOCH,
+    DATA_SYSTEM_EVENTS,
+    DATA_TODO_ITEMS,
+    DATA_TODO_JOURNAL,
+    DEFAULT_COALESCE_MINUTES,
+    DEFAULT_EPISODE_SHARE_PCT,
+    DEFAULT_FREEZE_DELTA_HIGH_HR,
+    DEFAULT_FREEZE_DELTA_LOW_MIN,
+    DEFAULT_LOW_THRESHOLD,
+    DEFAULT_RETENTION_DAYS,
+    DEFAULT_SETTLE_SHARE_PCT,
+    DEFAULT_SIGNAL_SENSITIVITY,
+    DEFAULT_TAINT_FLOOR_MINUTES,
+    DEFAULT_TAINT_SHARE_PCT,
+    DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
-    DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
@@ -135,49 +132,61 @@ from .const import (
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     DEV_TODAY_MAX,
-    SIGNAL_NAME_TERMS,
-    RAIL_CONFIRM_DAYS,
-    SIGNAL_RAIL_LQI,
-    SIGNAL_RAIL_RSSI,
-    STATS_EPOCH,
-    LEARNING_MIN_DAYS,
-    CONF_FREEZE_DELTA_LOW,
-    CONF_FREEZE_DELTA_HIGH,
-    DEFAULT_FREEZE_DELTA_LOW_MIN,
-    DEFAULT_FREEZE_DELTA_HIGH_HR,
-    FREEZE_REF_RHYTHM_FAST,
-    FREEZE_REF_RHYTHM_SLOW,
-    FREEZE_ARMING_DAYS,
-    FREEZE_CATEGORY_UNAVAILABLE,
-    FREEZE_CATEGORY_FROZEN,
-    FREEZE_CATEGORY_UNKNOWN,
-    FREEZE_CATEGORY_PRIORITY,
-    FREEZE_CATEGORY_NOT_REPORTED,
-    FREEZE_NOT_REPORTED_SECONDS,
-    FREEZE_UNAVAILABLE_DEBOUNCE,
-    LOGGER,
-    RENDER_TICK_SECONDS,
-    STARTUP_GRACE_SECONDS,
+    EPISODE_ENDED_POWER_LOSS,
     EPISODE_ENDED_REBOOT,
     EPISODE_ENDED_RECONNECT,
     EPISODE_ENDED_RESTART,
-    ACTION_ACKNOWLEDGED,
-    ACTION_DELETED,
-    ACTION_READDED,
-    ACTION_UNACKNOWLEDGED,
+    EPISODE_LEARNED_TRUNCATED,
+    EP_AT,
+    EP_DEVICE_ID,
+    EP_ENDED,
+    EP_LEARNED,
+    EP_SINCE,
+    FREEZE_ARMING_DAYS,
+    FREEZE_CATEGORY_FROZEN,
+    FREEZE_CATEGORY_NOT_REPORTED,
+    FREEZE_CATEGORY_PRIORITY,
+    FREEZE_CATEGORY_UNAVAILABLE,
+    FREEZE_CATEGORY_UNKNOWN,
+    FREEZE_NOT_REPORTED_SECONDS,
+    FREEZE_REF_RHYTHM_FAST,
+    FREEZE_REF_RHYTHM_SLOW,
+    FREEZE_UNAVAILABLE_DEBOUNCE,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
     INC_CAUSE,
-    COALESCE_MINUTES_MAX,
-    COALESCE_MINUTES_MIN,
-    CONF_COALESCE_MINUTES,
-    CONF_EPISODE_SHARE,
-    DEFAULT_COALESCE_MINUTES,
-    DEFAULT_EPISODE_SHARE_PCT,
+    LEARNED_PAIRING,
+    LEARNING_MIN_DAYS,
+    LEGACY_CAUSE_UNOBSERVED,
+    LOGGER,
+    NOTIFY_KIND_FAMILY,
+    PAIRING_GRACE_SECONDS_DEFAULT,
+    RAIL_CONFIRM_DAYS,
+    RATCHET_FAST_ALLOWANCE,
+    RATCHET_FAST_RHYTHM,
+    RATCHET_SLOW_ALLOWANCE,
+    RATCHET_SLOW_RHYTHM,
+    RECOVERY_CAUSE_UNOBSERVED,
+    RENDER_TICK_SECONDS,
+    RETENTION_DAYS_MAX,
+    RETENTION_DAYS_MIN,
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
-    CLOCK_FIELDS,
-    DATA_SAVED_AT,
+    SIGNAL_ARMING_DAYS,
+    SIGNAL_NAME_TERMS,
+    SIGNAL_PROBLEM_ADDITION,
+    SIGNAL_RAIL_LQI,
+    SIGNAL_RAIL_RSSI,
+    SIGNAL_SENSITIVITY_MAX,
+    SIGNAL_SENSITIVITY_MIN,
+    SIGNAL_TRIM_LADDER_FORTNIGHT,
+    SIGNAL_TRIM_LADDER_WEEK,
+    STACK_MATTER,
+    STACK_Z2M,
+    STACK_ZHA,
+    STACK_ZWAVE,
+    STARTUP_GRACE_SECONDS,
+    STATS_EPOCH,
     STORAGE_CLOCKS_KEY,
     STORAGE_CLOCKS_VERSION,
     STORAGE_KEY,
@@ -187,33 +196,32 @@ from .const import (
     STORM_HISTORY_SECONDS,
     STORM_RELEASE_SECONDS,
     STORM_WINDOW_SECONDS,
-    CONF_TAINT_FLOOR,
-    CONF_TAINT_SHARE,
-    DEFAULT_TAINT_FLOOR_MINUTES,
-    DEFAULT_TAINT_SHARE_PCT,
-    DATA_EPISODES,
-    DATA_INCIDENTS,
-    DATA_SYSTEM_EVENTS,
-    DATA_TODO_JOURNAL,
-    SIGNAL_PROBLEM_ADDITION,
+    SYS_BRIDGE_DOWN,
+    SYS_BRIDGE_UP,
+    SYS_EPOCH_RESET,
+    SYS_OPTIONS_CHANGED,
+    SYS_PAIRING_CLOSED,
+    SYS_PAIRING_OPEN,
+    SYS_RESTART,
+    SYS_UNCLEAN_RESTART,
+    TAINT_UNAVAILABLE,
+    TAINT_UNKNOWN,
     TODO_ACKED_AT,
     TODO_DESCRIPTION,
     TODO_DEVICE_ID,
     TODO_JOURNAL_KEEP,
+    TODO_KINDS,
     TODO_KIND_BATTERY,
     TODO_KIND_SIGNAL,
-    TODO_KINDS,
     TODO_SORT_NAME,
     TODO_STATUS,
     TODO_SUMMARY,
-    TODO_UID,)
-from .const import (
-    RATCHET_FAST_ALLOWANCE,
-    RATCHET_FAST_RHYTHM,
-    RATCHET_SLOW_ALLOWANCE,
-    RATCHET_SLOW_RHYTHM,
-    TAINT_UNAVAILABLE,
-    TAINT_UNKNOWN,
+    TODO_UID,
+    TRIM_MIN_SAMPLES,
+    TRIM_TOP_K,
+    Z2M_BRIDGE_MANUFACTURER,
+    Z2M_BRIDGE_MODEL,
+    Z2M_BRIDGE_NAME_MARK,
 )
 
 BAD_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
@@ -407,6 +415,13 @@ class DeviceSentinelCoordinator(
         self._bridge_down_at: dict[str, float] = {}
         self._pairing_open_at: dict[str, float] = {}
         self._pending_epoch_wipe: int | None = None
+        # #163 and #167. The first is how many devices this boot reset
+        # after an unclean stop, held until setup succeeds so the
+        # system event is written beside the restart it explains. The
+        # rest is what the integrity count found, kept for the
+        # diagnostics rather than acted on.
+        self._pending_unclean: int | None = None
+        self._orphan_episodes: dict[str, Any] = {}
         self._options_seen: dict[str, Any] = dict(entry.options)
 
     # ------------------------------------------------------------- setup
@@ -580,6 +595,17 @@ class DeviceSentinelCoordinator(
                 "in the record schema",
                 legacy,
             )
+        # The clean-stop marker is read and cleared in one breath
+        # (#163), so a crash before the next clean stop is detected
+        # again rather than inheriting this boot's verdict. Read after
+        # the merge, because the arithmetic below needs the clocks the
+        # merge restored, and after the epoch wipe, because a wipe
+        # that has just emptied the statistics leaves nothing to
+        # protect.
+        clean_stop = bool(loaded.pop(DATA_CLEAN_STOP, False))
+        if not clean_stop:
+            self._handle_unclean_restart(loaded)
+        self._orphan_episodes = self._count_orphan_episodes(loaded)
         converted = self._coerce_taint_reasons(loaded[DATA_DEVICES])
         if converted:
             LOGGER.info(
@@ -692,6 +718,19 @@ class DeviceSentinelCoordinator(
             duration=self._downtime if self._downtime > 0.0 else None,
             when=self._started_at,
         )
+        if self._pending_unclean is not None:
+            # Nothing about #163 ships without this row. A reader
+            # months later meeting a fleet whose clocks all restart at
+            # one moment needs the reason sitting above them, or the
+            # reset is exactly the kind of unexplained jump this
+            # project exists to catch in other people's software.
+            self._record_system_event(
+                SYS_UNCLEAN_RESTART,
+                detail=f"{self._pending_unclean} devices reset",
+                duration=self._downtime if self._downtime > 0.0 else None,
+                when=self._started_at,
+            )
+            self._pending_unclean = None
         if self._pending_epoch_wipe is not None:
             self._record_system_event(
                 SYS_EPOCH_RESET,
@@ -762,6 +801,16 @@ class DeviceSentinelCoordinator(
         if self._brief_unsub is not None:
             self._brief_unsub()
             self._brief_unsub = None
+        # The clean-stop marker belongs here as much as on the stop
+        # event (#163). An entry unload is every orderly ending that
+        # is not a shutdown: a settings change, a reload, a HACS
+        # update, the integration being disabled. None of those fires
+        # EVENT_HOMEASSISTANT_STOP, so a marker written only there
+        # would make an options change read as a power cut on the
+        # next load and reset the whole fleet's clocks. What the flag
+        # records is that the integration was asked to stop, not which
+        # door it left by.
+        self.data[DATA_CLEAN_STOP] = True
         # Unconditional from 0.10.0. A routine save writes the hot
         # file alone and clears the dirty flag, so a stop that waited
         # for a flag would leave the main file behind by however long
@@ -2420,6 +2469,179 @@ class DeviceSentinelCoordinator(
                 self._downtime,
             )
 
+    def _handle_unclean_restart(self, loaded: dict[str, Any]) -> None:
+        """Reset the clocks a power cut made unreadable (#163).
+
+        A clean stop stamps the moment it happened, so #160 can credit
+        every device the silence nobody was listening to and the
+        arithmetic is right. A power cut leaves no such stamp: the
+        newest thing on disk is up to a whole write interval old, and
+        any device that reported inside that unsaved window carries a
+        clock later than the anchor, fails the test that grants the
+        credit, and is judged across an outage it could not have
+        reported through. That is not a hypothetical: on 2026-07-31 a
+        thirty-minute cut on the development fleet produced nine
+        frozen verdicts, one of them a device whose clock read nine
+        minutes past the anchor.
+
+        Crediting every device instead does not fix it either, because
+        a device whose single daily report fell inside the blackout
+        has a genuinely stale clock and would be convicted hours
+        before it was ever going to speak.
+
+        So the clock is reset, with one exception that carries all the
+        weight. A device already on the problem list keeps its clock,
+        whatever the kind: a battery flagged two days ago, a device
+        still unavailable, a device already frozen. Resetting those
+        would forgive a fault already known and make the integration
+        do what the blueprints did, reporting a device recovered
+        because a restart swept it back to life. Everything else was
+        merely churning along, the integration cannot know what it did
+        while the house was dark, and a restart of the server, the
+        router and the coordinator together is an intervention in the
+        same sense a hand on the battery is.
+
+        The silence a reset device had genuinely accumulated before
+        the cut is banked rather than thrown away. It is a lower bound
+        and not a measurement, but the day's maximum keeps the larger
+        of what it holds and what arrives, so a lower bound can only
+        move that figure toward the truth and never past it;
+        discarding it leaves the maximum lower than the device
+        actually earned. Only the clock fields move: the event count,
+        the learned series, the first-observed stamp, and every
+        battery and signal field are what the device earned and are
+        untouched.
+        """
+        now = dt_util.utcnow().timestamp()
+        anchor = self._last_alive
+        if anchor is None:
+            # No stamp on either file, so there is no last known-alive
+            # moment. Every part of this rule is measured from that
+            # moment: the truncated gap is anchored to it, the episode
+            # closes at it, and the credit it exists to protect (#160)
+            # is itself inert without it. Resetting here would destroy
+            # every device's real last activity and buy nothing, so
+            # the safe reading of an unstamped file is to leave it
+            # alone. Only a file written before 0.10.0 can be in this
+            # state, and those were written by versions that always
+            # wrote the pair together.
+            LOGGER.debug(
+                "Unclean restart: no storage stamp to measure against, "
+                "so every clock is left as it was"
+            )
+            return
+        protected = {
+            item.get(TODO_DEVICE_ID)
+            for item in loaded.get(DATA_TODO_ITEMS) or []
+            if item.get(TODO_DEVICE_ID)
+        }
+        reset = 0
+        bankers: set[str] = set()
+        for device_id, record in (loaded.get(DATA_DEVICES) or {}).items():
+            if not isinstance(record, dict) or device_id in protected:
+                continue
+            last = record.get(DEV_LAST_ACTIVITY)
+            if not isinstance(last, (int, float)):
+                continue
+            if anchor is not None and anchor > last:
+                truncated = anchor - last
+                current = record.get(DEV_TODAY_MAX)
+                if current is None or truncated > current:
+                    record[DEV_TODAY_MAX] = truncated
+                    bankers.add(device_id)
+            record[DEV_LAST_ACTIVITY] = now
+            # A clock that no longer describes a real report cannot
+            # go on carrying a taint earned before it, because the
+            # gap that taint was waiting to exclude no longer exists.
+            record[DEV_TAINTED] = False
+            reset += 1
+
+        # Open episodes close at the last known-alive moment, so the
+        # episode record and the clock cannot contradict each other.
+        # A row whose device banked a truncated gap says so in the
+        # LEARNED cell, so a widened rhythm traceable to a lower bound
+        # is auditable from the row rather than looking like an
+        # ordinary measurement.
+        stamped = 0
+        for episode in loaded.get(DATA_EPISODES) or []:
+            if episode.get(EP_ENDED) is not None:
+                continue
+            episode[EP_ENDED] = EPISODE_ENDED_POWER_LOSS
+            episode[EP_AT] = anchor
+            if episode.get(EP_DEVICE_ID) in bankers:
+                episode[EP_LEARNED] = EPISODE_LEARNED_TRUNCATED
+            stamped += 1
+        banked = len(bankers)
+
+        self._pending_unclean = reset
+        LOGGER.warning(
+            "Unclean restart: no clean-stop marker on the storage file, "
+            "so %d device clock(s) were reset to this start and %d kept "
+            "for devices already on the problem list. %d banked a "
+            "truncated pre-cut gap; %d open silence episode(s) closed as "
+            "a power loss",
+            reset,
+            len(protected),
+            banked,
+            stamped,
+        )
+
+    @staticmethod
+    def _count_orphan_episodes(loaded: dict[str, Any]) -> dict[str, Any]:
+        """Count episodes with no ending, and report nothing else (#167).
+
+        After a clean stop every open episode has been stamped, and
+        after an unclean one #163 has just stamped them too, so by the
+        time this runs an episode carrying no ending is an orphan: a
+        row whose closing never reached disk. The window in which one
+        is visible is narrow, because the next intervention of any
+        kind stamps every open row it finds, which would give this one
+        an ending at the wrong moment and make it look correct
+        forever. Boot is the only place it can be seen.
+
+        The test is the ending, never the lag. An episode legitimately
+        sits ended-but-awaiting-lag until the device speaks again, and
+        counting those would cry wolf every morning.
+
+        It closes nothing. #163 is the only thing that closes an
+        episode at a restart, because two independent mechanisms
+        against one record is a fault class rather than a safeguard,
+        and when a row later reads wrong you want to know which one
+        wrote it.
+        """
+        now = dt_util.utcnow().timestamp()
+        orphans = [
+            episode
+            for episode in loaded.get(DATA_EPISODES) or []
+            if episode.get(EP_ENDED) is None
+        ]
+        oldest = None
+        if orphans:
+            since = [
+                episode.get(EP_SINCE)
+                for episode in orphans
+                if isinstance(episode.get(EP_SINCE), (int, float))
+            ]
+            if since:
+                oldest = now - min(since)
+        found = {
+            "count": len(orphans),
+            "devices": len({episode.get(EP_DEVICE_ID) for episode in orphans}),
+            "oldest_seconds": oldest,
+        }
+        if orphans:
+            LOGGER.warning(
+                "Episode integrity: %d silence episode(s) across %d "
+                "device(s) carry no ending, the oldest %s old. A closing "
+                "did not reach disk; nothing has been changed",
+                found["count"],
+                found["devices"],
+                _span(oldest) if oldest else "unknown",
+            )
+        else:
+            LOGGER.debug("Episode integrity: no episode without an ending")
+        return found
+
     def _observed_silence(
         self, record: dict[str, Any], now: float
     ) -> float | None:
@@ -2586,6 +2808,13 @@ class DeviceSentinelCoordinator(
         self._stamp_intervention(
             EPISODE_ENDED_REBOOT, dt_util.utcnow().timestamp()
         )
+        # The clean-stop marker (#163). Set before the flush, so the
+        # write below carries it. Its absence at the next load is the
+        # only evidence that the machine went down without being
+        # asked to: a power cut leaves a saved_at stamp that looks
+        # exactly like an ordinary interval write, so no comparison
+        # of stamps can tell the two apart.
+        self.data[DATA_CLEAN_STOP] = True
         await self._save_now()
 
     # --------------------------------------------------------- listeners
@@ -2608,6 +2837,27 @@ class DeviceSentinelCoordinator(
             update_callback()
 
     # -------------------------------------------------------- properties
+
+    @property
+    def downtime(self) -> float:
+        """Return how long nothing was listening before this start.
+
+        Exposed for the diagnostics rather than computed there,
+        because the value is settled once at load from the two file
+        stamps and any second derivation would be a second opinion
+        about the same fact.
+        """
+        return self._downtime
+
+    @property
+    def last_alive(self) -> float | None:
+        """Return the last moment the system is known to have run."""
+        return self._last_alive
+
+    @property
+    def orphan_episodes(self) -> dict[str, Any]:
+        """Return what the boot integrity count found (#167)."""
+        return dict(self._orphan_episodes)
 
     @property
     def setup_count(self) -> int:
