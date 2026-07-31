@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_unclean_restart.py, Version: 0.10.11 (2026-07-31)
+# File: test_unclean_restart.py, Version: 0.10.12 (2026-07-31)
 
 """What a restart with no clean-stop marker does to the clocks (#163).
 
@@ -55,7 +55,7 @@ from custom_components.device_sentinel.const import (
     DEV_LAST_ACTIVITY,
     DEV_TAINTED,
     DEV_TODAY_MAX,
-    EPISODE_ENDED_POWER_LOSS,
+    EPISODE_ENDED_UNCLEAN,
     EPISODE_LEARNED_TRUNCATED,
     EP_AT,
     EP_BASIS,
@@ -306,7 +306,7 @@ async def test_an_open_episode_closes_as_a_power_loss(
     entry = await setup_entry(hass)
     stored = entry.runtime_data.data[DATA_EPISODES][0]
 
-    assert stored[EP_ENDED] == EPISODE_ENDED_POWER_LOSS
+    assert stored[EP_ENDED] == EPISODE_ENDED_UNCLEAN
     assert stored[EP_AT] == ANCHOR
     assert stored[EP_LEARNED] == EPISODE_LEARNED_TRUNCATED
 

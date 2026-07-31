@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_email_brief.py, Version: 0.10.6 (2026-07-29)
+# File: test_email_brief.py, Version: 0.10.12 (2026-07-31)
 
 """The incident log and the daily brief: the memory and the report.
 
@@ -35,6 +35,10 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
+    ACTION_ACKNOWLEDGED,
+    ACTION_DELETED,
+    ACTION_READDED,
+    ACTION_UNACKNOWLEDGED,
     BRIEF_TRIGGER,
     CONF_BRIEF_TARGETS,
     CONF_EXCLUDED_DEVICES,
@@ -42,6 +46,7 @@ from custom_components.device_sentinel.const import (
     CONF_REMINDER_TIME,
     DATA_EPISODES,
     DATA_INCIDENTS,
+    DATA_SYSTEM_EVENTS,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
@@ -62,10 +67,6 @@ from custom_components.device_sentinel.const import (
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     FREEZE_CATEGORY_UNAVAILABLE,
-    ACTION_ACKNOWLEDGED,
-    ACTION_DELETED,
-    ACTION_READDED,
-    ACTION_UNACKNOWLEDGED,
     INCIDENT_ACKNOWLEDGED,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
@@ -82,6 +83,20 @@ from custom_components.device_sentinel.const import (
     REMINDER_MODE_DAILY,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
+    SYS_BRIDGE_DOWN,
+    SYS_BRIDGE_UP,
+    SYS_DETAIL,
+    SYS_DURATION,
+    SYS_EPOCH_RESET,
+    SYS_KIND,
+    SYS_OPTIONS_CHANGED,
+    SYS_PAIRING_CLOSED,
+    SYS_PAIRING_OPEN,
+    SYS_RESTART,
+    SYS_SCOPE,
+    SYS_SCOPE_SYSTEM,
+    SYS_UNCLEAN_RESTART,
+    SYS_WHEN,
     TODO_KIND_FROZEN,
     TODO_KIND_NOT_REPORTED,
 )
@@ -134,6 +149,87 @@ def _brief_text(hass):
     assert written, "no daily brief was written"
     with open(written[0], encoding="utf-8") as handle:
         return handle.read()
+
+
+async def test_the_unclean_restart_reads_as_english(
+    hass: HomeAssistant
+):
+    """The brief must not print the storage key.
+
+    0.10.11 added the event and not its wording, so the composer fell
+    through to its last line and the brief read a bare
+    "unclean_restart" in both the prose and the table. Harmless to
+    judgment, and the first thing anyone reads on the morning after a
+    real one, which is exactly when the wording should be working.
+    """
+    coord = await setup_coordinator(hass)
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        {
+            SYS_WHEN: dt_util.utcnow().timestamp() - 300.0,
+            SYS_KIND: SYS_UNCLEAN_RESTART,
+            SYS_SCOPE: SYS_SCOPE_SYSTEM,
+            SYS_DETAIL: "120 devices reset",
+            SYS_DURATION: 2640.0,
+        }
+    ]
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    text = _brief_text(hass)
+
+    assert SYS_UNCLEAN_RESTART not in text
+    assert "unclean shutdown" in text
+    assert "120 devices reset" in text
+    # Asserted against the sentence itself, not the file. The table
+    # row carries the count too, so a whole-file search passes even
+    # when the prose has dropped it, and the prose is what gets read
+    # first on the morning after.
+    sentence = coord._system_event_sentence(
+        coord.data[DATA_SYSTEM_EVENTS][0]
+    )
+    assert "120 devices reset" in sentence
+    assert "unclean shutdown" in sentence
+
+
+async def test_every_system_event_kind_has_wording(
+    hass: HomeAssistant
+):
+    """The gate that would have caught 0.10.11's omission.
+
+    The composer names each kind and falls through to the raw key for
+    anything it does not know, so a kind added without wording is
+    silent until it appears in somebody's brief. This walks every kind
+    the integration can write and fails on any that still reads as its
+    own storage key.
+    """
+    coord = await setup_coordinator(hass)
+    kinds = (
+        SYS_RESTART,
+        SYS_UNCLEAN_RESTART,
+        SYS_BRIDGE_DOWN,
+        SYS_BRIDGE_UP,
+        SYS_PAIRING_OPEN,
+        SYS_PAIRING_CLOSED,
+        SYS_EPOCH_RESET,
+        SYS_OPTIONS_CHANGED,
+    )
+    for kind in kinds:
+        row = {
+            SYS_WHEN: dt_util.utcnow().timestamp(),
+            SYS_KIND: kind,
+            SYS_SCOPE: SYS_SCOPE_SYSTEM,
+            SYS_DETAIL: None,
+            SYS_DURATION: 60.0,
+        }
+        sentence = coord._system_event_sentence(row)
+        cell = coord._system_event_phrase(row)
+        # The fallbacks the composer uses for a kind it does not
+        # know, matched exactly rather than as substrings: "restart"
+        # lives inside the perfectly good sentence "The system
+        # restarted", so a substring test would fail on wording that
+        # is correct.
+        assert not sentence.startswith(f"{kind} at "), (
+            f"{kind} has no sentence"
+        )
+        assert cell != kind, f"{kind} has no table wording"
 
 
 def _freeze(coord, device_id, hours_ago=4.0):
