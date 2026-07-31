@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.11 (2026-07-31)
+# File: const.py, Version: 0.10.12 (2026-07-31)
 
 """Constants for the Device Sentinel integration."""
 
@@ -99,16 +99,18 @@ TAINT_UNAVAILABLE = "unavailable"
 TAINT_UNKNOWN = "unknown"
 TAINT_BRIDGE_DOWN = "bridge down"
 # The widest cause of all, and the one #164 reserved a place for
-# before anything could detect it: the house lost power, so the
-# device was not silent, nobody was listening. It outranks a bridge
-# outage because a bridge that went down during a power cut went down
-# because of it.
-TAINT_POWER_LOSS = "power loss"
+# before anything could detect it: the system stopped without being
+# asked to, so the device was not silent, nobody was listening. Named
+# for the stop rather than its cause, because a power cut, a crash
+# and a pulled plug leave the files in exactly the same state and
+# nothing on disk can tell them apart. It outranks a bridge outage,
+# since a bridge that went quiet during one went quiet because of it.
+TAINT_UNCLEAN_SHUTDOWN = "unclean shutdown"
 TAINT_REASONS = (
     TAINT_UNAVAILABLE,
     TAINT_UNKNOWN,
     TAINT_BRIDGE_DOWN,
-    TAINT_POWER_LOSS,
+    TAINT_UNCLEAN_SHUTDOWN,
 )
 
 # The sensinel_type stem for a bridge sensor; the stack is appended so
@@ -910,7 +912,7 @@ EPISODE_ENDED_RESTART = "intervention (restart)"
 # days of the development fleet, deciding at the report would have
 # caught two of fifty-six. A reboot is absent deliberately, being an
 # intervention but not a reason a gap goes unlearned.
-EPISODE_ENDED_POWER_LOSS = "intervention (power loss)"
+EPISODE_ENDED_UNCLEAN = "intervention (unclean shutdown)"
 
 # What a truncated pre-cut gap reads in the LEARNED cell (#163). It
 # is a lower bound rather than a measurement: the device was silent
@@ -924,7 +926,7 @@ EPISODE_LEARNED_TRUNCATED = "yes (truncated)"
 
 TAINT_PROMOTIONS = {
     EPISODE_ENDED_RECONNECT: TAINT_BRIDGE_DOWN,
-    EPISODE_ENDED_POWER_LOSS: TAINT_POWER_LOSS,
+    EPISODE_ENDED_UNCLEAN: TAINT_UNCLEAN_SHUTDOWN,
 }
 TODO_JOURNAL_KEEP = 100
 SIGNAL_PROBLEM_ADDITION = f"{DOMAIN}_problem_addition"
