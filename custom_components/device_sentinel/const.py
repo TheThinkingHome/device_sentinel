@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.10 (2026-07-30)
+# File: const.py, Version: 0.10.11 (2026-07-31)
 
 """Constants for the Device Sentinel integration."""
 
@@ -98,7 +98,18 @@ RATCHET_SLOW_ALLOWANCE = 4320.0
 TAINT_UNAVAILABLE = "unavailable"
 TAINT_UNKNOWN = "unknown"
 TAINT_BRIDGE_DOWN = "bridge down"
-TAINT_REASONS = (TAINT_UNAVAILABLE, TAINT_UNKNOWN, TAINT_BRIDGE_DOWN)
+# The widest cause of all, and the one #164 reserved a place for
+# before anything could detect it: the house lost power, so the
+# device was not silent, nobody was listening. It outranks a bridge
+# outage because a bridge that went down during a power cut went down
+# because of it.
+TAINT_POWER_LOSS = "power loss"
+TAINT_REASONS = (
+    TAINT_UNAVAILABLE,
+    TAINT_UNKNOWN,
+    TAINT_BRIDGE_DOWN,
+    TAINT_POWER_LOSS,
+)
 
 # The sensinel_type stem for a bridge sensor; the stack is appended so
 # each stack's sensor has a stable unique id.
@@ -148,6 +159,18 @@ STORAGE_CLOCKS_VERSION = 1
 # 0.10.0 simply has no stamp, and a load that cannot compare declines
 # to merge, which is safe because the two were written together then.
 DATA_SAVED_AT = "saved_at"
+
+# The clean-stop marker (#163). Home Assistant's stop event runs the
+# flush, and that flush writes this flag true; the load reads it and
+# clears it in the same breath, so the flag on disk means "the last
+# thing that happened to this file was a deliberate stop". Its
+# absence means the machine went down without one, which no stamp can
+# tell us: a power cut leaves a saved_at that looks exactly like an
+# ordinary interval write. An install upgrading from a version that
+# never wrote the marker therefore reads its first load as unclean,
+# which is one harmless reset on a fleet that has just restarted
+# anyway, and is preferred to trusting a flag no earlier version set.
+DATA_CLEAN_STOP = "clean_stop"
 
 
 
@@ -833,6 +856,23 @@ SYS_PAIRING_OPEN = "pairing_open"
 SYS_PAIRING_CLOSED = "pairing_closed"
 SYS_EPOCH_RESET = "epoch_reset"
 SYS_OPTIONS_CHANGED = "options_changed"
+# A restart with no clean-stop marker behind it (#163). Distinct from
+# SYS_RESTART because the consequences differ: an ordinary restart
+# keeps every clock, this one resets all but the devices already in
+# trouble. Nothing about #163 ships without this row, because a clock
+# that jumps with no explanation above it is the silent oddity this
+# project exists to prevent.
+SYS_UNCLEAN_RESTART = "unclean_restart"
+
+# The backup backbone (#130). A copy of both storage files taken once,
+# on the first boot of a release that is about to remove something it
+# cannot put back. It ships inert: nothing in this release calls it,
+# and the phase that prunes the clock fields is what turns it on,
+# before it strips anything. Named for the state it preserves rather
+# than the release that took it, and kept beside the older backups
+# rather than replacing them.
+BACKUP_SUFFIX_PREPHASE_C = "prephase-c"
+BACKUP_TAKEN_KEY = "backup_taken"
 
 DATA_EPISODES = "silence_episodes"
 EPISODE_KEEP_DAYS = 14
@@ -870,7 +910,22 @@ EPISODE_ENDED_RESTART = "intervention (restart)"
 # days of the development fleet, deciding at the report would have
 # caught two of fifty-six. A reboot is absent deliberately, being an
 # intervention but not a reason a gap goes unlearned.
-TAINT_PROMOTIONS = {EPISODE_ENDED_RECONNECT: TAINT_BRIDGE_DOWN}
+EPISODE_ENDED_POWER_LOSS = "intervention (power loss)"
+
+# What a truncated pre-cut gap reads in the LEARNED cell (#163). It
+# is a lower bound rather than a measurement: the device was silent
+# at least this long before the lights went out, and how much longer
+# it would have stayed quiet is unknowable. Banked rather than
+# discarded because the day's maximum keeps the larger of what it
+# holds and what arrives, so a lower bound can only move the figure
+# toward the truth and never past it. Labelled so a widened rhythm
+# traceable to one is auditable from the row, in the #164 family.
+EPISODE_LEARNED_TRUNCATED = "yes (truncated)"
+
+TAINT_PROMOTIONS = {
+    EPISODE_ENDED_RECONNECT: TAINT_BRIDGE_DOWN,
+    EPISODE_ENDED_POWER_LOSS: TAINT_POWER_LOSS,
+}
 TODO_JOURNAL_KEEP = 100
 SIGNAL_PROBLEM_ADDITION = f"{DOMAIN}_problem_addition"
 
