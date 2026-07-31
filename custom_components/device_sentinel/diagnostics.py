@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.10.7 (2026-07-29)
+# File: diagnostics.py, Version: 0.10.11 (2026-07-31)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -250,6 +250,19 @@ async def async_get_config_entry_diagnostics(
             "storage_saved_at": coordinator.data.get(DATA_SAVED_AT),
             "clocks_saved_at": (hot or {}).get(DATA_SAVED_AT),
             "main_file_behind_seconds": behind,
+        },
+        # How the last stop went and what the record looked like on
+        # the way back up (#163, #167). Together these answer, from a
+        # download alone, whether a fleet whose clocks all start at
+        # one moment was reset deliberately, and whether any silence
+        # episode lost its closing before it reached disk. The orphan
+        # figures are observation only: nothing acts on them, and a
+        # non-zero count is a finding to read rather than a fault the
+        # integration has corrected behind you.
+        "restart": {
+            "unwatched_seconds": coordinator.downtime or None,
+            "last_alive": coordinator.last_alive,
+            "orphan_episodes": coordinator.orphan_episodes,
         },
         "devices": devices,
     }
