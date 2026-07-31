@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.10.6 (2026-07-29)
+# File: reports.py, Version: 0.10.12 (2026-07-31)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -33,15 +33,23 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    ACTION_ACKNOWLEDGED,
+    ACTION_DELETED,
+    ACTION_READDED,
+    ACTION_UNACKNOWLEDGED,
     BRIEF_KEEP_DAYS,
     BRIEF_TRIGGER,
     CONF_REMINDER_TIME,
+    CONF_TAINT_FLOOR,
+    CONF_TAINT_SHARE,
     DAILY_MAX_KEEP,
     DATA_DEVICES,
     DATA_EPISODES,
     DATA_INCIDENTS,
     DATA_SYSTEM_EVENTS,
     DEFAULT_REMINDER_TIME,
+    DEFAULT_TAINT_FLOOR_MINUTES,
+    DEFAULT_TAINT_SHARE_PCT,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
@@ -55,14 +63,10 @@ from .const import (
     EP_ENDED,
     EP_LAG,
     EP_LEARNED,
-    EP_TAINT_SECONDS,
     EP_NAME,
     EP_SINCE,
+    EP_TAINT_SECONDS,
     EP_WINDOW,
-    ACTION_ACKNOWLEDGED,
-    ACTION_DELETED,
-    ACTION_READDED,
-    ACTION_UNACKNOWLEDGED,
     INCIDENT_ACKNOWLEDGED,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
@@ -74,19 +78,6 @@ from .const import (
     INC_KIND,
     INC_NAME,
     INC_WHEN,
-    SYS_BRIDGE_DOWN,
-    SYS_BRIDGE_UP,
-    SYS_DETAIL,
-    SYS_DURATION,
-    SYS_EPOCH_RESET,
-    SYS_KIND,
-    SYS_OPTIONS_CHANGED,
-    SYS_PAIRING_CLOSED,
-    SYS_PAIRING_OPEN,
-    SYS_RESTART,
-    SYS_SCOPE,
-    SYS_SCOPE_SYSTEM,
-    SYS_WHEN,
     LEARNING_MIN_DAYS,
     LOGGER,
     REPORT_BRIEF_PREFIX,
@@ -103,10 +94,20 @@ from .const import (
     STORM_DEVICE_THRESHOLD,
     STORM_EXEMPT_PER_HOUR,
     STORM_WINDOW_SECONDS,
-    CONF_TAINT_FLOOR,
-    CONF_TAINT_SHARE,
-    DEFAULT_TAINT_FLOOR_MINUTES,
-    DEFAULT_TAINT_SHARE_PCT,
+    SYS_BRIDGE_DOWN,
+    SYS_BRIDGE_UP,
+    SYS_DETAIL,
+    SYS_DURATION,
+    SYS_EPOCH_RESET,
+    SYS_KIND,
+    SYS_OPTIONS_CHANGED,
+    SYS_PAIRING_CLOSED,
+    SYS_PAIRING_OPEN,
+    SYS_RESTART,
+    SYS_SCOPE,
+    SYS_SCOPE_SYSTEM,
+    SYS_UNCLEAN_RESTART,
+    SYS_WHEN,
     TODO_DEVICE_ID,
     TODO_KINDS,
     TODO_KIND_BATTERY,
@@ -1003,6 +1004,21 @@ class ReportWritingMixin:
                     f"after {held}."
                 )
             return f"The {scope} pairing window closed at {when}."
+        if kind == SYS_UNCLEAN_RESTART:
+            # The restart row above already carried the plain fact
+            # that the system came back, so this one carries what was
+            # different about it. Both are written deliberately (#163)
+            # and read as a pair: what happened, then why the clocks
+            # moved. On the morning after a real one this is the first
+            # sentence read, so it says the count rather than leaving
+            # the reader to find it in a diagnostics download.
+            extra = f", {detail}" if detail else ""
+            if held:
+                return (
+                    f"That restart followed an unclean shutdown, with "
+                    f"{held} unwatched{extra}."
+                )
+            return f"That restart followed an unclean shutdown{extra}."
         if kind == SYS_EPOCH_RESET:
             extra = f" for {detail}" if detail else ""
             return f"Learned statistics were reset at {when}{extra}."
@@ -1039,6 +1055,12 @@ class ReportWritingMixin:
                 f"{scope} pairing window closed after {held}"
                 if held
                 else f"{scope} pairing window closed"
+            )
+        if kind == SYS_UNCLEAN_RESTART:
+            return (
+                f"unclean shutdown ({detail})"
+                if detail
+                else "unclean shutdown"
             )
         if kind == SYS_EPOCH_RESET:
             return f"learned statistics reset ({detail})" if detail else "learned statistics reset"
