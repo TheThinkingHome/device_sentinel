@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.11 (2026-07-31)
+# File: coordinator.py, Version: 0.10.12 (2026-07-31)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -132,7 +132,7 @@ from .const import (
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     DEV_TODAY_MAX,
-    EPISODE_ENDED_POWER_LOSS,
+    EPISODE_ENDED_UNCLEAN,
     EPISODE_ENDED_REBOOT,
     EPISODE_ENDED_RECONNECT,
     EPISODE_ENDED_RESTART,
@@ -2566,7 +2566,7 @@ class DeviceSentinelCoordinator(
         for episode in loaded.get(DATA_EPISODES) or []:
             if episode.get(EP_ENDED) is not None:
                 continue
-            episode[EP_ENDED] = EPISODE_ENDED_POWER_LOSS
+            episode[EP_ENDED] = EPISODE_ENDED_UNCLEAN
             episode[EP_AT] = anchor
             if episode.get(EP_DEVICE_ID) in bankers:
                 episode[EP_LEARNED] = EPISODE_LEARNED_TRUNCATED
@@ -2579,7 +2579,7 @@ class DeviceSentinelCoordinator(
             "so %d device clock(s) were reset to this start and %d kept "
             "for devices already on the problem list. %d banked a "
             "truncated pre-cut gap; %d open silence episode(s) closed as "
-            "a power loss",
+            "an unclean shutdown",
             reset,
             len(protected),
             banked,
