@@ -32,9 +32,9 @@
           "instant": {
             "name": "Instant Notifications",
             "data": {
-              "high_priority_targets": "High-priority targets",
-              "normal_priority_targets": "Normal-priority targets",
-              "persistent_enabled": "Create a persistent notification"
+              "high_priority_targets": "High-Priority Targets",
+              "normal_priority_targets": "Normal-Priority Targets",
+              "persistent_enabled": "Create a Persistent Notification"
             },
             "data_description": {
               "high_priority_targets": "Sent a message when a device develops a problem, and the daily brief with its history.",
@@ -45,7 +45,7 @@
           "quiet": {
             "name": "Quiet Hours",
             "data": {
-              "quiet_hours_enabled": "Enable quiet hours",
+              "quiet_hours_enabled": "Enable Quiet Hours",
               "quiet_hours_start": "Start",
               "quiet_hours_end": "End"
             },
@@ -56,9 +56,9 @@
           "brief": {
             "name": "Daily Brief",
             "data": {
-              "daily_reminder_time": "When to send it",
-              "daily_reminder_mode": "How often",
-              "brief_document_targets": "Send the full brief to"
+              "daily_reminder_time": "When to Send It",
+              "daily_reminder_mode": "How Often",
+              "brief_document_targets": "Send the Full Brief To"
             },
             "data_description": {
               "daily_reminder_mode": "The brief file is written either way; this decides whether it is sent.",
@@ -71,9 +71,9 @@
         "title": "Global Exclusions",
         "description": "Globally excluded items are never reported, by any part of Device Sentinel, but they are still watched and their habits are learned, so undoing an exclusion is instant and nothing is lost.\n\nThe three lists run broad to narrow: integration, label, device. When you exclude at a higher level and save, everything it covers disappears as a choice from the lists below it: exclude an integration and its devices no longer appear and do not need to be removed individually, because the integration already covers them.\n\nFull documentation: {wiki_link}",
         "data": {
-          "excluded_devices": "Excluded devices",
-          "excluded_labels": "Excluded labels",
-          "excluded_integrations": "Excluded integrations"
+          "excluded_devices": "Excluded Devices",
+          "excluded_labels": "Excluded Labels",
+          "excluded_integrations": "Excluded Integrations"
         },
         "data_description": {
           "excluded_devices": "These devices are never reported.",
@@ -84,10 +84,10 @@
       "battery": {
         "title": "Low Battery",
         "data": {
-          "low_threshold": "Battery low threshold (%)",
-          "battery_excluded_integrations": "Battery-excluded integrations",
-          "battery_excluded_labels": "Battery-excluded labels",
-          "battery_excluded_devices": "Battery-excluded devices"
+          "low_threshold": "Battery Low Threshold (%)",
+          "battery_excluded_integrations": "Battery-Excluded Integrations",
+          "battery_excluded_labels": "Battery-Excluded Labels",
+          "battery_excluded_devices": "Battery-Excluded Devices"
         },
         "data_description": {
           "low_threshold": "A battery at or below this level is flagged low.",
@@ -99,15 +99,17 @@
       },
       "signal": {
         "title": "Signal Strength",
-        "description": "How sharply weakening radio links are flagged, and which devices are left out of signal reporting. The goal: some of your devices should show small readings in the 0-5 percent range, so a real problem stands out as big and obvious. Changes apply to readings going forward; a full day shows their true effect. [How signal strength is judged]({wiki_link}).",
+        "description": "How sharply weakening radio links are flagged, and which devices are left out of signal reporting. Each device's floor is its trimmed minimum: the lowest daily reading over the past two weeks, with the worst few days set aside as anomalies. The goal: some of your devices should show small readings in the 0-5 percent range, so a real problem stands out as big and obvious. Changes apply to readings going forward; a full day shows their true effect. [How Signal Strength Is Judged]({wiki_link}).",
         "data": {
-          "signal_sensitivity": "Sensitivity",
-          "signal_excluded_integrations": "Integrations excluded from signal reporting",
-          "signal_excluded_labels": "Labels excluded from signal reporting",
-          "signal_excluded_devices": "Devices excluded from signal reporting"
+          "signal_margin": "Sensitivity",
+          "signal_sensitivity": "Anomaly Trim",
+          "signal_excluded_integrations": "Integrations Excluded from Signal Reporting",
+          "signal_excluded_labels": "Labels Excluded from Signal Reporting",
+          "signal_excluded_devices": "Devices Excluded from Signal Reporting"
         },
         "data_description": {
-          "signal_sensitivity": "Left is less sensitive: fewer, only-severe flags. Right is more sensitive: weak moments register sooner.",
+          "signal_margin": "How close to the floor a reading must be to count as weak. At 0, only readings at or below the floor register. Higher values add a margin above it, catching links that hover just above their baseline. The margin scales with the device: 5% of a 200-point floor adds a 10-point margin, while 5% of a 40-point floor adds 2 points.",
+          "signal_sensitivity": "Where the floor sits. Shifting left trims fewer bad days, pulling the floor down toward the device's absolute worst performance. Shifting right trims more outliers, raising the floor to reflect normal operation.",
           "signal_excluded_integrations": "Every device from a ticked integration stops being reported for signal.",
           "signal_excluded_labels": "Devices carrying a ticked label stop being reported for signal.",
           "signal_excluded_devices": "A ticked device stops being reported for signal. It keeps recording, so re-including it brings its history back instantly."
@@ -117,11 +119,11 @@
         "title": "Freeze Detection",
         "description": "How long a device may go silent before it is called frozen. Each device is judged against its own learned rhythm, so you are not setting a single timeout; you are setting the grace on top of each device's normal. Delta low is the grace a fast device gets, delta high the grace a slow one gets, and the curve between them is shaped by the two. Raise delta low if a chatty device is flagged too soon; lower delta high if a slow device should be caught faster. [How freeze detection works]({wiki_link}).",
         "data": {
-          "freeze_delta_low": "Delta low (fast-device grace, minutes)",
-          "freeze_delta_high": "Delta high (slow-device grace, hours)",
-          "freeze_excluded_integrations": "Integrations excluded from freeze reporting",
-          "freeze_excluded_labels": "Labels excluded from freeze reporting",
-          "freeze_excluded_devices": "Devices excluded from freeze reporting"
+          "freeze_delta_low": "Delta Low (Fast-Device Grace, Minutes)",
+          "freeze_delta_high": "Delta High (Slow-Device Grace, Hours)",
+          "freeze_excluded_integrations": "Integrations Excluded from Freeze Reporting",
+          "freeze_excluded_labels": "Labels Excluded from Freeze Reporting",
+          "freeze_excluded_devices": "Devices Excluded from Freeze Reporting"
         },
         "data_description": {
           "freeze_delta_low": "The grace a fast device gets, in minutes: how long past its normal it may go quiet before it counts as frozen.",
@@ -156,8 +158,8 @@
   "selector": {
     "reminder_mode": {
       "options": {
-        "daily": "Every day, with an all-clear when nothing needs attention",
-        "overnight": "Only when something needs attention",
+        "daily": "Every Day, with an All-Clear When Nothing Needs Attention",
+        "overnight": "Only When Something Needs Attention",
         "none": "Never"
       }
     }
