@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.12 (2026-07-31)
+# File: coordinator.py, Version: 0.10.13 (2026-08-01)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -85,10 +85,11 @@ from .const import (
     CONF_LOW_THRESHOLD,
     CONF_RETENTION_DAYS,
     CONF_SETTLE_SHARE,
+    CONF_SIGNAL_ANOMALY_TRIM,
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
-    CONF_SIGNAL_SENSITIVITY,
+    CONF_SIGNAL_MARGIN,
     CONF_TAINT_FLOOR,
     CONF_TAINT_SHARE,
     DAILY_MAX_KEEP,
@@ -110,7 +111,8 @@ from .const import (
     DEFAULT_LOW_THRESHOLD,
     DEFAULT_RETENTION_DAYS,
     DEFAULT_SETTLE_SHARE_PCT,
-    DEFAULT_SIGNAL_SENSITIVITY,
+    DEFAULT_SIGNAL_ANOMALY_TRIM,
+    DEFAULT_SIGNAL_MARGIN,
     DEFAULT_TAINT_FLOOR_MINUTES,
     DEFAULT_TAINT_SHARE_PCT,
     DEV_BATTERY_DAILY,
@@ -132,10 +134,10 @@ from .const import (
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     DEV_TODAY_MAX,
-    EPISODE_ENDED_UNCLEAN,
     EPISODE_ENDED_REBOOT,
     EPISODE_ENDED_RECONNECT,
     EPISODE_ENDED_RESTART,
+    EPISODE_ENDED_UNCLEAN,
     EPISODE_LEARNED_TRUNCATED,
     EP_AT,
     EP_DEVICE_ID,
@@ -172,13 +174,15 @@ from .const import (
     RETENTION_DAYS_MIN,
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
+    SIGNAL_ANOMALY_TRIM_MAX,
+    SIGNAL_ANOMALY_TRIM_MIN,
     SIGNAL_ARMING_DAYS,
+    SIGNAL_MARGIN_MAX,
+    SIGNAL_MARGIN_MIN,
     SIGNAL_NAME_TERMS,
     SIGNAL_PROBLEM_ADDITION,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
-    SIGNAL_SENSITIVITY_MAX,
-    SIGNAL_SENSITIVITY_MIN,
     SIGNAL_TRIM_LADDER_FORTNIGHT,
     SIGNAL_TRIM_LADDER_WEEK,
     STACK_MATTER,
@@ -1435,29 +1439,38 @@ class DeviceSentinelCoordinator(
             record[DEV_SIGNAL_BELOW_SINCE] = None
 
     def _danger_line(self, record: dict[str, Any]) -> float | None:
-        """Return this device's line: its trimmed floor, or None with
-        no history.
+        """Return this device's line: its trimmed floor plus the
+        sensitivity margin, or None with no history.
 
-        The floor is the line (ruled 2026-07-19). Rail values never
-        feed it: a device whose whole history is rail has no floor at
-        all rather than a false one, which was the Door Laundry bug
-        (a floor of 255 from the stuck period made a garbage line).
+        The floor is the trimmed minimum (ruled 2026-07-19). Rail
+        values never feed it: a device whose whole history is rail has
+        no floor at all rather than a false one, which was the Door
+        Laundry bug (a floor of 255 from the stuck period made a
+        garbage line).
 
         The trim ladder grows with the soak: under a week nothing is
         dropped and the floor is the lowest real reading, so the line
         exists from the first day; at a week the single lowest is
-        dropped; at two weeks the two lowest are. The user's
-        sensitivity setting shifts k (left calmer, right twitchier),
-        clamped so at least one reading always survives to be the
-        floor. Dropping the LOWEST values is the opposite of the
-        rhythm trim, which drops the highest, because for signal the
-        spuriously bad reading is the anomaly to set aside.
+        dropped; at two weeks the two lowest are. The anomaly trim
+        setting shifts k, clamped so at least one reading always
+        survives to be the floor. Dropping the LOWEST values is the
+        opposite of the rhythm trim, which drops the highest, because
+        for signal the spuriously bad reading is the anomaly to set
+        aside.
+
+        From 0.10.13 the line sits a margin above that floor rather
+        than on it, so a link hovering just above its own baseline
+        registers instead of reading zero all day. The margin is a
+        percentage of the floor's absolute value, which keeps the
+        direction right for RSSI as well as LQI; at zero the line is
+        the floor and the behaviour is what it was before.
         """
         history = self._signal_history(record)
         if not history:
             return None
         effective_k = self._signal_effective_k(len(history))
-        return sorted(history)[effective_k]
+        floor = sorted(history)[effective_k]
+        return floor + self._signal_margin() * abs(floor)
 
     @staticmethod
     def _signal_history(record: dict[str, Any]) -> list[float]:
@@ -1481,34 +1494,55 @@ class DeviceSentinelCoordinator(
             if value not in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
         ]
 
-    def _signal_slider(self) -> int:
-        """Return the sensitivity slider, clamped to its band. This is
-        the k behind the SIGNAL header's sensitivity word: it is global,
-        the same
+    def _signal_trim(self) -> int:
+        """Return the anomaly trim, clamped to its band. This is the k
+        behind the SIGNAL header's trim word: it is global, the same
         for every device, unlike the per-device effective k which also
-        carries each device's ladder rung."""
+        carries each device's ladder rung.
+        """
         slider = int(
             self.entry.options.get(
-                CONF_SIGNAL_SENSITIVITY, DEFAULT_SIGNAL_SENSITIVITY
+                CONF_SIGNAL_ANOMALY_TRIM, DEFAULT_SIGNAL_ANOMALY_TRIM
             )
         )
-        return max(SIGNAL_SENSITIVITY_MIN, min(slider, SIGNAL_SENSITIVITY_MAX))
+        return max(
+            SIGNAL_ANOMALY_TRIM_MIN, min(slider, SIGNAL_ANOMALY_TRIM_MAX)
+        )
 
-    def _signal_slider_label(self) -> str:
-        """Return the sensitivity slider as a word, not a number.
+    def _signal_margin(self) -> float:
+        """Return the sensitivity margin as a fraction of the floor.
+
+        Zero is the pre-0.10.13 behaviour, where the floor was the
+        line. Clamped rather than trusted, because an options value
+        can arrive from a hand-edited entry as well as from the
+        slider.
+        """
+        margin = float(
+            self.entry.options.get(CONF_SIGNAL_MARGIN, DEFAULT_SIGNAL_MARGIN)
+        )
+        return max(
+            SIGNAL_MARGIN_MIN, min(margin, SIGNAL_MARGIN_MAX)
+        ) / 100.0
+
+    def _signal_trim_label(self) -> str:
+        """Return the anomaly trim as a word, not a number.
 
         The report used to show the slider as K, which collided with
         the trim depth the same report calls k. A word states what the
-        setting does: calmer settings trim fewer lows so the floor
-        sits lower and flags less, sensitive settings the reverse.
+        setting does: shallow settings trim fewer lows so the floor
+        sits lower and flags less, deep settings the reverse. The
+        earlier mood words (Calm through Sensitive) were replaced in
+        0.10.13, because the last of them collided with the new
+        Sensitivity setting beside it, which is a different control
+        entirely.
         """
         return {
-            -2: "Calm",
-            -1: "Stable",
+            -2: "None",
+            -1: "Light",
             0: "Normal",
-            1: "Watchful",
-            2: "Sensitive",
-        }.get(self._signal_slider(), "Normal")
+            1: "Deep",
+            2: "Deepest",
+        }.get(self._signal_trim(), "Normal")
 
     def _signal_effective_k(self, days: int) -> int:
         """Return how many of the lowest readings the floor trims for
@@ -1520,7 +1554,7 @@ class DeviceSentinelCoordinator(
             base_k = SIGNAL_TRIM_LADDER_WEEK
         else:
             base_k = 0
-        return max(0, min(base_k + self._signal_slider(), days - 1))
+        return max(0, min(base_k + self._signal_trim(), days - 1))
 
     def signal_railed(self, record: dict[str, Any]) -> bool:
         """Return whether this device's signal is stuck at the rail.
