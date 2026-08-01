@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.12 (2026-07-31)
+# File: const.py, Version: 0.10.13 (2026-08-01)
 
 """Constants for the Device Sentinel integration."""
 
@@ -531,10 +531,49 @@ SIGNAL_TRIM_LADDER_FORTNIGHT = 2
 # stays counted, so a full clean day is needed to see its true
 # effect, which is why this lives on the config screen rather than as
 # a live entity.
-CONF_SIGNAL_SENSITIVITY = "signal_sensitivity"
-DEFAULT_SIGNAL_SENSITIVITY = 0
-SIGNAL_SENSITIVITY_MIN = -2
-SIGNAL_SENSITIVITY_MAX = 2
+CONF_SIGNAL_ANOMALY_TRIM = "signal_sensitivity"
+DEFAULT_SIGNAL_ANOMALY_TRIM = 0
+SIGNAL_ANOMALY_TRIM_MIN = -2
+SIGNAL_ANOMALY_TRIM_MAX = 2
+
+# The margin above the floor, as a percentage of the floor itself.
+#
+# Until 0.10.13 the floor was the line: only a reading at or under it
+# counted as weak. The fleet showed why that is too narrow. Across 84
+# devices and 21 days, 82 percent of device-days recorded exactly zero
+# dwell, because the floor is derived from the device's own recent
+# minima and so the share of days that reach it is set by the
+# arithmetic rather than by the health of the mesh. Moving the trim
+# does not help: it only chooses a different historical day to call
+# the floor, so the touch rate stays near (k+1)/14 whatever the
+# setting. Replayed against the fleet, the trim spans 7 percent of
+# days at its calmest to 38 percent at its most aggressive, and never
+# gives the resolution wanted.
+#
+# A margin above the floor breaks that self-reference. A link hovering
+# just above its own floor all day registers dwell where it used to
+# register nothing, so a slow degradation shows as a rising number
+# rather than staying silent until it crosses a line.
+#
+# The percentage is taken against the absolute value of the floor,
+# which matters because the two signal types have opposite signs. LQI
+# runs 0 to 255 upward; RSSI is negative dBm. Ten percent of an RSSI
+# floor of -69 is -75.9, which is worse signal, so a naive percentage
+# would invert the setting's meaning on every RSSI device. Adding
+# pct * abs(floor) moves both types the same way: -69 becomes -62.1,
+# and 150 becomes 165.
+#
+# The band therefore scales with the device: five percent of a
+# 200-point floor is 10 points, of a 40-point floor is 2. Ruled
+# deliberately, on the reasoning that a strong link can absorb larger
+# swings than a weak one before either is worth reporting.
+#
+# Zero reproduces the pre-0.10.13 behaviour exactly, so the setting
+# can be turned off and older installs are unaffected until moved.
+CONF_SIGNAL_MARGIN = "signal_margin"
+DEFAULT_SIGNAL_MARGIN = 5
+SIGNAL_MARGIN_MIN = 0
+SIGNAL_MARGIN_MAX = 10
 
 # Signal-only excludes, the same broad-to-narrow ladder as battery:
 # integration, label, device. Exclusion suppresses judgment, not
