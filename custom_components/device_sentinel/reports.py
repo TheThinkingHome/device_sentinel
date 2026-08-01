@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.10.12 (2026-07-31)
+# File: reports.py, Version: 0.10.13 (2026-08-01)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -588,11 +588,12 @@ class ReportWritingMixin:
             f"re-bind. The trim grows with the soak (none under "
             f"{SIGNAL_ARMING_DAYS} days, drop 1 lowest at "
             f"{SIGNAL_ARMING_DAYS}, drop 2 at {2 * SIGNAL_ARMING_DAYS}), "
-            f"shifted by the sensitivity word in the header (Calm "
-            f"trims fewer lows so the floor sits lower and flags less, "
-            f"Sensitive the reverse), applied to readings going "
+            f"shifted by the anomaly trim word in the header (None "
+            f"trims no lows so the floor sits lower and flags less, "
+            f"Deepest the reverse), applied to readings going "
             f"forward only. DWELL% is the share of each day spent at "
-            f"or below the floor: healthy devices brushing their floor "
+            f"or below the line, which sits a sensitivity margin above "
+            f"the floor: healthy devices brushing their floor "
             f"read 0-5 percent, which proves the line has teeth; "
             f"sustained dwell is the anomaly, and outliers clustered "
             f"in one room mean that room needs a router. BAT LEVEL is "
@@ -628,7 +629,7 @@ class ReportWritingMixin:
             "## Learned Statistics",
             "",
             f"| DEVICE (INTEGRATION) | STATUS | GAPS (K={TRIM_TOP_K}) | "
-            f"CLOCK | EVENTS | SIGNAL ({self._signal_slider_label()}) | "
+            f"CLOCK | EVENTS | SIGNAL ({self._signal_trim_label()}) | "
             f"DWELL% | BAT LEVEL (floor {self.low_threshold:g}%) |",
             "|---|---|---|---|---|---|---|---|",
         ]
