@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.9.10 (2026-07-27)
+# File: config_flow.py, Version: 0.10.13 (2026-08-01)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -88,10 +88,11 @@ from .const import (
     CONF_REMINDER_TIME,
     CONF_RETENTION_DAYS,
     CONF_SETTLE_SHARE,
+    CONF_SIGNAL_ANOMALY_TRIM,
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
-    CONF_SIGNAL_SENSITIVITY,
+    CONF_SIGNAL_MARGIN,
     CONF_TAINT_FLOOR,
     CONF_TAINT_SHARE,
     DEFAULT_COALESCE_MINUTES,
@@ -107,7 +108,8 @@ from .const import (
     DEFAULT_REMINDER_TIME,
     DEFAULT_RETENTION_DAYS,
     DEFAULT_SETTLE_SHARE_PCT,
-    DEFAULT_SIGNAL_SENSITIVITY,
+    DEFAULT_SIGNAL_ANOMALY_TRIM,
+    DEFAULT_SIGNAL_MARGIN,
     DEFAULT_TAINT_FLOOR_MINUTES,
     DEFAULT_TAINT_SHARE_PCT,
     DOMAIN,
@@ -126,8 +128,10 @@ from .const import (
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
     SHARE_PCT_STEP,
-    SIGNAL_SENSITIVITY_MAX,
-    SIGNAL_SENSITIVITY_MIN,
+    SIGNAL_ANOMALY_TRIM_MAX,
+    SIGNAL_ANOMALY_TRIM_MIN,
+    SIGNAL_MARGIN_MAX,
+    SIGNAL_MARGIN_MIN,
     TAINT_FLOOR_MINUTES_MAX,
     TAINT_FLOOR_MINUTES_MIN,
     WIKI_LINK_ADVANCED,
@@ -444,15 +448,29 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_SIGNAL_SENSITIVITY,
+                        CONF_SIGNAL_MARGIN,
                         default=options.get(
-                            CONF_SIGNAL_SENSITIVITY,
-                            DEFAULT_SIGNAL_SENSITIVITY,
+                            CONF_SIGNAL_MARGIN, DEFAULT_SIGNAL_MARGIN
                         ),
                     ): selector.NumberSelector(
                         selector.NumberSelectorConfig(
-                            min=SIGNAL_SENSITIVITY_MIN,
-                            max=SIGNAL_SENSITIVITY_MAX,
+                            min=SIGNAL_MARGIN_MIN,
+                            max=SIGNAL_MARGIN_MAX,
+                            step=1,
+                            unit_of_measurement="%",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_SIGNAL_ANOMALY_TRIM,
+                        default=options.get(
+                            CONF_SIGNAL_ANOMALY_TRIM,
+                            DEFAULT_SIGNAL_ANOMALY_TRIM,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=SIGNAL_ANOMALY_TRIM_MIN,
+                            max=SIGNAL_ANOMALY_TRIM_MAX,
                             step=1,
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
@@ -507,10 +525,12 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         rule as battery: a superseded pick is gone because this code
         removed it."""
         pruned = dict(user_input)
-        if CONF_SIGNAL_SENSITIVITY in pruned:
-            pruned[CONF_SIGNAL_SENSITIVITY] = int(
-                pruned[CONF_SIGNAL_SENSITIVITY]
+        if CONF_SIGNAL_ANOMALY_TRIM in pruned:
+            pruned[CONF_SIGNAL_ANOMALY_TRIM] = int(
+                pruned[CONF_SIGNAL_ANOMALY_TRIM]
             )
+        if CONF_SIGNAL_MARGIN in pruned:
+            pruned[CONF_SIGNAL_MARGIN] = int(pruned[CONF_SIGNAL_MARGIN])
         covered = _devices_covered_by(
             signal_rows,
             pruned.get(CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []),
