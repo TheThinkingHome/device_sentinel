@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.9.9 (2026-07-26)
+# File: test_reports.py, Version: 0.10.13 (2026-08-01)
 
 """The diagnostic files: telemetry and classification.
 
@@ -48,8 +48,9 @@ from custom_components.device_sentinel.const import (
     CONF_EXCLUDED_DEVICES,
     CONF_FREEZE_EXCLUDED_DEVICES,
     CONF_HIGH_PRIORITY_TARGETS,
+    CONF_SIGNAL_ANOMALY_TRIM,
     CONF_SIGNAL_EXCLUDED_DEVICES,
-    CONF_SIGNAL_SENSITIVITY,
+    CONF_SIGNAL_MARGIN,
     DATA_EPISODES,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
     DEV_BATTERY_DAILY,
@@ -62,13 +63,13 @@ from custom_components.device_sentinel.const import (
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_MIN,
+    EPISODE_ENDED_REBOOT,
+    EPISODE_ENDED_RESUMED,
+    EPISODE_OPEN_SHARE,
     EP_ENDED,
     EP_LAG,
     EP_LEARNED,
     EP_NAME,
-    EPISODE_ENDED_REBOOT,
-    EPISODE_ENDED_RESUMED,
-    EPISODE_OPEN_SHARE,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     FREEZE_DELTA_HIGH_HR_MAX,
@@ -155,7 +156,7 @@ async def test_reports_written_at_setup_and_midnight(
     )
     assert svc
 
-    await setup_entry(hass)
+    await setup_entry(hass, {CONF_SIGNAL_MARGIN: 0})
 
     tele = hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
     clas = hass.config.path("device_sentinel/diagnostics/classification.md")
@@ -209,9 +210,7 @@ async def test_diagnostics_carry_the_learned_state(hass: HomeAssistant):
     er.async_get(hass).async_get_or_create(
         "sensor", "test", "diag", device_id=device.id, config_entry=source
     )
-    entry = await setup_entry(
-        hass, {CONF_HIGH_PRIORITY_TARGETS: ["notify.mobile_app_private"]}
-    )
+    entry = await setup_entry(hass, {CONF_HIGH_PRIORITY_TARGETS: ["notify.mobile_app_private"], CONF_SIGNAL_MARGIN: 0})
     coordinator = entry.runtime_data
 
     # A seven-day history with one spike: the trim must show through.
@@ -255,7 +254,7 @@ async def test_diagnostics_report_exclusions(hass: HomeAssistant):
     er.async_get(hass).async_get_or_create(
         "sensor", "test", "diagx", device_id=device.id, config_entry=source
     )
-    entry = await setup_entry(hass, {CONF_EXCLUDED_DEVICES: [device.id]})
+    entry = await setup_entry(hass, {CONF_EXCLUDED_DEVICES: [device.id], CONF_SIGNAL_MARGIN: 0})
 
     result = await async_get_config_entry_diagnostics(hass, entry)
     assert result["devices"][device.id]["excluded"] == "device"
@@ -269,6 +268,10 @@ async def test_diagnostics_report_exclusions(hass: HomeAssistant):
 # ==================================================================
 
 async def _marks_coordinator(hass, options=None):
+    # These tests read the floor marks in the report, which were
+    # written when the floor was the line, so the margin is pinned off
+    # and they go on testing the floor. The margin has its own file.
+    options = {CONF_SIGNAL_MARGIN: 0, **(options or {})}
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device = dr.async_get(hass).async_get_or_create(
@@ -353,14 +356,14 @@ async def test_a_reading_outside_the_scale_says_so(
 async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     """The column headers carry the tunables: GAPS its fixed trim k,
     SIGNAL the sensitivity as a word, BAT LEVEL the live threshold."""
-    coord, _ = await _marks_coordinator(hass, {CONF_SIGNAL_SENSITIVITY: 1})
+    coord, _ = await _marks_coordinator(hass, {CONF_SIGNAL_ANOMALY_TRIM: 1})
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
         hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
     ).read()
     header = next(line for line in text.splitlines() if "DEVICE (INTEGRATION) | STATUS" in line)
-    # Slider at +1 renders as the word Watchful, not a number.
-    assert "SIGNAL (Watchful)" in header
+    # Slider at +1 renders as the word Deep, not a number.
+    assert "SIGNAL (Deep)" in header
     assert "GAPS (K=" in header
     assert "BAT LEVEL (floor 20%)" in header
     # The retired columns are gone.
@@ -423,7 +426,7 @@ async def test_status_grammar(hass: HomeAssistant):
     global exclude; Excluded (BAT, SIG, FRZ) in column order when
     sections combine."""
     d = _plain_device(hass, "st", "Status Device")
-    entry = await setup_entry(hass)
+    entry = await setup_entry(hass, {CONF_SIGNAL_MARGIN: 0})
     coord = entry.runtime_data
     assert coord._device_status(d.id) == "Reported"
 
@@ -468,7 +471,7 @@ async def test_regenerate_judges_then_writes(hass: HomeAssistant):
     """The regenerate action judges every device, then writes a fresh
     report that shows a device already down."""
     d = _plain_device(hass, "ghost", "Ghost Device")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     record = _new_device_record("2026-07-08T00:00:00+00:00", None)
     record[DEV_EVENT_COUNT] = 0
     record[DEV_LAST_ACTIVITY] = None
@@ -490,7 +493,7 @@ async def test_regenerate_judges_then_writes(hass: HomeAssistant):
 async def test_regenerate_button_present_and_presses(hass: HomeAssistant):
     """The Regenerate Reports button exists on the Device Sentinel
     device and its press runs without error."""
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     reg = er.async_get(hass)
     buttons = [
         e
@@ -513,7 +516,7 @@ async def test_written_header_is_readable_on_both_reports(
     """Both report headers read a readable local time with the trigger
     tag, not a raw ISO timestamp."""
     _plain_device(hass, "wh", "Written Device")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     await hass.async_add_executor_job(coord._write_reports, "manual")
     for name in ("device_telemetry.md", "classification.md"):
         text = open(
@@ -542,7 +545,7 @@ async def test_all_three_families_grouped_and_sorted(
     d1, e1 = _register(hass, "r1", "Zebra Frozen")
     d2, e2 = _register(hass, "r2", "Apple Frozen")
     d3, e3 = _register(hass, "r3", "Mango Battery", battery=True)
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     for eid in (e1, e2, e3):
         hass.states.async_set(eid, "on")
     _freeze(coord, d1.id)
@@ -564,7 +567,7 @@ async def test_acknowledged_item_still_shows_tagged(
     """The whole reason for the section: the checkbox silences the
     phone, never the diagnostics."""
     device, eid = _register(hass, "a1", "Acked Sensor")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(eid, "21.5")
     _freeze(coord, device.id)
     coord._sync_problem_list()
@@ -582,7 +585,7 @@ async def test_hand_deleted_item_shows_removed_tag(
     """Still reporting, removed from the list by a human: the fault
     stays visible here with the removed tag until the sync re-adds."""
     device, eid = _register(hass, "x1", "Orphan Sensor")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(eid, "21.5")
     _freeze(coord, device.id)
     coord._sync_problem_list()
@@ -598,7 +601,7 @@ async def test_two_family_device_appears_in_both(hass: HomeAssistant):
     """One device, two lines, each family carrying its own age, both
     wearing the device's single todo tag."""
     device, eid = _register(hass, "b1", "Doubled Sensor", battery=True)
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(eid, "21.5")
     _freeze(coord, device.id)
     _battery_low(coord, device.id)
@@ -612,7 +615,7 @@ async def test_two_family_device_appears_in_both(hass: HomeAssistant):
 
 
 async def test_empty_section_is_all_clear(hass: HomeAssistant):
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     coord._sync_problem_list()
     text = "\n".join(coord._reporting_lines())
     assert "## Reporting Devices (0)" in text
@@ -625,7 +628,7 @@ async def test_status_cell_reverted_to_plain_grammar(
     """The 0.6.1 icon is gone from STATUS: a faulted device reads
     plain Reported there, and the icon lives in Reporting Devices."""
     device, eid = _register(hass, "s1", "Plain Status")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(eid, "21.5")
     _freeze(coord, device.id)
     coord._sync_problem_list()
@@ -634,7 +637,7 @@ async def test_status_cell_reverted_to_plain_grammar(
 
 async def test_section_reaches_the_written_report(hass: HomeAssistant):
     device, eid = _register(hass, "w1", "Written Sensor")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(eid, "21.5")
     _freeze(coord, device.id)
     coord._sync_problem_list()
@@ -690,7 +693,7 @@ async def test_quiet_device_never_opens_an_episode(hass: HomeAssistant):
     """The filter that keeps the file readable: a device inside its
     rhythm produces no row."""
     device, entity_id = _register(hass, "q1", "Quiet Sensor")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     _armed_and_silent(coord, device.id, 0.5)  # half its basis
@@ -704,7 +707,7 @@ async def test_episode_opens_past_basis_and_resumes(
     """Past its rhythm opens a row; speaking for itself closes it as
     resumed, with the gap learned."""
     device, entity_id = _register(hass, "r1", "Resuming Sensor")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     _armed_and_silent(coord, device.id, 2.0)
@@ -726,7 +729,7 @@ async def test_reboot_truncates_and_lag_fills_later(
     """A restart stamps the open episode; the lag arrives with the
     device's first genuine report, which is the wedge discriminator."""
     device, entity_id = _register(hass, "i1", "Levered Sensor")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     _armed_and_silent(coord, device.id, 3.0)
@@ -748,7 +751,7 @@ async def test_reboot_truncates_and_lag_fills_later(
 async def test_second_silence_is_a_new_row(hass: HomeAssistant):
     """One row per occurrence, so a nightly wedge reads as a pattern."""
     device, entity_id = _register(hass, "s2", "Repeating Sensor")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     _armed_and_silent(coord, device.id, 2.0)
@@ -762,7 +765,7 @@ async def test_second_silence_is_a_new_row(hass: HomeAssistant):
 async def test_report_written_and_readable(hass: HomeAssistant):
     """The file exists, names the device, and shows the columns."""
     device, entity_id = _register(hass, "we1", "Episode Written Sensor")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     _armed_and_silent(coord, device.id, 2.0)
@@ -778,7 +781,7 @@ async def test_report_written_and_readable(hass: HomeAssistant):
 
 
 async def test_empty_report_says_so(hass: HomeAssistant):
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     await hass.async_add_executor_job(coord._write_reports, "test")
     path = hass.config.path("device_sentinel", "diagnostics", "silence_episodes.md")
     with open(path, encoding="utf-8") as handle:
@@ -788,7 +791,7 @@ async def test_empty_report_says_so(hass: HomeAssistant):
 
 async def test_episodes_reach_diagnostics(hass: HomeAssistant):
     device, entity_id = _register(hass, "de1", "Episode Diag Sensor")
-    entry = await setup_entry(hass)
+    entry = await setup_entry(hass, {CONF_SIGNAL_MARGIN: 0})
     coord = entry.runtime_data
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
@@ -814,7 +817,7 @@ async def test_fast_device_ignores_a_trivial_silence(
     """The 0.6.7 noise case: a 36-second rhythm silent for 50
     seconds is a device behaving normally, not an episode."""
     device, entity_id = _register(hass, "fd1", "Fast Sensor")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     _rhythm(coord, device.id, 36.0, 50.0)
@@ -828,7 +831,7 @@ async def test_fast_device_opens_once_it_spends_its_patience(
     """The same device silent well into its grace does open a row,
     so the filter suppresses noise without going blind."""
     device, entity_id = _register(hass, "fd2", "Fast Sensor Two")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     record = coord.data["devices"][device.id]
@@ -848,9 +851,7 @@ async def test_globally_excluded_device_is_skipped(
 ):
     """#106: no verdict is possible, so no episode explains one."""
     device, entity_id = _register(hass, "ge1", "Global Excluded")
-    coord = await setup_coordinator(
-        hass, {CONF_EXCLUDED_DEVICES: [device.id]}
-    )
+    coord = await setup_coordinator(hass, {CONF_EXCLUDED_DEVICES: [device.id], CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     _rhythm(coord, device.id, 3600.0, 8 * 3600.0)
@@ -860,9 +861,7 @@ async def test_globally_excluded_device_is_skipped(
 
 async def test_freeze_excluded_device_is_skipped(hass: HomeAssistant):
     device, entity_id = _register(hass, "ze1", "Freeze Excluded")
-    coord = await setup_coordinator(
-        hass, {CONF_FREEZE_EXCLUDED_DEVICES: [device.id]}
-    )
+    coord = await setup_coordinator(hass, {CONF_FREEZE_EXCLUDED_DEVICES: [device.id], CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     _rhythm(coord, device.id, 3600.0, 8 * 3600.0)
@@ -876,9 +875,7 @@ async def test_battery_excluded_device_still_counts(
     """Excluded for battery only: still judged for freeze, so its
     silences still belong in the file."""
     device, entity_id = _register(hass, "be1", "Battery Excluded")
-    coord = await setup_coordinator(
-        hass, {CONF_BATTERY_EXCLUDED_DEVICES: [device.id]}
-    )
+    coord = await setup_coordinator(hass, {CONF_BATTERY_EXCLUDED_DEVICES: [device.id], CONF_SIGNAL_MARGIN: 0})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     _rhythm(coord, device.id, 3600.0, 8 * 3600.0)
