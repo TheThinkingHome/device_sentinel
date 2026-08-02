@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.10.16 (2026-08-02)
+# File: reports.py, Version: 0.10.17 (2026-08-02)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -83,6 +83,7 @@ from .const import (
     INC_WHEN,
     LEARNING_MIN_DAYS,
     LOGGER,
+    REPORT_BRIEF_HTML,
     REPORT_BRIEF_PREFIX,
     REPORT_CLASSIFICATION,
     REPORT_DIAGNOSTIC_DIR,
@@ -364,11 +365,11 @@ class ReportWritingMixin:
         if not rows:
             return "<p class='empty'>Nothing above zero.</p>"
         top = max(max(v for _, _, v in rows), red + 10.0)
-        # 12px bars on 3px gaps (ruled 2026-08-02): the first cut at
-        # 22 on 6 made the three sections 4,100px of chart and the
-        # page a scroll; 15px per device is a 46 percent cut and 11px
-        # labels stay readable on a phone.
-        width, bar_h, gap, label_w = 640, 12, 3, 240
+        # 13px bars on 4px gaps with 12px labels (revised 2026-08-02,
+        # same day): the first cut to 12 on 3 with 11px labels went
+        # too far and the text was hard to read. 17px per device is
+        # still a 39 percent cut against the original 22 on 6.
+        width, bar_h, gap, label_w = 640, 13, 4, 240
         chart_w = width - label_w - 60
         height = len(rows) * (bar_h + gap) + 30
         parts = [
@@ -402,12 +403,12 @@ class ReportWritingMixin:
             if len(shown) > 36:
                 shown = shown[:35] + "\u2026"
             parts.append(
-                f"<text x='{label_w - 8}' y='{y + 10}' class='lbl' "
-                f"font-size='11' text-anchor='end'>{shown}</text>"
+                f"<text x='{label_w - 8}' y='{y + 11}' class='lbl' "
+                f"font-size='12' text-anchor='end'>{shown}</text>"
                 f"<rect x='{label_w}' y='{y}' width='{bar:.0f}' "
                 f"height='{bar_h}' rx='2' fill='{color}'/>"
-                f"<text x='{label_w + bar + 6:.0f}' y='{y + 10}' "
-                f"class='lbl' font-size='10'>{value:.1f}%</text>"
+                f"<text x='{label_w + bar + 6:.0f}' y='{y + 11}' "
+                f"class='lbl' font-size='11'>{value:.1f}%</text>"
             )
             y += bar_h + gap
         parts.append("</svg>")
@@ -1633,8 +1634,103 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         text = "\n".join(lines)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(text)
+        self._write_brief_html(text)
         self._trim_briefs(report_directory)
         return text if complete else None
+
+    def _write_brief_html(self, markdown: str) -> None:
+        """Render the brief as a styled page under www (#178, rung 1).
+
+        One file, daily_brief.html, always the current picture: a
+        dashboard Webpage card wants one stable URL, and the dated
+        Markdown files remain the history until the ladder completes.
+        The scheduled roll writes the closed day and then the new
+        in-progress window, so the last write leaves this file
+        current. It is rendered from the Markdown text itself rather
+        than composed a second time, so the two briefs cannot drift:
+        what the Markdown says is what the page shows, and when the
+        email switches to this file (0.10.18, amending #135) the
+        content parity is already guaranteed.
+        """
+        html_lines: list[str] = []
+        table: list[str] = []
+
+        def _flush_table() -> None:
+            if not table:
+                return
+            html_lines.append("<table>")
+            header_cells = [
+                cell.strip()
+                for cell in table[0].strip().strip("|").split("|")
+            ]
+            html_lines.append(
+                "<tr>"
+                + "".join(f"<th>{cell}</th>" for cell in header_cells)
+                + "</tr>"
+            )
+            for row in table[2:]:
+                cells = [
+                    cell.strip()
+                    for cell in row.strip().strip("|").split("|")
+                ]
+                html_lines.append(
+                    "<tr>"
+                    + "".join(f"<td>{cell}</td>" for cell in cells)
+                    + "</tr>"
+                )
+            html_lines.append("</table>")
+            table.clear()
+
+        for line in markdown.split("\n"):
+            if line.startswith("|"):
+                table.append(line)
+                continue
+            _flush_table()
+            if line.startswith("# "):
+                html_lines.append(f"<h1>{line[2:]}</h1>")
+            elif line.startswith("## "):
+                html_lines.append(f"<h2>{line[3:]}</h2>")
+            elif line.strip():
+                text_line = line
+                if REPORT_SIGNAL_DWELL_URL in text_line:
+                    text_line = text_line.replace(
+                        REPORT_SIGNAL_DWELL_URL,
+                        f"<a href='{REPORT_SIGNAL_DWELL_URL}'>"
+                        f"the signal dwell chart</a>",
+                    )
+                html_lines.append(f"<p>{text_line}</p>")
+        _flush_table()
+
+        body = "\n".join(html_lines)
+        page = f"""<!DOCTYPE html>
+<html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Device Sentinel Daily Brief</title>
+<style>
+body {{ font-family: sans-serif; margin: 16px; background: #fff;
+  color: #1a1a19; max-width: 720px; }}
+h1 {{ font-size: 20px; }} h2 {{ font-size: 16px; margin-top: 24px; }}
+p, td, th {{ font-size: 13px; }}
+table {{ border-collapse: collapse; margin: 8px 0; }}
+td, th {{ border: 1px solid #D3D1C7; padding: 4px 8px;
+  text-align: left; }}
+a {{ color: #2a78d6; }}
+@media (prefers-color-scheme: dark) {{
+  body {{ background: #1a1a19; color: #eee; }}
+  td, th {{ border-color: #444; }}
+  a {{ color: #6ba6e8; }} }}
+</style></head><body>
+{body}
+</body></html>
+"""
+        directory = self.hass.config.path(REPORT_WWW_DIR)
+        os.makedirs(directory, exist_ok=True)
+        with open(
+            os.path.join(directory, REPORT_BRIEF_HTML),
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            handle.write(page)
 
     def _trim_briefs(self, report_directory: str) -> None:
         """Keep the most recent briefs, drop the rest."""
