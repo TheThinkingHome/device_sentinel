@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.13 (2026-08-01)
+# File: coordinator.py, Version: 0.10.14 (2026-08-01)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -56,12 +56,14 @@ from .messenger import MessengerMixin
 from .notifier import NotifierMixin
 from .narrative import NarrativeMixin
 from .reports import ReportWritingMixin
+from .backup import async_take_backup
 from .bridge import Z2MBridgeReader
 from .const import (
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
     ACTION_UNACKNOWLEDGED,
+    BACKUP_SUFFIX_PREPHASE_C,
     BATTERY_CLEAR_MARGIN,
     BRIDGE_DOWN,
     BRIDGE_UNKNOWN,
@@ -419,6 +421,12 @@ class DeviceSentinelCoordinator(
         self._bridge_down_at: dict[str, float] = {}
         self._pairing_open_at: dict[str, float] = {}
         self._pending_epoch_wipe: int | None = None
+        # Phase C (#101, #130). True only once the pre-strip backup is
+        # in place; every main-file save consults it. False means the
+        # main file keeps carrying the clock copies, which is the
+        # harmless direction: nothing is lost, the split simply is not
+        # finished yet on this install.
+        self._strip_clocks = False
         # #163 and #167. The first is how many devices this boot reset
         # after an unclean stop, held until setup succeeds so the
         # system event is written beside the restart it explains. The
@@ -620,6 +628,25 @@ class DeviceSentinelCoordinator(
             )
 
         self.data = loaded
+        # Phase C's gate (#130), at the one moment it can be honest:
+        # after the load, before the first save of this session. The
+        # copy taken here is the file as the previous version left it,
+        # clocks and all, which is exactly what a rollback needs. The
+        # backup module takes it once and remembers; on every later
+        # boot this returns immediately. A failure means the strip
+        # simply does not happen: the save below and every save after
+        # it keeps writing the clock copies into the main file, which
+        # is the pre-C behaviour and loses nothing.
+        self._strip_clocks = await async_take_backup(
+            self.hass, self.data, BACKUP_SUFFIX_PREPHASE_C
+        )
+        if not self._strip_clocks:
+            LOGGER.error(
+                "The pre-strip storage backup could not be taken, so "
+                "the main file keeps carrying the activity clocks. "
+                "Nothing is lost; the storage split is not finished on "
+                "this install until the backup succeeds"
+            )
         # Both stamped, and stamped here rather than at the first
         # later save. Setup writes storage directly rather than
         # through _save_now, and an unstamped main file beside a
@@ -2319,26 +2346,76 @@ class DeviceSentinelCoordinator(
         file to decide which holds the newer clocks. Serializing the
         main file is what the cold flag asks for, so it clears here,
         in the one place every main-file write passes through.
+
+        Phase C happens here (#101). Once the pre-strip backup is in
+        place, the nine clock fields stay out of the main file: they
+        are the hot file's job, written every interval, and the copies
+        in the main file existed only as a rollback net. The strip is
+        a filtered view built for the write rather than a mutation,
+        because the live records must keep their clocks for every
+        reader in this process; only the file sheds them.
         """
         self._cold_dirty = False
         self.data[DATA_SAVED_AT] = dt_util.utcnow().timestamp()
-        return self.data
+        if not self._strip_clocks:
+            return self.data
+        out = dict(self.data)
+        out[DATA_DEVICES] = {
+            device_id: (
+                {
+                    field: value
+                    for field, value in record.items()
+                    if field not in CLOCK_FIELDS
+                }
+                if isinstance(record, dict)
+                else record
+            )
+            for device_id, record in self.data[DATA_DEVICES].items()
+        }
+        return out
 
     def _merge_clocks(
         self, loaded: dict[str, Any], hot: dict[str, Any] | None
     ) -> int:
         """Overlay the hot file's clocks onto the loaded record set.
 
-        Phase B leaves the main file without the clocks a routine save
-        moved on, so this is how they come back. The hot file wins,
-        but only once it has proved it is the newer of the two: it is
-        written second, so a failure between the two writes leaves it
-        behind, and overlaying a stale clock would push a device's
-        last activity into the past. A device the main file has never
-        heard of is skipped, because nine fields cannot rebuild a
-        record. Returns how many devices took their clocks from here.
+        Under Phase C the hot file is the only place the clocks live,
+        so the old rule, refuse a suspect hot file and fall back to
+        the main file's copies, had to change with the strip (#101):
+        after it, three of this method's four exits meant "use copies
+        that no longer exist" and a fleet would load with no clocks at
+        all. The decision is now data-driven rather than
+        version-driven: whether the main file still carries clocks is
+        read from the records themselves, so the same code is correct
+        on a freshly stripped install, on one whose backup failed and
+        which still writes the copies, and on a pre-0.10.0 file with
+        no stamps at all.
+
+        Where the main file still carries clocks, the old caution
+        stands: a hot file older than the main file is refused, since
+        overlaying a stale clock would push a device's last activity
+        into the past when a newer copy is sitting right there. Where
+        the main file is bare, the hot file is used whatever its age,
+        because a slightly stale clock self-heals on the device's next
+        report while no clock at all is a fleet-wide reset. A device
+        the main file has never heard of is skipped, because nine
+        fields cannot rebuild a record. Returns how many devices took
+        their clocks from here.
         """
+        devices = loaded.get(DATA_DEVICES) or {}
+        cold_has_clocks = any(
+            isinstance(record, dict) and DEV_LAST_ACTIVITY in record
+            for record in devices.values()
+        )
         if not hot:
+            if devices and not cold_has_clocks:
+                LOGGER.warning(
+                    "The main storage file carries no activity clocks "
+                    "and %s is missing, so every device's clock starts "
+                    "over from this boot. This is expected only if the "
+                    "clocks file was deleted by hand",
+                    STORAGE_CLOCKS_KEY,
+                )
             return 0
         hot_at = hot.get(DATA_SAVED_AT)
         cold_at = loaded.get(DATA_SAVED_AT)
@@ -2348,7 +2425,7 @@ class DeviceSentinelCoordinator(
             # files were written together before this release, so the
             # main file is already current and there is nothing owed.
             return 0
-        if hot_at < cold_at:
+        if hot_at < cold_at and cold_has_clocks:
             LOGGER.warning(
                 "Activity clocks on disk are %.0f s older than the "
                 "main storage file, so they have been left alone. "
@@ -2359,7 +2436,17 @@ class DeviceSentinelCoordinator(
                 cold_at - hot_at,
             )
             return 0
-        devices = loaded.get(DATA_DEVICES) or {}
+        if hot_at < cold_at:
+            LOGGER.warning(
+                "Activity clocks on disk are %.0f s older than the "
+                "main storage file, which means the last write pair "
+                "was torn between its two files. The main file no "
+                "longer carries clock copies, so the hot file is used "
+                "regardless: a clock this slightly stale heals on the "
+                "device's next report, while discarding it would reset "
+                "the whole fleet",
+                cold_at - hot_at,
+            )
         merged = 0
         for device_id, fields in (hot.get("clocks") or {}).items():
             record = devices.get(device_id)
