@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.14 (2026-08-01)
+# File: coordinator.py, Version: 0.10.15 (2026-08-02)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -92,6 +92,7 @@ from .const import (
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
     CONF_SIGNAL_MARGIN,
+    CONF_SIGNAL_RED,
     CONF_TAINT_FLOOR,
     CONF_TAINT_SHARE,
     DAILY_MAX_KEEP,
@@ -115,6 +116,7 @@ from .const import (
     DEFAULT_SETTLE_SHARE_PCT,
     DEFAULT_SIGNAL_ANOMALY_TRIM,
     DEFAULT_SIGNAL_MARGIN,
+    DEFAULT_SIGNAL_RED,
     DEFAULT_TAINT_FLOOR_MINUTES,
     DEFAULT_TAINT_SHARE_PCT,
     DEV_BATTERY_DAILY,
@@ -129,9 +131,16 @@ from .const import (
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_BELOW_SINCE,
     DEV_SIGNAL_BELOW_TODAY,
+    DEV_SIGNAL_COUNT,
+    DEV_SIGNAL_DAILY_MAX,
+    DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_LAST_CHANGE,
+    DEV_SIGNAL_SUM,
+    DEV_SIGNAL_SUM_SQ,
+    DEV_SIGNAL_TODAY_MAX,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
@@ -185,6 +194,8 @@ from .const import (
     SIGNAL_PROBLEM_ADDITION,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
+    SIGNAL_RED_MAX,
+    SIGNAL_RED_MIN,
     SIGNAL_TRIM_LADDER_FORTNIGHT,
     SIGNAL_TRIM_LADDER_WEEK,
     STACK_MATTER,
@@ -262,6 +273,13 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_SIGNAL_BELOW_SINCE: None,
         DEV_SIGNAL_BELOW_TODAY: 0.0,
         DEV_SIGNAL_DWELL_DAILY: [],
+        DEV_SIGNAL_SUM: 0.0,
+        DEV_SIGNAL_SUM_SQ: 0.0,
+        DEV_SIGNAL_COUNT: 0,
+        DEV_SIGNAL_TODAY_MAX: None,
+        DEV_SIGNAL_DAILY_MEAN: [],
+        DEV_SIGNAL_DAILY_SD: [],
+        DEV_SIGNAL_DAILY_MAX: [],
         DEV_SIGNAL_LAST_CHANGE: None,
         DEV_BATTERY_LOW: False,
         DEV_BATTERY_SINCE: None,
@@ -583,6 +601,13 @@ class DeviceSentinelCoordinator(
                 record.setdefault(DEV_SIGNAL_BELOW_SINCE, None)
                 record.setdefault(DEV_SIGNAL_BELOW_TODAY, 0.0)
                 record.setdefault(DEV_SIGNAL_DWELL_DAILY, [])
+                record.setdefault(DEV_SIGNAL_SUM, 0.0)
+                record.setdefault(DEV_SIGNAL_SUM_SQ, 0.0)
+                record.setdefault(DEV_SIGNAL_COUNT, 0)
+                record.setdefault(DEV_SIGNAL_TODAY_MAX, None)
+                record.setdefault(DEV_SIGNAL_DAILY_MEAN, [])
+                record.setdefault(DEV_SIGNAL_DAILY_SD, [])
+                record.setdefault(DEV_SIGNAL_DAILY_MAX, [])
                 record.setdefault(DEV_SIGNAL_LAST_CHANGE, None)
                 record.setdefault(DEV_BATTERY_LOW, False)
                 record.setdefault(DEV_BATTERY_SINCE, None)
@@ -1405,6 +1430,47 @@ class DeviceSentinelCoordinator(
             )
             del record[DEV_SIGNAL_DWELL_DAILY][:-self.retention_days]
         record[DEV_SIGNAL_BELOW_TODAY] = 0.0
+        self._roll_signal_stats(record)
+
+    def _roll_signal_stats(self, record: dict[str, Any]) -> None:
+        """Close the day's signal distribution into the daily series.
+
+        Mean and standard deviation are what the Bayesian successor to
+        the current thresholding needs (#172), so they are recorded
+        ahead of it: the day's running sum, sum of squares, and count
+        become one mean, one deviation, and the day's maximum, and the
+        accumulators reset for the new day. The deviation is the
+        population form, and a one-reading day records zero deviation
+        rather than none, because one reading genuinely varied by
+        nothing. A day with no real readings appends nothing, so the
+        three series stay aligned with each other but may be shorter
+        than the dwell series, which records whenever a line existed.
+        """
+        count = int(record.get(DEV_SIGNAL_COUNT) or 0)
+        if count > 0:
+            total = float(record.get(DEV_SIGNAL_SUM) or 0.0)
+            squares = float(record.get(DEV_SIGNAL_SUM_SQ) or 0.0)
+            mean = total / count
+            variance = max(0.0, squares / count - mean * mean)
+            record.setdefault(DEV_SIGNAL_DAILY_MEAN, []).append(
+                round(mean, 2)
+            )
+            record.setdefault(DEV_SIGNAL_DAILY_SD, []).append(
+                round(variance**0.5, 2)
+            )
+            record.setdefault(DEV_SIGNAL_DAILY_MAX, []).append(
+                record.get(DEV_SIGNAL_TODAY_MAX)
+            )
+            for field in (
+                DEV_SIGNAL_DAILY_MEAN,
+                DEV_SIGNAL_DAILY_SD,
+                DEV_SIGNAL_DAILY_MAX,
+            ):
+                del record[field][:-self.retention_days]
+        record[DEV_SIGNAL_SUM] = 0.0
+        record[DEV_SIGNAL_SUM_SQ] = 0.0
+        record[DEV_SIGNAL_COUNT] = 0
+        record[DEV_SIGNAL_TODAY_MAX] = None
 
     def _feed_signal(
         self, record: dict[str, Any], value: float, now: float
@@ -1430,6 +1496,21 @@ class DeviceSentinelCoordinator(
         today_min = record.get(DEV_SIGNAL_TODAY_MIN)
         if today_min is None or value < today_min:
             record[DEV_SIGNAL_TODAY_MIN] = value
+        today_max = record.get(DEV_SIGNAL_TODAY_MAX)
+        if today_max is None or value > today_max:
+            record[DEV_SIGNAL_TODAY_MAX] = value
+        # The good-state accumulators (#172): sum, sum of squares,
+        # count. Three floats carry the day's whole distribution well
+        # enough for a mean and a deviation, and no samples are kept.
+        record[DEV_SIGNAL_SUM] = (
+            float(record.get(DEV_SIGNAL_SUM) or 0.0) + value
+        )
+        record[DEV_SIGNAL_SUM_SQ] = (
+            float(record.get(DEV_SIGNAL_SUM_SQ) or 0.0) + value * value
+        )
+        record[DEV_SIGNAL_COUNT] = (
+            int(record.get(DEV_SIGNAL_COUNT) or 0) + 1
+        )
         self._feed_dwell(record, value, now)
 
     def _feed_dwell(
@@ -1550,6 +1631,13 @@ class DeviceSentinelCoordinator(
         return max(
             SIGNAL_MARGIN_MIN, min(margin, SIGNAL_MARGIN_MAX)
         ) / 100.0
+
+    def _signal_red(self) -> float:
+        """Return the red threshold for the dwell report, clamped."""
+        red = float(
+            self.entry.options.get(CONF_SIGNAL_RED, DEFAULT_SIGNAL_RED)
+        )
+        return max(SIGNAL_RED_MIN, min(red, SIGNAL_RED_MAX))
 
     def _signal_trim_label(self) -> str:
         """Return the anomaly trim as a word, not a number.
