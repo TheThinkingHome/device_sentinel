@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.10.13 (2026-08-01)
+# File: test_reports.py, Version: 0.10.15 (2026-08-02)
 
 """The diagnostic files: telemetry and classification.
 
@@ -373,12 +373,13 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     assert "SIG FROZEN" not in header
 
     # Every data row must have exactly as many cells as the header,
-    # eight, so a dropped column can never leave the rows misaligned.
+    # nine since 0.10.15 added MEAN±SD, so a dropped column can
+    # never leave the rows misaligned.
     def _cells(line: str) -> int:
         return len([c for c in line.strip().strip("|").split("|")])
 
     header_cells = _cells(header)
-    assert header_cells == 8, header_cells
+    assert header_cells == 9, header_cells
     data_rows = [
         line
         for line in text.splitlines()
