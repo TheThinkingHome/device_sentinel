@@ -103,6 +103,7 @@
         "data": {
           "signal_margin": "Sensitivity",
           "signal_sensitivity": "Anomaly Trim",
+          "signal_red_threshold": "Red Threshold",
           "signal_excluded_integrations": "Integrations Excluded from Signal Reporting",
           "signal_excluded_labels": "Labels Excluded from Signal Reporting",
           "signal_excluded_devices": "Devices Excluded from Signal Reporting"
@@ -110,6 +111,7 @@
         "data_description": {
           "signal_margin": "How close to the floor a reading must be to count as weak. At 0, only readings at or below the floor register. Higher values add a margin above it, catching links that hover just above their baseline. The margin scales with the device: 5% of a 200-point floor adds a 10-point margin, while 5% of a 40-point floor adds 2 points.",
           "signal_sensitivity": "Where the floor sits. Shifting left trims fewer bad days, pulling the floor down toward the device's absolute worst performance. Shifting right trims more outliers, raising the floor to reflect normal operation.",
+          "signal_red_threshold": "Where yellow turns red on the signal dwell chart. The chart colors every device by its share of yesterday spent at or below its line: 0 to 5 percent is always green, 5 percent up to this value is yellow, and above it is red. Every red device is also pulled out as an anomaly and described in full. Coloring only; nothing alerts from it.",
           "signal_excluded_integrations": "Every device from a ticked integration stops being reported for signal.",
           "signal_excluded_labels": "Devices carrying a ticked label stop being reported for signal.",
           "signal_excluded_devices": "A ticked device stops being reported for signal. It keeps recording, so re-including it brings its history back instantly."
