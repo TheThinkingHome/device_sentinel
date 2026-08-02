@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.10.15 (2026-08-02)
+# File: reports.py, Version: 0.10.16 (2026-08-02)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -228,7 +228,15 @@ class ReportWritingMixin:
         """
         rows: list[tuple[str, str, float]] = []
         for device_id, record in self.data[DATA_DEVICES].items():
+            # Both ladders apply. The signal-only list is this
+            # surface's own release valve, and the global ladder
+            # excludes the device from judgment and reporting
+            # everywhere, which a chart and its anomaly table are
+            # (fault found live 2026-08-02: two globally excluded
+            # mobile_app devices charted, one as an anomaly).
             if self._signal_excluded(device_id):
+                continue
+            if device_id in self._excluded_devices:
                 continue
             series = record.get(DEV_SIGNAL_DWELL_DAILY) or []
             if not series:
@@ -242,12 +250,30 @@ class ReportWritingMixin:
         rows.sort(key=lambda row: -row[2])
         return rows
 
+    def _device_area(self, device_id: str) -> str:
+        """Return the device's area name, or an empty string.
+
+        The chart labels carry the room (ruled 2026-08-02) because the
+        pattern that pays for the whole page is several weak links
+        clustering in one room, and a reader should see that in the
+        bars themselves rather than only in the anomaly table.
+        """
+        from homeassistant.helpers import area_registry as ar
+
+        device = dr.async_get(self.hass).async_get(device_id)
+        if not device or not device.area_id:
+            return ""
+        area = ar.async_get(self.hass).async_get_area(device.area_id)
+        return area.name if area else ""
+
     def _dwell_zero_count(self) -> int:
         """Return how many recorded devices sat at exactly zero
         yesterday, for the chart header."""
         zeros = 0
         for device_id, record in self.data[DATA_DEVICES].items():
-            if self._signal_excluded(device_id):
+            if self._signal_excluded(device_id) or (
+                device_id in self._excluded_devices
+            ):
                 continue
             series = record.get(DEV_SIGNAL_DWELL_DAILY) or []
             if series and series[-1] == 0:
@@ -293,14 +319,26 @@ class ReportWritingMixin:
                 floor = sorted(history)[
                     self._signal_effective_k(len(history))
                 ]
+            # LQI runs positive, RSSI negative; a table mixing 176 and
+            # -68 with no tag is unreadable to anyone who does not
+            # know the fleet (ruled 2026-08-02). The sign of the floor
+            # is the type, and the floor exists for every device that
+            # can be an anomaly, since without one there is no line to
+            # dwell under.
+            kind = ""
+            if floor is not None:
+                kind = "RSSI" if floor < 0 else "LQI"
+            previous = series[-2] if len(series) >= 2 else None
             out.append(
                 {
                     "name": name,
                     "dwell": value,
+                    "previous": previous,
                     "streak": streak,
                     "integration": self._watched.get(device_id, "?"),
                     "area": area_name or "Unassigned",
                     "floor": floor,
+                    "kind": kind,
                     "value": record.get(DEV_SIGNAL_VALUE),
                     "mean": (record.get(DEV_SIGNAL_DAILY_MEAN) or [None])[
                         -1
@@ -310,9 +348,8 @@ class ReportWritingMixin:
             )
         return out
 
-    @staticmethod
     def _dwell_bar_svg(
-        rows: list[tuple[str, str, float]], red: float
+        self, rows: list[tuple[str, str, float]], red: float
     ) -> str:
         """Return one section's chart as inline SVG, banded by color.
 
@@ -327,7 +364,11 @@ class ReportWritingMixin:
         if not rows:
             return "<p class='empty'>Nothing above zero.</p>"
         top = max(max(v for _, _, v in rows), red + 10.0)
-        width, bar_h, gap, label_w = 640, 22, 6, 220
+        # 12px bars on 3px gaps (ruled 2026-08-02): the first cut at
+        # 22 on 6 made the three sections 4,100px of chart and the
+        # page a scroll; 15px per device is a 46 percent cut and 11px
+        # labels stay readable on a phone.
+        width, bar_h, gap, label_w = 640, 12, 3, 240
         chart_w = width - label_w - 60
         height = len(rows) * (bar_h + gap) + 30
         parts = [
@@ -348,7 +389,7 @@ class ReportWritingMixin:
             f"font-size='11' text-anchor='middle'>{red:.0f}%</text>"
         )
         y = 4
-        for _, name, value in rows:
+        for device_id, name, value in rows:
             if value <= SIGNAL_GREEN_CEILING:
                 color = "#1D9E75"
             elif value <= red:
@@ -356,14 +397,17 @@ class ReportWritingMixin:
             else:
                 color = "#D03B3B"
             bar = max(2.0, chart_w * value / top)
-            shown = name if len(name) <= 30 else name[:29] + "\u2026"
+            area = self._device_area(device_id)
+            shown = f"{name} ({area})" if area else name
+            if len(shown) > 36:
+                shown = shown[:35] + "\u2026"
             parts.append(
-                f"<text x='{label_w - 8}' y='{y + 15}' class='lbl' "
-                f"font-size='12' text-anchor='end'>{shown}</text>"
+                f"<text x='{label_w - 8}' y='{y + 10}' class='lbl' "
+                f"font-size='11' text-anchor='end'>{shown}</text>"
                 f"<rect x='{label_w}' y='{y}' width='{bar:.0f}' "
-                f"height='{bar_h}' rx='3' fill='{color}'/>"
-                f"<text x='{label_w + bar + 6:.0f}' y='{y + 15}' "
-                f"class='lbl' font-size='11'>{value:.1f}%</text>"
+                f"height='{bar_h}' rx='2' fill='{color}'/>"
+                f"<text x='{label_w + bar + 6:.0f}' y='{y + 10}' "
+                f"class='lbl' font-size='10'>{value:.1f}%</text>"
             )
             y += bar_h + gap
         parts.append("</svg>")
@@ -383,16 +427,33 @@ class ReportWritingMixin:
         if anomalies:
             cells = []
             for a in anomalies:
-                floor = f"{a['floor']:.0f}" if a["floor"] is not None else "?"
+                kind = f" {a['kind']}" if a["kind"] else ""
+                floor = (
+                    f"{a['floor']:.0f}{kind}"
+                    if a["floor"] is not None
+                    else "?"
+                )
                 value = f"{a['value']:.0f}" if a["value"] is not None else "?"
                 mean = (
                     f"{a['mean']:.0f}\u00b1{a['sd']:.0f}"
                     if a["mean"] is not None and a["sd"] is not None
-                    else "?"
+                    else "from tonight"
                 )
+                if a["previous"] is None:
+                    trend = "first day"
+                else:
+                    arrow = (
+                        "\u2191"
+                        if a["dwell"] > a["previous"]
+                        else "\u2193"
+                        if a["dwell"] < a["previous"]
+                        else "\u2192"
+                    )
+                    trend = f"{a['previous']:.1f}% {arrow}"
                 cells.append(
                     f"<tr><td>{a['name']}</td>"
                     f"<td>{a['dwell']:.1f}%</td>"
+                    f"<td>{trend}</td>"
                     f"<td>{a['streak']} day(s)</td>"
                     f"<td>{a['integration']}</td>"
                     f"<td>{a['area']}</td>"
@@ -402,10 +463,13 @@ class ReportWritingMixin:
             anomaly_html = (
                 "<h2>Anomalies</h2>"
                 "<p>Devices over the red threshold yesterday. "
+                "PRIOR DAY is the day before against yesterday, so the "
+                "arrow is the direction the link is moving. "
                 "DAYS OVER RED is how many "
                 "consecutive days the dwell has exceeded the red "
                 "threshold: one is a bad day, a run is a bad link.</p>"
                 "<table><tr><th>Device</th><th>Dwell</th>"
+                "<th>Prior Day</th>"
                 "<th>Days Over Red</th><th>Integration</th>"
                 "<th>Area</th><th>Floor</th><th>Now</th>"
                 "<th>Mean\u00b1SD</th></tr>"
@@ -430,6 +494,9 @@ td, th {{ border: 1px solid #D3D1C7; padding: 4px 8px;
 .swatch {{ display: inline-block; width: 11px; height: 11px;
   border-radius: 2px; margin-right: 4px; vertical-align: -1px; }}
 footer {{ margin-top: 24px; font-size: 12px; color: #5F5E5A; }}
+@media (min-width: 1000px) {{
+  .charts {{ display: flex; gap: 24px; align-items: flex-start; }}
+  .charts section {{ flex: 1; min-width: 0; }} }}
 @media (prefers-color-scheme: dark) {{
   body {{ background: #1a1a19; color: #eee; }}
   .lbl {{ fill: #eee; }}
@@ -448,12 +515,14 @@ are not charted.</p>
 <span><span class='swatch' style='background:#D03B3B'></span>over
 {red:.0f}%: weak</span></p>
 {anomaly_html}
-<h2>Yesterday</h2>
-{self._dwell_bar_svg(rows_day, red)}
-<h2>Last 7 Days (Mean)</h2>
-{self._dwell_bar_svg(rows_week, red)}
-<h2>Last 30 Days (Mean)</h2>
-{self._dwell_bar_svg(rows_month, red)}
+<div class='charts'>
+<section><h2>Yesterday</h2>
+{self._dwell_bar_svg(rows_day, red)}</section>
+<section><h2>Last 7 Days (Mean)</h2>
+{self._dwell_bar_svg(rows_week, red)}</section>
+<section><h2>Last 30 Days (Mean)</h2>
+{self._dwell_bar_svg(rows_month, red)}</section>
+</div>
 <footer>The red threshold is the Red Threshold slider on the Signal
 Strength configuration screen: Settings, Devices and Services, Device
 Sentinel, Configure, Signal Strength. Green is fixed at
