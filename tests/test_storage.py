@@ -282,7 +282,7 @@ async def test_delayed_save_serializes_live_data(hass: HomeAssistant):
     the live object, so identity can no longer be the assertion. What
     the test protects is unchanged: the values written are the values
     at write time. The clock fields are absent from the view by
-    design; that behaviour has its own tests in test_phase_c.py.
+    design; that behaviour has its own tests in test_clock_strip.py.
     """
     entry = await setup_entry(hass)
     coord = entry.runtime_data
