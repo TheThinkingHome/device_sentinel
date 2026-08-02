@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.10.16 (2026-08-02)
+# File: test_signal_stats.py, Version: 0.10.17 (2026-08-02)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -313,8 +313,9 @@ async def test_the_chart_label_carries_the_room(hass: HomeAssistant):
 
 
 async def test_the_bars_are_thin(hass: HomeAssistant):
-    """15px per device (ruled 2026-08-02), pinned so a padding sweep
-    cannot quietly re-inflate the page."""
+    """17px per device with 12px labels (revised 2026-08-02), pinned
+    so a sweep can neither re-inflate the page nor shrink the text
+    back to unreadable."""
     coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
     device, _ = register_device(hass, "th1", "Thin Device")
     coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [3.0]
@@ -322,8 +323,10 @@ async def test_the_bars_are_thin(hass: HomeAssistant):
     await hass.async_add_executor_job(coord._write_reports, "manual")
     html = _read(hass)
 
-    assert "height='12'" in html
+    assert "height='13'" in html
     assert "height='22'" not in html
+    assert "height='12'" not in html
+    assert "font-size='12'" in html
     assert "charts" in html
 
 async def test_a_globally_excluded_device_is_not_charted(
@@ -354,3 +357,61 @@ async def test_a_globally_excluded_device_is_not_charted(
     html = _read(hass)
 
     assert "Ghost Tablet" not in html
+
+async def test_the_brief_is_also_a_page_under_www(
+    hass: HomeAssistant,
+):
+    """Rung one of the www ladder (#178): daily_brief.html.
+
+    Rendered from the Markdown text itself so the two briefs cannot
+    drift: the heading, the problem table, and the anomaly pointer
+    all arrive as HTML, the pointer as a live link, and the page
+    carries the same dark-mode stylesheet approach as the chart.
+    """
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    device, _ = register_device(hass, "bh1", "Anomalous Device")
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [20.0]
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+
+    path = os.path.join(
+        hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
+    )
+    with open(path, encoding="utf-8") as handle:
+        page = handle.read()
+
+    assert "<h1>Device Sentinel Daily Brief</h1>" in page
+    assert "<h2>In Short</h2>" in page
+    assert "<table>" in page and "<th>DEVICE</th>" in page
+    assert "<a href='/local/device_sentinel/signal_dwell.html'>" in page
+    assert "prefers-color-scheme: dark" in page
+    assert "Anomalous Device" in page
+
+
+async def test_the_html_brief_tracks_the_markdown(
+    hass: HomeAssistant,
+):
+    """The page is the current picture: a second write replaces it,
+    and its content is the newest Markdown brief's content."""
+    import glob as _glob
+
+    coord = await setup_coordinator(hass)
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    path = os.path.join(
+        hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
+    )
+    with open(path, encoding="utf-8") as handle:
+        page = handle.read()
+    md_files = sorted(
+        _glob.glob(
+            hass.config.path("device_sentinel", "daily_brief_*.md")
+        )
+    )
+    with open(md_files[-1], encoding="utf-8") as handle:
+        markdown = handle.read()
+    # Every prose line of the Markdown appears in the page.
+    for line in markdown.split("\n"):
+        if line.strip() and not line.startswith(("#", "|")):
+            fragment = line.split("/local/")[0].strip()
+            if fragment:
+                assert fragment[:40] in page
