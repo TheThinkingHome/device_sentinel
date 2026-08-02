@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.10.15 (2026-08-02)
+# File: test_signal_stats.py, Version: 0.10.16 (2026-08-02)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -172,11 +172,12 @@ async def test_the_chart_bands_by_the_red_threshold(
     await hass.async_add_executor_job(coord._write_reports, "manual")
     html = _read(hass)
 
-    green = html.index("Green Device")
+    charts = html.index("class='charts'")
+    green = html.index("Green Device", charts)
     assert "#1D9E75" in html[green : green + 400]
-    yellow = html.index("Yellow Device")
+    yellow = html.index("Yellow Device", charts)
     assert "#EDA100" in html[yellow : yellow + 400]
-    red = html.index("Red Device")
+    red = html.index("Red Device", charts)
     assert "#D03B3B" in html[red : red + 400]
     assert "Red Threshold slider" in html
     assert "configuration screen" in html
@@ -259,3 +260,97 @@ async def test_the_mean_column_reads_dash_until_a_day_rolls(
         coord._feed_signal(record, value, 1000.0)
     coord._roll_signal_stats(record)
     assert coord._format_signal_mean_cell(record) == "110\u00b18.16"
+
+async def test_the_anomaly_row_carries_type_trend_and_room(
+    hass: HomeAssistant,
+):
+    """The additions ruled 2026-08-02, asserted on the file.
+
+    The floor carries its type tag, because a table mixing 176 and
+    -68 is unreadable without one; the prior day and its arrow say
+    which way the link is moving; and the first day before any mean
+    has rolled reads "from tonight" rather than a question mark that
+    looks like a lookup failure.
+    """
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    device, _ = register_device(hass, "tt1", "Trending Device")
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_SIGNAL_DWELL_DAILY] = [8.0, 14.0]
+    record["signal_daily_min"] = [100.0] * 14
+    falling, _ = register_device(hass, "tt2", "Falling Device")
+    coord.data[DATA_DEVICES][falling.id][DEV_SIGNAL_DWELL_DAILY] = [
+        14.0,
+        12.0,
+    ]
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    html = _read(hass)
+    section = html[html.index("Anomalies") : html.index("Yesterday")]
+
+    assert "LQI" in section
+    assert "8.0% \u2191" in section
+    assert "14.0% \u2193" in section
+    assert "from tonight" in section
+    assert "Prior Day" in section
+
+
+async def test_the_chart_label_carries_the_room(hass: HomeAssistant):
+    """A bar reads name and area, so room clustering shows in the
+    chart itself rather than only in the anomaly table."""
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    device, _ = register_device(hass, "rm1", "Roomed Device")
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import device_registry as dr
+
+    area = ar.async_get(hass).async_get_or_create("Boiler Room")
+    dr.async_get(hass).async_update_device(device.id, area_id=area.id)
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [3.0]
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    html = _read(hass)
+
+    assert "Roomed Device (Boiler Room)" in html
+
+
+async def test_the_bars_are_thin(hass: HomeAssistant):
+    """15px per device (ruled 2026-08-02), pinned so a padding sweep
+    cannot quietly re-inflate the page."""
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    device, _ = register_device(hass, "th1", "Thin Device")
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [3.0]
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    html = _read(hass)
+
+    assert "height='12'" in html
+    assert "height='22'" not in html
+    assert "charts" in html
+
+async def test_a_globally_excluded_device_is_not_charted(
+    hass: HomeAssistant,
+):
+    """Both exclusion ladders apply to the chart and its anomalies.
+
+    Found live on 2026-08-02: two devices excluded globally by
+    integration were charted, one as an anomaly. The global ladder
+    suppresses judgment and reporting everywhere, and this page is
+    reporting.
+    """
+    from custom_components.device_sentinel.const import (
+        CONF_EXCLUDED_INTEGRATIONS,
+    )
+
+    coord = await setup_coordinator(
+        hass,
+        {
+            CONF_SIGNAL_RED: 10,
+            CONF_EXCLUDED_INTEGRATIONS: ["test"],
+        },
+    )
+    device, _ = register_device(hass, "gx1", "Ghost Tablet")
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [20.0]
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    html = _read(hass)
+
+    assert "Ghost Tablet" not in html
