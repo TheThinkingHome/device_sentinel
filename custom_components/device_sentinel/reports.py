@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.10.13 (2026-08-01)
+# File: reports.py, Version: 0.10.15 (2026-08-02)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -54,8 +54,11 @@ from .const import (
     DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
+    DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_DWELL_DAILY,
+    DEV_SIGNAL_VALUE,
     EPISODE_KEEP_DAYS,
     EP_AT,
     EP_BASIS,
@@ -85,9 +88,13 @@ from .const import (
     REPORT_DIAGNOSTIC_DIR,
     REPORT_DIR,
     REPORT_EPISODES,
+    REPORT_SIGNAL_DWELL,
+    REPORT_SIGNAL_DWELL_URL,
     REPORT_STALE_FILES,
     REPORT_TELEMETRY,
+    REPORT_WWW_DIR,
     SIGNAL_ARMING_DAYS,
+    SIGNAL_GREEN_CEILING,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
     STARTUP_GRACE_SECONDS,
@@ -207,6 +214,262 @@ class ReportWritingMixin:
         return dt_util.as_local(
             dt_util.utc_from_timestamp(epoch)
         ).strftime("%b %d %H:%M")
+
+    def _dwell_chart_rows(
+        self, window: int
+    ) -> list[tuple[str, str, float]]:
+        """Return (device_id, name, dwell) for the window, descending.
+
+        Window 1 is yesterday's rolled percentage; larger windows are
+        the mean of the last N rolled days, which reads smoothly while
+        the anomaly section catches what a mean would hide. Devices at
+        exactly zero are left out: the chart is the nonzero tail, and
+        the header says how many sat at zero so the count is not lost.
+        """
+        rows: list[tuple[str, str, float]] = []
+        for device_id, record in self.data[DATA_DEVICES].items():
+            if self._signal_excluded(device_id):
+                continue
+            series = record.get(DEV_SIGNAL_DWELL_DAILY) or []
+            if not series:
+                continue
+            tail = series[-window:]
+            value = sum(tail) / len(tail)
+            if value > 0:
+                rows.append(
+                    (device_id, self._device_name(device_id), value)
+                )
+        rows.sort(key=lambda row: -row[2])
+        return rows
+
+    def _dwell_zero_count(self) -> int:
+        """Return how many recorded devices sat at exactly zero
+        yesterday, for the chart header."""
+        zeros = 0
+        for device_id, record in self.data[DATA_DEVICES].items():
+            if self._signal_excluded(device_id):
+                continue
+            series = record.get(DEV_SIGNAL_DWELL_DAILY) or []
+            if series and series[-1] == 0:
+                zeros += 1
+        return zeros
+
+    def _dwell_anomalies(
+        self, red: float
+    ) -> list[dict[str, Any]]:
+        """Return the devices above red plus the lift, described.
+
+        Red is the cut: every device above the red threshold stays on
+        the chart and is also pulled out here with everything known
+        that helps build a picture: integration, area, the learned
+        floor, the current reading, and how many consecutive days the
+        dwell has exceeded the red threshold, which is the fact that
+        separates a bad day from a bad device.
+        """
+        dev_reg = dr.async_get(self.hass)
+        from homeassistant.helpers import area_registry as ar
+
+        area_reg = ar.async_get(self.hass)
+        out: list[dict[str, Any]] = []
+        for device_id, name, value in self._dwell_chart_rows(1):
+            if value <= red:
+                continue
+            record = self.data[DATA_DEVICES][device_id]
+            series = record.get(DEV_SIGNAL_DWELL_DAILY) or []
+            streak = 0
+            for pct in reversed(series):
+                if pct > red:
+                    streak += 1
+                else:
+                    break
+            device = dev_reg.async_get(device_id)
+            area_name = ""
+            if device and device.area_id:
+                area = area_reg.async_get_area(device.area_id)
+                area_name = area.name if area else device.area_id
+            history = self._signal_history(record)
+            floor = None
+            if history:
+                floor = sorted(history)[
+                    self._signal_effective_k(len(history))
+                ]
+            out.append(
+                {
+                    "name": name,
+                    "dwell": value,
+                    "streak": streak,
+                    "integration": self._watched.get(device_id, "?"),
+                    "area": area_name or "Unassigned",
+                    "floor": floor,
+                    "value": record.get(DEV_SIGNAL_VALUE),
+                    "mean": (record.get(DEV_SIGNAL_DAILY_MEAN) or [None])[
+                        -1
+                    ],
+                    "sd": (record.get(DEV_SIGNAL_DAILY_SD) or [None])[-1],
+                }
+            )
+        return out
+
+    @staticmethod
+    def _dwell_bar_svg(
+        rows: list[tuple[str, str, float]], red: float
+    ) -> str:
+        """Return one section's chart as inline SVG, banded by color.
+
+        Static SVG with no scripts, so the file renders in a browser,
+        an email client, and a dashboard Webpage card alike. Green to
+        the fixed ceiling, yellow to the red threshold, red above it;
+        an anomaly (red plus the lift) keeps its red bar here and is
+        described in its own section. Bars scale to the largest value
+        or the red line plus ten, whichever is larger, so the
+        threshold always sits inside the picture.
+        """
+        if not rows:
+            return "<p class='empty'>Nothing above zero.</p>"
+        top = max(max(v for _, _, v in rows), red + 10.0)
+        width, bar_h, gap, label_w = 640, 22, 6, 220
+        chart_w = width - label_w - 60
+        height = len(rows) * (bar_h + gap) + 30
+        parts = [
+            f"<svg viewBox='0 0 {width} {height}' width='100%' "
+            f"role='img' aria-label='Dwell bars, one per device, "
+            f"colored by band'>"
+        ]
+        red_x = label_w + chart_w * red / top
+        green_x = label_w + chart_w * SIGNAL_GREEN_CEILING / top
+        parts.append(
+            f"<line x1='{green_x:.0f}' y1='0' x2='{green_x:.0f}' "
+            f"y2='{height - 18}' stroke='#B4B2A9' "
+            f"stroke-dasharray='3,3'/>"
+            f"<line x1='{red_x:.0f}' y1='0' x2='{red_x:.0f}' "
+            f"y2='{height - 18}' stroke='#D03B3B' "
+            f"stroke-dasharray='3,3'/>"
+            f"<text x='{red_x:.0f}' y='{height - 5}' fill='#D03B3B' "
+            f"font-size='11' text-anchor='middle'>{red:.0f}%</text>"
+        )
+        y = 4
+        for _, name, value in rows:
+            if value <= SIGNAL_GREEN_CEILING:
+                color = "#1D9E75"
+            elif value <= red:
+                color = "#EDA100"
+            else:
+                color = "#D03B3B"
+            bar = max(2.0, chart_w * value / top)
+            shown = name if len(name) <= 30 else name[:29] + "\u2026"
+            parts.append(
+                f"<text x='{label_w - 8}' y='{y + 15}' class='lbl' "
+                f"font-size='12' text-anchor='end'>{shown}</text>"
+                f"<rect x='{label_w}' y='{y}' width='{bar:.0f}' "
+                f"height='{bar_h}' rx='3' fill='{color}'/>"
+                f"<text x='{label_w + bar + 6:.0f}' y='{y + 15}' "
+                f"class='lbl' font-size='11'>{value:.1f}%</text>"
+            )
+            y += bar_h + gap
+        parts.append("</svg>")
+        return "".join(parts)
+
+    def _write_signal_dwell_html(self) -> None:
+        """Write the dwell chart to www for browsers and dashboards."""
+        red = self._signal_red()
+        rows_day = self._dwell_chart_rows(1)
+        rows_week = self._dwell_chart_rows(7)
+        rows_month = self._dwell_chart_rows(30)
+        anomalies = self._dwell_anomalies(red)
+        zeros = self._dwell_zero_count()
+        written = dt_util.now().strftime("%B %d, %Y at %-I:%M %p")
+
+        anomaly_html = ""
+        if anomalies:
+            cells = []
+            for a in anomalies:
+                floor = f"{a['floor']:.0f}" if a["floor"] is not None else "?"
+                value = f"{a['value']:.0f}" if a["value"] is not None else "?"
+                mean = (
+                    f"{a['mean']:.0f}\u00b1{a['sd']:.0f}"
+                    if a["mean"] is not None and a["sd"] is not None
+                    else "?"
+                )
+                cells.append(
+                    f"<tr><td>{a['name']}</td>"
+                    f"<td>{a['dwell']:.1f}%</td>"
+                    f"<td>{a['streak']} day(s)</td>"
+                    f"<td>{a['integration']}</td>"
+                    f"<td>{a['area']}</td>"
+                    f"<td>{floor}</td><td>{value}</td>"
+                    f"<td>{mean}</td></tr>"
+                )
+            anomaly_html = (
+                "<h2>Anomalies</h2>"
+                "<p>Devices over the red threshold yesterday. "
+                "DAYS OVER RED is how many "
+                "consecutive days the dwell has exceeded the red "
+                "threshold: one is a bad day, a run is a bad link.</p>"
+                "<table><tr><th>Device</th><th>Dwell</th>"
+                "<th>Days Over Red</th><th>Integration</th>"
+                "<th>Area</th><th>Floor</th><th>Now</th>"
+                "<th>Mean\u00b1SD</th></tr>"
+                + "".join(cells)
+                + "</table>"
+            )
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Signal Dwell</title>
+<style>
+body {{ font-family: sans-serif; margin: 16px; background: #fff;
+  color: #1a1a19; }}
+h1 {{ font-size: 20px; }} h2 {{ font-size: 16px; margin-top: 24px; }}
+p, td, th {{ font-size: 13px; }} .lbl {{ fill: #1a1a19; }}
+.empty {{ color: #5F5E5A; }}
+table {{ border-collapse: collapse; }}
+td, th {{ border: 1px solid #D3D1C7; padding: 4px 8px;
+  text-align: left; }}
+.legend span {{ display: inline-block; margin-right: 14px; }}
+.swatch {{ display: inline-block; width: 11px; height: 11px;
+  border-radius: 2px; margin-right: 4px; vertical-align: -1px; }}
+footer {{ margin-top: 24px; font-size: 12px; color: #5F5E5A; }}
+@media (prefers-color-scheme: dark) {{
+  body {{ background: #1a1a19; color: #eee; }}
+  .lbl {{ fill: #eee; }}
+  td, th {{ border-color: #444; }}
+  footer, .empty {{ color: #B4B2A9; }} }}
+</style></head><body>
+<h1>Signal Dwell</h1>
+<p>Written {written}. The share of each day a device spent at or
+below its line. {zeros} device(s) sat at exactly zero yesterday and
+are not charted.</p>
+<p class='legend'>
+<span><span class='swatch' style='background:#1D9E75'></span>0 to
+{SIGNAL_GREEN_CEILING:.0f}%: a healthy link brushing its line</span>
+<span><span class='swatch' style='background:#EDA100'></span>to
+{red:.0f}%: worth a glance</span>
+<span><span class='swatch' style='background:#D03B3B'></span>over
+{red:.0f}%: weak</span></p>
+{anomaly_html}
+<h2>Yesterday</h2>
+{self._dwell_bar_svg(rows_day, red)}
+<h2>Last 7 Days (Mean)</h2>
+{self._dwell_bar_svg(rows_week, red)}
+<h2>Last 30 Days (Mean)</h2>
+{self._dwell_bar_svg(rows_month, red)}
+<footer>The red threshold is the Red Threshold slider on the Signal
+Strength configuration screen: Settings, Devices and Services, Device
+Sentinel, Configure, Signal Strength. Green is fixed at
+{SIGNAL_GREEN_CEILING:.0f}%. This page is written beside the daily
+brief and on Regenerate Reports; it renders on a dashboard with a
+Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
+</body></html>
+"""
+        directory = self.hass.config.path(REPORT_WWW_DIR)
+        os.makedirs(directory, exist_ok=True)
+        with open(
+            os.path.join(directory, REPORT_SIGNAL_DWELL),
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            handle.write(html)
 
     def _write_episodes(self, report_directory: str, trigger: str) -> None:
         """Write the silence-episode report.
@@ -630,8 +893,9 @@ class ReportWritingMixin:
             "",
             f"| DEVICE (INTEGRATION) | STATUS | GAPS (K={TRIM_TOP_K}) | "
             f"CLOCK | EVENTS | SIGNAL ({self._signal_trim_label()}) | "
-            f"DWELL% | BAT LEVEL (floor {self.low_threshold:g}%) |",
-            "|---|---|---|---|---|---|---|---|",
+            f"DWELL% | MEAN\u00b1SD | "
+            f"BAT LEVEL (floor {self.low_threshold:g}%) |",
+            "|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
         for device_id, record in self.data[DATA_DEVICES].items():
@@ -658,6 +922,7 @@ class ReportWritingMixin:
                     list(record.get(DEV_SIGNAL_DWELL_DAILY) or [])[
                         -DAILY_MAX_KEEP:
                     ],
+                    self._format_signal_mean_cell(record),
                     self._format_battery_cell(record),
                     self.signal_railed(record),
                     self._signal_excluded(device_id),
@@ -677,6 +942,7 @@ class ReportWritingMixin:
             event_count,
             lows_cell,
             dwell_daily,
+            mean_cell,
             battery_cell,
             railed,
             sig_excluded,
@@ -699,7 +965,7 @@ class ReportWritingMixin:
                 f"| {device_label} | {status} | "
                 f"{maxima_cell} | "
                 f"{clock_source} | {event_count} | {signal_cell} | "
-                f"{dwell_text} | {battery_cell} |"
+                f"{dwell_text} | {mean_cell} | {battery_cell} |"
             )
         lines.append("")
         lines.append(f"{len(rows)} watched devices.")
@@ -707,6 +973,22 @@ class ReportWritingMixin:
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
         LOGGER.debug("Telemetry report written to %s", path)
+
+    @staticmethod
+    def _format_signal_mean_cell(record: dict[str, Any]) -> str:
+        """Return yesterday's mean and deviation, or a dash.
+
+        These are the good-state statistics the Bayesian successor
+        needs (#172), shown so the numbers are visible while the
+        method that will use them waits on the series maturing. One
+        value per day; the newest is enough for a reference table,
+        and the full series is in storage.
+        """
+        means = record.get(DEV_SIGNAL_DAILY_MEAN) or []
+        deviations = record.get(DEV_SIGNAL_DAILY_SD) or []
+        if not means or not deviations:
+            return "-"
+        return f"{means[-1]:g}\u00b1{deviations[-1]:g}"
 
     def _write_classification(
         self, report_directory: str, trigger: str
@@ -1225,6 +1507,22 @@ class ReportWritingMixin:
                     f"| {self._human_span(now - since)} |"
                 )
             lines.append("")
+        # The dwell anomalies get one pointer line, only on mornings
+        # there are any (ruled 2026-08-02). The chart itself is HTML
+        # at a fixed URL, so the brief names it rather than embedding
+        # it, and a quiet fleet adds nothing here. It sits in Now
+        # because yesterday's dwell is the current picture of the
+        # link, even though the day it measures has closed.
+        anomalies = self._dwell_anomalies(self._signal_red())
+        if anomalies:
+            named = ", ".join(
+                f"{a['name']} ({a['dwell']:.0f}%)" for a in anomalies[:5]
+            )
+            lines += [
+                f"Signal dwell anomalies: {named}. Details and the "
+                f"full chart: {REPORT_SIGNAL_DWELL_URL}",
+                "",
+            ]
         lines += ["## Last 24 Hours", ""]
         if not incidents and not sys_events:
             lines += ["Nothing happened.", ""]
@@ -1311,6 +1609,12 @@ class ReportWritingMixin:
         self._write_telemetry(diagnostic_directory, trigger)
         self._write_classification(diagnostic_directory, trigger)
         self._write_episodes(diagnostic_directory, trigger)
+        # The dwell chart is HTML rather than Markdown because the
+        # bands are its whole point and Markdown cannot carry color.
+        # It lives under www so a dashboard Webpage card can render it
+        # at /local/device_sentinel/signal_dwell.html; the reports
+        # folder is not web-served and cannot do that job.
+        self._write_signal_dwell_html()
         # The brief's window runs from the last brief time to now, so
         # a regenerate mid-day writes the in-progress one. The
         # scheduled write closes the day instead, covering the window
