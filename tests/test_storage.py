@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage.py, Version: 0.10.11 (2026-07-31)
+# File: test_storage.py, Version: 0.10.14 (2026-08-01)
 
 """Persistence: the write cadence, the split shadow, and retention.
 
@@ -276,10 +276,19 @@ async def test_acknowledgment_saves_immediately(hass: HomeAssistant):
 
 async def test_delayed_save_serializes_live_data(hass: HomeAssistant):
     """The delayed write reads the state at write time, not at
-    schedule time."""
+    schedule time.
+
+    Under Phase C the serialized view is a filtered copy rather than
+    the live object, so identity can no longer be the assertion. What
+    the test protects is unchanged: the values written are the values
+    at write time. The clock fields are absent from the view by
+    design; that behaviour has its own tests in test_phase_c.py.
+    """
     entry = await setup_entry(hass)
     coord = entry.runtime_data
-    assert coord._data_to_save() is coord.data
+    out = coord._data_to_save()
+    assert out[DATA_SAVED_AT] == coord.data[DATA_SAVED_AT]
+    assert set(out[DATA_DEVICES]) == set(coord.data[DATA_DEVICES])
 
 
 async def test_shutdown_flushes_pending(hass: HomeAssistant):

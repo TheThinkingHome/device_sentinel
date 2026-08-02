@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_backup.py, Version: 0.10.11 (2026-07-31)
+# File: test_backup.py, Version: 0.10.14 (2026-08-01)
 
 """The copy taken before a release removes what it cannot put back.
 
@@ -175,15 +175,16 @@ async def test_a_copy_that_fails_reports_failure(hass: HomeAssistant):
     assert not os.path.exists(_path(hass, f"{STORAGE_KEY}.{SUFFIX}"))
 
 
-async def test_nothing_in_this_release_calls_it(hass: HomeAssistant):
-    """It ships inert (#130).
+async def test_setup_takes_the_backup_and_remembers(hass: HomeAssistant):
+    """From 0.10.14 the setup path is the caller (#130).
 
-    An ordinary setup takes no backup, because the release that
-    strips is the one that asks for it. If this ever fails, something
-    has wired the backbone up early and the copy would be taken from
-    a file nobody is about to change.
+    The backup shipped inert in 0.10.11 so its one real run would not
+    be its first; Phase C is the release that asks for it, at the one
+    moment the copy is honest, after the load and before the first
+    save of the session. The marker rides in the storage payload so a
+    later boot does not overwrite the copy with a stripped file.
     """
     coordinator = await setup_coordinator(hass)
 
-    assert BACKUP_TAKEN_KEY not in coordinator.data
-    assert not os.path.exists(_path(hass, f"{STORAGE_KEY}.{SUFFIX}"))
+    assert coordinator.data.get(BACKUP_TAKEN_KEY) == [SUFFIX]
+    assert coordinator._strip_clocks
