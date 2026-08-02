@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.13 (2026-08-01)
+# File: const.py, Version: 0.10.15 (2026-08-02)
 
 """Constants for the Device Sentinel integration."""
 
@@ -258,6 +258,25 @@ DEV_SIGNAL_DAILY_MIN = "signal_daily_min"
 DEV_SIGNAL_BELOW_SINCE = "signal_below_since"
 DEV_SIGNAL_BELOW_TODAY = "signal_below_today_seconds"
 DEV_SIGNAL_DWELL_DAILY = "signal_dwell_daily_pct"
+
+# The good-state statistics (#172). The successor to percentile
+# thresholding needs each device's mean and standard deviation, so
+# they are recorded ahead of the method that will use them: a running
+# sum, sum of squares, and count, three floats and no samples kept,
+# rolled at midnight into a per-day mean and deviation and then reset.
+# The daily maximum rides along so a widening spread is visible where
+# before only a falling floor was. Rail values feed none of them, for
+# the same reason they never feed the floor. The accumulators move
+# with every reading, which makes them clock-shaped, so they live in
+# the hot file with the other clocks; the rolled series is history and
+# lives in the main file.
+DEV_SIGNAL_SUM = "signal_sum"
+DEV_SIGNAL_SUM_SQ = "signal_sum_sq"
+DEV_SIGNAL_COUNT = "signal_count"
+DEV_SIGNAL_TODAY_MAX = "signal_today_max"
+DEV_SIGNAL_DAILY_MEAN = "signal_daily_mean"
+DEV_SIGNAL_DAILY_SD = "signal_daily_sd"
+DEV_SIGNAL_DAILY_MAX = "signal_daily_max"
 # last_change is when the signal value last actually moved. Kept for
 # the dwell timer and diagnostics; the rail detector reads the daily
 # low series, not this.
@@ -414,6 +433,13 @@ REPORT_DIR = "device_sentinel"
 # deleted by hand; migrating them would be code that exists once and
 # then rots.
 REPORT_DIAGNOSTIC_DIR = "diagnostics"
+# The dwell chart (0.10.15). Under www rather than the reports folder,
+# because www is what Home Assistant serves at /local, and a dashboard
+# Webpage card pointed at /local/device_sentinel/signal_dwell.html is
+# the whole reason the file is HTML.
+REPORT_WWW_DIR = "www/device_sentinel"
+REPORT_SIGNAL_DWELL = "signal_dwell.html"
+REPORT_SIGNAL_DWELL_URL = "/local/device_sentinel/signal_dwell.html"
 REPORT_TELEMETRY = "device_telemetry.md"
 REPORT_CLASSIFICATION = "classification.md"
 REPORT_EPISODES = "silence_episodes.md"
@@ -481,6 +507,10 @@ CLOCK_FIELDS = (
     DEV_SIGNAL_BELOW_SINCE,
     DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_LAST_CHANGE,
+    DEV_SIGNAL_SUM,
+    DEV_SIGNAL_SUM_SQ,
+    DEV_SIGNAL_COUNT,
+    DEV_SIGNAL_TODAY_MAX,
 )
 
 SENTINEL_TYPE_LOW_BATTERIES = "low_batteries"
@@ -574,6 +604,20 @@ CONF_SIGNAL_MARGIN = "signal_margin"
 DEFAULT_SIGNAL_MARGIN = 5
 SIGNAL_MARGIN_MIN = 0
 SIGNAL_MARGIN_MAX = 10
+
+# Where yellow turns red on the dwell report (0.10.15). The dwell
+# chart bands every nonzero device: 0 to 5 percent is green always,
+# because a healthy link brushing its line is the design working; 5 to
+# this setting is yellow; above it is red, and every red device is
+# also pulled out as an anomaly and described in full. The bands are
+# report coloring only. Nothing alerts from them (#59), nothing joins
+# the problem list, and moving the slider repaints the next report
+# rather than changing any judgment.
+CONF_SIGNAL_RED = "signal_red_threshold"
+DEFAULT_SIGNAL_RED = 10
+SIGNAL_RED_MIN = 5
+SIGNAL_RED_MAX = 20
+SIGNAL_GREEN_CEILING = 5.0
 
 # Signal-only excludes, the same broad-to-narrow ladder as battery:
 # integration, label, device. Exclusion suppresses judgment, not
