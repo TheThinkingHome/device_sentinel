@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.9.11 (2026-07-27)
+# File: __init__.py, Version: 0.10.21 (2026-08-03)
 
 """The Device Sentinel integration.
 
@@ -21,6 +21,10 @@ and inert.
 
 from __future__ import annotations
 
+import os
+from functools import partial
+
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -32,6 +36,9 @@ from .const import (
     DEAD_OPTION_KEYS,
     DOMAIN,
     LOGGER,
+    REPORT_WWW_DIR,
+    REPORT_WWW_PARENT,
+    REPORT_WWW_URL,
 )
 from .coordinator import DeviceSentinelCoordinator
 
@@ -96,6 +103,59 @@ def _drop_dead_entities(
             ent_reg.async_remove(entity_id)
 
 
+async def _async_serve_www_folder(hass: HomeAssistant) -> None:
+    """Serve this integration's www folder on the boot that creates it.
+
+    Home Assistant registers /local only where config/www already
+    exists as a directory when the frontend sets up, and it checks
+    that once. Device Sentinel creates www/device_sentinel at its
+    first report write, which happens later, so on a system that
+    never had a www folder the very first boot after installing
+    leaves the daily brief and the dwell chart on disk at addresses
+    that return nothing. It heals at the next restart and says
+    nothing about why, which is the first impression the integration
+    makes on somebody who has just installed it.
+
+    Registering the folder for ourselves closes that boot rather
+    than explaining it. The test is deliberately for the parent
+    folder, not our own: where config/www already existed the
+    frontend has /local covered and a second overlapping route would
+    be a route we do not need. Where it did not, /local is absent
+    for this whole boot and only our own registration can serve the
+    files.
+
+    Any failure here is logged and swallowed. A brief that cannot be
+    reached over HTTP is a worse brief, not a broken integration,
+    and the files are still on disk (ruling #186).
+    """
+    if os.path.isdir(hass.config.path(REPORT_WWW_PARENT)):
+        return
+    folder = hass.config.path(REPORT_WWW_DIR)
+    try:
+        await hass.async_add_executor_job(
+            partial(os.makedirs, folder, exist_ok=True)
+        )
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(REPORT_WWW_URL, folder, False)]
+        )
+    except Exception as err:  # noqa: BLE001 - a link is not the integration
+        LOGGER.warning(
+            "Device Sentinel could not serve %s at %s, so the daily "
+            "brief and the dwell chart will not open until Home "
+            "Assistant restarts once (%s)",
+            REPORT_WWW_DIR,
+            REPORT_WWW_URL,
+            err,
+        )
+        return
+    LOGGER.info(
+        "Device Sentinel registered %s at %s for this session, because "
+        "no www folder existed when the frontend started",
+        REPORT_WWW_DIR,
+        REPORT_WWW_URL,
+    )
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: DeviceSentinelConfigEntry
 ) -> bool:
@@ -107,6 +167,9 @@ async def async_setup_entry(
 
     _drop_dead_options(hass, entry)
     _drop_dead_entities(hass, entry)
+    # Before anything writes into www, because the test is whether
+    # the parent existed when the frontend looked.
+    await _async_serve_www_folder(hass)
 
     coordinator = DeviceSentinelCoordinator(hass, entry, version)
     await coordinator.async_setup()
