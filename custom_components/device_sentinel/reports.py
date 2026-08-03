@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.10.21 (2026-08-03)
+# File: reports.py, Version: 0.10.22 (2026-08-03)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -27,6 +27,7 @@ from __future__ import annotations
 import contextlib
 import os
 from datetime import datetime, timedelta
+from html import escape
 from typing import Any
 
 from homeassistant.helpers import device_registry as dr
@@ -1699,59 +1700,90 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         self._last_brief_text = text
         return text if complete else None
 
+    @staticmethod
+    def _is_brief_table_rule(line: str) -> bool:
+        """Return whether a pipe line is a table's header rule.
+
+        Read from the characters rather than from the row's position.
+        Position was how the older renderer told the rule apart, and
+        it assumed the second line of every table was the separator,
+        which is true only while nothing else ever emits a pipe line.
+        """
+        body = line.strip()
+        if not body.startswith("|"):
+            return False
+        return set(body) <= set("|-: ")
+
+    @staticmethod
+    def _brief_cells(line: str) -> list[str]:
+        """Return one pipe row's cells, stripped and escaped."""
+        return [escape(cell.strip()) for cell in line.strip("|").split("|")]
+
     def _render_brief_html(self, markdown: str) -> str:
         """Return the brief rendered as a styled page (ruling #178).
 
-        Rendered from the composed Markdown text rather than written
-        a second way, so the record and the page cannot drift. This
-        one rendering is the brief: the dated file, the current file,
-        and the emailed body are all this exact string, which is how
-        the rule that the mail must be the document written survives
-        the move to HTML (rulings #135 and #179). The chart link is
-        resolved to an
-        absolute address where Home Assistant knows one, so the link
-        works from a mail client as well as a dashboard card.
+        The one renderer. Rendered from the composed Markdown text
+        rather than written a second way, so the record and the page
+        cannot drift, and every consumer reads this: the dated file,
+        the undated current file, the emailed body, and the fallback
+        the sender falls back to when the stashed pair does not match
+        (rulings #135, #179 and #184).
+
+        It was two renderers until 0.10.22, and they had already
+        drifted. Only the other one escaped its content, so from
+        0.10.18, when this one became the emailed body, a device
+        named with an angle bracket in it reached the file and the
+        mail raw. Merging them fixes the escaping as a consequence
+        rather than patching the same rule into two places that would
+        drift again (ruling #188).
+
+        A closed-subset renderer over our own output, not a Markdown
+        parser: the brief emits one h1, h2 sections, plain paragraphs
+        and pipe tables, so those four shapes are the whole grammar,
+        and anything unrecognized falls through as a paragraph, which
+        keeps a future line from vanishing silently.
+
+        Everything is escaped before the chart link is turned into an
+        anchor, so the one tag this renderer creates is the only
+        markup that survives. The link is resolved to an absolute
+        address where Home Assistant knows one, so it works from a
+        mail client as well as a dashboard card.
         """
         html_lines: list[str] = []
-        table: list[str] = []
+        table: list[list[str]] = []
 
         def _flush_table() -> None:
             if not table:
                 return
+            head, *body_rows = table
             html_lines.append("<table>")
-            header_cells = [
-                cell.strip()
-                for cell in table[0].strip().strip("|").split("|")
-            ]
             html_lines.append(
                 "<tr>"
-                + "".join(f"<th>{cell}</th>" for cell in header_cells)
+                + "".join(f"<th>{cell}</th>" for cell in head)
                 + "</tr>"
             )
-            for row in table[2:]:
-                cells = [
-                    cell.strip()
-                    for cell in row.strip().strip("|").split("|")
-                ]
+            for row in body_rows:
                 html_lines.append(
                     "<tr>"
-                    + "".join(f"<td>{cell}</td>" for cell in cells)
+                    + "".join(f"<td>{cell}</td>" for cell in row)
                     + "</tr>"
                 )
             html_lines.append("</table>")
             table.clear()
 
-        for line in markdown.split("\n"):
+        for raw in markdown.split("\n"):
+            line = raw.rstrip()
             if line.startswith("|"):
-                table.append(line)
+                if not self._is_brief_table_rule(line):
+                    table.append(self._brief_cells(line))
                 continue
             _flush_table()
             if line.startswith("# "):
-                html_lines.append(f"<h1>{line[2:]}</h1>")
+                html_lines.append(f"<h1>{escape(line[2:])}</h1>")
             elif line.startswith("## "):
-                html_lines.append(f"<h2>{line[3:]}</h2>")
+                html_lines.append(f"<h2>{escape(line[3:])}</h2>")
             elif line.strip():
-                text_line = line
+                text_line = escape(line)
                 if REPORT_SIGNAL_DWELL_URL in text_line:
                     href = self._absolute_url(REPORT_SIGNAL_DWELL_URL)
                     text_line = text_line.replace(
