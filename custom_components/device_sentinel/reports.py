@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.10.18 (2026-08-02)
+# File: reports.py, Version: 0.10.19 (2026-08-03)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -1662,7 +1662,17 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         # remains the plain form for the persistent-notification
         # target and the message fallback. Same content by
         # construction, one rendered from the other.
-        self._last_brief_page = page
+        #
+        # The page is stashed together with the text it came from,
+        # and only for a completed brief, so the sender can check
+        # that the two belong together before mailing the page. The
+        # scheduled write closes yesterday and then immediately
+        # opens today's in-progress brief a few lines below, and a
+        # stash that the second write also updated left the mail
+        # carrying the closed day's text beside the new day's page
+        # (#184, the paired stash; fixed here in 0.10.19).
+        if complete:
+            self._last_brief_pair = (text, page)
         self._last_brief_text = text
         return text if complete else None
 
@@ -1754,13 +1764,20 @@ a {{ color: #2a78d6; }}
         """Return the path resolved against the instance URL, if any.
 
         A relative /local address is dead inside an email, which has
-        no host to resolve it against. The link is made absolute
-        against the external URL only (ruled 2026-08-02): an internal
-        address in an email works solely on home wifi, which is a
-        link that fails exactly when a person is away, the worse
-        failure. Where no external URL is configured the link stays
-        relative, which still works everywhere a browser is already
-        looking at this instance, the dashboard card included.
+        no host to resolve it against, so the link is never left
+        relative (#183, amending #181). The external URL is preferred
+        because it works from anywhere, which is when an emailed
+        brief is most useful; where none is configured the internal
+        URL is used instead, which at least works on home wifi and is
+        better than an address that resolves nowhere at all. Home
+        Assistant's own resolver already tries them in that order,
+        so one call expresses the whole rule.
+
+        The bare path is returned only where neither URL resolves,
+        which needs an instance that knows no address for itself. It
+        is the same dead link the amendment removed, kept because
+        there is nothing better to return and raising here would
+        cost the whole brief for one hyperlink.
         """
         try:
             from homeassistant.helpers.network import get_url
@@ -1768,12 +1785,12 @@ a {{ color: #2a78d6; }}
             return (
                 get_url(
                     self.hass,
-                    allow_internal=False,
+                    allow_internal=True,
                     prefer_external=True,
                 )
                 + path
             )
-        except Exception:  # noqa: BLE001 - no external URL configured
+        except Exception:  # noqa: BLE001 - instance knows no URL at all
             return path
 
     def _trim_briefs(self, directory: str) -> None:
