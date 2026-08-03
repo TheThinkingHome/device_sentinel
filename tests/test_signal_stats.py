@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.10.18 (2026-08-02)
+# File: test_signal_stats.py, Version: 0.10.19 (2026-08-03)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -29,8 +29,10 @@ from __future__ import annotations
 import os
 
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
+    BRIEF_TRIGGER,
     CLOCK_FIELDS,
     CONF_SIGNAL_RED,
     DATA_DEVICES,
@@ -459,18 +461,35 @@ async def test_the_diagnostics_live_one_level_up(hass: HomeAssistant):
 
 async def test_the_email_body_is_the_page(hass: HomeAssistant):
     """#135 as amended: the html payload is the exact string written
-    to the current brief file, one rendering for disk and mail."""
-    coord = await setup_coordinator(hass)
-    await hass.async_add_executor_job(coord._write_reports, "manual")
+    to the brief file, one rendering for disk and mail.
 
-    payload = coord._brief_payload("notify.mail", "plain text")
-    path = os.path.join(
-        hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
+    Rewritten in 0.10.19. As first written this test took an
+    in-progress write and any text at all, and asserted the payload
+    matched the current file, which is what the fault of #184 did
+    every morning: it paired the closed day's text with a page
+    belonging to another window. The rule it was meant to hold is
+    that the mail carries the page of the document being sent, so it
+    now takes a closing write, the text that write returned, and the
+    dated file that write produced.
+    """
+    coord = await setup_coordinator(hass)
+    text = await hass.async_add_executor_job(
+        coord._write_reports, BRIEF_TRIGGER
     )
-    with open(path, encoding="utf-8") as handle:
+    assert text is not None
+
+    payload = coord._brief_payload("notify.mail", text)
+    start, _end = coord._brief_close_bounds()
+    closed = dt_util.as_local(
+        dt_util.utc_from_timestamp(start)
+    ).strftime("daily_brief_%Y-%m-%d.html")
+    with open(
+        os.path.join(hass.config.path(REPORT_WWW_DIR), closed),
+        encoding="utf-8",
+    ) as handle:
         page = handle.read()
     assert payload["data"]["html"] == page
-    assert payload["message"] == "plain text"
+    assert payload["message"] == text
 
 async def test_every_www_file_is_dated_and_trimmed(
     hass: HomeAssistant,
@@ -510,14 +529,20 @@ async def test_every_www_file_is_dated_and_trimmed(
     assert newest == current
     assert "Dated Device" in current
 
-async def test_the_link_is_external_or_relative_never_internal(
+async def test_the_link_is_external_then_internal_never_relative(
     hass: HomeAssistant,
 ):
-    """Ruled 2026-08-02: an internal address in an email works only
-    on home wifi, failing exactly when a person is away, so the link
-    is the external URL where one is configured and stays relative
-    where none is. The test environment configures an internal URL
-    and no external one, so the rendered link must be relative."""
+    """#183, amending #181: the link is never left relative.
+
+    #181 preferred the external URL and let the link stay relative
+    where none was configured, on the reasoning that a relative
+    address still works for a browser already facing the instance.
+    It does not work in a mail client, which has no host to resolve
+    it against, so the relative case was a dead link in the one
+    place the rule was written for. The order is now external, then
+    internal, then nothing. This environment configures no external
+    URL, so the rendered link must carry the internal host.
+    """
     coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
     device, _ = register_device(hass, "ex1", "Anomalous Device")
     coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [20.0]
@@ -529,5 +554,8 @@ async def test_the_link_is_external_or_relative_never_internal(
     with open(path, encoding="utf-8") as handle:
         page = handle.read()
 
-    assert "href='/local/device_sentinel/signal_dwell.html'" in page
-    assert "http://10." not in page
+    assert "href='/local/device_sentinel/signal_dwell.html'" not in page
+    assert (
+        "href='http://10.10.10.10:8123"
+        "/local/device_sentinel/signal_dwell.html'" in page
+    )
