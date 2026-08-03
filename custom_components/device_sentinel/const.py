@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.17 (2026-08-02)
+# File: const.py, Version: 0.10.18 (2026-08-02)
 
 """Constants for the Device Sentinel integration."""
 
@@ -439,6 +439,7 @@ REPORT_DIAGNOSTIC_DIR = "diagnostics"
 # the whole reason the file is HTML.
 REPORT_WWW_DIR = "www/device_sentinel"
 REPORT_SIGNAL_DWELL = "signal_dwell.html"
+REPORT_SIGNAL_DWELL_PREFIX = "signal_dwell_"
 # The HTML brief (#178, rung one of the www ladder): one file, always
 # the current picture, rendered from the Markdown brief so the two
 # cannot drift. The dated Markdown files remain the history and the
