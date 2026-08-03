@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.15 (2026-08-02)
+# File: coordinator.py, Version: 0.10.20 (2026-08-03)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -245,7 +245,10 @@ BAD_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 
 
 def _span(seconds: float) -> str:
-    """A compact human span for the capped label (#166): 74m, 4.1h, 2.3d.
+    """A compact human span for the capped label: 74m, 4.1h, 2.3d.
+
+    The label the resurrection cap prints when it holds a gap down
+    (ruling #166).
 
     Minutes under ninety, hours under two days, days beyond, one
     decimal where the unit is coarse. The label is read in a table
@@ -316,7 +319,7 @@ class DeviceSentinelCoordinator(
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, STORAGE_KEY
         )
-        # The hot half of the storage split (#101). A routine save
+        # The hot half of the storage split (ruling #101). A routine save
         # writes this file alone; the store above is written when
         # something changes that a restart must not lose, and on
         # every clean stop. The load merges the two, taking the
@@ -327,7 +330,9 @@ class DeviceSentinelCoordinator(
         self.data: dict[str, Any] = {}
         self.storage_healthy: bool = False
         self._dirty: bool = False
-        # Two-tier persistence (0.6.5, analysis finding E1). _dirty
+        # Two-tier persistence, which came out of an earlier analysis
+        # of how often storage was being rewritten (ruling #100).
+        # _dirty
         # alone is routine churn (activity clocks) and coalesces into
         # a delayed save; _critical marks a change a reboot must not
         # lose (a verdict, a battery flip, a problem-list change) and
@@ -337,12 +342,12 @@ class DeviceSentinelCoordinator(
         self._critical: bool = False
         # Cold data (episodes, incidents, system events, registry
         # changes) waiting for the next interval write to carry the
-        # main file (#165). Set by _mark_cold_dirty, cleared inside
+        # main file (ruling #165). Set by _mark_cold_dirty, cleared inside
         # _data_to_save so every main-file write satisfies it, and
         # read only by the render tick's scheduler.
         self._cold_dirty: bool = False
         # The one routine-save deadline, on the loop's monotonic
-        # clock (#165). Zero means no window has started, so the
+        # clock (ruling #165). Zero means no window has started, so the
         # first dirty tick writes at once rather than waiting a full
         # interval. _save_now restarts it, making a critical save
         # also the start of a fresh window.
@@ -358,7 +363,9 @@ class DeviceSentinelCoordinator(
         # Registry view, rebuilt on registry changes.
         self._entity_map: dict[str, tuple[str, str | None]] = {}
         self._watched: dict[str, str] = {}  # device_id -> integration domain
-        self._stacks: set[str] = set()  # coordinator stacks present (#143)
+        # Which coordinator stacks this house runs, derived from the
+        # registry rather than asked (ruling #143).
+        self._stacks: set[str] = set()
         # Names and labels, cached from the registry at classify
         # time. The options cascade reads them on every form open,
         # and re-walking the registry there would race a rebuild.
@@ -385,7 +392,7 @@ class DeviceSentinelCoordinator(
         self._taint_consumed_at: dict[str, float] = {}
         # The unavailable duration that set each device's live
         # taint, held until the recovery stamp writes it onto the
-        # episode (#137). Transient, not persisted on the record.
+        # episode (ruling #137). Transient, not persisted on the record.
         self._taint_duration: dict[str, float] = {}
         self.deviceless_count: int = 0
 
@@ -395,7 +402,7 @@ class DeviceSentinelCoordinator(
         self._grace_devices: set[str] = set()
         self._grace_taints: set[str] = set()
         # Family events collected during a sync, fired after it settles
-        # (#479). Each is (family, event_line, recovery). Cleared on
+        # (ruling #479). Each is (family, event_line, recovery). Cleared on
         # every dispatch so a later sync starts clean.
         self._pending_events: list[tuple[str, str, bool]] = []
         self._storm_feed_q: dict[str, deque[tuple[float, str]]] = {}
@@ -411,7 +418,7 @@ class DeviceSentinelCoordinator(
         self._held_events: dict[tuple[str, str], Any] = {}
         # When the current burst of cold changes began, so the
         # debounce can be capped rather than pushed out for ever.
-        # What the system could actually watch (#160). Both storage
+        # What the system could actually watch (ruling #160). Both storage
         # files carry the time they were written, so the newer of the
         # two is the last moment anything was observed, and the gap
         # from there to this start is time no device can be blamed
@@ -424,7 +431,7 @@ class DeviceSentinelCoordinator(
         self._started_at: float | None = None
         self._brief_unsub: Any | None = None
         # One bridge reader per detected coordinator stack that can
-        # report its own liveness and pairing state (#145). Populated in
+        # report its own liveness and pairing state (ruling #145). Populated in
         # async_setup after the registry view has found the stacks. Z2M
         # is the only reader today; ZHA and Z-Wave reach their state
         # through different doors and are added later.
@@ -439,17 +446,20 @@ class DeviceSentinelCoordinator(
         self._bridge_down_at: dict[str, float] = {}
         self._pairing_open_at: dict[str, float] = {}
         self._pending_epoch_wipe: int | None = None
-        # Phase C (#101, #130). True only once the pre-strip backup is
-        # in place; every main-file save consults it. False means the
-        # main file keeps carrying the clock copies, which is the
-        # harmless direction: nothing is lost, the split simply is not
+        # True only once the backup taken before the clock fields
+        # were stripped out of the main file is on disk (rulings
+        # #101 and #130). That copy is what a rollback would need,
+        # so nothing strips until it exists, and every main-file
+        # save consults this. False means the main file keeps
+        # carrying the clock copies, which is the harmless
+        # direction: nothing is lost, the split simply is not
         # finished yet on this install.
         self._strip_clocks = False
-        # #163 and #167. The first is how many devices this boot reset
-        # after an unclean stop, held until setup succeeds so the
-        # system event is written beside the restart it explains. The
-        # rest is what the integrity count found, kept for the
-        # diagnostics rather than acted on.
+        # Rulings #163 and #167. The first is how many devices this
+        # boot reset after an unclean stop, held until setup
+        # succeeds so the system event is written beside the
+        # restart it explains. The rest is what the integrity count
+        # found, kept for the diagnostics rather than acted on.
         self._pending_unclean: int | None = None
         self._orphan_episodes: dict[str, Any] = {}
         self._options_seen: dict[str, Any] = dict(entry.options)
@@ -478,7 +488,7 @@ class DeviceSentinelCoordinator(
     def _coerce_taint_reasons(devices: dict[str, dict[str, Any]]) -> int:
         """Give a stored boolean taint the reason it always meant.
 
-        Before #164 the field was true or false, and the only writer
+        Before ruling #164 the field was true or false, and the only writer
         was the unavailable path, so a stored true means exactly that.
         False is left alone: falsy is still how every caller asks
         whether a device is tainted. Returns how many were converted,
@@ -513,12 +523,13 @@ class DeviceSentinelCoordinator(
         loaded.setdefault(DATA_EPISODES, [])
         loaded.setdefault(DATA_INCIDENTS, [])
         loaded.setdefault(DATA_SYSTEM_EVENTS, [])
-        # The dry-run outbox was retired at 0.9.11 once the
+        # The dry-run outbox was retired once the
         # notifications it previewed had been sending for
         # several releases. Drop what an older install stored,
         # so nobody carries a dead key or its bytes.
         loaded.pop("outbox", None)
-        # 0.7.6 renamed the cause an unobserved recovery carries, and
+        # An earlier release renamed the cause an unobserved recovery
+        # carries, and
         # the entries already stored kept the old wording, which the
         # composer then failed to recognize and rendered as "revived
         # by a on its own". Rewritten here so the fleet's history
@@ -526,7 +537,7 @@ class DeviceSentinelCoordinator(
         for entry in loaded.get(DATA_INCIDENTS) or []:
             if entry.get(INC_CAUSE) == LEGACY_CAUSE_UNOBSERVED:
                 entry[INC_CAUSE] = RECOVERY_CAUSE_UNOBSERVED
-        # 0.6.0: the list is engine-owned. Anything stored without a
+        # The list is engine-owned. Anything stored without a
         # device_id is a hand-typed item from the pre-sync backbone
         # (the create feature is gone with this release) and is
         # purged, so every install lands on a list the sync alone
@@ -614,13 +625,13 @@ class DeviceSentinelCoordinator(
                 record.setdefault(DEV_BATTERY_VALUE, None)
                 record.setdefault(DEV_BATTERY_DAILY, [])
         # Strip any keys a past version wrote that the current record
-        # schema no longer holds (0.4.10). _new_device_record is the
+        # schema no longer holds. _new_device_record is the
         # one authoritative field set; anything outside it is dead,
         # like the frozen fields the rail rework removed. The prune is
         # idempotent: once a record is clean it finds nothing. Any new
         # field must be added to _new_device_record or this removes it
         # on the next load.
-        # The two backup markers were written by 0.9.x and 0.10.0,
+        # The two backup markers were written by earlier releases,
         # whose one-shot copies have long since been taken. Dropping
         # them here keeps a retired key from riding every save.
         loaded.pop("pre_split_backup_taken", None)
@@ -633,7 +644,7 @@ class DeviceSentinelCoordinator(
                 legacy,
             )
         # The clean-stop marker is read and cleared in one breath
-        # (#163), so a crash before the next clean stop is detected
+        # (ruling #163), so a crash before the next clean stop is detected
         # again rather than inheriting this boot's verdict. Read after
         # the merge, because the arithmetic below needs the clocks the
         # merge restored, and after the epoch wipe, because a wipe
@@ -653,7 +664,8 @@ class DeviceSentinelCoordinator(
             )
 
         self.data = loaded
-        # Phase C's gate (#130), at the one moment it can be honest:
+        # The gate on stripping the clock fields out of the main file
+        # (ruling #130), at the one moment it can be honest:
         # after the load, before the first save of this session. The
         # copy taken here is the file as the previous version left it,
         # clocks and all, which is exactly what a rollback needs. The
@@ -681,7 +693,7 @@ class DeviceSentinelCoordinator(
         # restart. Writing the stamp now closes that window to
         # nothing.
         await self._store.async_save(self._data_to_save())
-        # The hot file is written here too (0.8.8), not only on later
+        # The hot file is written here too, not only on later
         # saves, or it did not exist until the first coalesced write
         # up to a window later and a system restarting inside that
         # window would never produce one at all.
@@ -775,7 +787,7 @@ class DeviceSentinelCoordinator(
             when=self._started_at,
         )
         if self._pending_unclean is not None:
-            # Nothing about #163 ships without this row. A reader
+            # Nothing about ruling #163 ships without this row. A reader
             # months later meeting a fleet whose clocks all restart at
             # one moment needs the reason sitting above them, or the
             # reset is exactly the kind of unexplained jump this
@@ -858,7 +870,7 @@ class DeviceSentinelCoordinator(
             self._brief_unsub()
             self._brief_unsub = None
         # The clean-stop marker belongs here as much as on the stop
-        # event (#163). An entry unload is every orderly ending that
+        # event (ruling #163). An entry unload is every orderly ending that
         # is not a shutdown: a settings change, a reload, a HACS
         # update, the integration being disabled. None of those fires
         # EVENT_HOMEASSISTANT_STOP, so a marker written only there
@@ -867,7 +879,7 @@ class DeviceSentinelCoordinator(
         # records is that the integration was asked to stop, not which
         # door it left by.
         self.data[DATA_CLEAN_STOP] = True
-        # Unconditional from 0.10.0. A routine save writes the hot
+        # Unconditional. A routine save writes the hot
         # file alone and clears the dirty flag, so a stop that waited
         # for a flag would leave the main file behind by however long
         # since the last critical change. Writing the pair here bounds
@@ -899,7 +911,7 @@ class DeviceSentinelCoordinator(
 
     @staticmethod
     def _is_z2m_bridge(device: dr.DeviceEntry) -> bool:
-        """Recognise the Zigbee2MQTT bridge device (#143).
+        """Recognise the Zigbee2MQTT bridge device (ruling #143).
 
         Z2M publishes its bridge through MQTT discovery with a name
         ending "Zigbee2MQTT Bridge", or a model of "Bridge" under the
@@ -907,7 +919,7 @@ class DeviceSentinelCoordinator(
         it holds whatever coordinator hardware sits behind it, so the
         tell does not depend on any one adapter. This is the clean
         signal that Z2M is running, since the mqtt domain alone cannot
-        tell Z2M apart from any other MQTT device (#139).
+        tell Z2M apart from any other MQTT device (ruling #139).
         """
         name = device.name_by_user or device.name or ""
         if Z2M_BRIDGE_NAME_MARK in name:
@@ -942,8 +954,8 @@ class DeviceSentinelCoordinator(
             domain = self._primary_domain(device)
             name = device.name_by_user or device.name or device.id
             # Which coordinator stacks the house runs, read from the
-            # same walk (#143). ZHA, Z-Wave, and Matter by domain; Z2M
-            # by its bridge device, never the shared mqtt domain (#139).
+            # same walk (ruling #143). ZHA, Z-Wave, and Matter by domain; Z2M
+            # by its bridge device, never the shared mqtt domain (ruling #139).
             if domain == STACK_ZHA:
                 stacks.add(STACK_ZHA)
             elif domain == STACK_ZWAVE:
@@ -994,7 +1006,7 @@ class DeviceSentinelCoordinator(
                 # An entity carrying an excluded label does not feed
                 # its device's judgment. This is the label axis, not a
                 # per-entity exclude: the explicit entity exclude was
-                # removed (ruled 2026-07-19 evening) as residue from
+                # removed as residue from
                 # the entity-level Entity Sentinel blueprint.
                 excluded_entities[ent.entity_id] = "label"
             if self._is_last_seen(ent):
@@ -1099,7 +1111,7 @@ class DeviceSentinelCoordinator(
     def _contact_stamp(self, device_id: str, now: float) -> float | None:
         """Return when this device was last actually heard, or None.
 
-        Protocol truth where the integration publishes it (#124). The
+        Protocol truth where the integration publishes it (ruling #124). The
         value is the coordinator's own record of contact, and a
         republish carries it unchanged, so a replayed payload cannot
         advance the clock and the gap keeps accumulating with no
@@ -1113,7 +1125,7 @@ class DeviceSentinelCoordinator(
         there would have erased the evidence.
 
         A device with no such entity falls back to arrival time
-        (#125), because the moment we heard something is then the
+        (ruling #125), because the moment we heard something is then the
         only evidence there is.
         """
         entity_id = self._last_seen_entity.get(device_id)
@@ -1204,7 +1216,7 @@ class DeviceSentinelCoordinator(
             )
             if gone >= debounce and not same_episode:
                 if record is not None and not record[DEV_TAINTED]:
-                    # The reason, not a flag (#164). The state is
+                    # The reason, not a flag (ruling #164). The state is
                     # already in hand here and was previously spent
                     # on the log line below, which is why every
                     # excluded gap read "unavailable" whatever the
@@ -1316,7 +1328,7 @@ class DeviceSentinelCoordinator(
         if not tainted and last is not None:
             gap = stamp - last
             learned_gap = gap
-            # The resurrection cap (#166): a gap completing while the
+            # The resurrection cap (ruling #166): a gap completing while the
             # device stands convicted of a freeze may be a hand-fix
             # nothing can see, so it teaches at most rhythm plus the
             # ratchet allowance. Judgment and every human-facing
@@ -1343,7 +1355,7 @@ class DeviceSentinelCoordinator(
             ):
                 record[DEV_TODAY_MAX] = learned_gap
 
-        # Taint is the only surviving exclusion (#124, #125). Grace
+        # Taint is the only surviving exclusion (rulings #124 and #125). Grace
         # and storm are gone: for a device with a protocol clock they
         # were never needed, since a replayed payload cannot advance
         # it, and for a device without one they were discarding the
@@ -1352,17 +1364,17 @@ class DeviceSentinelCoordinator(
         learned = f"no ({tainted})" if tainted else (capped_note or "yes")
         # A recovery during a pairing window is a hand re-pair, not a
         # self-recovery, so its gap is discarded whatever the taint
-        # decided (#145). This overrides the debounce because pairing
+        # decided (ruling #145). This overrides the debounce because pairing
         # is a stronger, more specific signal than duration. Guarded so
         # that if no reader, no bridge, or any failure, the taint
-        # decision above stands and nothing is made worse (#147).
+        # decision above stands and nothing is made worse (ruling #147).
         if self._recovered_during_pairing(device_id, now):
             learned = LEARNED_PAIRING
             if not tainted and learned_gap is not None:
                 # Undo the daily-max update this gap just made, so a
                 # pairing gap never widens the learned rhythm. The
                 # retraction uses what was actually learned, which is
-                # the capped value when the cap bit (#166).
+                # the capped value when the cap bit (ruling #166).
                 self._retract_today_max(record, learned_gap)
             LOGGER.debug(
                 "Device %s recovered during a Z2M pairing window; gap "
@@ -1409,13 +1421,14 @@ class DeviceSentinelCoordinator(
         last reading: a link that dies below the line was below the
         line the whole silence, so its day reads 100 percent, which is
         the truth (the completed-gap principle turned inside out,
-        ruled 2026-07-18). A device still below at midnight is
+        the completed-gap principle turned inside out). A device
+        still below at midnight is
         re-stamped so the new day keeps accumulating without a seam.
 
         The percentage is against the full day. Recording starts from
         day one while the floor is still settling; the early numbers
         are provisional the same way rhythm floors were before day 7,
-        and are recorded anyway rather than gated (ruled 2026-07-18).
+        and are recorded anyway rather than gated.
         """
         below_since = record.get(DEV_SIGNAL_BELOW_SINCE)
         accumulated = float(record.get(DEV_SIGNAL_BELOW_TODAY) or 0.0)
@@ -1436,7 +1449,7 @@ class DeviceSentinelCoordinator(
         """Close the day's signal distribution into the daily series.
 
         Mean and standard deviation are what the Bayesian successor to
-        the current thresholding needs (#172), so they are recorded
+        the current thresholding needs (ruling #172), so they are recorded
         ahead of it: the day's running sum, sum of squares, and count
         become one mean, one deviation, and the day's maximum, and the
         accumulators reset for the new day. The deviation is the
@@ -1479,7 +1492,7 @@ class DeviceSentinelCoordinator(
 
         The floor and the dwell timer see only real readings; a rail
         value (255, -128) is the type's fill value, not a measurement,
-        so it feeds neither (ruled 2026-07-18). But every reading,
+        so it feeds neither. But every reading,
         rail or real, updates the frozen clock, because a signal that
         never changes is not reporting whatever value it is frozen at.
         last_change advances only when the value actually differs, so
@@ -1499,7 +1512,7 @@ class DeviceSentinelCoordinator(
         today_max = record.get(DEV_SIGNAL_TODAY_MAX)
         if today_max is None or value > today_max:
             record[DEV_SIGNAL_TODAY_MAX] = value
-        # The good-state accumulators (#172): sum, sum of squares,
+        # The good-state accumulators (ruling #172): sum, sum of squares,
         # count. Three floats carry the day's whole distribution well
         # enough for a mean and a deviation, and no samples are kept.
         record[DEV_SIGNAL_SUM] = (
@@ -1518,7 +1531,7 @@ class DeviceSentinelCoordinator(
     ) -> None:
         """Run the below-the-line timer for one real reading.
 
-        Signal is reported as dwell, not crossings (ruled 2026-07-18):
+        Signal is reported as dwell, not crossings (ruling #59):
         a battery moves one direction, but signal is noisy and always
         recovering, so the unit is time spent below the danger line,
         accumulated by a timer and rolled into a daily percentage. A
@@ -1550,7 +1563,7 @@ class DeviceSentinelCoordinator(
         """Return this device's line: its trimmed floor plus the
         sensitivity margin, or None with no history.
 
-        The floor is the trimmed minimum (ruled 2026-07-19). Rail
+        The floor is the trimmed minimum. Rail
         values never feed it: a device whose whole history is rail has
         no floor at all rather than a false one, which was the Door
         Laundry bug (a floor of 255 from the stuck period made a
@@ -1566,7 +1579,7 @@ class DeviceSentinelCoordinator(
         for signal the spuriously bad reading is the anomaly to set
         aside.
 
-        From 0.10.13 the line sits a margin above that floor rather
+        The line sits a margin above that floor rather
         than on it, so a link hovering just above its own baseline
         registers instead of reading zero all day. The margin is a
         percentage of the floor's absolute value, which keeps the
@@ -1592,7 +1605,7 @@ class DeviceSentinelCoordinator(
         lowest of what it sees, and the third lowest of ninety days
         is lower than the third lowest of fourteen, so reading the
         whole series would quietly slacken every floor on the fleet.
-        Storage and judgment are deliberately separated here (#126).
+        Storage and judgment are deliberately separated here (ruling #126).
         """
         return [
             value
@@ -1620,7 +1633,7 @@ class DeviceSentinelCoordinator(
     def _signal_margin(self) -> float:
         """Return the sensitivity margin as a fraction of the floor.
 
-        Zero is the pre-0.10.13 behaviour, where the floor was the
+        Zero is the older behaviour, where the floor was the
         line. Clamped rather than trusted, because an options value
         can arrive from a hand-edited entry as well as from the
         slider.
@@ -1679,7 +1692,7 @@ class DeviceSentinelCoordinator(
         which reads as perfect signal and is the opposite. It is
         confirmed over time, not on a single reading: the daily low
         has sat at a rail for RAIL_CONFIRM_DAYS consecutive days
-        (ruled 2026-07-19 evening, replacing the live repeat counter
+        (ruling #78, which replaced the live repeat counter
         the frozen rework proved unreliable). Reading the daily-low
         series the report already keeps means no live counter and no
         per-reading state: a rail that comes and goes within a day
@@ -1832,7 +1845,7 @@ class DeviceSentinelCoordinator(
         """Close the day's brief, start a new window, and send it.
 
         The send hangs off this one caller rather than the writer,
-        because this is the only write that closes a window (#135):
+        because this is the only write that closes a window (ruling #135):
         a regenerate or a midnight rewrite produces an in-progress
         document, and mailing one of those would deliver the same
         day several times, each incomplete.
@@ -1889,7 +1902,8 @@ class DeviceSentinelCoordinator(
         an apparent outlier cannot be told from the true rhythm.
 
         Only the most recent DAILY_MAX_KEEP days are read, however
-        many are stored (0.8.9). The trimmed maximum of ninety days
+        many are stored (ruling #131). The trimmed maximum of ninety
+        days
         is higher than of fourteen, because more days mean more
         chances at a long gap, so reading the whole series would
         quietly widen every freeze window on the fleet. Sliced here,
@@ -1933,7 +1947,7 @@ class DeviceSentinelCoordinator(
         return float(low_min) * 60.0, float(high_hr) * 3600.0
 
     def _freeze_grace(self, rhythm: float) -> float:
-        """Return the grace margin for a rhythm, in seconds (#85).
+        """Return the grace margin for a rhythm, in seconds (ruling #85).
 
         grace = a * rhythm^p, where a and p are solved so the curve
         passes through delta-low grace at the fast reference rhythm
@@ -1954,10 +1968,10 @@ class DeviceSentinelCoordinator(
         return min(delta_high, max(delta_low, grace))
 
     def _resurrection_cap(self, record: dict[str, Any]) -> float | None:
-        """Return the most a convicted device's gap may teach (#166).
+        """Return the most a convicted device's gap may teach (ruling #166).
 
         rhythm plus a * rhythm^p, the same power-curve solver as the
-        grace (#85) through the ratchet anchors: fast devices may step
+        grace (ruling #85) through the ratchet anchors: fast devices may step
         half their rhythm, slow ones a tenth, falling continuously
         between. The rhythm is read as it stands at the moment of
         recovery, ordinary staleness accepted, no special midnight
@@ -1981,7 +1995,7 @@ class DeviceSentinelCoordinator(
 
         The window is the learned rhythm plus the grace margin. None
         means the device is not yet armed for freeze: it has too few
-        learned days for a trustworthy rhythm (the arming gate, #27),
+        learned days for a trustworthy rhythm (the arming gate, ruling #27),
         so it is watched for unavailable and unknown but never called
         frozen, because there is no window to miss.
         """
@@ -1998,14 +2012,14 @@ class DeviceSentinelCoordinator(
 
         Permit-join is a coordinator-wide state, so any device behind
         the Z2M bridge that recovers while pairing is open (or within
-        the grace after it closed) is a pairing candidate (#145). The
+        the grace after it closed) is a pairing candidate (ruling #145). The
         available per-device signal is the integration domain: a Z2M
         device carries the mqtt domain. A non-Z2M mqtt device recovering
         by coincidence during a window would also be caught, but the
         only cost is a single discarded gap, which is the conservative,
         fail-safe direction. Everything is guarded: no reader, no
         bridge, or any failure returns False and the taint decision
-        stands (#147).
+        stands (ruling #147).
         """
         reader = self._bridge_readers.get(STACK_Z2M)
         if reader is None:
@@ -2038,7 +2052,11 @@ class DeviceSentinelCoordinator(
             record[DEV_TODAY_MAX] = None
 
     def _taint_debounce(self, record: dict[str, Any]) -> float:
-        """Return the unavailable a device tolerates before a taint (#137).
+        """Return the unavailable a device tolerates before a taint.
+
+        Short absences are mesh blips and the silence around them is
+        still learned; a long one is real downtime and its gap is
+        discarded (ruling #137).
 
         A blip under this is a hiccup and the surrounding silence is
         learned; an unavailable at or over it is real downtime and
@@ -2181,13 +2199,14 @@ class DeviceSentinelCoordinator(
 
         Returns True when the verdict flipped, so the caller can
         refresh the sensor once per flip rather than on every reading
-        (#234). A debounce holds an unavailable or unknown verdict
+        (ruling #234). A debounce holds an unavailable or unknown verdict
         until the device has been down long enough to rule out a
         mid-transition flip; the frozen verdict needs no debounce
         because its window already is the wait.
         """
         category = self._device_down_category(device_id, record, now)
-        # Pre-0.5.0 records predate the freeze fields, and the storage
+        # Records written before the freeze family existed predate
+        # these fields, and the storage
         # prune removes unknown keys but never adds missing ones, so
         # such a record arrives here without them. Default them before
         # reading, or the direct read raises KeyError and, with the
@@ -2209,7 +2228,7 @@ class DeviceSentinelCoordinator(
                     self._dirty = True
                     # Critical, not merely dirty. This stamp is what
                     # the debounce counts from, and its clear below is
-                    # the 0.9.12 fix; a crash between one reaching
+                    # an earlier fix; a crash between one reaching
                     # disk and the other not is how a device comes
                     # back reported down for hours.
                     self._critical = True
@@ -2228,7 +2247,7 @@ class DeviceSentinelCoordinator(
             # how long the device has been down and skips the debounce
             # that outage was owed. A published verdict is untouched,
             # so a republish still cannot erase a standing silence
-            # (#124).
+            # (ruling #124).
             if (
                 category is None
                 and record.get(DEV_FROZEN_SINCE) is not None
@@ -2298,7 +2317,8 @@ class DeviceSentinelCoordinator(
                 continue
             # Guard each device: one malformed record must never kill
             # the whole sweep, which would stop verdicts, saving, and
-            # refreshing for every device (the 0.5.1 tick crash).
+            # refreshing for every device, which once crashed the
+            # sixty-second tick.
             try:
                 if self._apply_freeze_verdict(device_id, record, now):
                     flipped = True
@@ -2323,7 +2343,7 @@ class DeviceSentinelCoordinator(
     def episode_share(self) -> float:
         """Return the configured episode-opening share, as a fraction.
 
-        Live from options (#117): a silence opens an episode once it
+        Live from options (ruling #117): a silence opens an episode once it
         has spent this much of the distance from the device's rhythm
         to its freeze line. Clamped to the same band the screen
         offers, so a hand-edited entry cannot produce a threshold
@@ -2340,7 +2360,7 @@ class DeviceSentinelCoordinator(
     def notification_debounce(self) -> float:
         """Return the configured notification debounce, as a fraction.
 
-        Live from options (#117): a fault waits this much of the
+        Live from options (ruling #117): a fault waits this much of the
         device's own learned reporting gap before it reaches a phone,
         so a problem that heals inside the delay is never announced at
         all. Clamped to the band the screen offers, so a hand-edited
@@ -2411,7 +2431,7 @@ class DeviceSentinelCoordinator(
     def coalesce_seconds(self) -> float:
         """Return the routine-save interval in seconds.
 
-        Live from options (#117), clamped to the offered band. Only
+        Live from options (ruling #117), clamped to the offered band. Only
         routine activity waits: verdicts, battery flips, list changes
         and acknowledgments always write immediately, so this governs
         wear and crash-window, never correctness.
@@ -2435,7 +2455,8 @@ class DeviceSentinelCoordinator(
         main file is what the cold flag asks for, so it clears here,
         in the one place every main-file write passes through.
 
-        Phase C happens here (#101). Once the pre-strip backup is in
+        The clock fields are stripped out of the main file here
+        (ruling #101). Once the backup taken before that strip is in
         place, the nine clock fields stay out of the main file: they
         are the hot file's job, written every interval, and the copies
         in the main file existed only as a rollback net. The strip is
@@ -2467,16 +2488,17 @@ class DeviceSentinelCoordinator(
     ) -> int:
         """Overlay the hot file's clocks onto the loaded record set.
 
-        Under Phase C the hot file is the only place the clocks live,
+        After the strip the hot file is the only place clocks live,
         so the old rule, refuse a suspect hot file and fall back to
-        the main file's copies, had to change with the strip (#101):
+        the main file's copies, had to change with the strip (ruling #101):
         after it, three of this method's four exits meant "use copies
         that no longer exist" and a fleet would load with no clocks at
         all. The decision is now data-driven rather than
         version-driven: whether the main file still carries clocks is
         read from the records themselves, so the same code is correct
         on a freshly stripped install, on one whose backup failed and
-        which still writes the copies, and on a pre-0.10.0 file with
+        which still writes the copies, and on a file written before
+        the split with
         no stamps at all.
 
         Where the main file still carries clocks, the old caution
@@ -2509,7 +2531,7 @@ class DeviceSentinelCoordinator(
         cold_at = loaded.get(DATA_SAVED_AT)
         if hot_at is None or cold_at is None:
             # One of the pair predates the stamp, which is every
-            # install's first load after upgrading to 0.10.0. Both
+            # install's first load after upgrading to the split. Both
             # files were written together before this release, so the
             # main file is already current and there is nothing owed.
             return 0
@@ -2555,7 +2577,7 @@ class DeviceSentinelCoordinator(
         job: the render tick's scheduler reads it when the storage
         write interval closes and takes the main file along with the
         hot one, main file first so the hot stamp is always the newer
-        of the pair (#165). Nothing here schedules a write of its own.
+        of the pair (ruling #165). Nothing here schedules a write of its own.
         The old arrangement did, on its own debounce with its own cap,
         and two independent schedules against one pair of files is the
         race that produced a main file newer than the clocks file, the
@@ -2563,7 +2585,7 @@ class DeviceSentinelCoordinator(
 
         The wait this buys is bounded by the interval and is spent on
         forensic rows alone: anything judgment-bearing is critical and
-        writes both files within the tick that detected it (#100).
+        writes both files within the tick that detected it (ruling #100).
         """
         self._cold_dirty = True
         self._dirty = True
@@ -2574,7 +2596,7 @@ class DeviceSentinelCoordinator(
         """Return a reader's state and pairing flag, or None if it
         faulted.
 
-        A reader that cannot answer is not an event. Following #147:
+        A reader that cannot answer is not an event. Following ruling #147:
         any failure degrades to no reading and says so at debug,
         rather than being swallowed or allowed to stop the tick that
         every other judgment runs on.
@@ -2679,9 +2701,9 @@ class DeviceSentinelCoordinator(
             )
 
     def _handle_unclean_restart(self, loaded: dict[str, Any]) -> None:
-        """Reset the clocks a power cut made unreadable (#163).
+        """Reset the clocks a power cut made unreadable (ruling #163).
 
-        A clean stop stamps the moment it happened, so #160 can credit
+        A clean stop stamps the moment it happened, so ruling #160 can credit
         every device the silence nobody was listening to and the
         arithmetic is right. A power cut leaves no such stamp: the
         newest thing on disk is up to a whole write interval old, and
@@ -2727,11 +2749,12 @@ class DeviceSentinelCoordinator(
             # No stamp on either file, so there is no last known-alive
             # moment. Every part of this rule is measured from that
             # moment: the truncated gap is anchored to it, the episode
-            # closes at it, and the credit it exists to protect (#160)
+            # closes at it, and the credit it exists to protect (ruling #160)
             # is itself inert without it. Resetting here would destroy
             # every device's real last activity and buy nothing, so
             # the safe reading of an unstamped file is to leave it
-            # alone. Only a file written before 0.10.0 can be in this
+            # alone. Only a file written before the split can be in
+            # this
             # state, and those were written by versions that always
             # wrote the pair together.
             LOGGER.debug(
@@ -2797,10 +2820,13 @@ class DeviceSentinelCoordinator(
 
     @staticmethod
     def _count_orphan_episodes(loaded: dict[str, Any]) -> dict[str, Any]:
-        """Count episodes with no ending, and report nothing else (#167).
+        """Count episodes with no ending, and report nothing else.
+
+        Observation only: a non-zero count is a finding to read rather
+        than a fault to act on (ruling #167).
 
         After a clean stop every open episode has been stamped, and
-        after an unclean one #163 has just stamped them too, so by the
+        after an unclean one ruling #163 has just stamped them too, so by the
         time this runs an episode carrying no ending is an orphan: a
         row whose closing never reached disk. The window in which one
         is visible is narrow, because the next intervention of any
@@ -2812,7 +2838,7 @@ class DeviceSentinelCoordinator(
         sits ended-but-awaiting-lag until the device speaks again, and
         counting those would cry wolf every morning.
 
-        It closes nothing. #163 is the only thing that closes an
+        It closes nothing. ruling #163 is the only thing that closes an
         episode at a restart, because two independent mechanisms
         against one record is a fault class rather than a safeguard,
         and when a row later reads wrong you want to know which one
@@ -2861,7 +2887,7 @@ class DeviceSentinelCoordinator(
         cross their windows first, purely by arithmetic: a six-minute
         power cut once produced twenty-three frozen verdicts against
         devices whose windows are two to four minutes, and touched
-        nothing with an hour-scale window (#160). What is counted
+        nothing with an hour-scale window (ruling #160). What is counted
         instead is the silence before the last save plus the silence
         since this start, so the unwatched middle counts against
         nobody. The credit lapses the moment a device reports, its
@@ -2896,7 +2922,8 @@ class DeviceSentinelCoordinator(
             # missing one as None would put the key in the hot file,
             # and the merge would then plant that None back on load
             # ahead of the defaults that fill an old record in, so a
-            # pre-0.4.0 device would come back with None where it
+            # device stored before the signal fields existed would
+            # come back with None where it
             # should have gained a zero.
             clocks[device_id] = {
                 field: record[field]
@@ -2955,7 +2982,7 @@ class DeviceSentinelCoordinator(
             # interval, so a pending cold flag rides along for free.
             await self._save_now()
         elif self._dirty:
-            # Routine churn coalesces on one clock (#165): this tick
+            # Routine churn coalesces on one clock (ruling #165): this tick
             # is the only scheduler, and the deadline is a plain float
             # here rather than state inside two Store objects. The old
             # arrangement gave the cold data its own delayed schedule,
@@ -2975,9 +3002,10 @@ class DeviceSentinelCoordinator(
                     # stamp the newer of the pair. Anything
                     # judgment-bearing never reaches this branch: it
                     # is critical and wrote both files within the tick
-                    # that detected it (#100).
+                    # that detected it (ruling #100).
                     await self._store.async_save(self._data_to_save())
-                # Phase B (#101): routine churn is nine fields per
+                # The split (ruling #101): routine churn is nine
+                # fields per
                 # device, so the ordinary window writes the hot file
                 # alone, 45 KB rather than 335 KB on this fleet, which
                 # is the whole point of the split. The main file then
@@ -3004,7 +3032,7 @@ class DeviceSentinelCoordinator(
         write them afterwards. That stage stamps each file as it goes
         and in no fixed order, so the small file could come out the
         older of the two, and the next start then refuses to merge it
-        (#101). Under the current phase that costs nothing, because
+        (ruling #101). Under the current phase that costs nothing, because
         the main file still carries the clocks; under the phase that
         removes them it would leave every device with no clock at all.
         One write on a stop is not worth a condition.
@@ -3012,12 +3040,12 @@ class DeviceSentinelCoordinator(
         Flushing also cancels both scheduled writes, so the stop is
         the last thing to touch either file. That is what makes the
         saved stamp the true moment of stopping, which is the value
-        #160 measures observed silence against.
+        ruling #160 measures observed silence against.
         """
         self._stamp_intervention(
             EPISODE_ENDED_REBOOT, dt_util.utcnow().timestamp()
         )
-        # The clean-stop marker (#163). Set before the flush, so the
+        # The clean-stop marker (ruling #163). Set before the flush, so the
         # write below carries it. Its absence at the next load is the
         # only evidence that the machine went down without being
         # asked to: a power cut leaves a saved_at stamp that looks
@@ -3065,7 +3093,7 @@ class DeviceSentinelCoordinator(
 
     @property
     def orphan_episodes(self) -> dict[str, Any]:
-        """Return what the boot integrity count found (#167)."""
+        """Return what the boot integrity count found (ruling #167)."""
         return dict(self._orphan_episodes)
 
     @property
@@ -3274,7 +3302,7 @@ class DeviceSentinelCoordinator(
     def signal_problem_list(self) -> list[dict[str, Any]]:
         """Return devices with a signal problem, each tagged by kind.
 
-        Two kinds (ruled 2026-07-19 evening). A rail: the daily low
+        Two kinds (ruling #78). A rail: the daily low
         has sat at the fill value (255, -128) for three days, a stale
         reading that shows as perfect signal. A low: the device dwells
         below its danger line (the dwell judgment, still soaking, so
@@ -3804,7 +3832,7 @@ class DeviceSentinelCoordinator(
 
         The user's, and about memory rather than judgment: every
         verdict is computed from the most recent DAILY_MAX_KEEP days
-        whatever this says (#131). The floor of thirty is what makes
+        whatever this says (ruling #131). The floor of thirty is what makes
         that safe, since no setting can starve a fourteen-day window.
         """
         return max(
@@ -3839,7 +3867,7 @@ class DeviceSentinelCoordinator(
         value climbs past threshold plus the clear margin, so a cell
         hovering exactly at the line never flaps. The margin is small
         (2) because a load-driven rest-rebound is a genuine recovery
-        and is allowed to clear the flag (ruled 2026-07-13).
+        and is allowed to clear the flag.
 
         below-threshold-since: the first crossing stamps the time,
         later evaluations carry it, recovery clears it. It lives in

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.10.19 (2026-08-03)
+# File: reports.py, Version: 0.10.20 (2026-08-03)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -255,7 +255,7 @@ class ReportWritingMixin:
     def _device_area(self, device_id: str) -> str:
         """Return the device's area name, or an empty string.
 
-        The chart labels carry the room (ruled 2026-08-02) because the
+        The chart labels carry the room (ruling #176) because the
         pattern that pays for the whole page is several weak links
         clustering in one room, and a reader should see that in the
         bars themselves rather than only in the anomaly table.
@@ -323,7 +323,7 @@ class ReportWritingMixin:
                 ]
             # LQI runs positive, RSSI negative; a table mixing 176 and
             # -68 with no tag is unreadable to anyone who does not
-            # know the fleet (ruled 2026-08-02). The sign of the floor
+            # know the fleet (ruling #176). The sign of the floor
             # is the type, and the floor exists for every device that
             # can be an anomaly, since without one there is no line to
             # dwell under.
@@ -552,7 +552,8 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
     def _write_episodes(self, report_directory: str, trigger: str) -> None:
         """Write the silence-episode report.
 
-        The forensic file (#103). One row per episode, newest first,
+        The forensic file, which explains freeze verdicts and decides
+        nothing (ruling #103). One row per episode, newest first,
         recording what the other two reports cannot: whether a long
         silence ended because the device chose to speak or because
         something made it speak. That distinction is the difference
@@ -631,10 +632,10 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         SIG, and FRZ are the section excludes, listed in column order
         when more than one applies.
 
-        The 0.6.1 todo icon lived here for one release and moved to
-        the Reporting Devices section at 0.6.2: the same state shown
-        twice was redundant and confusing, and the section is where a
-        fault's whole story reads, list state included.
+        A todo icon lived here for one release and moved to the
+        Reporting Devices section: the same state shown twice was
+        redundant and confusing, and that section is where a fault's
+        whole story reads, list state included.
         """
         if device_id in self._excluded_devices:
             return "Excluded (GLB)"
@@ -653,7 +654,7 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         """Render the battery as a level and its recent trend.
 
         Ninety daily levels will not fit in a table cell and would not
-        be read if they did (0.8.6). What this column is for is
+        be read if they did. What this column is for is
         whether a cell is falling and how fast, which is the level
         plus two changes: over the last week and over the last month.
 
@@ -665,9 +666,10 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
 
         A reading outside nought to a hundred is shown as what it is
         rather than dressed as a percentage. It is still recorded
-        (#128): the classification belongs here, at rendering, and
-        never at the recorder, where a discarded value costs ninety
-        days to recover.
+        (ruling #128): every value is recorded as reported, however
+        implausible, and classified when it is read. A value discarded
+        at the recorder is unrecoverable without waiting out the whole
+        retention window again.
         """
         levels = list(record.get(DEV_BATTERY_DAILY) or [])
         level = record.get(DEV_BATTERY_VALUE)
@@ -692,9 +694,9 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         not define the line), and rail fill values are italic (seen
         and shown, but never fed to the floor).
 
-        Two rules make repeated values read cleanly (ruled 2026-07-19,
-        after a flat button series showed one 48 bold, one struck, and
-        two plain). The floor mark lands on the EARLIEST recorded
+        Two rules make repeated values read cleanly, settled after a
+        flat button series showed one 48 bold, one struck, and two
+        plain. The floor mark lands on the EARLIEST recorded
         occurrence of the floor value, so a reader sees when the
         device first reached its low. And a value equal to the floor
         is never struck: only values strictly below the floor are
@@ -706,7 +708,7 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         """
         # The series holds ninety days; this column shows the same
         # fortnight it always has, so the report is unchanged by the
-        # longer retention (0.8.6).
+        # longer retention setting.
         stored = list(record.get(DEV_SIGNAL_DAILY_MIN) or [])[
             -DAILY_MAX_KEEP:
         ]
@@ -749,7 +751,7 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         """
         # The series holds up to a year; this cell shows the same
         # fortnight it always has, and the indices below are into
-        # that fortnight (0.8.9).
+        # that fortnight.
         daily_maximum_gaps = list(daily_maximum_gaps)[-DAILY_MAX_KEEP:]
         if not daily_maximum_gaps:
             return "-"
@@ -1057,7 +1059,8 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         """Return yesterday's mean and deviation, or a dash.
 
         These are the good-state statistics the Bayesian successor
-        needs (#172), shown so the numbers are visible while the
+        needs (ruling #172), shown so the numbers are visible while
+        the
         method that will use them waits on the series maturing. One
         value per day; the newest is enough for a reference table,
         and the full series is in storage.
@@ -1279,8 +1282,9 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
             return "acknowledged"
         if kind == TODO_KIND_BATTERY:
             # Borrowed from the composer so the table and the prose
-            # cannot disagree about the same event (#120): the level
-            # belongs in both or neither.
+            # cannot disagree about the same event: one composer
+            # serves every channel, so nothing is described two ways
+            # (ruling #120). The level belongs in both or neither.
             return self._battery_phrase(row[INC_DEVICE_ID], False)
         wording = {
             TODO_KIND_FROZEN: "stopped reporting",
@@ -1299,7 +1303,9 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         Read from the problem list rather than recomputed, so the
         brief and the list can never disagree. Excluded devices are
         absent because this is a report, and so are acknowledged ones
-        (#123): the brief is a notification that happens to be a file,
+        (ruling #123): acknowledgment silences every human-facing
+        channel, and the brief is a notification that happens to be a
+        file,
         and acknowledging a problem is the statement that the person
         knows about it and does not want reminding. The diagnostics
         keep every acknowledged fault, which is where an audit
@@ -1368,7 +1374,8 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         if kind == SYS_UNCLEAN_RESTART:
             # The restart row above already carried the plain fact
             # that the system came back, so this one carries what was
-            # different about it. Both are written deliberately (#163)
+            # different about it. Both are written deliberately
+            # (ruling #163)
             # and read as a pair: what happened, then why the clocks
             # moved. On the morning after a real one this is the first
             # sentence read, so it says the count rather than leaving
@@ -1439,11 +1446,12 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         """Return the brief's opening prose.
 
         The same composer that will speak to a phone, read as
-        paragraphs (#122): history first, then what is standing
-        right now. History is told as episodes rather than events
-        (#134), so a device stopping and the same device recovering
-        are one sentence, ordered by when each episode began. The tables below stay for
-        scanning and for exact times; this is for reading. Every
+        paragraphs (ruling #122): history first, then what is
+        standing right now. History is told as episodes rather than
+        events (ruling #134), so a device stopping and the same device
+        recovering are one sentence, ordered by when each episode
+        began. The tables below stay for scanning and for exact times;
+        this is for reading. Every
         sentence comes from the composer, so the prose, the tables,
         and a future notification cannot describe one event three
         ways.
@@ -1497,13 +1505,15 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         """Write the daily brief for a window, and return it when done.
 
         The text comes back only for a completed brief, which is the
-        one the email carries (#135). Returning it rather than
+        one the email carries, since mailing an unfinished document
+        would deliver the same day several times (ruling #135).
+        Returning it rather than
         re-reading the file guarantees the document sent is the
         document written, byte for byte, with no second read that
         could catch a half-written file.
 
         The one report written for a person rather than a maintainer
-        (#116): what is wrong now, what happened in the last 24
+        (ruling #116): what is wrong now, what happened in the last 24
         hours, plain language, human units, no basis or window or
         lag or exclusion reasoning. Regenerating mid-day writes the
         in-progress brief with its scope stated and marked
@@ -1573,7 +1583,7 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
                 # A device that has never reported has no last-seen
                 # time; the stamp is when it was discovered in the
                 # registry, and saying so stops a reader taking it
-                # for the moment the device broke (#118).
+                # for the moment the device broke (ruling #118).
                 when = (
                     f"discovered {self._brief_moment(since)}"
                     if kind == TODO_KIND_NOT_REPORTED
@@ -1586,7 +1596,7 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
                 )
             lines.append("")
         # The dwell anomalies get one pointer line, only on mornings
-        # there are any (ruled 2026-08-02). The chart itself is HTML
+        # there are any (ruling #173). The chart itself is HTML
         # at a fixed URL, so the brief names it rather than embedding
         # it, and a quiet fleet adds nothing here. It sits in Now
         # because yesterday's dwell is the current picture of the
@@ -1637,8 +1647,10 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
             dt_util.utc_from_timestamp(window_start)
         ).strftime("%Y-%m-%d")
         text = "\n".join(lines)
-        # The Markdown brief is retired (#178, final rung, 0.10.18):
-        # the dated HTML files are the record now, named exactly as
+        # The Markdown brief is retired: what a person reads moved
+        # under www, where a browser and a dashboard card can render
+        # it (rulings #178 and #179). The dated HTML files are the
+        # record now, named exactly as
         # the Markdown files were, and the undated current file is a
         # copy of the newest write so a dashboard card has one stable
         # URL that never breaks at midnight. Old .md briefs on disk
@@ -1670,20 +1682,22 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         # opens today's in-progress brief a few lines below, and a
         # stash that the second write also updated left the mail
         # carrying the closed day's text beside the new day's page
-        # (#184, the paired stash; fixed here in 0.10.19).
+        # (ruling #184, the paired stash).
         if complete:
             self._last_brief_pair = (text, page)
         self._last_brief_text = text
         return text if complete else None
 
     def _render_brief_html(self, markdown: str) -> str:
-        """Return the brief rendered as a styled page (#178).
+        """Return the brief rendered as a styled page (ruling #178).
 
         Rendered from the composed Markdown text rather than written
-        a second way, so the record and the page cannot drift. Since
-        0.10.18 this one rendering is the brief: the dated file, the
-        current file, and the emailed body are all this exact string
-        (#135 as amended), and the chart link is resolved to an
+        a second way, so the record and the page cannot drift. This
+        one rendering is the brief: the dated file, the current file,
+        and the emailed body are all this exact string, which is how
+        the rule that the mail must be the document written survives
+        the move to HTML (rulings #135 and #179). The chart link is
+        resolved to an
         absolute address where Home Assistant knows one, so the link
         works from a mail client as well as a dashboard card.
         """
@@ -1765,7 +1779,8 @@ a {{ color: #2a78d6; }}
 
         A relative /local address is dead inside an email, which has
         no host to resolve it against, so the link is never left
-        relative (#183, amending #181). The external URL is preferred
+        relative (ruling #183, amending #181). The external URL is
+        preferred
         because it works from anywhere, which is when an emailed
         brief is most useful; where none is configured the internal
         URL is used instead, which at least works on home wifi and is
@@ -1800,7 +1815,7 @@ a {{ color: #2a78d6; }}
     def _trim_dated(self, directory: str, prefix: str) -> None:
         """Keep the newest dated files of a prefix, drop the rest.
 
-        Every file under www follows one rule (ruled 2026-08-02):
+        Every file under www follows one rule (ruling #180):
         dated files as the record, an undated current file for the
         one stable dashboard URL, and a trim on the same fourteen-day
         schedule as the brief. The undated file never matches, since
@@ -1826,8 +1841,9 @@ a {{ color: #2a78d6; }}
         is overwritten on every update (a ruled decision). Written at
         every setup and after every midnight rollover, so the files
         always exist from first boot and are never staler than the
-        last restart or midnight. Stale pre-0.2.6 .txt files are
-        removed so the folder holds one truth.
+        last restart or midnight. Stale plain-text files from before
+        the reports became Markdown are removed so the folder holds
+        one truth.
         """
         report_directory = self.hass.config.path(REPORT_DIR)
         os.makedirs(report_directory, exist_ok=True)
@@ -1835,14 +1851,15 @@ a {{ color: #2a78d6; }}
             stale_path = os.path.join(report_directory, stale_name)
             if os.path.isfile(stale_path):
                 os.remove(stale_path)
-        # The folder split completed (#178, 0.10.18): what a person
-        # reads lives under www/device_sentinel, so this folder is the
-        # developer's and the maintainer files come back up out of the
-        # diagnostics subfolder (which reverses 0.8.6, whose reason,
-        # keeping the briefs alone in this folder, retired with the
-        # Markdown brief). The old subfolder's three files are removed
-        # once; anything else in it, the rig log included, is not
-        # this integration's to touch.
+        # The folder split completed (rulings #178 and #179): what a
+        # person reads lives under www/device_sentinel, so this
+        # folder is the developer's and the maintainer files come
+        # back up out of the diagnostics subfolder. They were put
+        # there to keep the briefs alone in this folder, and that
+        # reason retired when the Markdown brief did. The old
+        # subfolder's three files are removed once; anything else in
+        # it, the rig log included, is not this integration's to
+        # touch.
         old_diagnostics = os.path.join(
             report_directory, REPORT_DIAGNOSTIC_DIR
         )
@@ -1886,7 +1903,8 @@ a {{ color: #2a78d6; }}
         # current window, and nothing does until the next startup or
         # regenerate. So the file named for today is absent from the
         # roll until then, which reads as a brief that stopped
-        # publishing (#116, completed here). Open the new window's
+        # publishing (ruling #116, completed here). Open the new
+        # window's
         # in-progress brief now, so today's file exists the moment
         # the window rolls.
         if closing:

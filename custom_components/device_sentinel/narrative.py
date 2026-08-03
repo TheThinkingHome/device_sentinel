@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.10.7 (2026-07-29)
+# File: narrative.py, Version: 0.10.20 (2026-08-03)
 
 """What happened, and how to say it: the memory and the composer.
 
@@ -92,7 +92,10 @@ from .const import (
 )
 
 
-# The taint labels a promotion may replace (#164). Built from the
+# The taint labels a promotion may replace. A taint carries the
+# reason learning skipped a gap rather than a bare flag, so a row can
+# name the cause instead of always saying unavailable (ruling #164).
+# Built from the
 # reasons rather than written out, so a reason added later is covered
 # without a second place to remember. Pairing is deliberately absent:
 # it is a hand intervention and more specific than any cause above it.
@@ -102,7 +105,11 @@ _TAINT_LABELS = frozenset(
 
 
 def _promoted_learned(ended: str | None, learned: str | None) -> str | None:
-    """Return the widest cause that fits a tainted gap (#164).
+    """Return the widest cause that fits a tainted gap.
+
+    Where more than one reason fits, the widest wins, so a device
+    felled by its bridge reads as the bridge rather than as its own
+    unavailability (ruling #164).
 
     A device felled by its bridge showed unavailable, which is true
     and shallow: the row worth reading names the bridge. The episode
@@ -206,7 +213,9 @@ class NarrativeMixin:
         Shared by the lone recovery sentence and the paired episode
         so one recovery cannot be attributed two ways. The
         unobserved wording stands alone because it is a statement
-        about what was not seen rather than a named lever (#116).
+        about what was not seen rather than a named lever. The brief
+        is a report for a person rather than a diagnostic dump, so it
+        says plainly that nobody saw the recovery (ruling #116).
         """
         cause = row.get(INC_CAUSE)
         if cause == RECOVERY_CAUSE_UNOBSERVED:
@@ -285,7 +294,11 @@ class NarrativeMixin:
     def _compose_episode(
         self, opened: dict[str, Any], resolved: dict[str, Any]
     ) -> str:
-        """Return a whole silence as one sentence (#134).
+        """Return a whole silence as one sentence.
+
+        A stop and its recovery are one thing that happened, so the
+        prose tells them together and leaves strict chronology to the
+        table, where a reader is looking a time up (ruling #134).
 
         A device stopping and the same device recovering are one
         thing that happened, and telling them in strict time order
@@ -297,7 +310,7 @@ class NarrativeMixin:
         if opened[INC_EVENT] == INCIDENT_ACTION:
             # A deletion and the re-add that undid it are one thing
             # that happened, told the way an opening and its
-            # recovery are (#134).
+            # recovery are (ruling #134).
             when = self._clock(opened[INC_WHEN])
             return (
                 f"{opened[INC_NAME]} deleted from the list at {when}, "
@@ -314,7 +327,10 @@ class NarrativeMixin:
     def _pair_incidents(
         self, rows: list[dict[str, Any]]
     ) -> list[tuple[dict[str, Any], dict[str, Any] | None]]:
-        """Group a window's incidents into episodes, in order (#134).
+        """Group a window's incidents into episodes, in order.
+
+        One episode is one sentence in the prose, so the pairing has
+        to happen before the wording does (ruling #134).
 
         Each resolution is matched to the most recent unmatched
         opening for the same device and kind, so a device that
@@ -358,7 +374,9 @@ class NarrativeMixin:
         """Return what is wrong with one device, right now.
 
         The shape a phone holds: one line per device, replaced in
-        place as things change (#108), so it describes a state rather
+        place as things change, tagged by device id so its line
+        always says where that device is now rather than piling up a
+        history (ruling #108), so it describes a state rather
         than an event and carries no timestamp. Several problems at
         once are named by the worst with the rest counted, because
         the line has room for one fact.
@@ -439,10 +457,12 @@ class NarrativeMixin:
     def _note_silences(self, now: float) -> None:
         """Open an episode for any device well into its own patience.
 
-        The threshold is basis plus a share of that device's grace
-        (#105, configurable since #117): the silence has spent that share of the
-        distance from the rhythm to the freeze line. Basis alone,
-        shipped at 0.6.7, was too sensitive at the fast end, where a
+        The threshold is basis plus a share of that device's grace:
+        the silence has spent that share of the distance from the
+        rhythm to the freeze line (ruling #105, and a person may set
+        the share since ruling #117). Basis alone, which is what the
+        first version shipped, was too sensitive at the fast end,
+        where a
         rhythm of seconds is exceeded constantly and trivial silences
         filled the file, while the same rule was properly selective
         for a device measured in hours. A share of grace scales with
@@ -451,7 +471,8 @@ class NarrativeMixin:
         both a clear distance short of judgment.
 
         Devices whose freeze judgment is suppressed are skipped
-        (#106). Exclusion suppresses judgment and reporting while
+        (ruling #106). Exclusion suppresses judgment and reporting
+        while
         observation continues, and this file exists to explain
         verdicts: a device that can never be judged frozen has no
         verdict to explain, so its silences are noise here. A device
@@ -465,7 +486,7 @@ class NarrativeMixin:
             # storm closes seconds later, all of them describing the
             # restart rather than any device. Silences that matter
             # are still open in the record from before the restart,
-            # and new ones open once grace closes (0.7.0).
+            # and new ones open once grace closes.
             return
         for device_id in self._watched:
             if device_id in self._excluded_devices or self._freeze_excluded(
@@ -508,7 +529,7 @@ class NarrativeMixin:
             # only in the cold file, so _dirty alone schedules a write
             # of the clocks file that cannot carry it, and then clears
             # itself, leaving nothing to remember the row is unwritten
-            # (0.10.3). _mark_cold_dirty raises _dirty too, so nothing
+            # at all. _mark_cold_dirty raises _dirty too, so nothing
             # the routine tier did is lost by asking for both.
             self._mark_cold_dirty()
 
@@ -546,7 +567,7 @@ class NarrativeMixin:
             episode[EP_TAINT_SECONDS] = taint_seconds
         # The ending, the lag and the learned verdict are all cold
         # fields, so the close schedules the main file for the same
-        # reason the open does (0.10.3).
+        # reason the open does.
         self._mark_cold_dirty()
 
     def _stamp_intervention(
@@ -764,7 +785,10 @@ class NarrativeMixin:
         """Return the devices a person has checked off.
 
         Acknowledgment ends at recovery, because the item is deleted
-        when its last problem clears (#123 with #114). So a device is
+        when its last problem clears. Acknowledgment silences every
+        human-facing channel while it lasts (ruling #123), and a
+        recovery is still news because it ends the acknowledgment
+        rather than happening under it (ruling #114). So a device is
         in this set only while it is both broken and acknowledged,
         and its eventual recovery is reported as the news it is.
         """

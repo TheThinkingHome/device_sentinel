@@ -3,12 +3,12 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.10.11 (2026-07-31)
+# File: backup.py, Version: 0.10.20 (2026-08-03)
 
 """A one-shot copy of both storage files, taken before a release removes
 something it cannot put back.
 
-Why this exists (#130). The two-file split was built so that stepping
+Why this exists (ruling #130). The two-file split was built so that stepping
 back to an earlier version was free at every stage: the main file went
 on carrying the clock fields unused, so an older build loaded a
 complete record and lost nothing. The phase that removes those fields
@@ -56,10 +56,12 @@ def _storage_path(hass: HomeAssistant, key: str) -> Path:
 def _copy_one(source: Path, destination: Path) -> bool:
     """Copy one file, reporting whether the copy now exists.
 
-    A missing source is not a failure. The clocks file does not exist
-    until the first save after 0.8.8, and a house that has never run
-    that far has nothing to preserve; the caller's job is to protect
-    what is there, not to invent what is not.
+    A missing source is not a failure. The clocks file is the second
+    half of the storage split and does not exist until a version that
+    writes it has saved at least once (it arrived in 0.8.8), and a
+    house that has never run that far has nothing to preserve; the
+    caller's job is to protect what is there, not to invent what is
+    not.
     """
     if not source.exists():
         LOGGER.debug(

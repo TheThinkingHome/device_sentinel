@@ -3,16 +3,18 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.9.4 (2026-07-25)
+# File: sensor.py, Version: 0.10.20 (2026-08-03)
 
 """Sensor platform for the Device Sentinel integration.
 
 Every name here has to stand alone: Home Assistant gives entities no
 helper text on the device page, so a label and its state are the
-whole explanation a user gets. Names are title-cased per ruling 48,
-counts carry a unit so a card reads "125 devices" rather than "125",
+whole explanation a user gets. Names are title-cased like book
+titles rather than following Home Assistant's own sentence case,
+which is a deliberate divergence rather than a drift (ruling #48).
+Counts carry a unit so a card reads "125 devices" rather than "125",
 and any sensor whose state a user could not act on was renamed or
-retired at 0.3.12.
+retired in an early release (0.3.12).
 
 Clock source was retired there. It counted watched devices lacking a
 last_seen entity, so a higher number read as better while meaning
@@ -148,10 +150,10 @@ class DeviceSentinelBaseSensor(SensorEntity):
 class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
     """The status sensor: is Device Sentinel alive and fine.
 
-    Through 0.3.11 this published the setup count, which proved the
-    Step 1 storage round-trip and meant nothing to anyone else. A
-    sensor named Status must answer its own name, so the count moved
-    to an attribute, where it still proves persistence.
+    This once published the setup count, which proved that storage
+    survived a restart and meant nothing to anyone else. A sensor
+    named Status must answer its own name, so the count moved to an
+    attribute, where it still proves persistence (changed in 0.3.12).
 
     Learning shows only until the first device establishes a rhythm.
     Partial learning is permanent rather than a phase (every new
@@ -475,9 +477,11 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
     This is the visible surface of the intervention-detection work and,
     just as much, the acceptance test for each stack. Reading a stack's
     pairing state is the hard, stack-specific part; when this sensor
-    flips to binding as a pairing window opens, the reader underneath is
-    proven, and the shared detector that acts on the same state follows
-    (#145).
+    flips to binding as a pairing window opens, the reader underneath
+    is proven, and the shared detector follows: a device that comes
+    back while that window is open came back because of the hand on
+    it, so its silence is set aside rather than learned as the
+    device's normal rhythm (ruling #145).
 
     Disabled by default. A house may run several coordinators and most
     users watch one, so the sensors exist but stay off until a person

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.10.15 (2026-08-02)
+# File: config_flow.py, Version: 0.10.20 (2026-08-03)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -572,7 +572,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         learned rhythm plus a grace margin. The margin is not a flat
         multiple, because rhythms span seconds to hours and no single
         multiple fits both ends; it follows a curve the two deltas
-        shape (#85). delta-low is the grace a fast device gets, the
+        shape, generous where the rhythm is fast and tight where it
+        is slow (ruling #85). delta-low is the grace a fast device
+        gets, the
         floor in minutes, so a device reporting every few seconds is
         not called dead for missing a couple of reports. delta-high
         is the grace a slow device gets, the ceiling in hours, so the
@@ -849,8 +851,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Who hears about a problem, and when.
 
-        Three sections on one screen (#117): the instant messages, the
-        quiet window, and the daily brief. High-priority targets get a
+        Three sections on one screen: the instant messages, the
+        quiet window, and the daily brief. They sit together because
+        they are all about who hears, which is a different question
+        from how a detector is tuned, and tuning stays on its own
+        detector's screen (ruling #117). High-priority targets get a
         message when a device develops a problem and the brief with
         its history; normal-priority targets get the brief alone. A
         target in both is normalized to high on save, so the engine
@@ -858,8 +863,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         target list carries the whole document, which is why it is
         separate: the payload differs, not the urgency.
 
-        Quiet hours suppress both tiers (#111); nothing pierces, and
-        the brief reports what was missed.
+        Quiet hours suppress both tiers; nothing pierces, not even a
+        high-priority message, because an event inside quiet hours is
+        dropped rather than queued and the morning brief carries it
+        instead (ruling #111).
         """
         if user_input is not None:
             flat: dict[str, Any] = {}
@@ -981,7 +988,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     async def async_step_advanced(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Settings a person may change and most never will (#117).
+        """Settings a person may change and most never will.
+
+        Cross-cutting values live here while anything that tunes one
+        detector stays on that detector's own screen, where a person
+        adjusting it expects to find it (ruling #117).
 
         Each is a share of something the device already earned, or a
         plain interval, so no value here can produce a nonsensical

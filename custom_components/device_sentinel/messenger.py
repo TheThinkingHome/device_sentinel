@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.10.19 (2026-08-03)
+# File: messenger.py, Version: 0.10.20 (2026-08-03)
 
 """Sending the daily brief, and nothing else yet.
 
@@ -25,8 +25,12 @@ invisible until somebody compared an email against a file. The
 subset it handles is closed because we emit it: one h1, some h2s,
 paragraphs, and pipe tables.
 
-The sender reads the settings already stored (#132) and composes
-nothing new.
+The sender reads the settings already stored and composes nothing
+new. That is what lets it ship while the event-triggered engine is
+still held shut: mailing a document a person already reads asserts
+nothing the file did not already assert, where a push says this
+device is wrong now and inherits the formula behind it
+(ruling #132).
 """
 
 from __future__ import annotations
@@ -132,10 +136,11 @@ class MessengerMixin:
         """Return whether the day's brief is due to anyone.
 
         The mode is the whole rule, and quiet hours deliberately do
-        not apply (#136). Quiet hours exist to stop an event waking
+        not apply. Quiet hours exist to stop an event waking
         somebody; the brief arrives at an hour the person chose, and
         it is the thing that carries what quiet hours suppressed, so
-        suppressing it too would mean nothing ever arrived.
+        suppressing it too would mean nothing ever arrived
+        (ruling #136).
         """
         mode = self.entry.options.get(
             CONF_REMINDER_MODE, DEFAULT_REMINDER_MODE
@@ -160,15 +165,19 @@ class MessengerMixin:
         payload: dict[str, Any] = {"title": BRIEF_TITLE, "message": text}
         if target != PERSISTENT_TARGET:
             # The emailed body is the brief page itself, the same
-            # string written to www (#135 as amended by #178's final
-            # rung): one rendering serves the file, the dashboard
-            # card, and the mail client, so what arrives is what is
-            # on disk. The composed text stays as the message field
-            # for services without HTML and as the plain fallback.
+            # string written to www: one rendering serves the file,
+            # the dashboard card, and the mail client, so what
+            # arrives is what is on disk. The composed text stays as
+            # the message field for services without HTML and as the
+            # plain fallback. The rule that the mail must be the
+            # document that was written predates the HTML page and
+            # was carried across to it when the page replaced the
+            # Markdown brief (rulings #135 and #179).
             #
             # The stashed page is used only where it was rendered
             # from this very text, so the body can never describe a
-            # different document from the one being sent (#184). A
+            # different document from the one being sent
+            # (ruling #184). A
             # mismatched or missing stash falls back to the local
             # renderer, which gives the right day in a different
             # style rather than the wrong day in the right style.
@@ -187,7 +196,9 @@ class MessengerMixin:
 
         Called only from the brief's own scheduled write, so a
         regenerate or a midnight rewrite cannot mail an in-progress
-        document (#135). Each target is tried on its own and a
+        document: mailing one of those would deliver the same day
+        several times, each incomplete (ruling #135). Each target is
+        tried on its own and a
         failure is logged rather than raised: one unreachable mail
         server must not stop the other targets, and a brief that
         cannot be delivered is still written to disk.

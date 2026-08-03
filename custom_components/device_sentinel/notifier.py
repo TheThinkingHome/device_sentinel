@@ -3,13 +3,14 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.9.11 (2026-07-27)
+# File: notifier.py, Version: 0.10.20 (2026-08-03)
 
 """The event notification engine: per-family pushes and the card.
 
 Three self-overwriting surfaces, each keyed by a fixed id so it
-replaces its own last message rather than stacking (#479, #487 as
-reimagined 2026-07-25):
+replaces its own last message rather than stacking, always showing
+the most recent picture rather than a pile of stale ones
+(ruling #147):
 
 The persistent card. One card, always the current trouble state of the
 home, re-sent on every change. It is silent by nature and so is never
@@ -119,8 +120,11 @@ class NotifierMixin:
         Reads the same list properties the Problems sensors publish, so
         the summary can never disagree with what is detected, then drops
         the devices a person has acknowledged: an acknowledged problem
-        is invisible to humans everywhere, the card and pushes included,
-        exactly as the brief already hides it (#109). Each remaining
+        is invisible to humans everywhere, the card and pushes
+        included, exactly as the brief already hides it, because the
+        phone is a live status board rather than a log and shows what
+        is wrong and unacknowledged right now (ruling #109). Each
+        remaining
         entry is worded the way the briefs and the list word it: a
         battery's level, a signal marked railed, a device that is
         unavailable or never reported.
@@ -139,8 +143,10 @@ class NotifierMixin:
                     parts.append(f"{name} low")
         elif family == "signal":
             # The signal list tags each row by kind, not category, and
-            # a rail is not a low: a railed device shows a stale perfect
-            # reading, so the card must say railed, not low (#78).
+            # a rail is not a low: a railed device shows a stale
+            # perfect reading held at the protocol's fill value, which
+            # is a dead reading rather than a strong link, so the card
+            # must say railed, not low (ruling #78).
             for row in self.signal_problem_list:
                 if row.get("device_id") in acknowledged:
                     continue

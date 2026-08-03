@@ -3,16 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: bridge.py, Version: 0.9.11 (2026-07-27)
+# File: bridge.py, Version: 0.10.20 (2026-08-03)
 
 """Reading a coordinator bridge's own liveness and pairing state.
 
 This is the per-stack reader the whole intervention-detection idea
 rests on. Each coordinator publishes, in its own way, whether it is
-online and whether a pairing window is open. Reading that state is the
-hard, stack-specific part; the shared detector that acts on it only
-needs to know whether pairing is open, so once a stack's state is read
-correctly the rest follows (#145, #146).
+online and whether a pairing window is open. Why that matters: a
+device that comes back to life while somebody is pairing devices
+came back because of the hand on it, not on its own, so the silence
+before it must be set aside rather than learned as that device's
+normal rhythm. Reading the state is the hard, stack-specific part;
+the shared detector that acts on it only needs to know whether
+pairing is open, so once a stack's state is read correctly the rest
+follows (rulings #145 and #146).
 
 This module reads Zigbee2MQTT, which is the clean case: two retained
 MQTT topics, bridge/state (online or offline) and bridge/info (which
@@ -23,8 +27,11 @@ middle of a pairing window loses nothing.
 Everything here is guarded. If MQTT is not available, if the topics
 never arrive, or if a payload will not parse, the state stays unknown
 and nothing raises. A bridge reader that cannot read simply reports
-unknown, and the detector that reads it falls back to the debounce,
-which is the fail-safe the whole design turns on (#138, #147).
+unknown, and the detector that reads it goes back to judging by how
+long the silence lasted, which is what it did before this reader
+existed. So a reader that fails can only cost a pairing it would have
+caught, and can never make a judgment worse than the one the project
+already trusted (rulings #138 and #147).
 """
 
 from __future__ import annotations
@@ -75,8 +82,10 @@ class Z2MBridgeReader:
         self._last_heard: str | None = None
         # When a pairing window last closed, as a UTC timestamp. A
         # device paired near the end of a window may not report until
-        # just after it closes, so the detector allows a short grace
-        # after this moment (#145). None until a window has closed.
+        # just after it closes, so the detector counts a recovery in
+        # a short window after this moment as pairing too, rather
+        # than crediting the device with recovering on its own
+        # (ruling #145). None until a window has closed.
         self._pairing_closed_at: float | None = None
 
     @property
@@ -135,10 +144,13 @@ class Z2MBridgeReader:
 
         The detector asks this when a device recovers: a device that
         comes back while a pairing window is open, or within a short
-        grace after it closed, recovered because of the pairing, not on
-        its own (#145). Open now is the clear case; the grace covers a
-        device that reports just after the window closes, which the
-        observed publish lag on a real bridge makes a real case.
+        grace after it closed, recovered because somebody was pairing
+        it, not on its own. That silence is then discarded instead of
+        being learned, because its ending measures the hand rather
+        than the device (ruling #145). Open now is the clear case;
+        the grace covers a device that reports just after the window
+        closes, which the observed publish lag on a real bridge makes
+        a real case.
         """
         if self.pairing_open:
             return True
@@ -231,8 +243,9 @@ class Z2MBridgeReader:
             return
         was_open = self._permit_join
         self._permit_join = bool(data.get("permit_join", False))
-        # Note the moment a window closes, so a device that reports just
-        # after the window can still be attributed to the pairing (#145).
+        # Note the moment a window closes, so a device that reports
+        # just after it can still be credited to the pairing rather
+        # than to itself (ruling #145).
         if was_open and not self._permit_join:
             self._pairing_closed_at = dt_util.utcnow().timestamp()
         end = data.get("permit_join_end")

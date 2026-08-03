@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.10.11 (2026-07-31)
+# File: diagnostics.py, Version: 0.10.20 (2026-08-03)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -102,9 +102,10 @@ async def async_get_config_entry_diagnostics(
         window_basis, set_aside_indices = coordinator._trimmed_maximum(
             daily_maximum_gaps
         )
-        # The floor is the line (0.4.3): one computation, rails
-        # filtered, the trim ladder applied. signal_floor is kept as
-        # a key for reader continuity and equals the line.
+        # The floor and the line were separate computations once and
+        # were merged into one: rails filtered out, the trim ladder
+        # applied. signal_floor is kept as a key so an older reader
+        # does not break, and it equals the line (merged in 0.4.3).
         signal_line = coordinator._danger_line(record)
         devices[device_id] = {
             "name": (
@@ -123,11 +124,14 @@ async def async_get_config_entry_diagnostics(
             "window_basis": window_basis,
             "set_aside_indices": sorted(set_aside_indices),
             "signal_floor": signal_line,
-            # The dwell soak (0.4.0): the danger line the timer runs
+            # The dwell soak: the danger line the below-timer runs
             # against, yesterday's percent-below history, and the
-            # stuck flag. RSSI rows (negative floors) are provisional:
-            # eleven devices and barely-seen floors do not yet justify
-            # trusting the offset.
+            # stuck flag. Dwell is the share of a day a device spent
+            # under its own line, recorded since 0.4.0 so the level at
+            # which a weak link becomes a problem can be settled from
+            # real numbers rather than guessed. RSSI rows (negative
+            # floors) are provisional: eleven devices and barely-seen
+            # floors do not yet justify trusting the offset.
             "signal_danger_line": signal_line,
             "signal_dwell_daily_pct": list(
                 (record.get("signal_dwell_daily_pct") or [])[-DIAGNOSTIC_SERIES_CAP:]
@@ -136,13 +140,20 @@ async def async_get_config_entry_diagnostics(
                 "signal_below_today_seconds"
             ),
             "signal_excluded": coordinator._signal_excluded(device_id),
-            # A rail is confirmed when the daily low sits at the fill
-            # value for three consecutive days (0.4.8).
+            # A rail is a reading stuck at the protocol's fill value
+            # (LQI 255, RSSI -128), which is a dead reading rather
+            # than a perfect link. It is confirmed only when the daily
+            # low sits there for three consecutive days, because a
+            # live repeat counter proved unreliable (ruling #78).
             "signal_railed": coordinator.signal_railed(record),
-            # The discharge soak (0.4.2): the daily level series and
+            # The discharge soak: the daily battery level series and
             # the deltas derived from it (a positive delta is a drop).
-            # Provisional and short until it has depth; the velocity
-            # flag reads it in a later release.
+            # A coin cell is flat for most of its life and then falls
+            # away, so a level threshold can fire too late; this
+            # series is the ninety-day measurement a rate-of-fall
+            # detector will be built from. Provisional and short until
+            # it has depth; the velocity flag reads it in a later
+            # release (recording since 0.4.2, ruling #62).
             "battery_daily_value": list(
                 (record.get("battery_daily_value") or [])[-DIAGNOSTIC_SERIES_CAP:]
             ),
@@ -195,15 +206,17 @@ async def async_get_config_entry_diagnostics(
             "watched": len(coordinator._watched),
             "set_aside": len(coordinator._set_aside),
             "deviceless_entities": coordinator.deviceless_count,
-            # Coordinator stacks detected in this house (#143). Derived
-            # from the registry each rebuild, the whole visible surface
-            # of stack auto-detection; every later intervention detector
-            # attaches only where its stack appears here.
+            # Coordinator stacks detected in this house. Derived from
+            # the registry each rebuild rather than stored, so it is
+            # never a stale truth, and it is the whole visible surface
+            # of stack auto-detection; every later intervention
+            # detector attaches only where its stack appears here
+            # (ruling #143).
             "stacks": sorted(coordinator._stacks),
             # Each detected bridge's current state (running, binding,
-            # down, unknown), so a pairing-discarded gap is auditable
-            # from a diagnostics download and not only from the live
-            # sensor (#149).
+            # down, unknown), so a gap discarded as a pairing is
+            # auditable from a diagnostics download and not only from
+            # the live sensor, which is off by default (ruling #149).
             "bridge_state": {
                 stack: coordinator.bridge_state(stack)
                 for stack in coordinator.bridge_stacks
@@ -216,7 +229,10 @@ async def async_get_config_entry_diagnostics(
             "low_count": coordinator.battery_low_count,
             "low_list": coordinator.battery_low_list,
         },
-        # What the house's exclusions are actually made of (#164).
+        # What the house's excluded gaps are actually made of. A
+        # taint carries the reason it was set rather than a bare flag,
+        # so a rhythm that skipped a gap can be traced to the cause
+        # (ruling #164).
         # Counted from the episode record rather than from the live
         # flags, because a taint is spent the moment the device
         # speaks and the standing count is almost always zero, while
@@ -232,14 +248,26 @@ async def async_get_config_entry_diagnostics(
         ),
         # The silence episodes behind silence_episodes.md: a feed
         # belongs in the download, where a maintainer can read the
-        # raw timestamps the report renders (#103).
+        # raw timestamps the report renders. An episode is a silence
+        # that passed the device's own learned basis, and it records
+        # whether it ended because the device spoke or because
+        # something made it speak (ruling #103).
         "silence_episodes": coordinator.data.get(DATA_EPISODES, []),
-        # The incident timeline every renderer reads (#107).
+        # The incident timeline every renderer reads. It is the
+        # single memory: the push, the brief, the email and the card
+        # are all renderings over it, and none derives its own truth
+        # (ruling #107).
         "incidents": coordinator.data.get(DATA_INCIDENTS, []),
         # What the engine would have said, composed but never sent
-        # while the dry run lasts (#120).
+        # while the dry run lasts. One composer serves every channel,
+        # so an event cannot be described differently by two of them
+        # (ruling #120).
         # The storage split, so its state travels with an issue
-        # report rather than needing a terminal (0.8.8).
+        # report rather than needing a terminal. The split keeps the
+        # nine fast-changing clock fields in a small companion file
+        # written on every routine save, and everything learned in the
+        # main file written only when it changes (arrived in 0.8.8,
+        # ruling #101).
         "split": {
             "clock_fields": list(CLOCK_FIELDS),
             "clock_devices": len(coordinator.data.get(DATA_DEVICES, {})),
@@ -252,7 +280,10 @@ async def async_get_config_entry_diagnostics(
             "main_file_behind_seconds": behind,
         },
         # How the last stop went and what the record looked like on
-        # the way back up (#163, #167). Together these answer, from a
+        # the way back up: whether the last stop was asked for, and
+        # how many silence episodes came back with no ending because
+        # their closing died with the machine (rulings #163 and #167).
+        # Together these answer, from a
         # download alone, whether a fleet whose clocks all start at
         # one moment was reset deliberately, and whether any silence
         # episode lost its closing before it reached disk. The orphan

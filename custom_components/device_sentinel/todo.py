@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: todo.py, Version: 0.10.4 (2026-07-28)
+# File: todo.py, Version: 0.10.20 (2026-08-03)
 
 """Todo platform for the Device Sentinel integration.
 
@@ -29,8 +29,8 @@ The acknowledgment lifecycle, carried from Sentinel Notify:
 
 There is no add box: the list is maintained by detections alone, so
 the create feature is not offered and hand-typed items are gone
-(anything stored without a device id was purged at the 0.6.0
-upgrade). Text edits do not stick either; the sync rewrites the
+(anything stored without a device id was purged by an earlier
+upgrade, 0.6.0). Text edits do not stick either; the sync rewrites the
 wording from the detections.
 
 Order: open items alphabetical by the device's common name, then the
