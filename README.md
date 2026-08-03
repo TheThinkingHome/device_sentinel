@@ -10,6 +10,12 @@
 
 **Your dashboard cannot tell a quiet device from a dead one. Device Sentinel can, and it watches the batteries and radio links that fail first.**
 
+[!WARNING]
+
+**Pre-Release Notice
+
+Device Sentinel is in active, rapid development and breaking changes will occur. Please read all release notes carefully before updating. The integration is fully functional and actively producing real freeze, battery, and signal data for live environments.
+
 > **Image placeholder:** hero banner, 1200x300. Device Sentinel alongside the Home Assistant and HACS marks.
 
 ## The Problem
