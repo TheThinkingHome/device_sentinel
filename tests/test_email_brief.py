@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_email_brief.py, Version: 0.10.19 (2026-08-03)
+# File: test_email_brief.py, Version: 0.10.21 (2026-08-03)
 
 """The incident log and the daily brief: the memory and the report.
 
@@ -102,7 +102,7 @@ from custom_components.device_sentinel.const import (
     TODO_KIND_NOT_REPORTED,
 )
 
-from tests.helpers import setup_coordinator
+from tests.helpers import register_device, setup_coordinator
 
 DOMAIN = "device_sentinel"
 
@@ -1692,3 +1692,93 @@ async def test_the_emailed_chart_link_is_absolute_in_the_page(
         in page
     )
     assert f"href='{REPORT_SIGNAL_DWELL_URL}'" not in page
+
+
+# ---------------------------------- the live copy carries a full day
+
+async def test_the_live_brief_covers_a_rolling_day(
+    hass: HomeAssistant,
+):
+    """Ruling #187, found on the live fleet on 2026-08-03.
+
+    The undated file is the dashboard's address, and its window ran
+    from the brief hour to now. Read at 11 AM that was four hours,
+    so the card said two events had happened while a full day of
+    twelve sat in yesterday's dated file. The live copy now carries
+    a rolling day.
+
+    An incident from yesterday afternoon is the test: outside the
+    brief-hour window, inside the rolling one.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "rw1", "Rolling Device")
+    now = dt_util.utcnow().timestamp()
+    brief_start = coord._brief_window_start(now)
+    # Comfortably before the brief hour, comfortably inside a day.
+    when = brief_start - 3600.0
+    assert now - when < 86400.0
+    coord.data[DATA_INCIDENTS] = [
+        {
+            INC_WHEN: when,
+            INC_DEVICE_ID: device.id,
+            INC_NAME: "Rolling Device",
+            INC_KIND: TODO_KIND_FROZEN,
+            INC_EVENT: INCIDENT_OPENED,
+        }
+    ]
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _text(
+        hass.config.path("www", "device_sentinel", "daily_brief.html")
+    )
+    assert "Rolling Device" in page
+    assert "(in progress)" in page
+
+
+async def test_the_live_brief_never_lands_on_a_closed_record(
+    hass: HomeAssistant,
+):
+    """The hazard the rolling window creates, closed by ruling #187.
+
+    The dated file is named from the window start. Left alone, a
+    rolling window starting yesterday would name the live copy for
+    yesterday and overwrite the closed record with an unfinished
+    document. The naming day is passed separately, so the live copy
+    is still named for the brief day.
+    """
+    coord = await setup_coordinator(hass)
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+
+    now = dt_util.utcnow().timestamp()
+    expected = dt_util.as_local(
+        dt_util.utc_from_timestamp(coord._brief_window_start(now))
+    ).strftime("daily_brief_%Y-%m-%d.html")
+    directory = hass.config.path("www", "device_sentinel")
+    assert os.path.isfile(os.path.join(directory, expected))
+    # Yesterday's name belongs to yesterday's closed brief and must
+    # not have been written by this live copy.
+    yesterday = dt_util.as_local(
+        dt_util.utc_from_timestamp(now - 86400.0)
+    ).strftime("daily_brief_%Y-%m-%d.html")
+    if yesterday != expected:
+        assert not os.path.isfile(os.path.join(directory, yesterday))
+
+
+async def test_the_closed_brief_still_runs_brief_to_brief(
+    hass: HomeAssistant,
+):
+    """Ruling #116 is untouched: the record is the closed window.
+
+    The rolling day is the live copy's job alone, so a closing write
+    still says it covers the 24 hours since the brief hour and is
+    named for the day that window opened.
+    """
+    coord = await setup_coordinator(hass)
+    await hass.async_add_executor_job(coord._write_reports, BRIEF_TRIGGER)
+    start, _end = coord._brief_close_bounds()
+    closed = dt_util.as_local(
+        dt_util.utc_from_timestamp(start)
+    ).strftime("daily_brief_%Y-%m-%d.html")
+    text = _text(hass.config.path("www", "device_sentinel", closed))
+    assert "Covering the 24 hours since" in text
+    assert "(in progress)" not in text
