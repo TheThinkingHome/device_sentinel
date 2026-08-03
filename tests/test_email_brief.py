@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_email_brief.py, Version: 0.10.21 (2026-08-03)
+# File: test_email_brief.py, Version: 0.10.22 (2026-08-03)
 
 """The incident log and the daily brief: the memory and the report.
 
@@ -46,6 +46,7 @@ from custom_components.device_sentinel.const import (
     CONF_REMINDER_TIME,
     DATA_EPISODES,
     DATA_INCIDENTS,
+    DATA_TODO_ITEMS,
     DATA_SYSTEM_EVENTS,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
@@ -98,8 +99,12 @@ from custom_components.device_sentinel.const import (
     SYS_SCOPE_SYSTEM,
     SYS_UNCLEAN_RESTART,
     SYS_WHEN,
+    TODO_DEVICE_ID,
+    TODO_KINDS,
     TODO_KIND_FROZEN,
     TODO_KIND_NOT_REPORTED,
+    TODO_SORT_NAME,
+    TODO_STATUS,
 )
 
 from tests.helpers import register_device, setup_coordinator
@@ -1534,9 +1539,16 @@ async def test_the_renderer_makes_tables_and_escapes_content(
 ):
     """A mail client shows a pipe table as a wall of text, so the
     tables are rendered; anything a device name could carry is
-    escaped rather than injected."""
+    escaped rather than injected.
+
+    Moved onto the surviving renderer in 0.10.22 (ruling #188). It
+    tested the messenger's renderer, which stopped being what the
+    file and the mail carried in 0.10.18, so it went on passing over
+    a renderer nothing read while the one that mattered escaped
+    nothing.
+    """
     coord = await setup_coordinator(hass)
-    html = coord._brief_html(
+    html = coord._render_brief_html(
         "# Device Sentinel Daily Brief\n"
         "\n"
         "Jul 24, 7:00 AM.\n"
@@ -1556,6 +1568,56 @@ async def test_the_renderer_makes_tables_and_escapes_content(
     assert "---" not in html
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
+
+
+async def test_a_device_name_cannot_inject_markup_into_the_brief(
+    hass: HomeAssistant,
+):
+    """The fault as found, end to end through the real brief path.
+
+    Reproduced on 0.10.21 before the fix: a device named with an
+    angle bracket in it reached daily_brief.html raw, and therefore
+    reached the mail raw, because the renderer that writes the file
+    escaped nothing while the one carrying the escaping test was no
+    longer read (ruling #188).
+    """
+    coord = await setup_coordinator(hass)
+    coord.data[DATA_TODO_ITEMS] = [
+        {
+            TODO_DEVICE_ID: "inject1",
+            TODO_SORT_NAME: "Sensor <script>alert(1)</script>",
+            TODO_STATUS: "needs_action",
+            TODO_KINDS: {
+                TODO_KIND_FROZEN: dt_util.utcnow().timestamp() - 60
+            },
+        }
+    ]
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+
+    page = _text(
+        hass.config.path("www", "device_sentinel", "daily_brief.html")
+    )
+    assert "<script>alert(1)</script>" not in page
+    assert "&lt;script&gt;" in page
+    # And the sender's fallback is now the same document, so a
+    # mismatched stash cannot reintroduce a second rendering.
+    assert coord._render_brief_html(coord._last_brief_text) == page
+
+
+async def test_the_separator_is_told_by_its_characters(
+    hass: HomeAssistant,
+):
+    """The merged renderer reads the rule row rather than counting to
+    it, so a pipe line arriving anywhere else is still data."""
+    coord = await setup_coordinator(hass)
+    html = coord._render_brief_html(
+        "| A | B |\n"
+        "|:--|--:|\n"
+        "| one | two |\n"
+    )
+    assert "<th>A</th>" in html
+    assert "<td>one</td>" in html
+    assert ":--" not in html
 
 
 # ------------------------------------- the page and the text as a pair
