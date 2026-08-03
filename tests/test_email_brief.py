@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_email_brief.py, Version: 0.10.12 (2026-07-31)
+# File: test_email_brief.py, Version: 0.10.18 (2026-08-02)
 
 """The incident log and the daily brief: the memory and the report.
 
@@ -136,19 +136,19 @@ def _register(hass, uid, name, battery=False, source=None):
 
 
 def _brief_text(hass):
-    """Return the brief that was written, whatever its name.
+    """Return the composed brief text of the newest write.
 
-    Named for the day its window opened, which is not today's date
-    when the window began before the brief hour (0.7.5).
+    Since 0.10.18 the file on disk is the rendered HTML page; the
+    composed text remains the product these tests assert on, because
+    it is the message field, the persistent-notification body, and
+    the source the page is rendered from, so its prose is the prose.
     """
-    written = sorted(
-        glob.glob(
-            hass.config.path("device_sentinel", "daily_brief_*.md")
-        )
-    )
-    assert written, "no daily brief was written"
-    with open(written[0], encoding="utf-8") as handle:
-        return handle.read()
+    from custom_components.device_sentinel.const import DOMAIN
+
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    text = getattr(entry.runtime_data, "_last_brief_text", None)
+    assert text, "no daily brief was written"
+    return text
 
 
 async def test_the_unclean_restart_reads_as_english(
@@ -592,19 +592,19 @@ async def test_scheduled_roll_opens_todays_in_progress_brief(
     await hass.async_add_executor_job(coord._write_reports, BRIEF_TRIGGER)
 
     written = sorted(
-        glob.glob(hass.config.path("device_sentinel", "daily_brief_*.md"))
+        glob.glob(hass.config.path("www", "device_sentinel", "daily_brief_2*.html"))
     )
     names = [p.rsplit("/", 1)[-1] for p in written]
-    assert "daily_brief_2026-07-25.md" in names, names  # closed day
-    assert "daily_brief_2026-07-26.md" in names, names  # opened day
+    assert "daily_brief_2026-07-25.html" in names, names  # closed day
+    assert "daily_brief_2026-07-26.html" in names, names  # opened day
 
     with open(
-        hass.config.path("device_sentinel", "daily_brief_2026-07-25.md"),
+        hass.config.path("www", "device_sentinel", "daily_brief_2026-07-25.html"),
         encoding="utf-8",
     ) as handle:
         completed = handle.read()
     with open(
-        hass.config.path("device_sentinel", "daily_brief_2026-07-26.md"),
+        hass.config.path("www", "device_sentinel", "daily_brief_2026-07-26.html"),
         encoding="utf-8",
     ) as handle:
         today = handle.read()
@@ -1001,7 +1001,7 @@ async def test_one_window_writes_one_file(hass: HomeAssistant):
     for _ in range(3):
         await hass.async_add_executor_job(coord._write_reports, "test")
     written = glob.glob(
-        hass.config.path("device_sentinel", "daily_brief_*.md")
+        hass.config.path("www", "device_sentinel", "daily_brief_2*.html")
     )
     assert len(written) == 1
 
@@ -1014,9 +1014,9 @@ async def test_the_file_is_named_for_the_window_start(
     start = coord._brief_window_start(dt_util.utcnow().timestamp())
     expected = dt_util.as_local(
         dt_util.utc_from_timestamp(start)
-    ).strftime("daily_brief_%Y-%m-%d.md")
+    ).strftime("daily_brief_%Y-%m-%d.html")
     written = glob.glob(
-        hass.config.path("device_sentinel", "daily_brief_*.md")
+        hass.config.path("www", "device_sentinel", "daily_brief_2*.html")
     )
     assert os.path.basename(written[0]) == expected
 
@@ -1027,7 +1027,7 @@ async def test_the_file_is_named_for_the_window_start(
 
 def _briefs(hass):
     return sorted(
-        glob.glob(hass.config.path("device_sentinel", "daily_brief_*.md"))
+        glob.glob(hass.config.path("www", "device_sentinel", "daily_brief_2*.html"))
     )
 
 
@@ -1085,8 +1085,10 @@ async def test_a_scheduled_write_completes_the_brief(
     start, _end = coord._brief_close_bounds()
     closed = dt_util.as_local(
         dt_util.utc_from_timestamp(start)
-    ).strftime("daily_brief_%Y-%m-%d.md")
-    text = _text(hass.config.path("device_sentinel", closed))
+    ).strftime("daily_brief_%Y-%m-%d.html")
+    text = _text(
+        hass.config.path("www", "device_sentinel", closed)
+    )
     assert "(in progress)" not in text
     assert "Covering the 24 hours since" in text
 
@@ -1126,7 +1128,7 @@ async def test_the_completed_brief_is_named_for_the_day_it_covers(
     start, _end = coord._brief_close_bounds()
     expected = dt_util.as_local(
         dt_util.utc_from_timestamp(start)
-    ).strftime("daily_brief_%Y-%m-%d.md")
+    ).strftime("daily_brief_%Y-%m-%d.html")
     assert os.path.basename(_briefs(hass)[0]) == expected
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
@@ -1350,7 +1352,7 @@ async def test_every_generated_heading_is_title_case(
     assert "## In Short" in brief
     assert "## Last 24 Hours" in brief
 
-    directory = hass.config.path("device_sentinel", "diagnostics")
+    directory = hass.config.path("device_sentinel")
     for name, heading in (
         ("device_telemetry.md", "Learned Statistics"),
         ("classification.md", "Classification"),

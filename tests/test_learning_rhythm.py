@@ -184,7 +184,7 @@ async def test_markdown_render_marks_trim(hass: HomeAssistant):
     await hass.async_add_executor_job(coord._write_reports)
 
     text = open(
-        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
+        hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     row = next(line for line in text.splitlines() if "Markdown Device" in line)
     assert "~~2.50h~~" in row          # the 9000 s spike, set aside

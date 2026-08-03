@@ -78,7 +78,7 @@ def _class_device(hass, uid, name):
 
 def _class_rows(hass):
     text = open(
-        hass.config.path("device_sentinel/diagnostics/classification.md")
+        hass.config.path("device_sentinel/classification.md")
     ).read()
     return [
         line

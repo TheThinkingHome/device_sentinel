@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.10.15 (2026-08-02)
+# File: test_reports.py, Version: 0.10.18 (2026-08-02)
 
 """The diagnostic files: telemetry and classification.
 
@@ -114,7 +114,7 @@ def _register(hass, uid, name, battery=False):
 
 def _telemetry_row(hass, name):
     text = open(
-        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
+        hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     return next(line for line in text.splitlines() if name in line)
 
@@ -158,8 +158,8 @@ async def test_reports_written_at_setup_and_midnight(
 
     await setup_entry(hass, {CONF_SIGNAL_MARGIN: 0})
 
-    tele = hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
-    clas = hass.config.path("device_sentinel/diagnostics/classification.md")
+    tele = hass.config.path("device_sentinel/device_telemetry.md")
+    clas = hass.config.path("device_sentinel/classification.md")
 
     # Written at setup.
     assert os.path.isfile(tele)
@@ -359,7 +359,7 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     coord, _ = await _marks_coordinator(hass, {CONF_SIGNAL_ANOMALY_TRIM: 1})
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
-        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
+        hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     header = next(line for line in text.splitlines() if "DEVICE (INTEGRATION) | STATUS" in line)
     # Slider at +1 renders as the word Deep, not a number.
@@ -482,7 +482,7 @@ async def test_regenerate_judges_then_writes(hass: HomeAssistant):
     assert result == {"regenerated": 2}
 
     text = open(
-        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
+        hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     # Judgment ran, so the ghost is flagged and shows in the report.
     assert "Reporting Devices (1)" in text
@@ -521,7 +521,7 @@ async def test_written_header_is_readable_on_both_reports(
     await hass.async_add_executor_job(coord._write_reports, "manual")
     for name in ("device_telemetry.md", "classification.md"):
         text = open(
-            hass.config.path(f"device_sentinel/diagnostics/{name}")
+            hass.config.path(f"device_sentinel/{name}")
         ).read()
         written = next(
             line
@@ -643,7 +643,7 @@ async def test_section_reaches_the_written_report(hass: HomeAssistant):
     _freeze(coord, device.id)
     coord._sync_problem_list()
     await hass.async_add_executor_job(coord._write_reports, "test")
-    path = hass.config.path("device_sentinel", "diagnostics", "device_telemetry.md")
+    path = hass.config.path("device_sentinel", "device_telemetry.md")
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     assert "## Reporting Devices (1)" in text
@@ -772,7 +772,7 @@ async def test_report_written_and_readable(hass: HomeAssistant):
     _armed_and_silent(coord, device.id, 2.0)
     coord._judge_all_devices()
     await hass.async_add_executor_job(coord._write_reports, "test")
-    path = hass.config.path("device_sentinel", "diagnostics", "silence_episodes.md")
+    path = hass.config.path("device_sentinel", "silence_episodes.md")
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     assert "Silence Episodes" in text
@@ -784,7 +784,7 @@ async def test_report_written_and_readable(hass: HomeAssistant):
 async def test_empty_report_says_so(hass: HomeAssistant):
     coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     await hass.async_add_executor_job(coord._write_reports, "test")
-    path = hass.config.path("device_sentinel", "diagnostics", "silence_episodes.md")
+    path = hass.config.path("device_sentinel", "silence_episodes.md")
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     assert "No device has been silent past its own rhythm" in text

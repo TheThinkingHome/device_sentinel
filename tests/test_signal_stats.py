@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.10.17 (2026-08-02)
+# File: test_signal_stats.py, Version: 0.10.18 (2026-08-02)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -55,7 +55,9 @@ import glob
 
 def _brief_text(hass: HomeAssistant) -> str:
     written = sorted(
-        glob.glob(hass.config.path("device_sentinel", "daily_brief_*.md"))
+        glob.glob(
+            hass.config.path(REPORT_WWW_DIR, "daily_brief_2*.html")
+        )
     )
     assert written
     with open(written[-1], encoding="utf-8") as handle:
@@ -383,7 +385,10 @@ async def test_the_brief_is_also_a_page_under_www(
     assert "<h1>Device Sentinel Daily Brief</h1>" in page
     assert "<h2>In Short</h2>" in page
     assert "<table>" in page and "<th>DEVICE</th>" in page
-    assert "<a href='/local/device_sentinel/signal_dwell.html'>" in page
+    # The href is absolute where Home Assistant knows its URL, so
+    # the assertion pins the path and the anchor rather than a host.
+    assert "/local/device_sentinel/signal_dwell.html'>" in page
+    assert "the signal dwell chart</a>" in page
     assert "prefers-color-scheme: dark" in page
     assert "Anomalous Device" in page
 
@@ -402,16 +407,127 @@ async def test_the_html_brief_tracks_the_markdown(
     )
     with open(path, encoding="utf-8") as handle:
         page = handle.read()
-    md_files = sorted(
+    dated = sorted(
         _glob.glob(
-            hass.config.path("device_sentinel", "daily_brief_*.md")
+            hass.config.path(REPORT_WWW_DIR, "daily_brief_2*.html")
         )
     )
-    with open(md_files[-1], encoding="utf-8") as handle:
-        markdown = handle.read()
-    # Every prose line of the Markdown appears in the page.
-    for line in markdown.split("\n"):
-        if line.strip() and not line.startswith(("#", "|")):
-            fragment = line.split("/local/")[0].strip()
-            if fragment:
-                assert fragment[:40] in page
+    with open(dated[-1], encoding="utf-8") as handle:
+        dated_page = handle.read()
+    # The dated file and the current file are the same document.
+    assert dated_page == page
+
+async def test_the_markdown_brief_is_retired(hass: HomeAssistant):
+    """0.10.18: no new .md brief is written; the dated record is
+    HTML under www, named as the Markdown files were, and trimmed."""
+    import glob as _glob
+
+    coord = await setup_coordinator(hass)
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+
+    assert not _glob.glob(
+        hass.config.path("device_sentinel", "daily_brief_*.md")
+    )
+    assert _glob.glob(
+        hass.config.path(REPORT_WWW_DIR, "daily_brief_2*.html")
+    )
+
+
+async def test_the_diagnostics_live_one_level_up(hass: HomeAssistant):
+    """0.10.18: the maintainer files write to device_sentinel itself,
+    and a leftover set in the old diagnostics subfolder is cleaned
+    while anything else in that folder is left alone."""
+    old_dir = hass.config.path("device_sentinel", "diagnostics")
+    os.makedirs(old_dir, exist_ok=True)
+    for name in ("device_telemetry.md", "not_ours.txt"):
+        with open(
+            os.path.join(old_dir, name), "w", encoding="utf-8"
+        ) as handle:
+            handle.write("old")
+
+    coord = await setup_coordinator(hass)
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+
+    assert os.path.isfile(
+        hass.config.path("device_sentinel", "device_telemetry.md")
+    )
+    assert not os.path.isfile(
+        os.path.join(old_dir, "device_telemetry.md")
+    )
+    assert os.path.isfile(os.path.join(old_dir, "not_ours.txt"))
+
+
+async def test_the_email_body_is_the_page(hass: HomeAssistant):
+    """#135 as amended: the html payload is the exact string written
+    to the current brief file, one rendering for disk and mail."""
+    coord = await setup_coordinator(hass)
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+
+    payload = coord._brief_payload("notify.mail", "plain text")
+    path = os.path.join(
+        hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
+    )
+    with open(path, encoding="utf-8") as handle:
+        page = handle.read()
+    assert payload["data"]["html"] == page
+    assert payload["message"] == "plain text"
+
+async def test_every_www_file_is_dated_and_trimmed(
+    hass: HomeAssistant,
+):
+    """One rule for the folder (ruled 2026-08-02): dated files as
+    the record, an undated current file for the stable URL, and the
+    brief's fourteen-day trim applied to every prefix alike."""
+    import glob as _glob
+
+    from custom_components.device_sentinel.const import BRIEF_KEEP_DAYS
+
+    directory = hass.config.path(REPORT_WWW_DIR)
+    os.makedirs(directory, exist_ok=True)
+    for day in range(1, BRIEF_KEEP_DAYS + 5):
+        name = f"signal_dwell_2026-06-{day:02d}.html"
+        with open(
+            os.path.join(directory, name), "w", encoding="utf-8"
+        ) as handle:
+            handle.write("stale")
+
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "dt1", "Dated Device")
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [3.0]
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+
+    dated = sorted(
+        _glob.glob(os.path.join(directory, "signal_dwell_2*.html"))
+    )
+    assert len(dated) == BRIEF_KEEP_DAYS
+    # Today's dated file and the current file are the same document.
+    with open(dated[-1], encoding="utf-8") as handle:
+        newest = handle.read()
+    with open(
+        os.path.join(directory, "signal_dwell.html"), encoding="utf-8"
+    ) as handle:
+        current = handle.read()
+    assert newest == current
+    assert "Dated Device" in current
+
+async def test_the_link_is_external_or_relative_never_internal(
+    hass: HomeAssistant,
+):
+    """Ruled 2026-08-02: an internal address in an email works only
+    on home wifi, failing exactly when a person is away, so the link
+    is the external URL where one is configured and stays relative
+    where none is. The test environment configures an internal URL
+    and no external one, so the rendered link must be relative."""
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    device, _ = register_device(hass, "ex1", "Anomalous Device")
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [20.0]
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    path = os.path.join(
+        hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
+    )
+    with open(path, encoding="utf-8") as handle:
+        page = handle.read()
+
+    assert "href='/local/device_sentinel/signal_dwell.html'" in page
+    assert "http://10." not in page

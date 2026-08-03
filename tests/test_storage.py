@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage.py, Version: 0.10.15 (2026-08-02)
+# File: test_storage.py, Version: 0.10.18 (2026-08-02)
 
 """Persistence: the write cadence, the split shadow, and retention.
 
@@ -508,27 +508,31 @@ async def test_the_split_state_reaches_diagnostics(
 async def test_only_the_newest_briefs_are_kept(hass: HomeAssistant):
     entry = await setup_entry(hass)
     coord = entry.runtime_data
-    directory = hass.config.path("device_sentinel")
+    directory = hass.config.path("www", "device_sentinel")
     os.makedirs(directory, exist_ok=True)
     # Setup writes today's brief, so start from a known count.
-    for path in glob.glob(os.path.join(directory, "daily_brief_*.md")):
+    for path in glob.glob(
+        os.path.join(directory, "daily_brief_2*.html")
+    ):
         os.remove(path)
     for day in range(1, BRIEF_KEEP_DAYS + 7):
-        name = f"{REPORT_BRIEF_PREFIX}2026-06-{day:02d}.md"
+        name = f"{REPORT_BRIEF_PREFIX}2026-06-{day:02d}.html"
         with open(os.path.join(directory, name), "w") as handle:
             handle.write("stale\n")
-    assert len(glob.glob(os.path.join(directory, "daily_brief_*.md"))) == (
-        BRIEF_KEEP_DAYS + 6
-    )
+    assert len(
+        glob.glob(os.path.join(directory, "daily_brief_2*.html"))
+    ) == (BRIEF_KEEP_DAYS + 6)
 
     coord._trim_briefs(directory)
     left = sorted(
         os.path.basename(p)
-        for p in glob.glob(os.path.join(directory, "daily_brief_*.md"))
+        for p in glob.glob(
+            os.path.join(directory, "daily_brief_2*.html")
+        )
     )
     assert len(left) == BRIEF_KEEP_DAYS
     # The newest survive: the oldest six dates are gone.
-    assert left[0] == f"{REPORT_BRIEF_PREFIX}2026-06-07.md"
+    assert left[0] == f"{REPORT_BRIEF_PREFIX}2026-06-07.html"
 
 
 async def test_trimming_briefs_is_safe_when_there_are_few(
@@ -694,10 +698,13 @@ async def test_the_columns_show_the_same_fortnight_as_before(
     assert len(cell.split()) == DAILY_MAX_KEEP
 
 
-async def test_the_maintainer_files_live_in_a_subfolder(
+async def test_the_maintainer_files_live_at_the_top(
     hass: HomeAssistant,
 ):
-    """The folder a person opens holds the briefs and nothing else."""
+    """Since 0.10.18 the folder is the developer's (#178): the
+    briefs a person reads live under www, so the maintainer files
+    come back up and the old diagnostics subfolder is emptied of
+    them."""
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     await hass.async_add_executor_job(coord._write_reports, "test")
@@ -708,10 +715,12 @@ async def test_the_maintainer_files_live_in_a_subfolder(
         "classification.md",
         "silence_episodes.md",
     ):
-        assert os.path.isfile(os.path.join(below, name)), name
-        assert not os.path.isfile(os.path.join(top, name)), name
+        assert os.path.isfile(os.path.join(top, name)), name
+        assert not os.path.isfile(os.path.join(below, name)), name
+    # The briefs live under www now, not here.
+    www = hass.config.path("www", "device_sentinel")
     assert any(
-        name.startswith("daily_brief_") for name in os.listdir(top)
+        name.startswith("daily_brief_") for name in os.listdir(www)
     )
 
 
@@ -864,7 +873,7 @@ async def test_the_report_states_the_retention_in_force(
     coord = entry.runtime_data
     await hass.async_add_executor_job(coord._write_reports, "test")
     with open(
-        hass.config.path("device_sentinel/diagnostics/device_telemetry.md"),
+        hass.config.path("device_sentinel/device_telemetry.md"),
         encoding="utf-8",
     ) as handle:
         text = handle.read()

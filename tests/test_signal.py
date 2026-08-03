@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal.py, Version: 0.10.13 (2026-08-01)
+# File: test_signal.py, Version: 0.10.18 (2026-08-02)
 
 """Signal detection: the floor line, the dwell timer, and the rail.
 
@@ -169,7 +169,7 @@ async def test_line_in_report(hass: HomeAssistant):
     ]
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
-        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
+        hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     row = next(
         line
@@ -185,7 +185,7 @@ async def test_line_in_report(hass: HomeAssistant):
     coord.data["devices"][device.id][DEV_SIGNAL_DAILY_MIN].append(40.0)
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
-        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
+        hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     row = next(
         line
@@ -490,7 +490,7 @@ async def test_excluded_device_still_records_but_is_not_reported(
     # The report marks it excl in the dwell and frozen columns.
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
-        hass.config.path("device_sentinel/diagnostics/device_telemetry.md")
+        hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     row = next(
         line for line in text.splitlines() if "LR Router Plug" in line

@@ -101,11 +101,11 @@ async def test_pipe_in_name_stays_in_one_cell(hass: HomeAssistant):
     await hass.async_add_executor_job(coord._write_reports, "test")
 
     telemetry = open(
-        hass.config.path("device_sentinel", "diagnostics", "device_telemetry.md"),
+        hass.config.path("device_sentinel", "device_telemetry.md"),
         encoding="utf-8",
     ).read()
     classification = open(
-        hass.config.path("device_sentinel", "diagnostics", "classification.md"),
+        hass.config.path("device_sentinel", "classification.md"),
         encoding="utf-8",
     ).read()
     assert "Weird \\| Name" in telemetry

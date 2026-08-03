@@ -26,14 +26,22 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 REPORT_DIRECTORY = os.path.join(get_test_config_dir(), "device_sentinel")
+WWW_DIRECTORY = os.path.join(get_test_config_dir(), "www", "device_sentinel")
 
 
 @pytest.fixture(autouse=True)
 def clean_report_directory():
-    """Give each test an empty report directory, before and after."""
+    """Give each test empty report directories, before and after.
+
+    Both folders since 0.10.18: what a person reads lives under www
+    (#178), and a dated brief left by one test is a wrong answer in
+    the next test's file count.
+    """
     shutil.rmtree(REPORT_DIRECTORY, ignore_errors=True)
+    shutil.rmtree(WWW_DIRECTORY, ignore_errors=True)
     yield
     shutil.rmtree(REPORT_DIRECTORY, ignore_errors=True)
+    shutil.rmtree(WWW_DIRECTORY, ignore_errors=True)
 
 
 @pytest.fixture
@@ -46,13 +54,21 @@ def read_brief():
     """
 
     def _read(hass):
+        # The file on disk is the rendered page (0.10.18); the one-
+        # file naming discipline is still asserted on it, and the
+        # composed text is returned, because it is the message field
+        # and the source the page renders from, so its prose is the
+        # prose these tests examine.
         pattern = os.path.join(
-            hass.config.path("device_sentinel"), "daily_brief_*.md"
+            hass.config.path("www", "device_sentinel"),
+            "daily_brief_2*.html",
         )
         written = sorted(glob.glob(pattern))
         assert written, "no daily brief was written"
         assert len(written) == 1, f"expected one brief, found {written}"
-        with open(written[0], encoding="utf-8") as handle:
-            return handle.read()
+        from custom_components.device_sentinel.const import DOMAIN
+
+        entry = hass.config_entries.async_entries(DOMAIN)[0]
+        return entry.runtime_data._last_brief_text
 
     return _read

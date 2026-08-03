@@ -18,7 +18,7 @@ and the counts line reads as a sentence. This file holds the section
 flattening, the advanced sliders, and those wording riders.
 """
 
-import glob
+import os
 from datetime import timedelta
 
 from homeassistant.core import HomeAssistant
@@ -65,13 +65,11 @@ def _brief_text(hass):
     Named for the day its window opened, which is not today's date
     when the window began before the brief hour (0.7.5).
     """
-    written = sorted(
-        glob.glob(
-            hass.config.path("device_sentinel", "daily_brief_*.md")
-        )
+    path = hass.config.path(
+        "www", "device_sentinel", "daily_brief.html"
     )
-    assert written, "no daily brief was written"
-    with open(written[0], encoding="utf-8") as handle:
+    assert os.path.isfile(path), "no daily brief was written"
+    with open(path, encoding="utf-8") as handle:
         return handle.read()
 
 
