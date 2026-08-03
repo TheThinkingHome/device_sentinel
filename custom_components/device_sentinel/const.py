@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.20 (2026-08-03)
+# File: const.py, Version: 0.10.21 (2026-08-03)
 
 """Constants for the Device Sentinel integration."""
 
@@ -482,6 +482,14 @@ REPORT_DIAGNOSTIC_DIR = "diagnostics"
 # Webpage card pointed at /local/device_sentinel/signal_dwell.html is
 # the whole reason the file is HTML.
 REPORT_WWW_DIR = "www/device_sentinel"
+# The parent Home Assistant looks for, and the address our folder is
+# reachable at. Home Assistant registers /local only where the parent
+# already existed when the frontend set up, and it checks that once,
+# so on a system with no www folder the first boot after installing
+# leaves these files unreachable. Where that is the case the
+# integration registers this one folder for itself (ruling #186).
+REPORT_WWW_PARENT = "www"
+REPORT_WWW_URL = "/local/device_sentinel"
 REPORT_SIGNAL_DWELL = "signal_dwell.html"
 REPORT_SIGNAL_DWELL_PREFIX = "signal_dwell_"
 # The HTML brief. What a person reads lives under www, where a
@@ -970,6 +978,16 @@ RECOVERY_CAUSE_UNOBSERVED = "no intervention recorded"
 # would otherwise write "revived by a on its own" for a fortnight.
 LEGACY_CAUSE_UNOBSERVED = "on its own"
 
+# The span the live copy of the brief covers, as opposed to the
+# closed record, which runs brief hour to brief hour (ruling
+# #116). The undated file is the dashboard's address, and a
+# window measured from the brief time held almost nothing for
+# most of the day, so the card read as a quiet house while a
+# full day of events sat in yesterday's dated file. A rolling
+# day fixes that and costs the record nothing, because the
+# dated file is still named for the brief day and is rewritten
+# as the true closed window when the day closes (ruling #187).
+BRIEF_LIVE_WINDOW_SECONDS = 86400.0
 REPORT_BRIEF_PREFIX = "daily_brief_"
 BRIEF_KEEP_DAYS = 14
 
