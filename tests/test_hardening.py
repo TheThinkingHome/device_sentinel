@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.9.11 (2026-07-27)
+# File: test_hardening.py, Version: 0.10.23 (2026-08-03)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -189,21 +189,71 @@ def test_prune_drops_legacy_keys_keeps_current():
     record["signal_rail_since"] = "2026-07-18T00:00:00+00:00"
     before = set(_new_device_record("", None).keys())
 
-    removed = DeviceSentinelCoordinator._prune_legacy_fields(
-        {"dev": record}
+    removed, filled = DeviceSentinelCoordinator._reconcile_records(
+        {"dev": record}, ""
     )
 
     assert removed == 4
+    assert filled == 0
     assert set(record.keys()) == before
 
 
 def test_prune_is_idempotent():
-    """A clean record loses nothing and reports zero."""
+    """A clean record loses nothing, gains nothing, reports zero."""
     record = _new_device_record("2026-07-19T00:00:00+00:00", 1000.0)
-    removed = DeviceSentinelCoordinator._prune_legacy_fields(
-        {"dev": record}
+    removed, filled = DeviceSentinelCoordinator._reconcile_records(
+        {"dev": record}, ""
     )
     assert removed == 0
+    assert filled == 0
+
+
+def test_reconcile_fills_a_field_the_stored_record_never_had():
+    """The half that did not exist until 0.10.23 (ruling #189).
+
+    A record written by a version before a field joined the schema
+    arrives without it. The removing half was automatic and the
+    filling half was a list somebody had to remember, so this is the
+    direction that could silently fail on an upgrading user while
+    passing every test, since a test builds a fresh record and never
+    meets a stored one that is missing anything.
+    """
+    record = _new_device_record("2026-07-19T00:00:00+00:00", 1000.0)
+    missing = (
+        "signal_sum",
+        "signal_sum_sq",
+        "signal_count",
+        "signal_today_max",
+        "signal_daily_mean",
+        "signal_daily_sd",
+        "signal_daily_max",
+    )
+    for key in missing:
+        del record[key]
+
+    removed, filled = DeviceSentinelCoordinator._reconcile_records(
+        {"dev": record}, ""
+    )
+
+    assert removed == 0
+    assert filled == len(missing)
+    assert set(record.keys()) == set(_new_device_record("", None))
+
+
+def test_filled_lists_are_not_shared_between_devices():
+    """A fresh record per device, because the schema's defaults hold
+    lists and one shared list handed to every device would make them
+    the same list: appending to one would append to all."""
+    records = {}
+    for name in ("a", "b"):
+        record = _new_device_record("2026-07-19T00:00:00+00:00", 1.0)
+        del record["signal_daily_mean"]
+        records[name] = record
+
+    DeviceSentinelCoordinator._reconcile_records(records, "")
+
+    records["a"]["signal_daily_mean"].append(1.0)
+    assert records["b"]["signal_daily_mean"] == []
 
 
 def test_dead_types_tuple_is_the_sweep_source():
@@ -235,8 +285,11 @@ async def test_setup_prunes_stored_legacy_fields(hass: HomeAssistant):
     for record in coord.data["devices"].values():
         record["signal_frozen_verdict"] = True
         break
-    removed = coord._prune_legacy_fields(coord.data["devices"])
-    assert removed >= 0  # prune runs without error on live records
+    removed, filled = coord._reconcile_records(
+        coord.data["devices"], ""
+    )
+    assert removed >= 0  # runs without error on live records
+    assert filled >= 0
 
 
 async def test_retired_ghost_entity_is_removed(hass: HomeAssistant):

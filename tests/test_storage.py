@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage.py, Version: 0.10.18 (2026-08-02)
+# File: test_storage.py, Version: 0.10.23 (2026-08-03)
 
 """Persistence: the write cadence, the split shadow, and retention.
 
@@ -1610,3 +1610,40 @@ async def test_the_interval_write_puts_the_main_file_first(
     await coord._on_render_tick(None)
 
     assert order == ["main", "clocks"]
+
+
+async def test_an_older_record_gains_the_fields_this_version_adds(
+    hass: HomeAssistant, hass_storage
+):
+    """End to end through the load path (ruling #189).
+
+    A stored record from a version before the signal statistics
+    existed, with a stale statistics epoch so it takes the wipe
+    branch, which is precisely the branch whose hand-maintained
+    backfill had drifted and never set them. Every schema field is
+    present after setup, whichever branch the load took.
+    """
+    device, _eid = _register(hass, "older1", "Older Device")
+    stored = _new_device_record("2026-07-01T00:00:00+00:00", 1000.0)
+    for key in (
+        "signal_sum",
+        "signal_sum_sq",
+        "signal_count",
+        "signal_today_max",
+        "signal_daily_mean",
+        "signal_daily_sd",
+        "signal_daily_max",
+    ):
+        del stored[key]
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {
+            DATA_DEVICES: {device.id: stored},
+            DATA_STATS_EPOCH: "0.0.1",
+        },
+    }
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    record = coord.data[DATA_DEVICES][device.id]
+    assert set(record.keys()) == set(_new_device_record("", None))
