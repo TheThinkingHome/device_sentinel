@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.23 (2026-08-03)
+# File: coordinator.py, Version: 0.11.0 (2026-08-03)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -165,6 +165,7 @@ from .const import (
     FREEZE_REF_RHYTHM_FAST,
     FREEZE_REF_RHYTHM_SLOW,
     FREEZE_UNAVAILABLE_DEBOUNCE,
+    GOOD_STATE_CEILING_SD,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
     INC_CAUSE,
@@ -1593,13 +1594,85 @@ class DeviceSentinelCoordinator(
         percentage of the floor's absolute value, which keeps the
         direction right for RSSI as well as LQI; at zero the line is
         the floor and the behaviour is what it was before.
+
+        The margin is then bounded by the device's own spread, and
+        the line can never sit higher than the mean of its readings
+        less half a standard deviation (ruling #193). A percentage of
+        the floor is the largest number of points where there is the
+        least room for it, because LQI stops at 255: a device whose
+        floor is already near the ceiling gets a margin wide enough
+        to swallow its whole operating range. That is not theory. It
+        put a line of 252 on a device averaging 246.2, which read as
+        below its line for 97 percent of the day while running one of
+        the strongest links on the fleet. Two of 71 devices are
+        bounded at the default setting and five at the maximum, so
+        for almost every device the setting still does exactly what
+        it says; on a bounded device it becomes a maximum rather than
+        an amount.
+
+        min is right on both scales. The line is a lower bound
+        whichever way the numbers run, so taking the smaller value
+        always makes a device less sensitive rather than more.
+
+        Where the device has no mean and deviation yet, nothing is
+        bounded and the behaviour is unchanged, so a fresh install
+        behaves as it did before the first midnight roll.
         """
         history = self._signal_history(record)
         if not history:
             return None
         effective_k = self._signal_effective_k(len(history))
         floor = sorted(history)[effective_k]
-        return floor + self._signal_margin() * abs(floor)
+        line = floor + self._signal_margin() * abs(floor)
+        ceiling = self._good_state_ceiling(record)
+        if ceiling is not None:
+            return min(line, ceiling)
+        return line
+
+    @staticmethod
+    def _good_state_ceiling(record: dict[str, Any]) -> float | None:
+        """Return the highest the line may sit, or None if unknown.
+
+        The mean of yesterday's readings less half a deviation, from
+        the good-state statistics #174 has been recording since
+        0.10.15. This is the first thing that reads them to decide
+        something rather than to print it.
+
+        Half a deviation is a constant rather than a setting. It is a
+        guard rather than a preference, and the screen has enough
+        sliders on it already. It sits close under the mean on
+        purpose: the fault it stops is a line crossing into the
+        readings a healthy device makes every day, so the bound has
+        to bite before that happens rather than long after.
+
+        The deviation is used only as a boundary here, which is why
+        one day of it is enough. #172's successor makes it the scale
+        the whole judgment is drawn from, and that needs weeks rather
+        than a day.
+        """
+        means = record.get(DEV_SIGNAL_DAILY_MEAN) or []
+        sds = record.get(DEV_SIGNAL_DAILY_SD) or []
+        if not means or not sds:
+            return None
+        return means[-1] - GOOD_STATE_CEILING_SD * sds[-1]
+
+    def _line_is_bounded(self, record: dict[str, Any]) -> bool:
+        """Return whether the good-state ceiling is what set the line.
+
+        Recorded in the diagnostics rather than derived from them, so
+        the next time a device reads oddly the download says whether
+        the bound was holding it (ruling #193). It is also the
+        measurement of how badly the percentage fits: a guard that
+        fires often is evidence for #172 rather than against it.
+        """
+        history = self._signal_history(record)
+        if not history:
+            return False
+        ceiling = self._good_state_ceiling(record)
+        if ceiling is None:
+            return False
+        floor = sorted(history)[self._signal_effective_k(len(history))]
+        return floor + self._signal_margin() * abs(floor) > ceiling
 
     @staticmethod
     def _signal_history(record: dict[str, Any]) -> list[float]:
