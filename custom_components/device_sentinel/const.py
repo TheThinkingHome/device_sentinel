@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.10.21 (2026-08-03)
+# File: const.py, Version: 0.11.0 (2026-08-03)
 
 """Constants for the Device Sentinel integration."""
 
@@ -291,6 +291,20 @@ DEV_SIGNAL_DAILY_MIN = "signal_daily_min"
 DEV_SIGNAL_BELOW_SINCE = "signal_below_since"
 DEV_SIGNAL_BELOW_TODAY = "signal_below_today_seconds"
 DEV_SIGNAL_DWELL_DAILY = "signal_dwell_daily_pct"
+
+# How far under the mean the dwell line may sit at the very highest,
+# in the device's own standard deviations. A margin taken as a
+# percentage of the floor is the largest number of points exactly
+# where there is the least room for it, because LQI stops at 255, so
+# a device whose floor is already near that ceiling gets a margin
+# wide enough to cover its whole operating range and reads as below
+# its own line all day while running a strong link. Half a deviation
+# under the mean is where the bound has to sit: the fault is a line
+# crossing into the readings a healthy device makes every day, so it
+# must bite before that rather than long after. A constant and not a
+# setting, because it is a guard rather than a preference (ruling
+# #193).
+GOOD_STATE_CEILING_SD = 0.5
 
 # The good-state statistics. Percentile thresholding is the weakest
 # of the established families and the intended successor is Bayesian,
