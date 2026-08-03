@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.10.19 (2026-08-03)
+# File: test_signal_stats.py, Version: 0.10.24 (2026-08-03)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -27,6 +27,7 @@ nothing alerts from it (#59).
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -208,9 +209,12 @@ async def test_every_red_device_is_an_anomaly(hass: HomeAssistant):
     await hass.async_add_executor_job(coord._write_reports, "manual")
     html = _read(hass)
 
-    anomaly_section = html[html.index("Anomalies") : html.index(
-        "Yesterday"
-    )]
+    # Sliced to the charts block rather than to the word Yesterday,
+    # which the headings stopped saying when they gained their dates
+    # (ruling #190).
+    anomaly_section = html[
+        html.index("Anomalies") : html.index("<div class='charts'>")
+    ]
     assert "Anomalous Device" in anomaly_section
     assert "3 day(s)" in anomaly_section
     assert "Calm Device" not in anomaly_section
@@ -289,7 +293,9 @@ async def test_the_anomaly_row_carries_type_trend_and_room(
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     html = _read(hass)
-    section = html[html.index("Anomalies") : html.index("Yesterday")]
+    section = html[
+        html.index("Anomalies") : html.index("<div class='charts'>")
+    ]
 
     assert "LQI" in section
     assert "8.0% \u2191" in section
@@ -558,4 +564,70 @@ async def test_the_link_is_external_then_internal_never_relative(
     assert (
         "href='http://10.10.10.10:8123"
         "/local/device_sentinel/signal_dwell.html'" in page
+    )
+
+
+async def test_the_chart_names_the_days_it_covers(
+    hass: HomeAssistant,
+):
+    """Ruling #190, found by reading the live pages on 2026-08-03.
+
+    Every heading said Yesterday, or Last 7 Days, with no date
+    anywhere on the page, so a chart opened later could not say
+    which days it was about.
+    """
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    device, _ = register_device(hass, "lbl1", "Labelled Device")
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [20.0]
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    with open(
+        os.path.join(hass.config.path(REPORT_WWW_DIR), REPORT_SIGNAL_DWELL),
+        encoding="utf-8",
+    ) as handle:
+        page = handle.read()
+
+    covered = dt_util.now().date() - timedelta(days=1)
+    day = covered.strftime("%b %-d")
+    week = (covered - timedelta(days=6)).strftime("%b %-d")
+    month = (covered - timedelta(days=29)).strftime("%b %-d")
+
+    assert f"<h2>{day}</h2>" in page
+    assert f"<h2>7 Days, {week} to {day} (Mean)</h2>" in page
+    assert f"<h2>30 Days, {month} to {day} (Mean)</h2>" in page
+    # The bare words are gone, so nothing on the page is undated.
+    assert "<h2>Yesterday</h2>" not in page
+    assert "threshold yesterday" not in page
+    assert f"threshold on {day}" in page
+
+
+async def test_the_dated_chart_is_named_for_the_day_it_covers(
+    hass: HomeAssistant,
+):
+    """The fault as found (ruling #190).
+
+    Dwell rolls at midnight, so a chart written on the 3rd carries
+    the 2nd's figures. It was named for the write, so the file called
+    signal_dwell_2026-08-02 held the 1st, while the brief's dated
+    file for the same date held the 2nd. Two files, one date, two
+    days.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "dt2", "Dated Device")
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [4.0]
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+
+    directory = hass.config.path(REPORT_WWW_DIR)
+    covered = dt_util.now().date() - timedelta(days=1)
+    assert os.path.isfile(
+        os.path.join(
+            directory,
+            f"signal_dwell_{covered.strftime('%Y-%m-%d')}.html",
+        )
+    )
+    # No dated chart for today, because today's dwell has not closed.
+    today = dt_util.now().date().strftime("%Y-%m-%d")
+    assert not os.path.isfile(
+        os.path.join(directory, f"signal_dwell_{today}.html")
     )
