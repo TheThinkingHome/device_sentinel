@@ -65,6 +65,8 @@ There is no watch list to maintain. Every device in your registry is observed fr
 
 It cannot watch what your integrations ship switched off, and most of them ship battery, signal, and last-seen entities disabled. Three buttons turn them on in bulk, one per kind, leaving alone anything you disabled on purpose.
 
+![The Device Sentinel device page in Home Assistant, with its three enable buttons and diagnostic sensors](https://xeazy.com/wp-content/uploads/integration_page.webp)
+
 You curate by exception. Exclude a whole integration, a label, or a single device. Excluding stops the judging and the reporting; it does not stop the learning, so a device you un-exclude next year already knows its own rhythm and needs no relearning period.
 
 ### Warnings Before The Failure
@@ -72,6 +74,8 @@ You curate by exception. Exclude a whole integration, a label, or a single devic
 A low battery is caught on the percentage rather than the binary flag, against a threshold you set with a slider. Every device's daily level is recorded as well, which is the groundwork for telling you a cell is falling unusually fast while it is still nowhere near the threshold.
 
 A radio link is watched against the floor that device has actually held over the past two weeks, and what gets reported is dwell: how much of the day it spent down at that floor. A link stuck at its rail, the 255 or the minus 128 that means the field was filled in rather than measured, is called out for what it is rather than read as a strong signal.
+
+![The Device Sentinel signal dwell chart, one colored bar per device showing how much of the day its radio link spent below its own learned floor](https://xeazy.com/wp-content/uploads/signal_report.webp)
 
 ### One List Of What Is Actually Wrong
 
@@ -87,7 +91,7 @@ Every fault, whatever kind, lands in one Home Assistant to-do list. A device tha
 
 Quiet hours hold every phone push, while the card and the morning brief still carry what happened. A new fault waits a short, per-device moment before it reaches you, so a problem that fixes itself in thirty seconds never wakes you at all.
 
-> **Image placeholder:** the daily brief as it arrives by email.
+![A Device Sentinel daily brief, listing the devices that need attention and what happened over the last day](https://xeazy.com/wp-content/uploads/daily_brief.webp)
 
 ## Installation
 
@@ -110,6 +114,8 @@ It runs on sensible defaults the moment it is added. Two things are worth doing 
 ## Configuration
 
 Every screen explains itself and links to its own wiki page. Most people change one thing and never open the rest.
+
+![The Device Sentinel configuration screens in Home Assistant](https://xeazy.com/wp-content/uploads/integration_settings.webp)
 
 | Screen | What it is for |
 |---|---|
