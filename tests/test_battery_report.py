@@ -1,0 +1,205 @@
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: test_battery_report.py, Version: 0.11.1 (2026-08-03)
+
+"""The battery report (ruling #194).
+
+A threshold answers which cells are low. This page answers which are
+going to be. The shapes below are taken from the reference fleet on
+2026-08-03, including the cell that motivated it: ten days flat at 32
+percent, then a ten point drop and an eight and a half point rebound
+on consecutive days, then a fall to 21.
+
+Nothing here alarms, and one test pins that: no problem-list item and
+no incident comes out of writing this page.
+"""
+
+from __future__ import annotations
+
+import os
+
+from homeassistant.core import HomeAssistant
+
+from custom_components.device_sentinel.const import (
+    DATA_DEVICES,
+    DATA_INCIDENTS,
+    DATA_TODO_ITEMS,
+    DEV_BATTERY_DAILY,
+    DEV_BATTERY_LOW,
+    DEV_BATTERY_SINCE,
+    DEV_BATTERY_VALUE,
+    REPORT_BATTERY_HTML,
+    REPORT_BATTERY_PREFIX,
+    REPORT_WWW_DIR,
+)
+
+from .helpers import register_device, setup_coordinator
+
+# The dying cell, exactly as recorded: flat, then the sag and rebound,
+# then the fall.
+DYING = [
+    32.0, 32.5, 31.5, 32.5, 32.5, 31.5, 31.0, 32.0,
+    32.5, 31.5, 21.5, 30.0, 28.0, 23.5, 22.0, 21.0,
+]
+# A healthy cell drifting down at half a point a day.
+HEALTHY = [91.0, 92.0, 92.5, 92.0, 91.5, 92.0, 91.5, 91.0,
+           91.0, 91.0, 89.5, 88.5, 87.0, 86.0, 84.0, 82.5]
+# A cell that has not moved at all.
+STEADY = [100.0] * 16
+
+
+def _seed(coord, device_id, series, level, low=False, since=None):
+    record = coord.data[DATA_DEVICES][device_id]
+    record[DEV_BATTERY_DAILY] = list(series)
+    record[DEV_BATTERY_VALUE] = level
+    record[DEV_BATTERY_LOW] = low
+    record[DEV_BATTERY_SINCE] = since
+    return record
+
+
+def _page(hass) -> str:
+    with open(
+        os.path.join(hass.config.path(REPORT_WWW_DIR), REPORT_BATTERY_HTML),
+        encoding="utf-8",
+    ) as handle:
+        return handle.read()
+
+
+async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
+    hass: HomeAssistant,
+):
+    """The whole point of the page in one assertion.
+
+    Both cells are falling. One is at 12 percent losing 1.75 a day
+    and has a week; the other is at 82 percent losing 1.4 and has two
+    months. A rate alone cannot tell them apart, because their rates
+    are within half a point of each other. Time remaining can.
+    """
+    coord = await setup_coordinator(hass)
+    dying, _ = register_device(hass, "bat1", "Door 2nd Bedroom")
+    healthy, _ = register_device(hass, "bat2", "Soil Moisture")
+    _seed(coord, dying.id, DYING, 12.0, low=True,
+          since="2026-08-03T06:41:02+00:00")
+    _seed(coord, healthy.id, HEALTHY, 82.0)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+
+    assert page.index("Door 2nd Bedroom") < page.index("Soil Moisture")
+    assert "-1.75/day" in page
+    assert "<td style='color:#D03B3B'>7</td>" in page
+    assert "<td>59</td>" in page
+
+
+async def test_the_sag_and_rebound_do_not_move_the_slope(
+    hass: HomeAssistant,
+):
+    """A cell sags under load and recovers, which is what the ten
+    point drop and the eight and a half point rebound were. A fit
+    would be dragged by both. The median of pairwise slopes puts them
+    in the tails, so the answer is what the rest of the window
+    agrees on.
+    """
+    coord = await setup_coordinator(hass)
+    with_spike = coord._battery_slope(DYING[-7:])
+    without = coord._battery_slope([30.0, 28.0, 23.5, 22.0, 21.0])
+    assert with_spike == -1.75
+    assert abs(with_spike - without) < 0.6
+
+
+async def test_a_steady_cell_is_not_projected(
+    hass: HomeAssistant,
+):
+    """A cell holds its level for most of its life and then falls, so
+    steady is the healthy state rather than a stale reading. Half
+    point rounding alone yields a slope of a few hundredths, and a
+    lifetime projected from rounding runs to thousands of days.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "bat3", "Motion Hall")
+    _seed(coord, device.id, STEADY, 100.0)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+
+    assert "holding steady" in page
+    assert "Motion Hall 100%" in page
+
+
+async def test_a_reading_above_100_is_called_unreadable(
+    hass: HomeAssistant,
+):
+    """Seen on the fleet: an MQTT device reporting around 196 every
+    day, a raw scale rather than a percentage. It can never cross the
+    low threshold, and counted as a level it would sit at the top of
+    the bank looking healthier than anything else.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "bat4", "LUX Outdoors")
+    _seed(coord, device.id, [196.0] * 16, 186.0)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+
+    assert "LUX Outdoors reads 186%" in page
+    assert "A percentage cannot be above 100" in page
+
+
+async def test_a_device_with_no_battery_is_counted_not_listed_as_zero(
+    hass: HomeAssistant,
+):
+    """A watched device with no battery entity is mains powered or
+    has one switched off. Either way it is not a cell at zero.
+    """
+    coord = await setup_coordinator(hass)
+    register_device(hass, "bat5", "Wired Thing")
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+
+    assert "report no battery" in page
+
+
+async def test_the_page_raises_nothing(
+    hass: HomeAssistant,
+):
+    """Ruling #194: the projection is shown and never pushed. It moved
+    from twelve days to seven in an afternoon on the fleet, so until a
+    soak says how far it swings the low threshold does the alarming
+    and this page does not.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "bat6", "Door 2nd Bedroom")
+    _seed(coord, device.id, DYING, 12.0)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+
+    assert coord.data[DATA_TODO_ITEMS] == []
+    assert coord.data[DATA_INCIDENTS] == []
+
+
+async def test_the_page_gets_a_dated_copy_and_a_stable_address(
+    hass: HomeAssistant,
+):
+    """The one www rule (ruling #180): a dated record, an undated
+    current copy at an address a dashboard card can keep, and the
+    fourteen day trim.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "bat7", "Leak Sink")
+    _seed(coord, device.id, HEALTHY, 82.0)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+
+    directory = hass.config.path(REPORT_WWW_DIR)
+    dated = [
+        name
+        for name in os.listdir(directory)
+        if name.startswith(REPORT_BATTERY_PREFIX)
+    ]
+    assert len(dated) == 1
+    with open(os.path.join(directory, dated[0]), encoding="utf-8") as handle:
+        assert handle.read() == _page(hass)
