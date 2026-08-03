@@ -15,6 +15,7 @@
 > Device Sentinel is in active, rapid development and breaking changes will occur. Please read all release notes carefully before updating. The integration is fully functional and actively producing real freeze, battery, and signal data for live environments.
 
 
+
 ## The Problem
 
 Home Assistant reacts to what devices tell it. When a device stops telling it anything, the last thing it said stays on your dashboard forever. Nothing turns red. Nothing goes unavailable. The reading just stops changing, and it keeps looking perfectly reasonable.
