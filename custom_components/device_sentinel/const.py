@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.11.0 (2026-08-03)
+# File: const.py, Version: 0.11.1 (2026-08-03)
 
 """Constants for the Device Sentinel integration."""
 
@@ -514,6 +514,40 @@ REPORT_SIGNAL_DWELL_PREFIX = "signal_dwell_"
 REPORT_BRIEF_HTML = "daily_brief.html"
 REPORT_BRIEF_HTML_URL = "/local/device_sentinel/daily_brief.html"
 REPORT_SIGNAL_DWELL_URL = "/local/device_sentinel/signal_dwell.html"
+# The battery report. A third page for a person, beside the brief and
+# the dwell chart, answering what a threshold alone cannot: not which
+# cells are low, but which are going to be (ruling #194). Its dated
+# copy is named for the day it was written, and under the same rule
+# as the chart (#190): its headline figures are the levels now, so
+# the day it covers and the day it is written are the same day.
+REPORT_BATTERY_HTML = "battery_report.html"
+REPORT_BATTERY_PREFIX = "battery_report_"
+REPORT_BATTERY_URL = "/local/device_sentinel/battery_report.html"
+
+# How many recent daily levels the fall is measured over. Seven is
+# the shortest span that survives a single bad pair: the cell that
+# proved this reported a ten point drop and an eight and a half point
+# rebound on consecutive days, which is a coin cell sagging under
+# load and recovering, not a battery that refilled. The slope is a
+# median of every pairwise slope in the window rather than a fit, so
+# both of those readings land in the tails and neither moves the
+# answer (ruling #194).
+BATTERY_SLOPE_DAYS = 7
+# Below this the device is called flat rather than falling. A cell
+# reporting in half point steps produces a slope of a few hundredths
+# from rounding alone, and projecting a lifetime from rounding gives
+# numbers in the thousands of days.
+BATTERY_FALLING_SLOPE = -0.05
+# A percentage that cannot be one. Seen on the reference fleet: an
+# MQTT device reporting around 196 every day, which is a raw scale
+# rather than a percentage. It can never cross a low threshold and it
+# distorts any summary of the bank, so it is named as unreadable
+# instead of counted as very healthy.
+BATTERY_READABLE_MAX = 100.0
+# Where the projection is worth reading in red. Not an alarm: the
+# projection moves as the series grows and nothing notifies from it
+# until a soak says how much it moves (ruling #194).
+BATTERY_DAYS_URGENT = 21.0
 REPORT_TELEMETRY = "device_telemetry.md"
 REPORT_CLASSIFICATION = "classification.md"
 REPORT_EPISODES = "silence_episodes.md"
