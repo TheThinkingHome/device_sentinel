@@ -1754,17 +1754,26 @@ a {{ color: #2a78d6; }}
         """Return the path resolved against the instance URL, if any.
 
         A relative /local address is dead inside an email, which has
-        no host to resolve it against, so the link is made absolute
-        where Home Assistant knows its own address (the external URL
-        preferred, the internal one otherwise) and left relative only
-        where it knows neither, which still works everywhere a
-        browser is already looking at this instance.
+        no host to resolve it against. The link is made absolute
+        against the external URL only (ruled 2026-08-02): an internal
+        address in an email works solely on home wifi, which is a
+        link that fails exactly when a person is away, the worse
+        failure. Where no external URL is configured the link stays
+        relative, which still works everywhere a browser is already
+        looking at this instance, the dashboard card included.
         """
         try:
             from homeassistant.helpers.network import get_url
 
-            return get_url(self.hass, prefer_external=True) + path
-        except Exception:  # noqa: BLE001 - no URL configured
+            return (
+                get_url(
+                    self.hass,
+                    allow_internal=False,
+                    prefer_external=True,
+                )
+                + path
+            )
+        except Exception:  # noqa: BLE001 - no external URL configured
             return path
 
     def _trim_briefs(self, directory: str) -> None:
