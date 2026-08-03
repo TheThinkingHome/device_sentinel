@@ -62,6 +62,7 @@ And two that give you warning first:
 ### It Watches Everything From The Moment You Install It
 
 There is no watch list to maintain. Every device in your registry is observed from the start, so the leak sensor you paired last month is already covered, and the one you pair tomorrow will be too. Non-hardware entries like Sun, Backup, and HACS classify themselves out.
+![Device Sentinel Battery Decay vs. Signal Dwell](https://xeazy.com/wp-content/uploads/Battery-Decay-Signal-Dwell.png)
 
 It cannot watch what your integrations ship switched off, and most of them ship battery, signal, and last-seen entities disabled. Three buttons turn them on in bulk, one per kind, leaving alone anything you disabled on purpose.
 
