@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.10.20 (2026-08-03)
+# File: diagnostics.py, Version: 0.11.0 (2026-08-03)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -133,6 +133,16 @@ async def async_get_config_entry_diagnostics(
             # floors) are provisional: eleven devices and barely-seen
             # floors do not yet justify trusting the offset.
             "signal_danger_line": signal_line,
+            # Whether the good-state ceiling is what set that
+            # line, rather than the margin (ruling #193).
+            # Recorded rather than left to be derived, so the
+            # next device that reads oddly says for itself
+            # whether the bound was holding it. A guard that
+            # fires often is also the measurement of how badly
+            # a percentage of the floor fits a diverse fleet.
+            "signal_line_bounded": coordinator._line_is_bounded(
+                record
+            ),
             "signal_dwell_daily_pct": list(
                 (record.get("signal_dwell_daily_pct") or [])[-DIAGNOSTIC_SERIES_CAP:]
             ),
