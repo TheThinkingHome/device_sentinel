@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.10.20 (2026-08-03)
+# File: messenger.py, Version: 0.10.22 (2026-08-03)
 
 """Sending the daily brief, and nothing else yet.
 
@@ -16,14 +16,14 @@ claim in the moment about a device that just broke. When the push
 engine is built it belongs here beside this, which is why the file
 exists rather than another method on the coordinator.
 
-Two jobs. The renderer turns the brief into HTML so a mail client
-shows its tables as tables. It reads the brief's own text rather
-than rebuilding the document from the underlying rows, which
-guarantees the email and the file say the same thing: two renderers
-over one set of rows could drift, and the difference would be
-invisible until somebody compared an email against a file. The
-subset it handles is closed because we emit it: one h1, some h2s,
-paragraphs, and pipe tables.
+One job now. This module chooses the targets and sends; the
+rendering lives with the reports, which is where the document is
+written, so the email and the file are one string rather than two
+renderings that agree by inspection. This file used to hold a second
+renderer, and the warning written here at the time, that two
+renderers over one set of rows could drift invisibly until somebody
+compared an email against a file, turned out to be exactly what
+happened (ruling #188).
 
 The sender reads the settings already stored and composes nothing
 new. That is what lets it ship while the event-triggered engine is
@@ -35,7 +35,6 @@ device is wrong now and inherits the formula behind it
 
 from __future__ import annotations
 
-from html import escape
 from typing import Any
 
 from .const import (
@@ -53,12 +52,6 @@ from .const import (
 # Inline rather than a stylesheet block, because several mail
 # clients strip a <style> element and would render an unruled table
 # of times as a wall of text.
-_TABLE_STYLE = (
-    "border-collapse:collapse;width:100%;"
-    "font-family:sans-serif;font-size:14px"
-)
-_CELL_STYLE = "border:1px solid #ddd;padding:6px 10px;text-align:left"
-_HEAD_STYLE = f"{_CELL_STYLE};background:#f2f2f2;font-weight:bold"
 
 
 class MessengerMixin:
@@ -67,70 +60,6 @@ class MessengerMixin:
     Mixed into DeviceSentinelCoordinator; every attribute reached
     for here belongs to that class.
     """
-
-    @staticmethod
-    def _html_cells(line: str) -> list[str]:
-        """Return one pipe-table row's cells, stripped and escaped."""
-        return [escape(cell.strip()) for cell in line.strip("|").split("|")]
-
-    @staticmethod
-    def _is_table_rule(line: str) -> bool:
-        """Return whether a line is a table's header rule."""
-        body = line.strip()
-        if not body.startswith("|"):
-            return False
-        return set(body) <= set("|-: ")
-
-    def _brief_html(self, text: str) -> str:
-        """Return the brief rendered as HTML for a mail client.
-
-        A closed-subset renderer over our own output, not a Markdown
-        parser: the brief emits one h1, h2 sections, plain
-        paragraphs and pipe tables, so those four shapes are the
-        whole grammar. Anything unrecognized falls through as a
-        paragraph, which keeps a future line from vanishing silently.
-        """
-        out: list[str] = []
-        rows: list[list[str]] = []
-
-        def flush_table() -> None:
-            """Close any table being accumulated."""
-            if not rows:
-                return
-            head, *body = rows
-            cells = "".join(
-                f'<th style="{_HEAD_STYLE}">{cell}</th>' for cell in head
-            )
-            parts = [
-                f'<table style="{_TABLE_STYLE}"><tr>{cells}</tr>'
-            ]
-            for row in body:
-                cells = "".join(
-                    f'<td style="{_CELL_STYLE}">{cell}</td>' for cell in row
-                )
-                parts.append(f"<tr>{cells}</tr>")
-            parts.append("</table>")
-            out.append("".join(parts))
-            rows.clear()
-
-        for raw in text.split("\n"):
-            line = raw.rstrip()
-            if line.startswith("|"):
-                if not self._is_table_rule(line):
-                    rows.append(self._html_cells(line))
-                continue
-            flush_table()
-            if not line.strip():
-                continue
-            if line.startswith("## "):
-                out.append(f"<h2>{escape(line[3:])}</h2>")
-            elif line.startswith("# "):
-                out.append(f"<h1>{escape(line[2:])}</h1>")
-            else:
-                out.append(f"<p>{escape(line)}</p>")
-        flush_table()
-        body = "\n".join(out)
-        return f'<html><body style="font-family:sans-serif">{body}</body></html>'
 
     def _brief_should_send(self) -> bool:
         """Return whether the day's brief is due to anyone.
@@ -178,16 +107,18 @@ class MessengerMixin:
             # from this very text, so the body can never describe a
             # different document from the one being sent
             # (ruling #184). A
-            # mismatched or missing stash falls back to the local
-            # renderer, which gives the right day in a different
-            # style rather than the wrong day in the right style.
+            # mismatched or missing stash renders the text again
+            # rather than sending the stashed page. Since the two
+            # renderers became one (ruling #188) that fallback
+            # produces the identical document, so a mismatch now
+            # costs nothing at all.
             stashed_text, stashed_page = getattr(
                 self, "_last_brief_pair", (None, None)
             )
             payload["data"] = {
                 "html": stashed_page
                 if stashed_page is not None and stashed_text == text
-                else self._brief_html(text)
+                else self._render_brief_html(text)
             }
         return payload
 
