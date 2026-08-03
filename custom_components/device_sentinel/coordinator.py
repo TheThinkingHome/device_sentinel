@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.10.20 (2026-08-03)
+# File: coordinator.py, Version: 0.10.23 (2026-08-03)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -467,22 +467,46 @@ class DeviceSentinelCoordinator(
     # ------------------------------------------------------------- setup
 
     @staticmethod
-    def _prune_legacy_fields(devices: dict[str, dict[str, Any]]) -> int:
-        """Remove stored keys outside the current record schema.
+    def _reconcile_records(
+        devices: dict[str, dict[str, Any]], now_iso: str
+    ) -> tuple[int, int]:
+        """Bring stored records into line with the schema, both ways.
 
-        _new_device_record is the authoritative field set. Any key in
-        a stored record that is not in a fresh record was written by a
-        past version and is dead (the frozen fields the rail rework
-        dropped, for instance). Returns how many keys were removed
-        across all records, zero once storage is clean.
+        _new_device_record is the one authoritative field set. Any
+        key a stored record carries that a fresh one does not was
+        written by a past version and is dead, like the frozen fields
+        the rail rework dropped; any key a fresh record carries that
+        a stored one does not belongs to a version newer than the
+        file and has to arrive with a value.
+
+        Only the removing half existed until 0.10.22, and the filling
+        half was a hand-maintained list of setdefault calls in the
+        load path. That is the shape of fault this exists to end
+        (ruling #189): the list had already drifted, omitting seven
+        signal fields on the branch that runs when the statistics
+        epoch changes, and its failure mode is invisible to the
+        tests, which build fresh records and so never meet a stored
+        one that is missing anything.
+
+        A fresh record is built per device rather than once, because
+        the schema's defaults include lists and one shared list
+        handed to every device would make them the same list.
+
+        Returns (keys removed, keys filled), both zero once storage
+        has been written by this version.
         """
-        allowed = set(_new_device_record("", None).keys())
         removed = 0
+        filled = 0
         for record in devices.values():
-            for key in [k for k in record if k not in allowed]:
+            schema = _new_device_record(now_iso, None)
+            for key in [k for k in record if k not in schema]:
                 del record[key]
                 removed += 1
-        return removed
+            for key, value in schema.items():
+                if key not in record:
+                    record[key] = value
+                    filled += 1
+        return removed, filled
 
     @staticmethod
     def _coerce_taint_reasons(devices: dict[str, dict[str, Any]]) -> int:
@@ -587,10 +611,6 @@ class DeviceSentinelCoordinator(
                 record[DEV_SIGNAL_BELOW_TODAY] = 0.0
                 record[DEV_SIGNAL_DWELL_DAILY] = []
                 record[DEV_SIGNAL_LAST_CHANGE] = None
-                record.setdefault(DEV_BATTERY_LOW, False)
-                record.setdefault(DEV_BATTERY_SINCE, None)
-                record.setdefault(DEV_BATTERY_VALUE, None)
-                record.setdefault(DEV_BATTERY_DAILY, [])
                 wiped += 1
             loaded[DATA_STATS_EPOCH] = STATS_EPOCH
             # Only when it actually wiped something. A fresh
@@ -604,44 +624,32 @@ class DeviceSentinelCoordinator(
                 STATS_EPOCH,
                 wiped,
             )
-        else:
-            for record in loaded[DATA_DEVICES].values():
-                record.setdefault(DEV_SIGNAL_VALUE, None)
-                record.setdefault(DEV_SIGNAL_TODAY_MIN, None)
-                record.setdefault(DEV_SIGNAL_DAILY_MIN, [])
-                record.setdefault(DEV_SIGNAL_BELOW_SINCE, None)
-                record.setdefault(DEV_SIGNAL_BELOW_TODAY, 0.0)
-                record.setdefault(DEV_SIGNAL_DWELL_DAILY, [])
-                record.setdefault(DEV_SIGNAL_SUM, 0.0)
-                record.setdefault(DEV_SIGNAL_SUM_SQ, 0.0)
-                record.setdefault(DEV_SIGNAL_COUNT, 0)
-                record.setdefault(DEV_SIGNAL_TODAY_MAX, None)
-                record.setdefault(DEV_SIGNAL_DAILY_MEAN, [])
-                record.setdefault(DEV_SIGNAL_DAILY_SD, [])
-                record.setdefault(DEV_SIGNAL_DAILY_MAX, [])
-                record.setdefault(DEV_SIGNAL_LAST_CHANGE, None)
-                record.setdefault(DEV_BATTERY_LOW, False)
-                record.setdefault(DEV_BATTERY_SINCE, None)
-                record.setdefault(DEV_BATTERY_VALUE, None)
-                record.setdefault(DEV_BATTERY_DAILY, [])
-        # Strip any keys a past version wrote that the current record
-        # schema no longer holds. _new_device_record is the
-        # one authoritative field set; anything outside it is dead,
-        # like the frozen fields the rail rework removed. The prune is
-        # idempotent: once a record is clean it finds nothing. Any new
-        # field must be added to _new_device_record or this removes it
-        # on the next load.
+        # Reconcile every stored record against the schema, both
+        # directions. There used to be a prune here and a
+        # hand-maintained list of setdefault calls above it, so a
+        # field leaving the schema was removed automatically while a
+        # field joining it reached an existing record only if
+        # somebody remembered the other place. The list had already
+        # drifted (ruling #189).
         # The two backup markers were written by earlier releases,
         # whose one-shot copies have long since been taken. Dropping
         # them here keeps a retired key from riding every save.
         loaded.pop("pre_split_backup_taken", None)
         loaded.pop("phase_b_backup_taken", None)
-        legacy = self._prune_legacy_fields(loaded[DATA_DEVICES])
-        if legacy:
+        removed, filled = self._reconcile_records(
+            loaded[DATA_DEVICES], dt_util.utcnow().isoformat()
+        )
+        if removed:
             LOGGER.info(
                 "Storage prune: removed %d legacy field(s) no longer "
                 "in the record schema",
-                legacy,
+                removed,
+            )
+        if filled:
+            LOGGER.info(
+                "Storage upgrade: filled %d field(s) this version "
+                "adds to the record schema",
+                filled,
             )
         # The clean-stop marker is read and cleared in one breath
         # (ruling #163), so a crash before the next clean stop is detected
