@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.10.17 (2026-08-02)
+# File: reports.py, Version: 0.10.18 (2026-08-02)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -90,6 +90,7 @@ from .const import (
     REPORT_DIR,
     REPORT_EPISODES,
     REPORT_SIGNAL_DWELL,
+    REPORT_SIGNAL_DWELL_PREFIX,
     REPORT_SIGNAL_DWELL_URL,
     REPORT_STALE_FILES,
     REPORT_TELEMETRY,
@@ -534,12 +535,19 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
 """
         directory = self.hass.config.path(REPORT_WWW_DIR)
         os.makedirs(directory, exist_ok=True)
+        stamp = dt_util.now().strftime("%Y-%m-%d")
+        dated = os.path.join(
+            directory, f"{REPORT_SIGNAL_DWELL_PREFIX}{stamp}.html"
+        )
+        with open(dated, "w", encoding="utf-8") as handle:
+            handle.write(html)
         with open(
             os.path.join(directory, REPORT_SIGNAL_DWELL),
             "w",
             encoding="utf-8",
         ) as handle:
             handle.write(html)
+        self._trim_dated(directory, REPORT_SIGNAL_DWELL_PREFIX)
 
     def _write_episodes(self, report_directory: str, trigger: str) -> None:
         """Write the silence-episode report.
@@ -1628,29 +1636,46 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         stamp = dt_util.as_local(
             dt_util.utc_from_timestamp(window_start)
         ).strftime("%Y-%m-%d")
-        path = os.path.join(
-            report_directory, f"{REPORT_BRIEF_PREFIX}{stamp}.md"
-        )
         text = "\n".join(lines)
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        self._write_brief_html(text)
-        self._trim_briefs(report_directory)
+        # The Markdown brief is retired (#178, final rung, 0.10.18):
+        # the dated HTML files are the record now, named exactly as
+        # the Markdown files were, and the undated current file is a
+        # copy of the newest write so a dashboard card has one stable
+        # URL that never breaks at midnight. Old .md briefs on disk
+        # are left as the history they are.
+        page = self._render_brief_html(text)
+        directory = self.hass.config.path(REPORT_WWW_DIR)
+        os.makedirs(directory, exist_ok=True)
+        dated = os.path.join(
+            directory, f"{REPORT_BRIEF_PREFIX}{stamp}.html"
+        )
+        with open(dated, "w", encoding="utf-8") as handle:
+            handle.write(page)
+        with open(
+            os.path.join(directory, REPORT_BRIEF_HTML),
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            handle.write(page)
+        self._trim_briefs(directory)
+        # The page is what a mail client renders; the composed text
+        # remains the plain form for the persistent-notification
+        # target and the message fallback. Same content by
+        # construction, one rendered from the other.
+        self._last_brief_page = page
+        self._last_brief_text = text
         return text if complete else None
 
-    def _write_brief_html(self, markdown: str) -> None:
-        """Render the brief as a styled page under www (#178, rung 1).
+    def _render_brief_html(self, markdown: str) -> str:
+        """Return the brief rendered as a styled page (#178).
 
-        One file, daily_brief.html, always the current picture: a
-        dashboard Webpage card wants one stable URL, and the dated
-        Markdown files remain the history until the ladder completes.
-        The scheduled roll writes the closed day and then the new
-        in-progress window, so the last write leaves this file
-        current. It is rendered from the Markdown text itself rather
-        than composed a second time, so the two briefs cannot drift:
-        what the Markdown says is what the page shows, and when the
-        email switches to this file (0.10.18, amending #135) the
-        content parity is already guaranteed.
+        Rendered from the composed Markdown text rather than written
+        a second way, so the record and the page cannot drift. Since
+        0.10.18 this one rendering is the brief: the dated file, the
+        current file, and the emailed body are all this exact string
+        (#135 as amended), and the chart link is resolved to an
+        absolute address where Home Assistant knows one, so the link
+        works from a mail client as well as a dashboard card.
         """
         html_lines: list[str] = []
         table: list[str] = []
@@ -1693,10 +1718,10 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
             elif line.strip():
                 text_line = line
                 if REPORT_SIGNAL_DWELL_URL in text_line:
+                    href = self._absolute_url(REPORT_SIGNAL_DWELL_URL)
                     text_line = text_line.replace(
                         REPORT_SIGNAL_DWELL_URL,
-                        f"<a href='{REPORT_SIGNAL_DWELL_URL}'>"
-                        f"the signal dwell chart</a>",
+                        f"<a href='{href}'>the signal dwell chart</a>",
                     )
                 html_lines.append(f"<p>{text_line}</p>")
         _flush_table()
@@ -1723,29 +1748,50 @@ a {{ color: #2a78d6; }}
 {body}
 </body></html>
 """
-        directory = self.hass.config.path(REPORT_WWW_DIR)
-        os.makedirs(directory, exist_ok=True)
-        with open(
-            os.path.join(directory, REPORT_BRIEF_HTML),
-            "w",
-            encoding="utf-8",
-        ) as handle:
-            handle.write(page)
+        return page
 
-    def _trim_briefs(self, report_directory: str) -> None:
-        """Keep the most recent briefs, drop the rest."""
+    def _absolute_url(self, path: str) -> str:
+        """Return the path resolved against the instance URL, if any.
+
+        A relative /local address is dead inside an email, which has
+        no host to resolve it against, so the link is made absolute
+        where Home Assistant knows its own address (the external URL
+        preferred, the internal one otherwise) and left relative only
+        where it knows neither, which still works everywhere a
+        browser is already looking at this instance.
+        """
+        try:
+            from homeassistant.helpers.network import get_url
+
+            return get_url(self.hass, prefer_external=True) + path
+        except Exception:  # noqa: BLE001 - no URL configured
+            return path
+
+    def _trim_briefs(self, directory: str) -> None:
+        """Keep the most recent dated briefs, drop the rest."""
+        self._trim_dated(directory, REPORT_BRIEF_PREFIX)
+
+    def _trim_dated(self, directory: str, prefix: str) -> None:
+        """Keep the newest dated files of a prefix, drop the rest.
+
+        Every file under www follows one rule (ruled 2026-08-02):
+        dated files as the record, an undated current file for the
+        one stable dashboard URL, and a trim on the same fourteen-day
+        schedule as the brief. The undated file never matches, since
+        a date always follows the underscore.
+        """
         try:
             names = sorted(
                 name
-                for name in os.listdir(report_directory)
-                if name.startswith(REPORT_BRIEF_PREFIX)
-                and name.endswith(".md")
+                for name in os.listdir(directory)
+                if name.startswith(f"{prefix}2")
+                and name.endswith(".html")
             )
         except OSError:
             return
         for name in names[:-BRIEF_KEEP_DAYS]:
             with contextlib.suppress(OSError):
-                os.remove(os.path.join(report_directory, name))
+                os.remove(os.path.join(directory, name))
 
     def _write_reports(self, trigger: str = "manual") -> str | None:
         """Write the report files, and return a closed brief if one.
@@ -1763,17 +1809,29 @@ a {{ color: #2a78d6; }}
             stale_path = os.path.join(report_directory, stale_name)
             if os.path.isfile(stale_path):
                 os.remove(stale_path)
-        # The three maintainer files go one level down (0.8.6), so the
-        # folder a person opens holds the daily briefs and nothing
-        # else. Copies written before this stay where they were and
-        # can be deleted by hand.
-        diagnostic_directory = os.path.join(
+        # The folder split completed (#178, 0.10.18): what a person
+        # reads lives under www/device_sentinel, so this folder is the
+        # developer's and the maintainer files come back up out of the
+        # diagnostics subfolder (which reverses 0.8.6, whose reason,
+        # keeping the briefs alone in this folder, retired with the
+        # Markdown brief). The old subfolder's three files are removed
+        # once; anything else in it, the rig log included, is not
+        # this integration's to touch.
+        old_diagnostics = os.path.join(
             report_directory, REPORT_DIAGNOSTIC_DIR
         )
-        os.makedirs(diagnostic_directory, exist_ok=True)
-        self._write_telemetry(diagnostic_directory, trigger)
-        self._write_classification(diagnostic_directory, trigger)
-        self._write_episodes(diagnostic_directory, trigger)
+        for name in (
+            REPORT_TELEMETRY,
+            REPORT_CLASSIFICATION,
+            REPORT_EPISODES,
+        ):
+            with contextlib.suppress(OSError):
+                os.remove(os.path.join(old_diagnostics, name))
+        with contextlib.suppress(OSError):
+            os.rmdir(old_diagnostics)
+        self._write_telemetry(report_directory, trigger)
+        self._write_classification(report_directory, trigger)
+        self._write_episodes(report_directory, trigger)
         # The dwell chart is HTML rather than Markdown because the
         # bands are its whole point and Markdown cannot carry color.
         # It lives under www so a dashboard Webpage card can render it
