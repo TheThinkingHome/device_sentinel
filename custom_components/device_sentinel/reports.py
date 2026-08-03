@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.10.22 (2026-08-03)
+# File: reports.py, Version: 0.10.24 (2026-08-03)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -426,6 +426,22 @@ class ReportWritingMixin:
         anomalies = self._dwell_anomalies(red)
         zeros = self._dwell_zero_count()
         written = dt_util.now().strftime("%B %d, %Y at %-I:%M %p")
+        # The newest closed day, which is the day this page is about.
+        # Dwell rolls at midnight, so the last figure in every series
+        # is always the day before this write, whatever hour it runs
+        # at. Every heading names its own days rather than saying
+        # yesterday and leaving a reader to work out yesterday of
+        # what (ruling #190).
+        covered = dt_util.now().date() - timedelta(days=1)
+        day_label = covered.strftime("%b %-d")
+        week_label = (
+            f"{(covered - timedelta(days=6)).strftime('%b %-d')} to "
+            f"{day_label}"
+        )
+        month_label = (
+            f"{(covered - timedelta(days=29)).strftime('%b %-d')} to "
+            f"{day_label}"
+        )
 
         anomaly_html = ""
         if anomalies:
@@ -466,8 +482,8 @@ class ReportWritingMixin:
                 )
             anomaly_html = (
                 "<h2>Anomalies</h2>"
-                "<p>Devices over the red threshold yesterday. "
-                "PRIOR DAY is the day before against yesterday, so the "
+                f"<p>Devices over the red threshold on {day_label}. "
+                "PRIOR DAY is the day before against that day, so the "
                 "arrow is the direction the link is moving. "
                 "DAYS OVER RED is how many "
                 "consecutive days the dwell has exceeded the red "
@@ -509,8 +525,8 @@ footer {{ margin-top: 24px; font-size: 12px; color: #5F5E5A; }}
 </style></head><body>
 <h1>Signal Dwell</h1>
 <p>Written {written}. The share of each day a device spent at or
-below its line. {zeros} device(s) sat at exactly zero yesterday and
-are not charted.</p>
+below its line. {zeros} device(s) sat at exactly zero on
+{day_label} and are not charted.</p>
 <p class='legend'>
 <span><span class='swatch' style='background:#1D9E75'></span>0 to
 {SIGNAL_GREEN_CEILING:.0f}%: a healthy link brushing its line</span>
@@ -520,24 +536,36 @@ are not charted.</p>
 {red:.0f}%: weak</span></p>
 {anomaly_html}
 <div class='charts'>
-<section><h2>Yesterday</h2>
+<section><h2>{day_label}</h2>
 {self._dwell_bar_svg(rows_day, red)}</section>
-<section><h2>Last 7 Days (Mean)</h2>
+<section><h2>7 Days, {week_label} (Mean)</h2>
 {self._dwell_bar_svg(rows_week, red)}</section>
-<section><h2>Last 30 Days (Mean)</h2>
+<section><h2>30 Days, {month_label} (Mean)</h2>
 {self._dwell_bar_svg(rows_month, red)}</section>
 </div>
 <footer>The red threshold is the Red Threshold slider on the Signal
 Strength configuration screen: Settings, Devices and Services, Device
 Sentinel, Configure, Signal Strength. Green is fixed at
-{SIGNAL_GREEN_CEILING:.0f}%. This page is written beside the daily
-brief and on Regenerate Reports; it renders on a dashboard with a
-Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
+{SIGNAL_GREEN_CEILING:.0f}%. The 7 and 30 day spans are the windows
+the means are taken over; a device with less history than the span
+contributes the days it has. This page covers {day_label}, the most
+recent day that has closed, and its dated copy is named for that day
+rather than for the day it was written. It is written beside the
+daily brief and on Regenerate Reports, and renders on a dashboard
+with a Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
 </body></html>
 """
         directory = self.hass.config.path(REPORT_WWW_DIR)
         os.makedirs(directory, exist_ok=True)
-        stamp = dt_util.now().strftime("%Y-%m-%d")
+        # Named for the day it describes, not the day it was
+        # written, which is how the brief is named and was not how
+        # this was. A chart written on the 3rd carries the 2nd's
+        # dwell, so the file called signal_dwell_2026-08-02 held the
+        # 1st, and two files with the same date meant different days
+        # (ruling #190). There is therefore no dated chart for today
+        # until tomorrow, which is correct: today's dwell has not
+        # finished.
+        stamp = covered.strftime("%Y-%m-%d")
         dated = os.path.join(
             directory, f"{REPORT_SIGNAL_DWELL_PREFIX}{stamp}.html"
         )
