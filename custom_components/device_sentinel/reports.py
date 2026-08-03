@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.10.20 (2026-08-03)
+# File: reports.py, Version: 0.10.21 (2026-08-03)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -38,6 +38,7 @@ from .const import (
     ACTION_READDED,
     ACTION_UNACKNOWLEDGED,
     BRIEF_KEEP_DAYS,
+    BRIEF_LIVE_WINDOW_SECONDS,
     BRIEF_TRIGGER,
     CONF_REMINDER_TIME,
     CONF_TAINT_FLOOR,
@@ -1501,8 +1502,16 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         window_start: float,
         window_end: float,
         complete: bool,
+        stamp_start: float | None = None,
     ) -> str | None:
         """Write the daily brief for a window, and return it when done.
+
+        window_start and window_end are the content: what the brief
+        describes. stamp_start is the day the file is named for, and
+        it is passed separately because the two stopped agreeing
+        when the live copy became a rolling day (ruling #187). Left
+        out, it is the window start, which is what a closed brief
+        wants.
 
         The text comes back only for a completed brief, which is the
         one the email carries, since mailing an unfinished document
@@ -1644,7 +1653,9 @@ Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         # midnight, so one window produced two files describing
         # overlapping periods, and neither was ever completed.
         stamp = dt_util.as_local(
-            dt_util.utc_from_timestamp(window_start)
+            dt_util.utc_from_timestamp(
+                window_start if stamp_start is None else stamp_start
+            )
         ).strftime("%Y-%m-%d")
         text = "\n".join(lines)
         # The Markdown brief is retired: what a person reads moved
@@ -1888,15 +1899,28 @@ a {{ color: #2a78d6; }}
         closing = trigger == BRIEF_TRIGGER
         if closing:
             window_start, window_end = self._brief_close_bounds()
+            stamp_start = None
         else:
+            # The live copy carries a rolling day rather than the
+            # hours since the brief time (ruling #187). The undated
+            # file is the dashboard's address, and for most of the
+            # day the brief-to-brief window had almost nothing in it,
+            # so a card read "nothing happened" while a full day of
+            # events sat in yesterday's dated file. Now stays live
+            # either way, since it is read from the problem list
+            # rather than from the window. The file is still named
+            # for the brief day, so this copy cannot land on top of a
+            # closed record.
             window_end = dt_util.utcnow().timestamp()
-            window_start = self._brief_window_start(window_end)
+            stamp_start = self._brief_window_start(window_end)
+            window_start = window_end - BRIEF_LIVE_WINDOW_SECONDS
         brief_text = self._write_brief(
             report_directory,
             trigger,
             window_start,
             window_end,
             complete=closing,
+            stamp_start=stamp_start,
         )
         # A scheduled write closes the day that just ended, but the
         # day just beginning has no file until something writes the
@@ -1912,8 +1936,9 @@ a {{ color: #2a78d6; }}
             self._write_brief(
                 report_directory,
                 trigger,
-                self._brief_window_start(now),
+                now - BRIEF_LIVE_WINDOW_SECONDS,
                 now,
                 complete=False,
+                stamp_start=self._brief_window_start(now),
             )
         return brief_text
