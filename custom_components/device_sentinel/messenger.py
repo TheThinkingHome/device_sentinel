@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.10.18 (2026-08-02)
+# File: messenger.py, Version: 0.10.19 (2026-08-03)
 
 """Sending the daily brief, and nothing else yet.
 
@@ -165,9 +165,20 @@ class MessengerMixin:
             # card, and the mail client, so what arrives is what is
             # on disk. The composed text stays as the message field
             # for services without HTML and as the plain fallback.
+            #
+            # The stashed page is used only where it was rendered
+            # from this very text, so the body can never describe a
+            # different document from the one being sent (#184). A
+            # mismatched or missing stash falls back to the local
+            # renderer, which gives the right day in a different
+            # style rather than the wrong day in the right style.
+            stashed_text, stashed_page = getattr(
+                self, "_last_brief_pair", (None, None)
+            )
             payload["data"] = {
-                "html": getattr(self, "_last_brief_page", None)
-                or self._brief_html(text)
+                "html": stashed_page
+                if stashed_page is not None and stashed_text == text
+                else self._brief_html(text)
             }
         return payload
 
