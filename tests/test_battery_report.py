@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.11.1 (2026-08-03)
+# File: test_battery_report.py, Version: 0.11.2 (2026-08-03)
 
 """The battery report (ruling #194).
 
@@ -20,6 +20,7 @@ no incident comes out of writing this page.
 from __future__ import annotations
 
 import os
+import re
 
 from homeassistant.core import HomeAssistant
 
@@ -203,3 +204,145 @@ async def test_the_page_gets_a_dated_copy_and_a_stable_address(
     assert len(dated) == 1
     with open(os.path.join(directory, dated[0]), encoding="utf-8") as handle:
         assert handle.read() == _page(hass)
+
+
+async def test_the_bank_chart_fits_inside_its_own_box(
+    hass: HomeAssistant,
+):
+    """Found by reading the rendered page on the fleet: ten bands at
+    50 wide on 14 gaps ran to 646 inside a 640 viewBox, so the top
+    band was clipped, and the unit label sat directly on top of the
+    last band's number.
+
+    Geometry is arithmetic and can be checked, so it is.
+    """
+    coord = await setup_coordinator(hass)
+    for index in range(10):
+        device, _ = register_device(hass, f"bank{index}", f"Cell {index}")
+        _seed(coord, device.id, [float(index * 10 + 5)] * 16,
+              float(index * 10 + 5))
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+
+    box = re.search(r"viewBox='0 0 (\d+) (\d+)'", page)
+    assert box is not None
+    width, height = int(box.group(1)), int(box.group(2))
+    bars = [
+        (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        for m in re.finditer(
+            r"<rect x='(\d+)' y='(\d+)' width='(\d+)'", page
+        )
+    ]
+    assert len(bars) == 10
+    assert max(x + w for x, _y, w in bars) <= width
+    # Every label sits inside the box, and the unit is on its own row
+    # rather than on top of the last band's number.
+    rows = {
+        int(m.group(2)): m.group(3)
+        for m in re.finditer(
+            r"<text x='(\d+)' y='(\d+)'[^>]*>([^<]+)</text>", page
+        )
+    }
+    assert "percent" in rows.values()
+    unit_y = next(y for y, text in rows.items() if text == "percent")
+    assert unit_y <= height
+    band_label_rows = {
+        int(m.group(1))
+        for m in re.finditer(r"<text x='\d+' y='(\d+)'[^>]*>\d0</text>", page)
+    }
+    assert unit_y not in band_label_rows
+
+
+async def test_the_brief_names_a_cell_that_is_nearly_out(
+    hass: HomeAssistant,
+):
+    """Ruling #195. The report shipped in 0.11.1 with nothing pointing
+    at it, so a person who did not know the file existed had no way
+    to find it. The brief now names it, on the same footing as the
+    dwell chart, with a full address rather than a bare path.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "brf1", "Door 2nd Bedroom")
+    _seed(coord, device.id, DYING, 12.0)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    with open(
+        os.path.join(
+            hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
+        ),
+        encoding="utf-8",
+    ) as handle:
+        brief = handle.read()
+
+    assert "Batteries falling: Door 2nd Bedroom (7 days)" in brief
+    assert "<a href='http" in brief
+    assert "the battery report</a>" in brief
+    assert "href='/local/device_sentinel/battery_report.html'" not in brief
+
+
+async def test_the_brief_leaves_out_what_nobody_can_act_on(
+    hass: HomeAssistant,
+):
+    """A cell a season away belongs in the report and not in a
+    document that arrives whether it was wanted or not. On the
+    reference fleet the unfiltered list was sixteen devices.
+    """
+    coord = await setup_coordinator(hass)
+    near, _ = register_device(hass, "brf2", "Nearly Out")
+    far, _ = register_device(hass, "brf3", "Months Away")
+    _seed(coord, near.id, DYING, 12.0)
+    _seed(coord, far.id, HEALTHY, 82.0)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    with open(
+        os.path.join(
+            hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
+        ),
+        encoding="utf-8",
+    ) as handle:
+        brief = handle.read()
+
+    assert "Nearly Out" in brief
+    assert "Months Away" not in brief
+    # Both are still in the report, which is not filtered.
+    assert "Months Away" in _page(hass)
+
+
+async def test_a_cell_already_low_is_not_said_twice(
+    hass: HomeAssistant,
+):
+    """It has a row in Now already. One document, one mention."""
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "brf4", "Door 2nd Bedroom")
+    _seed(coord, device.id, DYING, 12.0, low=True,
+          since="2026-08-03T06:41:02+00:00")
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    with open(
+        os.path.join(
+            hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
+        ),
+        encoding="utf-8",
+    ) as handle:
+        brief = handle.read()
+
+    assert "Batteries falling" not in brief
+
+
+async def test_a_quiet_fleet_adds_no_line(
+    hass: HomeAssistant,
+):
+    """Nothing to say means nothing said, as the signal line does."""
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "brf5", "Motion Hall")
+    _seed(coord, device.id, STEADY, 100.0)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    with open(
+        os.path.join(
+            hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
+        ),
+        encoding="utf-8",
+    ) as handle:
+        assert "Batteries falling" not in handle.read()
