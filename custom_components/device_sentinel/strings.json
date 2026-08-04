@@ -85,17 +85,19 @@
         "title": "Low Battery",
         "data": {
           "low_threshold": "Battery Low Threshold (%)",
+          "battery_days_till_empty": "Days Till Empty",
           "battery_excluded_integrations": "Battery-Excluded Integrations",
           "battery_excluded_labels": "Battery-Excluded Labels",
           "battery_excluded_devices": "Battery-Excluded Devices"
         },
         "data_description": {
           "low_threshold": "A battery at or below this level is flagged low.",
+          "battery_days_till_empty": "A dying battery triggers an alert this many days before it hits empty. The system projects that date using the last seven daily readings. A battery holding its charge will not trigger a warning, and a cell that is already below your main threshold is not flagged twice.",
           "battery_excluded_integrations": "One tick covers every battery that integration owns (phones under mobile_app, for example).",
           "battery_excluded_labels": "Any device carrying one of these labels stops being reported for a low battery. Set the label on the device's own page and it applies here without opening this dialog.",
           "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery reporting."
         },
-        "description": "Every battery Device Sentinel finds is watched by default. A battery is flagged when it is at or below the threshold. Excluding a battery here stops battery reports for that device only; everything else about it stays watched.\n\nThe three lists run broad to narrow: integration, label, device. They work like the Global Exclusions lists: exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.\n\nFull documentation: {wiki_link}"
+        "description": "Every battery Device Sentinel finds is watched by default. The threshold answers which cells are low; the warning days answer which are about to be. A cell at 80 percent falling steadily can have less life left than one sitting at 30 percent that has not moved in a month. A battery is flagged when it is at or below the threshold. Excluding a battery here stops battery reports for that device only; everything else about it stays watched.\n\nThe three lists run broad to narrow: integration, label, device. They work like the Global Exclusions lists: exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.\n\nFull documentation: {wiki_link}"
       },
       "signal": {
         "title": "Signal Strength",
