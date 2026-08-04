@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.11.0 (2026-08-03)
+# File: coordinator.py, Version: 0.11.3 (2026-08-03)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -188,7 +188,7 @@ from .const import (
     SHARE_PCT_MIN,
     SIGNAL_ANOMALY_TRIM_MAX,
     SIGNAL_ANOMALY_TRIM_MIN,
-    SIGNAL_ARMING_DAYS,
+    SIGNAL_DAYS_KEEP,
     SIGNAL_MARGIN_MAX,
     SIGNAL_MARGIN_MIN,
     SIGNAL_NAME_TERMS,
@@ -197,8 +197,8 @@ from .const import (
     SIGNAL_RAIL_RSSI,
     SIGNAL_RED_MAX,
     SIGNAL_RED_MIN,
-    SIGNAL_TRIM_LADDER_FORTNIGHT,
-    SIGNAL_TRIM_LADDER_WEEK,
+    SIGNAL_TRIM_LADDER_MAX,
+    SIGNAL_TRIM_PER_WEEK,
     STACK_MATTER,
     STACK_Z2M,
     STACK_ZHA,
@@ -1680,18 +1680,21 @@ class DeviceSentinelCoordinator(
         removed. Rails are fill values, not readings, so they never
         feed the floor and never count toward the trim.
 
-        Only the most recent DAILY_MAX_KEEP days are read, however
-        many are stored. The series is kept for ninety days so a
-        season of it can be studied, but the floor is the third
-        lowest of what it sees, and the third lowest of ninety days
-        is lower than the third lowest of fourteen, so reading the
-        whole series would quietly slacken every floor on the fleet.
-        Storage and judgment are deliberately separated here (ruling #126).
+        Only the most recent SIGNAL_DAYS_KEEP days are read, however
+        many are stored. Thirty rather than the fourteen the rhythm
+        uses, because a floor is a trimmed minimum and a short window
+        forgets a device's genuinely bad days: on the reference fleet
+        fifty-one of seventy-eight had a worse day just outside the
+        fortnight, and the floor jumping as one aged out is what made
+        dwell spike to a hundred percent and back within days
+        (ruling #196). The series is still kept for as long as the
+        person asks, and reading all of it would slacken every floor,
+        so storage and judgment stay separate (ruling #126).
         """
         return [
             value
             for value in (record.get(DEV_SIGNAL_DAILY_MIN) or [])[
-                -DAILY_MAX_KEEP:
+                -SIGNAL_DAYS_KEEP:
             ]
             if value not in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
         ]
@@ -1754,15 +1757,18 @@ class DeviceSentinelCoordinator(
         }.get(self._signal_trim(), "Normal")
 
     def _signal_effective_k(self, days: int) -> int:
-        """Return how many of the lowest readings the floor trims for
-        a device with this many non-rail days: the ladder rung shifted
-        by the slider, clamped so at least one reading survives."""
-        if days >= 2 * SIGNAL_ARMING_DAYS:
-            base_k = SIGNAL_TRIM_LADDER_FORTNIGHT
-        elif days >= SIGNAL_ARMING_DAYS:
-            base_k = SIGNAL_TRIM_LADDER_WEEK
-        else:
-            base_k = 0
+        """Return how many of the lowest readings the floor trims.
+
+        One per full week held, shifted by the slider and clamped so
+        at least one reading survives (ruling #196). A count rather
+        than a share, so it stays a whole number of days, but chosen
+        per week so the share stays near a seventh at every rung
+        instead of thinning as the window grows: two rungs discarded
+        fourteen percent of a fortnight and would discard nine
+        percent of a month, lowering every floor on the fleet as a
+        side effect of a change meant to be about stability.
+        """
+        base_k = min(days // SIGNAL_TRIM_PER_WEEK, SIGNAL_TRIM_LADDER_MAX)
         return max(0, min(base_k + self._signal_trim(), days - 1))
 
     def signal_railed(self, record: dict[str, Any]) -> bool:
