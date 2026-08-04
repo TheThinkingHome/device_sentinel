@@ -33,12 +33,11 @@ from custom_components.device_sentinel.const import (
     BRIEF_KEEP_DAYS,
     CONF_COALESCE_MINUTES,
     CONF_EPISODE_SHARE,
+    CONF_LOW_THRESHOLD,
     CONF_RETENTION_DAYS,
     CONF_SETTLE_SHARE,
     DAILY_MAX_KEEP,
-    SIGNAL_DAYS_KEEP,
     DATA_EPISODES,
-    CONF_LOW_THRESHOLD,
     DATA_INCIDENTS,
     DATA_SYSTEM_EVENTS,
     DEFAULT_RETENTION_DAYS,
@@ -54,20 +53,25 @@ from custom_components.device_sentinel.const import (
     FREEZE_CATEGORY_UNKNOWN,
     INCIDENT_KEEP_DAYS,
     INCIDENT_OPENED,
-    SYS_KIND,
-    SYS_OPTIONS_CHANGED,
-    SYS_RESTART,
-    SYS_WHEN,
+    INC_DEVICE_ID,
+    INC_EVENT,
+    INC_KIND,
+    INC_NAME,
     INC_WHEN,
     REPORT_BRIEF_PREFIX,
     REPORT_DIAGNOSTIC_DIR,
     RETENTION_DAYS_MAX,
     RETENTION_DAYS_MIN,
     RETENTION_DAYS_STEP,
+    SIGNAL_DAYS_KEEP,
+    SYS_KIND,
+    SYS_OPTIONS_CHANGED,
+    SYS_RESTART,
+    SYS_WHEN,
+    TODO_KINDS_ALL,
     TODO_KIND_BATTERY,
     TODO_KIND_FROZEN,
     TODO_KIND_NOT_REPORTED,
-    TODO_KIND_SIGNAL,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
 )
@@ -218,32 +222,66 @@ async def test_freeze_kinds_alias_their_verdicts(hass: HomeAssistant):
     assert TODO_KIND_NOT_REPORTED == FREEZE_CATEGORY_NOT_REPORTED
 
 
-async def test_every_kind_has_words_for_both_shapes(
+async def test_every_kind_has_words_everywhere(
     hass: HomeAssistant,
 ):
-    """The guard the literals could not give: if a kind is ever renamed
-    and a table is missed, this fails rather than a raw kind name
-    reaching a person's brief."""
+    """The guard that failed to guard (ruling #215).
+
+    Five tables map a kind to words. This test existed for exactly
+    the case where one is missed, and it listed the kinds by hand, so
+    when the falling kind arrived the list did not grow and the test
+    kept passing while checking six of seven. A person's brief read
+    "battery_falling" and "Door 2nd Bedroom 0s" for a day.
+
+    It now reads TODO_KINDS_ALL, so a kind added without wording
+    fails here rather than in a brief.
+    """
     entry = await setup_entry(hass)
     coord = entry.runtime_data
-    kinds = (
-        TODO_KIND_FROZEN,
-        TODO_KIND_UNAVAILABLE,
-        TODO_KIND_UNKNOWN,
-        TODO_KIND_NOT_REPORTED,
-        TODO_KIND_BATTERY,
-        TODO_KIND_SIGNAL,
-    )
-    for kind in kinds:
+
+    for kind in TODO_KINDS_ALL:
         assert kind in coord._KIND_SEVERITY, kind
-    for kind in (
-        TODO_KIND_FROZEN,
-        TODO_KIND_UNAVAILABLE,
-        TODO_KIND_UNKNOWN,
-        TODO_KIND_SIGNAL,
-    ):
+        # The freeze categories are already their own words, so
+        # falling through to the key is correct for them. What is
+        # never correct is a raw key reaching a person: an underscore
+        # in the output is the tell, and it is precisely what
+        # "battery_falling" showed in a live brief.
+        assert "_" not in coord._kind_word(
+            kind, 20.0, "about a month"
+        ), kind
+        # The events table, which takes an incident row.
+        assert "_" not in coord._brief_phrase(
+            {
+                INC_KIND: kind,
+                INC_EVENT: INCIDENT_OPENED,
+                INC_DEVICE_ID: "nonexistent",
+                INC_NAME: "Probe",
+            }
+        ), kind
+
+    # The two narrative tables cover the kinds that describe a moment
+    # or a standing state. A battery level is phrased from its own
+    # reading rather than a template, so it is absent by design.
+    for kind in TODO_KINDS_ALL:
+        if kind in (TODO_KIND_BATTERY, TODO_KIND_NOT_REPORTED):
+            continue
         assert kind in coord._EVENT_WORDING, kind
         assert kind in coord._STATE_TEMPLATE, kind
+
+
+async def test_the_kind_list_is_the_whole_list(hass: HomeAssistant):
+    """TODO_KINDS_ALL has to actually hold every kind, or the guard
+    above is checking a subset again (ruling #215). Read from the
+    source: every TODO_KIND_ constant must appear in it.
+    """
+    from custom_components.device_sentinel import const
+
+    declared = {
+        value
+        for name, value in vars(const).items()
+        if name.startswith("TODO_KIND_") and isinstance(value, str)
+    }
+    assert declared == set(TODO_KINDS_ALL), declared ^ set(TODO_KINDS_ALL)
 
 
 async def test_the_floor_ignores_history_beyond_its_window(
