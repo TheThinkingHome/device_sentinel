@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.11.11 (2026-08-04)
+# File: problem_list.py, Version: 0.11.13 (2026-08-04)
 
 """The problem list: the single memory every channel renders.
 
@@ -292,7 +292,15 @@ class ProblemListMixin:
             shown = int(level) if float(level).is_integer() else level
             return f"battery {shown}%"
         if kind == TODO_KIND_BATTERY_FALLING:
-            return f"empty in {left}" if left else "battery falling"
+            # The noun is carried, because the item may say this and
+            # nothing else: "Door 2nd Bedroom: empty in about 2 weeks"
+            # sitting beside "Soil Irrigation: battery 0%" leaves a
+            # reader to guess what is empty (ruling #216). It reads
+            # once when both kinds are present, because the level
+            # clause ahead of it has already said the word.
+            if left:
+                return f"empty in {left}"
+            return "battery running down"
         if kind == TODO_KIND_SIGNAL:
             return "signal (rail)"
         return kind.replace("_", " ")
@@ -325,15 +333,20 @@ class ProblemListMixin:
         order = [kind for kind in kinds if kind not in tail]
         order += [kind for kind in tail if kind in kinds]
 
-        summary = (
-            f"{name}: "
-            + ", ".join(
-                self._kind_word(kind, level, left) for kind in order
-            )
-        )
+        words = [self._kind_word(kind, level, left) for kind in order]
+        # The falling clause names the battery unless the level
+        # clause already did, so one item says the noun once and an
+        # item carrying only the forecast still says what is empty
+        # (ruling #216).
+        if TODO_KIND_BATTERY_FALLING in order and (
+            TODO_KIND_BATTERY not in order
+        ):
+            index = order.index(TODO_KIND_BATTERY_FALLING)
+            if words[index].startswith("empty in "):
+                words[index] = f"battery {words[index]}"
+        summary = f"{name}: " + ", ".join(words)
         lines = []
-        for kind in order:
-            word = self._kind_word(kind, level, left)
+        for kind, word in zip(order, words, strict=True):
             since = kinds.get(kind)
             if since is not None:
                 when = self._format_report_time(
