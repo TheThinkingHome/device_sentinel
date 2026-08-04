@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.11.1 (2026-08-03)
+# File: const.py, Version: 0.11.2 (2026-08-03)
 
 """Constants for the Device Sentinel integration."""
 
@@ -548,6 +548,14 @@ BATTERY_READABLE_MAX = 100.0
 # projection moves as the series grows and nothing notifies from it
 # until a soak says how much it moves (ruling #194).
 BATTERY_DAYS_URGENT = 21.0
+# How near the end a cell has to be before the daily brief names it.
+# The report lists every cell that is measurably falling, which on a
+# real fleet is a third of it, most of them a season away. The brief
+# is read at an hour a person chose and has to be worth that hour, so
+# it names only what is close (ruling #195). Deliberately shorter
+# than the report's own reading, because a page a person opened is a
+# different thing from a page that arrives.
+BATTERY_BRIEF_DAYS = 30.0
 REPORT_TELEMETRY = "device_telemetry.md"
 REPORT_CLASSIFICATION = "classification.md"
 REPORT_EPISODES = "silence_episodes.md"
