@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.10.20 (2026-08-03)
+# File: config_flow.py, Version: 0.11.3 (2026-08-03)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -61,8 +61,11 @@ from homeassistant.data_entry_flow import section
 from homeassistant.helpers import selector
 
 from .const import (
+    BATTERY_DAYS_MAX,
+    BATTERY_DAYS_MIN,
     COALESCE_MINUTES_MAX,
     COALESCE_MINUTES_MIN,
+    CONF_BATTERY_DAYS,
     CONF_BATTERY_EXCLUDED_DEVICES,
     CONF_BATTERY_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_EXCLUDED_LABELS,
@@ -96,6 +99,7 @@ from .const import (
     CONF_SIGNAL_RED,
     CONF_TAINT_FLOOR,
     CONF_TAINT_SHARE,
+    DEFAULT_BATTERY_DAYS,
     DEFAULT_COALESCE_MINUTES,
     DEFAULT_EPISODE_SHARE_PCT,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
@@ -327,6 +331,26 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             max=99,
                             step=1,
                             unit_of_measurement="%",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    # The second question the screen answers. The
+                    # threshold says which cells are low; this says
+                    # how far ahead a falling one is called out
+                    # (ruling #197). It sits beside the threshold
+                    # because they are one decision made twice, and
+                    # a person setting one should meet the other.
+                    vol.Optional(
+                        CONF_BATTERY_DAYS,
+                        default=options.get(
+                            CONF_BATTERY_DAYS, DEFAULT_BATTERY_DAYS
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=BATTERY_DAYS_MIN,
+                            max=BATTERY_DAYS_MAX,
+                            step=1,
+                            unit_of_measurement="days",
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
