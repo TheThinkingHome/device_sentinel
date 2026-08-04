@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_device_page.py, Version: 0.11.10 (2026-08-04)
+# File: test_device_page.py, Version: 0.11.11 (2026-08-04)
 
 """The device page a person actually reads, and its diagnostics journal.
 
@@ -146,7 +146,6 @@ async def test_every_count_sensor_carries_a_unit(hass: HomeAssistant):
     expected = {
         "sensor.device_sentinel_devices_watched": UNIT_DEVICES,
         "sensor.device_sentinel_devices_learned": UNIT_DEVICES,
-        "sensor.device_sentinel_service_devices_ignored": UNIT_DEVICES,
         "sensor.device_sentinel_signal_tracked": UNIT_SIGNALS,
         "sensor.device_sentinel_battery_tracked": UNIT_BATTERIES,
         "sensor.device_sentinel_device_tracked": UNIT_DEVICES,
@@ -180,7 +179,6 @@ async def test_renamed_entities_exist_at_their_new_ids(
     for entity_id in (
         "sensor.device_sentinel_devices_watched",
         "sensor.device_sentinel_devices_learned",
-        "sensor.device_sentinel_service_devices_ignored",
         "todo.device_sentinel_problem_list",
         "button.device_sentinel_enable_signals",
         "button.device_sentinel_enable_last_seen",

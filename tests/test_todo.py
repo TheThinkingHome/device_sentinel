@@ -35,25 +35,27 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.device_sentinel.const import (
+    DATA_DEVICES,
+    DATA_INCIDENTS,
     DATA_TODO_JOURNAL,
+    DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
-    DATA_DEVICES,
-    DATA_INCIDENTS,
     DEV_FROZEN_CATEGORY,
-    INCIDENT_OPENED,
-    INC_EVENT,
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     FREEZE_CATEGORY_UNAVAILABLE,
+    INCIDENT_OPENED,
+    INC_EVENT,
     SIGNAL_PROBLEM_ADDITION,
     STARTUP_GRACE_SECONDS,
     TODO_JOURNAL_KEEP,
     TODO_KIND_BATTERY,
+    TODO_KIND_BATTERY_FALLING,
 )
 
 from tests.helpers import setup_entry
@@ -580,3 +582,94 @@ async def test_journal_cap_evicts_only_the_oldest(hass: HomeAssistant):
     assert "Device 0" not in names          # the oldest, evicted
     assert names[0] == "Device 1"           # order preserved
     assert names[-1] == f"Device {TODO_JOURNAL_KEEP}"
+
+
+async def test_a_falling_cell_reaches_the_problem_list(
+    hass: HomeAssistant,
+):
+    """Ruling #213. Low is a level that has been crossed; falling is
+    one that is going to be, and the two rarely name the same device.
+    The forecast is worth a person's attention on its own, so it
+    reaches the list like any other kind rather than living only on a
+    report they may never open.
+
+    It reads as a warning rather than a fault, because the cell is
+    working: what is wrong is where it is heading.
+    """
+    device, eids = _register_device(hass, "bf1", "Falling Cell",
+                                    battery=True)
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(eids["plain"], "on")
+
+    record = coord.data["devices"][device.id]
+    record[DEV_BATTERY_DAILY] = [
+        40.0, 38.5, 37.0, 35.5, 34.0, 32.5, 31.0, 29.5,
+        28.0, 26.5, 25.0, 23.5, 22.0, 20.5, 20.0, 20.0,
+    ]
+    record[DEV_BATTERY_VALUE] = 20.0
+    coord._sync_problem_list()
+
+    item = _item_for(coord, device.id)
+    assert item is not None
+    assert item["summary"] == "Falling Cell: empty in about a month"
+
+
+async def test_low_and_falling_read_as_one_line(
+    hass: HomeAssistant,
+):
+    """One device, one item, one line: the level then where it is
+    heading, rather than two phrases stacked (ruling #213)."""
+    device, eids = _register_device(hass, "bf2", "Dying Cell",
+                                    battery=True)
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(eids["plain"], "on")
+
+    summary, _description = coord._problem_item_text(
+        "Dying Cell",
+        {TODO_KIND_BATTERY: None, TODO_KIND_BATTERY_FALLING: None},
+        16.0,
+        "about 2 weeks",
+    )
+    assert summary == "Dying Cell: battery 16%, empty in about 2 weeks"
+
+
+async def test_the_falling_kind_keeps_an_acknowledgment(
+    hass: HomeAssistant,
+):
+    """Rulings #123 and #133 hold without amendment. Acknowledging
+    silences the phone and not the record, so a person who ticked off
+    a forecast still watches it come true on the list: the item stays,
+    gains the level, and says nothing further to anyone.
+
+    This was nearly overturned when the falling kind arrived, on the
+    reasoning that acknowledging a forecast should not acknowledge the
+    event it forecasts. It does not need to: the item is still there.
+    """
+    device, eids = _register_device(hass, "bf3", "Watched Cell",
+                                    battery=True)
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(eids["plain"], "on")
+
+    record = coord.data["devices"][device.id]
+    record[DEV_BATTERY_DAILY] = [
+        40.0, 38.5, 37.0, 35.5, 34.0, 32.5, 31.0, 29.5,
+        28.0, 26.5, 25.0, 23.5, 22.0, 20.5, 20.0, 20.0,
+    ]
+    record[DEV_BATTERY_VALUE] = 20.0
+    coord._sync_problem_list()
+    uid = _item_for(coord, device.id)["uid"]
+    await coord.async_todo_update(uid=uid, status="completed")
+    acked_at = _item_for(coord, device.id)["acked_at"]
+    assert acked_at is not None
+
+    # The cell crosses the threshold. The item gains the level and
+    # stays acknowledged.
+    _battery_low(coord, device.id)
+    coord._sync_problem_list()
+    item = _item_for(coord, device.id)
+    assert item["status"] == "completed"
+    assert item["acked_at"] == acked_at
+    assert "battery" in item["summary"]

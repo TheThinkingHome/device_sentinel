@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_classification.py, Version: 0.9.9 (2026-07-26)
+# File: test_classification.py, Version: 0.11.11 (2026-08-04)
 
 """How devices are counted and attributed to integrations.
 
@@ -189,12 +189,15 @@ async def test_coverage_sensors(hass: HomeAssistant):
     assert coverage.attributes["set_aside"] == coord.set_aside_count
     assert coverage.attributes["learning"]["observing"] >= 2
 
-    classification = hass.states.get("sensor.device_sentinel_service_devices_ignored")
-    assert classification is not None
-    assert classification.attributes["by_integration"]["test"]["watched"] == 2
-    assert (
-        classification.attributes["by_integration"]["test"]["set_aside"] == 1
-    )
+    # Service Devices Ignored is opt-in since 0.11.11 (ruling #212),
+    # so it has no state until enabled. Its numbers are read from the
+    # coordinator, which is where the sensor reads them.
+    assert hass.states.get(
+        "sensor.device_sentinel_service_devices_ignored"
+    ) is None
+    breakdown = coord.classification_breakdown
+    assert breakdown["test"]["watched"] == 2
+    assert breakdown["test"]["set_aside"] == 1
 
     # Clock source was retired at 0.3.12: it counted devices lacking
     # protocol truth, so a higher number read better while meaning

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.11.10 (2026-08-04)
+# File: test_notifications.py, Version: 0.11.11 (2026-08-04)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -614,9 +614,15 @@ async def test_card_default_on_when_option_absent():
 # The opt-in problem counts and the integration picker.
 # ==================================================================
 
-async def test_problem_counts_are_disabled_by_default(hass: HomeAssistant):
-    """The three problem sensors register disabled, so they do not
-    appear until a person enables them."""
+async def test_problem_counts_are_enabled_by_default(hass: HomeAssistant):
+    """Ruling #212. All five register enabled.
+
+    They were opt-in on the reasoning that the todo list carries
+    trouble devices, which is true of two of them and false of the
+    rest: a weak link and a falling battery never reach that list, so
+    hiding them meant a person had to know a sensor existed before
+    they could see the problem it counts.
+    """
     entry = await setup_entry(hass)
     reg = er.async_get(hass)
     for suffix in (
@@ -630,7 +636,20 @@ async def test_problem_counts_are_disabled_by_default(hass: HomeAssistant):
             "sensor", DOMAIN, f"{entry.entry_id}_{suffix}"
         )
         assert eid is not None, suffix
-        assert reg.async_get(eid).disabled_by is not None, suffix
+        assert reg.async_get(eid).disabled_by is None, suffix
+
+
+async def test_the_service_count_stays_opt_in(hass: HomeAssistant):
+    """The one that goes the other way (ruling #212). It answers why
+    a particular device is not watched, which is asked once if ever,
+    so it belongs in the registry rather than on the page."""
+    entry = await setup_entry(hass)
+    reg = er.async_get(hass)
+    eid = reg.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_classification"
+    )
+    assert eid is not None
+    assert reg.async_get(eid).disabled_by is not None
 
 
 async def test_tracked_counts_stay_enabled(hass: HomeAssistant):
