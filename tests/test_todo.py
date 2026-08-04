@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.10.4 (2026-07-28)
+# File: test_todo.py, Version: 0.11.13 (2026-08-04)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -58,7 +58,7 @@ from custom_components.device_sentinel.const import (
     TODO_KIND_BATTERY_FALLING,
 )
 
-from tests.helpers import setup_entry
+from tests.helpers import setup_coordinator, setup_entry
 
 DOMAIN = "device_sentinel"
 LIST_ENTITY = "todo.device_sentinel_problem_list"
@@ -612,7 +612,9 @@ async def test_a_falling_cell_reaches_the_problem_list(
 
     item = _item_for(coord, device.id)
     assert item is not None
-    assert item["summary"] == "Falling Cell: empty in about a month"
+    assert item["summary"] == (
+        "Falling Cell: battery empty in about a month"
+    )
 
 
 async def test_low_and_falling_read_as_one_line(
@@ -673,3 +675,38 @@ async def test_the_falling_kind_keeps_an_acknowledgment(
     assert item["status"] == "completed"
     assert item["acked_at"] == acked_at
     assert "battery" in item["summary"]
+
+
+async def test_the_falling_line_says_what_is_empty(
+    hass: HomeAssistant,
+):
+    """Ruling #216. The item may carry the forecast and nothing else,
+    and "Door 2nd Bedroom: empty in about 2 weeks" sitting beside
+    "Soil Irrigation: battery 0%" leaves a reader to guess what is
+    empty. It reads once when both kinds are present, because the
+    level clause ahead of it has already said the word.
+    """
+    coord = await setup_coordinator(hass)
+
+    alone, _ = coord._problem_item_text(
+        "Falling Cell",
+        {TODO_KIND_BATTERY_FALLING: None},
+        None,
+        "about 2 weeks",
+    )
+    assert alone == "Falling Cell: battery empty in about 2 weeks"
+
+    both, _ = coord._problem_item_text(
+        "Dying Cell",
+        {TODO_KIND_BATTERY: None, TODO_KIND_BATTERY_FALLING: None},
+        16.0,
+        "about 2 weeks",
+    )
+    assert both == "Dying Cell: battery 16%, empty in about 2 weeks"
+    assert both.count("battery") == 1
+
+    # No projection yet, so it says the direction without a time.
+    vague, _ = coord._problem_item_text(
+        "Vague Cell", {TODO_KIND_BATTERY_FALLING: None}, None, None
+    )
+    assert vague == "Vague Cell: battery running down"
