@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.11.2 (2026-08-03)
+# File: const.py, Version: 0.11.3 (2026-08-03)
 
 """Constants for the Device Sentinel integration."""
 
@@ -555,7 +555,31 @@ BATTERY_DAYS_URGENT = 21.0
 # it names only what is close (ruling #195). Deliberately shorter
 # than the report's own reading, because a page a person opened is a
 # different thing from a page that arrives.
-BATTERY_BRIEF_DAYS = 30.0
+# The person's answer to how far ahead a falling cell is called out.
+# Seven to thirty, because under a week is too late to act and past a
+# month the projection is guesswork (ruling #197).
+CONF_BATTERY_DAYS = "battery_days_till_empty"
+DEFAULT_BATTERY_DAYS = 30
+BATTERY_DAYS_MIN = 7
+BATTERY_DAYS_MAX = 30
+
+# How time left is said, rather than printed as a number. The
+# projection moved from twelve days to seven in one afternoon on the
+# cell that proved it, roughly forty percent; the same relative error
+# on a device reading 1122 days puts the truth anywhere between 670
+# and 1570, so printing 1122 claims a precision the arithmetic does
+# not have. Precision degrades with distance, which is how the error
+# behaves, and the words are all a person needs (ruling #197).
+BATTERY_LEFT_BANDS = (
+    (7.0, "under a week"),
+    (14.0, "about 2 weeks"),
+    (30.0, "about a month"),
+    (60.0, "about 2 months"),
+    (90.0, "about 3 months"),
+    (180.0, "about 6 months"),
+    (365.0, "under a year"),
+)
+BATTERY_LEFT_BEYOND = "over a year"
 REPORT_TELEMETRY = "device_telemetry.md"
 REPORT_CLASSIFICATION = "classification.md"
 REPORT_EPISODES = "silence_episodes.md"
@@ -666,8 +690,37 @@ SIGNAL_ARMING_DAYS = 7
 # drops the LOWEST values, the opposite of the rhythm trim which
 # drops the highest, because for signal the spuriously bad reading is
 # the anomaly to set aside.
-SIGNAL_TRIM_LADDER_WEEK = 1
-SIGNAL_TRIM_LADDER_FORTNIGHT = 2
+#
+# The ladder is one trimmed reading per full week held, so the share
+# discarded stays near a seventh at every rung instead of thinning as
+# the window grows (ruling #196). Two rungs were enough while the
+# window was a fortnight; on thirty days a fixed k of two would drop
+# nine percent where it used to drop fourteen, which lowers every
+# floor on the fleet by about a tenth as a side effect of a change
+# meant to be about stability. Measured on the reference fleet: one
+# per week holds the median floor within a few points and still cuts
+# the devices whose floor swings twenty points in a week from fifteen
+# to five.
+SIGNAL_TRIM_PER_WEEK = 7
+SIGNAL_TRIM_LADDER_MAX = 4
+
+# The window every signal verdict is computed over. Thirty days
+# rather than the fourteen the rhythm uses, because the two measure
+# different shapes (ruling #196). A floor is a trimmed minimum, so a
+# short window forgets a device's genuinely bad days and sits too
+# high: on the reference fleet fifty-one of seventy-eight devices had
+# a worse day just outside the fortnight, and the floor jumping as
+# one aged out is what made dwell spike to a hundred percent and back
+# to zero within days. A line that moves under the device cannot be
+# read across days, and dwell is only useful read across days.
+#
+# The rhythm stays at fourteen. It is a trimmed maximum, so a longer
+# window can only raise it, and on the same fleet a longer window
+# left seventy-nine of ninety-four devices identical while making the
+# rest less sensitive. Battery stays at seven, because it is watching
+# for the moment a plateau ends and a fortnight averages the plateau
+# in with the fall, halving the apparent rate.
+SIGNAL_DAYS_KEEP = 30
 
 # The user's sensitivity adjustment, added to the ladder's k and
 # clamped so the effective k always leaves at least one reading to be
