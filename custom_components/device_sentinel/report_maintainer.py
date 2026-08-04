@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.11.4 (2026-08-04)
+# File: report_maintainer.py, Version: 0.11.7 (2026-08-04)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -102,6 +102,17 @@ class MaintainerReportMixin:
         episodes.sort(key=lambda row: row[EP_SINCE], reverse=True)
         now = dt_util.utcnow().timestamp()
         open_count = sum(1 for row in episodes if row[EP_ENDED] is None)
+        # When the newest row was opened, because an empty stretch and
+        # a stopped recorder look identical from the file alone
+        # (ruling #203). A quiet fleet can go days without a single
+        # device passing its own threshold, and the last thing written
+        # here was a mesh-wide event that produced most of the file in
+        # one hour, so the file reads as though it stalled.
+        newest = (
+            f", newest {self._episode_stamp(episodes[0][EP_SINCE])}"
+            if episodes
+            else ""
+        )
         lines = [
             f"# Device Sentinel v{self.version} Silence Episodes",
             "",
@@ -119,7 +130,7 @@ class MaintainerReportMixin:
             "whether the completed gap reached the statistics, and "
             "why not when it did not. UNAVAIL is how long the device read unavailable when a taint excluded the gap, recorded so the debounce can be tuned from real spread rather than a guess. Kept "
             f"{EPISODE_KEEP_DAYS} days; {len(episodes)} episode(s), "
-            f"{open_count} still open.",
+            f"{open_count} still open{newest}.",
             "",
         ]
         if not episodes:
