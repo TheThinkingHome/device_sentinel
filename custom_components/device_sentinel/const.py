@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.11.9 (2026-08-04)
+# File: const.py, Version: 0.11.10 (2026-08-04)
 
 """Constants for the Device Sentinel integration."""
 
@@ -693,7 +693,17 @@ CLOCK_FIELDS = (
 )
 
 SENTINEL_TYPE_LOW_BATTERIES = "low_batteries"
-SENTINEL_TYPE_SIGNAL_PROBLEMS = "signal_problems"
+# A different set and a different question from the one above:
+# low is a level that has been crossed, falling is one that is
+# going to be (ruling #209).
+SENTINEL_TYPE_FALLING_BATTERIES = "falling_batteries"
+# The two signal conditions, counted apart because they are not the
+# same kind of thing: a rail is a broken measurement confirmed over
+# three days and it persists, a weak link is a live reading that moves
+# day to day. Counting them together gave one number that meant two
+# things and read zero on a fleet with no rails (ruling #211).
+SENTINEL_TYPE_SIGNAL_RAILS = "signal_rails"
+SENTINEL_TYPE_SIGNAL_WEAK = "signal_weak"
 SENTINEL_TYPE_FROZEN_DEVICES = "frozen_devices"
 SENTINEL_TYPE_TRACKED_SIGNALS = "tracked_signals"
 SENTINEL_TYPE_TRACKED_BATTERIES = "tracked_batteries"
@@ -1389,4 +1399,12 @@ ATTR_SETUP_COUNT = "setup_count"
 # page as an unavailable row. Removed once at setup, the same
 # treatment DEAD_OPTION_KEYS gets. Append a sentinel type here when a
 # sensor is retired, and drop it again once every install is past it.
-DEAD_ENTITY_SENTINEL_TYPES = (SENTINEL_TYPE_CLOCK_SOURCE,)
+DEAD_ENTITY_SENTINEL_TYPES = (
+    SENTINEL_TYPE_CLOCK_SOURCE,
+    # The battery threshold slider, retired in 0.11.10 with the
+    # whole number platform (ruling #209).
+    "battery_low_threshold",
+    # Signal: Problems, split into Signal: Rails and Signal: Weak in
+    # the same release (ruling #211).
+    "signal_problems",
+)

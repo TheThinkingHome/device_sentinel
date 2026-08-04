@@ -243,6 +243,38 @@ class BatteryMixin:
         return rows
 
     @property
+    def battery_falling_list(self) -> list[dict[str, Any]]:
+        """Return cells projected to reach empty inside the horizon.
+
+        The Battery: Falling sensor. A different set from Battery:
+        Low and a different question: low is a level that has been
+        crossed, falling is a level that is going to be. A cell at 80
+        percent dropping steadily can have less life left than one
+        sitting at 30 that has not moved in a month (ruling #209).
+
+        Read from the battery report's own rows, so the sensor, the
+        report and the daily brief cannot disagree about which cells
+        are near the end or how long they have. Cells already low are
+        absent: they have their own count, and one thing should be
+        counted once.
+        """
+        return [
+            {
+                "device_id": row.get("device_id"),
+                "name": row["name"],
+                "level": row["level"],
+                "per_day": round(row["slope"], 2),
+                "left": self.battery_time_left(row["days"]),
+            }
+            for row in self._battery_brief_rows()
+        ]
+
+    @property
+    def battery_falling_count(self) -> int:
+        """Return how many cells are inside the horizon."""
+        return len(self.battery_falling_list)
+
+    @property
     def battery_low_count(self) -> int:
         """Return the number of devices currently battery-low."""
         return sum(

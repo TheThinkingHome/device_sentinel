@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.11.4 (2026-08-04)
+# File: reports.py, Version: 0.11.10 (2026-08-04)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -217,6 +217,39 @@ class ReportWritingMixin(
         except Exception:  # noqa: BLE001 - instance knows no URL at all
             return path
 
+
+    @staticmethod
+    def _write_file(path: str, text: str) -> None:
+        """Write a report so a reader never sees half of one.
+
+        Every report is written to a temporary name in the same
+        directory and then moved onto the destination, which os
+        .replace makes atomic on the same filesystem. Opening the
+        destination directly leaves a truncated file if the write is
+        interrupted, and a person opening a dashboard card mid-crash
+        would see half a page (ruling #208).
+
+        Nothing is lost either way, because every report regenerates
+        at the next write. What this buys is that the file on disk is
+        always a whole report, the old one or the new one and never a
+        piece of both. The temporary name sits beside the target so
+        the move stays within one filesystem; a temp directory
+        elsewhere would make os.replace a copy and lose the property.
+
+        Failure is left to the caller. A report that cannot be
+        written is a worse report and not a broken integration, and
+        the writers above already run inside the executor call that
+        handles it.
+        """
+        temporary = f"{path}.tmp"
+        try:
+            with open(temporary, "w", encoding="utf-8") as handle:
+                handle.write(text)
+            os.replace(temporary, path)
+        except OSError:
+            with contextlib.suppress(OSError):
+                os.remove(temporary)
+            raise
 
     def _trim_dated(self, directory: str, prefix: str) -> None:
         """Keep the newest dated files of a prefix, drop the rest.

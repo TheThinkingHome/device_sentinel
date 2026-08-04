@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_dwell.py, Version: 0.11.4 (2026-08-04)
+# File: report_dwell.py, Version: 0.11.10 (2026-08-04)
 
 """The signal dwell chart and the signal cells of the telemetry.
 
@@ -150,6 +150,11 @@ class DwellChartMixin:
             previous = series[-2] if len(series) >= 2 else None
             out.append(
                 {
+                    # Carried so the Signal: Problems sensor can name
+                    # the device in an automation, and so the low kind
+                    # can be checked against the signal exclusions
+                    # (ruling #210).
+                    "device_id": device_id,
                     "name": name,
                     "dwell": value,
                     "previous": previous,
@@ -384,14 +389,11 @@ with a Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         dated = os.path.join(
             directory, f"{REPORT_SIGNAL_DWELL_PREFIX}{stamp}.html"
         )
-        with open(dated, "w", encoding="utf-8") as handle:
-            handle.write(html)
-        with open(
+        self._write_file(dated, html)
+        self._write_file(
             os.path.join(directory, REPORT_SIGNAL_DWELL),
-            "w",
-            encoding="utf-8",
-        ) as handle:
-            handle.write(html)
+            html,
+        )
         self._trim_dated(directory, REPORT_SIGNAL_DWELL_PREFIX)
 
     def _floor_drift_cell(self, record: dict[str, Any]) -> str:

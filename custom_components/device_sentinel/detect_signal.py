@@ -521,18 +521,24 @@ class SignalMixin:
 
     @property
     def signal_problem_list(self) -> list[dict[str, Any]]:
-        """Return devices with a signal problem, each tagged by kind.
+        """Return devices whose signal reading is stuck at a rail.
 
-        Two kinds (ruling #78). A rail: the daily low
-        has sat at the fill value (255, -128) for three days, a stale
-        reading that shows as perfect signal. A low: the device dwells
-        below its danger line (the dwell judgment, still soaking, so
-        this kind stays quiet until its threshold is ruled). Reported
-        together because both are signal problems a person discovers
-        here and may then exclude, and kept apart by kind because a
-        rail is a fault and a low is a weak link. Signal-excluded
-        devices are observed but never judged, so they stay off this
-        list until re-included by hand.
+        A rail is the type's fill value, 255 for LQI or -128 for
+        RSSI: the empty value of a field the device stopped
+        populating, which reads as perfect signal and is the
+        opposite. Confirmed over three days rather than on a single
+        reading (ruling #78), so what lands here is a fault rather
+        than a bad afternoon.
+
+        Rails only, and deliberately. This list feeds the problem
+        list and therefore the todo entity, the card and the phone,
+        so a rail is the one signal condition solid enough to
+        interrupt somebody. Weak links are a live reading that moves
+        day to day and live on signal_weak_list, which notifies
+        nothing (rulings #59 and #211).
+
+        Signal-excluded devices are observed but never judged, so
+        they stay off this list until re-included by hand.
         """
         problems: list[dict[str, Any]] = []
         for device_id, record in self.data.get(DATA_DEVICES, {}).items():
@@ -547,10 +553,63 @@ class SignalMixin:
                         "value": record.get(DEV_SIGNAL_VALUE),
                     }
                 )
-        # Rail problems first, then by name. The low kind joins here
-        # once the dwell danger line is ruled.
+        # Rails only, and deliberately. This list feeds the problem
+        # list, which feeds the todo entity, the card and the phone,
+        # so anything added here becomes a notification. Dwell has no
+        # day-to-day persistence to notify on: on the reference fleet
+        # only three of twelve device-days above twenty percent were
+        # still above it the next morning, so a low arriving here
+        # would push tonight and clear tomorrow. Signal reports and
+        # does not push (ruling #59), and the low kind lives on
+        # signal_weak_list below, which nothing notifies from
+        # (ruling #211).
+        # Rail problems first, then by name: a rail is a fault and a
+        # low is a weak link.
         problems.sort(key=lambda row: (row["kind"] != "rail", row["name"] or ""))
         return problems
+
+    @property
+    def signal_weak_list(self) -> list[dict[str, Any]]:
+        """Return devices whose link is weak right now.
+
+        The Signal: Weak sensor. A device qualifies while its dwell
+        on the last closed day is over the red threshold, which is
+        the rule the brief's anomaly line and the chart's colouring
+        already use, so one definition serves all three and a device
+        cannot be named in one and absent from another (ruling #211).
+
+        Separate from the rails for the same reason Battery: Low and
+        Battery: Falling are separate. A rail is a broken measurement,
+        confirmed over three days and persistent; a weak link is a
+        live reading that moves. On the reference fleet only three of
+        twelve device-days above twenty percent were still above it
+        the next morning, so counting the two together produced one
+        number that meant two things and read zero on a fleet with no
+        rails.
+
+        Nothing notifies from this. A device drops off the moment its
+        dwell falls back under the threshold, with no acknowledgment
+        and no record, because it is a reading rather than an
+        incident: what a dashboard shows is the fleet as it stands
+        (ruling #59).
+        """
+        railed = {row["device_id"] for row in self.signal_problem_list}
+        return [
+            {
+                "name": anomaly["name"],
+                "device_id": anomaly["device_id"],
+                "dwell": anomaly.get("dwell"),
+                "floor": anomaly.get("floor"),
+                "area": anomaly.get("area"),
+            }
+            for anomaly in self._dwell_anomalies(self._signal_red())
+            if anomaly["device_id"] not in railed
+        ]
+
+    @property
+    def signal_weak_count(self) -> int:
+        """Return how many links are weak right now."""
+        return len(self.signal_weak_list)
 
     @property
     def signal_problem_count(self) -> int:

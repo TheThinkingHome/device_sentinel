@@ -608,14 +608,11 @@ class BriefMixin:
         dated = os.path.join(
             directory, f"{REPORT_BRIEF_PREFIX}{stamp}.html"
         )
-        with open(dated, "w", encoding="utf-8") as handle:
-            handle.write(page)
-        with open(
+        self._write_file(dated, page)
+        self._write_file(
             os.path.join(directory, REPORT_BRIEF_HTML),
-            "w",
-            encoding="utf-8",
-        ) as handle:
-            handle.write(page)
+            page,
+        )
         self._trim_briefs(directory)
         # The page is what a mail client renders; the composed text
         # remains the plain form for the persistent-notification

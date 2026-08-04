@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.10.20 (2026-08-03)
+# File: sensor.py, Version: 0.11.10 (2026-08-04)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -41,37 +41,39 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import DeviceSentinelConfigEntry
 from .const import (
-    BRIDGE_STATES,
-    BRIDGE_UNKNOWN,
-    SENTINEL_TYPE_BRIDGE,
-    BRIDGE_SENSOR_NAMES,
-    ATTR_BRIDGE_STACK,
-    ATTR_BRIDGE_PERMIT_JOIN_END,
     ATTR_BRIDGE_BASE_TOPIC,
     ATTR_BRIDGE_LAST_HEARD,
+    ATTR_BRIDGE_PERMIT_JOIN_END,
+    ATTR_BRIDGE_STACK,
     ATTR_FIRST_INSTALLED,
     ATTR_SENTINEL_TYPE,
-    ATTR_SETUP_COUNT,
     ATTR_SENTINEL_VERSION,
+    ATTR_SETUP_COUNT,
     ATTR_STORAGE_HEALTHY,
     BATTERY_CLEAR_MARGIN,
+    BRIDGE_SENSOR_NAMES,
+    BRIDGE_STATES,
+    BRIDGE_UNKNOWN,
     DOMAIN,
+    SENTINEL_TYPE_BRIDGE,
+    SENTINEL_TYPE_CLASSIFICATION,
+    SENTINEL_TYPE_COVERAGE,
+    SENTINEL_TYPE_FALLING_BATTERIES,
     SENTINEL_TYPE_FROZEN_DEVICES,
+    SENTINEL_TYPE_LEARNING,
     SENTINEL_TYPE_LOW_BATTERIES,
-    SENTINEL_TYPE_SIGNAL_PROBLEMS,
+    SENTINEL_TYPE_SIGNAL_RAILS,
+    SENTINEL_TYPE_SIGNAL_WEAK,
+    SENTINEL_TYPE_STATUS,
     SENTINEL_TYPE_TRACKED_BATTERIES,
     SENTINEL_TYPE_TRACKED_DEVICES,
     SENTINEL_TYPE_TRACKED_SIGNALS,
-    SENTINEL_TYPE_CLASSIFICATION,
-    SENTINEL_TYPE_COVERAGE,
-    SENTINEL_TYPE_LEARNING,
-    SENTINEL_TYPE_STATUS,
     STATUS_LEARNING,
     STATUS_PROBLEM,
     STATUS_WATCHING,
     UNIT_BATTERIES,
-    UNIT_SIGNALS,
     UNIT_DEVICES,
+    UNIT_SIGNALS,
 )
 from .coordinator import DeviceSentinelCoordinator
 
@@ -92,8 +94,10 @@ async def async_setup_entry(
             DeviceSentinelTrackedSignalsSensor(coordinator),
             DeviceSentinelTrackedBatteriesSensor(coordinator),
             DeviceSentinelTrackedDevicesSensor(coordinator),
-            DeviceSentinelSignalProblemsSensor(coordinator),
+            DeviceSentinelSignalRailsSensor(coordinator),
+            DeviceSentinelSignalWeakSensor(coordinator),
             DeviceSentinelLowBatteriesSensor(coordinator),
+            DeviceSentinelFallingBatteriesSensor(coordinator),
             DeviceSentinelFrozenDevicesSensor(coordinator),
         ]
     )
@@ -366,17 +370,22 @@ class DeviceSentinelTrackedDevicesSensor(DeviceSentinelBaseSensor):
         }
 
 
-class DeviceSentinelSignalProblemsSensor(DeviceSentinelBaseSensor):
-    """How many devices have a signal problem right now.
+class DeviceSentinelSignalRailsSensor(DeviceSentinelBaseSensor):
+    """How many devices report a signal stuck at its rail.
 
-    The signal member of the Problems family. State is the count;
-    attributes carry the devices, each tagged by kind: a rail (stuck
-    at the fill value for three days, a fault) or a low (dwelling
-    below the danger line, a weak link). The low kind stays quiet
-    until the dwell danger line is ruled, so today this reports rails.
+    A rail is the type's fill value, 255 for LQI or -128 for RSSI:
+    the empty value of a field the device stopped populating, which
+    reads as perfect signal and is the opposite. Confirmed over three
+    days rather than on one reading (ruling #78), so this counts
+    faults rather than bad afternoons, and it is the one signal
+    condition that reaches the problem list and the phone.
+
+    Weak links are counted next door. They were counted here until
+    0.11.10, under the name Signal: Problems, and one number meaning
+    two things read zero on a fleet with no rails (ruling #211).
     """
 
-    _attr_name = "Signal: Problems"
+    _attr_name = "Signal: Rails"
     _attr_icon = "mdi:access-point-off"
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -385,19 +394,59 @@ class DeviceSentinelSignalProblemsSensor(DeviceSentinelBaseSensor):
     # devices. This count is for anyone who wants it on a dashboard or
     # in an automation, so it is theirs to enable.
     _attr_entity_registry_enabled_default = False
-    sentinel_type = SENTINEL_TYPE_SIGNAL_PROBLEMS
+    sentinel_type = SENTINEL_TYPE_SIGNAL_RAILS
 
     @property
     def native_value(self) -> int:
-        """Return how many devices have a signal problem."""
+        """Return how many devices are stuck at a rail."""
         return self._coordinator.signal_problem_count
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the problem devices, rail kind first."""
+        """Return the railed devices."""
         return {
             **self._identity(),
             "devices": self._coordinator.signal_problem_list,
+        }
+
+
+class DeviceSentinelSignalWeakSensor(DeviceSentinelBaseSensor):
+    """How many links are weak right now.
+
+    A device is here while its dwell on the last closed day is over
+    the red threshold, which is the rule the daily brief and the
+    chart already use, so the three cannot name different devices
+    (ruling #211).
+
+    Live rather than remembered. A device drops off the moment its
+    dwell falls back under the threshold, with no acknowledgment and
+    no record, because it is a reading rather than an incident. That
+    also means the count moves: on the reference fleet only three of
+    twelve device-days above twenty percent were still above it the
+    next morning, which is why nothing notifies from it
+    (ruling #59).
+    """
+
+    _attr_name = "Signal: Weak"
+    _attr_icon = "mdi:wifi-strength-1-alert"
+    _attr_native_unit_of_measurement = UNIT_SIGNALS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+    sentinel_type = SENTINEL_TYPE_SIGNAL_WEAK
+
+    @property
+    def native_value(self) -> int:
+        """Return how many links are weak right now."""
+        return self._coordinator.signal_weak_count
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the weak devices and the threshold in force."""
+        return {
+            **self._identity(),
+            "devices": self._coordinator.signal_weak_list,
+            "red_threshold": self._coordinator._signal_red(),
         }
 
 
@@ -435,6 +484,54 @@ class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
             "devices": self._coordinator.battery_low_list,
             "low_threshold": self._coordinator.low_threshold,
             "clear_margin": BATTERY_CLEAR_MARGIN,
+        }
+
+
+class DeviceSentinelFallingBatteriesSensor(DeviceSentinelBaseSensor):
+    """How many cells are projected to reach empty inside the horizon.
+
+    A different set from Battery: Low and a different question. Low is
+    a level that has been crossed; falling is a level that is going to
+    be, and the two rarely name the same device: a cell at 80 percent
+    dropping steadily can have less life left than one sitting at 30
+    that has not moved in a month (ruling #209).
+
+    The count is read from the battery report's own rows, so this
+    sensor, the report and the daily brief cannot disagree about which
+    cells are near the end or how long they have. Cells already low
+    are absent, because they are counted by the sensor above and one
+    thing should be counted once.
+
+    Time left is a phrase rather than a number, for the reason it is a
+    phrase everywhere else: the projection moved from twelve days to
+    seven in an afternoon on the cell that proved it, so the words say
+    what the arithmetic supports and the number would not
+    (ruling #197).
+    """
+
+    _attr_name = "Battery: Falling"
+    _attr_icon = "mdi:battery-arrow-down"
+    _attr_native_unit_of_measurement = UNIT_BATTERIES
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    # Off by default like the other problem counts: the todo list is
+    # where a person reads trouble, and this is for a dashboard or an
+    # automation that asks for it.
+    _attr_entity_registry_enabled_default = False
+    sentinel_type = SENTINEL_TYPE_FALLING_BATTERIES
+
+    @property
+    def native_value(self) -> int:
+        """Return how many cells are inside the horizon."""
+        return self._coordinator.battery_falling_count
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the cells, nearest the end first, and the horizon."""
+        return {
+            **self._identity(),
+            "devices": self._coordinator.battery_falling_list,
+            "days_till_empty": self._coordinator._battery_days(),
         }
 
 

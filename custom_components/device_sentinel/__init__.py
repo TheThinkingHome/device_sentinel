@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.10.21 (2026-08-03)
+# File: __init__.py, Version: 0.11.10 (2026-08-04)
 
 """The Device Sentinel integration.
 
@@ -42,9 +42,15 @@ from .const import (
 )
 from .coordinator import DeviceSentinelCoordinator
 
+# No NUMBER platform since 0.11.10. It carried one entity, the
+# battery threshold as a dashboard slider, put there because the
+# options dialog was buried and the author could not find it.
+# The dialog is documented now and the threshold has a second
+# setting beside it that never got a knob, so the device page
+# held one control out of two and no others at all. One door
+# rather than one and a half (ruling #209).
 PLATFORMS: list[Platform] = [
     Platform.BUTTON,
-    Platform.NUMBER,
     Platform.SENSOR,
     Platform.TODO,
 ]

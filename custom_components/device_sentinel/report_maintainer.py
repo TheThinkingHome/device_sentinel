@@ -167,8 +167,7 @@ class MaintainerReportMixin:
                 )
             lines.append("")
         path = os.path.join(report_directory, REPORT_EPISODES)
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write("\n".join(lines))
+        self._write_file(path, "\n".join(lines))
 
     def _format_maxima_cell(self, daily_maximum_gaps: list[float]) -> str:
         """Render the maxima list newest-first with the trim visible.
@@ -488,8 +487,7 @@ class MaintainerReportMixin:
         lines.append("")
         lines.append(f"{len(rows)} watched devices.")
         path = os.path.join(report_directory, REPORT_TELEMETRY)
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write("\n".join(lines) + "\n")
+        self._write_file(path, "\n".join(lines) + "\n")
         LOGGER.debug("Telemetry report written to %s", path)
 
     def _write_classification(
@@ -598,6 +596,5 @@ class MaintainerReportMixin:
                 lines.append(f"| {entity_id} | {reason} |")
 
         path = os.path.join(report_directory, REPORT_CLASSIFICATION)
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write("\n".join(lines) + "\n")
+        self._write_file(path, "\n".join(lines) + "\n")
         LOGGER.debug("Classification report written to %s", path)
