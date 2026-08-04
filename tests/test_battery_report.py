@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.11.2 (2026-08-03)
+# File: test_battery_report.py, Version: 0.11.10 (2026-08-04)
 
 """The battery report (ruling #194).
 
@@ -21,6 +21,10 @@ from __future__ import annotations
 
 import os
 import re
+
+from unittest.mock import patch
+
+import pytest
 
 from homeassistant.core import HomeAssistant
 
@@ -409,3 +413,92 @@ def _brief(hass) -> str:
         encoding="utf-8",
     ) as handle:
         return handle.read()
+
+
+async def test_the_falling_sensor_is_a_different_set_from_low(
+    hass: HomeAssistant,
+):
+    """Ruling #209. Low is a level that has been crossed; falling is
+    one that is going to be, and the two rarely name the same device.
+
+    The dying cell is at 12 percent and is counted low. The healthy
+    faller is at 82 and is counted by neither, being two months out.
+    A third at 20 percent dropping fast is the case that belongs in
+    falling and nowhere else.
+    """
+    coord = await setup_coordinator(hass)
+    low, _ = register_device(hass, "fs1", "Already Low")
+    soon, _ = register_device(hass, "fs2", "Nearly Out")
+    far, _ = register_device(hass, "fs3", "Months Away")
+    _seed(coord, low.id, DYING, 12.0, low=True)
+    _seed(coord, soon.id,
+          [40.0, 38.5, 37.0, 35.5, 34.0, 32.5, 31.0, 29.5,
+           28.0, 26.5, 25.0, 23.5, 22.0, 20.5, 20.0, 20.0], 20.0)
+    _seed(coord, far.id, HEALTHY, 82.0)
+
+    names = [row["name"] for row in coord.battery_falling_list]
+    assert names == ["Nearly Out"]
+    assert coord.battery_falling_count == 1
+    # Already counted as low, so not counted twice.
+    assert "Already Low" not in names
+    # And the sensor agrees with the report and the brief.
+    row = coord.battery_falling_list[0]
+    assert row["left"] == "about a month"
+    assert row["device_id"] == soon.id
+
+
+async def test_the_report_is_written_whole_or_not_at_all(
+    hass: HomeAssistant,
+):
+    """Ruling #208. A report opened directly leaves a truncated file
+    if the write is interrupted, and a dashboard card would show half
+    a page. Every report is written beside its destination and moved
+    onto it, which is atomic on one filesystem.
+
+    Nothing is lost either way, because reports regenerate. What this
+    buys is that the file on disk is always a whole report.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "aw1", "Atomic Cell")
+    _seed(coord, device.id, HEALTHY, 82.0)
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    before = _page(hass)
+
+    def _boom(path, text):
+        raise OSError("disk full")
+
+    with patch.object(type(coord), "_write_file", staticmethod(_boom)):
+        with pytest.raises(OSError):
+            await hass.async_add_executor_job(
+                coord._write_reports, "manual"
+            )
+
+    # The previous whole report is still there, not a fragment.
+    assert _page(hass) == before
+    # And no temporary file is left lying beside it.
+    directory = hass.config.path(REPORT_WWW_DIR)
+    assert not [n for n in os.listdir(directory) if n.endswith(".tmp")]
+
+
+async def test_an_interrupted_write_leaves_no_fragment(
+    hass: HomeAssistant,
+):
+    """The helper itself, on a write that fails part way."""
+    coord = await setup_coordinator(hass)
+    directory = hass.config.path(REPORT_WWW_DIR)
+    os.makedirs(directory, exist_ok=True)
+    target = os.path.join(directory, "atomic_probe.html")
+
+    with open(target, "w", encoding="utf-8") as handle:
+        handle.write("the whole previous report")
+
+    # A directory where the temporary file wants to be, so the write
+    # fails at the point the old code would already have truncated
+    # the destination.
+    os.makedirs(f"{target}.tmp", exist_ok=True)
+    with pytest.raises(OSError):
+        coord._write_file(target, "half a ")
+
+    with open(target, encoding="utf-8") as handle:
+        assert handle.read() == "the whole previous report"
+    os.rmdir(f"{target}.tmp")

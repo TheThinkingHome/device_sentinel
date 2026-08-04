@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_device_page.py, Version: 0.9.9 (2026-07-26)
+# File: test_device_page.py, Version: 0.11.10 (2026-08-04)
 
 """The device page a person actually reads, and its diagnostics journal.
 
@@ -131,7 +131,13 @@ async def test_every_count_sensor_carries_a_unit(hass: HomeAssistant):
     # The three problem sensors are disabled by default; enable them
     # so their state exists to check.
     reg = er.async_get(hass)
-    for suffix in ("signal_problems", "low_batteries", "frozen_devices"):
+    for suffix in (
+        "signal_rails",
+        "signal_weak",
+        "low_batteries",
+        "falling_batteries",
+        "frozen_devices",
+    ):
         eid = reg.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_{suffix}")
         if eid and reg.async_get(eid).disabled:
             reg.async_update_entity(eid, disabled_by=None)
@@ -144,7 +150,9 @@ async def test_every_count_sensor_carries_a_unit(hass: HomeAssistant):
         "sensor.device_sentinel_signal_tracked": UNIT_SIGNALS,
         "sensor.device_sentinel_battery_tracked": UNIT_BATTERIES,
         "sensor.device_sentinel_device_tracked": UNIT_DEVICES,
-        "sensor.device_sentinel_signal_problems": UNIT_SIGNALS,
+        "sensor.device_sentinel_signal_rails": UNIT_SIGNALS,
+        "sensor.device_sentinel_signal_weak": UNIT_SIGNALS,
+        "sensor.device_sentinel_battery_falling": UNIT_BATTERIES,
         "sensor.device_sentinel_battery_low": UNIT_BATTERIES,
         "sensor.device_sentinel_device_frozen": UNIT_DEVICES,
     }

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.11.0 (2026-08-03)
+# File: test_signal_stats.py, Version: 0.11.10 (2026-08-04)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -38,6 +38,7 @@ from custom_components.device_sentinel.const import (
     BRIEF_TRIGGER,
     CLOCK_FIELDS,
     CONF_SIGNAL_ANOMALY_TRIM,
+    CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_MARGIN,
     CONF_SIGNAL_RED,
     DATA_DEVICES,
@@ -50,6 +51,7 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_SUM,
     DEV_SIGNAL_SUM_SQ,
     DEV_SIGNAL_TODAY_MAX,
+    DOMAIN,
     REPORT_SIGNAL_DWELL,
     REPORT_WWW_DIR,
     SIGNAL_RAIL_LQI,
@@ -59,7 +61,7 @@ from custom_components.device_sentinel.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 
-from .helpers import register_device, setup_coordinator
+from .helpers import register_device, setup_coordinator, setup_entry
 
 
 import glob
@@ -839,3 +841,111 @@ async def test_the_telemetry_report_shows_the_floor_moving(
     assert "86 -14/wk" in sinking_row
     assert "flat" in steady_row
     assert "/wk" not in steady_row
+
+
+async def test_weak_links_are_counted_apart_from_rails(
+    hass: HomeAssistant,
+):
+    """Ruling #211. Signal: Problems counted one kind under a plural
+    name, so a fleet with no rails read zero and looked inert. Adding
+    weak links to it would have made one number mean two things, and
+    the two are not alike: a rail is a broken measurement confirmed
+    over three days, a weak link is a live reading that moves.
+
+    So they are counted apart, the way Battery: Low and Battery:
+    Falling are, and the weak rule is the one the brief and the chart
+    already use.
+    """
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    weak, _ = register_device(hass, "sp1", "Weak Link")
+    fine, _ = register_device(hass, "sp2", "Fine Link")
+    coord.data[DATA_DEVICES][weak.id][DEV_SIGNAL_DWELL_DAILY] = [4.0, 35.0]
+    coord.data[DATA_DEVICES][fine.id][DEV_SIGNAL_DWELL_DAILY] = [0.0, 2.0]
+
+    rows = coord.signal_weak_list
+    assert [row["name"] for row in rows] == ["Weak Link"]
+    assert coord.signal_weak_count == 1
+    assert rows[0]["device_id"] == weak.id
+    assert rows[0]["dwell"] == 35.0
+
+    # And it stays off the list that notifies, which is the whole
+    # point of the split (rulings #59 and #210).
+    assert coord.signal_problem_list == []
+    assert coord.signal_problem_count == 0
+    assert not any(
+        row["device_id"] == weak.id for row in coord._current_problems()
+    )
+
+
+async def test_a_signal_excluded_device_is_not_counted_low(
+    hass: HomeAssistant,
+):
+    """Exclusion suppresses judgment, so it suppresses this too."""
+    coord = await setup_coordinator(
+        hass, {CONF_SIGNAL_RED: 10, CONF_SIGNAL_EXCLUDED_DEVICES: []}
+    )
+    weak, _ = register_device(hass, "sp3", "Excluded Link")
+    coord.data[DATA_DEVICES][weak.id][DEV_SIGNAL_DWELL_DAILY] = [4.0, 35.0]
+    assert coord.signal_weak_count == 1
+
+    hass.config_entries.async_update_entry(
+        coord.entry,
+        options={
+            **coord.entry.options,
+            CONF_SIGNAL_EXCLUDED_DEVICES: [weak.id],
+        },
+    )
+    assert coord.signal_weak_count == 0
+
+
+async def test_a_low_clears_the_moment_its_dwell_falls_back(
+    hass: HomeAssistant,
+):
+    """It is a reading rather than an incident, so it needs no
+    acknowledgment and leaves no record: a dashboard shows the fleet
+    as it stands and the device drops off when it recovers.
+    """
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    device, _ = register_device(hass, "sp4", "Recovering Link")
+    record = coord.data[DATA_DEVICES][device.id]
+
+    record[DEV_SIGNAL_DWELL_DAILY] = [4.0, 35.0]
+    assert coord.signal_weak_count == 1
+
+    record[DEV_SIGNAL_DWELL_DAILY] = [4.0, 35.0, 2.0]
+    assert coord.signal_weak_count == 0
+
+
+async def test_a_railed_device_is_not_counted_twice(
+    hass: HomeAssistant,
+):
+    """A rail dwells below its own line by construction, so without
+    the guard a stuck device would appear in both counts and a person
+    adding them would see one fault as two.
+    """
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    device, _ = register_device(hass, "sp5", "Railed Link")
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_SIGNAL_DAILY_MIN] = [255.0] * 4
+    record[DEV_SIGNAL_DWELL_DAILY] = [4.0, 35.0]
+
+    assert coord.signal_problem_count == 1
+    assert coord.signal_weak_count == 0
+
+
+async def test_the_retired_signal_problems_sensor_is_swept(
+    hass: HomeAssistant,
+):
+    """Signal: Problems became two sensors, so its registry entry is
+    removed rather than left as an unavailable row (ruling #211).
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    entry = await setup_entry(hass)
+    registry = er.async_get(hass)
+    assert (
+        registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_signal_problems"
+        )
+        is None
+    )

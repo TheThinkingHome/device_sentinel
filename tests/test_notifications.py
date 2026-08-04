@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.9.10 (2026-07-27)
+# File: test_notifications.py, Version: 0.11.10 (2026-08-04)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -619,7 +619,13 @@ async def test_problem_counts_are_disabled_by_default(hass: HomeAssistant):
     appear until a person enables them."""
     entry = await setup_entry(hass)
     reg = er.async_get(hass)
-    for suffix in ("signal_problems", "low_batteries", "frozen_devices"):
+    for suffix in (
+        "signal_rails",
+        "signal_weak",
+        "low_batteries",
+        "falling_batteries",
+        "frozen_devices",
+    ):
         eid = reg.async_get_entity_id(
             "sensor", DOMAIN, f"{entry.entry_id}_{suffix}"
         )

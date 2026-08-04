@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.11.8 (2026-08-04)
+# File: test_hardening.py, Version: 0.11.10 (2026-08-04)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -28,6 +28,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -527,18 +528,18 @@ async def test_the_battery_screen_carries_both_questions(
     assert labels[CONF_BATTERY_DAYS] == "Days Till Empty"
 
 
-async def test_both_doors_offer_the_same_range(hass: HomeAssistant):
-    """Ruling #205. The battery threshold has two ways in, the
-    options dialog and a dashboard slider, and the file's own
-    docstring promised they stay in step. They stayed in step by
-    luck: the range was written 1 to 99 in each, with nothing
-    shared, so editing one would have offered the same setting under
-    two different limits.
-    """
-    from custom_components.device_sentinel.number import (
-        DeviceSentinelBatteryThresholdNumber,
-    )
+async def test_the_threshold_range_comes_from_the_constants(
+    hass: HomeAssistant,
+):
+    """Ruling #205, narrowed by #209. The battery threshold once had
+    two ways in, the options dialog and a dashboard slider, each
+    carrying its own copy of the range 1 to 99 with nothing shared.
+    They stayed in step by luck.
 
+    The slider went with the number platform in 0.11.10, so there is
+    one door now, and the constants stay: a named range is checkable
+    and a literal buried in a selector is not.
+    """
     entry = await setup_entry(hass)
     result = await _open(hass, entry, "battery")
     dialog = next(
@@ -548,6 +549,24 @@ async def test_both_doors_offer_the_same_range(hass: HomeAssistant):
     assert dialog.config["min"] == LOW_THRESHOLD_MIN
     assert dialog.config["max"] == LOW_THRESHOLD_MAX
 
-    slider = DeviceSentinelBatteryThresholdNumber(entry.runtime_data)
-    assert slider.native_min_value == LOW_THRESHOLD_MIN
-    assert slider.native_max_value == LOW_THRESHOLD_MAX
+
+async def test_the_number_platform_is_gone(hass: HomeAssistant):
+    """One door rather than one and a half (ruling #209). The device
+    page carried a slider for the threshold and nothing for the
+    setting beside it, which is a page half describing a screen that
+    describes itself.
+    """
+    from custom_components.device_sentinel import PLATFORMS
+
+    assert Platform.NUMBER not in PLATFORMS
+    entry = await setup_entry(hass)
+    assert hass.states.get("number.device_sentinel_battery_threshold") is None
+    # And the registry entry is swept, so no unavailable row is left
+    # behind on an install that had it.
+    registry = er.async_get(hass)
+    assert (
+        registry.async_get_entity_id(
+            "number", DOMAIN, f"{entry.entry_id}_battery_low_threshold"
+        )
+        is None
+    )

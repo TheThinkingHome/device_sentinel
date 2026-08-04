@@ -251,23 +251,34 @@ async def test_number_entity_sets_threshold_live(hass: HomeAssistant):
     await hass.async_block_till_done()
     assert coord.battery_low_count == 0
 
-    slider = hass.states.get(
-        "number.device_sentinel_battery_threshold"
-    )
-    assert slider is not None
-    assert float(slider.state) == 20.0
-
-    await hass.services.async_call(
-        "number", "set_value",
-        {
-            "entity_id": "number.device_sentinel_battery_threshold",
-            "value": 35,
-        },
-        blocking=True,
+    # The dashboard slider was retired with the number platform in
+    # 0.11.10 (ruling #209), so the options dialog is the one door.
+    hass.config_entries.async_update_entry(
+        coord.entry,
+        options={**coord.entry.options, CONF_LOW_THRESHOLD: 35},
     )
     await hass.async_block_till_done()
     assert coord.low_threshold == 35.0
     assert coord.battery_low_count == 1
+
+
+async def test_the_retired_slider_is_swept_from_the_registry(
+    hass: HomeAssistant,
+):
+    """Deleting the platform does not remove the registry entry, so
+    an install that had the slider would keep an unavailable row on
+    the device page. It is swept at setup like any retired surface.
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    entry = await setup_entry(hass)
+    registry = er.async_get(hass)
+    assert (
+        registry.async_get_entity_id(
+            "number", DOMAIN, f"{entry.entry_id}_battery_low_threshold"
+        )
+        is None
+    )
 
 
 # ---------------------------------------- the discharge recorder (#62)
