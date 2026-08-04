@@ -66,10 +66,15 @@ from custom_components.device_sentinel.const import (
     EPISODE_ENDED_REBOOT,
     EPISODE_ENDED_RESUMED,
     EPISODE_OPEN_SHARE,
+    EP_AT,
+    EP_BASIS,
+    EP_DEVICE_ID,
     EP_ENDED,
     EP_LAG,
     EP_LEARNED,
     EP_NAME,
+    EP_SINCE,
+    EP_WINDOW,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     FREEZE_DELTA_HIGH_HR_MAX,
@@ -83,7 +88,7 @@ from custom_components.device_sentinel.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 
-from tests.helpers import setup_coordinator, setup_entry
+from tests.helpers import register_device, setup_coordinator, setup_entry
 
 OPEN_TAG = "[\u25cb open]"
 ACKED_TAG = "[\u2713 acknowledged]"
@@ -927,3 +932,64 @@ async def test_below_floor_is_struck_but_equal_is_not(hass: HomeAssistant):
     assert "**112**" in row     # earliest 112: bold
     # The other 112 is plain, not struck (equal to the floor).
     assert "~~112~~" not in row
+
+
+async def test_the_episodes_header_says_when_the_newest_one_was(
+    hass: HomeAssistant,
+):
+    """Ruling #203. A quiet fleet can go days without a device passing
+    its own threshold, and the file then reads as though the recorder
+    stopped. On the reference fleet the last thing written was a
+    mesh-wide event that produced most of the file inside one hour,
+    which made four ordinary quiet days look like a fault.
+
+    The count alone cannot tell an empty stretch from a broken
+    recorder. The date can.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "ep1", "Quiet Device")
+    since = dt_util.utcnow().timestamp() - 3600.0
+    coord.data[DATA_EPISODES] = [
+        {
+            EP_DEVICE_ID: device.id,
+            EP_NAME: "Quiet Device",
+            EP_SINCE: since,
+            EP_BASIS: 600.0,
+            EP_WINDOW: 2400.0,
+            EP_ENDED: "resumed",
+            EP_AT: since + 1800.0,
+            EP_LAG: None,
+            EP_LEARNED: "yes",
+        }
+    ]
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    with open(
+        hass.config.path("device_sentinel/silence_episodes.md"),
+        encoding="utf-8",
+    ) as handle:
+        text = handle.read()
+
+    assert (
+        f"1 episode(s), 0 still open, newest "
+        f"{coord._episode_stamp(since)}." in text
+    )
+
+
+async def test_an_empty_record_names_no_newest(
+    hass: HomeAssistant,
+):
+    """Nothing to be newest, so the clause is absent rather than
+    printed with a blank after it."""
+    coord = await setup_coordinator(hass)
+    coord.data[DATA_EPISODES] = []
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    with open(
+        hass.config.path("device_sentinel/silence_episodes.md"),
+        encoding="utf-8",
+    ) as handle:
+        text = handle.read()
+
+    assert "0 episode(s), 0 still open." in text
+    assert "newest" not in text
