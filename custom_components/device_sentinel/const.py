@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.11.8 (2026-08-04)
+# File: const.py, Version: 0.11.9 (2026-08-04)
 
 """Constants for the Device Sentinel integration."""
 
@@ -243,56 +243,6 @@ TAINT_FLOOR_MINUTES_MIN = 1
 TAINT_FLOOR_MINUTES_MAX = 60
 # Shares reuse the existing SHARE_PCT bounds (10 to 90, step 10).
 
-# What a statistics epoch keeps. The wipe is everything else, taken
-# from the record schema, so a field added later is wiped by default
-# and there is no second list to forget (ruling #204).
-#
-# Seven fields are wiped: the rolling maxima, today's maximum, the
-# event count, the taint flag, the freeze verdict with its stamp, and
-# the daily dwell. The rhythm, the conclusion drawn from it, and the
-# one series that is a verdict rather than a measurement.
-#
-# Dwell is the exception that had to be argued. It looks like the
-# signal statistics beside it and behaves like the freeze verdict: it
-# accrues in real time against the line as that line stands at each
-# second, then rolls into a daily figure. So a change to the margin
-# (#171), the ceiling (#193) or the window (#196) leaves every figure
-# already recorded measured against a line that no longer exists, and
-# it cannot be recomputed, because the readings behind it are gone.
-# It was in the kept set on the first cut of this list, which would
-# have meant an epoch bump sparing the single series most likely to
-# need clearing.
-#
-# Everything else is kept, and the reason is that nothing is
-# recoverable. There is no raw layer beneath these records: readings
-# are folded into a daily figure as they arrive and the readings
-# themselves are never stored, so a wiped series cannot be rebuilt
-# from anything. The signal statistics are what the Bayesian
-# successor is accumulating (#172) and what the good-state ceiling
-# already judges against (#193); the battery series is a ninety-day
-# soak that cannot be re-collected faster than it was collected. A
-# rhythm rule changing is no reason to destroy either.
-EPOCH_KEPT = (
-    "last_activity",
-    "first_observed",
-    "signal_value",
-    "signal_today_min",
-    "signal_daily_min",
-    "signal_below_since",
-    "signal_below_today_seconds",
-    "signal_last_change",
-    "signal_sum",
-    "signal_sum_sq",
-    "signal_count",
-    "signal_today_max",
-    "signal_daily_mean",
-    "signal_daily_sd",
-    "signal_daily_max",
-    "battery_low",
-    "battery_since",
-    "battery_value",
-    "battery_daily_value",
-)
 
 # Statistics epoch: when storage carries an older epoch, learned
 # statistics (daily maxima, event counts, signal minima) are wiped
@@ -662,6 +612,65 @@ DEV_BATTERY_DAILY = "battery_daily_value"
 # "how long".
 DEV_FROZEN_CATEGORY = "frozen_category"
 DEV_FROZEN_SINCE = "frozen_since"
+
+
+# What a statistics epoch keeps. The wipe is everything else, taken
+# from the record schema, so a field added later is wiped by default
+# and there is no second list to forget (ruling #204).
+#
+# Seven fields are wiped: the rolling maxima, today's maximum, the
+# event count, the taint flag, the freeze verdict with its stamp, and
+# the daily dwell. The rhythm, the conclusion drawn from it, and the
+# one series that is a verdict rather than a measurement.
+#
+# Dwell is the exception that had to be argued. It looks like the
+# signal statistics beside it and behaves like the freeze verdict: it
+# accrues in real time against the line as that line stands at each
+# second, then rolls into a daily figure. So a change to the margin
+# (#171), the ceiling (#193) or the window (#196) leaves every figure
+# already recorded measured against a line that no longer exists, and
+# it cannot be recomputed, because the readings behind it are gone.
+# It was in the kept set on the first cut of this list, which would
+# have meant an epoch bump sparing the single series most likely to
+# need clearing.
+#
+# Everything else is kept, and the reason is that nothing is
+# recoverable. There is no raw layer beneath these records: readings
+# are folded into a daily figure as they arrive and the readings
+# themselves are never stored, so a wiped series cannot be rebuilt
+# from anything. The signal statistics are what the Bayesian
+# successor is accumulating (#172) and what the good-state ceiling
+# already judges against (#193); the battery series is a ninety-day
+# soak that cannot be re-collected faster than it was collected. A
+# rhythm rule changing is no reason to destroy either.
+# Named by constant rather than by literal, as CLOCK_FIELDS is. The
+# first cut of this tuple spelled the stored keys out as strings,
+# which works and is proven by the partition test, but it was the
+# only place in the package naming a stored field by literal: a
+# constant's value changing would have moved CLOCK_FIELDS and left
+# this behind, and the failure would have been a field quietly
+# surviving a wipe (ruling #207).
+EPOCH_KEPT = (
+    DEV_LAST_ACTIVITY,
+    DEV_FIRST_OBSERVED,
+    DEV_SIGNAL_VALUE,
+    DEV_SIGNAL_TODAY_MIN,
+    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_BELOW_SINCE,
+    DEV_SIGNAL_BELOW_TODAY,
+    DEV_SIGNAL_LAST_CHANGE,
+    DEV_SIGNAL_SUM,
+    DEV_SIGNAL_SUM_SQ,
+    DEV_SIGNAL_COUNT,
+    DEV_SIGNAL_TODAY_MAX,
+    DEV_SIGNAL_DAILY_MEAN,
+    DEV_SIGNAL_DAILY_SD,
+    DEV_SIGNAL_DAILY_MAX,
+    DEV_BATTERY_LOW,
+    DEV_BATTERY_SINCE,
+    DEV_BATTERY_VALUE,
+    DEV_BATTERY_DAILY,
+)
 
 # The hot set, read from the code rather than assumed: these are the
 # fields _record_activity and the signal path write on an ordinary

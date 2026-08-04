@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.11.8 (2026-08-04)
+# File: coordinator.py, Version: 0.11.9 (2026-08-04)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -364,12 +364,18 @@ class DeviceSentinelCoordinator(
         for record in engine_items:
             record.setdefault(TODO_KINDS, {})
             record.setdefault(TODO_ACKED_AT, None)
-        # The hot file is merged here, and the position is deliberate.
-        # Six of the nine clock fields are exactly what the statistics
-        # epoch below wipes, so merging after it would hand those
-        # fields straight back and a declared epoch would quietly fail
-        # to take. Merging first means the wipe still has the last
-        # word.
+        # The hot file is merged here, and the position is
+        # deliberate. Three of the thirteen clock fields are among
+        # what the statistics epoch below wipes, so merging after it
+        # would hand those fields straight back and a declared epoch
+        # would quietly fail to take. Merging first means the wipe
+        # still has the last word.
+        #
+        # The count was six of nine when this was written and neither
+        # number was updated as clock fields were added or as the
+        # wipe was narrowed (ruling #207). The ordering it argues for
+        # was correct throughout and still is: one field overlapping
+        # would be reason enough.
         hot_payload = await self._clock_store.async_load()
         merged = self._merge_clocks(loaded, hot_payload)
         self._note_downtime(loaded, hot_payload)

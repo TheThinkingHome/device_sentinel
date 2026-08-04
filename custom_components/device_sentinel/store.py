@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.11.5 (2026-08-04)
+# File: store.py, Version: 0.11.9 (2026-08-04)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -115,7 +115,7 @@ class StorageMixin:
 
         The clock fields are stripped out of the main file here
         (ruling #101). Once the backup taken before that strip is in
-        place, the nine clock fields stay out of the main file: they
+        place, the clock fields stay out of the main file: they
         are the hot file's job, written every interval, and the copies
         in the main file existed only as a rollback net. The strip is
         a filtered view built for the write rather than a mutation,

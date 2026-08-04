@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.11.8 (2026-08-04)
+# File: diagnostics.py, Version: 0.11.9 (2026-08-04)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -274,7 +274,7 @@ async def async_get_config_entry_diagnostics(
         # (ruling #120).
         # The storage split, so its state travels with an issue
         # report rather than needing a terminal. The split keeps the
-        # nine fast-changing clock fields in a small companion file
+        # fast-changing clock fields in a small companion file
         # written on every routine save, and everything learned in the
         # main file written only when it changes (arrived in 0.8.8,
         # ruling #101).
