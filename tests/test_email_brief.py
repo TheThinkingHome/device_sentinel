@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_email_brief.py, Version: 0.10.22 (2026-08-03)
+# File: test_email_brief.py, Version: 0.11.3 (2026-08-04)
 
 """The incident log and the daily brief: the memory and the report.
 
@@ -1759,7 +1759,7 @@ async def test_the_emailed_chart_link_is_absolute_in_the_page(
 # ---------------------------------- the live copy carries a full day
 
 async def test_the_live_brief_covers_a_rolling_day(
-    hass: HomeAssistant,
+    hass: HomeAssistant, freezer,
 ):
     """Ruling #187, found on the live fleet on 2026-08-03.
 
@@ -1772,12 +1772,21 @@ async def test_the_live_brief_covers_a_rolling_day(
     An incident from yesterday afternoon is the test: outside the
     brief-hour window, inside the rolling one.
     """
+    # The clock is pinned. As first written this test placed the
+    # incident an hour before the brief hour and asserted it was
+    # inside a rolling day, which is only true while the brief hour
+    # is recent: run late enough in the day the brief hour is nearly
+    # twenty-four hours back and an hour before it is outside the
+    # window. It passed at build time and failed hours later on
+    # nothing but the wall clock (ruling #198).
+    freezer.move_to("2026-08-04T12:00:00-05:00")
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "rw1", "Rolling Device")
     now = dt_util.utcnow().timestamp()
     brief_start = coord._brief_window_start(now)
     # Comfortably before the brief hour, comfortably inside a day.
     when = brief_start - 3600.0
+    assert now - brief_start < 82800.0, "the pin must leave room"
     assert now - when < 86400.0
     coord.data[DATA_INCIDENTS] = [
         {

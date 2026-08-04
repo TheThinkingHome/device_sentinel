@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.10.23 (2026-08-03)
+# File: test_hardening.py, Version: 0.11.3 (2026-08-04)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -21,8 +21,12 @@ render as a create-this-page screen rather than an error. This file
 holds the audit fixes, the two cleanups, and the wiki links.
 """
 
+import json
+import os
 import re
 from types import SimpleNamespace
+
+import pytest
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -36,6 +40,8 @@ from custom_components.device_sentinel.coordinator import (
     _new_device_record,
 )
 from custom_components.device_sentinel.const import (
+    CONF_BATTERY_DAYS,
+    CONF_LOW_THRESHOLD,
     DEAD_ENTITY_SENTINEL_TYPES,
     DEV_DAILY_MAX,
     DEV_FROZEN_CATEGORY,
@@ -429,3 +435,91 @@ def test_the_logger_uses_the_namespace_home_assistant_targets():
     from custom_components.device_sentinel.const import LOGGER
 
     assert LOGGER.name == "custom_components.device_sentinel"
+
+
+# ------------------------ every screen against its own strings (#198)
+
+CONFIG_STEPS = (
+    "battery",
+    "signal",
+    "freeze",
+    "exclusions",
+    "notifications",
+    "advanced",
+)
+
+
+def _strings() -> dict:
+    """Return strings.json, read from the shipped file."""
+    path = os.path.join(
+        "custom_components", "device_sentinel", "strings.json"
+    )
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+@pytest.mark.parametrize("step", CONFIG_STEPS)
+async def test_every_screen_offers_exactly_what_it_describes(
+    hass: HomeAssistant, step: str
+):
+    """The gate 0.11.3 did not have (ruling #198).
+
+    Days Till Empty was added to the schema, to strings.json and to
+    the translation, and the whole suite passed while the field was
+    absent from the running system, because config_flow.py had never
+    reached the repository. Five hundred and thirty-nine tests could
+    not see that the setting a person came to the screen for was not
+    on it.
+
+    So the screen is checked against its own words, both directions.
+    A field with no label renders as a raw key, and a label with no
+    field is a setting somebody was told about and cannot find.
+    """
+    entry = await setup_entry(hass)
+    result = await _open(hass, entry, step)
+    offered = {str(key) for key in result["data_schema"].schema}
+
+    described = _strings()["options"]["step"][step]
+    named = set(described.get("data", {})) | set(
+        described.get("sections", {})
+    )
+
+    assert offered == named, {
+        "on the screen, not in strings": sorted(offered - named),
+        "in strings, not on the screen": sorted(named - offered),
+    }
+
+
+@pytest.mark.parametrize("step", CONFIG_STEPS)
+async def test_every_field_explains_itself(hass: HomeAssistant, step: str):
+    """A label alone is a name; the description is what makes a
+    setting usable without opening the wiki (ruling #50 as replaced
+    by #192). Sections carry their own, so they are walked too.
+    """
+    described = _strings()["options"]["step"][step]
+    for name in described.get("data", {}):
+        assert name in described.get("data_description", {}), (step, name)
+    # A section explains itself once rather than field by field: Start
+    # and End under Quiet Hours need a label and nothing more, and a
+    # paragraph on each would be noise. What must not happen is a
+    # section that explains nothing at all.
+    for name, section in described.get("sections", {}).items():
+        assert section.get("name"), (step, name)
+        assert section.get("data_description"), (step, name)
+
+
+async def test_the_battery_screen_carries_both_questions(
+    hass: HomeAssistant,
+):
+    """Named rather than left to the parametrized sweep, because this
+    is the field that went missing and the one a person opens the
+    screen to set (ruling #198).
+    """
+    entry = await setup_entry(hass)
+    result = await _open(hass, entry, "battery")
+    offered = [str(key) for key in result["data_schema"].schema]
+
+    assert offered[0] == CONF_LOW_THRESHOLD
+    assert offered[1] == CONF_BATTERY_DAYS
+    labels = _strings()["options"]["step"]["battery"]["data"]
+    assert labels[CONF_BATTERY_DAYS] == "Days Till Empty"
