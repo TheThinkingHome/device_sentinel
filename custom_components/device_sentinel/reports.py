@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.11.2 (2026-08-03)
+# File: reports.py, Version: 0.11.3 (2026-08-03)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -38,14 +38,15 @@ from .const import (
     ACTION_DELETED,
     ACTION_READDED,
     ACTION_UNACKNOWLEDGED,
-    BATTERY_BRIEF_DAYS,
-    BATTERY_DAYS_URGENT,
     BATTERY_FALLING_SLOPE,
+    BATTERY_LEFT_BANDS,
+    BATTERY_LEFT_BEYOND,
     BATTERY_READABLE_MAX,
     BATTERY_SLOPE_DAYS,
     BRIEF_KEEP_DAYS,
     BRIEF_LIVE_WINDOW_SECONDS,
     BRIEF_TRIGGER,
+    CONF_BATTERY_DAYS,
     CONF_REMINDER_TIME,
     CONF_TAINT_FLOOR,
     CONF_TAINT_SHARE,
@@ -54,6 +55,7 @@ from .const import (
     DATA_EPISODES,
     DATA_INCIDENTS,
     DATA_SYSTEM_EVENTS,
+    DEFAULT_BATTERY_DAYS,
     DEFAULT_REMINDER_TIME,
     DEFAULT_TAINT_FLOOR_MINUTES,
     DEFAULT_TAINT_SHARE_PCT,
@@ -108,9 +110,11 @@ from .const import (
     REPORT_TELEMETRY,
     REPORT_WWW_DIR,
     SIGNAL_ARMING_DAYS,
+    SIGNAL_DAYS_KEEP,
     SIGNAL_GREEN_CEILING,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
+    SIGNAL_TRIM_PER_WEEK,
     STARTUP_GRACE_SECONDS,
     STORM_DEVICE_THRESHOLD,
     STORM_EXEMPT_PER_HOUR,
@@ -525,6 +529,67 @@ class ReportWritingMixin:
             "absent": sorted(absent, key=lambda r: r["name"] or ""),
         }
 
+    def _floor_drift_cell(self, record: dict[str, Any]) -> str:
+        """Return how fast this device's floor is moving, per week.
+
+        The floor is what dwell is measured against, so a floor that
+        moves makes dwell unreadable across days: a reading of ten
+        percent last week and ten this week mean different things if
+        the line moved between them. On the reference fleet forty-three
+        of seventy-nine floors were moving a point a week or more and
+        one was moving thirty-four, which is the whole reason dwell
+        spiked and collapsed rather than trending (ruling #196).
+
+        Per week rather than per day, because the floor is a trimmed
+        minimum over thirty days and a daily figure would be mostly
+        rounding. Points rather than percent, because neither LQI nor
+        dBm is a percentage.
+        """
+        lows = [
+            value
+            for value in (record.get(DEV_SIGNAL_DAILY_MIN) or [])
+            if value not in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
+        ]
+        if len(lows) < SIGNAL_TRIM_PER_WEEK + 2:
+            return "-"
+        floors: list[float] = []
+        for end in range(len(lows) - SIGNAL_TRIM_PER_WEEK, len(lows) + 1):
+            window = lows[:end][-SIGNAL_DAYS_KEEP:]
+            if not window:
+                continue
+            trim = self._signal_effective_k(len(window))
+            floors.append(sorted(window)[min(trim, len(window) - 1)])
+        if len(floors) < 3:
+            return "-"
+        weekly = self._battery_slope(floors) * SIGNAL_TRIM_PER_WEEK
+        if abs(weekly) < 0.5:
+            return f"{floors[-1]:g} flat"
+        return f"{floors[-1]:g} {weekly:+.0f}/wk"
+
+    def _battery_days(self) -> float:
+        """Return how far ahead a falling cell is called out."""
+        return float(
+            self.entry.options.get(
+                CONF_BATTERY_DAYS, DEFAULT_BATTERY_DAYS
+            )
+        )
+
+    @staticmethod
+    def battery_time_left(days: float) -> str:
+        """Return how long is left, in words rather than a number.
+
+        The projection moved from twelve days to seven in a single
+        afternoon on the cell that proved it, about forty percent. The
+        same relative error on a device reading 1122 days puts the
+        truth between 670 and 1570, so the number claims a precision
+        it does not have while the words do not (ruling #197). Bands
+        widen with distance, which is how the error behaves.
+        """
+        for limit, words in BATTERY_LEFT_BANDS:
+            if days <= limit:
+                return words
+        return BATTERY_LEFT_BEYOND
+
     def _battery_brief_rows(self) -> list[dict[str, Any]]:
         """Return the falling cells close enough for the brief.
 
@@ -538,7 +603,7 @@ class ReportWritingMixin:
         return [
             row
             for row in self._battery_rows()["falling"]
-            if row["days"] <= BATTERY_BRIEF_DAYS and not row["low"]
+            if row["days"] <= self._battery_days() and not row["low"]
         ]
 
     def _battery_bank_svg(self, rows: list[dict[str, Any]]) -> str:
@@ -611,13 +676,14 @@ class ReportWritingMixin:
 
         if groups["falling"]:
             falling_html = ["<table><tr><th>DEVICE</th><th>LEVEL</th>"
-                            "<th>RATE</th><th>DAYS LEFT</th></tr>"]
+                            "<th>RATE</th><th>LEFT</th></tr>"]
+            horizon = self._battery_days()
             for row in groups["falling"]:
-                urgent = row["days"] <= BATTERY_DAYS_URGENT
+                left = self.battery_time_left(row["days"])
                 cell = (
-                    f"<td style='color:#D03B3B'>{row['days']:.0f}</td>"
-                    if urgent
-                    else f"<td>{row['days']:.0f}</td>"
+                    f"<td style='color:#D03B3B'>{left}</td>"
+                    if row["days"] <= horizon
+                    else f"<td>{left}</td>"
                 )
                 falling_html.append(
                     f"<tr><td>{escape(row['name'] or '')}</td>"
@@ -704,7 +770,9 @@ threshold.</p>
 <h2>Falling</h2>
 <p>Sorted by how long is left, which is the order that matters. The
 rate is the median daily change over the last {BATTERY_SLOPE_DAYS}
-days; days left is the current level divided by it.</p>
+days, and how long is left is the current level divided by it. It is
+said in words rather than a count of days on purpose: the projection
+moves, and it moves further the further out it reaches.</p>
 {falling_block}
 <h2>Under the Threshold</h2>
 {low_block}
@@ -1063,11 +1131,14 @@ with a Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         describe the values, not the positions the trim happened to
         pick.
         """
-        # The series holds ninety days; this column shows the same
-        # fortnight it always has, so the report is unchanged by the
-        # longer retention setting.
+        # The column shows exactly the window the floor is computed
+        # over, which is thirty days rather than the fortnight it was
+        # (ruling #196). Showing fourteen while judging on thirty
+        # would leave the marked value outside the cell on any device
+        # whose worst days sit further back, so a reader would see
+        # every reading struck and none marked.
         stored = list(record.get(DEV_SIGNAL_DAILY_MIN) or [])[
-            -DAILY_MAX_KEEP:
+            -SIGNAL_DAYS_KEEP:
         ]
         if not stored:
             return "-"
@@ -1330,9 +1401,9 @@ with a Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
             "",
             f"| DEVICE (INTEGRATION) | STATUS | GAPS (K={TRIM_TOP_K}) | "
             f"CLOCK | EVENTS | SIGNAL ({self._signal_trim_label()}) | "
-            f"DWELL% | MEAN\u00b1SD | "
+            f"FLOOR/WK | DWELL% | MEAN\u00b1SD | "
             f"BAT LEVEL (floor {self.low_threshold:g}%) |",
-            "|---|---|---|---|---|---|---|---|---|",
+            "|---|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
         for device_id, record in self.data[DATA_DEVICES].items():
@@ -1356,6 +1427,12 @@ with a Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
                     else "clock",
                     int(record.get(DEV_EVENT_COUNT, 0)),
                     self._format_signal_lows_cell(record),
+                    # Computed here rather than at render, because the
+                    # rows are collected, sorted, and only then
+                    # written: a call in the second loop reads
+                    # whatever record the first loop left behind and
+                    # prints one device's figure on every row.
+                    self._floor_drift_cell(record),
                     list(record.get(DEV_SIGNAL_DWELL_DAILY) or [])[
                         -DAILY_MAX_KEEP:
                     ],
@@ -1378,6 +1455,7 @@ with a Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
             clock_source,
             event_count,
             lows_cell,
+            floor_drift,
             dwell_daily,
             mean_cell,
             battery_cell,
@@ -1402,6 +1480,7 @@ with a Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
                 f"| {device_label} | {status} | "
                 f"{maxima_cell} | "
                 f"{clock_source} | {event_count} | {signal_cell} | "
+                f"{floor_drift} | "
                 f"{dwell_text} | {mean_cell} | {battery_cell} |"
             )
         lines.append("")
@@ -1992,7 +2071,7 @@ with a Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
         fallers = self._battery_brief_rows()
         if fallers:
             named = ", ".join(
-                f"{row['name']} ({row['days']:.0f} days)"
+                f"{row['name']} ({self.battery_time_left(row['days'])})"
                 for row in fallers[:5]
             )
             lines += [
