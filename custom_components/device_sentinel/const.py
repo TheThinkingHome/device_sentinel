@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.11.3 (2026-08-03)
+# File: const.py, Version: 0.11.8 (2026-08-04)
 
 """Constants for the Device Sentinel integration."""
 
@@ -122,12 +122,6 @@ TAINT_BRIDGE_DOWN = "bridge down"
 # nothing on disk can tell them apart. It outranks a bridge outage,
 # since a bridge that went quiet during one went quiet because of it.
 TAINT_UNCLEAN_SHUTDOWN = "unclean shutdown"
-TAINT_REASONS = (
-    TAINT_UNAVAILABLE,
-    TAINT_UNKNOWN,
-    TAINT_BRIDGE_DOWN,
-    TAINT_UNCLEAN_SHUTDOWN,
-)
 
 # The sensinel_type stem for a bridge sensor; the stack is appended so
 # each stack's sensor has a stable unique id.
@@ -201,8 +195,6 @@ DATA_SAVED_AT = "saved_at"
 DATA_CLEAN_STOP = "clean_stop"
 
 
-
-
 # Storage field names.
 DATA_FIRST_INSTALLED = "first_installed"
 DATA_SETUP_COUNT = "setup_count"
@@ -243,22 +235,6 @@ STORM_RELEASE_SECONDS = 5.0
 STORM_EXEMPT_PER_HOUR = 10
 STORM_HISTORY_SECONDS = 3600
 
-# Taint debounce: an unavailable or unknown shorter than this is a
-# hiccup, not an outage; it sets no taint, so the silence around it
-# is still learned, while a long absence is real downtime and its gap
-# is discarded (ruling #137). The threshold is per device, floor plus
-# a share of the device's freeze window, so a fleet whose windows
-# range from seconds to hours is fitted rather than held to one
-# number. The floor is deliberate even though a global minimum was
-# refused under the settle delay (ruling #127): a blip is noise rather
-# than a share of anything the device earned, so a minimum below which
-# an absence cannot count as real is not the fixed number that ruling
-# turned down. An
-# unarmed device with no learned window falls back to the floor
-# alone. Starting values are soak-settled tunables, exposed on the
-# Advanced screen.
-TAINT_DEBOUNCE_FLOOR_SECONDS = 600
-TAINT_DEBOUNCE_SHARE_PCT = 10
 CONF_TAINT_FLOOR = "taint_floor_minutes"
 CONF_TAINT_SHARE = "taint_share_pct"
 DEFAULT_TAINT_FLOOR_MINUTES = 10
@@ -266,6 +242,57 @@ DEFAULT_TAINT_SHARE_PCT = 10
 TAINT_FLOOR_MINUTES_MIN = 1
 TAINT_FLOOR_MINUTES_MAX = 60
 # Shares reuse the existing SHARE_PCT bounds (10 to 90, step 10).
+
+# What a statistics epoch keeps. The wipe is everything else, taken
+# from the record schema, so a field added later is wiped by default
+# and there is no second list to forget (ruling #204).
+#
+# Seven fields are wiped: the rolling maxima, today's maximum, the
+# event count, the taint flag, the freeze verdict with its stamp, and
+# the daily dwell. The rhythm, the conclusion drawn from it, and the
+# one series that is a verdict rather than a measurement.
+#
+# Dwell is the exception that had to be argued. It looks like the
+# signal statistics beside it and behaves like the freeze verdict: it
+# accrues in real time against the line as that line stands at each
+# second, then rolls into a daily figure. So a change to the margin
+# (#171), the ceiling (#193) or the window (#196) leaves every figure
+# already recorded measured against a line that no longer exists, and
+# it cannot be recomputed, because the readings behind it are gone.
+# It was in the kept set on the first cut of this list, which would
+# have meant an epoch bump sparing the single series most likely to
+# need clearing.
+#
+# Everything else is kept, and the reason is that nothing is
+# recoverable. There is no raw layer beneath these records: readings
+# are folded into a daily figure as they arrive and the readings
+# themselves are never stored, so a wiped series cannot be rebuilt
+# from anything. The signal statistics are what the Bayesian
+# successor is accumulating (#172) and what the good-state ceiling
+# already judges against (#193); the battery series is a ninety-day
+# soak that cannot be re-collected faster than it was collected. A
+# rhythm rule changing is no reason to destroy either.
+EPOCH_KEPT = (
+    "last_activity",
+    "first_observed",
+    "signal_value",
+    "signal_today_min",
+    "signal_daily_min",
+    "signal_below_since",
+    "signal_below_today_seconds",
+    "signal_last_change",
+    "signal_sum",
+    "signal_sum_sq",
+    "signal_count",
+    "signal_today_max",
+    "signal_daily_mean",
+    "signal_daily_sd",
+    "signal_daily_max",
+    "battery_low",
+    "battery_since",
+    "battery_value",
+    "battery_daily_value",
+)
 
 # Statistics epoch: when storage carries an older epoch, learned
 # statistics (daily maxima, event counts, signal minima) are wiped
@@ -512,7 +539,6 @@ REPORT_SIGNAL_DWELL_PREFIX = "signal_dwell_"
 # dated record, the undated current file, and the emailed body, so
 # the three cannot drift (ruling #179).
 REPORT_BRIEF_HTML = "daily_brief.html"
-REPORT_BRIEF_HTML_URL = "/local/device_sentinel/daily_brief.html"
 REPORT_SIGNAL_DWELL_URL = "/local/device_sentinel/signal_dwell.html"
 # The battery report. A third page for a person, beside the brief and
 # the dwell chart, answering what a threshold alone cannot: not which
@@ -544,10 +570,6 @@ BATTERY_FALLING_SLOPE = -0.05
 # distorts any summary of the bank, so it is named as unreadable
 # instead of counted as very healthy.
 BATTERY_READABLE_MAX = 100.0
-# Where the projection is worth reading in red. Not an alarm: the
-# projection moves as the series grows and nothing notifies from it
-# until a soak says how much it moves (ruling #194).
-BATTERY_DAYS_URGENT = 21.0
 # How near the end a cell has to be before the daily brief names it.
 # The report lists every cell that is measurably falling, which on a
 # real fleet is a third of it, most of them a season away. The brief
@@ -604,6 +626,14 @@ TRIM_MIN_SAMPLES = 7
 # soak shows flapping.
 CONF_LOW_THRESHOLD = "low_threshold"
 DEFAULT_LOW_THRESHOLD = 20
+# The range both doors offer. Written twice and shared nowhere until
+# 0.11.8: the options dialog and the dashboard slider each carried
+# their own copy, so the one setting could have been offered with two
+# different ranges the moment either was edited. Every range added
+# since this one has had a constant; this one predates the habit
+# (ruling #205).
+LOW_THRESHOLD_MIN = 1
+LOW_THRESHOLD_MAX = 99
 BATTERY_CLEAR_MARGIN = 2
 
 # Per-device battery storage fields.
@@ -683,10 +713,12 @@ SIGNAL_ARMING_DAYS = 7
 # living at its lows (the anomaly). One rule for both scales: below
 # is below, whether the number is an LQI index or negative dBm.
 #
-# The floor is chosen by a trim ladder that grows with the soak:
-# under a week no reading is dropped, at a week the single lowest is,
-# at two weeks the two lowest are, so the floor settles from "worst
-# ever seen" to "typical worst" as the history earns trust. The trim
+# The floor is chosen by a trim ladder that grows with the soak: one
+# lowest reading dropped per full week held, so the floor settles
+# from "worst ever seen" to "typical worst" as the history earns
+# trust. A count per week rather than a fixed number, so the share
+# discarded stays near a seventh however long the window is
+# (ruling #196). The trim
 # drops the LOWEST values, the opposite of the rhythm trim which
 # drops the highest, because for signal the spuriously bad reading is
 # the anomaly to set aside.

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.11.6 (2026-08-04)
+# File: coordinator.py, Version: 0.11.8 (2026-08-04)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -97,15 +97,11 @@ from .const import (
     DEV_EVENT_COUNT,
     DEV_FROZEN_CATEGORY,
     DEV_LAST_ACTIVITY,
-    DEV_SIGNAL_BELOW_SINCE,
-    DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_DAILY_MIN,
-    DEV_SIGNAL_DWELL_DAILY,
-    DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_TODAY_MIN,
-    DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     DEV_TODAY_MAX,
+    EPOCH_KEPT,
     FREEZE_CATEGORY_FROZEN,
     INC_CAUSE,
     LEARNED_PAIRING,
@@ -384,29 +380,53 @@ class DeviceSentinelCoordinator(
                 STORAGE_CLOCKS_KEY,
             )
         if loaded.get(DATA_STATS_EPOCH) != STATS_EPOCH:
+            # A copy of both files before anything is destroyed. An
+            # epoch bump is the one operation in the integration that
+            # deletes learned data with nothing behind it, and there
+            # is no raw layer to rebuild from: readings are folded
+            # into a daily figure as they arrive and never stored. So
+            # it gets the same protection the clock strip has
+            # (ruling #204, on the mechanism of #130).
+            # False means it could not copy, and a caller about to
+            # delete must treat that as a stop: doing nothing is
+            # harmless, wiping without a copy cannot be undone. The
+            # suffix carries the epoch so a later bump takes its own
+            # copy rather than finding the first one's marker and
+            # skipping.
+            safe = not loaded[DATA_DEVICES] or await async_take_backup(
+                self.hass, loaded, f"pre-epoch-{STATS_EPOCH}"
+            )
             wiped = 0
-            for record in loaded[DATA_DEVICES].values():
-                record[DEV_DAILY_MAX] = []
-                record[DEV_TODAY_MAX] = None
-                record[DEV_EVENT_COUNT] = 0
-                record[DEV_TAINTED] = False
-                record[DEV_SIGNAL_VALUE] = None
-                record[DEV_SIGNAL_TODAY_MIN] = None
-                record[DEV_SIGNAL_DAILY_MIN] = []
-                record[DEV_SIGNAL_BELOW_SINCE] = None
-                record[DEV_SIGNAL_BELOW_TODAY] = 0.0
-                record[DEV_SIGNAL_DWELL_DAILY] = []
-                record[DEV_SIGNAL_LAST_CHANGE] = None
-                wiped += 1
-            loaded[DATA_STATS_EPOCH] = STATS_EPOCH
+            fresh = _new_device_record(
+                dt_util.utcnow().isoformat(), None
+            )
+            if safe:
+                for record in loaded[DATA_DEVICES].values():
+                    # The kept set is declared; the wipe is everything
+                    # else in the schema, so a field added later is
+                    # wiped by default rather than surviving unnoticed
+                    # (ruling #204).
+                    for field, value in fresh.items():
+                        if field not in EPOCH_KEPT:
+                            record[field] = value
+                    wiped += 1
+                loaded[DATA_STATS_EPOCH] = STATS_EPOCH
+            else:
+                LOGGER.warning(
+                    "Statistics epoch %s: the pre-wipe backup could "
+                    "not be taken, so nothing was reset. The rhythm "
+                    "stays as it is and the epoch will be tried "
+                    "again on the next start",
+                    STATS_EPOCH,
+                )
             # Only when it actually wiped something. A fresh
             # install sets the epoch with no devices to reset, which
             # is an install rather than an event.
             self._pending_epoch_wipe = wiped or None
             LOGGER.info(
-                "Statistics epoch %s: learned statistics reset for %d "
-                "devices so rhythms are learned under the final rule "
-                "set; activity clocks and identity kept",
+                "Statistics epoch %s: the learned rhythm reset for %d "
+                "devices so it is relearned under the final rule set; "
+                "clocks, identity, signal and battery history kept",
                 STATS_EPOCH,
                 wiped,
             )
@@ -1476,7 +1496,7 @@ class DeviceSentinelCoordinator(
         return self._enable_matching_entities(self._is_signal, "signals")
 
     async def async_regenerate_reports(self) -> dict[str, int]:
-        """Judge every device now, then rewrite both report files.
+        """Judge every device now, then rewrite every report.
 
         For a person hunting a problem: fix a frozen device, press
         this, and the report reflects the fix at once rather than at

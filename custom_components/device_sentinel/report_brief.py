@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.11.4 (2026-08-04)
+# File: report_brief.py, Version: 0.11.8 (2026-08-04)
 
 """The daily brief: the one report written for a person.
 
@@ -458,9 +458,18 @@ class BriefMixin:
         resolved = sum(
             1 for row in incidents if row[INC_EVENT] == INCIDENT_RESOLVED
         )
+        # The span is counted rather than asserted. The window is
+        # anchored to the wall clock so a person's seven o'clock brief
+        # covers seven to seven, which across a daylight saving change
+        # is 23 or 25 real hours, not 24. Reproduced on a New York
+        # clock: the March window measures 23.0 and the November one
+        # 25.0, and the page said 24 for both (ruling #206). Anchoring
+        # to the epoch instead would hold the number and move the
+        # brief hour, which is the thing a person notices.
+        span = round((window_end - window_start) / 3600.0)
         scope = (
-            f"{self._brief_moment(window_end)}. Covering the 24 hours "
-            f"since {self._brief_moment(window_start)}."
+            f"{self._brief_moment(window_end)}. Covering the {span} "
+            f"hours since {self._brief_moment(window_start)}."
             if complete
             else f"From {self._brief_moment(window_start)} to "
             f"{self._brief_moment(window_end)} (in progress)."

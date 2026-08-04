@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.11.7 (2026-08-04)
+# File: report_maintainer.py, Version: 0.11.8 (2026-08-04)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -52,7 +52,8 @@ from .const import (
     REPORT_CLASSIFICATION,
     REPORT_EPISODES,
     REPORT_TELEMETRY,
-    SIGNAL_ARMING_DAYS,
+    SIGNAL_DAYS_KEEP,
+    SIGNAL_TRIM_LADDER_MAX,
     STARTUP_GRACE_SECONDS,
     STORM_DEVICE_THRESHOLD,
     STORM_EXEMPT_PER_HOUR,
@@ -90,7 +91,7 @@ class MaintainerReportMixin:
 
         The forensic file, which explains freeze verdicts and decides
         nothing (ruling #103). One row per episode, newest first,
-        recording what the other two reports cannot: whether a long
+        recording what no other report can: whether a long
         silence ended because the device chose to speak or because
         something made it speak. That distinction is the difference
         between a rhythm the statistics should learn and a wedge no
@@ -348,17 +349,18 @@ class MaintainerReportMixin:
             f"({trigger})",
             "",
             f"All series read newest first. SIGNAL is each device's "
-            f"daily signal minima; the floor (the line dwell is "
-            f"measured against) is **bold**, the trimmed lowest "
-            f"readings are ~~struck~~, and rail fill values 255/-128 "
+            f"daily signal minima; the line dwell is measured "
+            f"against is **bold**, readings below that line are "
+            f"~~struck~~, and rail fill values 255/-128 "
             f"are *italic* (shown but never fed to the floor). A "
             f"warning sign at the front of the cell marks a device "
             f"whose daily low has sat at a rail for three days: a "
             f"stuck reading that shows as perfect signal and is the "
             f"opposite, a near-certain fault worth a power cycle or a "
-            f"re-bind. The trim grows with the soak (none under "
-            f"{SIGNAL_ARMING_DAYS} days, drop 1 lowest at "
-            f"{SIGNAL_ARMING_DAYS}, drop 2 at {2 * SIGNAL_ARMING_DAYS}), "
+            f"re-bind. The trim grows with the soak, one lowest "
+            f"reading dropped per full week held up to "
+            f"{SIGNAL_TRIM_LADDER_MAX}, over the last "
+            f"{SIGNAL_DAYS_KEEP} days, "
             f"shifted by the anomaly trim word in the header (None "
             f"trims no lows so the floor sits lower and flags less, "
             f"Deepest the reverse), applied to readings going "

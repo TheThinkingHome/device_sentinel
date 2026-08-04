@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.11.3 (2026-08-03)
+# File: config_flow.py, Version: 0.11.8 (2026-08-04)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -123,6 +123,8 @@ from .const import (
     FREEZE_DELTA_HIGH_HR_MIN,
     FREEZE_DELTA_LOW_MIN_MAX,
     FREEZE_DELTA_LOW_MIN_MIN,
+    LOW_THRESHOLD_MAX,
+    LOW_THRESHOLD_MIN,
     NOTIFY_DOMAIN,
     PERSISTENT_TARGET,
     REMINDER_MODE_DAILY,
@@ -327,8 +329,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         ),
                     ): selector.NumberSelector(
                         selector.NumberSelectorConfig(
-                            min=1,
-                            max=99,
+                            min=LOW_THRESHOLD_MIN,
+                            max=LOW_THRESHOLD_MAX,
                             step=1,
                             unit_of_measurement="%",
                             mode=selector.NumberSelectorMode.SLIDER,

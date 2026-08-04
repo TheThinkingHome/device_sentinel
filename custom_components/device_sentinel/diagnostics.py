@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.11.0 (2026-08-03)
+# File: diagnostics.py, Version: 0.11.8 (2026-08-04)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -281,7 +281,24 @@ async def async_get_config_entry_diagnostics(
         "split": {
             "clock_fields": list(CLOCK_FIELDS),
             "clock_devices": len(coordinator.data.get(DATA_DEVICES, {})),
-            "phase": "B: hot file written routinely and read on load",
+            # Read from the flag that gates the strip rather than
+            # written down. This said "B: hot file written routinely
+            # and read on load" for eleven releases after Phase C
+            # shipped in 0.10.14, which is a wrong answer in the one
+            # file whose job is answering questions about a running
+            # system (ruling #205).
+            #
+            # Not counted from the records in memory, which was the
+            # first attempt and is wrong: the clocks are merged back
+            # in on load, so every in-memory record carries them
+            # whatever the file holds. The flag is the honest source,
+            # because it is the thing the save actually consults.
+            "phase": (
+                "C: the main file is written without the clock fields"
+                if coordinator._strip_clocks
+                else "B: the main file still carries the clock fields, "
+                "waiting on the backup that must precede the strip"
+            ),
             # Both stamps, so this file can answer on its own whether
             # the split is healthy: the hot one should be the newer,
             # and the gap is how far the main file is behind.

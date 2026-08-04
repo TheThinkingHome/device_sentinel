@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: number.py, Version: 0.4.9 (2026-07-19)
+# File: number.py, Version: 0.11.8 (2026-08-04)
 
 """Number platform for the Device Sentinel integration.
 
@@ -11,7 +11,16 @@ One entity: the battery low threshold as a dashboard-visible slider.
 It exists because the options dialog is buried (the project's own
 author could not find it); a knob belongs where the counts are seen.
 The entity and the options dialog write the same setting, so either
-door works and both stay in step.
+door works and both stay in step, and since 0.11.8 they read the same
+range from one constant rather than each carrying its own copy of it
+(ruling #205).
+
+One entity and not more, deliberately. The Low Battery screen carries
+a second setting, how many days ahead a falling cell is called out,
+and it does not get a knob: the threshold is the one a person reaches
+for while looking at a battery count and wants to nudge, and the
+other is set once and left. A dashboard full of sliders for settings
+nobody adjusts is the buried dialog's problem in a different place.
 """
 
 from __future__ import annotations
@@ -28,6 +37,8 @@ from .const import (
     ATTR_SENTINEL_VERSION,
     CONF_LOW_THRESHOLD,
     DOMAIN,
+    LOW_THRESHOLD_MAX,
+    LOW_THRESHOLD_MIN,
 )
 from .coordinator import DeviceSentinelCoordinator
 
@@ -50,8 +61,8 @@ class DeviceSentinelBatteryThresholdNumber(NumberEntity):
     _attr_name = "Battery: Threshold"
     _attr_icon = "mdi:battery-alert-variant"
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_native_min_value = 1
-    _attr_native_max_value = 99
+    _attr_native_min_value = LOW_THRESHOLD_MIN
+    _attr_native_max_value = LOW_THRESHOLD_MAX
     _attr_native_step = 1
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_mode = NumberMode.SLIDER

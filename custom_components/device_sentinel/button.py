@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: button.py, Version: 0.5.5 (2026-07-21)
+# File: button.py, Version: 0.11.8 (2026-08-04)
 
 """Button platform for the Device Sentinel integration.
 
@@ -18,9 +18,9 @@ sensor with device_class battery), not a widening of the signal
 filter, and it earns its own press because a user reading only
 "signals" has no reason to expect a battery button to be hiding there.
 
-A fourth button regenerates both nightly report files on demand, for a
-person mid-investigation who wants the report to reflect a fix now
-rather than at the next tick.
+A fourth button rewrites every report on demand, for a person
+mid-investigation who wants them to reflect a fix now rather than at
+the next tick.
 """
 
 from __future__ import annotations
@@ -85,8 +85,8 @@ class DeviceSentinelActionButton(ButtonEntity):
     The enable buttons each walk the entity registry for entities of
     their kind that an integration shipped turned off, and turn them
     on, on watched devices only, leaving user-disabled entities alone.
-    The regenerate button judges every device and rewrites both report
-    files on demand. Each button is a thin wrapper around the async
+    The regenerate button judges every device and rewrites every
+    report on demand. Each button is a thin wrapper around the async
     action it is given; the action carries the behavior.
     """
 

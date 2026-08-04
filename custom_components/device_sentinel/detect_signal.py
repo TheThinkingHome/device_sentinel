@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.11.5 (2026-08-04)
+# File: detect_signal.py, Version: 0.11.8 (2026-08-04)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -227,8 +227,10 @@ class SignalMixin:
 
         The trim ladder grows with the soak: under a week nothing is
         dropped and the floor is the lowest real reading, so the line
-        exists from the first day; at a week the single lowest is
-        dropped; at two weeks the two lowest are. The anomaly trim
+        exists from the first day; thereafter one lowest reading is
+        dropped per full week held, so the share discarded stays near
+        a seventh however long the window is (ruling #196). The
+        anomaly trim
         setting shifts k, clamped so at least one reading always
         survives to be the floor. Dropping the LOWEST values is the
         opposite of the rhythm trim, which drops the highest, because
