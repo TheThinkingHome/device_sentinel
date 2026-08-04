@@ -1,0 +1,751 @@
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: report_brief.py, Version: 0.11.4 (2026-08-04)
+
+"""The daily brief: the one report written for a person.
+
+One of the four report modules split out of reports.py, which
+had grown past two thousand lines and held every report the
+integration writes. The seam is the report rather than the
+audience: a split by reader was considered and does not survive
+contact with the code, because one writer produces both kinds
+and the shared helpers serve both (ruling #199).
+
+Still a file split rather than a boundary. These methods are
+mixed into the coordinator and read its state freely, so `self`
+is the coordinator throughout and nothing here stands alone.
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import timedelta
+from html import escape
+from typing import Any
+
+from homeassistant.util import dt as dt_util
+
+from .const import (
+    ACTION_ACKNOWLEDGED,
+    ACTION_DELETED,
+    ACTION_READDED,
+    ACTION_UNACKNOWLEDGED,
+    CONF_REMINDER_TIME,
+    DATA_DEVICES,
+    DATA_INCIDENTS,
+    DATA_SYSTEM_EVENTS,
+    DEFAULT_REMINDER_TIME,
+    DEV_BATTERY_VALUE,
+    INCIDENT_ACKNOWLEDGED,
+    INCIDENT_ACTION,
+    INCIDENT_OPENED,
+    INCIDENT_RESOLVED,
+    INC_CAUSE,
+    INC_DEVICE_ID,
+    INC_DURATION,
+    INC_EVENT,
+    INC_KIND,
+    INC_NAME,
+    INC_WHEN,
+    REPORT_BATTERY_URL,
+    REPORT_BRIEF_HTML,
+    REPORT_BRIEF_PREFIX,
+    REPORT_SIGNAL_DWELL_URL,
+    REPORT_WWW_DIR,
+    SYS_BRIDGE_DOWN,
+    SYS_BRIDGE_UP,
+    SYS_DETAIL,
+    SYS_DURATION,
+    SYS_EPOCH_RESET,
+    SYS_KIND,
+    SYS_OPTIONS_CHANGED,
+    SYS_PAIRING_CLOSED,
+    SYS_PAIRING_OPEN,
+    SYS_RESTART,
+    SYS_SCOPE,
+    SYS_SCOPE_SYSTEM,
+    SYS_UNCLEAN_RESTART,
+    SYS_WHEN,
+    TODO_DEVICE_ID,
+    TODO_KINDS,
+    TODO_KIND_BATTERY,
+    TODO_KIND_FROZEN,
+    TODO_KIND_NOT_REPORTED,
+    TODO_KIND_SIGNAL,
+    TODO_KIND_UNAVAILABLE,
+    TODO_KIND_UNKNOWN,
+    TODO_SORT_NAME,
+    TODO_STATUS,
+)
+
+
+class BriefMixin:
+    """The daily brief: the one report written for a person."""
+
+    @staticmethod
+    def _brief_moment(epoch: float) -> str:
+        """Return a readable local time for the brief."""
+        return dt_util.as_local(
+            dt_util.utc_from_timestamp(epoch)
+        ).strftime("%b %-d, %-I:%M %p")
+
+    def _brief_hour_minute(self) -> tuple[int, int]:
+        """Return the configured brief time, as hour and minute."""
+        raw = str(
+            self.entry.options.get(CONF_REMINDER_TIME, DEFAULT_REMINDER_TIME)
+        )
+        try:
+            hour, minute = (int(part) for part in raw.split(":")[:2])
+        except ValueError:
+            return 8, 0
+        return hour, minute
+
+    def _brief_close_bounds(self) -> tuple[float, float]:
+        """Return the window that closes at this brief hour.
+
+        The scheduled write finishes the day that just ended rather
+        than opening the one just starting, so the completed brief
+        covers brief hour to brief hour and is named for the day it
+        began. Computed from the configured time rather than from the
+        clock, so a callback firing a moment early still closes the
+        window it was meant to close.
+        """
+        local_now = dt_util.now()
+        hour, minute = self._brief_hour_minute()
+        end_local = local_now.replace(
+            hour=hour, minute=minute, second=0, microsecond=0
+        )
+        if end_local > local_now:
+            end_local -= timedelta(days=1)
+        previous = end_local.date() - timedelta(days=1)
+        start_local = end_local.replace(
+            year=previous.year, month=previous.month, day=previous.day
+        )
+        return start_local.timestamp(), end_local.timestamp()
+
+    def _brief_window_start(self, now: float) -> float:
+        """Return the start of the current brief window.
+
+        The most recent brief hour at or before now, so the window
+        always runs brief-to-brief rather than by calendar day: an
+        overnight problem stays in one report instead of being split
+        across two. A user who wants calendar days sets the brief
+        time to midnight.
+        """
+        local_now = dt_util.as_local(dt_util.utc_from_timestamp(now))
+        hour, minute = self._brief_hour_minute()
+        candidate = local_now.replace(
+            hour=hour, minute=minute, second=0, microsecond=0
+        )
+        if candidate > local_now:
+            candidate -= timedelta(days=1)
+        return candidate.timestamp()
+
+    def _brief_battery_text(self, device_id: str) -> str:
+        """Return the battery cell with its level where known."""
+        record = self.data[DATA_DEVICES].get(device_id) or {}
+        level = record.get(DEV_BATTERY_VALUE)
+        if isinstance(level, (int, float)):
+            shown = (
+                f"{int(level)}%"
+                if float(level).is_integer()
+                else f"{level}%"
+            )
+            return f"battery {shown}"
+        return "battery low"
+
+    def _brief_phrase(self, row: dict[str, Any]) -> str:
+        """Return one incident as a sentence a person would write.
+
+        Plain language, never category names: a reader should not
+        need to know what "frozen" means inside this integration to
+        understand that a device stopped reporting. A resolution
+        carries how long it lasted and what ended it in the same
+        phrase, which over a fortnight is the column that says
+        whether a device recovers on its own or only when levered.
+        """
+        kind = row[INC_KIND]
+        event = row[INC_EVENT]
+        if event == INCIDENT_RESOLVED:
+            span = self._human_span(row.get(INC_DURATION))
+            cause = row.get(INC_CAUSE)
+            base = f"recovered after {span}"
+            return f"{base}, {cause}" if cause else base
+        if event == INCIDENT_ACTION:
+            return {
+                ACTION_ACKNOWLEDGED: "acknowledged",
+                ACTION_UNACKNOWLEDGED: "acknowledgment removed",
+                ACTION_DELETED: "deleted from the list",
+                ACTION_READDED: "re-added, the problem is still there",
+            }.get(row.get(INC_CAUSE) or "", "acknowledged")
+        if event == INCIDENT_ACKNOWLEDGED:
+            # Legacy rows only, removable after 2026-08-11.
+            return "acknowledged"
+        if kind == TODO_KIND_BATTERY:
+            # Borrowed from the composer so the table and the prose
+            # cannot disagree about the same event: one composer
+            # serves every channel, so nothing is described two ways
+            # (ruling #120). The level belongs in both or neither.
+            return self._battery_phrase(row[INC_DEVICE_ID], False)
+        wording = {
+            TODO_KIND_FROZEN: "stopped reporting",
+            TODO_KIND_NOT_REPORTED: "has never reported",
+            TODO_KIND_UNAVAILABLE: "went unavailable",
+            TODO_KIND_UNKNOWN: "went unknown",
+            TODO_KIND_SIGNAL: "signal railed",
+        }
+        return wording.get(kind, kind)
+
+    def _brief_now_rows(
+        self,
+    ) -> list[tuple[str, str, float, str, str]]:
+        """Return the standing state: what is wrong right now.
+
+        Read from the problem list rather than recomputed, so the
+        brief and the list can never disagree. Excluded devices are
+        absent because this is a report, and so are acknowledged ones
+        (ruling #123): acknowledgment silences every human-facing
+        channel, and the brief is a notification that happens to be a
+        file,
+        and acknowledging a problem is the statement that the person
+        knows about it and does not want reminding. The diagnostics
+        keep every acknowledged fault, which is where an audit
+        belongs.
+        """
+        now = dt_util.utcnow().timestamp()
+        rows: list[tuple[str, str, float, str]] = []
+        for record in self.todo_items:
+            device_id = record.get(TODO_DEVICE_ID)
+            if not device_id or device_id in self._excluded_devices:
+                continue
+            if record.get(TODO_STATUS) == "completed":
+                continue
+            name = record.get(TODO_SORT_NAME) or device_id
+            for kind, since in (record.get(TODO_KINDS) or {}).items():
+                problem = {
+                    TODO_KIND_FROZEN: "stopped reporting",
+                    TODO_KIND_NOT_REPORTED: "never reported",
+                    TODO_KIND_UNAVAILABLE: "unavailable",
+                    TODO_KIND_UNKNOWN: "unknown",
+                    TODO_KIND_SIGNAL: "signal railed",
+                    TODO_KIND_BATTERY: self._brief_battery_text(device_id),
+                }.get(kind, kind)
+                rows.append((name, problem, since or now, kind, device_id))
+        rows.sort(key=lambda row: row[2])
+        return rows
+
+    def _system_event_sentence(self, row: dict[str, Any]) -> str:
+        """One thing that happened to the house, as a sentence.
+
+        Deliberately plain. These sit above the device lines and
+        explain them, so the useful part is the fact and the time,
+        not the telling of it.
+        """
+        when = self._brief_moment(row[SYS_WHEN])
+        scope = row.get(SYS_SCOPE) or SYS_SCOPE_SYSTEM
+        detail = row.get(SYS_DETAIL)
+        span = row.get(SYS_DURATION)
+        held = self._human_span(span) if span else None
+        kind = row.get(SYS_KIND)
+        if kind == SYS_RESTART:
+            if held:
+                return (
+                    f"The system restarted at {when} after {held} "
+                    "with nothing listening."
+                )
+            return f"The system restarted at {when}."
+        if kind == SYS_BRIDGE_DOWN:
+            return f"The {scope} bridge went down at {when}."
+        if kind == SYS_BRIDGE_UP:
+            if held:
+                return (
+                    f"The {scope} bridge came back at {when} after "
+                    f"{held}."
+                )
+            return f"The {scope} bridge came back at {when}."
+        if kind == SYS_PAIRING_OPEN:
+            return f"A {scope} pairing window opened at {when}."
+        if kind == SYS_PAIRING_CLOSED:
+            if held:
+                return (
+                    f"The {scope} pairing window closed at {when} "
+                    f"after {held}."
+                )
+            return f"The {scope} pairing window closed at {when}."
+        if kind == SYS_UNCLEAN_RESTART:
+            # The restart row above already carried the plain fact
+            # that the system came back, so this one carries what was
+            # different about it. Both are written deliberately
+            # (ruling #163)
+            # and read as a pair: what happened, then why the clocks
+            # moved. On the morning after a real one this is the first
+            # sentence read, so it says the count rather than leaving
+            # the reader to find it in a diagnostics download.
+            extra = f", {detail}" if detail else ""
+            if held:
+                return (
+                    f"That restart followed an unclean shutdown, with "
+                    f"{held} unwatched{extra}."
+                )
+            return f"That restart followed an unclean shutdown{extra}."
+        if kind == SYS_EPOCH_RESET:
+            extra = f" for {detail}" if detail else ""
+            return f"Learned statistics were reset at {when}{extra}."
+        if kind == SYS_OPTIONS_CHANGED:
+            extra = f": {detail}" if detail else ""
+            return f"Settings changed at {when}{extra}."
+        return f"{kind} at {when}."
+
+    def _system_event_phrase(self, row: dict[str, Any]) -> str:
+        """The same event as a table cell rather than a sentence."""
+        scope = row.get(SYS_SCOPE) or SYS_SCOPE_SYSTEM
+        detail = row.get(SYS_DETAIL)
+        span = row.get(SYS_DURATION)
+        held = self._human_span(span) if span else None
+        kind = row.get(SYS_KIND)
+        if kind == SYS_RESTART:
+            return (
+                f"system restarted, {held} unwatched"
+                if held
+                else "system restarted"
+            )
+        if kind == SYS_BRIDGE_DOWN:
+            return f"{scope} bridge went down"
+        if kind == SYS_BRIDGE_UP:
+            return (
+                f"{scope} bridge came back after {held}"
+                if held
+                else f"{scope} bridge came back"
+            )
+        if kind == SYS_PAIRING_OPEN:
+            return f"{scope} pairing window opened"
+        if kind == SYS_PAIRING_CLOSED:
+            return (
+                f"{scope} pairing window closed after {held}"
+                if held
+                else f"{scope} pairing window closed"
+            )
+        if kind == SYS_UNCLEAN_RESTART:
+            return (
+                f"unclean shutdown ({detail})"
+                if detail
+                else "unclean shutdown"
+            )
+        if kind == SYS_EPOCH_RESET:
+            return f"learned statistics reset ({detail})" if detail else "learned statistics reset"
+        if kind == SYS_OPTIONS_CHANGED:
+            return f"settings changed ({detail})" if detail else "settings changed"
+        return str(kind)
+
+    def _brief_prose(
+        self,
+        incidents: list[dict[str, Any]],
+        now_rows: list[tuple[str, str, float, str, str]],
+        window_start: float,
+        sys_events: list[dict[str, Any]] | None = None,
+    ) -> list[str]:
+        """Return the brief's opening prose.
+
+        The same composer that will speak to a phone, read as
+        paragraphs (ruling #122): history first, then what is
+        standing right now. History is told as episodes rather than
+        events (ruling #134), so a device stopping and the same device
+        recovering are one sentence, ordered by when each episode
+        began. The tables below stay for scanning and for exact times;
+        this is for reading. Every
+        sentence comes from the composer, so the prose, the tables,
+        and a future notification cannot describe one event three
+        ways.
+        """
+        told: list[str] = []
+        for opened, resolved in self._pair_incidents(incidents):
+            told.append(
+                self._compose_episode(opened, resolved)
+                if resolved is not None
+                else self._compose_event(opened)
+            )
+        standing: list[str] = []
+        for _name, _problem, _since, _kind, device_id in now_rows:
+            line = self._compose_device_line(device_id)
+            if line is None:
+                continue
+            if line not in standing:
+                standing.append(line)
+        lines = ["## In Short", ""]
+        since_text = self._brief_moment(window_start)
+        # Above the device lines, not among them. What happened to
+        # the house is the context for what happened to the devices,
+        # and a reader who has it will not read fifty consequences as
+        # fifty faults.
+        house = [
+            self._system_event_sentence(row)
+            for row in sorted(
+                sys_events or [], key=lambda row: row[SYS_WHEN]
+            )
+        ]
+        if house:
+            lines += [" ".join(house), ""]
+        if told:
+            lines += [f"Since {since_text}: " + " ".join(told), ""]
+        else:
+            lines += [f"Nothing has happened since {since_text}.", ""]
+        if standing:
+            lines += ["Right now: " + " ".join(standing), ""]
+        else:
+            lines += ["Nothing needs attention right now.", ""]
+        return lines
+
+    def _write_brief(
+        self,
+        report_directory: str,
+        trigger: str,
+        window_start: float,
+        window_end: float,
+        complete: bool,
+        stamp_start: float | None = None,
+    ) -> str | None:
+        """Write the daily brief for a window, and return it when done.
+
+        window_start and window_end are the content: what the brief
+        describes. stamp_start is the day the file is named for, and
+        it is passed separately because the two stopped agreeing
+        when the live copy became a rolling day (ruling #187). Left
+        out, it is the window start, which is what a closed brief
+        wants.
+
+        The text comes back only for a completed brief, which is the
+        one the email carries, since mailing an unfinished document
+        would deliver the same day several times (ruling #135).
+        Returning it rather than
+        re-reading the file guarantees the document sent is the
+        document written, byte for byte, with no second read that
+        could catch a half-written file.
+
+        The one report written for a person rather than a maintainer
+        (ruling #116): what is wrong now, what happened in the last 24
+        hours, plain language, human units, no basis or window or
+        lag or exclusion reasoning. Regenerating mid-day writes the
+        in-progress brief with its scope stated and marked
+        incomplete, replacing itself until the real brief publishes
+        and starts a new day.
+        """
+        now_rows = self._brief_now_rows()
+        silenced = self._acknowledged_devices()
+        incidents = [
+            row
+            for row in (self.data.get(DATA_INCIDENTS) or [])
+            if window_start <= row[INC_WHEN] <= window_end
+            and row[INC_DEVICE_ID] not in self._excluded_devices
+            and row[INC_DEVICE_ID] not in silenced
+        ]
+        incidents.sort(key=lambda row: row[INC_WHEN], reverse=True)
+        # The house's own events, over the same window. Never
+        # filtered by exclusion or acknowledgment: a person silencing
+        # one device has not asked to stop hearing that the power
+        # failed.
+        sys_events = [
+            row
+            for row in (self.data.get(DATA_SYSTEM_EVENTS) or [])
+            if window_start <= row[SYS_WHEN] <= window_end
+        ]
+        sys_events.sort(key=lambda row: row[SYS_WHEN], reverse=True)
+        opened = sum(
+            1 for row in incidents if row[INC_EVENT] == INCIDENT_OPENED
+        )
+        resolved = sum(
+            1 for row in incidents if row[INC_EVENT] == INCIDENT_RESOLVED
+        )
+        scope = (
+            f"{self._brief_moment(window_end)}. Covering the 24 hours "
+            f"since {self._brief_moment(window_start)}."
+            if complete
+            else f"From {self._brief_moment(window_start)} to "
+            f"{self._brief_moment(window_end)} (in progress)."
+        )
+        lines = [
+            "# Device Sentinel Daily Brief",
+            "",
+            scope,
+            "",
+        ]
+        lines += self._brief_prose(
+            incidents, now_rows, window_start, sys_events
+        )
+        lines += ["## Now", ""]
+        if not now_rows:
+            lines += ["Nothing needs attention.", ""]
+        else:
+            devices = len({row[0] for row in now_rows})
+            summary = (
+                f"{devices} device{'s' if devices != 1 else ''} "
+                f"need{'' if devices != 1 else 's'} attention"
+            )
+            summary += "."
+            now = dt_util.utcnow().timestamp()
+            lines += [
+                summary,
+                "",
+                "| DEVICE | PROBLEM | SINCE | FOR |",
+                "|---|---|---|---|",
+            ]
+            for name, problem, since, kind, _device_id in now_rows:
+                # A device that has never reported has no last-seen
+                # time; the stamp is when it was discovered in the
+                # registry, and saying so stops a reader taking it
+                # for the moment the device broke (ruling #118).
+                when = (
+                    f"discovered {self._brief_moment(since)}"
+                    if kind == TODO_KIND_NOT_REPORTED
+                    else self._brief_moment(since)
+                )
+                lines.append(
+                    f"| {self._report_cell(name)} | {problem} "
+                    f"| {when} "
+                    f"| {self._human_span(now - since)} |"
+                )
+            lines.append("")
+        # The dwell anomalies get one pointer line, only on mornings
+        # there are any (ruling #173). The chart itself is HTML
+        # at a fixed URL, so the brief names it rather than embedding
+        # it, and a quiet fleet adds nothing here. It sits in Now
+        # because yesterday's dwell is the current picture of the
+        # link, even though the day it measures has closed.
+        anomalies = self._dwell_anomalies(self._signal_red())
+        if anomalies:
+            named = ", ".join(
+                f"{a['name']} ({a['dwell']:.0f}%)" for a in anomalies[:5]
+            )
+            lines += [
+                f"Signal dwell anomalies: {named}. Details and the "
+                f"full chart: {REPORT_SIGNAL_DWELL_URL}",
+                "",
+            ]
+        # The battery report answers what the threshold cannot: which
+        # cells are going to be low rather than which are (ruling
+        # #194). It shipped with nothing pointing at it, so a person
+        # who did not know the file existed had no way to find it.
+        # Named here on the same footing as the chart, and under the
+        # same reasoning that lets signal appear in a brief while
+        # never pushing (ruling #59): a document read at an hour a
+        # person chose is not an alert.
+        #
+        # Only what is close. The report lists every cell measurably
+        # falling, which is a third of a real fleet and most of them
+        # a season out; naming those here would be sixteen devices
+        # nobody can act on (ruling #195).
+        fallers = self._battery_brief_rows()
+        if fallers:
+            named = ", ".join(
+                f"{row['name']} ({self.battery_time_left(row['days'])})"
+                for row in fallers[:5]
+            )
+            lines += [
+                f"Batteries falling: {named}. Details and the full "
+                f"report: {REPORT_BATTERY_URL}",
+                "",
+            ]
+        lines += ["## Last 24 Hours", ""]
+        if not incidents and not sys_events:
+            lines += ["Nothing happened.", ""]
+        else:
+            lines += [
+                f"{len(incidents) + len(sys_events)} event"
+                f"{'s' if len(incidents) + len(sys_events) != 1 else ''}. "
+                f"{opened} problem{'s' if opened != 1 else ''} "
+                f"started, {resolved} ended.",
+                "",
+                "| TIME | DEVICE | WHAT HAPPENED |",
+                "|---|---|---|",
+            ]
+            merged = [
+                (row[INC_WHEN], self._report_cell(row[INC_NAME]),
+                 self._brief_phrase(row))
+                for row in incidents
+            ] + [
+                (row[SYS_WHEN], "The system",
+                 self._system_event_phrase(row))
+                for row in sys_events
+            ]
+            merged.sort(key=lambda item: item[0], reverse=True)
+            for when, who, what in merged:
+                lines.append(
+                    f"| {self._brief_moment(when)} | {who} | {what} |"
+                )
+            lines.append("")
+        # Named for the day the window opened, not the moment of
+        # writing. Naming by "now" renamed the in-progress brief at
+        # midnight, so one window produced two files describing
+        # overlapping periods, and neither was ever completed.
+        stamp = dt_util.as_local(
+            dt_util.utc_from_timestamp(
+                window_start if stamp_start is None else stamp_start
+            )
+        ).strftime("%Y-%m-%d")
+        text = "\n".join(lines)
+        # The Markdown brief is retired: what a person reads moved
+        # under www, where a browser and a dashboard card can render
+        # it (rulings #178 and #179). The dated HTML files are the
+        # record now, named exactly as
+        # the Markdown files were, and the undated current file is a
+        # copy of the newest write so a dashboard card has one stable
+        # URL that never breaks at midnight. Old .md briefs on disk
+        # are left as the history they are.
+        page = self._render_brief_html(text)
+        directory = self.hass.config.path(REPORT_WWW_DIR)
+        os.makedirs(directory, exist_ok=True)
+        dated = os.path.join(
+            directory, f"{REPORT_BRIEF_PREFIX}{stamp}.html"
+        )
+        with open(dated, "w", encoding="utf-8") as handle:
+            handle.write(page)
+        with open(
+            os.path.join(directory, REPORT_BRIEF_HTML),
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            handle.write(page)
+        self._trim_briefs(directory)
+        # The page is what a mail client renders; the composed text
+        # remains the plain form for the persistent-notification
+        # target and the message fallback. Same content by
+        # construction, one rendered from the other.
+        #
+        # The page is stashed together with the text it came from,
+        # and only for a completed brief, so the sender can check
+        # that the two belong together before mailing the page. The
+        # scheduled write closes yesterday and then immediately
+        # opens today's in-progress brief a few lines below, and a
+        # stash that the second write also updated left the mail
+        # carrying the closed day's text beside the new day's page
+        # (ruling #184, the paired stash).
+        if complete:
+            self._last_brief_pair = (text, page)
+        self._last_brief_text = text
+        return text if complete else None
+
+    @staticmethod
+    def _is_brief_table_rule(line: str) -> bool:
+        """Return whether a pipe line is a table's header rule.
+
+        Read from the characters rather than from the row's position.
+        Position was how the older renderer told the rule apart, and
+        it assumed the second line of every table was the separator,
+        which is true only while nothing else ever emits a pipe line.
+        """
+        body = line.strip()
+        if not body.startswith("|"):
+            return False
+        return set(body) <= set("|-: ")
+
+    @staticmethod
+    def _brief_cells(line: str) -> list[str]:
+        """Return one pipe row's cells, stripped and escaped."""
+        return [escape(cell.strip()) for cell in line.strip("|").split("|")]
+
+    def _render_brief_html(self, markdown: str) -> str:
+        """Return the brief rendered as a styled page (ruling #178).
+
+        The one renderer. Rendered from the composed Markdown text
+        rather than written a second way, so the record and the page
+        cannot drift, and every consumer reads this: the dated file,
+        the undated current file, the emailed body, and the fallback
+        the sender falls back to when the stashed pair does not match
+        (rulings #135, #179 and #184).
+
+        It was two renderers until 0.10.22, and they had already
+        drifted. Only the other one escaped its content, so from
+        0.10.18, when this one became the emailed body, a device
+        named with an angle bracket in it reached the file and the
+        mail raw. Merging them fixes the escaping as a consequence
+        rather than patching the same rule into two places that would
+        drift again (ruling #188).
+
+        A closed-subset renderer over our own output, not a Markdown
+        parser: the brief emits one h1, h2 sections, plain paragraphs
+        and pipe tables, so those four shapes are the whole grammar,
+        and anything unrecognized falls through as a paragraph, which
+        keeps a future line from vanishing silently.
+
+        Everything is escaped before the chart link is turned into an
+        anchor, so the one tag this renderer creates is the only
+        markup that survives. The link is resolved to an absolute
+        address where Home Assistant knows one, so it works from a
+        mail client as well as a dashboard card.
+        """
+        html_lines: list[str] = []
+        table: list[list[str]] = []
+
+        def _flush_table() -> None:
+            if not table:
+                return
+            head, *body_rows = table
+            html_lines.append("<table>")
+            html_lines.append(
+                "<tr>"
+                + "".join(f"<th>{cell}</th>" for cell in head)
+                + "</tr>"
+            )
+            for row in body_rows:
+                html_lines.append(
+                    "<tr>"
+                    + "".join(f"<td>{cell}</td>" for cell in row)
+                    + "</tr>"
+                )
+            html_lines.append("</table>")
+            table.clear()
+
+        for raw in markdown.split("\n"):
+            line = raw.rstrip()
+            if line.startswith("|"):
+                if not self._is_brief_table_rule(line):
+                    table.append(self._brief_cells(line))
+                continue
+            _flush_table()
+            if line.startswith("# "):
+                html_lines.append(f"<h1>{escape(line[2:])}</h1>")
+            elif line.startswith("## "):
+                html_lines.append(f"<h2>{escape(line[3:])}</h2>")
+            elif line.strip():
+                text_line = escape(line)
+                for url, words in (
+                    (REPORT_SIGNAL_DWELL_URL, "the signal dwell chart"),
+                    (REPORT_BATTERY_URL, "the battery report"),
+                ):
+                    if url in text_line:
+                        href = self._absolute_url(url)
+                        text_line = text_line.replace(
+                            url, f"<a href='{href}'>{words}</a>"
+                        )
+                html_lines.append(f"<p>{text_line}</p>")
+        _flush_table()
+
+        body = "\n".join(html_lines)
+        page = f"""<!DOCTYPE html>
+<html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Device Sentinel Daily Brief</title>
+<style>
+body {{ font-family: sans-serif; margin: 16px; background: #fff;
+  color: #1a1a19; max-width: 720px; }}
+h1 {{ font-size: 20px; }} h2 {{ font-size: 16px; margin-top: 24px; }}
+p, td, th {{ font-size: 13px; }}
+table {{ border-collapse: collapse; margin: 8px 0; }}
+td, th {{ border: 1px solid #D3D1C7; padding: 4px 8px;
+  text-align: left; }}
+a {{ color: #2a78d6; }}
+@media (prefers-color-scheme: dark) {{
+  body {{ background: #1a1a19; color: #eee; }}
+  td, th {{ border-color: #444; }}
+  a {{ color: #6ba6e8; }} }}
+</style></head><body>
+{body}
+</body></html>
+"""
+        return page
+
+    def _trim_briefs(self, directory: str) -> None:
+        """Keep the most recent dated briefs, drop the rest."""
+        self._trim_dated(directory, REPORT_BRIEF_PREFIX)
