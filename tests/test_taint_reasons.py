@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_taint_reasons.py, Version: 0.10.7 (2026-07-29)
+# File: test_taint_reasons.py, Version: 0.11.6 (2026-08-04)
 
 """Why a gap went unlearned, and the record saying so (#164).
 
@@ -48,7 +48,7 @@ from custom_components.device_sentinel.const import (
 from custom_components.device_sentinel.coordinator import (
     DeviceSentinelCoordinator,
 )
-from custom_components.device_sentinel.narrative import _promoted_learned
+from custom_components.device_sentinel.journal import _promoted_learned
 
 from .helpers import setup_coordinator
 
