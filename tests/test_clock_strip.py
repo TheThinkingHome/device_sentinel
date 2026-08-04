@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_clock_strip.py, Version: 0.10.14 (2026-08-02)
+# File: test_clock_strip.py, Version: 0.11.9 (2026-08-04)
 
 """The final phase of the storage split: the main file sheds the clocks.
 
@@ -127,7 +127,7 @@ async def test_the_main_file_sheds_the_clocks(
     """The point of the phase, asserted on the file itself.
 
     After setup's own save, no device record in the main file carries
-    any of the nine clock fields, while the hot file carries all it
+    any of the clock fields, while the hot file carries all it
     was given. The live in-memory records keep theirs, because every
     reader in this process depends on them; only the file sheds them.
     """

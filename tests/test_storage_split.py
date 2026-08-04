@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.11.8 (2026-08-04)
+# File: test_storage_split.py, Version: 0.11.9 (2026-08-04)
 
 """The two files: the shadow, the merge, and the stamps.
 
@@ -17,6 +17,7 @@ pooled, so each file reads on its own.
 
 
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 from homeassistant.core import HomeAssistant
@@ -28,6 +29,7 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
+from custom_components.device_sentinel import const
 from custom_components.device_sentinel.const import (
     CLOCK_FIELDS,
     DATA_CLEAN_STOP,
@@ -40,9 +42,9 @@ from custom_components.device_sentinel.const import (
     DEV_FROZEN_CATEGORY,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_MEAN,
-    DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_SD,
+    DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     EPOCH_KEPT,
@@ -792,3 +794,45 @@ async def test_nothing_is_wiped_without_a_backup(
     assert record[DEV_DAILY_MAX] == [600.0]
     # And the epoch is not marked done, so the next start tries again.
     assert entry.runtime_data.data[DATA_STATS_EPOCH] == "an-older-epoch"
+
+
+def test_the_kept_set_names_constants_and_not_literals():
+    """Ruling #207. The first cut of this tuple spelled the stored
+    keys out as strings, which works and which the partition test
+    proves, but it was the only place in the package naming a stored
+    field by literal.
+
+    A constant's value changing would have moved CLOCK_FIELDS and
+    left this behind, and the failure would have been a field quietly
+    surviving a wipe. So the source is read as text: every entry has
+    to be a constant reference.
+    """
+    source = Path(const.__file__).read_text(encoding="utf-8")
+    start = source.index("EPOCH_KEPT = (")
+    body = source[start:source.index(")", start)]
+    entries = [
+        line.strip().rstrip(",")
+        for line in body.split("\n")[1:]
+        if line.strip()
+    ]
+    assert entries, "the kept set is empty"
+    for entry in entries:
+        assert entry.startswith("DEV_"), entry
+        assert not entry.startswith('"'), entry
+    assert len(entries) == len(EPOCH_KEPT)
+
+
+def test_the_clock_fields_and_the_wipe_overlap_as_documented():
+    """The merge runs before the wipe because they overlap, and the
+    comment saying so carried a count that went stale twice (#207).
+
+    Pinned as a fact rather than a number in prose: some clock field
+    is wiped, so the ordering is load-bearing.
+    """
+    overlap = set(CLOCK_FIELDS) & (
+        set(_new_device_record("", None)) - set(EPOCH_KEPT)
+    )
+    assert overlap, (
+        "no clock field is wiped, so the merge ordering no longer "
+        "matters and the comment arguing for it should be revisited"
+    )
