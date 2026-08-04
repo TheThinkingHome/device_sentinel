@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.11.6 (2026-08-04)
+# File: narrative.py, Version: 0.11.12 (2026-08-04)
 
 """How to say what happened: the composer.
 
@@ -31,12 +31,12 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    DATA_DEVICES,
-    DEV_BATTERY_VALUE,
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
     ACTION_UNACKNOWLEDGED,
+    DATA_DEVICES,
+    DEV_BATTERY_VALUE,
     INCIDENT_ACKNOWLEDGED,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
@@ -52,6 +52,7 @@ from .const import (
     TODO_DEVICE_ID,
     TODO_KINDS,
     TODO_KIND_BATTERY,
+    TODO_KIND_BATTERY_FALLING,
     TODO_KIND_FROZEN,
     TODO_KIND_NOT_REPORTED,
     TODO_KIND_SIGNAL,
@@ -80,6 +81,10 @@ class NarrativeMixin:
         TODO_KIND_UNKNOWN,
         TODO_KIND_NOT_REPORTED,
         TODO_KIND_BATTERY,
+        # A forecast ranks below the level it forecasts: a cell that
+        # has crossed the threshold is more urgent than one heading
+        # for it (ruling #215).
+        TODO_KIND_BATTERY_FALLING,
         TODO_KIND_SIGNAL,
     )
 
@@ -100,6 +105,10 @@ class NarrativeMixin:
         TODO_KIND_UNAVAILABLE: "went unavailable",
         TODO_KIND_UNKNOWN: "went unknown",
         TODO_KIND_SIGNAL: "signal railed",
+        # Present tense, because nothing happened to the device: what
+        # changed is what the readings now say about where it is
+        # heading (ruling #215).
+        TODO_KIND_BATTERY_FALLING: "battery is running down",
     }
 
     # Each kind carries its own duration template rather than sharing
@@ -120,6 +129,13 @@ class NarrativeMixin:
         TODO_KIND_SIGNAL: (
             "signal has been railed for {ago}",
             "signal is railed",
+        ),
+        # No duration, because how long the projection has stood is
+        # not the interesting number; how long the cell has is, and
+        # the brief's own falling line carries that.
+        TODO_KIND_BATTERY_FALLING: (
+            "battery is running down",
+            "battery is running down",
         ),
     }
 

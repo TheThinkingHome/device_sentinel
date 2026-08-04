@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.11.11 (2026-08-04)
+# File: const.py, Version: 0.11.12 (2026-08-04)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1043,6 +1043,22 @@ TODO_KIND_UNAVAILABLE = FREEZE_CATEGORY_UNAVAILABLE
 TODO_KIND_UNKNOWN = FREEZE_CATEGORY_UNKNOWN
 TODO_KIND_NOT_REPORTED = FREEZE_CATEGORY_NOT_REPORTED
 TODO_KIND_SIGNAL = "signal"
+
+# Every problem kind, in one place. Five tables map a kind to words
+# and each was written by hand, so adding the falling kind gave it
+# wording in one of them and left a raw key reading "battery_falling"
+# in a person's brief. The guard against exactly that listed the
+# kinds by hand too, so it kept passing while checking six of seven
+# (ruling #215). Anything that maps kinds reads this.
+TODO_KINDS_ALL = (
+    TODO_KIND_FROZEN,
+    TODO_KIND_UNAVAILABLE,
+    TODO_KIND_UNKNOWN,
+    TODO_KIND_NOT_REPORTED,
+    TODO_KIND_BATTERY,
+    TODO_KIND_BATTERY_FALLING,
+    TODO_KIND_SIGNAL,
+)
 
 # The additions journal. Every item added and every kind that joins
 # an existing item is recorded here and announced on the dispatcher

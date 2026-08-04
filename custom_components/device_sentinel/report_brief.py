@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.11.8 (2026-08-04)
+# File: report_brief.py, Version: 0.11.12 (2026-08-04)
 
 """The daily brief: the one report written for a person.
 
@@ -72,6 +72,7 @@ from .const import (
     TODO_DEVICE_ID,
     TODO_KINDS,
     TODO_KIND_BATTERY,
+    TODO_KIND_BATTERY_FALLING,
     TODO_KIND_FROZEN,
     TODO_KIND_NOT_REPORTED,
     TODO_KIND_SIGNAL,
@@ -196,8 +197,21 @@ class BriefMixin:
             TODO_KIND_UNAVAILABLE: "went unavailable",
             TODO_KIND_UNKNOWN: "went unknown",
             TODO_KIND_SIGNAL: "signal railed",
+            TODO_KIND_BATTERY_FALLING: "battery is running down",
         }
         return wording.get(kind, kind)
+
+    def _brief_falling_text(self, device_id: str) -> str:
+        """Return the falling clause with its time left where known.
+
+        Read from the same rows the report and the sensor use, so a
+        person cannot be told two different times for one cell
+        (ruling #215).
+        """
+        for row in self.battery_falling_list:
+            if row.get("device_id") == device_id:
+                return f"battery empty in {row['left']}"
+        return "battery running down"
 
     def _brief_now_rows(
         self,
@@ -232,6 +246,9 @@ class BriefMixin:
                     TODO_KIND_UNKNOWN: "unknown",
                     TODO_KIND_SIGNAL: "signal railed",
                     TODO_KIND_BATTERY: self._brief_battery_text(device_id),
+                    TODO_KIND_BATTERY_FALLING: (
+                        self._brief_falling_text(device_id)
+                    ),
                 }.get(kind, kind)
                 rows.append((name, problem, since or now, kind, device_id))
         rows.sort(key=lambda row: row[2])
