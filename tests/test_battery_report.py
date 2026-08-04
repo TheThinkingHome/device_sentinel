@@ -25,6 +25,7 @@ import re
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
+    CONF_BATTERY_DAYS,
     DATA_DEVICES,
     DATA_INCIDENTS,
     DATA_TODO_ITEMS,
@@ -91,8 +92,13 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
 
     assert page.index("Door 2nd Bedroom") < page.index("Soil Moisture")
     assert "-1.75/day" in page
-    assert "<td style='color:#D03B3B'>7</td>" in page
-    assert "<td>59</td>" in page
+    # Words rather than a count, and widening with distance, because
+    # the projection moves further the further out it reaches
+    # (ruling #197).
+    assert "<td style='color:#D03B3B'>under a week</td>" in page
+    assert "<td>about 2 months</td>" in page
+    assert ">7<" not in page
+    assert ">59<" not in page
 
 
 async def test_the_sag_and_rebound_do_not_move_the_slope(
@@ -275,7 +281,7 @@ async def test_the_brief_names_a_cell_that_is_nearly_out(
     ) as handle:
         brief = handle.read()
 
-    assert "Batteries falling: Door 2nd Bedroom (7 days)" in brief
+    assert "Batteries falling: Door 2nd Bedroom (under a week)" in brief
     assert "<a href='http" in brief
     assert "the battery report</a>" in brief
     assert "href='/local/device_sentinel/battery_report.html'" not in brief
@@ -346,3 +352,60 @@ async def test_a_quiet_fleet_adds_no_line(
         encoding="utf-8",
     ) as handle:
         assert "Batteries falling" not in handle.read()
+
+
+async def test_time_left_is_said_in_words_that_widen_with_distance(
+    hass: HomeAssistant,
+):
+    """Ruling #197. The band a projection lands in has to be wider
+    the further out it reaches, because the error grows with it: the
+    proving cell moved forty percent in one afternoon, which on a
+    reading of 1122 days is a true value somewhere between 670 and
+    1570.
+    """
+    coord = await setup_coordinator(hass)
+    said = coord.battery_time_left
+    assert said(3) == "under a week"
+    assert said(7) == "under a week"
+    assert said(7.1) == "about 2 weeks"
+    assert said(30) == "about a month"
+    assert said(59) == "about 2 months"
+    assert said(92) == "about 6 months"
+    assert said(304) == "under a year"
+    assert said(1122) == "over a year"
+
+
+async def test_the_horizon_is_the_persons_to_set(
+    hass: HomeAssistant,
+):
+    """Days Till Empty, 7 to 30 (ruling #197). A cell two weeks out
+    is named at thirty and silent at seven.
+    """
+    coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
+    device, _ = register_device(hass, "hz1", "Two Weeks Out")
+    # 20 percent falling 1.5 a day is a little over thirteen days.
+    _seed(coord, device.id,
+          [40.0, 38.5, 37.0, 35.5, 34.0, 32.5, 31.0, 29.5,
+           28.0, 26.5, 25.0, 23.5, 22.0, 20.5, 20.0, 20.0], 20.0)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    assert "Two Weeks Out" in _brief(hass)
+
+    hass.config_entries.async_update_entry(
+        coord.entry,
+        options={**coord.entry.options, CONF_BATTERY_DAYS: 7},
+    )
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    assert "Batteries falling" not in _brief(hass)
+    # Still in the report, which lists everything falling.
+    assert "Two Weeks Out" in _page(hass)
+
+
+def _brief(hass) -> str:
+    with open(
+        os.path.join(
+            hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
+        ),
+        encoding="utf-8",
+    ) as handle:
+        return handle.read()

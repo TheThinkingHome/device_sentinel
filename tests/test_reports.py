@@ -372,14 +372,18 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     assert "SIG MIN" not in header
     assert "SIG FROZEN" not in header
 
+    # The floor is what dwell is measured against, so a floor that
+    # moves makes dwell unreadable across days (ruling #196).
+    assert "FLOOR/WK" in header
+
     # Every data row must have exactly as many cells as the header,
-    # nine since 0.10.15 added MEAN±SD, so a dropped column can
-    # never leave the rows misaligned.
+    # ten since 0.11.3 added FLOOR/WK, so a dropped column can never
+    # leave the rows misaligned.
     def _cells(line: str) -> int:
         return len([c for c in line.strip().strip("|").split("|")])
 
     header_cells = _cells(header)
-    assert header_cells == 9, header_cells
+    assert header_cells == 10, header_cells
     data_rows = [
         line
         for line in text.splitlines()

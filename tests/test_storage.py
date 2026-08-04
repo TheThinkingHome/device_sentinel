@@ -52,6 +52,7 @@ from custom_components.device_sentinel.const import (
     CONF_RETENTION_DAYS,
     CONF_SETTLE_SHARE,
     DAILY_MAX_KEEP,
+    SIGNAL_DAYS_KEEP,
     DATA_DEVICES,
     DATA_EPISODES,
     CONF_LOW_THRESHOLD,
@@ -646,28 +647,55 @@ async def test_every_kind_has_words_for_both_shapes(
 # Ninety days kept, a fortnight judged.
 # ==================================================================
 
-async def test_the_floor_ignores_history_beyond_a_fortnight(
+async def test_the_floor_ignores_history_beyond_its_window(
     hass: HomeAssistant,
 ):
-    """The guard that matters. The floor is the third lowest reading
-    it can see, and the third lowest of ninety days is lower than the
-    third lowest of fourteen, so reading the whole series would
-    quietly slacken every floor on the fleet."""
+    """The guard that matters. The floor is a trimmed minimum, so the
+    fourth lowest of ninety days is lower than the fourth lowest of
+    thirty, and reading the whole series would quietly slacken every
+    floor on the fleet.
+
+    The window is thirty days rather than the fourteen the rhythm
+    uses (ruling #196): a fortnight forgets a device's genuinely bad
+    days and sits too high, and a floor that jumps as one ages out is
+    what made dwell spike and collapse rather than trend.
+    """
     device, _ = _register(hass, "fl1", "Floor Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     record = coord.data["devices"][device.id]
 
-    fortnight = [100.0 - n for n in range(DAILY_MAX_KEEP)]
-    record[DEV_SIGNAL_DAILY_MIN] = list(fortnight)
-    with_a_fortnight = coord._danger_line(record)
+    month = [100.0 - n for n in range(SIGNAL_DAYS_KEEP)]
+    record[DEV_SIGNAL_DAILY_MIN] = list(month)
+    with_a_month = coord._danger_line(record)
 
-    # The same fortnight, preceded by far worse older days.
-    record[DEV_SIGNAL_DAILY_MIN] = [10.0] * 40 + list(fortnight)
+    # The same month, preceded by far worse older days.
+    record[DEV_SIGNAL_DAILY_MIN] = [10.0] * 40 + list(month)
     with_a_season = coord._danger_line(record)
 
-    assert with_a_season == with_a_fortnight
+    assert with_a_season == with_a_month
     assert 10.0 not in coord._signal_history(record)
+    assert len(coord._signal_history(record)) == SIGNAL_DAYS_KEEP
+
+
+async def test_a_bad_day_three_weeks_back_still_counts(
+    hass: HomeAssistant,
+):
+    """The reason the window moved (ruling #196). On the reference
+    fleet fifty-one of seventy-eight devices had a worse day just
+    outside the fortnight, so a fourteen day floor sat above what
+    those devices actually do, and it jumped when the day aged out.
+    """
+    device, _ = _register(hass, "fl2", "Long Memory")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    record = coord.data["devices"][device.id]
+
+    # Twenty steady days, with three bad ones twenty-one days back.
+    record[DEV_SIGNAL_DAILY_MIN] = (
+        [40.0, 40.0, 40.0] + [100.0] * 20
+    )
+    assert 40.0 in coord._signal_history(record)
 
 
 async def test_the_signal_series_keeps_ninety_days(
@@ -685,17 +713,31 @@ async def test_the_signal_series_keeps_ninety_days(
     assert record[DEV_SIGNAL_DAILY_MIN][-1] == 42.0
 
 
-async def test_the_columns_show_the_same_fortnight_as_before(
+async def test_the_columns_show_the_window_and_not_the_season(
     hass: HomeAssistant,
 ):
-    """A season of history must not widen the report's columns."""
+    """A season of history must not widen the report's columns.
+
+    The signal column shows exactly the window the floor is computed
+    over, thirty days since ruling #196. Showing fewer would leave
+    the marked value outside the cell on any device whose worst days
+    sit further back, and a reader would see every reading struck
+    with none marked.
+    """
     device, _ = _register(hass, "co1", "Column Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     record = coord.data["devices"][device.id]
     record[DEV_SIGNAL_DAILY_MIN] = [50.0 + n for n in range(DEFAULT_RETENTION_DAYS)]
     cell = coord._format_signal_lows_cell(record)
-    assert len(cell.split()) == DAILY_MAX_KEEP
+    assert len(cell.split()) == SIGNAL_DAYS_KEEP
+    # The rhythm column is unchanged; the two windows differ on
+    # purpose, because a trimmed maximum and a trimmed minimum need
+    # different lengths of memory.
+    record[DEV_DAILY_MAX] = [60.0 + n for n in range(DEFAULT_RETENTION_DAYS)]
+    assert len(coord._format_maxima_cell(record[DEV_DAILY_MAX]).split()) == (
+        DAILY_MAX_KEEP
+    )
 
 
 async def test_the_maintainer_files_live_at_the_top(

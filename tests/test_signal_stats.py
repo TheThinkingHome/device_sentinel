@@ -37,6 +37,7 @@ from homeassistant.util import dt as dt_util
 from custom_components.device_sentinel.const import (
     BRIEF_TRIGGER,
     CLOCK_FIELDS,
+    CONF_SIGNAL_ANOMALY_TRIM,
     CONF_SIGNAL_MARGIN,
     CONF_SIGNAL_RED,
     DATA_DEVICES,
@@ -760,3 +761,81 @@ async def test_the_diagnostics_say_whether_the_line_was_bounded(
     payload = await async_get_config_entry_diagnostics(hass, coord.entry)
     row = payload["devices"][device.id]
     assert row["signal_line_bounded"] is True
+
+
+# ------------------------------- the window and the ladder (#196)
+
+async def test_the_trim_is_one_reading_per_full_week(
+    hass: HomeAssistant,
+):
+    """Ruling #196. A count that does not grow with the window
+    thins as the window does: two rungs discarded fourteen percent
+    of a fortnight and would discard nine percent of a month,
+    lowering every floor on the fleet as a side effect of a change
+    meant to be about stability.
+    """
+    coord = await setup_coordinator(hass)
+    assert coord._signal_effective_k(6) == 0
+    assert coord._signal_effective_k(7) == 1
+    assert coord._signal_effective_k(13) == 1
+    assert coord._signal_effective_k(14) == 2
+    assert coord._signal_effective_k(21) == 3
+    assert coord._signal_effective_k(28) == 4
+    # The window caps at thirty, so the ladder caps with it.
+    assert coord._signal_effective_k(30) == 4
+
+
+async def test_the_slider_still_shifts_the_rung(
+    hass: HomeAssistant,
+):
+    """Anomaly Trim keeps working on top of the ladder, and the
+    clamp still leaves one reading to be the floor."""
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_ANOMALY_TRIM: 1})
+    assert coord._signal_effective_k(28) == 5
+    hass.config_entries.async_update_entry(
+        coord.entry,
+        options={**coord.entry.options, CONF_SIGNAL_ANOMALY_TRIM: -2},
+    )
+    assert coord._signal_effective_k(28) == 2
+    assert coord._signal_effective_k(1) == 0
+
+
+async def test_the_telemetry_report_shows_the_floor_moving(
+    hass: HomeAssistant,
+):
+    """The floor is what dwell is measured against, so a floor that
+    moves makes dwell unreadable across days. On the reference fleet
+    forty-three of seventy-nine were moving a point a week or more
+    and one was moving thirty-four (ruling #196).
+    """
+    coord = await setup_coordinator(hass)
+    sinking, _ = register_device(hass, "fd1", "Sinking Floor")
+    steady, _ = register_device(hass, "fd2", "Steady Floor")
+    # A floor walking down two points a day.
+    coord.data[DATA_DEVICES][sinking.id][DEV_SIGNAL_DAILY_MIN] = [
+        float(120 - n * 2) for n in range(20)
+    ]
+    coord.data[DATA_DEVICES][steady.id][DEV_SIGNAL_DAILY_MIN] = [
+        100.0
+    ] * 20
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    with open(
+        hass.config.path("device_sentinel/device_telemetry.md"),
+        encoding="utf-8",
+    ) as handle:
+        text = handle.read()
+
+    assert "FLOOR/WK" in text
+    sinking_row = next(
+        line for line in text.splitlines() if "Sinking Floor" in line
+    )
+    steady_row = next(
+        line for line in text.splitlines() if "Steady Floor" in line
+    )
+    assert "/wk" in sinking_row
+    # The series falls two points a day, so its floor walks down
+    # fourteen a week, and the cell carries the current floor with it.
+    assert "86 -14/wk" in sinking_row
+    assert "flat" in steady_row
+    assert "/wk" not in steady_row
