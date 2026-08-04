@@ -3,24 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.11.3 (2026-08-04)
+# File: test_brief_wording.py, Version: 0.11.8 (2026-08-04)
 
-"""The incident log and the daily brief: the memory and the report.
-
-The incident log is a problem's whole life on one timeline, opened,
-resolved with its duration and borrowed cause, acknowledged. The
-composer turns those rows into two shapes: an event sentence that reads
-as history and carries its time, and a device line that reads as
-current status and carries none. The reconcile pass states what is
-still true for a problem that predates the engine, idempotently and
-skipping the acknowledged. The daily brief opens in that prose, history
-oldest first then what is standing, in language that needs no knowledge
-of the internals, and its grammar, its acknowledgment handling, its
-intervention attribution, and its one-window-one-file naming all have
-to stay honest. This file holds the log, the composer, the reconcile,
-the prose, and those four honesty fixes; the window close, the
-schedule, and the email delivery follow in the same file.
-""""""How the brief says things: prose, device lines, pairing.
+"""How the brief says things: prose, device lines, pairing.
 
 One of the files split out of test_email_brief.py, which had
 grown larger than any source file in the project (ruling #203).

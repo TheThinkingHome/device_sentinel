@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.11.3 (2026-08-04)
+# File: test_hardening.py, Version: 0.11.8 (2026-08-04)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -49,6 +49,8 @@ from custom_components.device_sentinel.const import (
     DEV_LAST_ACTIVITY,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
+    LOW_THRESHOLD_MAX,
+    LOW_THRESHOLD_MIN,
     WIKI_BASE_URL,
     WIKI_LINK_BATTERY,
     WIKI_LINK_DEVICE_PAGE,
@@ -523,3 +525,29 @@ async def test_the_battery_screen_carries_both_questions(
     assert offered[1] == CONF_BATTERY_DAYS
     labels = _strings()["options"]["step"]["battery"]["data"]
     assert labels[CONF_BATTERY_DAYS] == "Days Till Empty"
+
+
+async def test_both_doors_offer_the_same_range(hass: HomeAssistant):
+    """Ruling #205. The battery threshold has two ways in, the
+    options dialog and a dashboard slider, and the file's own
+    docstring promised they stay in step. They stayed in step by
+    luck: the range was written 1 to 99 in each, with nothing
+    shared, so editing one would have offered the same setting under
+    two different limits.
+    """
+    from custom_components.device_sentinel.number import (
+        DeviceSentinelBatteryThresholdNumber,
+    )
+
+    entry = await setup_entry(hass)
+    result = await _open(hass, entry, "battery")
+    dialog = next(
+        v for k, v in result["data_schema"].schema.items()
+        if str(k) == CONF_LOW_THRESHOLD
+    )
+    assert dialog.config["min"] == LOW_THRESHOLD_MIN
+    assert dialog.config["max"] == LOW_THRESHOLD_MAX
+
+    slider = DeviceSentinelBatteryThresholdNumber(entry.runtime_data)
+    assert slider.native_min_value == LOW_THRESHOLD_MIN
+    assert slider.native_max_value == LOW_THRESHOLD_MAX

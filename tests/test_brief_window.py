@@ -3,24 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_window.py, Version: 0.11.3 (2026-08-04)
+# File: test_brief_window.py, Version: 0.11.8 (2026-08-04)
 
-"""The incident log and the daily brief: the memory and the report.
-
-The incident log is a problem's whole life on one timeline, opened,
-resolved with its duration and borrowed cause, acknowledged. The
-composer turns those rows into two shapes: an event sentence that reads
-as history and carries its time, and a device line that reads as
-current status and carries none. The reconcile pass states what is
-still true for a problem that predates the engine, idempotently and
-skipping the acknowledged. The daily brief opens in that prose, history
-oldest first then what is standing, in language that needs no knowledge
-of the internals, and its grammar, its acknowledgment handling, its
-intervention attribution, and its one-window-one-file naming all have
-to stay honest. This file holds the log, the composer, the reconcile,
-the prose, and those four honesty fixes; the window close, the
-schedule, and the email delivery follow in the same file.
-""""""Which window the brief covers, and what it is named.
+"""Which window the brief covers, and what it is named.
 
 One of the files split out of test_email_brief.py, which had
 grown larger than any source file in the project (ruling #203).
@@ -335,3 +320,36 @@ async def test_the_closed_brief_still_runs_brief_to_brief(
     text = _text(hass.config.path("www", "device_sentinel", closed))
     assert "Covering the 24 hours since" in text
     assert "(in progress)" not in text
+
+
+async def test_the_span_is_counted_and_not_asserted(
+    hass: HomeAssistant, freezer,
+):
+    """Ruling #206. The window is anchored to the wall clock so a
+    seven o'clock brief covers seven to seven, which across a
+    daylight saving change is 23 or 25 real hours rather than 24.
+
+    Reproduced on a New York clock before the fix: the March window
+    measures 23.0 hours and the November one 25.0, and the page said
+    24 for both. Anchoring to the epoch instead would hold the number
+    and move the brief hour, which is the thing a person notices.
+    """
+    await hass.config.async_update(time_zone="America/New_York")
+    coord = await setup_coordinator(hass)
+
+    for when, expected in (
+        ("2026-07-15T12:00:00+00:00", 24),
+        ("2026-03-08T12:00:00+00:00", 23),
+        ("2026-11-01T13:00:00+00:00", 25),
+    ):
+        freezer.move_to(when)
+        start, end = coord._brief_close_bounds()
+        assert round((end - start) / 3600.0) == expected, when
+        text = coord._write_brief(
+            hass.config.path("www", "device_sentinel"),
+            BRIEF_TRIGGER,
+            start,
+            end,
+            complete=True,
+        )
+        assert f"Covering the {expected} hours since" in text

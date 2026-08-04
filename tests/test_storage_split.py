@@ -3,28 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.10.23 (2026-08-03)
+# File: test_storage_split.py, Version: 0.11.8 (2026-08-04)
 
-"""Persistence: the write cadence, the split shadow, and retention.
-
-Per-device statistics survive a reload: a device driven through the
-coordinator writes its record to the store and reads it back intact
-across a restart. Two tiers of write keep the store honest without
-thrashing it. Routine
-activity-clock churn coalesces into one delayed save on the coalesce
-window; anything a reboot must not lose (a verdict, a battery flip, an
-acknowledgment) saves immediately. The delayed write has to actually
-fire rather than reschedule itself forever under continuous churn. The
-storage split writes a clocks shadow on the same triggers and never
-reads it, which is the whole safety argument, alongside a one-time
-pre-split backup that copies and never overwrites. Retention bounds the
-records that are supposed to forget (briefs, episodes, incidents) and
-lets the user choose how long the long series are kept, and the rule
-that makes every length safe is that no verdict depends on retention:
-the freeze rhythm and the signal floor read only the most recent
-fortnight however much is stored. This file holds the two-tier writes,
-the coalesce firing, the split shadow and backup, and retention.
-""""""The two files: the shadow, the merge, and the stamps.
+"""The two files: the shadow, the merge, and the stamps.
 
 One of the files split out of test_storage.py, which had
 grown larger than any source file in the project (ruling #203).
@@ -36,6 +17,7 @@ pooled, so each file reads on its own.
 
 
 from datetime import timedelta
+from unittest.mock import patch
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -48,16 +30,23 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.device_sentinel.const import (
     CLOCK_FIELDS,
-    DATA_DEVICES,
-    DEV_DAILY_MAX,
-    DEV_EVENT_COUNT,
-    DEV_LAST_ACTIVITY,
-    INCIDENT_OPENED,
     DATA_CLEAN_STOP,
+    DATA_DEVICES,
     DATA_SAVED_AT,
     DATA_STATS_EPOCH,
+    DEV_BATTERY_DAILY,
+    DEV_DAILY_MAX,
+    DEV_EVENT_COUNT,
+    DEV_FROZEN_CATEGORY,
+    DEV_LAST_ACTIVITY,
+    DEV_SIGNAL_DAILY_MEAN,
+    DEV_SIGNAL_DWELL_DAILY,
+    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
+    EPOCH_KEPT,
+    INCIDENT_OPENED,
     STATS_EPOCH,
     STORAGE_CLOCKS_KEY,
     STORAGE_COALESCE_SECONDS,
@@ -248,7 +237,15 @@ async def test_the_split_state_reaches_diagnostics(
     hass: HomeAssistant,
 ):
     """It was confirmable only from a terminal, which is no way to
-    verify a release (0.8.8)."""
+    verify a release (0.8.8).
+
+    The phase is read from the flag that gates the strip rather than
+    written down, after the string said Phase B for eleven releases
+    following Phase C shipping (ruling #205). Setup takes the backup
+    the strip waits on, so a healthy install reports C, and the
+    string moves with the flag rather than being a constant wearing a
+    different value.
+    """
     from custom_components.device_sentinel.diagnostics import (
         async_get_config_entry_diagnostics,
     )
@@ -257,7 +254,11 @@ async def test_the_split_state_reaches_diagnostics(
     entry = await setup_entry(hass)
     diag = await async_get_config_entry_diagnostics(hass, entry)
     split = diag["split"]
-    assert split["phase"].startswith("B:")
+    assert split["phase"].startswith("C:")
+    # And it moves with the flag rather than being a constant.
+    entry.runtime_data._strip_clocks = False
+    later = await async_get_config_entry_diagnostics(hass, entry)
+    assert later["split"]["phase"].startswith("B:")
     assert set(split["clock_fields"]) == set(CLOCK_FIELDS)
     assert split["clock_devices"] >= 1
 
@@ -436,10 +437,15 @@ async def test_a_device_only_the_hot_file_knows_is_skipped(
 async def test_the_epoch_wipe_still_has_the_last_word(
     hass: HomeAssistant, hass_storage
 ):
-    """The ordering the merge depends on. Six of the nine clock
-    fields are exactly what a statistics epoch wipes, so a merge that
-    ran afterwards would hand them straight back and a declared epoch
-    would quietly fail to take."""
+    """The ordering the merge depends on: a merge running after the
+    wipe would hand the wiped fields straight back.
+
+    Narrowed in 0.11.8. The epoch wipes the rhythm and the verdict
+    drawn from it, six fields, and keeps everything else, because
+    there is no raw layer to rebuild a wiped series from and the
+    signal and battery histories are soaks in progress (ruling #204).
+    So the taint flag is reset here and the signal reading is not.
+    """
     device, _eid = _register(hass, "hot5", "Epoch Device")
     stale = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
     hass_storage[STORAGE_KEY] = {
@@ -456,8 +462,12 @@ async def test_the_epoch_wipe_still_has_the_last_word(
 
     entry = await setup_entry(hass)
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
-    assert record[DEV_SIGNAL_VALUE] is None
     assert record[DEV_TAINTED] is False
+    assert record[DEV_DAILY_MAX] == []
+    # Kept, and the reason the wipe was narrowed: a wiped series
+    # cannot be rebuilt, because the readings behind it are never
+    # stored.
+    assert record[DEV_SIGNAL_VALUE] == 42.0
 
 
 async def test_shutdown_writes_the_pair_whatever_the_flags_say(
@@ -676,3 +686,109 @@ async def test_an_older_record_gains_the_fields_this_version_adds(
     coord = entry.runtime_data
     record = coord.data[DATA_DEVICES][device.id]
     assert set(record.keys()) == set(_new_device_record("", None))
+
+
+async def test_an_epoch_wipe_keeps_what_cannot_be_rebuilt(
+    hass: HomeAssistant, hass_storage
+):
+    """Ruling #204. There is no raw layer under these records: a
+    reading is folded into a daily figure as it arrives and the
+    reading itself is never stored, so a wiped series is gone with
+    nothing to rebuild it from.
+
+    The epoch exists to relearn the rhythm, which its own log line
+    has always said. It wipes six fields and keeps the rest, so a
+    signal soak measured in weeks and a battery soak measured in
+    months both survive a rhythm rule changing.
+    """
+    device, _eid = _register(hass, "ep2", "Soaking Device")
+    stale = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    stale[DEV_DAILY_MAX] = [600.0, 700.0]
+    stale[DEV_SIGNAL_DAILY_MIN] = [120.0, 116.0]
+    stale[DEV_SIGNAL_DAILY_MEAN] = [147.7]
+    stale[DEV_SIGNAL_DAILY_SD] = [7.5]
+    stale[DEV_BATTERY_DAILY] = [32.0, 31.5]
+    stale[DEV_SIGNAL_DWELL_DAILY] = [4.0, 96.7]
+    stale[DEV_FROZEN_CATEGORY] = "frozen"
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {
+            DATA_DEVICES: {device.id: stale},
+            DATA_STATS_EPOCH: "an-older-epoch",
+            DATA_SAVED_AT: 1000.0,
+        },
+    }
+
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+
+    # The rhythm, and the verdicts drawn from it, are gone. Dwell
+    # counts as a verdict: it was accrued against a line the rule
+    # change moved, and nothing survives to recompute it from.
+    assert record[DEV_DAILY_MAX] == []
+    assert record[DEV_FROZEN_CATEGORY] is None
+    assert record[DEV_SIGNAL_DWELL_DAILY] == []
+    # Both soaks survive.
+    assert record[DEV_SIGNAL_DAILY_MIN] == [120.0, 116.0]
+    assert record[DEV_SIGNAL_DAILY_MEAN] == [147.7]
+    assert record[DEV_SIGNAL_DAILY_SD] == [7.5]
+    assert record[DEV_BATTERY_DAILY] == [32.0, 31.5]
+
+
+def test_the_kept_set_and_the_wipe_partition_the_schema():
+    """The half that keeps this honest as fields are added.
+
+    A count that has to be maintained by hand drifts, which is the
+    fault #189 exists for. Here the wipe is derived, so what needs
+    pinning is that every schema field is either kept on purpose or
+    wiped on purpose, and none is in neither or both.
+    """
+    schema = set(_new_device_record("", None))
+    kept = set(EPOCH_KEPT)
+    assert kept <= schema, sorted(kept - schema)
+    wiped = schema - kept
+    assert len(wiped) == 7, sorted(wiped)
+    assert wiped == {
+        "daily_max",
+        "today_max",
+        "event_count",
+        "tainted",
+        "frozen_category",
+        "frozen_since",
+        # A verdict rather than a measurement: accrued against a line
+        # that a rule change moves, and not recomputable afterwards
+        # because the readings behind it are gone.
+        "signal_dwell_daily_pct",
+    }
+
+
+async def test_nothing_is_wiped_without_a_backup(
+    hass: HomeAssistant, hass_storage
+):
+    """A wipe cannot be undone, so a backup that will not take is a
+    stop rather than a warning (ruling #204)."""
+    device, _eid = _register(hass, "ep3", "Guarded Device")
+    stale = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    stale[DEV_DAILY_MAX] = [600.0]
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {
+            DATA_DEVICES: {device.id: stale},
+            DATA_STATS_EPOCH: "an-older-epoch",
+            DATA_SAVED_AT: 1000.0,
+        },
+    }
+
+    async def _refuse(hass, data, suffix):
+        return False
+
+    with patch(
+        "custom_components.device_sentinel.coordinator.async_take_backup",
+        _refuse,
+    ):
+        entry = await setup_entry(hass)
+
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+    assert record[DEV_DAILY_MAX] == [600.0]
+    # And the epoch is not marked done, so the next start tries again.
+    assert entry.runtime_data.data[DATA_STATS_EPOCH] == "an-older-epoch"

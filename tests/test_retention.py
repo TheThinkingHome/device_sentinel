@@ -3,28 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_retention.py, Version: 0.10.23 (2026-08-03)
+# File: test_retention.py, Version: 0.11.8 (2026-08-04)
 
-"""Persistence: the write cadence, the split shadow, and retention.
-
-Per-device statistics survive a reload: a device driven through the
-coordinator writes its record to the store and reads it back intact
-across a restart. Two tiers of write keep the store honest without
-thrashing it. Routine
-activity-clock churn coalesces into one delayed save on the coalesce
-window; anything a reboot must not lose (a verdict, a battery flip, an
-acknowledgment) saves immediately. The delayed write has to actually
-fire rather than reschedule itself forever under continuous churn. The
-storage split writes a clocks shadow on the same triggers and never
-reads it, which is the whole safety argument, alongside a one-time
-pre-split backup that copies and never overwrites. Retention bounds the
-records that are supposed to forget (briefs, episodes, incidents) and
-lets the user choose how long the long series are kept, and the rule
-that makes every length safe is that no verdict depends on retention:
-the freeze rhythm and the signal floor read only the most recent
-fortnight however much is stored. This file holds the two-tier writes,
-the coalesce firing, the split shadow and backup, and retention.
-""""""How much is kept, and what reads only a window of it.
+"""How much is kept, and what reads only a window of it.
 
 One of the files split out of test_storage.py, which had
 grown larger than any source file in the project (ruling #203).
