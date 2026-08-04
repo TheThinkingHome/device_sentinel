@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.11.5 (2026-08-04)
+# File: problem_list.py, Version: 0.11.11 (2026-08-04)
 
 """The problem list: the single memory every channel renders.
 
@@ -52,6 +52,7 @@ from .const import (
     TODO_JOURNAL_KEEP,
     TODO_KINDS,
     TODO_KIND_BATTERY,
+    TODO_KIND_BATTERY_FALLING,
     TODO_KIND_SIGNAL,
     TODO_SORT_NAME,
     TODO_STATUS,
@@ -229,7 +230,12 @@ class ProblemListMixin:
         def _entry(device_id: str, name: str | None) -> dict[str, Any]:
             return problems.setdefault(
                 device_id,
-                {"name": name or device_id, "kinds": {}, "level": None},
+                {
+                    "name": name or device_id,
+                    "kinds": {},
+                    "level": None,
+                    "left": None,
+                },
             )
 
         for row in self.frozen_devices_list:
@@ -245,6 +251,23 @@ class ProblemListMixin:
             )
             entry["level"] = row.get("level")
 
+        # A falling cell, from the battery report's own rows so the
+        # list, the report, the brief and the sensor cannot disagree
+        # about which cells are near the end (ruling #213). Cells
+        # already low are absent from that source, so a device never
+        # carries both kinds at once from here; where one follows the
+        # other the item gains a kind and keeps its acknowledgment
+        # (rulings #123 and #133). Acknowledging silences the phone
+        # and not the record: the item stays on the list and updates
+        # to say the level as well as the projection, so a person who
+        # ticked off a forecast still watches it come true.
+        for row in self.battery_falling_list:
+            entry = _entry(row["device_id"], row.get("name"))
+            entry["kinds"][TODO_KIND_BATTERY_FALLING] = None
+            entry["left"] = row.get("left")
+            if entry["level"] is None:
+                entry["level"] = row.get("level")
+
         for row in self.signal_problem_list:
             entry = _entry(row["device_id"], row.get("name"))
             entry["kinds"][TODO_KIND_SIGNAL] = None
@@ -252,19 +275,34 @@ class ProblemListMixin:
         return problems
 
     @staticmethod
-    def _kind_word(kind: str, level: Any) -> str:
-        """Return one kind as the person reads it in the item text."""
+    def _kind_word(
+        kind: str, level: Any, left: str | None = None
+    ) -> str:
+        """Return one kind as the person reads it in the item text.
+
+        The falling kind reads as a warning rather than a fault,
+        because the cell is working: what is wrong is where it is
+        heading (ruling #213). It says the time in the same words the
+        report and the brief use, which are words rather than a count
+        of days because the projection moves (ruling #197).
+        """
         if kind == TODO_KIND_BATTERY:
             if level is None:
                 return "battery low"
             shown = int(level) if float(level).is_integer() else level
             return f"battery {shown}%"
+        if kind == TODO_KIND_BATTERY_FALLING:
+            return f"empty in {left}" if left else "battery falling"
         if kind == TODO_KIND_SIGNAL:
             return "signal (rail)"
         return kind.replace("_", " ")
 
     def _problem_item_text(
-        self, name: str, kinds: dict[str, float | None], level: Any
+        self,
+        name: str,
+        kinds: dict[str, float | None],
+        level: Any,
+        left: str | None = None,
     ) -> tuple[str, str]:
         """Return the summary and description for one item.
 
@@ -274,24 +312,28 @@ class ProblemListMixin:
         device is alive, then battery, then signal. The description
         expands each kind with its readable local start time, so the
         list line stays short and the tap-open carries the story.
+
+        A device that is both low and falling reads as one line, the
+        level then where it is heading: "battery 16%, empty in about
+        2 weeks" rather than two phrases stacked (ruling #213).
         """
-        order = [
-            kind
-            for kind in kinds
-            if kind not in (TODO_KIND_BATTERY, TODO_KIND_SIGNAL)
-        ]
-        if TODO_KIND_BATTERY in kinds:
-            order.append(TODO_KIND_BATTERY)
-        if TODO_KIND_SIGNAL in kinds:
-            order.append(TODO_KIND_SIGNAL)
+        tail = (
+            TODO_KIND_BATTERY,
+            TODO_KIND_BATTERY_FALLING,
+            TODO_KIND_SIGNAL,
+        )
+        order = [kind for kind in kinds if kind not in tail]
+        order += [kind for kind in tail if kind in kinds]
 
         summary = (
             f"{name}: "
-            + ", ".join(self._kind_word(kind, level) for kind in order)
+            + ", ".join(
+                self._kind_word(kind, level, left) for kind in order
+            )
         )
         lines = []
         for kind in order:
-            word = self._kind_word(kind, level)
+            word = self._kind_word(kind, level, left)
             since = kinds.get(kind)
             if since is not None:
                 when = self._format_report_time(
@@ -488,7 +530,10 @@ class ProblemListMixin:
                         device_id=device_id,
                     )
             summary, description = self._problem_item_text(
-                problem["name"], new_kinds, problem["level"]
+                problem["name"],
+                new_kinds,
+                problem["level"],
+                problem.get("left"),
             )
             if (
                 new_kinds != stored_kinds
@@ -509,7 +554,8 @@ class ProblemListMixin:
                 for kind, since in problem["kinds"].items()
             }
             summary, description = self._problem_item_text(
-                problem["name"], kinds, problem["level"]
+                problem["name"], kinds, problem["level"],
+                problem.get("left"),
             )
             kept.append(
                 {

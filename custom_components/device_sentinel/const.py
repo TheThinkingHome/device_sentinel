@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.11.10 (2026-08-04)
+# File: const.py, Version: 0.11.11 (2026-08-04)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1031,6 +1031,13 @@ TODO_ACKED_AT = "acked_at"
 # rename fails at import rather than quietly printing a raw kind
 # into somebody's daily brief.
 TODO_KIND_BATTERY = "battery"
+# A cell projected to reach empty inside the person's horizon. A
+# different kind from the one above and not a lesser version of it:
+# low is a level that has been crossed, falling is one that is going
+# to be, and a cell at eighty percent dropping steadily can have less
+# life left than one sitting at thirty that has not moved in a month.
+# They combine into one line when a device has both (ruling #213).
+TODO_KIND_BATTERY_FALLING = "battery_falling"
 TODO_KIND_FROZEN = FREEZE_CATEGORY_FROZEN
 TODO_KIND_UNAVAILABLE = FREEZE_CATEGORY_UNAVAILABLE
 TODO_KIND_UNKNOWN = FREEZE_CATEGORY_UNKNOWN

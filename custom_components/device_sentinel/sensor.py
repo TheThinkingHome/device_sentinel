@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.11.10 (2026-08-04)
+# File: sensor.py, Version: 0.11.11 (2026-08-04)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -263,6 +263,11 @@ class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:filter-outline"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+        # Off by default. It answers why a particular device is not
+    # watched, which is a question asked once if ever, so it
+    # belongs in the registry rather than on the page
+    # (ruling #212).
+    _attr_entity_registry_enabled_default = False
     sentinel_type = SENTINEL_TYPE_CLASSIFICATION
 
     @property
@@ -390,10 +395,12 @@ class DeviceSentinelSignalRailsSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    # Off by default: the todo list is where a person reads trouble
-    # devices. This count is for anyone who wants it on a dashboard or
-    # in an automation, so it is theirs to enable.
-    _attr_entity_registry_enabled_default = False
+    # On by default (ruling #212). The reasoning for hiding these
+    # was that the todo list carries trouble devices, which is
+    # true of two of the five and false of the rest: a weak link
+    # and a falling battery never reach that list, so hiding
+    # them meant a person had to know the sensor existed before
+    # they could see the problem.
     sentinel_type = SENTINEL_TYPE_SIGNAL_RAILS
 
     @property
@@ -432,7 +439,6 @@ class DeviceSentinelSignalWeakSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_entity_registry_enabled_default = False
     sentinel_type = SENTINEL_TYPE_SIGNAL_WEAK
 
     @property
@@ -465,10 +471,12 @@ class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    # Off by default, and diagnostic like its two siblings: the todo
-    # list carries trouble devices, so the three problem counts are
-    # opt-in rather than shown to everyone.
-    _attr_entity_registry_enabled_default = False
+    # On by default (ruling #212). The reasoning for hiding these
+    # was that the todo list carries trouble devices, which is
+    # true of two of the five and false of the rest: a weak link
+    # and a falling battery never reach that list, so hiding
+    # them meant a person had to know the sensor existed before
+    # they could see the problem.
     sentinel_type = SENTINEL_TYPE_LOW_BATTERIES
 
     @property
@@ -514,10 +522,12 @@ class DeviceSentinelFallingBatteriesSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    # Off by default like the other problem counts: the todo list is
-    # where a person reads trouble, and this is for a dashboard or an
-    # automation that asks for it.
-    _attr_entity_registry_enabled_default = False
+    # On by default (ruling #212). The reasoning for hiding these
+    # was that the todo list carries trouble devices, which is
+    # true of two of the five and false of the rest: a weak link
+    # and a falling battery never reach that list, so hiding
+    # them meant a person had to know the sensor existed before
+    # they could see the problem.
     sentinel_type = SENTINEL_TYPE_FALLING_BATTERIES
 
     @property
@@ -548,9 +558,12 @@ class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    # Off by default: trouble devices live in the todo list; this
-    # count is opt-in for dashboards and automations.
-    _attr_entity_registry_enabled_default = False
+    # On by default (ruling #212). The reasoning for hiding these
+    # was that the todo list carries trouble devices, which is
+    # true of two of the five and false of the rest: a weak link
+    # and a falling battery never reach that list, so hiding
+    # them meant a person had to know the sensor existed before
+    # they could see the problem.
     sentinel_type = SENTINEL_TYPE_FROZEN_DEVICES
 
     @property
