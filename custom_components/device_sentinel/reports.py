@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.11.1 (2026-08-03)
+# File: reports.py, Version: 0.11.2 (2026-08-03)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -38,6 +38,7 @@ from .const import (
     ACTION_DELETED,
     ACTION_READDED,
     ACTION_UNACKNOWLEDGED,
+    BATTERY_BRIEF_DAYS,
     BATTERY_DAYS_URGENT,
     BATTERY_FALLING_SLOPE,
     BATTERY_READABLE_MAX,
@@ -524,6 +525,22 @@ class ReportWritingMixin:
             "absent": sorted(absent, key=lambda r: r["name"] or ""),
         }
 
+    def _battery_brief_rows(self) -> list[dict[str, Any]]:
+        """Return the falling cells close enough for the brief.
+
+        The report's own table is unfiltered on purpose: somebody who
+        opened it wants the whole picture. The brief arrives whether
+        it was wanted or not, so it carries only what is near
+        (ruling #195). A cell already under the threshold is left out
+        as well, since it has its own row in Now and saying it twice
+        in one document helps nobody.
+        """
+        return [
+            row
+            for row in self._battery_rows()["falling"]
+            if row["days"] <= BATTERY_BRIEF_DAYS and not row["low"]
+        ]
+
     def _battery_bank_svg(self, rows: list[dict[str, Any]]) -> str:
         """Return the whole bank as ten-point bands, as inline SVG.
 
@@ -538,7 +555,12 @@ class ReportWritingMixin:
         for row in rows:
             bands[min(int(row["level"] // 10), 9)] += 1
         top = max(bands)
-        width, bar_w, gap, floor_y = 640, 50, 14, 150
+        # Ten bands have to fit inside the viewBox with room for the
+        # unit under the axis. 20 + 9 * 60 + 48 is 608, which leaves
+        # a margin; the first cut used 50 wide on 14 gaps and ran to
+        # 646 inside a 640 box, so the top band was clipped and the
+        # unit sat on top of its label.
+        width, bar_w, gap, floor_y = 640, 48, 12, 150
         parts = [
             f"<svg viewBox='0 0 {width} 180' width='100%' role='img' "
             f"aria-label='Cells per ten point band, "
@@ -563,7 +585,7 @@ class ReportWritingMixin:
                 f"{index * 10}</text>"
             )
         parts.append(
-            f"<text x='{width - 20}' y='{floor_y + 14}' class='lbl' "
+            f"<text x='{width - 20}' y='{floor_y + 26}' class='lbl' "
             f"font-size='11' text-anchor='end'>percent</text></svg>"
         )
         return "".join(parts)
@@ -1954,6 +1976,30 @@ with a Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
                 f"full chart: {REPORT_SIGNAL_DWELL_URL}",
                 "",
             ]
+        # The battery report answers what the threshold cannot: which
+        # cells are going to be low rather than which are (ruling
+        # #194). It shipped with nothing pointing at it, so a person
+        # who did not know the file existed had no way to find it.
+        # Named here on the same footing as the chart, and under the
+        # same reasoning that lets signal appear in a brief while
+        # never pushing (ruling #59): a document read at an hour a
+        # person chose is not an alert.
+        #
+        # Only what is close. The report lists every cell measurably
+        # falling, which is a third of a real fleet and most of them
+        # a season out; naming those here would be sixteen devices
+        # nobody can act on (ruling #195).
+        fallers = self._battery_brief_rows()
+        if fallers:
+            named = ", ".join(
+                f"{row['name']} ({row['days']:.0f} days)"
+                for row in fallers[:5]
+            )
+            lines += [
+                f"Batteries falling: {named}. Details and the full "
+                f"report: {REPORT_BATTERY_URL}",
+                "",
+            ]
         lines += ["## Last 24 Hours", ""]
         if not incidents and not sys_events:
             lines += ["Nothing happened.", ""]
@@ -2117,12 +2163,15 @@ with a Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
                 html_lines.append(f"<h2>{escape(line[3:])}</h2>")
             elif line.strip():
                 text_line = escape(line)
-                if REPORT_SIGNAL_DWELL_URL in text_line:
-                    href = self._absolute_url(REPORT_SIGNAL_DWELL_URL)
-                    text_line = text_line.replace(
-                        REPORT_SIGNAL_DWELL_URL,
-                        f"<a href='{href}'>the signal dwell chart</a>",
-                    )
+                for url, words in (
+                    (REPORT_SIGNAL_DWELL_URL, "the signal dwell chart"),
+                    (REPORT_BATTERY_URL, "the battery report"),
+                ):
+                    if url in text_line:
+                        href = self._absolute_url(url)
+                        text_line = text_line.replace(
+                            url, f"<a href='{href}'>{words}</a>"
+                        )
                 html_lines.append(f"<p>{text_line}</p>")
         _flush_table()
 
