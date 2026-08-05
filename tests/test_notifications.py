@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.11.11 (2026-08-04)
+# File: test_notifications.py, Version: 0.12.2 (2026-08-05)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -299,9 +299,18 @@ def test_quiet_hours_disabled_is_never_quiet():
 class _Harness(NotifierMixin):
     """A minimal object carrying only what the notifier reads."""
 
-    def __init__(self, high_targets, battery=None, signal=None, freeze=None, acknowledged=None):
+    def __init__(
+        self,
+        high_targets,
+        battery=None,
+        signal=None,
+        freeze=None,
+        acknowledged=None,
+        falling=None,
+    ):
         self._high = high_targets
         self._battery = battery or []
+        self._falling = falling or []
         self._signal = signal or []
         self._freeze = freeze or []
         self._acknowledged = set(acknowledged or [])
@@ -325,6 +334,11 @@ class _Harness(NotifierMixin):
     @property
     def battery_low_list(self):
         return self._battery
+
+    @property
+    def battery_falling_list(self):
+        """The card reads two battery sources, not one (#220)."""
+        return self._falling
 
     @property
     def signal_problem_list(self):
@@ -365,6 +379,21 @@ async def test_family_summary_reads_the_lists():
     summary = h._family_summary("battery")
     assert "Battery X 20%" in summary
     assert "Battery U low" in summary
+
+    # The card reads two battery sources (#220). A cell that is both
+    # reads level then direction in one entry; a cell that is only
+    # falling stands on its own.
+    h = _Harness(
+        ["notify.phone"],
+        battery=[{"device_id": "d1", "name": "Battery X", "level": 16}],
+        falling=[
+            {"device_id": "d1", "name": "Battery X", "left": "about 2 weeks"},
+            {"device_id": "d2", "name": "Battery Y", "left": "about a month"},
+        ],
+    )
+    summary = h._family_summary("battery")
+    assert "Battery X 16%, empty in about 2 weeks" in summary
+    assert "Battery Y empty in about a month" in summary
 
 
 async def test_events_dropped_in_quiet_hours():
