@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.11.9 (2026-08-04)
+# File: coordinator.py, Version: 0.12.1 (2026-08-05)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -72,6 +72,7 @@ from .detect_signal import SignalMixin
 from .interventions import InterventionMixin
 from .problem_list import ProblemListMixin
 from .records import BAD_STATES, _new_device_record, _span
+from .stacks import detect as detect_stack
 from .store import StorageMixin
 from .backup import async_take_backup
 from .const import (
@@ -112,10 +113,6 @@ from .const import (
     RENDER_TICK_SECONDS,
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
-    STACK_MATTER,
-    STACK_Z2M,
-    STACK_ZHA,
-    STACK_ZWAVE,
     STARTUP_GRACE_SECONDS,
     STATS_EPOCH,
     STORAGE_CLOCKS_KEY,
@@ -728,16 +725,12 @@ class DeviceSentinelCoordinator(
             domain = self._primary_domain(device)
             name = device.name_by_user or device.name or device.id
             # Which coordinator stacks the house runs, read from the
-            # same walk (ruling #143). ZHA, Z-Wave, and Matter by domain; Z2M
-            # by its bridge device, never the shared mqtt domain (ruling #139).
-            if domain == STACK_ZHA:
-                stacks.add(STACK_ZHA)
-            elif domain == STACK_ZWAVE:
-                stacks.add(STACK_ZWAVE)
-            elif domain == STACK_MATTER:
-                stacks.add(STACK_MATTER)
-            elif domain == "mqtt" and self._is_z2m_bridge(device):
-                stacks.add(STACK_Z2M)
+            # same walk (ruling #143). Which device proves which stack
+            # is each stack file's own question and is asked through
+            # the registry, so this walk names no stack (ruling #218).
+            stack = detect_stack(domain, device)
+            if stack is not None:
+                stacks.add(stack)
             if device.entry_type is dr.DeviceEntryType.SERVICE:
                 set_aside[device.id] = (name, domain)
                 continue

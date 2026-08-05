@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.11.5 (2026-08-04)
+# File: detect_freeze.py, Version: 0.12.1 (2026-08-05)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -28,6 +28,7 @@ from homeassistant.const import (
 )
 from homeassistant.util import dt as dt_util
 from .records import BAD_STATES
+from .stacks import reader_for_domain
 
 from .const import (
     CONF_FREEZE_DELTA_HIGH,
@@ -68,7 +69,6 @@ from .const import (
     RATCHET_FAST_RHYTHM,
     RATCHET_SLOW_ALLOWANCE,
     RATCHET_SLOW_RHYTHM,
-    STACK_Z2M,
     TAINT_UNAVAILABLE,
     TRIM_MIN_SAMPLES,
     TRIM_TOP_K,
@@ -200,23 +200,26 @@ class FreezeMixin:
         return rhythm + self._freeze_grace(rhythm)
 
     def _recovered_during_pairing(self, device_id: str, now: float) -> bool:
-        """Return whether this device recovered during a Z2M pairing.
+        """Return whether this device recovered during a pairing window.
 
-        Permit-join is a coordinator-wide state, so any device behind
-        the Z2M bridge that recovers while pairing is open (or within
-        the grace after it closed) is a pairing candidate (ruling #145). The
-        available per-device signal is the integration domain: a Z2M
-        device carries the mqtt domain. A non-Z2M mqtt device recovering
-        by coincidence during a window would also be caught, but the
-        only cost is a single discarded gap, which is the conservative,
-        fail-safe direction. Everything is guarded: no reader, no
-        bridge, or any failure returns False and the taint decision
-        stands (ruling #147).
+        A pairing window is a coordinator-wide state, so any device
+        behind that coordinator which recovers while the window is
+        open (or within the grace after it closed) is a pairing
+        candidate (ruling #145). The available per-device signal is the
+        integration domain, and which stack owns a domain is that
+        stack's own question rather than this detector's (ruling #218):
+        a domain no stack claims, or a stack with no reader, gives no
+        reader here. Ownership is the widest claim a stack can make
+        about one device, so a device that merely shares a domain with
+        the stack would also be caught, but the only cost is a single
+        discarded gap, which is the conservative, fail-safe direction.
+        Everything is guarded: no reader, no bridge, or any failure
+        returns False and the taint decision stands (ruling #147).
         """
-        reader = self._bridge_readers.get(STACK_Z2M)
+        reader = reader_for_domain(
+            self._bridge_readers, self._watched.get(device_id)
+        )
         if reader is None:
-            return False
-        if self._watched.get(device_id) != "mqtt":
             return False
         try:
             return reader.pairing_active_within(

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.11.5 (2026-08-04)
+# File: interventions.py, Version: 0.12.1 (2026-08-05)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -16,6 +16,12 @@ reach out fewer than ten times each (ruling #201).
 A file split rather than a boundary. These are mixins on the
 coordinator and read its state freely, so `self` is the
 coordinator throughout and nothing here stands alone.
+
+This file names no coordinator stack (ruling #218). It holds the
+live readers and the accessors onto them; which stacks exist, how
+each is recognised and which can be read are questions for the
+stack registry and the stack files behind it. A test asserts the
+silence rather than trusting it.
 """
 
 from __future__ import annotations
@@ -23,9 +29,8 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 from homeassistant.core import callback
-from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
-from .bridge import Z2MBridgeReader
+from .stacks import make_reader
 
 from .const import (
     BRIDGE_DOWN,
@@ -33,7 +38,6 @@ from .const import (
     EPISODE_ENDED_RECONNECT,
     EPISODE_ENDED_RESTART,
     LOGGER,
-    STACK_Z2M,
     STARTUP_GRACE_SECONDS,
     STORM_DEVICE_THRESHOLD,
     STORM_EXEMPT_PER_HOUR,
@@ -44,9 +48,6 @@ from .const import (
     SYS_BRIDGE_UP,
     SYS_PAIRING_CLOSED,
     SYS_PAIRING_OPEN,
-    Z2M_BRIDGE_MANUFACTURER,
-    Z2M_BRIDGE_MODEL,
-    Z2M_BRIDGE_NAME_MARK,
 )
 
 
@@ -56,15 +57,22 @@ class InterventionMixin:
     async def _start_bridge_readers(self) -> None:
         """Create and start a bridge reader for each capable stack.
 
-        Only Z2M has a reader today. A reader that cannot reach its
+        Which stacks can be read is the stack registry's question,
+        not this file's (ruling #218): a stack with no reader returns
+        None and gets nothing, so an unbuilt or absent stack costs no
+        subscription and no timer. A reader that cannot reach its
         state (no MQTT, topics absent) starts anyway and reports
         unknown, so the sensor and the later detector always have
         something to read. The reader is kept regardless of whether it
         connected, because MQTT may come up after us.
         """
-        if STACK_Z2M in self._stacks and STACK_Z2M not in self._bridge_readers:
-            reader = Z2MBridgeReader(self.hass)
-            self._bridge_readers[STACK_Z2M] = reader
+        for stack in sorted(self._stacks):
+            if stack in self._bridge_readers:
+                continue
+            reader = make_reader(stack, self.hass)
+            if reader is None:
+                continue
+            self._bridge_readers[stack] = reader
             await reader.async_start()
 
     def bridge_state(self, stack: str) -> str | None:
@@ -80,26 +88,6 @@ class InterventionMixin:
     def bridge_stacks(self) -> list[str]:
         """Return the stacks that have a bridge reader, sorted."""
         return sorted(self._bridge_readers)
-
-    @staticmethod
-    def _is_z2m_bridge(device: dr.DeviceEntry) -> bool:
-        """Recognise the Zigbee2MQTT bridge device (ruling #143).
-
-        Z2M publishes its bridge through MQTT discovery with a name
-        ending "Zigbee2MQTT Bridge", or a model of "Bridge" under the
-        manufacturer "Zigbee2MQTT". The name is checked first because
-        it holds whatever coordinator hardware sits behind it, so the
-        tell does not depend on any one adapter. This is the clean
-        signal that Z2M is running, since the mqtt domain alone cannot
-        tell Z2M apart from any other MQTT device (ruling #139).
-        """
-        name = device.name_by_user or device.name or ""
-        if Z2M_BRIDGE_NAME_MARK in name:
-            return True
-        return (
-            device.model == Z2M_BRIDGE_MODEL
-            and device.manufacturer == Z2M_BRIDGE_MANUFACTURER
-        )
 
     def _read_bridge(
         self, stack: str, reader: Any
