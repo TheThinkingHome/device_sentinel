@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.10.20 (2026-08-03)
+# File: notifier.py, Version: 0.12.2 (2026-08-05)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -132,15 +132,46 @@ class NotifierMixin:
         acknowledged = self._acknowledged_devices()
         parts: list[str] = []
         if family == "battery":
+            # Two sources, because low and falling are two questions
+            # and the card was reading only the first: a cell heading
+            # for empty never reached it at all, so a card could read
+            # "All devices reporting" while an unacknowledged forecast
+            # stood on the list and in the brief (ruling #220). A cell
+            # already low is absent from the falling source, so the
+            # two rarely name one device, but where they do the level
+            # leads and the direction follows in one clause rather
+            # than two entries (ruling #216).
+            rows: dict[str, str] = {}
+
+            def _key(row: dict[str, Any], count: int) -> str:
+                # The device id joins the two sources, so a cell that
+                # is both reads as one entry. It falls back to the
+                # name and then to position, because a row with no id
+                # must still be its own entry rather than overwriting
+                # the row before it.
+                return row.get("device_id") or row.get("name") or f"#{count}"
+
             for row in self.battery_low_list:
                 if row.get("device_id") in acknowledged:
                     continue
                 level = row.get("level")
                 name = row.get("name") or row.get("device_id")
                 if level is not None:
-                    parts.append(f"{name} {int(level)}%")
+                    rows[_key(row, len(rows))] = f"{name} {int(level)}%"
                 else:
-                    parts.append(f"{name} low")
+                    rows[_key(row, len(rows))] = f"{name} low"
+            for row in self.battery_falling_list:
+                if row.get("device_id") in acknowledged:
+                    continue
+                name = row.get("name") or row.get("device_id")
+                left = row.get("left")
+                clause = f"empty in {left}" if left else "running down"
+                key = _key(row, len(rows))
+                if key in rows:
+                    rows[key] = f"{rows[key]}, {clause}"
+                else:
+                    rows[key] = f"{name} {clause}"
+            parts.extend(rows.values())
         elif family == "signal":
             # The signal list tags each row by kind, not category, and
             # a rail is not a low: a railed device shows a stale

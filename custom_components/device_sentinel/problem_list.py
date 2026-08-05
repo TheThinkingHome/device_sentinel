@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.11.13 (2026-08-04)
+# File: problem_list.py, Version: 0.12.2 (2026-08-05)
 
 """The problem list: the single memory every channel renders.
 
@@ -69,6 +69,25 @@ _EVENT_WORD = {
     "unavailable": "unavailable",
     "unknown": "unknown",
     "not_reported": "never reporting",
+}
+
+# The kinds whose push line is written rather than assembled from
+# _EVENT_WORD. A battery forecast cannot use the shared shape: "was
+# detected running down" is not English, and nothing was detected
+# about the device at all, since what changed is what its readings
+# say about where it is heading (ruling #215). A recovery names the
+# kind that lifted rather than reading "recovered", because a cell
+# can carry a level and a forecast and "recovered" would not say
+# which of them ended (ruling #220).
+_FAULT_LINE = {
+    TODO_KIND_BATTERY_FALLING: (
+        "{name} battery is running down, empty in {left}",
+        "{name} battery is running down",
+    ),
+}
+_RECOVERY_LINE = {
+    TODO_KIND_BATTERY: "{name} battery is no longer low",
+    TODO_KIND_BATTERY_FALLING: "{name} battery is no longer running down",
 }
 
 class ProblemListMixin:
@@ -389,17 +408,74 @@ class ProblemListMixin:
             },
         )
 
+    def _overtaken(self, kind: str, gained: set[str]) -> bool:
+        """Return whether a kind ended because a worse one replaced it.
+
+        A cell already below the threshold is absent from the falling
+        source (ruling #213), so the moment Door 2nd Bedroom drops
+        through 18 percent the item loses the forecast and gains the
+        level in one pass. Both are collected, both are battery, and
+        one push per family survives, so without this the phone would
+        read "battery is no longer running down" at the exact moment
+        the battery went low (ruling #220).
+
+        Read from the severity order rather than by naming the pair,
+        so a future kind that supersedes another needs nothing here.
+        A kind absent from the order ranks last, which makes it
+        supersede nothing and be superseded by anything named.
+        """
+        if not gained:
+            return False
+        order = self._KIND_SEVERITY
+        limit = len(order)
+        rank = order.index(kind) if kind in order else limit
+        return any(
+            (order.index(other) if other in order else limit) < rank
+            for other in gained
+        )
+
+    @staticmethod
+    def _event_line(
+        kind: str, name: str, when: str, recovery: bool, left: str | None
+    ) -> str:
+        """Return the one sentence a push carries.
+
+        Three shapes. A fault with a written line of its own, a fault
+        assembled from the shared word, and a recovery. Every one of
+        them is a sentence a person reads on a phone, so the kind
+        never appears raw: an underscore reaching a person is the
+        tell that a table was missed (ruling #215).
+        """
+        if recovery:
+            written = _RECOVERY_LINE.get(kind)
+            if written is not None:
+                return f"At {when}, {written.format(name=name)}."
+            return f"At {when}, {name} recovered."
+        written = _FAULT_LINE.get(kind)
+        if written is not None:
+            with_left, without = written
+            if left:
+                return f"At {when}, {with_left.format(name=name, left=left)}."
+            return f"At {when}, {without.format(name=name)}."
+        word = _EVENT_WORD.get(kind, kind)
+        return f"At {when}, {name} was detected {word}."
+
     @callback
     def _collect_event(
-        self, kind: str, name: str, recovery: bool, device_id: str
+        self,
+        kind: str,
+        name: str,
+        recovery: bool,
+        device_id: str,
+        left: str | None = None,
+        superseded: bool = False,
     ) -> None:
         """Buffer a family event to fire after the sync settles.
 
         The kind maps to its family (battery, signal, freeze), and the
         event line names the device and what happened, timestamped in
         local wall time so the push reads like a person would write it.
-        A recovery reads recovered; a fault reads the kind. The buffer
-        is fired and cleared by the dispatch after the sync.
+        The buffer is fired and cleared by the dispatch after the sync.
 
         A fault is held for its device's notification debounce first,
         so a problem that heals inside the delay is never announced.
@@ -407,18 +483,24 @@ class ProblemListMixin:
         recovery for a fault nobody was told about would be news about
         nothing. The card, the list and the brief are untouched by any
         of this, since they carry state rather than announcements.
+
+        superseded is the crossing: a kind that ends because a worse
+        one replaced it in the same pass. The hold is still cancelled,
+        because the fault it guards has been overtaken, but nothing is
+        announced, since a cell that dropped through the threshold has
+        not stopped running down in any sense a person would accept
+        (ruling #220).
         """
         family = NOTIFY_KIND_FAMILY.get(kind, "freeze")
         when = dt_util.now().strftime("%-I:%M %p").lower()
-        if recovery:
-            line = f"At {when}, {name} recovered."
-        else:
-            line = f"At {when}, {name} was detected {_EVENT_WORD.get(kind, kind)}."
+        line = self._event_line(kind, name, when, recovery, left)
         key = (device_id, kind)
         if recovery:
             cancel = self._held_events.pop(key, None)
             if cancel is not None:
                 cancel()
+                return
+            if superseded:
                 return
             self._pending_events.append((family, line, recovery))
             return
@@ -531,8 +613,9 @@ class ProblemListMixin:
                     )
                     self._collect_event(
                         kind, problem["name"], recovery=False,
-                        device_id=device_id,
+                        device_id=device_id, left=problem.get("left"),
                     )
+            gained = set(new_kinds) - set(stored_kinds)
             for kind in stored_kinds:
                 if kind not in new_kinds:
                     self._resolve_incident(
@@ -541,6 +624,7 @@ class ProblemListMixin:
                     self._collect_event(
                         kind, problem["name"], recovery=True,
                         device_id=device_id,
+                        superseded=self._overtaken(kind, gained),
                     )
             summary, description = self._problem_item_text(
                 problem["name"],
@@ -606,7 +690,7 @@ class ProblemListMixin:
                 )
                 self._collect_event(
                     kind, problem["name"], recovery=False,
-                    device_id=device_id,
+                    device_id=device_id, left=problem.get("left"),
                 )
             changed = True
 

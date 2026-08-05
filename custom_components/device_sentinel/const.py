@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.11.12 (2026-08-04)
+# File: const.py, Version: 0.12.2 (2026-08-05)
 
 """Constants for the Device Sentinel integration."""
 
@@ -944,6 +944,10 @@ NOTIFY_FAMILY_IDS = {
 # event. This is the map from a problem kind to its notification family.
 NOTIFY_KIND_FAMILY = {
     "battery": "battery",
+    # A forecast is battery news, not device news. Absent from this
+    # table it fell through to the freeze family, so a running-down
+    # cell arrived on the phone titled Device (ruling #220).
+    "battery_falling": "battery",
     "signal": "signal",
     "rail": "signal",
     "frozen": "freeze",
