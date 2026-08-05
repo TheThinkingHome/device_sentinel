@@ -1,0 +1,17 @@
+{
+ "permit_join": false,
+ "config": {
+  "availability": {
+   "active": {
+    "backoff": true,
+    "max_jitter": 30000,
+    "pause_on_backoff_gt": 0,
+    "timeout": 10
+   },
+   "enabled": true,
+   "passive": {
+    "timeout": 1500
+   }
+  }
+ }
+}

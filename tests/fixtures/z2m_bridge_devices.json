@@ -1,0 +1,452 @@
+[
+ {
+  "ieee_address": "0x804b50fffea7ee09",
+  "friendly_name": "Coordinator",
+  "power_source": null,
+  "type": "Coordinator"
+ },
+ {
+  "ieee_address": "0xa4c1386ca1fe4df2",
+  "friendly_name": "Switch Bath Master",
+  "power_source": "Mains (single phase)",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xa4c1385ed871b435",
+  "friendly_name": "Switch Laundry",
+  "power_source": "Mains (single phase)",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe8fb02",
+  "friendly_name": "Button Doorbell",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe8f42c",
+  "friendly_name": "Button Terrace Dining",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x00158d000af0defb",
+  "friendly_name": "Door Master",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe6500f",
+  "friendly_name": "Leak Washing Machine",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffebfd68",
+  "friendly_name": "Leak Sink Laundry",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe6536d",
+  "friendly_name": "Leak Kitchen Sink",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffea66c4",
+  "friendly_name": "Leak Sink Bath Main",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe652bc",
+  "friendly_name": "Leak Sink Bath Master Left",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffebfcbd",
+  "friendly_name": "Leak Sink Bath Master Right",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x00158d000adc1002",
+  "friendly_name": "Temperature Living Room",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x00158d000adc0fb4",
+  "friendly_name": "Temperature Outdoors",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe6dc37",
+  "friendly_name": "Plug James Night Light",
+  "power_source": "Mains (single phase)",
+  "type": "Router"
+ },
+ {
+  "ieee_address": "0x282c02bfffe6f266",
+  "friendly_name": "Plug Randy Night Light",
+  "power_source": "Mains (single phase)",
+  "type": "Router"
+ },
+ {
+  "ieee_address": "0x282c02bfffea56a6",
+  "friendly_name": "Plug Laundry Router",
+  "power_source": "Mains (single phase)",
+  "type": "Router"
+ },
+ {
+  "ieee_address": "0x00158d000af0df00",
+  "friendly_name": "Door Entryway",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x00158d000af385f1",
+  "friendly_name": "Door Laundry",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x00158d000af0ddbe",
+  "friendly_name": "Door Bath Main",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffed4cac",
+  "friendly_name": "Motion Laundry",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffed6aed",
+  "friendly_name": "Motion Bath Main",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffed77a4",
+  "friendly_name": "Motion Master Closet",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffed77c3",
+  "friendly_name": "Motion Master Bath",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xa4c138b9a33b85df",
+  "friendly_name": "Temperature Master",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x00158d000af0defd",
+  "friendly_name": "Door Terrace Dining",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe6a30e",
+  "friendly_name": "Plug 2nd Bedroom Router",
+  "power_source": "Mains (single phase)",
+  "type": "Router"
+ },
+ {
+  "ieee_address": "0x282c02bfffe6de8b",
+  "friendly_name": "Plug Master Bath Router",
+  "power_source": "Mains (single phase)",
+  "type": "Router"
+ },
+ {
+  "ieee_address": "0x282c02bfffed8108",
+  "friendly_name": "Motion Master Shower",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffeafa5b",
+  "friendly_name": "Door 2nd Bedroom",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe6e994",
+  "friendly_name": "Plug Stove Vent Router",
+  "power_source": "Mains (single phase)",
+  "type": "Router"
+ },
+ {
+  "ieee_address": "0x282c02bfffecde71",
+  "friendly_name": "Window Living Room Left",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffece52d",
+  "friendly_name": "Window Dining Room Right",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffecd3c7",
+  "friendly_name": "Window Living Room Right",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe66ce7",
+  "friendly_name": "Window Dining Room Left",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xf44250000b3c0000",
+  "friendly_name": "Temperature Master Shower",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffef300e",
+  "friendly_name": "Soil Moisture (Monstera)",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xb40e060fffe02269",
+  "friendly_name": "Soil Irrigation (Monstera)",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xb40e060fffe0fc13",
+  "friendly_name": "Motion Master Shower 2",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xb40e060fffe6e909",
+  "friendly_name": "Door Medicine Cabinet",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x00158d000af0c475",
+  "friendly_name": "Door Terrace Master",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x00158d0008920413",
+  "friendly_name": "Window Master Park Left",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe6fa7c",
+  "friendly_name": "Plug Master Terrace Twinkle Lights",
+  "power_source": "Mains (single phase)",
+  "type": "Router"
+ },
+ {
+  "ieee_address": "0x282c02bfffeaff42",
+  "friendly_name": "Door Terrace 2nd",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xa4c138cefc1f0e33",
+  "friendly_name": "Switch Hall Guest",
+  "power_source": "Mains (single phase)",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xa4c138de765b1e05",
+  "friendly_name": "Switch Guest Bedroom",
+  "power_source": "Mains (single phase)",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffed806c",
+  "friendly_name": "Motion Hall",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xffffb40e06033165",
+  "friendly_name": "Button Randy Night Table",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xa4c138fd5b035f2e",
+  "friendly_name": "Switch Master Terrace",
+  "power_source": "Mains (single phase)",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xa4c138e4d448bbc1",
+  "friendly_name": "Switch Hall Master",
+  "power_source": "Mains (single phase)",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe3b6fe",
+  "friendly_name": "Window Master City",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe6f529",
+  "friendly_name": "Plug Master Router",
+  "power_source": "Mains (single phase)",
+  "type": "Router"
+ },
+ {
+  "ieee_address": "0xb40e060fffe6e698",
+  "friendly_name": "Window Master Park Right",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xffffb40e06032c2c",
+  "friendly_name": "Button Master Shower",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe3d72f",
+  "friendly_name": "Door Master Shower",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xa4c1386274986ede",
+  "friendly_name": "Switch Master Bedroom Lights",
+  "power_source": "Mains (single phase)",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xa4c138be6aed62d2",
+  "friendly_name": "Switch Bath Main",
+  "power_source": "Mains (single phase)",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x00158d000adc0e6e",
+  "friendly_name": "Temperature Main Bath",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xb40e060fffe6e33a",
+  "friendly_name": "Door Master Closet 2",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffece530",
+  "friendly_name": "Door Master Closer 3",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xb0e8e8fffe40eb25",
+  "friendly_name": "Router Aotec Zi - Dining Terrace",
+  "power_source": "Mains (single phase)",
+  "type": "Router"
+ },
+ {
+  "ieee_address": "0xffffb40e060697e8",
+  "friendly_name": "Vibration FJ40 Land Cruiser",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xb40e060fffe6e333",
+  "friendly_name": "Door Gate Garage Confirm",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x00158d0008a7016d",
+  "friendly_name": "Door Gate Garage",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xf4b3b1fffeccf84d",
+  "friendly_name": "Switch Entryway",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xa4c1384071972155",
+  "friendly_name": "Switch Master Closet",
+  "power_source": "Mains (single phase)",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xa4c13811174c1ea8",
+  "friendly_name": "Switch Master Terrace Utility",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xa4c1386ef81a8cdd",
+  "friendly_name": "Switch Kitchen",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xb40e060fffe6e44e",
+  "friendly_name": "Door Master Closet 1",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xb40e060fffe6e3b0",
+  "friendly_name": "Door Master Closet 4",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xa4c1383a88c7dc20",
+  "friendly_name": "Switch Hall Living",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x5fff000100000034",
+  "friendly_name": "LUX Outdoors",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0xffffb40e0601bfa5",
+  "friendly_name": "Vibration Gate Garage",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x04cd15fffe874b1a",
+  "friendly_name": "Button James Night Table",
+  "power_source": "Battery",
+  "type": "EndDevice"
+ },
+ {
+  "ieee_address": "0x282c02bfffe6c67e",
+  "friendly_name": "Plug Living Room Router",
+  "power_source": "Mains (single phase)",
+  "type": "Router"
+ }
+]
