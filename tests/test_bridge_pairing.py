@@ -37,7 +37,7 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
-from custom_components.device_sentinel.bridge import Z2MBridgeReader
+from custom_components.device_sentinel.stack_z2m import Z2MBridgeReader
 from custom_components.device_sentinel.const import (
     BRIDGE_BINDING,
     BRIDGE_DOWN,
