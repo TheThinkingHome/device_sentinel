@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.11.12 (2026-08-04)
+# File: report_brief.py, Version: 0.12.3 (2026-08-05)
 
 """The daily brief: the one report written for a person.
 
@@ -533,6 +533,31 @@ class BriefMixin:
                     f"| {self._human_span(now - since)} |"
                 )
             lines.append("")
+            # What the stack says about the same devices. It follows
+            # the table rather than joining it, because it applies to
+            # some rows and not others and a mostly empty column
+            # would read as a fault of its own. Only devices whose
+            # problem is a freeze verdict are asked: a battery level
+            # is nothing a bridge has an opinion about. It confirms
+            # or it doubts, and it changes no verdict (ruling #221).
+            seen: dict[str, str] = {}
+            for name, _problem, _since, kind, device_id in now_rows:
+                if kind in (
+                    TODO_KIND_BATTERY,
+                    TODO_KIND_BATTERY_FALLING,
+                    TODO_KIND_SIGNAL,
+                ):
+                    continue
+                phrase = self.reachability_phrase(device_id)
+                if phrase:
+                    seen[name] = phrase
+            if seen:
+                lines += [
+                    " ".join(
+                        f"{name}: {phrase}" for name, phrase in seen.items()
+                    ),
+                    "",
+                ]
         # The dwell anomalies get one pointer line, only on mornings
         # there are any (ruling #173). The chart itself is HTML
         # at a fixed URL, so the brief names it rather than embedding

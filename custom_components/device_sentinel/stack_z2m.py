@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.12.1 (2026-08-05)
+# File: stack_z2m.py, Version: 0.12.3 (2026-08-05)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -56,6 +56,10 @@ from .const import (
     Z2M_BRIDGE_MANUFACTURER,
     Z2M_BRIDGE_MODEL,
     Z2M_BRIDGE_NAME_MARK,
+    Z2M_IDENTIFIER_MARK,
+    Z2M_TOPIC_AVAILABILITY,
+    Z2M_TOPIC_AVAILABILITY_LEAF,
+    Z2M_TOPIC_DEVICES,
     Z2M_TOPIC_INFO,
     Z2M_TOPIC_STATE,
 )
@@ -85,6 +89,27 @@ def detects(domain: str, device: dr.DeviceEntry) -> bool:
     (rulings #139 and #143).
     """
     return owns_domain(domain) and is_bridge_device(device)
+
+
+def device_key(device: dr.DeviceEntry) -> str | None:
+    """Return the IEEE address Zigbee2MQTT knows this device by.
+
+    Z2M publishes through MQTT discovery with an identifier of the
+    shape ('mqtt', 'zigbee2mqtt_0x282c02bfffeafa5b'), so the address
+    is the tail of the second element. It is the only reliable join:
+    matching on name fails on the reference fleet today, where a
+    switch carries one name in Home Assistant and another in
+    Zigbee2MQTT (ruling #221). An MQTT device that is not Z2M's, such
+    as a panel publishing its own discovery, has no such identifier
+    and returns None, which rejects it without a special case.
+    """
+    for domain, value in device.identifiers:
+        if domain != "mqtt" or not isinstance(value, str):
+            continue
+        _, marker, address = value.partition(Z2M_IDENTIFIER_MARK)
+        if marker and address.startswith("0x"):
+            return address
+    return None
 
 
 def make_reader(hass: HomeAssistant) -> Z2MBridgeReader:
@@ -143,6 +168,82 @@ class Z2MBridgeReader:
         # than crediting the device with recovering on its own
         # (ruling #145). None until a window has closed.
         self._pairing_closed_at: float | None = None
+        # Reachability. Zigbee2MQTT publishes its own verdict on every
+        # device to <name>/availability, retained, and the verdict is
+        # keyed by friendly name while Home Assistant knows a device
+        # by its IEEE address. bridge/devices is the only thing that
+        # joins the two, and it is also what rejects a topic with no
+        # device behind it: a group, or a retained topic left by a
+        # device that was renamed or removed (ruling #221).
+        self._availability: dict[str, tuple[str, str]] = {}
+        self._devices_by_name: dict[str, dict[str, Any]] = {}
+        # How long Z2M waits before it calls a device offline, read
+        # from the bridge rather than assumed, because it is a per
+        # install setting and the two classes differ by two orders of
+        # magnitude. A mains device is pinged; a sleeping end device
+        # cannot be, so it is judged on silence alone.
+        self._availability_enabled: bool | None = None
+        self._active_timeout: int | None = None
+        self._passive_timeout: int | None = None
+
+    @property
+    def reachability_known(self) -> bool:
+        """Return whether this bridge can answer reachability at all.
+
+        False where availability is switched off in Zigbee2MQTT, or
+        where nothing has arrived yet. Every consumer reads that as
+        "no opinion" and carries on with the verdict it already had.
+        """
+        return bool(self._availability_enabled and self._devices_by_name)
+
+    def reachability(self, key: str | None) -> dict[str, Any] | None:
+        """Return what Zigbee2MQTT says about one device, or None.
+
+        key is the IEEE address out of the Home Assistant device
+        identifier. None comes back for a device this bridge does not
+        have, for a topic with no device behind it, and for a bridge
+        that cannot answer. The reply carries the state and the class
+        it was judged in, because the two are not comparable: a mains
+        device is pinged on a short timer, while a sleeping device is
+        called offline only after a silence far longer than any window
+        this integration learns. A caller that shows the state without
+        the timeout would tell a person a dead battery device is fine
+        (ruling #221).
+        """
+        if not key or not self.reachability_known:
+            return None
+        for name, entry in self._devices_by_name.items():
+            if entry.get("ieee_address") != key:
+                continue
+            state = self._availability.get(name)
+            if state is None:
+                return None
+            passive = entry.get("power_source") == "Battery"
+            timeout = (
+                self._passive_timeout if passive else self._active_timeout
+            )
+            return {
+                "state": state[0],
+                "at": state[1],
+                "class": "passive" if passive else "active",
+                "timeout_minutes": timeout,
+            }
+        return None
+
+    @property
+    def reachability_rejected(self) -> list[str]:
+        """Return availability topics with no device behind them.
+
+        Groups, and topics left behind by a device that was renamed or
+        removed, which keep publishing whatever they last said. Two on
+        the reference fleet read online while naming nothing, which is
+        the case that would otherwise contradict a true verdict.
+        """
+        return sorted(
+            name
+            for name in self._availability
+            if name not in self._devices_by_name
+        )
 
     @property
     def stack(self) -> str:
@@ -247,6 +348,20 @@ class Z2MBridgeReader:
                     self._on_info,
                 )
             )
+            self._unsubs.append(
+                await mqtt.async_subscribe(
+                    self._hass,
+                    f"{self._base}/{Z2M_TOPIC_DEVICES}",
+                    self._on_devices,
+                )
+            )
+            self._unsubs.append(
+                await mqtt.async_subscribe(
+                    self._hass,
+                    f"{self._base}/{Z2M_TOPIC_AVAILABILITY}",
+                    self._on_availability,
+                )
+            )
         except Exception as err:  # noqa: BLE001 - subscribe can fail many ways
             LOGGER.warning(
                 "Device Sentinel: could not subscribe to Z2M bridge "
@@ -306,6 +421,91 @@ class Z2MBridgeReader:
             self._pairing_closed_at = dt_util.utcnow().timestamp()
         end = data.get("permit_join_end")
         self._permit_join_end = str(end) if end is not None else None
+        # The availability settings, read rather than assumed. Absent
+        # or malformed leaves the previous reading alone, so one bad
+        # payload cannot silently turn reachability off.
+        config = data.get("config")
+        if isinstance(config, dict):
+            availability = config.get("availability")
+            if isinstance(availability, dict):
+                self._availability_enabled = bool(
+                    availability.get("enabled", False)
+                )
+                active = availability.get("active")
+                if isinstance(active, dict):
+                    timeout = active.get("timeout")
+                    if isinstance(timeout, (int, float)):
+                        self._active_timeout = int(timeout)
+                passive = availability.get("passive")
+                if isinstance(passive, dict):
+                    timeout = passive.get("timeout")
+                    if isinstance(timeout, (int, float)):
+                        self._passive_timeout = int(timeout)
+            elif isinstance(availability, bool):
+                # Older configurations wrote a bare boolean with the
+                # timeouts left at their defaults, which are not
+                # published. Enabled is known; the timeouts are not,
+                # and a caller reads None as "cannot say how long".
+                self._availability_enabled = availability
+
+    @callback
+    def _on_devices(self, msg: mqtt.ReceiveMessage) -> None:
+        """Handle bridge/devices: the roll of what actually exists.
+
+        The join and the filter in one topic. It carries the IEEE
+        address Home Assistant knows a device by, the friendly name
+        the availability topics are keyed on, and the power source
+        that decides which timeout the device is judged against. A
+        payload that will not parse leaves the previous roll standing,
+        because an empty roll would silently reject every topic.
+        """
+        self._last_heard = dt_util.utcnow().isoformat()
+        data = _load(_decode(msg.payload))
+        if not isinstance(data, list):
+            return
+        roll: dict[str, dict[str, Any]] = {}
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("friendly_name")
+            ieee = entry.get("ieee_address")
+            if not isinstance(name, str) or not isinstance(ieee, str):
+                continue
+            roll[name] = {
+                "ieee_address": ieee,
+                "power_source": entry.get("power_source"),
+                "type": entry.get("type"),
+            }
+        if roll:
+            self._devices_by_name = roll
+
+    @callback
+    def _on_availability(self, msg: mqtt.ReceiveMessage) -> None:
+        """Handle <name>/availability: online or offline, retained.
+
+        The name is taken from the topic rather than the payload,
+        which carries only the state. Nothing is reconciled here: the
+        topic is recorded as heard and the join rejects it later if no
+        device answers to that name, so a device that appears in the
+        roll after its availability arrives is not lost.
+        """
+        topic = msg.topic or ""
+        prefix = f"{self._base}/"
+        suffix = f"/{Z2M_TOPIC_AVAILABILITY_LEAF}"
+        if not topic.startswith(prefix) or not topic.endswith(suffix):
+            return
+        name = topic[len(prefix):-len(suffix)]
+        if not name:
+            return
+        payload = _load(_decode(msg.payload))
+        state: Any = payload
+        if isinstance(payload, dict):
+            state = payload.get("state")
+        elif payload is None:
+            state = _decode(msg.payload).strip()
+        if not isinstance(state, str) or state not in ("online", "offline"):
+            return
+        self._availability[name] = (state, dt_util.utcnow().isoformat())
 
 
 def _decode(payload: Any) -> str:

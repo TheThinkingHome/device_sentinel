@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.12.1 (2026-08-05)
+# File: coordinator.py, Version: 0.12.3 (2026-08-05)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -73,6 +73,7 @@ from .interventions import InterventionMixin
 from .problem_list import ProblemListMixin
 from .records import BAD_STATES, _new_device_record, _span
 from .stacks import detect as detect_stack
+from .stacks import device_key
 from .store import StorageMixin
 from .backup import async_take_backup
 from .const import (
@@ -82,6 +83,7 @@ from .const import (
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_EXCLUDED_LABELS,
+    DATA_BRIDGE_SEEN,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
     DATA_EPISODES,
@@ -203,6 +205,9 @@ class DeviceSentinelCoordinator(
         # Which coordinator stacks this house runs, derived from the
         # registry rather than asked (ruling #143).
         self._stacks: set[str] = set()
+        # device_id -> (stack, the key that stack knows it by).
+        # Derived on every registry rebuild and never stored.
+        self._stack_keys: dict[str, tuple[str, str]] = {}
         # Names and labels, cached from the registry at classify
         # time. The options cascade reads them on every form open,
         # and re-walking the registry there would race a rebuild.
@@ -326,6 +331,7 @@ class DeviceSentinelCoordinator(
         loaded.setdefault(DATA_EPISODES, [])
         loaded.setdefault(DATA_INCIDENTS, [])
         loaded.setdefault(DATA_SYSTEM_EVENTS, [])
+        loaded.setdefault(DATA_BRIDGE_SEEN, {})
         # The dry-run outbox was retired once the
         # notifications it previewed had been sending for
         # several releases. Drop what an older install stored,
@@ -594,6 +600,10 @@ class DeviceSentinelCoordinator(
         # it) runs whether or not a user ever enables the sensor, so
         # detection never depends on a display choice.
         await self._start_bridge_readers()
+        # Before the first sample, so a bridge that went down
+        # and came back across this restart still closes
+        # (ruling #222).
+        self._restore_bridge_state()
 
         # The house's own record of what happened to it. Written here
         # rather than at load, so a start that failed halfway leaves
@@ -721,6 +731,7 @@ class DeviceSentinelCoordinator(
         excluded_devices: dict[str, str] = {}
         excluded_entities: dict[str, str] = {}
         stacks: set[str] = set()
+        stack_keys: dict[str, tuple[str, str]] = {}
         for device in dev_reg.devices.values():
             domain = self._primary_domain(device)
             name = device.name_by_user or device.name or device.id
@@ -735,6 +746,13 @@ class DeviceSentinelCoordinator(
                 set_aside[device.id] = (name, domain)
                 continue
             watched[device.id] = domain
+            # What the owning stack calls this device, where it can
+            # say. Read on the same walk for the same reason stack
+            # presence is (ruling #143), and asked through the
+            # registry so this file still names no stack.
+            owner = device_key(domain, device)
+            if owner is not None:
+                stack_keys[device.id] = owner
             device_names[device.id] = name
             device_labels[device.id] = frozenset(device.labels or ())
             # Device-level exclusion reasons, named broadest first
@@ -794,6 +812,7 @@ class DeviceSentinelCoordinator(
 
         self._watched = watched
         self._stacks = stacks
+        self._stack_keys = stack_keys
         self._device_names = device_names
         self._device_labels = device_labels
         self._set_aside = set_aside

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stacks.py, Version: 0.12.1 (2026-08-05)
+# File: stacks.py, Version: 0.12.3 (2026-08-05)
 
 """The one place a coordinator stack is registered.
 
@@ -50,6 +50,24 @@ def detect(domain: str, device: dr.DeviceEntry) -> str | None:
     for module in STACK_MODULES:
         if module.detects(domain, device):
             return module.STACK
+    return None
+
+
+def device_key(domain: str, device: dr.DeviceEntry) -> tuple[str, str] | None:
+    """Return the stack owning this device and the key it knows it by.
+
+    Asked once per device during the registry rebuild that already
+    happens, beside detection. A stack that cannot say how it names a
+    device returns None and the device simply has no key, which is
+    what every unbuilt stack does today.
+    """
+    for module in STACK_MODULES:
+        if not module.owns_domain(domain):
+            continue
+        key = module.device_key(device)
+        if key is None:
+            return None
+        return module.STACK, key
     return None
 
 

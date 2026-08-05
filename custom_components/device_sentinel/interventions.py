@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.12.1 (2026-08-05)
+# File: interventions.py, Version: 0.12.3 (2026-08-05)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -34,7 +34,11 @@ from .stacks import make_reader
 
 from .const import (
     BRIDGE_DOWN,
+    BRIDGE_SEEN_SINCE,
+    BRIDGE_SEEN_STATE,
+    BRIDGE_STATES,
     BRIDGE_UNKNOWN,
+    DATA_BRIDGE_SEEN,
     EPISODE_ENDED_RECONNECT,
     EPISODE_ENDED_RESTART,
     LOGGER,
@@ -49,6 +53,24 @@ from .const import (
     SYS_PAIRING_CLOSED,
     SYS_PAIRING_OPEN,
 )
+
+
+def _spell_minutes(minutes: int) -> str:
+    """Return a count of minutes as a person would say it.
+
+    Ten reads as ten minutes; fifteen hundred reads as twenty five
+    hours rather than as fifteen hundred minutes, which nobody
+    converts in their head while reading a brief.
+    """
+    if minutes < 90:
+        return f"{minutes} minutes"
+    hours = minutes / 60
+    if hours < 48:
+        shown = int(hours) if float(hours).is_integer() else round(hours, 1)
+        return f"{shown} hours"
+    days = hours / 24
+    shown = int(days) if float(days).is_integer() else round(days, 1)
+    return f"{shown} days"
 
 
 class InterventionMixin:
@@ -89,6 +111,103 @@ class InterventionMixin:
         """Return the stacks that have a bridge reader, sorted."""
         return sorted(self._bridge_readers)
 
+    def reachability(self, device_id: str) -> dict[str, Any] | None:
+        """Return the owning stack's view of one device, or None.
+
+        None is the common answer and the safe one: no key for this
+        device, no reader for its stack, a reader that cannot say, or
+        a stack that has never claimed to know. Every caller treats
+        None as no opinion and shows nothing (ruling #221).
+        """
+        owner = self._stack_keys.get(device_id)
+        if owner is None:
+            return None
+        stack, key = owner
+        reader = self._bridge_readers.get(stack)
+        if reader is None:
+            return None
+        try:
+            return reader.reachability(key)
+        except Exception as err:  # noqa: BLE001 - a reader never raises up
+            LOGGER.debug(
+                "Device Sentinel: %s could not answer reachability "
+                "for %s, reading as no opinion (%s)",
+                stack,
+                device_id,
+                err,
+            )
+            return None
+
+    def reachability_phrase(self, device_id: str) -> str | None:
+        """Return the sentence a person reads beside a verdict.
+
+        The state alone would mislead. Zigbee2MQTT allows a sleeping
+        device a silence far longer than any window this integration
+        learns, so on the reference fleet an online reading is true of
+        a battery device that stopped reporting twenty hours ago, and
+        a person shown a bare "reads online" would doubt a verdict
+        that is correct. The timeout travels with the reading, in the
+        units the bridge published it in (ruling #221).
+        """
+        seen = self.reachability(device_id)
+        if seen is None:
+            return None
+        if seen.get("state") == "offline":
+            return "Zigbee2MQTT confirms it is offline."
+        minutes = seen.get("timeout_minutes")
+        if not isinstance(minutes, int):
+            return "Zigbee2MQTT reads it as online."
+        if seen.get("class") == "passive":
+            return (
+                "Zigbee2MQTT reads it as online, though it allows a "
+                f"battery device {_spell_minutes(minutes)} of silence "
+                "before saying otherwise."
+            )
+        return (
+            "Zigbee2MQTT reads it as online, and it pings a mains "
+            f"device every {_spell_minutes(minutes)}."
+        )
+
+    def _remember_bridge_state(
+        self, stack: str, state: str, since: float | None = None
+    ) -> None:
+        """Store a stack's bridge state so a restart does not lose it.
+
+        Small and derived, but it has to outlive the process: the
+        whole point is the comparison on the next boot. since is
+        written only when the state becomes down, and it is what the
+        recovery's duration is measured from, so an outage that
+        spanned a reboot reports its real length rather than none.
+        """
+        seen = self.data.setdefault(DATA_BRIDGE_SEEN, {})
+        entry = seen.setdefault(stack, {})
+        if entry.get(BRIDGE_SEEN_STATE) != state or since is not None:
+            entry[BRIDGE_SEEN_STATE] = state
+            if since is not None:
+                entry[BRIDGE_SEEN_SINCE] = since
+            elif state != BRIDGE_DOWN:
+                entry.pop(BRIDGE_SEEN_SINCE, None)
+            self._dirty = True
+
+    def _restore_bridge_state(self) -> None:
+        """Load the last bridge state each stack was seen in.
+
+        Called once, after the readers start and before the first
+        sample. A stack with nothing stored stays absent, which is
+        the fresh-start shape the sampler already handles by
+        recording no transition (ruling #222).
+        """
+        for stack, entry in (self.data.get(DATA_BRIDGE_SEEN) or {}).items():
+            if not isinstance(entry, dict):
+                continue
+            state = entry.get(BRIDGE_SEEN_STATE)
+            if state not in BRIDGE_STATES or state == BRIDGE_UNKNOWN:
+                continue
+            self._bridge_seen[stack] = state
+            since = entry.get(BRIDGE_SEEN_SINCE)
+            if state == BRIDGE_DOWN and isinstance(since, (int, float)):
+                self._bridge_down_at[stack] = since
+
     def _read_bridge(
         self, stack: str, reader: Any
     ) -> tuple[str, bool] | None:
@@ -124,6 +243,13 @@ class InterventionMixin:
         been heard from the bridge yet, which is the shape of a fresh
         start rather than of anything happening, and recording it
         would put a bridge event under every restart.
+
+        The last state seen is remembered across a restart, so an
+        outage that spans one still closes. It used to live only in
+        memory, so a bridge that went down at 03:40 and came back
+        while the house rebooted at 03:42 wrote a bridge_down and
+        never a bridge_up, and the log read as an outage that never
+        ended. Twice on the reference fleet (ruling #222).
         """
         now = dt_util.utcnow().timestamp()
         for stack, reader in self._bridge_readers.items():
@@ -135,9 +261,11 @@ class InterventionMixin:
                 continue
             was = self._bridge_seen.get(stack)
             self._bridge_seen[stack] = state
+            self._remember_bridge_state(stack, state)
             if was is not None and was != state:
                 if state == BRIDGE_DOWN:
                     self._bridge_down_at[stack] = now
+                    self._remember_bridge_state(stack, state, since=now)
                     self._record_system_event(
                         SYS_BRIDGE_DOWN, scope=stack
                     )

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.12.1 (2026-08-05)
+# File: stack_zha.py, Version: 0.12.3 (2026-08-05)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -72,6 +72,18 @@ def detects(domain: str, device: dr.DeviceEntry) -> bool:
     needs the device to find its bridge.
     """
     return owns_domain(domain)
+
+
+def device_key(device: dr.DeviceEntry) -> None:
+    """Return None: this stack's device identifiers are unverified.
+
+    Z2M answers this with the IEEE address out of its identifier, and
+    ZHA very likely carries something equivalent. Very likely is
+    not measured, and a join key guessed wrong joins a verdict to the
+    wrong device, so nothing is claimed here until somebody with the
+    hardware sends a real identifier (rulings #218 and #219).
+    """
+    return None
 
 
 def make_reader(hass: object) -> None:

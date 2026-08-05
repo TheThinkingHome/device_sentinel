@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.12.2 (2026-08-05)
+# File: problem_list.py, Version: 0.12.3 (2026-08-05)
 
 """The problem list: the single memory every channel renders.
 
@@ -330,6 +330,7 @@ class ProblemListMixin:
         kinds: dict[str, float | None],
         level: Any,
         left: str | None = None,
+        device_id: str | None = None,
     ) -> tuple[str, str]:
         """Return the summary and description for one item.
 
@@ -374,6 +375,23 @@ class ProblemListMixin:
                 lines.append(f"{word.capitalize()} since {when}.")
             else:
                 lines.append(f"{word.capitalize()}.")
+        # What the stack says about the same device, where it can say
+        # anything. It goes in the description rather than the
+        # summary, because the summary is a list line read at a
+        # glance and this is a second opinion rather than the verdict
+        # (ruling #221). It confirms or it doubts; it never changes
+        # what the kinds above say.
+        if device_id is not None and any(
+            kind not in (
+                TODO_KIND_BATTERY,
+                TODO_KIND_BATTERY_FALLING,
+                TODO_KIND_SIGNAL,
+            )
+            for kind in order
+        ):
+            phrase = self.reachability_phrase(device_id)
+            if phrase:
+                lines.append(phrase)
         return summary, " ".join(lines)
 
     def _journal_addition(
@@ -631,6 +649,7 @@ class ProblemListMixin:
                 new_kinds,
                 problem["level"],
                 problem.get("left"),
+                device_id,
             )
             if (
                 new_kinds != stored_kinds
@@ -652,7 +671,7 @@ class ProblemListMixin:
             }
             summary, description = self._problem_item_text(
                 problem["name"], kinds, problem["level"],
-                problem.get("left"),
+                problem.get("left"), device_id,
             )
             kept.append(
                 {

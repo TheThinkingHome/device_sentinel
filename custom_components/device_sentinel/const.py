@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.2 (2026-08-05)
+# File: const.py, Version: 0.12.3 (2026-08-05)
 
 """Constants for the Device Sentinel integration."""
 
@@ -58,6 +58,23 @@ BRIDGE_STATES = [BRIDGE_RUNNING, BRIDGE_BINDING, BRIDGE_DOWN, BRIDGE_UNKNOWN]
 Z2M_BASE_TOPIC_DEFAULT = "zigbee2mqtt"
 Z2M_TOPIC_INFO = "bridge/info"
 Z2M_TOPIC_STATE = "bridge/state"
+# bridge/devices is the roll of what actually exists, retained. It
+# carries the IEEE address Home Assistant knows a device by beside
+# the friendly name the availability topics are keyed on, which is
+# the only join between the two, and it is what rejects an
+# availability topic naming a group or a device that is gone.
+# The availability subscription is one level wildcard, so a friendly
+# name containing a slash publishes deeper and is not seen; Z2M
+# permits it and nothing on the reference fleet does it
+# (ruling #221).
+Z2M_TOPIC_DEVICES = "bridge/devices"
+# The Z2M discovery identifier reads ('mqtt', 'zigbee2mqtt_0x282c...'),
+# so the IEEE address follows this mark. It is the base topic by
+# default and does not follow a renamed one, which is why it is a
+# constant here rather than derived from the configured base.
+Z2M_IDENTIFIER_MARK = "zigbee2mqtt_"
+Z2M_TOPIC_AVAILABILITY_LEAF = "availability"
+Z2M_TOPIC_AVAILABILITY = f"+/{Z2M_TOPIC_AVAILABILITY_LEAF}"
 
 # Bridge sensor attribute keys.
 ATTR_BRIDGE_STACK = "stack"
@@ -1191,6 +1208,14 @@ BRIEF_KEEP_DAYS = 14
 # than a fortnight has been fixed or is still standing, but how often
 # this house loses power is a question about the house, and it is
 # only answerable over seasons.
+# The last bridge state each stack was seen in, kept across a restart
+# so an outage that spans one still closes with its real duration.
+# Derived rather than measured, but a comparison against the previous
+# boot is the one thing memory cannot hold (ruling #222).
+DATA_BRIDGE_SEEN = "bridge_seen"
+BRIDGE_SEEN_STATE = "state"
+BRIDGE_SEEN_SINCE = "since"
+
 DATA_SYSTEM_EVENTS = "system_events"
 SYS_WHEN = "when"
 SYS_KIND = "kind"
