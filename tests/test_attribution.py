@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.12.6 (2026-08-06)
+# File: tests/test_attribution.py, Version: 0.12.7 (2026-08-06)
 
 """What explains an incident, and what a flood reads as.
 
@@ -338,3 +338,169 @@ async def test_a_grace_storm_writes_no_event(hass: HomeAssistant):
     for index in range(STORM_DEVICE_THRESHOLD + 2):
         coord._storm_feed(entry_id, f"d{index}", after)
     assert len(coord.data[DATA_STORMS]) == 1
+
+
+async def test_a_grace_storm_records_neither_half(hass: HomeAssistant):
+    """Suppressing the opening alone left an orphan in the brief.
+
+    0.12.6 stopped writing the opening inside startup grace and went
+    on writing the closing, so the live brief carried a sentence
+    saying an integration had settled when nothing was ever said to
+    have started (ruling #230).
+    """
+    from custom_components.device_sentinel.const import (
+        DATA_STORMS,
+        DATA_SYSTEM_EVENTS,
+        STORM_DEVICE_THRESHOLD,
+        SYS_STORM_CLOSED,
+        SYS_STORM_OPEN,
+    )
+
+    coord = await setup_coordinator(hass)
+    entry_id = coord.entry.entry_id
+    coord._grace_until = T0 + 1000
+    for index in range(STORM_DEVICE_THRESHOLD + 2):
+        coord._storm_feed(entry_id, f"g{index}", T0)
+    coord._sweep_storms(T0 + 60)
+
+    kinds = [row[SYS_KIND] for row in coord.data[DATA_SYSTEM_EVENTS]]
+    assert SYS_STORM_OPEN not in kinds
+    assert SYS_STORM_CLOSED not in kinds
+    assert coord.data.get(DATA_STORMS) == []
+
+
+async def test_an_exempted_storm_is_closed_not_abandoned(
+    hass: HomeAssistant,
+):
+    """The row must not be left open by the early return.
+
+    Once an integration is read as a poller, its feed is never
+    sampled again, so nothing would ever finish the storm that was
+    open when the verdict landed. The live fleet left eleven of
+    twenty storms unclosed that way, and the exemption went on
+    counting rows it could no longer update (ruling #230).
+    """
+    from custom_components.device_sentinel.const import (
+        DATA_STORMS,
+        STORM_DEVICE_THRESHOLD,
+        STORM_DURATION,
+        STORM_EXEMPT_PER_HOUR,
+    )
+
+    coord = await setup_coordinator(hass)
+    entry_id = coord.entry.entry_id
+    coord._grace_until = 0.0
+
+    at = T0
+    for _cycle in range(STORM_EXEMPT_PER_HOUR + 2):
+        coord._storm_active.clear()
+        coord._storm_feed_q.clear()
+        for index in range(STORM_DEVICE_THRESHOLD + 2):
+            coord._storm_feed(entry_id, f"d{index}", at)
+        coord._sweep_storms(at + 30)
+        at += 60
+
+    rows = coord.data[DATA_STORMS]
+    assert rows
+    assert all(row[STORM_DURATION] is not None for row in rows), (
+        "a storm row was left open"
+    )
+    assert coord._is_polling_integration(entry_id, at)
+
+
+async def test_the_exemption_ignores_an_unfinished_storm(
+    hass: HomeAssistant,
+):
+    """A row a crash left open cannot be updated, so it cannot count."""
+    from custom_components.device_sentinel.const import (
+        DATA_STORMS,
+        STORM_AT,
+        STORM_DOMAIN,
+        STORM_DURATION,
+        STORM_ENTRY,
+        STORM_EXEMPT_PER_HOUR,
+    )
+
+    coord = await setup_coordinator(hass)
+    coord.data[DATA_STORMS] = [
+        {
+            STORM_AT: T0 + index,
+            STORM_ENTRY: "e1",
+            STORM_DOMAIN: "poller",
+            STORM_DURATION: None,
+        }
+        for index in range(STORM_EXEMPT_PER_HOUR + 5)
+    ]
+    assert not coord._is_polling_integration("e1", T0 + 100)
+    for row in coord.data[DATA_STORMS]:
+        row[STORM_DURATION] = 5.0
+    assert coord._is_polling_integration("e1", T0 + 100)
+
+
+async def test_a_repeated_storm_reads_as_one_line(hass: HomeAssistant):
+    """Twenty reloads in an hour are one sentence, not forty."""
+    from custom_components.device_sentinel.const import (
+        SYS_DEVICES,
+        SYS_STORM_CLOSED,
+        SYS_STORM_OPEN,
+    )
+
+    coord = await setup_coordinator(hass)
+    rows = []
+    for index in range(20):
+        when = T0 + index * 36
+        rows.append(_event(SYS_STORM_OPEN, "tplink_router", when))
+        rows.append(
+            _event(
+                SYS_STORM_CLOSED, "tplink_router", when + 5, duration=5.0
+            )
+        )
+        rows[-1][SYS_DEVICES] = 5
+    said = coord._house_sentences(rows)
+    assert len(said) == 1
+    assert said[0].startswith("The tplink_router integration reloaded 20 times")
+    assert "up to 5 device(s) at a time" in said[0]
+
+
+async def test_one_storm_keeps_its_own_two_sentences(hass: HomeAssistant):
+    """A single reload is not repetition and reads as it always did."""
+    from custom_components.device_sentinel.const import (
+        SYS_DEVICES,
+        SYS_STORM_CLOSED,
+        SYS_STORM_OPEN,
+    )
+
+    coord = await setup_coordinator(hass)
+    closed = _event(SYS_STORM_CLOSED, "reolink", T0 + 5, duration=5.0)
+    closed[SYS_DEVICES] = 4
+    said = coord._house_sentences(
+        [_event(SYS_STORM_OPEN, "reolink", T0), closed]
+    )
+    assert len(said) == 2
+    assert said[0].startswith("The reolink integration reloaded at ")
+
+
+async def test_an_orphan_closing_is_never_spoken(hass: HomeAssistant):
+    """Even beside a real storm on the same integration.
+
+    Counting openings per scope was not enough: the live fleet had a
+    genuine mqtt storm and an orphan mqtt closing in the same window,
+    and the orphan was spoken anyway.
+    """
+    from custom_components.device_sentinel.const import (
+        SYS_DEVICES,
+        SYS_STORM_CLOSED,
+        SYS_STORM_OPEN,
+    )
+
+    coord = await setup_coordinator(hass)
+    good_close = _event(SYS_STORM_CLOSED, "mqtt", T0 + 6, duration=6.0)
+    good_close[SYS_DEVICES] = 50
+    orphan = _event(SYS_STORM_CLOSED, "mqtt", T0 + 2600, duration=7.0)
+    orphan[SYS_DEVICES] = 47
+    said = coord._house_sentences(
+        [_event(SYS_STORM_OPEN, "mqtt", T0), good_close, orphan]
+    )
+    assert len(said) == 2
+    assert "47 device(s)" not in " ".join(said)
+    assert "50 device(s)" in " ".join(said)
