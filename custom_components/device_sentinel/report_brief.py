@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.12.6 (2026-08-06)
+# File: report_brief.py, Version: 0.12.7 (2026-08-06)
 
 """The daily brief: the one report written for a person.
 
@@ -402,6 +402,93 @@ class BriefMixin:
             return f"settings changed ({detail})" if detail else "settings changed"
         return str(kind)
 
+    def _house_sentences(
+        self, sys_events: list[dict[str, Any]]
+    ) -> list[str]:
+        """Return what happened to the house, repetition collapsed.
+
+        Restarts and bridge outages arrive one at a time, so these
+        sentences were written one per event and that was right. A
+        storm is the first house event that can repeat: an
+        integration polling every device on a timer trips the storm
+        detector every cycle, and the reference fleet produced twenty
+        in an hour, which filled the brief with forty sentences
+        saying the same thing (ruling #230). Device floods were
+        collapsed in 0.12.5 and this is the same wall one layer up.
+
+        Only storms are grouped, and only per integration. Everything
+        else keeps its own sentence, because a second restart is a
+        second event a person wants to see.
+        """
+        rows = sorted(sys_events, key=lambda row: row[SYS_WHEN])
+        storms: dict[str, list[dict[str, Any]]] = {}
+        # Paired in time order, so a closing is only spoken where an
+        # opening preceded it. A closing with no opening says an
+        # integration settled when nothing was ever said to have
+        # started: 0.12.6 wrote one of those for a storm inside
+        # startup grace, and the row stays on disk until it ages
+        # out, so the reader refuses it as well as the writer
+        # (ruling #230). Counting per scope alone was not enough,
+        # because an integration can have a real storm and an orphan
+        # closing in the same window.
+        pending: dict[str, int] = {}
+        orphans: set[int] = set()
+        for row in rows:
+            kind = row[SYS_KIND]
+            scope = row[SYS_SCOPE]
+            if kind == SYS_STORM_OPEN:
+                storms.setdefault(scope, []).append(row)
+                pending[scope] = pending.get(scope, 0) + 1
+            elif kind == SYS_STORM_CLOSED:
+                if pending.get(scope, 0) <= 0:
+                    orphans.add(id(row))
+                else:
+                    pending[scope] -= 1
+        said: list[str] = []
+        grouped: set[str] = set()
+        for row in rows:
+            kind = row[SYS_KIND]
+            scope = row[SYS_SCOPE]
+            if kind in (SYS_STORM_OPEN, SYS_STORM_CLOSED):
+                if id(row) in orphans:
+                    continue
+                opens = storms.get(scope) or []
+                if len(opens) < 2:
+                    said.append(self._system_event_sentence(row))
+                    continue
+                if scope in grouped:
+                    continue
+                grouped.add(scope)
+                said.append(self._compose_storm_run(scope, opens, rows))
+                continue
+            said.append(self._system_event_sentence(row))
+        return said
+
+    def _compose_storm_run(
+        self,
+        scope: str,
+        opens: list[dict[str, Any]],
+        rows: list[dict[str, Any]],
+    ) -> str:
+        """Return one sentence for an integration that keeps storming.
+
+        The size is the largest seen rather than the mean, because
+        what a person wants from a repeated event is how big it gets.
+        """
+        first = self._clock(opens[0][SYS_WHEN])
+        last = self._clock(opens[-1][SYS_WHEN])
+        sizes = [
+            row.get(SYS_DEVICES) or 0
+            for row in rows
+            if row[SYS_KIND] == SYS_STORM_CLOSED and row[SYS_SCOPE] == scope
+        ]
+        most = max(sizes) if sizes else 0
+        tail = f", up to {most} device(s) at a time" if most else ""
+        return (
+            f"The {scope} integration reloaded {len(opens)} times "
+            f"between {first} and {last}{tail}."
+        )
+
     def _tell_episodes(
         self,
         pairs: list[tuple[dict[str, Any], dict[str, Any] | None]],
@@ -531,12 +618,7 @@ class BriefMixin:
         # the house is the context for what happened to the devices,
         # and a reader who has it will not read fifty consequences as
         # fifty faults.
-        house = [
-            self._system_event_sentence(row)
-            for row in sorted(
-                sys_events or [], key=lambda row: row[SYS_WHEN]
-            )
-        ]
+        house = self._house_sentences(sys_events or [])
         if house:
             lines += [" ".join(house), ""]
         if told:

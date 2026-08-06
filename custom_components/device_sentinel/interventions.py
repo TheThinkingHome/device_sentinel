@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.12.6 (2026-08-06)
+# File: interventions.py, Version: 0.12.7 (2026-08-06)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -487,7 +487,10 @@ class InterventionMixin:
         self, entry_id: str | None, device_id: str, now: float
     ) -> dict[str, Any] | None:
         """Feed the per-integration storm detector; return active storm."""
-        if entry_id is None or self._is_polling_integration(entry_id, now):
+        if entry_id is None:
+            return None
+        if self._is_polling_integration(entry_id, now):
+            self._announce_polling(entry_id)
             return None
         queue = self._storm_feed_q.setdefault(entry_id, deque())
         queue.append((now, device_id))
@@ -506,24 +509,32 @@ class InterventionMixin:
                 # wrong explanation, and the episode stamp below has
                 # said so since long before storms were recorded
                 # (ruling #229).
-                if now >= self._grace_until:
+                recorded = now >= self._grace_until
+                if recorded:
                     self._record_storm(entry_id, now)
                 if self._is_polling_integration(entry_id, now):
+                    self._announce_polling(entry_id)
                     self._storm_feed_q.pop(entry_id, None)
-                    LOGGER.debug(
-                        "Integration %s reclassified as synchronized "
-                        "polling (%d storms inside an hour); storm "
-                        "exclusion disabled for it, its devices learn "
-                        "their poll cadence as rhythm",
-                        self._entry_domain(entry_id),
-                        STORM_EXEMPT_PER_HOUR,
-                    )
+                    # Close the row just opened. The early return
+                    # below means this entry is never fed again, so
+                    # nothing would ever close it, and the exemption
+                    # would go on counting a storm whose record it
+                    # can no longer update (ruling #230).
+                    self._close_storm_row(entry_id, now, 0.0, 0)
                     return None
                 storm = {
                     "start": now,
                     "last_met": now,
                     "stamps": 0,
                     "devices": set(),
+                    # Whether this storm's opening reached the record.
+                    # A storm inside startup grace is the restart and
+                    # is not recorded, so its closing must not be
+                    # either: suppressing one half left an orphan
+                    # sentence in the brief saying an integration
+                    # settled when nothing had been said to start
+                    # (ruling #230).
+                    "recorded": recorded,
                 }
                 self._storm_active[entry_id] = storm
                 # A storm is a radio-level event, most often a bridge
@@ -593,6 +604,47 @@ class InterventionMixin:
         self._trim_storms(now)
         self._dirty = True
 
+    def _announce_polling(self, entry_id: str) -> None:
+        """Say once a session that an integration reads as a poller.
+
+        The verdict is recomputed from the series every time, which
+        is the point, but saying so on every sample would fill a log
+        with one sentence. Announced state is memory only and never
+        a verdict: forgetting it costs one repeated line after a
+        restart and nothing else (ruling #230).
+        """
+        if entry_id in self._storm_announced:
+            return
+        self._storm_announced.add(entry_id)
+        LOGGER.debug(
+            "Integration %s reclassified as synchronized "
+            "polling (%d storms inside an hour); storm "
+            "exclusion disabled for it, its devices learn "
+            "their poll cadence as rhythm",
+            self._entry_domain(entry_id),
+            STORM_EXEMPT_PER_HOUR,
+        )
+
+    def _close_storm_row(
+        self, entry_id: str, now: float, duration: float, devices: int
+    ) -> bool:
+        """Finish the open row for this entry. Returns whether one was.
+
+        One storm is one row, opened when it begins and finished
+        here, so the series carries a duration and a size rather than
+        two rows to be paired later.
+        """
+        for row in reversed(self.data.get(DATA_STORMS) or []):
+            if (
+                row.get(STORM_ENTRY) == entry_id
+                and row.get(STORM_DURATION) is None
+            ):
+                row[STORM_DEVICES] = devices
+                row[STORM_DURATION] = duration
+                self._dirty = True
+                return True
+        return False
+
     def _is_polling_integration(self, entry_id: str, now: float) -> bool:
         """Return whether this integration's bursts are its own cadence.
 
@@ -612,11 +664,17 @@ class InterventionMixin:
         present rather than trusting a version number.
         """
         cutoff = now - STORM_HISTORY_SECONDS
+        # Only finished storms count. A row left open by a crash
+        # cannot be updated by anything, so counting it would let a
+        # verdict rest on evidence that can never change, which is
+        # the whole reason the exemption is recomputed rather than
+        # remembered (ruling #230).
         recent = [
             row
             for row in (self.data.get(DATA_STORMS) or [])
             if row.get(STORM_ENTRY) == entry_id
             and (row.get(STORM_AT) or 0) >= cutoff
+            and row.get(STORM_DURATION) is not None
         ]
         return len(recent) >= STORM_EXEMPT_PER_HOUR
 
@@ -644,24 +702,16 @@ class InterventionMixin:
         duration = (
             storm["last_met"] - storm["start"] + STORM_RELEASE_SECONDS
         )
-        # The row opened when the storm did, so it is finished here
-        # rather than appended to: one storm, one row, whatever the
-        # brief later groups under it.
-        for row in reversed(self.data.get(DATA_STORMS) or []):
-            if (
-                row.get(STORM_ENTRY) == entry_id
-                and row.get(STORM_DURATION) is None
-            ):
-                row[STORM_DEVICES] = len(storm["devices"])
-                row[STORM_DURATION] = duration
-                self._dirty = True
-                break
-        self._record_system_event(
-            SYS_STORM_CLOSED,
-            scope=domain,
-            duration=duration,
-            devices=len(storm["devices"]),
-        )
+        if storm.get("recorded", True):
+            self._close_storm_row(
+                entry_id, now, duration, len(storm["devices"])
+            )
+            self._record_system_event(
+                SYS_STORM_CLOSED,
+                scope=domain,
+                duration=duration,
+                devices=len(storm["devices"]),
+            )
         if storm["stamps"]:
             LOGGER.debug(
                 "Storm on %s ended: %d devices, %d stamps excluded from "

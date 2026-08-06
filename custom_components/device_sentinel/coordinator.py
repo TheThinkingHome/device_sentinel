@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.12.5 (2026-08-06)
+# File: coordinator.py, Version: 0.12.7 (2026-08-06)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -251,6 +251,10 @@ class DeviceSentinelCoordinator(
         self._pending_events: list[tuple[str, str, bool]] = []
         self._storm_feed_q: dict[str, deque[tuple[float, str]]] = {}
         self._storm_active: dict[str, dict[str, Any]] = {}
+        # Which integrations have been announced as pollers this
+        # session. Log-only, so losing it at a restart costs one
+        # repeated debug line (ruling #230).
+        self._storm_announced: set[str] = set()
         # The polling exemption used to live here as a set and a
         # history of storm times, both in memory alone, so the rule
         # that spots a synchronized poller could only ever count the
