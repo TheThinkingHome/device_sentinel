@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.12.5 (2026-08-06)
+# File: report_brief.py, Version: 0.12.6 (2026-08-06)
 
 """The daily brief: the one report written for a person.
 
@@ -509,8 +509,14 @@ class BriefMixin:
         and a future notification cannot describe one event three
         ways.
         """
+        # Every event, not only the window's. An outage that began
+        # before the window still explains an incident inside it, and
+        # filtering first left those devices with no cause at all
+        # (ruling #229). The printed house sentences below stay
+        # filtered, because those are what happened today.
         told = self._tell_episodes(
-            self._pair_incidents(incidents), sys_events
+            self._pair_incidents(incidents),
+            self.data.get(DATA_SYSTEM_EVENTS) or [],
         )
         standing: list[str] = []
         for _name, _problem, _since, _kind, device_id in now_rows:

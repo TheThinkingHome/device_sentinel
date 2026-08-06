@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.12.5 (2026-08-06)
+# File: interventions.py, Version: 0.12.6 (2026-08-06)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -499,7 +499,15 @@ class InterventionMixin:
         storm = self._storm_active.get(entry_id)
         if distinct >= STORM_DEVICE_THRESHOLD:
             if storm is None:
-                self._record_storm(entry_id, now)
+                # Inside startup grace the burst is the restart
+                # itself, which is already recorded and already
+                # explains these devices. Writing a storm here would
+                # give the nightly reboot a second, narrower and
+                # wrong explanation, and the episode stamp below has
+                # said so since long before storms were recorded
+                # (ruling #229).
+                if now >= self._grace_until:
+                    self._record_storm(entry_id, now)
                 if self._is_polling_integration(entry_id, now):
                     self._storm_feed_q.pop(entry_id, None)
                     LOGGER.debug(
@@ -664,6 +672,7 @@ class InterventionMixin:
                 duration,
             )
         self._storm_active.pop(entry_id, None)
+        self._trim_storms(now)
 
     def _sweep_storms(self, now: float) -> None:
         """Close storms whose feed has gone quiet."""

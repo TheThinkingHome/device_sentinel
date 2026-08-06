@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: attribution.py, Version: 0.12.5 (2026-08-06)
+# File: attribution.py, Version: 0.12.6 (2026-08-06)
 
 """Which recorded event explains an incident, and which do not.
 
@@ -22,6 +22,18 @@ WHAT REPLACES IT. An incident is explained by a recorded intervention
 whose window overlaps it and whose scope covers the device. Nothing
 else. Where no intervention covers it, the device recovered on its
 own and the brief says so rather than naming a lever.
+
+AN EXPLANATION MUST HAVE BEEN IN EFFECT WHEN THE SILENCE BEGAN. That
+is the whole selection rule, and it separates a cause from its own
+symptom without ranking anything. A broker outage at 01:47 takes
+devices at 01:50 and they return at 02:04, and the burst of them
+returning is itself recorded as a storm at 02:04. Both cover the
+device and both overlap the incident, but only the broker window was
+open when the device went quiet, so only the broker can have caused
+it. Ranking by narrowness picked the storm and named a consequence as
+the cause (ruling #229). The same test fixes the nightly reboot,
+where the burst of devices returning inside startup grace is the
+restart rather than an integration reloading.
 
 SCOPE IS THE HALF THAT MATTERS. A Zigbee bridge reconnecting cannot
 revive a HomeKit accessory, and crediting it with one is the fault
@@ -116,22 +128,20 @@ class Window:
             return domain is not None and domain == self.scope
         return False
 
-    def overlaps(self, opened: float, closed: float | None) -> bool:
-        """Return whether this window and an incident share any time.
+    def in_effect_at(self, moment: float) -> bool:
+        """Return whether this intervention was under way at a moment.
 
-        The edge allowance is the sampler's own resolution: a bridge
-        or broker outage is noticed up to a tick after it began, so
-        an incident that opened just before the record is still the
-        same event.
+        The edge allowance is the sampler's own resolution. A bridge
+        or broker outage is noticed up to a tick after it began and
+        its recovery up to a tick after that, so a device that fell
+        quiet just before the record, or returned just after it, is
+        still the same event.
         """
-        end = self.end if self.end is not None else closed
-        if end is None:
-            end = opened
-        last = closed if closed is not None else opened
-        return (
-            self.start - _EDGE_SECONDS <= last
-            and end + _EDGE_SECONDS >= opened
-        )
+        if moment < self.start - _EDGE_SECONDS:
+            return False
+        if self.end is None:
+            return True
+        return moment <= self.end + _EDGE_SECONDS
 
 
 def windows(events: list[dict[str, Any]]) -> list[Window]:
@@ -182,30 +192,32 @@ def attribute(
 ) -> Window | None:
     """Return the intervention that explains one incident, or None.
 
-    Where more than one could, the narrowest wins: a storm on the
-    device's own integration says more than a restart of the whole
-    machine, and saying the more specific true thing is the point.
+    First choice is a window that was already in effect when the
+    device went quiet, because that is the only kind that can have
+    caused the silence. Where several were, the earliest wins: an
+    outage that takes a broker down also produces a burst when its
+    devices return, and the outage is the cause of both.
+
+    Second choice, only where nothing was in effect at the opening,
+    is a window covering the recovery. A device that had been silent
+    for hours before an outage was not silenced by it, but it may
+    well have been revived when everything else came back, and
+    saying so is more useful than saying nothing.
     """
-    candidates = [
-        window
-        for window in all_windows
-        if window.covers(domain, stack) and window.overlaps(opened, closed)
+    reach = [
+        window for window in all_windows if window.covers(domain, stack)
     ]
-    if not candidates:
+    began = [
+        window for window in reach if window.in_effect_at(opened)
+    ]
+    if began:
+        return min(began, key=lambda window: window.start)
+    if closed is None:
         return None
-    return min(candidates, key=lambda window: _RANK.get(window.kind, 99))
-
-
-# Narrower first. A storm names one integration, a bridge one stack,
-# a broker one transport, a restart the whole house.
-_RANK = {
-    SYS_STORM_OPEN: 0,
-    SYS_PAIRING_OPEN: 1,
-    SYS_BRIDGE_DOWN: 2,
-    SYS_BROKER_DOWN: 3,
-    SYS_UNCLEAN_RESTART: 4,
-    SYS_RESTART: 5,
-}
+    revived = [window for window in reach if window.in_effect_at(closed)]
+    if not revived:
+        return None
+    return min(revived, key=lambda window: window.start)
 
 # What a person reads. Written here rather than in the brief so the
 # prose, the tables and any future notification cannot describe one
