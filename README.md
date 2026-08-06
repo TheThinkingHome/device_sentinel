@@ -8,6 +8,7 @@
 ![License](https://img.shields.io/github/license/TheThinkingHome/device_sentinel)
 ![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)
 
+
 **Your dashboard cannot tell a quiet device from a dead one. Device Sentinel can, and it watches the batteries and radio links that fail first.**
 
 ## Pre-Release Notice
