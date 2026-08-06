@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.12.4 (2026-08-06)
+# File: report_brief.py, Version: 0.12.5 (2026-08-06)
 
 """The daily brief: the one report written for a person.
 
@@ -28,6 +28,7 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
+from . import attribution
 from .const import (
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
@@ -58,6 +59,9 @@ from .const import (
     SYS_BRIDGE_DOWN,
     SYS_BRIDGE_UP,
     SYS_BROKER_DOWN,
+    SYS_DEVICES,
+    SYS_STORM_CLOSED,
+    SYS_STORM_OPEN,
     SYS_BROKER_UP,
     SYS_DETAIL,
     SYS_DURATION,
@@ -288,6 +292,16 @@ class BriefMixin:
         # The broker names itself rather than its scope, because a
         # house has one and "the mqtt broker" reads as a stack name
         # to somebody who does not know the difference.
+        if kind == SYS_STORM_OPEN:
+            return f"The {scope} integration reloaded at {when}."
+        if kind == SYS_STORM_CLOSED:
+            count = row.get(SYS_DEVICES)
+            if count:
+                return (
+                    f"It settled after {held or 'a moment'}, "
+                    f"{count} device(s) affected."
+                )
+            return f"It settled after {held or 'a moment'}."
         if kind == SYS_BROKER_DOWN:
             return f"The MQTT broker went down at {when}."
         if kind == SYS_BROKER_UP:
@@ -350,6 +364,16 @@ class BriefMixin:
                 if held
                 else f"{scope} bridge came back"
             )
+        if kind == SYS_STORM_OPEN:
+            return f"{scope} integration reloaded"
+        if kind == SYS_STORM_CLOSED:
+            count = row.get(SYS_DEVICES)
+            return (
+                f"{scope} integration settled after {held}, "
+                f"{count} device(s)"
+                if held and count
+                else f"{scope} integration settled"
+            )
         if kind == SYS_BROKER_DOWN:
             return "MQTT broker went down"
         if kind == SYS_BROKER_UP:
@@ -378,6 +402,93 @@ class BriefMixin:
             return f"settings changed ({detail})" if detail else "settings changed"
         return str(kind)
 
+    def _tell_episodes(
+        self,
+        pairs: list[tuple[dict[str, Any], dict[str, Any] | None]],
+        sys_events: list[dict[str, Any]] | None,
+    ) -> list[str]:
+        """Return one sentence per episode, floods collapsed to one.
+
+        A flood is not a count inside a time bucket. It is every
+        episode the same recorded intervention explains, which is
+        both narrower and wider than counting: two devices are a
+        flood if one broker outage took them both, and a hundred
+        unrelated ones in the same minute are not (ruling #228).
+        Without this the reference fleet's brief carried a single
+        paragraph of 7,375 characters and 74 sentences, one per
+        device, for one broker outage.
+
+        Grouping runs on both directions, since the same event puts
+        every device on the list going in as well as coming out.
+        """
+        spans = attribution.windows(sys_events or [])
+        told: list[str] = []
+        groups: dict[Any, list[tuple[dict, dict | None]]] = {}
+        placed: dict[Any, int] = {}
+        for opened, resolved in pairs:
+            device_id = opened[INC_DEVICE_ID]
+            window = (
+                attribution.attribute(
+                    spans,
+                    self._watched.get(device_id),
+                    self._device_stack(device_id),
+                    opened[INC_WHEN],
+                    resolved[INC_WHEN] if resolved is not None else None,
+                )
+                if spans
+                else None
+            )
+            if window is None:
+                told.append(
+                    self._compose_episode(opened, resolved)
+                    if resolved is not None
+                    else self._compose_event(opened)
+                )
+                continue
+            key = (window.key, opened[INC_KIND], resolved is not None)
+            if key not in placed:
+                placed[key] = len(told)
+                told.append("")
+            groups.setdefault(key, []).append((opened, resolved))
+        for key, members in groups.items():
+            told[placed[key]] = self._compose_flood(key, members, spans)
+        return [line for line in told if line]
+
+    def _compose_flood(
+        self,
+        key: Any,
+        members: list[tuple[dict[str, Any], dict[str, Any] | None]],
+        spans: list[Any],
+    ) -> str:
+        """Return the one sentence a group of episodes becomes.
+
+        One device is not a flood. It keeps its own sentence, with
+        its time and its duration, and gains only the corrected
+        cause, because collapsing a single device would throw away
+        detail to solve a problem it does not have.
+
+        Beyond one, the count leads: a person reading a brief wants
+        the size of the thing before a roll of seventy-four names.
+        """
+        window_key, kind, resolved = key
+        window = next(
+            (span for span in spans if span.key == window_key), None
+        )
+        clause = attribution.phrase(window) if window else "an intervention"
+        if len(members) == 1:
+            opened, closed = members[0]
+            if closed is not None:
+                return self._compose_episode(opened, closed, clause)
+            return self._compose_event(opened)
+        word = self._EVENT_WORDING.get(kind, kind)
+        when = self._clock(min(row[INC_WHEN] for row, _ in members))
+        if resolved:
+            return (
+                f"{len(members)} devices {word} at {when} and "
+                f"recovered, revived by {clause}."
+            )
+        return f"{len(members)} devices {word} at {when}, with {clause}."
+
     def _brief_prose(
         self,
         incidents: list[dict[str, Any]],
@@ -398,13 +509,9 @@ class BriefMixin:
         and a future notification cannot describe one event three
         ways.
         """
-        told: list[str] = []
-        for opened, resolved in self._pair_incidents(incidents):
-            told.append(
-                self._compose_episode(opened, resolved)
-                if resolved is not None
-                else self._compose_event(opened)
-            )
+        told = self._tell_episodes(
+            self._pair_incidents(incidents), sys_events
+        )
         standing: list[str] = []
         for _name, _problem, _since, _kind, device_id in now_rows:
             line = self._compose_device_line(device_id)

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.11.6 (2026-08-04)
+# File: journal.py, Version: 0.12.5 (2026-08-06)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -36,6 +36,7 @@ from .const import (
     DATA_SYSTEM_EVENTS,
     DEV_DAILY_MAX,
     DEV_LAST_ACTIVITY,
+    CAUSE_EPISODE_SLACK_SECONDS,
     EPISODE_ENDED_RESUMED,
     EPISODE_KEEP_DAYS,
     EP_AT,
@@ -63,6 +64,7 @@ from .const import (
     LOGGER,
     RECOVERY_CAUSE_UNOBSERVED,
     SYS_DETAIL,
+    SYS_DEVICES,
     SYS_DURATION,
     SYS_KIND,
     SYS_SCOPE,
@@ -351,6 +353,7 @@ class JournalMixin:
         detail: str | None = None,
         duration: float | None = None,
         when: float | None = None,
+        devices: int | None = None,
     ) -> None:
         """Append one thing that happened to the house, not a device.
 
@@ -386,6 +389,9 @@ class JournalMixin:
                 SYS_SCOPE: scope,
                 SYS_DETAIL: detail,
                 SYS_DURATION: duration,
+                # Only a storm carries a count: it is the one event
+                # whose size a person wants in the sentence.
+                **({SYS_DEVICES: devices} if devices is not None else {}),
             }
         )
         cutoff = (
@@ -417,7 +423,9 @@ class JournalMixin:
                 opened = None
         return opened
 
-    def _recovery_cause(self, device_id: str) -> str | None:
+    def _recovery_cause(
+        self, device_id: str, opened: float = 0.0
+    ) -> str | None:
         """Return how a device's silence ended, if the record says.
 
         Borrowed from the episode record rather than guessed: an
@@ -428,6 +436,15 @@ class JournalMixin:
         for episode in reversed(self.data.get(DATA_EPISODES) or []):
             if episode[EP_DEVICE_ID] != device_id:
                 continue
+            # Bounded to the incident. Without this the newest
+            # episode for the device answered whatever the question
+            # was, so an incident that opened no episode of its own
+            # took its cause from one days old, and 74 devices
+            # recovering from one broker outage were given four
+            # different explanations (ruling #228).
+            at = episode.get(EP_AT)
+            if at is None or at < opened - CAUSE_EPISODE_SLACK_SECONDS:
+                return None
             ended = episode[EP_ENDED]
             if ended is None:
                 return None
@@ -449,7 +466,7 @@ class JournalMixin:
         opened = self._incident_opened_at(device_id, kind)
         duration = (now - opened) if opened is not None else None
         cause = (
-            self._recovery_cause(device_id)
+            self._recovery_cause(device_id, opened or now)
             if kind in FREEZE_KINDS_FOR_CAUSE
             else None
         )

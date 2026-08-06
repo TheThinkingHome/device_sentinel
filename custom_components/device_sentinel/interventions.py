@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.12.4 (2026-08-06)
+# File: interventions.py, Version: 0.12.5 (2026-08-06)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -59,7 +59,17 @@ from .const import (
     LOGGER,
     STARTUP_GRACE_SECONDS,
     STORM_DEVICE_THRESHOLD,
+    CONF_RETENTION_DAYS,
+    DATA_STORMS,
+    DEFAULT_RETENTION_DAYS,
+    STORM_AT,
+    STORM_DEVICES,
+    STORM_DOMAIN,
+    STORM_DURATION,
+    STORM_ENTRY,
     STORM_EXEMPT_PER_HOUR,
+    SYS_STORM_CLOSED,
+    SYS_STORM_OPEN,
     STORM_HISTORY_SECONDS,
     STORM_RELEASE_SECONDS,
     STORM_WINDOW_SECONDS,
@@ -477,7 +487,7 @@ class InterventionMixin:
         self, entry_id: str | None, device_id: str, now: float
     ) -> dict[str, Any] | None:
         """Feed the per-integration storm detector; return active storm."""
-        if entry_id is None or entry_id in self._storm_exempt:
+        if entry_id is None or self._is_polling_integration(entry_id, now):
             return None
         queue = self._storm_feed_q.setdefault(entry_id, deque())
         queue.append((now, device_id))
@@ -489,24 +499,16 @@ class InterventionMixin:
         storm = self._storm_active.get(entry_id)
         if distinct >= STORM_DEVICE_THRESHOLD:
             if storm is None:
-                history = self._storm_history.setdefault(entry_id, deque())
-                history.append(now)
-                cutoff_h = now - STORM_HISTORY_SECONDS
-                while history and history[0] < cutoff_h:
-                    history.popleft()
-                if len(history) >= STORM_EXEMPT_PER_HOUR:
-                    self._storm_exempt.add(entry_id)
+                self._record_storm(entry_id, now)
+                if self._is_polling_integration(entry_id, now):
                     self._storm_feed_q.pop(entry_id, None)
-                    entry = self.hass.config_entries.async_get_entry(
-                        entry_id
-                    )
                     LOGGER.debug(
                         "Integration %s reclassified as synchronized "
                         "polling (%d storms inside an hour); storm "
                         "exclusion disabled for it, its devices learn "
                         "their poll cadence as rhythm",
-                        entry.domain if entry else entry_id,
-                        len(history),
+                        self._entry_domain(entry_id),
+                        STORM_EXEMPT_PER_HOUR,
                     )
                     return None
                 storm = {
@@ -540,20 +542,126 @@ class InterventionMixin:
             return None
         return self._storm_active.get(entry_id)
 
+    def _device_stack(self, device_id: str) -> str | None:
+        """Return the coordinator stack a device belongs to, if known.
+
+        Read from the map the registry walk already builds, so this
+        file still names no stack (ruling #218).
+        """
+        owner = self._stack_keys.get(device_id)
+        return owner[0] if owner else None
+
+    def _entry_domain(self, entry_id: str) -> str:
+        """Return an integration's domain, or its id if it is gone.
+
+        The domain is what a person reads, and it is stable across a
+        rename of the entry's title, which is why the stored series
+        and the system event both carry it (ruling #227).
+        """
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        return entry.domain if entry else entry_id
+
+    def _record_storm(self, entry_id: str, now: float) -> None:
+        """Open a storm: one system event and one row on the series.
+
+        Both, because they answer different questions. The event puts
+        an integration reload in the brief beside a bridge outage and
+        a restart, which is where a person looks. The series is what
+        the polling rule reads, and it has to outlive the process or
+        the rule can only ever count the storms of one uptime.
+        """
+        domain = self._entry_domain(entry_id)
+        self._record_system_event(SYS_STORM_OPEN, scope=domain)
+        storms = self.data.setdefault(DATA_STORMS, [])
+        storms.append(
+            {
+                STORM_AT: now,
+                STORM_ENTRY: entry_id,
+                STORM_DOMAIN: domain,
+                STORM_DEVICES: 0,
+                STORM_DURATION: None,
+            }
+        )
+        self._trim_storms(now)
+        self._dirty = True
+
+    def _is_polling_integration(self, entry_id: str, now: float) -> bool:
+        """Return whether this integration's bursts are its own cadence.
+
+        Some integrations poll every device on a timer, so all of them
+        report inside the same second, again and again. That is
+        indistinguishable from a hub reconnecting, and excluding it
+        from learning would throw away the very rhythm the device has.
+        Enough storms inside an hour and the integration is read as a
+        poller instead.
+
+        Counted from the stored series each time rather than written
+        down once. A stored verdict cannot be revisited: an
+        integration that misbehaved for a week and then settled would
+        stay exempt for good, with nothing to notice. Reading the
+        series means the answer changes when the evidence does, which
+        is the same reason the storage split reads whether clocks are
+        present rather than trusting a version number.
+        """
+        cutoff = now - STORM_HISTORY_SECONDS
+        recent = [
+            row
+            for row in (self.data.get(DATA_STORMS) or [])
+            if row.get(STORM_ENTRY) == entry_id
+            and (row.get(STORM_AT) or 0) >= cutoff
+        ]
+        return len(recent) >= STORM_EXEMPT_PER_HOUR
+
+    def _trim_storms(self, now: float) -> None:
+        """Drop storms past the person's retention.
+
+        The series is kept on the retention setting rather than the
+        judgment window, because nothing judges by it yet and its
+        whole purpose is to be looked back over.
+        """
+        storms = self.data.get(DATA_STORMS) or []
+        days = self.entry.options.get(
+            CONF_RETENTION_DAYS, DEFAULT_RETENTION_DAYS
+        )
+        cutoff = now - float(days) * 86400.0
+        kept = [row for row in storms if (row.get(STORM_AT) or 0) >= cutoff]
+        if len(kept) != len(storms):
+            self.data[DATA_STORMS] = kept
+
     def _end_storm(
         self, entry_id: str, storm: dict[str, Any], now: float
     ) -> None:
-        """Close a storm and log its full accounting."""
+        """Close a storm, on the series and in the events log."""
+        domain = self._entry_domain(entry_id)
+        duration = (
+            storm["last_met"] - storm["start"] + STORM_RELEASE_SECONDS
+        )
+        # The row opened when the storm did, so it is finished here
+        # rather than appended to: one storm, one row, whatever the
+        # brief later groups under it.
+        for row in reversed(self.data.get(DATA_STORMS) or []):
+            if (
+                row.get(STORM_ENTRY) == entry_id
+                and row.get(STORM_DURATION) is None
+            ):
+                row[STORM_DEVICES] = len(storm["devices"])
+                row[STORM_DURATION] = duration
+                self._dirty = True
+                break
+        self._record_system_event(
+            SYS_STORM_CLOSED,
+            scope=domain,
+            duration=duration,
+            devices=len(storm["devices"]),
+        )
         if storm["stamps"]:
-            entry = self.hass.config_entries.async_get_entry(entry_id)
-            domain = entry.domain if entry else entry_id
             LOGGER.debug(
                 "Storm on %s ended: %d devices, %d stamps excluded from "
                 "learning, %.1f s duration",
                 domain,
                 len(storm["devices"]),
                 storm["stamps"],
-                storm["last_met"] - storm["start"] + STORM_RELEASE_SECONDS,
+                duration,
             )
         self._storm_active.pop(entry_id, None)
 

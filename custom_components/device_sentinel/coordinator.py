@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.12.4 (2026-08-06)
+# File: coordinator.py, Version: 0.12.5 (2026-08-06)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -85,6 +85,7 @@ from .const import (
     CONF_EXCLUDED_LABELS,
     DATA_BRIDGE_SEEN,
     DATA_BROKER_SEEN,
+    DATA_STORMS,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
     DATA_EPISODES,
@@ -250,8 +251,11 @@ class DeviceSentinelCoordinator(
         self._pending_events: list[tuple[str, str, bool]] = []
         self._storm_feed_q: dict[str, deque[tuple[float, str]]] = {}
         self._storm_active: dict[str, dict[str, Any]] = {}
-        self._storm_history: dict[str, deque[float]] = {}
-        self._storm_exempt: set[str] = set()
+        # The polling exemption used to live here as a set and a
+        # history of storm times, both in memory alone, so the rule
+        # that spots a synchronized poller could only ever count the
+        # storms of one uptime and reset at every nightly reboot. It
+        # is read from the stored storm series now (ruling #227).
 
         self._listeners: list[Any] = []
         self._unsubs: list[Any] = []
@@ -338,6 +342,7 @@ class DeviceSentinelCoordinator(
         loaded.setdefault(DATA_SYSTEM_EVENTS, [])
         loaded.setdefault(DATA_BRIDGE_SEEN, {})
         loaded.setdefault(DATA_BROKER_SEEN, {})
+        loaded.setdefault(DATA_STORMS, [])
         # The dry-run outbox was retired once the
         # notifications it previewed had been sending for
         # several releases. Drop what an older install stored,

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.12.4 (2026-08-06)
+# File: diagnostics.py, Version: 0.12.5 (2026-08-06)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -29,10 +29,12 @@ from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers import device_registry as dr
 
 from . import DeviceSentinelConfigEntry
 from .const import (
+    DATA_STORMS,
     EP_LEARNED,
     BATTERY_CLEAR_MARGIN,
     CONF_HIGH_PRIORITY_TARGETS,
@@ -227,6 +229,7 @@ async def async_get_config_entry_diagnostics(
             # down, unknown), so a gap discarded as a pairing is
             # auditable from a diagnostics download and not only from
             # the live sensor, which is off by default (ruling #149).
+            "storms": len(coordinator.data.get(DATA_STORMS) or []),
             "broker_state": coordinator.broker_state,
             "broker": coordinator.broker_attributes,
             "bridge_state": {
@@ -235,7 +238,16 @@ async def async_get_config_entry_diagnostics(
             },
             "excluded_devices": coordinator._excluded_devices,
             "excluded_entities": coordinator._excluded_entities,
-            "storm_exempt_entries": sorted(coordinator._storm_exempt),
+            "storm_exempt_entries": sorted(
+                {
+                    row.get("entry_id")
+                    for row in (coordinator.data.get(DATA_STORMS) or [])
+                    if row.get("entry_id")
+                    and coordinator._is_polling_integration(
+                        row["entry_id"], dt_util.utcnow().timestamp()
+                    )
+                }
+            ),
         },
         "battery": {
             "low_count": coordinator.battery_low_count,

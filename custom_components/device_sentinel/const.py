@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.4 (2026-08-06)
+# File: const.py, Version: 0.12.5 (2026-08-06)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1200,6 +1200,12 @@ ACTION_READDED = "readded"
 # lever to credit: a battery rising or a rail clearing has no
 # reconnect or restart behind it, so those resolutions stay silent
 # about why rather than guessing.
+# How far before an incident opened an episode may have ended and
+# still be its explanation. A sampler notices an intervention up to
+# one tick late, so an episode closed a minute early is the same
+# event; one closed on Tuesday is not (ruling #228).
+CAUSE_EPISODE_SLACK_SECONDS = 120.0
+
 FREEZE_KINDS_FOR_CAUSE = frozenset(
     {"frozen", "unavailable", "unknown", "not_reported"}
 )
@@ -1289,6 +1295,31 @@ SYS_BRIDGE_UP = "bridge_up"
 # deliverer. Measured on 2026-08-06, a sixteen-minute broker outage
 # took 75 devices unavailable and wrote no system event at all, while
 # bridge_state read running throughout (ruling #224).
+# A storm: many devices on one integration reporting at once, most
+# often that integration reloading or its hub reconnecting. It was a
+# runtime concept that stamped episodes and then forgot, so the rule
+# that reclassifies a polling integration counted storms only within
+# one uptime and reset at every nightly reboot. Recorded now, so the
+# rule survives a restart and so an integration outage is legible at
+# all: before this, Reolink reloading and dropping four cameras
+# produced nothing a person could read (ruling #227).
+SYS_STORM_OPEN = "storm_open"
+SYS_STORM_CLOSED = "storm_closed"
+# Fields the storm rows carry beyond the shared ones.
+SYS_DEVICES = "devices"
+
+# The per-integration storm series, kept on the person's retention
+# rather than the judgment window, because its purpose is to be
+# looked back over. Nothing is learned from it yet: an integration
+# reloading is not periodic, and inventing a cadence for it would be
+# the global constant this project keeps overruling (ruling #227).
+DATA_STORMS = "storms"
+STORM_AT = "at"
+STORM_ENTRY = "entry_id"
+STORM_DOMAIN = "domain"
+STORM_DEVICES = "devices"
+STORM_DURATION = "duration"
+
 SYS_BROKER_DOWN = "broker_down"
 SYS_BROKER_UP = "broker_up"
 SYS_PAIRING_OPEN = "pairing_open"

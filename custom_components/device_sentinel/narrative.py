@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.11.12 (2026-08-04)
+# File: narrative.py, Version: 0.12.5 (2026-08-06)
 
 """How to say what happened: the composer.
 
@@ -245,7 +245,10 @@ class NarrativeMixin:
         return f"{name} acknowledged at {when}."
 
     def _compose_episode(
-        self, opened: dict[str, Any], resolved: dict[str, Any]
+        self,
+        opened: dict[str, Any],
+        resolved: dict[str, Any],
+        clause: str | None = None,
     ) -> str:
         """Return a whole silence as one sentence.
 
@@ -259,6 +262,14 @@ class NarrativeMixin:
         The recovery's clock time is dropped because the opening
         time plus the span already gives it, and the table below
         carries exact times for anyone looking one up.
+
+        clause overrides the cause the row carries. The stored cause
+        is written when the incident closes, before the intervention
+        that explains it has necessarily been recorded, and older
+        rows carry a cause that was borrowed from an unrelated
+        episode. The reader works it out afresh and passes it here,
+        so the sentence says the true thing and one composer still
+        writes every wording (ruling #228).
         """
         if opened[INC_EVENT] == INCIDENT_ACTION:
             # A deletion and the re-add that undid it are one thing
@@ -269,7 +280,11 @@ class NarrativeMixin:
                 f"{opened[INC_NAME]} deleted from the list at {when}, "
                 "and re-added because the problem is still there."
             )
-        tail = self._recovery_tail(resolved)
+        tail = (
+            f", revived by {clause}"
+            if clause
+            else self._recovery_tail(resolved)
+        )
         opening = self._opening_clause(opened)
         if resolved.get(INC_DURATION) is None:
             when = self._clock(resolved[INC_WHEN])
