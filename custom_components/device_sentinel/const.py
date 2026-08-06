@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.5 (2026-08-06)
+# File: const.py, Version: 0.12.8 (2026-08-06)
 
 """Constants for the Device Sentinel integration."""
 
@@ -86,6 +86,11 @@ BROKER_SILENCE_FLOOR_SECONDS = 30.0
 # noise. The cost is that a broker restarting twice inside thirty
 # seconds reports one restart, which is the right trade.
 BROKER_START_TOLERANCE_SECONDS = 30.0
+# The largest uptime worth believing, a hundred years in seconds. A
+# payload beyond it is not a broker that has been up that long, and
+# an infinity would put the computed start before the epoch
+# (ruling #231).
+BROKER_UPTIME_CEILING = 3_155_760_000.0
 BROKER_RUNNING = "running"
 BROKER_DOWN = "down"
 BROKER_UNKNOWN = "unknown"

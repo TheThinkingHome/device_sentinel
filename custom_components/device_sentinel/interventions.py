@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.12.7 (2026-08-06)
+# File: interventions.py, Version: 0.12.8 (2026-08-06)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -636,7 +636,8 @@ class InterventionMixin:
         """
         for row in reversed(self.data.get(DATA_STORMS) or []):
             if (
-                row.get(STORM_ENTRY) == entry_id
+                isinstance(row, dict)
+                and row.get(STORM_ENTRY) == entry_id
                 and row.get(STORM_DURATION) is None
             ):
                 row[STORM_DEVICES] = devices
@@ -669,11 +670,18 @@ class InterventionMixin:
         # verdict rest on evidence that can never change, which is
         # the whole reason the exemption is recomputed rather than
         # remembered (ruling #230).
+        # Every row is checked for shape before it is read. This
+        # runs inside the event listener, so one malformed row would
+        # break event processing for the device that triggered it,
+        # and the restore path beside it has always guarded this way
+        # (ruling #231).
         recent = [
             row
             for row in (self.data.get(DATA_STORMS) or [])
-            if row.get(STORM_ENTRY) == entry_id
-            and (row.get(STORM_AT) or 0) >= cutoff
+            if isinstance(row, dict)
+            and row.get(STORM_ENTRY) == entry_id
+            and isinstance(row.get(STORM_AT), (int, float))
+            and row[STORM_AT] >= cutoff
             and row.get(STORM_DURATION) is not None
         ]
         return len(recent) >= STORM_EXEMPT_PER_HOUR
@@ -690,7 +698,18 @@ class InterventionMixin:
             CONF_RETENTION_DAYS, DEFAULT_RETENTION_DAYS
         )
         cutoff = now - float(days) * 86400.0
-        kept = [row for row in storms if (row.get(STORM_AT) or 0) >= cutoff]
+        # Shape-checked like every other read of this series: one
+        # malformed row would otherwise break the storm path, which
+        # runs inside the event listener (ruling #231). A row that
+        # cannot be read is also a row that can never be trimmed by
+        # date, so dropping it here is the only way it ever leaves.
+        kept = [
+            row
+            for row in storms
+            if isinstance(row, dict)
+            and isinstance(row.get(STORM_AT), (int, float))
+            and row[STORM_AT] >= cutoff
+        ]
         if len(kept) != len(storms):
             self.data[DATA_STORMS] = kept
 

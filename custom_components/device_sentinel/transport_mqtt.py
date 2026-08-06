@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: transport_mqtt.py, Version: 0.12.4 (2026-08-06)
+# File: transport_mqtt.py, Version: 0.12.8 (2026-08-06)
 
 """The MQTT broker itself, watched directly.
 
@@ -65,6 +65,7 @@ from .const import (
     BROKER_SILENCE_MULTIPLE,
     BROKER_START_TOLERANCE_SECONDS,
     BROKER_TOPIC_UPTIME,
+    BROKER_UPTIME_CEILING,
     BROKER_UNKNOWN,
     LOGGER,
 )
@@ -130,6 +131,7 @@ class MQTTBrokerReader:
                 "Device Sentinel: could not watch %s, so the broker "
                 "state stays unknown (%s)",
                 BROKER_TOPIC_UPTIME,
+    BROKER_UPTIME_CEILING,
                 err,
             )
             return False
@@ -271,4 +273,10 @@ def _uptime_seconds(payload: Any) -> float | None:
         value = float(token)
     except ValueError:
         return None
-    return value if value >= 0 else None
+    # Finite and not absurd. A broker cannot have been up longer than
+    # this and an infinity would put its computed start before the
+    # epoch, which every consumer would then read as a restart that
+    # never happened (ruling #231).
+    if value < 0 or value != value or value > BROKER_UPTIME_CEILING:
+        return None
+    return value

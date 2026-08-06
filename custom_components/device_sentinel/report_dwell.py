@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_dwell.py, Version: 0.11.10 (2026-08-04)
+# File: report_dwell.py, Version: 0.12.8 (2026-08-06)
 
 """The signal dwell chart and the signal cells of the telemetry.
 
@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 from datetime import timedelta
+from html import escape
 from typing import Any
 
 from homeassistant.helpers import device_registry as dr
@@ -225,9 +226,15 @@ class DwellChartMixin:
             shown = f"{name} ({area})" if area else name
             if len(shown) > 36:
                 shown = shown[:35] + "\u2026"
+            # Escaped on the way into the page, like every other name
+            # in every other report (ruling #231). A device name is
+            # not always the reader's own words: MQTT discovery lets
+            # a device advertise its own, so an angle bracket can
+            # arrive from the network rather than the keyboard, and
+            # this file is served to a dashboard.
             parts.append(
                 f"<text x='{label_w - 8}' y='{y + 11}' class='lbl' "
-                f"font-size='12' text-anchor='end'>{shown}</text>"
+                f"font-size='12' text-anchor='end'>{escape(shown)}</text>"
                 f"<rect x='{label_w}' y='{y}' width='{bar:.0f}' "
                 f"height='{bar_h}' rx='2' fill='{color}'/>"
                 f"<text x='{label_w + bar + 6:.0f}' y='{y + 11}' "
@@ -291,12 +298,12 @@ class DwellChartMixin:
                     )
                     trend = f"{a['previous']:.1f}% {arrow}"
                 cells.append(
-                    f"<tr><td>{a['name']}</td>"
+                    f"<tr><td>{escape(str(a['name'] or ''))}</td>"
                     f"<td>{a['dwell']:.1f}%</td>"
                     f"<td>{trend}</td>"
                     f"<td>{a['streak']} day(s)</td>"
-                    f"<td>{a['integration']}</td>"
-                    f"<td>{a['area']}</td>"
+                    f"<td>{escape(str(a['integration'] or ''))}</td>"
+                    f"<td>{escape(str(a['area'] or ''))}</td>"
                     f"<td>{floor}</td><td>{value}</td>"
                     f"<td>{mean}</td></tr>"
                 )
