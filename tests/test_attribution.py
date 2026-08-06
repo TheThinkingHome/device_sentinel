@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.12.7 (2026-08-06)
+# File: tests/test_attribution.py, Version: 0.12.8 (2026-08-06)
 
 """What explains an incident, and what a flood reads as.
 
@@ -504,3 +504,61 @@ async def test_an_orphan_closing_is_never_spoken(hass: HomeAssistant):
     assert len(said) == 2
     assert "47 device(s)" not in " ".join(said)
     assert "50 device(s)" in " ".join(said)
+
+
+async def test_a_hostile_device_name_cannot_reach_the_dwell_page(
+    hass: HomeAssistant,
+):
+    """The signal dwell page escaped nothing until 0.12.8.
+
+    A device name is not always the reader's own words: MQTT
+    discovery lets a device advertise its own, so an angle bracket
+    can arrive from the network. The page is served to a dashboard,
+    so raw markup there is script running in the reader's session
+    (ruling #231).
+    """
+    coord = await setup_coordinator(hass)
+    evil = "<img src=x onerror=alert(1)>"
+    chart = coord._dwell_bar_svg([("d1", evil, 64.0)], 40.0)
+    assert "<img" not in chart
+    assert "&lt;img" in chart
+
+
+async def test_a_corrupt_storm_row_cannot_break_the_listener(
+    hass: HomeAssistant,
+):
+    """One malformed row would have stopped event processing.
+
+    The exemption is read inside the event listener, so an
+    AttributeError there breaks the device that triggered it. The
+    restore path beside it has always checked shape (ruling #231).
+    """
+    from custom_components.device_sentinel.const import DATA_STORMS
+
+    coord = await setup_coordinator(hass)
+    coord.data[DATA_STORMS] = [
+        None,
+        "not a row",
+        {},
+        {"entry_id": "e1", "at": "yesterday"},
+        {"entry_id": "e1", "at": T0, "duration": 5.0},
+    ]
+    assert coord._is_polling_integration("e1", T0 + 10) is False
+    assert coord._close_storm_row("nobody", T0, 1.0, 1) is False
+    coord._trim_storms(T0 + 10)
+    assert coord.data[DATA_STORMS] == [
+        {"entry_id": "e1", "at": T0, "duration": 5.0}
+    ]
+
+
+def test_an_absurd_uptime_is_refused():
+    """An infinity would put the broker's start before the epoch."""
+    from custom_components.device_sentinel import transport_mqtt
+
+    read = transport_mqtt._uptime_seconds
+    assert read("12355 seconds") == 12355.0
+    assert read("0 seconds") == 0.0
+    assert read("1e400 seconds") is None
+    assert read("nan seconds") is None
+    assert read("-1 seconds") is None
+    assert read("999999999999999 seconds") is None
