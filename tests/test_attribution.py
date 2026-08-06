@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.12.5 (2026-08-06)
+# File: tests/test_attribution.py, Version: 0.12.6 (2026-08-06)
 
 """What explains an incident, and what a flood reads as.
 
@@ -88,7 +88,7 @@ def test_an_unclosed_opening_stays_open():
     spans = attribution.windows([_event(SYS_BRIDGE_DOWN, "z2m", T0)])
     assert len(spans) == 1
     assert spans[0].end is None
-    assert spans[0].overlaps(T0 + 5000, None)
+    assert spans[0].in_effect_at(T0 + 5000)
 
 
 def test_the_broker_reaches_mqtt_devices_and_nothing_else():
@@ -125,17 +125,23 @@ def test_a_restart_reaches_everything():
         assert span.covers(domain, None) is True
 
 
-def test_the_narrowest_explanation_wins():
-    """A storm on the device's own integration says more than a reboot."""
+def test_the_earliest_thing_under_way_wins():
+    """Where two were in effect, the outer one is the cause.
+
+    Narrowness was the old rule and it was wrong: an outage produces
+    the burst that follows it, so the narrower record is the
+    consequence (ruling #229).
+    """
     spans = attribution.windows(
         [
-            _event(SYS_RESTART, "system", T0 + 60, duration=120.0),
             _event(SYS_STORM_OPEN, "mqtt", T0 + 10),
             _event(SYS_STORM_CLOSED, "mqtt", T0 + 20, duration=10.0),
+            _event(SYS_RESTART, "system", T0 + 60, duration=120.0),
         ]
     )
+    # The restart's window opens at T0 - 60, before the storm.
     found = attribution.attribute(spans, "mqtt", "z2m", T0 + 12, T0 + 18)
-    assert found.kind == SYS_STORM_OPEN
+    assert found.kind == SYS_RESTART
 
 
 def test_an_unexplained_recovery_gets_nothing():
@@ -245,3 +251,90 @@ async def test_unrelated_devices_are_not_swept_in(hass: HomeAssistant):
     assert len(told) == 2
     assert any(line.startswith("2 devices went unavailable") for line in told)
     assert any(line.startswith("HomeKit One") for line in told)
+
+
+# The two shapes the reference fleet produces every night, and the
+# ones that were wrong until 0.12.6 (ruling #229).
+STORM_AFTER_BROKER = BROKER_OUTAGE + [
+    _event(SYS_STORM_OPEN, "mqtt", T0 + 1024),
+    _event(SYS_STORM_CLOSED, "mqtt", T0 + 1032, duration=8.0),
+]
+REBOOT_WITH_BURST = [
+    _event(SYS_RESTART, "system", T0 + 104, duration=104.0),
+    _event(SYS_STORM_OPEN, "mqtt", T0 + 110),
+    _event(SYS_STORM_CLOSED, "mqtt", T0 + 118, duration=8.0),
+]
+
+
+def test_a_symptom_never_masks_its_cause():
+    """The burst of devices returning is not why they left.
+
+    Both windows cover the device and both overlap the incident.
+    Only the broker was under way when the device went quiet, and
+    ranking by narrowness named the consequence instead.
+    """
+    spans = attribution.windows(STORM_AFTER_BROKER)
+    found = attribution.attribute(spans, "mqtt", "z2m", T0 + 180, T0 + 1024)
+    assert attribution.phrase(found) == (
+        "the MQTT broker going down and coming back"
+    )
+
+
+def test_a_reboot_is_not_an_integration_reloading():
+    """The burst inside startup grace is the restart itself."""
+    spans = attribution.windows(REBOOT_WITH_BURST)
+    found = attribution.attribute(spans, "mqtt", "z2m", T0 + 20, T0 + 112)
+    assert attribution.phrase(found) == "a restart"
+
+
+def test_a_device_already_silent_is_not_blamed_on_the_outage():
+    """Nothing was under way when it went quiet, so nothing caused it.
+
+    It is still credited with the revival, because the outage ending
+    is plausibly what brought it back, and that is more useful than
+    saying nothing.
+    """
+    spans = attribution.windows(BROKER_OUTAGE)
+    found = attribution.attribute(
+        spans, "mqtt", "z2m", T0 - 40000, T0 + 1024
+    )
+    assert attribution.phrase(found) == (
+        "the MQTT broker going down and coming back"
+    )
+
+
+def test_an_outage_older_than_the_brief_window_still_explains():
+    """The attributor reads every event, not only today's."""
+    spans = attribution.windows(BROKER_OUTAGE)
+    assert attribution.attribute(
+        spans, "mqtt", "z2m", T0 + 180, None
+    ) is not None
+
+
+async def test_a_grace_storm_writes_no_event(hass: HomeAssistant):
+    """A burst during startup grace is the restart, already recorded.
+
+    Driven through the detector rather than the recorder, because
+    the guard is in the detector and testing the recorder would
+    prove only that it records.
+    """
+    from custom_components.device_sentinel.const import (
+        DATA_STORMS,
+        STORM_DEVICE_THRESHOLD,
+    )
+
+    coord = await setup_coordinator(hass)
+    entry_id = coord.entry.entry_id
+
+    coord._grace_until = T0 + 1000
+    for index in range(STORM_DEVICE_THRESHOLD + 2):
+        coord._storm_feed(entry_id, f"g{index}", T0)
+    assert coord.data.get(DATA_STORMS) == []
+
+    # The same burst after grace is a storm and is recorded.
+    coord._storm_active.clear()
+    coord._storm_feed_q.clear()
+    after = T0 + 2000
+    for index in range(STORM_DEVICE_THRESHOLD + 2):
+        coord._storm_feed(entry_id, f"d{index}", after)
+    assert len(coord.data[DATA_STORMS]) == 1
