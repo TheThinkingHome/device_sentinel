@@ -90,7 +90,12 @@ async def test_synchronized_poller_exempted(
         async_fire_time_changed(hass)
         await hass.async_block_till_done()
 
-    assert source.entry_id in coord._storm_exempt
+    # Read from the stored series rather than a remembered flag, so
+    # the answer survives a restart and can change back when the
+    # evidence does (ruling #227).
+    assert coord._is_polling_integration(
+        source.entry_id, dt_util.utcnow().timestamp()
+    )
     assert "reclassified as synchronized polling" in caplog.text
 
     # Post-exemption cycles complete learnable gaps at the poll cadence.
@@ -138,7 +143,9 @@ async def test_rare_storm_still_storms_without_excluding(
     await hass.async_block_till_done()
 
     assert coord._storm_active
-    assert source.entry_id not in coord._storm_exempt
+    assert not coord._is_polling_integration(
+        source.entry_id, dt_util.utcnow().timestamp()
+    )
     tail = [
         coord.data[DATA_DEVICES][dev.id][DEV_TODAY_MAX]
         for dev, _ in fleet[STORM_DEVICE_THRESHOLD - 1 :]
