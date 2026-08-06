@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.11.9 (2026-08-04)
+# File: diagnostics.py, Version: 0.12.4 (2026-08-06)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -227,6 +227,8 @@ async def async_get_config_entry_diagnostics(
             # down, unknown), so a gap discarded as a pairing is
             # auditable from a diagnostics download and not only from
             # the live sensor, which is off by default (ruling #149).
+            "broker_state": coordinator.broker_state,
+            "broker": coordinator.broker_attributes,
             "bridge_state": {
                 stack: coordinator.bridge_state(stack)
                 for stack in coordinator.bridge_stacks

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.12.3 (2026-08-05)
+# File: report_brief.py, Version: 0.12.4 (2026-08-06)
 
 """The daily brief: the one report written for a person.
 
@@ -57,6 +57,8 @@ from .const import (
     REPORT_WWW_DIR,
     SYS_BRIDGE_DOWN,
     SYS_BRIDGE_UP,
+    SYS_BROKER_DOWN,
+    SYS_BROKER_UP,
     SYS_DETAIL,
     SYS_DURATION,
     SYS_EPOCH_RESET,
@@ -283,6 +285,17 @@ class BriefMixin:
                     f"{held}."
                 )
             return f"The {scope} bridge came back at {when}."
+        # The broker names itself rather than its scope, because a
+        # house has one and "the mqtt broker" reads as a stack name
+        # to somebody who does not know the difference.
+        if kind == SYS_BROKER_DOWN:
+            return f"The MQTT broker went down at {when}."
+        if kind == SYS_BROKER_UP:
+            if held:
+                return (
+                    f"The MQTT broker came back at {when} after {held}."
+                )
+            return f"The MQTT broker came back at {when}."
         if kind == SYS_PAIRING_OPEN:
             return f"A {scope} pairing window opened at {when}."
         if kind == SYS_PAIRING_CLOSED:
@@ -336,6 +349,14 @@ class BriefMixin:
                 f"{scope} bridge came back after {held}"
                 if held
                 else f"{scope} bridge came back"
+            )
+        if kind == SYS_BROKER_DOWN:
+            return "MQTT broker went down"
+        if kind == SYS_BROKER_UP:
+            return (
+                f"MQTT broker came back after {held}"
+                if held
+                else "MQTT broker came back"
             )
         if kind == SYS_PAIRING_OPEN:
             return f"{scope} pairing window opened"

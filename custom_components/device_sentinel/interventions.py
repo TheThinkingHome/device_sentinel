@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.12.3 (2026-08-05)
+# File: interventions.py, Version: 0.12.4 (2026-08-06)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -31,8 +31,23 @@ from typing import Any
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 from .stacks import make_reader
+from .transport_mqtt import MQTTBrokerReader
 
 from .const import (
+    BROKER_DOWN,
+    BROKER_RUNNING,
+    BROKER_SCOPE,
+    BROKER_TOPIC_UPTIME,
+    BROKER_UNKNOWN,
+    ATTR_BROKER_CADENCE,
+    ATTR_BROKER_LAST_HEARD,
+    ATTR_BROKER_STARTED,
+    ATTR_BROKER_THRESHOLD,
+    ATTR_BROKER_TOPIC,
+    ATTR_BROKER_UPTIME,
+    DATA_BROKER_SEEN,
+    SYS_BROKER_DOWN,
+    SYS_BROKER_UP,
     BRIDGE_DOWN,
     BRIDGE_SEEN_SINCE,
     BRIDGE_SEEN_STATE,
@@ -75,6 +90,22 @@ def _spell_minutes(minutes: int) -> str:
 
 class InterventionMixin:
     """Interventions: bridge state, pairing windows, and storms."""
+
+    async def _start_broker_reader(self) -> None:
+        """Start the one broker watch, where MQTT is present at all.
+
+        Independent of which stacks are detected: a house running
+        Tasmota or ESPHome over MQTT and no Zigbee at all still has a
+        broker that can fail, and the failure is invisible to every
+        other surface (ruling #224). A watch that cannot reach MQTT
+        starts anyway and reports unknown, which every consumer reads
+        as no opinion.
+        """
+        if self._broker_reader is not None:
+            return
+        reader = MQTTBrokerReader(self.hass)
+        await reader.async_start()
+        self._broker_reader = reader
 
     async def _start_bridge_readers(self) -> None:
         """Create and start a bridge reader for each capable stack.
@@ -168,6 +199,144 @@ class InterventionMixin:
             f"device every {_spell_minutes(minutes)}."
         )
 
+    def _sample_broker(self, now: float) -> str:
+        """Record the broker going and returning. Returns its state.
+
+        Two signals. A regression, where the computed start moves
+        forward, means the broker restarted, and it is the only
+        signal that survives Home Assistant restarting too, because
+        it needs no continuity of its own. Silence past the learned
+        threshold covers a broker that dies while this process stays
+        alive, which is the case a bridge reader is blind to and the
+        reason this watch exists (ruling #224).
+
+        One attribution rule keeps a reboot from being reported
+        twice: where the broker's computed start falls inside our own
+        unwatched span, the restart event already accounts for it and
+        no broker pair is written. Without it, a nightly reboot would
+        produce both a restart and a broker outage describing the
+        same two minutes.
+        """
+        reader = self._broker_reader
+        if reader is None:
+            return BROKER_UNKNOWN
+        try:
+            state = reader.state
+            started = reader.started_at
+        except Exception as err:  # noqa: BLE001 - never break the tick
+            LOGGER.debug("Broker watch faulted, not sampled: %s", err)
+            return BROKER_UNKNOWN
+        if state == BROKER_UNKNOWN:
+            return BROKER_UNKNOWN
+
+        stored = self.data.setdefault(DATA_BROKER_SEEN, {})
+        was = stored.get(BRIDGE_SEEN_STATE)
+        known_start = stored.get("started")
+
+        restarted = (
+            state == BROKER_RUNNING
+            and was == BROKER_RUNNING
+            and reader.regressed_since(known_start)
+        )
+        if restarted and not self._inside_unwatched(started):
+            since = known_start
+            self._record_system_event(SYS_BROKER_DOWN, scope=BROKER_SCOPE)
+            self._record_system_event(
+                SYS_BROKER_UP,
+                scope=BROKER_SCOPE,
+                duration=(
+                    started - since
+                    if since is not None and started is not None
+                    else None
+                ),
+            )
+        elif was is not None and was != state:
+            if state == BROKER_DOWN:
+                stored[BRIDGE_SEEN_SINCE] = now
+                self._record_system_event(
+                    SYS_BROKER_DOWN, scope=BROKER_SCOPE
+                )
+            elif was == BROKER_DOWN:
+                since = stored.pop(BRIDGE_SEEN_SINCE, None)
+                self._record_system_event(
+                    SYS_BROKER_UP,
+                    scope=BROKER_SCOPE,
+                    duration=(
+                        now - since if since is not None else None
+                    ),
+                )
+
+        if (
+            stored.get(BRIDGE_SEEN_STATE) != state
+            or stored.get("started") != started
+        ):
+            stored[BRIDGE_SEEN_STATE] = state
+            if started is not None:
+                stored["started"] = started
+            self._dirty = True
+        return state
+
+    def _inside_unwatched(self, started: float | None) -> bool:
+        """Return whether a broker start falls in our own dark window.
+
+        A restart of the whole machine takes the broker with it, and
+        the restart event already carries the span nothing was
+        listening. Reporting a broker outage for the same two minutes
+        would be two records of one event.
+        """
+        if started is None:
+            return False
+        last_alive = getattr(self, "_last_alive", None)
+        if last_alive is None:
+            return False
+        session_start = getattr(self, "_started_at", None)
+        if session_start is None:
+            return False
+        return last_alive <= started <= session_start + 1.0
+
+    @property
+    def broker_state(self) -> str:
+        """Return the broker's state for the sensor and diagnostics."""
+        reader = self._broker_reader
+        if reader is None:
+            return BROKER_UNKNOWN
+        try:
+            return reader.state
+        except Exception:  # noqa: BLE001 - a reader never raises up
+            return BROKER_UNKNOWN
+
+    @property
+    def broker_attributes(self) -> dict[str, Any]:
+        """Return what the broker sensor publishes beside its state."""
+        reader = self._broker_reader
+        attributes: dict[str, Any] = {ATTR_BROKER_TOPIC: BROKER_TOPIC_UPTIME}
+        if reader is None:
+            return attributes
+        try:
+            started = reader.started_at
+            attributes[ATTR_BROKER_STARTED] = (
+                dt_util.utc_from_timestamp(started).isoformat()
+                if started is not None
+                else None
+            )
+            attributes[ATTR_BROKER_UPTIME] = reader.uptime
+            attributes[ATTR_BROKER_LAST_HEARD] = reader.last_heard
+            cadence = reader.cadence
+            attributes[ATTR_BROKER_CADENCE] = (
+                round(cadence, 3) if cadence is not None else None
+            )
+            threshold = reader.threshold
+            attributes[ATTR_BROKER_THRESHOLD] = (
+                round(threshold, 1) if threshold is not None else None
+            )
+        except Exception as err:  # noqa: BLE001 - a reader never raises up
+            LOGGER.debug(
+                "Device Sentinel: broker attributes unavailable, "
+                "showing what was read (%s)",
+                err,
+            )
+        return attributes
+
     def _remember_bridge_state(
         self, stack: str, state: str, since: float | None = None
     ) -> None:
@@ -252,6 +421,14 @@ class InterventionMixin:
         ended. Twice on the reference fleet (ruling #222).
         """
         now = dt_util.utcnow().timestamp()
+        # The broker first, because it is the outer scope. A bridge
+        # that cannot be heard is not a bridge that is down: when the
+        # broker dies nothing delivers the bridge's last will, since
+        # the broker is the deliverer, so a bridge event written here
+        # would name the wrong thing (ruling #224).
+        broker = self._sample_broker(now)
+        if broker == BROKER_DOWN:
+            return
         for stack, reader in self._bridge_readers.items():
             sample = self._read_bridge(stack, reader)
             if sample is None:

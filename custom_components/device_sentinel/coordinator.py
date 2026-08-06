@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.12.3 (2026-08-05)
+# File: coordinator.py, Version: 0.12.4 (2026-08-06)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -84,6 +84,7 @@ from .const import (
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_EXCLUDED_LABELS,
     DATA_BRIDGE_SEEN,
+    DATA_BROKER_SEEN,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
     DATA_EPISODES,
@@ -271,6 +272,10 @@ class DeviceSentinelCoordinator(
         # The moment this run began listening, which is
         # what the restart event is stamped with.
         self._started_at: float | None = None
+        # The broker underneath every MQTT stack. One reader for the
+        # whole house rather than one per stack, because there is one
+        # broker and a bridge reader cannot see it fail (ruling #224).
+        self._broker_reader: Any | None = None
         self._brief_unsub: Any | None = None
         # One bridge reader per detected coordinator stack that can
         # report its own liveness and pairing state (ruling #145). Populated in
@@ -332,6 +337,7 @@ class DeviceSentinelCoordinator(
         loaded.setdefault(DATA_INCIDENTS, [])
         loaded.setdefault(DATA_SYSTEM_EVENTS, [])
         loaded.setdefault(DATA_BRIDGE_SEEN, {})
+        loaded.setdefault(DATA_BROKER_SEEN, {})
         # The dry-run outbox was retired once the
         # notifications it previewed had been sending for
         # several releases. Drop what an older install stored,
@@ -600,6 +606,7 @@ class DeviceSentinelCoordinator(
         # it) runs whether or not a user ever enables the sensor, so
         # detection never depends on a display choice.
         await self._start_bridge_readers()
+        await self._start_broker_reader()
         # Before the first sample, so a bridge that went down
         # and came back across this restart still closes
         # (ruling #222).
@@ -652,6 +659,9 @@ class DeviceSentinelCoordinator(
 
     async def async_shutdown(self) -> None:
         """Stop listening and flush storage."""
+        if self._broker_reader is not None:
+            self._broker_reader.async_stop()
+            self._broker_reader = None
         for reader in self._bridge_readers.values():
             reader.async_stop()
         self._bridge_readers.clear()

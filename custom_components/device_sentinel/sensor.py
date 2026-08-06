@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.11.11 (2026-08-04)
+# File: sensor.py, Version: 0.12.4 (2026-08-06)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -41,6 +41,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import DeviceSentinelConfigEntry
 from .const import (
+    BROKER_SENSOR_NAME,
+    BROKER_STATES,
+    SENTINEL_TYPE_BROKER,
     ATTR_BRIDGE_BASE_TOPIC,
     ATTR_BRIDGE_LAST_HEARD,
     ATTR_BRIDGE_PERMIT_JOIN_END,
@@ -109,6 +112,7 @@ async def async_setup_entry(
         DeviceSentinelBridgeSensor(coordinator, stack)
         for stack in coordinator.bridge_stacks
     )
+    async_add_entities([DeviceSentinelBrokerSensor(coordinator)])
 
 
 class DeviceSentinelBaseSensor(SensorEntity):
@@ -577,6 +581,52 @@ class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
         return {
             **self._identity(),
             "devices": self._coordinator.frozen_devices_list,
+        }
+
+
+class DeviceSentinelBrokerSensor(DeviceSentinelBaseSensor):
+    """The MQTT broker's own liveness, which nothing else can show.
+
+    Created wherever the integration runs, not only where a stack was
+    detected, because a house on Tasmota or ESPHome over MQTT has a
+    broker and no bridge. Where there is no MQTT at all it reads
+    unknown forever and costs one disabled entity.
+
+    Disabled by default like the bridge sensors, for the same reason:
+    the watch runs off the subscription rather than off this entity,
+    so a person who never enables it still gets the broker events in
+    the log and the brief (ruling #224).
+    """
+
+    _attr_icon = "mdi:transit-connection-variant"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = BROKER_STATES
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+    sentinel_type = SENTINEL_TYPE_BROKER
+
+    def __init__(self, coordinator: DeviceSentinelCoordinator) -> None:
+        """Initialize the broker sensor."""
+        super().__init__(coordinator)
+        self._attr_name = BROKER_SENSOR_NAME
+
+    @property
+    def native_value(self) -> str:
+        """Return running, down, or unknown."""
+        return self._coordinator.broker_state
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return when the broker came up, and how it is being judged.
+
+        broker_started answers a question that had no answer before:
+        whether the broker has been restarting unnoticed. The cadence
+        and threshold are shown because the threshold is learned
+        rather than set, so a person can see what it settled on.
+        """
+        return {
+            **self._identity(),
+            **self._coordinator.broker_attributes,
         }
 
 

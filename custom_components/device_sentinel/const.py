@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.3 (2026-08-05)
+# File: const.py, Version: 0.12.4 (2026-08-06)
 
 """Constants for the Device Sentinel integration."""
 
@@ -55,6 +55,50 @@ BRIDGE_STATES = [BRIDGE_RUNNING, BRIDGE_BINDING, BRIDGE_DOWN, BRIDGE_UNKNOWN]
 # them means depending on MQTT properly: the manifest names it and the
 # reader waits for the client, because MQTT may not be up when Device
 # Sentinel starts (ruling #146).
+# The MQTT broker itself, which sits underneath every MQTT stack and
+# belongs to none of them. Mosquitto publishes its uptime on a fixed
+# interval, ten seconds by default, as a payload reading like
+# "12355 seconds". Home Assistant exposes no broker entity at all, so
+# this topic is the only source. Measured on the reference broker on
+# 2026-08-06: 2,363 intervals, median 9.997s, maximum 10.350s,
+# standard deviation 0.082s (ruling #224).
+BROKER_TOPIC_UPTIME = "$SYS/broker/uptime"
+BROKER_SCOPE = "mqtt"
+# Two arrivals before anything is claimed. A broker with $SYS
+# switched off, or one that words its payload differently, never
+# arms and costs nothing.
+BROKER_ARM_SAMPLES = 2
+# The silence threshold is learned from the cadence rather than set:
+# this many times the observed median, floored, so an install with a
+# different sys_interval is right without being asked. Six against a
+# measured spread of 82 milliseconds is far outside anything a broker
+# does, and the floor covers a broker publishing far faster than
+# Mosquitto's default.
+BROKER_SILENCE_MULTIPLE = 6
+BROKER_SILENCE_FLOOR_SECONDS = 30.0
+# How far the computed broker start may wander before it counts as a
+# restart. The start is an arrival minus a value published in whole
+# seconds, so it drifts a little even when nothing happens. Measured
+# across 2,458 intervals of the reference recording: the drift maxes
+# at 2.95 seconds and its p99.9 is 0.34, while the three genuine
+# restarts in the same recording moved the start by 564 seconds at
+# the very least. Thirty sits two orders of magnitude clear of the
+# noise. The cost is that a broker restarting twice inside thirty
+# seconds reports one restart, which is the right trade.
+BROKER_START_TOLERANCE_SECONDS = 30.0
+BROKER_RUNNING = "running"
+BROKER_DOWN = "down"
+BROKER_UNKNOWN = "unknown"
+BROKER_STATES = [BROKER_RUNNING, BROKER_DOWN, BROKER_UNKNOWN]
+BROKER_SENSOR_NAME = "Broker: MQTT"
+
+ATTR_BROKER_STARTED = "broker_started"
+ATTR_BROKER_UPTIME = "uptime_seconds"
+ATTR_BROKER_LAST_HEARD = "last_heard"
+ATTR_BROKER_CADENCE = "cadence_seconds"
+ATTR_BROKER_THRESHOLD = "threshold_seconds"
+ATTR_BROKER_TOPIC = "topic"
+
 Z2M_BASE_TOPIC_DEFAULT = "zigbee2mqtt"
 Z2M_TOPIC_INFO = "bridge/info"
 Z2M_TOPIC_STATE = "bridge/state"
@@ -143,6 +187,7 @@ TAINT_UNCLEAN_SHUTDOWN = "unclean shutdown"
 # The sensinel_type stem for a bridge sensor; the stack is appended so
 # each stack's sensor has a stable unique id.
 SENTINEL_TYPE_BRIDGE = "bridge"
+SENTINEL_TYPE_BROKER = "broker"
 # Display names per stack. The "Bridge:" prefix groups these with the
 # other family sensors (Signal:, Battery:, Device:) so a house running
 # several coordinators sees them in one block. Family prefixes sort
@@ -1213,6 +1258,9 @@ BRIEF_KEEP_DAYS = 14
 # Derived rather than measured, but a comparison against the previous
 # boot is the one thing memory cannot hold (ruling #222).
 DATA_BRIDGE_SEEN = "bridge_seen"
+# The broker state, kept across a restart for the same reason
+# (ruling #222 applied to #224).
+DATA_BROKER_SEEN = "broker_seen"
 BRIDGE_SEEN_STATE = "state"
 BRIDGE_SEEN_SINCE = "since"
 
@@ -1235,6 +1283,14 @@ SYS_DURATION = "duration"
 SYS_RESTART = "restart"
 SYS_BRIDGE_DOWN = "bridge_down"
 SYS_BRIDGE_UP = "bridge_up"
+# The broker going and returning. Its own pair rather than a bridge
+# event, because a bridge reader is blind to it: when the broker dies
+# nothing delivers the bridge's last will, since the broker is the
+# deliverer. Measured on 2026-08-06, a sixteen-minute broker outage
+# took 75 devices unavailable and wrote no system event at all, while
+# bridge_state read running throughout (ruling #224).
+SYS_BROKER_DOWN = "broker_down"
+SYS_BROKER_UP = "broker_up"
 SYS_PAIRING_OPEN = "pairing_open"
 SYS_PAIRING_CLOSED = "pairing_closed"
 SYS_EPOCH_RESET = "epoch_reset"
