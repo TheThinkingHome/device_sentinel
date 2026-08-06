@@ -11,6 +11,11 @@ permissions:
 on:
   push:
   pull_request:
+  # A manual trigger, so a run can be started from the Actions tab
+  # without an empty commit. Added after a day of uploads produced no
+  # runs at all and there was no way to tell a workflow that failed
+  # from one that never fired.
+  workflow_dispatch:
 
 jobs:
   pytest:
