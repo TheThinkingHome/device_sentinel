@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.11.8 (2026-08-04)
+# File: test_reports.py, Version: 0.12.10 (2026-08-07)
 
 """The diagnostic files: telemetry and classification.
 
@@ -993,3 +993,46 @@ async def test_an_empty_record_names_no_newest(
 
     assert "0 episode(s), 0 still open." in text
     assert "newest" not in text
+
+
+async def test_a_report_directory_that_vanishes_does_not_raise(
+    hass: HomeAssistant, tmp_path
+):
+    """The write is guarded, so a missing directory is a log line.
+
+    Every report write runs in the executor, and an executor job
+    handles nothing: an OSError raised inside one escapes into Home
+    Assistant's task machinery and lands in a person's log as an
+    unretrieved task exception. It surfaced as an intermittent
+    failure in continuous integration, where the midnight listener
+    fires after the test's configuration directory is gone
+    (ruling #234).
+    """
+    coord = await setup_coordinator(hass)
+
+    def boom(*args, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory", "reports")
+
+    coord._write_reports = boom
+
+    # All four paths, none of which may raise.
+    assert await coord._write_reports_guarded("setup") is None
+    assert await coord._write_reports_guarded() is None
+    assert await coord._write_reports_guarded("manual") is None
+    await coord._on_midnight(None)
+
+
+async def test_a_brief_that_cannot_be_written_is_not_sent(
+    hass: HomeAssistant,
+):
+    """A failed write must not mail an empty brief."""
+    coord = await setup_coordinator(hass)
+    sent: list = []
+    coord.async_send_brief = lambda text: sent.append(text)
+
+    def boom(*args, **kwargs):
+        raise OSError(28, "No space left on device", "reports")
+
+    coord._write_reports = boom
+    await coord._on_brief_time(None)
+    assert sent == []
