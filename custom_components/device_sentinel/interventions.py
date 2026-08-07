@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.12.8 (2026-08-06)
+# File: interventions.py, Version: 0.12.9 (2026-08-06)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -59,15 +59,14 @@ from .const import (
     LOGGER,
     STARTUP_GRACE_SECONDS,
     STORM_DEVICE_THRESHOLD,
-    CONF_RETENTION_DAYS,
     DATA_STORMS,
-    DEFAULT_RETENTION_DAYS,
     STORM_AT,
     STORM_DEVICES,
     STORM_DOMAIN,
     STORM_DURATION,
     STORM_ENTRY,
     STORM_EXEMPT_PER_HOUR,
+    STORM_KEEP_SECONDS,
     SYS_STORM_CLOSED,
     SYS_STORM_OPEN,
     STORM_HISTORY_SECONDS,
@@ -489,9 +488,21 @@ class InterventionMixin:
         """Feed the per-integration storm detector; return active storm."""
         if entry_id is None:
             return None
-        if self._is_polling_integration(entry_id, now):
+        # A poller is still watched and still counted. Only its
+        # reporting stops. Returning here instead was the fault: an
+        # integration read as a poller was never fed again, so its
+        # history stopped accruing, its rows aged out of the hour,
+        # the verdict lapsed, and it stormed ten more times. The
+        # reference fleet ran exactly ten storms an hour for four
+        # hours, which is the exemption threshold rather than
+        # anything the router was doing. Being exempt cannot be
+        # allowed to suppress the evidence for being exempt
+        # (ruling #232). This is the rule the project already holds
+        # for exclusion: every device is watched and recorded, and
+        # exclusion suppresses judgment and reporting alone.
+        polling = self._is_polling_integration(entry_id, now)
+        if polling:
             self._announce_polling(entry_id)
-            return None
         queue = self._storm_feed_q.setdefault(entry_id, deque())
         queue.append((now, device_id))
         cutoff = now - STORM_WINDOW_SECONDS
@@ -509,19 +520,13 @@ class InterventionMixin:
                 # wrong explanation, and the episode stamp below has
                 # said so since long before storms were recorded
                 # (ruling #229).
+                # The row is written whatever the verdict, because the
+                # verdict is recomputed from these rows. What a
+                # poller does not get is the system event and the
+                # episode stamp (ruling #232).
                 recorded = now >= self._grace_until
                 if recorded:
-                    self._record_storm(entry_id, now)
-                if self._is_polling_integration(entry_id, now):
-                    self._announce_polling(entry_id)
-                    self._storm_feed_q.pop(entry_id, None)
-                    # Close the row just opened. The early return
-                    # below means this entry is never fed again, so
-                    # nothing would ever close it, and the exemption
-                    # would go on counting a storm whose record it
-                    # can no longer update (ruling #230).
-                    self._close_storm_row(entry_id, now, 0.0, 0)
-                    return None
+                    self._record_storm(entry_id, now, announce=not polling)
                 storm = {
                     "start": now,
                     "last_met": now,
@@ -535,6 +540,12 @@ class InterventionMixin:
                     # settled when nothing had been said to start
                     # (ruling #230).
                     "recorded": recorded,
+                    # A poller's storm is counted and never spoken
+                    # of: no opening event, no closing event, and no
+                    # episode stamp, so its devices go on learning
+                    # their poll cadence as rhythm, which is the
+                    # whole point of recognising it (ruling #232).
+                    "announce": recorded and not polling,
                 }
                 self._storm_active[entry_id] = storm
                 # A storm is a radio-level event, most often a bridge
@@ -545,13 +556,14 @@ class InterventionMixin:
                 # is named as such: the brief quotes this cause, and
                 # crediting a reconnect for a restart's work would
                 # mislead the recovery ladder later.
-                self._stamp_intervention(
-                    EPISODE_ENDED_RESTART
-                    if now < self._grace_until
-                    else EPISODE_ENDED_RECONNECT,
-                    now,
-                    entry_id=entry_id,
-                )
+                if not polling:
+                    self._stamp_intervention(
+                        EPISODE_ENDED_RESTART
+                        if now < self._grace_until
+                        else EPISODE_ENDED_RECONNECT,
+                        now,
+                        entry_id=entry_id,
+                    )
             else:
                 storm["last_met"] = now
         elif storm is not None and now - storm["last_met"] > (
@@ -580,8 +592,10 @@ class InterventionMixin:
         entry = self.hass.config_entries.async_get_entry(entry_id)
         return entry.domain if entry else entry_id
 
-    def _record_storm(self, entry_id: str, now: float) -> None:
-        """Open a storm: one system event and one row on the series.
+    def _record_storm(
+        self, entry_id: str, now: float, announce: bool = True
+    ) -> None:
+        """Open a storm: one row, and an event where it is news.
 
         Both, because they answer different questions. The event puts
         an integration reload in the brief beside a bridge outage and
@@ -590,7 +604,8 @@ class InterventionMixin:
         the rule can only ever count the storms of one uptime.
         """
         domain = self._entry_domain(entry_id)
-        self._record_system_event(SYS_STORM_OPEN, scope=domain)
+        if announce:
+            self._record_system_event(SYS_STORM_OPEN, scope=domain)
         storms = self.data.setdefault(DATA_STORMS, [])
         storms.append(
             {
@@ -694,10 +709,14 @@ class InterventionMixin:
         whole purpose is to be looked back over.
         """
         storms = self.data.get(DATA_STORMS) or []
-        days = self.entry.options.get(
-            CONF_RETENTION_DAYS, DEFAULT_RETENTION_DAYS
-        )
-        cutoff = now - float(days) * 86400.0
+        # Two days, not the retention setting. The only thing that
+        # reads these rows looks back one hour, and a real reload is
+        # already kept for the full retention in the system events
+        # log, so a longer window here stores nothing anybody asks
+        # for. On a fleet with one poller, the retention setting
+        # would have reached 2.66 MB against a whole storage file of
+        # about 880 KB (ruling #232).
+        cutoff = now - STORM_KEEP_SECONDS
         # Shape-checked like every other read of this series: one
         # malformed row would otherwise break the storm path, which
         # runs inside the event listener (ruling #231). A row that
@@ -725,6 +744,7 @@ class InterventionMixin:
             self._close_storm_row(
                 entry_id, now, duration, len(storm["devices"])
             )
+        if storm.get("announce", storm.get("recorded", True)):
             self._record_system_event(
                 SYS_STORM_CLOSED,
                 scope=domain,
