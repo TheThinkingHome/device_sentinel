@@ -59,7 +59,7 @@ And two that give you warning first:
 |---|---|---|
 | **Low battery** | The level falls past your threshold, default twenty percent, and stays there. | Warning while you can still act, rather than a post-mortem once the device has gone quiet. |
 | **Falling battery** | The cell is projected to reach empty inside your chosen horizon, default thirty days, from how fast it is actually dropping. | The earlier warning. A cell at 24 percent falling steadily can have less life left than one sitting at 80 that has not moved in a month. |
-| **Weak or railed signal** | A link that spends much of its day at or below that device's own learned floor, or stuck at the value that means no reading at all. | Links degrade before they fail. This is the part you can fix with a repeater. |
+| **Weak or railed signal** | A link that spends much of its day at or below that device's own learned floor, or stuck at the value that means no reading at all. | Links degrade before they fail. This is the part you can fix with a repeater. Weak links are listed and charted today; only the railed case reaches your phone, until the alerting formula has earned trust. |
 
 ## What You Get
 
@@ -84,6 +84,10 @@ The time left is said in words rather than days, "empty in about 2 weeks" rather
 A radio link is watched against the floor that device has actually held over the past thirty days, and what gets reported is dwell: how much of the day it spent down at that floor. A link stuck at its rail, the 255 or the minus 128 that means the field was filled in rather than measured, is called out for what it is rather than read as a strong signal.
 
 ![The Device Sentinel signal dwell chart, one colored bar per device showing how much of the day its radio link spent below its own learned floor](https://xeazy.com/wp-content/uploads/signal_report.webp)
+
+### It Does Not Learn Your Repairs As Normal
+
+The learning has to survive you. A battery swap, a re-pair, a Home Assistant restart: each looks exactly like a device choosing to be silent, and an integration that learned those gaps would slowly teach itself that broken is normal. Device Sentinel tells them apart. A recovery during a Zigbee2MQTT pairing window is recognized as your hand. A silence that spans a restart is not counted against anybody, because nothing was listening. And for everything no coordinator can see, there is a Maintenance Mode button: press it before you work on your hardware, and whatever recovers in the next ten minutes is credited to you rather than learned as the device's own rhythm.
 
 ### One List Of What Is Actually Wrong
 
@@ -115,6 +119,8 @@ By hand:
 
 **Requires** Home Assistant 2026.5 or newer.
 
+And should you ever remove it, it removes everything it wrote: its storage, its reports, and its pages. No trace is left behind.
+
 It runs on sensible defaults the moment it is added. Two things are worth doing straight away: tell it where alerts should go, and press the three enable buttons so there is battery and signal data to watch.
 
 ### What You Get, And When
@@ -145,7 +151,7 @@ Every screen explains itself and links to its own wiki page. Most people change 
 | **Low Battery** | The threshold, default twenty percent; how far ahead a falling cell is flagged, default thirty days; and devices to leave out of battery reporting. |
 | **Signal Strength** | How sensitive the fleet-wide judgment is, and devices to leave out of signal reporting. |
 | **Freeze Detection** | Two sliders shaping how much grace a device gets on top of its learned rhythm. Fast devices are governed by the first (1 to 8 minutes, default 3), slow ones by the second (4 to 12 hours, default 8). |
-| **Advanced** | Settings most people never need: how long a fault must persist before your phone hears about it, how long a device may be unreachable before that counts as real downtime, how often work is written to disk, and how much history to keep. |
+| **Advanced** | Settings most people never need: how long a fault must persist before your phone hears about it, how long a device may be unreachable before that counts as real downtime, how long the Maintenance Mode window lasts, how often work is written to disk, and how much history to keep. |
 
 ## Reports And Diagnostics
 
@@ -172,11 +178,11 @@ The [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki) is the full 
 
 ## On The Roadmap
 
-Found while building the core, and worked on in this order:
+Worked on in this order:
 
-- **Telling a self-recovery from a hand-fix.** Where a coordinator publishes its pairing state, a device that comes back while you are standing there re-pairing it should not have that silence learned as normal.
+- **Signal alerts.** Weak links are already found, charted, and listed; they do not yet reach your phone, because the judgment is still learning what a real failure looks like across enough hardware to be trusted. Alerting ships when the formula has earned it, not before.
 - **The signal trail on an alert.** The last few readings before a device went dark, attached to the alert. Forty, thirty-two, twenty-four, then gone tells you the link died. Two hundred, two hundred and one, then gone tells you to look elsewhere.
-- **Recovery.** Trying to revive a stuck device rather than only reporting it, from the gentlest nudge upward, and saying what it did either way. Detection comes first, because nothing should be fixed automatically until finding things is proven.
+- **A dashboard card.** One card showing the problem list, the counts, and the maintenance state, installable from HACS beside the integration.
 
 ## Why An Integration
 
