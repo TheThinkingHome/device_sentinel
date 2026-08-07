@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.11.10 (2026-08-04)
+# File: reports.py, Version: 0.12.10 (2026-08-07)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -236,10 +236,13 @@ class ReportWritingMixin(
         the move stays within one filesystem; a temp directory
         elsewhere would make os.replace a copy and lose the property.
 
-        Failure is left to the caller. A report that cannot be
-        written is a worse report and not a broken integration, and
-        the writers above already run inside the executor call that
-        handles it.
+        Failure is left to the caller, which catches it. An executor
+        job handles nothing on its own: an OSError raised in one
+        escapes into Home Assistant's task machinery and lands in a
+        person's log as an unretrieved task exception, so this
+        docstring once named a handler that did not exist
+        (ruling #234). A report that cannot be written is a worse
+        report rather than a broken integration.
         """
         temporary = f"{path}.tmp"
         try:

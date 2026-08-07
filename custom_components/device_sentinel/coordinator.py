@@ -661,10 +661,42 @@ class DeviceSentinelCoordinator(
             len(self._set_aside),
             self.deviceless_count,
         )
-        await self.hass.async_add_executor_job(
-            self._write_reports, "setup"
-        )
+        await self._write_reports_guarded("setup")
 
+
+    async def _write_reports_guarded(
+        self, trigger: str | None = None
+    ) -> str | None:
+        """Write the reports, and survive a directory that is not there.
+
+        Every write runs in the executor, and an executor job handles
+        nothing: an OSError raised inside one escapes into Home
+        Assistant's task machinery and lands in a person's log as an
+        unretrieved task exception. The writer's own docstring said
+        failure was the caller's to handle and no caller handled it
+        (ruling #234).
+
+        A report that cannot be written is a worse report rather than
+        a broken integration, so the failure is logged with its path
+        and the tick carries on. The path this most affects is the
+        midnight rollover, where an unguarded raise abandons the rest
+        of the job.
+        """
+        try:
+            if trigger is None:
+                return await self.hass.async_add_executor_job(
+                    self._write_reports
+                )
+            return await self.hass.async_add_executor_job(
+                self._write_reports, trigger
+            )
+        except OSError as err:
+            LOGGER.warning(
+                "Device Sentinel could not write its reports (%s): %s",
+                trigger or "midnight",
+                err,
+            )
+            return None
 
     async def async_shutdown(self) -> None:
         """Stop listening and flush storage."""
@@ -1213,10 +1245,9 @@ class DeviceSentinelCoordinator(
         document, and mailing one of those would deliver the same
         day several times, each incomplete.
         """
-        text = await self.hass.async_add_executor_job(
-            self._write_reports, BRIEF_TRIGGER
-        )
-        await self.async_send_brief(text)
+        text = await self._write_reports_guarded(BRIEF_TRIGGER)
+        if text is not None:
+            await self.async_send_brief(text)
 
     async def _on_midnight(self, _now: Any) -> None:
         """Roll today's maxima into the bounded daily set."""
@@ -1247,7 +1278,7 @@ class DeviceSentinelCoordinator(
             pushed,
             len(self.data[DATA_DEVICES]),
         )
-        await self.hass.async_add_executor_job(self._write_reports)
+        await self._write_reports_guarded()
 
 
     # ------------------------------------------------ device-down judgment
@@ -1542,9 +1573,7 @@ class DeviceSentinelCoordinator(
         files are written with a fresh timestamp that confirms the run.
         """
         self._judge_all_devices()
-        await self.hass.async_add_executor_job(
-            self._write_reports, "manual"
-        )
+        await self._write_reports_guarded("manual")
         return {"regenerated": 2}
 
     async def async_enable_last_seen_entities(self) -> dict[str, int]:
