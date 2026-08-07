@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.11.10 (2026-08-04)
+# File: test_hardening.py, Version: 0.12.13 (2026-08-07)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -59,10 +59,12 @@ from custom_components.device_sentinel.const import (
     WIKI_LINK_FAQ,
     WIKI_LINK_FREEZE,
     WIKI_LINK_HOME,
+    WIKI_LINK_BATTERY_REPORT,
+    WIKI_LINK_INSTALLATION,
     WIKI_LINK_LEARNING,
     WIKI_LINK_NOTIFICATIONS,
     WIKI_LINK_PROBLEM_LIST,
-    WIKI_LINK_RECOVERY,
+    WIKI_LINK_MAINTENANCE,
     WIKI_LINK_REPORTS,
     WIKI_LINK_SIGNAL,
 )
@@ -334,7 +336,9 @@ PUBLISHED_PAGES = {
     "Low-Battery",
     "Signal-Strength",
     "Freeze-Detection",
-    "Recovery",
+    "Maintenance-Mode",
+    "Installation-and-Setup",
+    "The-Battery-Report",
     "How-Device-Sentinel-Learns",
     "The-Device-Page",
     "The-Problem-List",
@@ -349,7 +353,9 @@ ALL_LINKS = {
     "WIKI_LINK_BATTERY": WIKI_LINK_BATTERY,
     "WIKI_LINK_SIGNAL": WIKI_LINK_SIGNAL,
     "WIKI_LINK_FREEZE": WIKI_LINK_FREEZE,
-    "WIKI_LINK_RECOVERY": WIKI_LINK_RECOVERY,
+    "WIKI_LINK_MAINTENANCE": WIKI_LINK_MAINTENANCE,
+    "WIKI_LINK_INSTALLATION": WIKI_LINK_INSTALLATION,
+    "WIKI_LINK_BATTERY_REPORT": WIKI_LINK_BATTERY_REPORT,
     "WIKI_LINK_LEARNING": WIKI_LINK_LEARNING,
     "WIKI_LINK_DEVICE_PAGE": WIKI_LINK_DEVICE_PAGE,
     "WIKI_LINK_PROBLEM_LIST": WIKI_LINK_PROBLEM_LIST,

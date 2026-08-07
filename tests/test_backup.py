@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_backup.py, Version: 0.10.14 (2026-08-01)
+# File: test_backup.py, Version: 0.12.13 (2026-08-07)
 
 """The copy taken before a release removes what it cannot put back.
 
@@ -38,6 +38,7 @@ from homeassistant.helpers.storage import STORAGE_DIR
 
 from custom_components.device_sentinel.backup import async_take_backup
 from custom_components.device_sentinel.const import (
+    DATA_DEVICES,
     BACKUP_SUFFIX_PREPHASE_C,
     BACKUP_TAKEN_KEY,
     STORAGE_CLOCKS_KEY,
@@ -175,16 +176,28 @@ async def test_a_copy_that_fails_reports_failure(hass: HomeAssistant):
     assert not os.path.exists(_path(hass, f"{STORAGE_KEY}.{SUFFIX}"))
 
 
-async def test_setup_takes_the_backup_and_remembers(hass: HomeAssistant):
-    """From 0.10.14 the setup path is the caller (#130).
+async def test_the_retired_marker_is_pruned_from_storage(
+    hass: HomeAssistant, hass_storage
+):
+    """The pre-strip backup is gone and takes its marker with it.
 
-    The backup shipped inert in 0.10.11 so its one real run would not
-    be its first; Phase C is the release that asks for it, at the one
-    moment the copy is honest, after the load and before the first
-    save of the session. The marker rides in the storage payload so a
-    later boot does not overwrite the copy with a stripped file.
+    Nothing takes that copy any more (ruling #241): every install writes
+    both files in the split shape, so the transition it guarded
+    cannot occur. A marker left by an older version is dropped on
+    load rather than carried in every save from now on, while an
+    epoch marker beside it survives, because #204 still uses the
+    mechanism.
     """
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            DATA_DEVICES: {},
+            BACKUP_TAKEN_KEY: [SUFFIX, "pre-epoch-9"],
+        },
+    }
     coordinator = await setup_coordinator(hass)
 
-    assert coordinator.data.get(BACKUP_TAKEN_KEY) == [SUFFIX]
-    assert coordinator._strip_clocks
+    assert coordinator.data.get(BACKUP_TAKEN_KEY) == ["pre-epoch-9"]
+
+

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_clock_strip.py, Version: 0.11.9 (2026-08-04)
+# File: test_clock_strip.py, Version: 0.12.13 (2026-08-07)
 
 """The final phase of the storage split: the main file sheds the clocks.
 
@@ -28,19 +28,19 @@ rollback cannot survive unaided, so the release that strips takes a
 copy of both files before it changes anything, and a copy that cannot
 be taken stops the strip rather than the boot: the main file simply
 keeps carrying the clocks, which loses nothing.
+
+Three tests were retired with the transition they guarded (ruling #241): the backup that preceded the strip, the gate that kept writing clock copies where it failed, and the merge branch that preferred a main file still carrying them. The strip is unconditional now and the main file never carries clocks, so those states cannot occur.
 """
 
 from __future__ import annotations
 
 import os
-from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import STORAGE_DIR
 
 from custom_components.device_sentinel.const import (
-    BACKUP_SUFFIX_PREPHASE_C,
     CLOCK_FIELDS,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
@@ -145,67 +145,6 @@ async def test_the_main_file_sheds_the_clocks(
     assert DEV_LAST_ACTIVITY in live
 
 
-async def test_a_failed_backup_stops_the_strip(
-    hass: HomeAssistant, hass_storage
-):
-    """No copy, no strip (#130).
-
-    The boot proceeds and everything works; the main file simply
-    keeps carrying the clock copies, which is the pre-C behaviour and
-    loses nothing. Stripping without the copy is the one step that
-    cannot be undone, so failure lands on the harmless side.
-    """
-    device, _ = register_device(hass, "pc2", "Phase C Device")
-    _seed(hass_storage, device.id, cold_clocks=True, hot=True)
-    # A real file must exist for the copy to be attempted and fail;
-    # with no file on disk the backup correctly reports nothing owed.
-    directory = hass.config.path(STORAGE_DIR)
-    os.makedirs(directory, exist_ok=True)
-    with open(
-        os.path.join(directory, STORAGE_KEY), "w", encoding="utf-8"
-    ) as handle:
-        handle.write("{}")
-
-    with patch(
-        "custom_components.device_sentinel.backup.shutil.copyfile",
-        side_effect=OSError("disk full"),
-    ):
-        entry = await setup_entry(hass)
-
-    assert not entry.runtime_data._strip_clocks
-    written = hass_storage[STORAGE_KEY]["data"][DATA_DEVICES][device.id]
-    assert DEV_LAST_ACTIVITY in written
-
-
-async def test_the_backup_copy_still_holds_the_clocks(
-    hass: HomeAssistant, hass_storage
-):
-    """The copy is the file before the strip, which is its whole value.
-
-    A rollback needs the file the older version would have read. The
-    copy is taken after the load and before the first save of the
-    session, so the bytes preserved are the previous version's,
-    clocks included, and never this version's stripped write.
-    """
-    device, _ = register_device(hass, "pc3", "Phase C Device")
-    _seed(hass_storage, device.id, cold_clocks=True, hot=True)
-    directory = hass.config.path(STORAGE_DIR)
-    os.makedirs(directory, exist_ok=True)
-    marker = '{"the file as 0.10.13 left it, clocks and all"}'
-    with open(
-        os.path.join(directory, STORAGE_KEY), "w", encoding="utf-8"
-    ) as handle:
-        handle.write(marker)
-
-    await setup_entry(hass)
-
-    copy = os.path.join(
-        directory, f"{STORAGE_KEY}.{BACKUP_SUFFIX_PREPHASE_C}"
-    )
-    with open(copy, encoding="utf-8") as handle:
-        assert handle.read() == marker
-
-
 async def test_a_stale_hot_file_is_used_once_the_main_file_is_bare(
     hass: HomeAssistant, hass_storage
 ):
@@ -233,32 +172,6 @@ async def test_a_stale_hot_file_is_used_once_the_main_file_is_bare(
 
     assert record[DEV_LAST_ACTIVITY] == NOW - 60.0
     assert record[DEV_EVENT_COUNT] == 901
-
-
-async def test_a_stale_hot_file_is_still_refused_beside_carried_clocks(
-    hass: HomeAssistant, hass_storage
-):
-    """The old caution survives exactly where it is still right.
-
-    An install whose backup failed, or one upgrading straight through,
-    still writes the copies, and there the newer source is the main
-    file. The decision is read from the records rather than from any
-    version, so both worlds get the correct rule from the same code.
-    """
-    device, _ = register_device(hass, "pc5", "Phase C Device")
-    _seed(
-        hass_storage,
-        device.id,
-        cold_clocks=True,
-        hot=True,
-        hot_at=NOW - 500.0,
-    )
-
-    entry = await setup_entry(hass)
-    record = entry.runtime_data.data[DATA_DEVICES][device.id]
-
-    assert record[DEV_LAST_ACTIVITY] == NOW - 300.0
-    assert record[DEV_EVENT_COUNT] == 900
 
 
 async def test_a_bare_main_file_with_no_hot_file_starts_over(

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.11.9 (2026-08-04)
+# File: test_storage_split.py, Version: 0.12.13 (2026-08-07)
 
 """The two files: the shadow, the merge, and the stamps.
 
@@ -12,6 +12,8 @@ grown larger than any source file in the project (ruling #203).
 The seam is the subject, the same rule the source split followed.
 Helpers are carried to every file that calls them rather than
 pooled, so each file reads on its own.
+
+Two tests were retired with the transition (ruling #241). The diagnostics phase field is gone, having one answer forever once the strip became unconditional. And the refused-stale-hot case is gone with the main file's clock copies: that test's own docstring predicted it would fail the day the strip landed and called that failure the point. The invariant it guarded, that a load reconstructs the newest clocks available, is covered by the round-trip test in test_clock_strip.py.
 """
 
 
@@ -235,36 +237,6 @@ async def test_the_shadow_exists_from_the_first_moment(
     assert hass_storage[STORAGE_CLOCKS_KEY]["data"]["clocks"]
 
 
-async def test_the_split_state_reaches_diagnostics(
-    hass: HomeAssistant,
-):
-    """It was confirmable only from a terminal, which is no way to
-    verify a release (0.8.8).
-
-    The phase is read from the flag that gates the strip rather than
-    written down, after the string said Phase B for eleven releases
-    following Phase C shipping (ruling #205). Setup takes the backup
-    the strip waits on, so a healthy install reports C, and the
-    string moves with the flag rather than being a constant wearing a
-    different value.
-    """
-    from custom_components.device_sentinel.diagnostics import (
-        async_get_config_entry_diagnostics,
-    )
-
-    _register(hass, "sd1", "Diag Sensor")
-    entry = await setup_entry(hass)
-    diag = await async_get_config_entry_diagnostics(hass, entry)
-    split = diag["split"]
-    assert split["phase"].startswith("C:")
-    # And it moves with the flag rather than being a constant.
-    entry.runtime_data._strip_clocks = False
-    later = await async_get_config_entry_diagnostics(hass, entry)
-    assert later["split"]["phase"].startswith("B:")
-    assert set(split["clock_fields"]) == set(CLOCK_FIELDS)
-    assert split["clock_devices"] >= 1
-
-
 async def test_the_hot_file_supplies_the_clocks(
     hass: HomeAssistant, hass_storage
 ):
@@ -276,38 +248,6 @@ async def test_the_hot_file_supplies_the_clocks(
     _hot(hass_storage, {device.id: {
         DEV_LAST_ACTIVITY: 9000.0, DEV_EVENT_COUNT: 42,
     }}, saved_at=9000.0)
-
-    entry = await setup_entry(hass)
-    record = entry.runtime_data.data[DATA_DEVICES][device.id]
-    assert record[DEV_LAST_ACTIVITY] == 9000.0
-    assert record[DEV_EVENT_COUNT] == 42
-
-
-async def test_an_older_hot_file_is_refused(
-    hass: HomeAssistant, hass_storage
-):
-    """The reason the stamp exists, and the phase C tripwire.
-
-    This asserts the invariant rather than the mechanism: a load
-    reconstructs the newest clocks available to it. When the hot
-    file is refused, the main file is what supplies them, which
-    holds only while the main file still carries clock fields.
-    Phase C stops writing them there, so this test is expected to
-    fail on the day phase C lands, and that failure is the point.
-
-    The reason the stamp exists. The main file is written first
-    and the hot file second, so a failure between them leaves a stale
-    hot file. Merging it would drag a device's last activity
-    backwards, which reads as silence and earns a freeze it never
-    deserved."""
-    device, _eid = _register(hass, "hot2", "Stale Hot Device")
-    fresh = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
-    fresh[DEV_LAST_ACTIVITY] = 9000.0
-    fresh[DEV_EVENT_COUNT] = 42
-    _cold(hass_storage, {device.id: fresh}, saved_at=9000.0)
-    _hot(hass_storage, {device.id: {
-        DEV_LAST_ACTIVITY: 1000.0, DEV_EVENT_COUNT: 1,
-    }}, saved_at=1000.0)
 
     entry = await setup_entry(hass)
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
