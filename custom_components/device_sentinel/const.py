@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.9 (2026-08-06)
+# File: const.py, Version: 0.12.10 (2026-08-07)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1318,6 +1318,14 @@ SYS_DEVICES = "devices"
 # looked back over. Nothing is learned from it yet: an integration
 # reloading is not periodic, and inventing a cadence for it would be
 # the global constant this project keeps overruling (ruling #227).
+# The highest ruling recorded in the decision history. A citation in
+# the source past this number cannot be followed, and two such
+# citations sat in the tree unnoticed for weeks: one a typo, one
+# pointing at reasoning that was never written down. The guard in
+# tests/test_citations.py reads this, so a stale number fails the
+# suite rather than passing quietly (ruling #233).
+HIGHEST_RULING = 233
+
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
 # retention: the polling test looks back one hour, and a real reload

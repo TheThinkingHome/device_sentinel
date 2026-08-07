@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.12.7 (2026-08-06)
+# File: coordinator.py, Version: 0.12.10 (2026-08-07)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -246,7 +246,7 @@ class DeviceSentinelCoordinator(
         self._grace_devices: set[str] = set()
         self._grace_taints: set[str] = set()
         # Family events collected during a sync, fired after it settles
-        # (ruling #479). Each is (family, event_line, recovery). Cleared on
+        # (ruling #151). Each is (family, event_line, recovery). Cleared on
         # every dispatch so a later sync starts clean.
         self._pending_events: list[tuple[str, str, bool]] = []
         self._storm_feed_q: dict[str, deque[tuple[float, str]]] = {}

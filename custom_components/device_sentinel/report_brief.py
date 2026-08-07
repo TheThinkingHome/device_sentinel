@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.12.7 (2026-08-06)
+# File: report_brief.py, Version: 0.12.10 (2026-08-07)
 
 """The daily brief: the one report written for a person.
 
@@ -87,6 +87,15 @@ from .const import (
     TODO_SORT_NAME,
     TODO_STATUS,
 )
+
+
+def _plural(count: int) -> str:
+    """Return a count of devices as a person would write it.
+
+    The count is known when the sentence is written, so "device(s)"
+    is an evasion rather than a shorthand (ruling #233).
+    """
+    return f"{count} device" if count == 1 else f"{count} devices"
 
 
 class BriefMixin:
@@ -299,7 +308,7 @@ class BriefMixin:
             if count:
                 return (
                     f"It settled after {held or 'a moment'}, "
-                    f"{count} device(s) affected."
+                    f"{_plural(count)} affected."
                 )
             return f"It settled after {held or 'a moment'}."
         if kind == SYS_BROKER_DOWN:
@@ -370,7 +379,7 @@ class BriefMixin:
             count = row.get(SYS_DEVICES)
             return (
                 f"{scope} integration settled after {held}, "
-                f"{count} device(s)"
+                f"{_plural(count)}"
                 if held and count
                 else f"{scope} integration settled"
             )
@@ -483,7 +492,12 @@ class BriefMixin:
             if row[SYS_KIND] == SYS_STORM_CLOSED and row[SYS_SCOPE] == scope
         ]
         most = max(sizes) if sizes else 0
-        tail = f", up to {most} device(s) at a time" if most else ""
+        # The largest of the group rather than a limit. "Up to 5
+        # devices at a time" read as a cap on something, when it is
+        # the biggest burst seen: a five-device poller and a
+        # fifty-device hub reconnect wear the same word otherwise
+        # (ruling #233).
+        tail = f", the largest affecting {_plural(most)}" if most else ""
         return (
             f"The {scope} integration reloaded {len(opens)} times "
             f"between {first} and {last}{tail}."

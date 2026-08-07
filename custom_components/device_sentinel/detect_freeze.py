@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.12.1 (2026-08-05)
+# File: detect_freeze.py, Version: 0.12.10 (2026-08-07)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -376,8 +376,8 @@ class FreezeMixin:
         """Judge one device and store the verdict if it changed.
 
         Returns True when the verdict flipped, so the caller can
-        refresh the sensor once per flip rather than on every reading
-        (ruling #234). A debounce holds an unavailable or unknown verdict
+        refresh the sensor once per flip rather than on every reading.
+        A debounce holds an unavailable or unknown verdict
         until the device has been down long enough to rule out a
         mid-transition flip; the frozen verdict needs no debounce
         because its window already is the wait.
