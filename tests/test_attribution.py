@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.12.8 (2026-08-06)
+# File: tests/test_attribution.py, Version: 0.12.9 (2026-08-06)
 
 """What explains an incident, and what a flood reads as.
 
@@ -562,3 +562,130 @@ def test_an_absurd_uptime_is_refused():
     assert read("nan seconds") is None
     assert read("-1 seconds") is None
     assert read("999999999999999 seconds") is None
+
+
+async def test_a_poller_is_recognized_once_and_stays_recognized(
+    hass: HomeAssistant,
+):
+    """The loop the reference fleet ran for four hours.
+
+    An integration read as a poller was never fed again, so its
+    history stopped accruing, its rows aged out of the hour, the
+    verdict lapsed, and it stormed ten more times. The fleet's own
+    log shows exactly ten storms an hour for four hours, which is the
+    exemption threshold rather than anything the router was doing
+    (ruling #232).
+
+    Four hours of a burst every 36 seconds, which is the reference
+    integration's own cadence.
+    """
+    from custom_components.device_sentinel.const import (
+        DATA_STORMS,
+        DATA_SYSTEM_EVENTS,
+        STORM_DEVICE_THRESHOLD,
+        STORM_EXEMPT_PER_HOUR,
+        SYS_STORM_OPEN,
+    )
+
+    coord = await setup_coordinator(hass)
+    entry_id = coord.entry.entry_id
+    coord._grace_until = 0.0
+    before = len(coord.data.get(DATA_SYSTEM_EVENTS) or [])
+
+    at = T0
+    for _cycle in range(400):
+        coord._storm_active.clear()
+        coord._storm_feed_q.clear()
+        for index in range(STORM_DEVICE_THRESHOLD + 2):
+            coord._storm_feed(entry_id, f"d{index}", at)
+        coord._sweep_storms(at + 30)
+        at += 36
+
+    events = [
+        row
+        for row in coord.data[DATA_SYSTEM_EVENTS][before:]
+        if row[SYS_KIND] == SYS_STORM_OPEN
+    ]
+    # Announced while it was still an unknown integration, and never
+    # again once it was read as a poller.
+    assert len(events) == STORM_EXEMPT_PER_HOUR, (
+        f"a poller announced {len(events)} storms over four hours"
+    )
+    assert coord._is_polling_integration(entry_id, at)
+    # Counting continued, which is what makes the verdict hold.
+    assert len(coord.data[DATA_STORMS]) > STORM_EXEMPT_PER_HOUR * 4
+
+
+async def test_an_integration_that_settles_stops_being_a_poller(
+    hass: HomeAssistant,
+):
+    """The recompute still does its job in the other direction."""
+    from custom_components.device_sentinel.const import (
+        STORM_DEVICE_THRESHOLD,
+        STORM_EXEMPT_PER_HOUR,
+    )
+
+    coord = await setup_coordinator(hass)
+    entry_id = coord.entry.entry_id
+    coord._grace_until = 0.0
+
+    at = T0
+    for _cycle in range(STORM_EXEMPT_PER_HOUR + 4):
+        coord._storm_active.clear()
+        coord._storm_feed_q.clear()
+        for index in range(STORM_DEVICE_THRESHOLD + 2):
+            coord._storm_feed(entry_id, f"d{index}", at)
+        coord._sweep_storms(at + 30)
+        at += 60
+    assert coord._is_polling_integration(entry_id, at)
+
+    # It stops storming. An hour later the verdict lapses on its own.
+    assert not coord._is_polling_integration(entry_id, at + 3700)
+
+
+async def test_a_poller_stamps_no_episode(hass: HomeAssistant):
+    """Its devices learn their poll cadence as rhythm.
+
+    That is the whole point of recognising a poller, and it is the
+    half that must survive the fix (ruling #232).
+    """
+    from custom_components.device_sentinel.const import (
+        STORM_DEVICE_THRESHOLD,
+        STORM_EXEMPT_PER_HOUR,
+    )
+
+    coord = await setup_coordinator(hass)
+    entry_id = coord.entry.entry_id
+    coord._grace_until = 0.0
+    stamped: list[str] = []
+    coord._stamp_intervention = lambda *a, **k: stamped.append(a[0])
+
+    at = T0
+    for _cycle in range(STORM_EXEMPT_PER_HOUR + 6):
+        coord._storm_active.clear()
+        coord._storm_feed_q.clear()
+        for index in range(STORM_DEVICE_THRESHOLD + 2):
+            coord._storm_feed(entry_id, f"d{index}", at)
+        coord._sweep_storms(at + 30)
+        at += 60
+
+    assert len(stamped) == STORM_EXEMPT_PER_HOUR, (
+        "a poller kept stamping interventions after being recognised"
+    )
+
+
+async def test_storm_rows_are_trimmed_at_two_days(hass: HomeAssistant):
+    """Nothing reads them past an hour, so nothing keeps them past two days."""
+    from custom_components.device_sentinel.const import (
+        DATA_STORMS,
+        STORM_KEEP_SECONDS,
+    )
+
+    coord = await setup_coordinator(hass)
+    coord.data[DATA_STORMS] = [
+        {"at": T0 - STORM_KEEP_SECONDS - 60, "entry_id": "e", "duration": 5.0},
+        {"at": T0 - 3600, "entry_id": "e", "duration": 5.0},
+    ]
+    coord._trim_storms(T0)
+    assert len(coord.data[DATA_STORMS]) == 1
+    assert STORM_KEEP_SECONDS == 172800.0
