@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.12.11 (2026-08-07)
+# File: coordinator.py, Version: 0.12.12 (2026-08-07)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -115,6 +115,7 @@ from .const import (
     STORAGE_KEY,
     STORAGE_VERSION,
     SYS_EPOCH_RESET,
+    SYS_KIND,
     SYS_MAINTENANCE_CLOSED,
     SYS_MAINTENANCE_OPEN,
     SYS_OPTIONS_CHANGED,
@@ -635,6 +636,17 @@ class DeviceSentinelCoordinator(
         # and came back across this restart still closes
         # (ruling #222).
         self._restore_bridge_state()
+
+        # A maintenance window that was open when the process stopped
+        # died with it, correctly, since the window is deliberately
+        # in-memory (ruling #238). But its opening row is persisted, and
+        # an events log where every other pair closes must not carry
+        # one open forever, so the close is written here, before this
+        # session's restart row, stamped at the restart because the
+        # stop is when the declaration actually ended. Duration is
+        # left unknown: the wall time between the press and the stop
+        # is not how long the window stood if the machine was off.
+        self._close_dangling_maintenance(self._started_at)
 
         # The house's own record of what happened to it. Written here
         # rather than at load, so a start that failed halfway leaves
@@ -1569,6 +1581,7 @@ class DeviceSentinelCoordinator(
         """
         ent_reg = er.async_get(self.hass)
         enabled = 0
+        enabled_ids: list[str] = []
         skipped_user = 0
         for ent in list(ent_reg.entities.values()):
             if ent.device_id not in self._watched:
@@ -1582,6 +1595,7 @@ class DeviceSentinelCoordinator(
                 continue
             ent_reg.async_update_entity(ent.entity_id, disabled_by=None)
             enabled += 1
+            enabled_ids.append(ent.entity_id)
         LOGGER.info(
             "Enable %s: enabled %d entities; %d left alone because a "
             "user disabled them. Home Assistant reloads the owning "
@@ -1590,6 +1604,13 @@ class DeviceSentinelCoordinator(
             enabled,
             skipped_user,
         )
+        if enabled_ids:
+            # Named, so a person who wonders where a count on the
+            # Status sensor came from (ruling #237 keeps the attribute a
+            # bare number) finds the answer where the press left it.
+            LOGGER.info(
+                "Enable %s turned on: %s", kind, ", ".join(enabled_ids)
+            )
         return {"enabled": enabled, "skipped_user": skipped_user}
 
     async def async_enable_signal_entities(self) -> dict[str, int]:
@@ -1741,6 +1762,34 @@ class DeviceSentinelCoordinator(
             return
         self._close_maintenance(
             self._maintenance_until, "expired", self._maintenance_opened_at
+        )
+
+    def _close_dangling_maintenance(self, restart_at: float) -> None:
+        """Write the close a restart denied the previous window.
+
+        Called once at setup. The newest maintenance row still being
+        an open means the process stopped mid-window; the pair is
+        completed with detail "ended by restart" and no duration,
+        because how long the declaration actually stood cannot be
+        known from here.
+        """
+        newest: str | None = None
+        for row in self.data.get(DATA_SYSTEM_EVENTS) or []:
+            if row.get(SYS_KIND) in (
+                SYS_MAINTENANCE_OPEN,
+                SYS_MAINTENANCE_CLOSED,
+            ):
+                newest = row.get(SYS_KIND)
+        if newest != SYS_MAINTENANCE_OPEN:
+            return
+        self._record_system_event(
+            SYS_MAINTENANCE_CLOSED,
+            detail="ended by restart",
+            when=restart_at,
+        )
+        LOGGER.info(
+            "A maintenance window was open at the last stop; its "
+            "closing row is recorded at this restart"
         )
 
     def _recovered_during_maintenance(self, now: float) -> bool:

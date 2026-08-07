@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.12.11 (2026-08-07)
+# File: sensor.py, Version: 0.12.12 (2026-08-07)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -23,6 +23,14 @@ worse, and it existed to answer a soak question that closed on
 to linger unavailable.
 
 Identity attributes on all, per blueprint precedent.
+
+Which sensors ship enabled follows one test (ruling #239): a person reads
+it daily or acts on it in their first week. Status, the coverage
+pair, the maintenance timestamp, and the detected bridge and broker
+are on; the per-family counts are off, because the problem list
+already carries what is wrong and their audience is a dashboard
+builder, who enables exactly what they chart. Detection, the brief,
+and every report run regardless of what is enabled here.
 """
 
 from __future__ import annotations
@@ -319,6 +327,7 @@ class DeviceSentinelTrackedSignalsSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
     sentinel_type = SENTINEL_TYPE_TRACKED_SIGNALS
 
     @property
@@ -351,6 +360,7 @@ class DeviceSentinelTrackedBatteriesSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
     sentinel_type = SENTINEL_TYPE_TRACKED_BATTERIES
 
     @property
@@ -380,6 +390,7 @@ class DeviceSentinelTrackedDevicesSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
     sentinel_type = SENTINEL_TYPE_TRACKED_DEVICES
 
     @property
@@ -416,6 +427,7 @@ class DeviceSentinelSignalRailsSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
     # On by default (ruling #212). The reasoning for hiding these
     # was that the todo list carries trouble devices, which is
     # true of two of the five and false of the rest: a weak link
@@ -460,6 +472,7 @@ class DeviceSentinelSignalWeakSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
     sentinel_type = SENTINEL_TYPE_SIGNAL_WEAK
 
     @property
@@ -492,6 +505,7 @@ class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
     # On by default (ruling #212). The reasoning for hiding these
     # was that the todo list carries trouble devices, which is
     # true of two of the five and false of the rest: a weak link
@@ -543,6 +557,7 @@ class DeviceSentinelFallingBatteriesSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
     # On by default (ruling #212). The reasoning for hiding these
     # was that the todo list carries trouble devices, which is
     # true of two of the five and false of the rest: a weak link
@@ -579,6 +594,7 @@ class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
     # On by default (ruling #212). The reasoning for hiding these
     # was that the todo list carries trouble devices, which is
     # true of two of the five and false of the rest: a weak link
@@ -634,23 +650,34 @@ class DeviceSentinelBrokerSensor(DeviceSentinelBaseSensor):
     broker and no bridge. Where there is no MQTT at all it reads
     unknown forever and costs one disabled entity.
 
-    Disabled by default like the bridge sensors, for the same reason:
-    the watch runs off the subscription rather than off this entity,
-    so a person who never enables it still gets the broker events in
-    the log and the brief (ruling #224).
+    Its default follows detection (ruling #239): enabled where a bridge
+    stack was found, because that house demonstrably runs on this
+    broker and the sensor belongs on its first page; disabled
+    otherwise, so a house without MQTT never meets a dead sensor. The
+    watch itself runs off the subscription either way, so a person who
+    never enables it still gets the broker events in the log and the
+    brief (ruling #224).
     """
 
     _attr_icon = "mdi:transit-connection-variant"
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = BROKER_STATES
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_entity_registry_enabled_default = False
     sentinel_type = SENTINEL_TYPE_BROKER
 
     def __init__(self, coordinator: DeviceSentinelCoordinator) -> None:
-        """Initialize the broker sensor."""
+        """Initialize the broker sensor, defaulting on with a bridge.
+
+        Detection rather than the reader decides (ruling #239): a house
+        whose registry shows a bridge stack runs on this broker even
+        if the reader could not start, and the default is a statement
+        about the house rather than about this session's wiring.
+        """
         super().__init__(coordinator)
         self._attr_name = BROKER_SENSOR_NAME
+        self._attr_entity_registry_enabled_default = bool(
+            coordinator._stacks
+        )
 
     @property
     def native_value(self) -> str:
@@ -685,20 +712,20 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
     it, so its silence is set aside rather than learned as the
     device's normal rhythm (ruling #145).
 
-    Disabled by default. A house may run several coordinators and most
-    users watch one, so the sensors exist but stay off until a person
-    enables the one for their stack. The wiki says which to enable and,
-    importantly, that intervention detection works whether or not any of
-    these is enabled, because the reader and the detector run off the
-    subscription, not off this entity (the NUT-integration lesson: a
-    disabled diagnostic with no documentation is a feature nobody finds).
+    Enabled by default (ruling #239): a bridge sensor is only created
+    where its stack was detected, so its very existence is the
+    condition that used to justify keeping it off, and the house it
+    appears in demonstrably runs that coordinator. Intervention
+    detection works whether or not it is enabled, because the reader
+    and the detector run off the subscription, not off this entity
+    (the NUT-integration lesson: a disabled diagnostic with no
+    documentation is a feature nobody finds).
     """
 
     _attr_icon = "mdi:zigbee"
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = BRIDGE_STATES
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self, coordinator: DeviceSentinelCoordinator, stack: str

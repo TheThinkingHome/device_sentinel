@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.11.10 (2026-08-04)
+# File: __init__.py, Version: 0.12.12 (2026-08-07)
 
 """The Device Sentinel integration.
 
@@ -22,13 +22,16 @@ and inert.
 from __future__ import annotations
 
 import os
+import shutil
 from functools import partial
+from pathlib import Path
 
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.storage import STORAGE_DIR
 from homeassistant.loader import async_get_integration
 
 from .const import (
@@ -36,9 +39,12 @@ from .const import (
     DEAD_OPTION_KEYS,
     DOMAIN,
     LOGGER,
+    REPORT_DIR,
     REPORT_WWW_DIR,
     REPORT_WWW_PARENT,
     REPORT_WWW_URL,
+    STORAGE_CLOCKS_KEY,
+    STORAGE_KEY,
 )
 from .coordinator import DeviceSentinelCoordinator
 
@@ -204,3 +210,60 @@ async def async_unload_entry(
     LOGGER.debug("Device Sentinel unloading")
     await entry.runtime_data.async_shutdown()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Remove everything the integration ever wrote (ruling #240).
+
+    Runs when a person deletes the integration, after the unload. A
+    tool whose pitch is that it costs almost nothing must also cost
+    nothing to leave: both storage files with every backup copy taken
+    beside them, the reports folder, and the www folder all go, so an
+    uninstall leaves no trace for the person to find later and wonder
+    about. Deliberately not part of unload, which also runs on every
+    restart and reconfiguration; only deletion reaches here.
+
+    Each target is removed on its own and a failure is logged rather
+    than raised, because a folder that cannot be deleted must not
+    abort the removal of the rest, and Home Assistant ignores errors
+    from this hook anyway.
+    """
+    storage = Path(hass.config.path(STORAGE_DIR))
+    report_dir = Path(hass.config.path(REPORT_DIR))
+    www_dir = Path(hass.config.path(REPORT_WWW_DIR))
+
+    def _remove_all() -> list[str]:
+        removed: list[str] = []
+        # The two live files and every suffixed backup beside them
+        # (the pre-strip pair of ruling #130, the epoch copies of
+        # ruling #204): the glob catches whatever suffixes exist
+        # rather than a list somebody must remember to extend.
+        for key in (STORAGE_KEY, STORAGE_CLOCKS_KEY):
+            for path in storage.glob(f"{key}*"):
+                try:
+                    path.unlink()
+                    removed.append(path.name)
+                except OSError as err:
+                    LOGGER.warning(
+                        "Uninstall could not remove %s: %s", path, err
+                    )
+        for folder in (report_dir, www_dir):
+            if not folder.exists():
+                continue
+            try:
+                shutil.rmtree(folder)
+                removed.append(f"{folder.name}/")
+            except OSError as err:
+                LOGGER.warning(
+                    "Uninstall could not remove %s: %s", folder, err
+                )
+        return removed
+
+    removed = await hass.async_add_executor_job(_remove_all)
+    LOGGER.info(
+        "Device Sentinel removed; deleted %d item(s): %s",
+        len(removed),
+        ", ".join(removed) or "nothing was on disk",
+    )
