@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.12.13 (2026-08-07)
+# File: test_hardening.py, Version: 0.12.14 (2026-08-07)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -23,7 +23,6 @@ holds the audit fixes, the two cleanups, and the wiki links.
 
 import json
 import os
-import re
 from types import SimpleNamespace
 
 import pytest
@@ -364,9 +363,14 @@ ALL_LINKS = {
 }
 
 
-def _page_of(markdown_link: str) -> str:
-    """Return the wiki page a markdown link targets."""
-    url = re.search(r"\((.*?)\)", markdown_link).group(1)
+def _page_of(url: str) -> str:
+    """Return the wiki page a URL targets.
+
+    The constants are bare URLs since #242: the link text moved into
+    the translatable strings, so each screen can name the page it
+    opens rather than every one of them reading "Device Sentinel
+    wiki".
+    """
     return url.rsplit("/wiki", 1)[1].lstrip("/") or "Home"
 
 
@@ -385,11 +389,14 @@ def test_every_link_targets_a_published_page():
         assert _page_of(link) in PUBLISHED_PAGES, (name, _page_of(link))
 
 
-def test_every_link_is_markdown_pointing_at_the_wiki():
+def test_every_link_is_a_bare_wiki_url():
+    """Bare URLs, not Markdown (ruling #242). A constant carrying its own
+    link text put the words out of a translator's reach and made
+    three screens render a link nested inside a link."""
     for name, link in ALL_LINKS.items():
-        assert link.startswith("[Device Sentinel wiki]("), name
-        assert WIKI_BASE_URL in link, name
-        assert link.endswith(")"), name
+        assert link.startswith(WIKI_BASE_URL), name
+        assert not link.startswith("["), name
+        assert not link.endswith(")"), name
 
 
 def test_links_are_distinct_per_page():
@@ -400,7 +407,7 @@ def test_links_are_distinct_per_page():
 
 def test_home_link_has_no_page_suffix():
     assert _page_of(WIKI_LINK_HOME) == "Home"
-    assert WIKI_LINK_HOME.endswith(f"({WIKI_BASE_URL})")
+    assert WIKI_LINK_HOME == WIKI_BASE_URL
 
 
 async def test_each_screen_supplies_its_own_page(hass: HomeAssistant):
