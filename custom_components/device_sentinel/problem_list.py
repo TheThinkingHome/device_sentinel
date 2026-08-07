@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.12.3 (2026-08-05)
+# File: problem_list.py, Version: 0.12.11 (2026-08-07)
 
 """The problem list: the single memory every channel renders.
 
@@ -392,6 +392,17 @@ class ProblemListMixin:
             phrase = self.reachability_phrase(device_id)
             if phrase:
                 lines.append(phrase)
+            # The same plain sentence the push carries (ruling #235): a
+            # convicted battery device is unreachable by radio, so
+            # the tap-open says what fixes it, a person at the
+            # device, rather than leaving the reader to try remedies
+            # that cannot work.
+            if device_id in self._battery_entity:
+                lines.append(
+                    "This is a battery device. It cannot be reached "
+                    "remotely; bringing it back needs a person at "
+                    "the device."
+                )
         return summary, " ".join(lines)
 
     def _journal_addition(
@@ -512,6 +523,22 @@ class ProblemListMixin:
         family = NOTIFY_KIND_FAMILY.get(kind, "freeze")
         when = dt_util.now().strftime("%-I:%M %p").lower()
         line = self._event_line(kind, name, when, recovery, left)
+        if (
+            not recovery
+            and family == "freeze"
+            and device_id in self._battery_entity
+        ):
+            # A convicted battery device cannot be reached by radio;
+            # the recovery research established that plainly, so the
+            # push says it rather than leaving the reader to try
+            # (ruling #235). The elected battery entity is the
+            # classification the battery detector already maintains,
+            # so a device with one runs on battery.
+            line = (
+                f"{line} This is a battery device. It cannot be "
+                "reached remotely; bringing it back needs a "
+                "person at the device."
+            )
         key = (device_id, kind)
         if recovery:
             cancel = self._held_events.pop(key, None)

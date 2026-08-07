@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.10 (2026-08-07)
+# File: const.py, Version: 0.12.11 (2026-08-07)
 
 """Constants for the Device Sentinel integration."""
 
@@ -145,6 +145,22 @@ PAIRING_GRACE_SECONDS_DEFAULT = 120.0
 # recovered during pairing. Distinct from the taint discard so the
 # episode report tells a pairing intervention apart from real downtime.
 LEARNED_PAIRING = "no (pairing)"
+# The learned-column value for a gap discarded because the device
+# recovered inside a declared maintenance window (rulings #225 and #238).
+# Its own word for the same reason pairing has one: the episode report
+# should say which intervention explained the discard.
+LEARNED_MAINTENANCE = "no (maintenance)"
+
+# The maintenance window (rulings #225 and #238): a button-declared span in
+# which any recovery is attributed to the person's hands rather than
+# learned. Short by design; a person fixing hardware is at the device
+# for minutes, and a long default would swallow genuine
+# self-recoveries all afternoon.
+CONF_MAINTENANCE_MINUTES = "maintenance_minutes"
+DEFAULT_MAINTENANCE_MINUTES = 10
+MAINTENANCE_MINUTES_MIN = 5
+MAINTENANCE_MINUTES_MAX = 60
+MAINTENANCE_MINUTES_STEP = 5
 
 # The resurrection cap. A gap completing while the device stands
 # convicted of a freeze is a silent-then-speaks recovery that neither
@@ -520,6 +536,20 @@ SENTINEL_TYPE_COVERAGE = "coverage"
 SENTINEL_TYPE_LEARNING = "learning_progress"
 SENTINEL_TYPE_CLASSIFICATION = "classification"
 SENTINEL_TYPE_CLOCK_SOURCE = "clock_source"
+SENTINEL_TYPE_MAINTENANCE = "maintenance"
+
+# The awaiting-enable counts on Status (ruling #237): one exact number
+# per enable button, no entity lists, so a dashboard can show each
+# button exactly while there is something for it to do.
+ATTR_AWAITING_SIGNAL = "signal_awaiting_enable"
+ATTR_AWAITING_LAST_SEEN = "last_seen_awaiting_enable"
+ATTR_AWAITING_BATTERY = "battery_awaiting_enable"
+
+# Whether Zigbee2MQTT's availability feature is on, read from bridge
+# info and surfaced on the bridge sensor (ruling #236). Reported, never
+# written: enabling it is Zigbee2MQTT's configuration, not this
+# integration's.
+ATTR_BRIDGE_AVAILABILITY = "availability_enabled"
 
 # Diagnostic files, written at every setup and after every midnight
 # rollover. They live under /config, never under custom_components
@@ -1178,9 +1208,9 @@ INC_EVENT = "event"
 INC_WHEN = "when"
 INC_CAUSE = "cause"
 INC_DURATION = "duration"
-# Event types. ACTION is reserved for Step 9: a recovery attempt and
-# its outcome belong on the same timeline as the problem it answers,
-# so the brief can one day say what was tried as well as what broke.
+# Event types. ACTION is reserved: anything the integration one day
+# does, rather than observes, belongs on the same timeline as the
+# problem it answers. Nothing writes it today (ruling #235).
 INCIDENT_OPENED = "opened"
 INCIDENT_RESOLVED = "resolved"
 # Legacy. Retired in favour of INCIDENT_ACTION carrying
@@ -1324,7 +1354,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 234
+HIGHEST_RULING = 238
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1343,6 +1373,11 @@ SYS_BROKER_DOWN = "broker_down"
 SYS_BROKER_UP = "broker_up"
 SYS_PAIRING_OPEN = "pairing_open"
 SYS_PAIRING_CLOSED = "pairing_closed"
+# A person declared they are working on the hardware, and the
+# declaration ended, by expiry or by a second press (rulings #225 and
+# #238). Recorded so the events log explains the discards between them.
+SYS_MAINTENANCE_OPEN = "maintenance_open"
+SYS_MAINTENANCE_CLOSED = "maintenance_closed"
 SYS_EPOCH_RESET = "epoch_reset"
 SYS_OPTIONS_CHANGED = "options_changed"
 # A restart with no clean-stop marker behind it (ruling #163).

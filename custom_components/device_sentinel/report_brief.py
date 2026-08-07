@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.12.10 (2026-08-07)
+# File: report_brief.py, Version: 0.12.11 (2026-08-07)
 
 """The daily brief: the one report written for a person.
 
@@ -68,6 +68,8 @@ from .const import (
     SYS_EPOCH_RESET,
     SYS_KIND,
     SYS_OPTIONS_CHANGED,
+    SYS_MAINTENANCE_CLOSED,
+    SYS_MAINTENANCE_OPEN,
     SYS_PAIRING_CLOSED,
     SYS_PAIRING_OPEN,
     SYS_RESTART,
@@ -328,6 +330,16 @@ class BriefMixin:
                     f"after {held}."
                 )
             return f"The {scope} pairing window closed at {when}."
+        if kind == SYS_MAINTENANCE_OPEN:
+            return f"Maintenance mode was opened at {when}."
+        if kind == SYS_MAINTENANCE_CLOSED:
+            tail = f" ({detail})" if detail else ""
+            if held:
+                return (
+                    f"Maintenance mode ended at {when} after "
+                    f"{held}{tail}."
+                )
+            return f"Maintenance mode ended at {when}{tail}."
         if kind == SYS_UNCLEAN_RESTART:
             # The restart row above already carried the plain fact
             # that the system came back, so this one carries what was
@@ -398,6 +410,15 @@ class BriefMixin:
                 f"{scope} pairing window closed after {held}"
                 if held
                 else f"{scope} pairing window closed"
+            )
+        if kind == SYS_MAINTENANCE_OPEN:
+            return "maintenance mode opened"
+        if kind == SYS_MAINTENANCE_CLOSED:
+            tail = f" ({detail})" if detail else ""
+            return (
+                f"maintenance mode ended after {held}{tail}"
+                if held
+                else f"maintenance mode ended{tail}"
             )
         if kind == SYS_UNCLEAN_RESTART:
             return (

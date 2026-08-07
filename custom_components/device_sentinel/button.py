@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: button.py, Version: 0.11.8 (2026-08-04)
+# File: button.py, Version: 0.12.11 (2026-08-07)
 
 """Button platform for the Device Sentinel integration.
 
@@ -21,6 +21,12 @@ filter, and it earns its own press because a user reading only
 A fourth button rewrites every report on demand, for a person
 mid-investigation who wants them to reflect a fix now rather than at
 the next tick.
+
+A fifth opens and closes the maintenance window (rulings #225 and #238):
+pressed once it declares that a person is working on the hardware,
+pressed again it ends the declaration early. While the window is
+open, any device that recovers is attributed to the person's hands
+and its silence is not learned.
 """
 
 from __future__ import annotations
@@ -74,6 +80,13 @@ async def async_setup_entry(
                 name="Regenerate Reports",
                 icon="mdi:file-refresh-outline",
                 action=coordinator.async_regenerate_reports,
+            ),
+            DeviceSentinelActionButton(
+                coordinator,
+                key="maintenance_mode",
+                name="Maintenance Mode",
+                icon="mdi:progress-wrench",
+                action=coordinator.async_toggle_maintenance,
             ),
         ]
     )

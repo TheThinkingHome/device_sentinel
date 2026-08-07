@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.11.8 (2026-08-04)
+# File: config_flow.py, Version: 0.12.11 (2026-08-07)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -82,6 +82,7 @@ from .const import (
     CONF_FREEZE_EXCLUDED_LABELS,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_LOW_THRESHOLD,
+    CONF_MAINTENANCE_MINUTES,
     CONF_NORMAL_PRIORITY_TARGETS,
     CONF_PERSISTENT_ENABLED,
     CONF_QUIET_ENABLED,
@@ -105,6 +106,7 @@ from .const import (
     DEFAULT_FREEZE_DELTA_HIGH_HR,
     DEFAULT_FREEZE_DELTA_LOW_MIN,
     DEFAULT_LOW_THRESHOLD,
+    DEFAULT_MAINTENANCE_MINUTES,
     DEFAULT_PERSISTENT_ENABLED,
     DEFAULT_QUIET_ENABLED,
     DEFAULT_QUIET_END,
@@ -125,6 +127,9 @@ from .const import (
     FREEZE_DELTA_LOW_MIN_MIN,
     LOW_THRESHOLD_MAX,
     LOW_THRESHOLD_MIN,
+    MAINTENANCE_MINUTES_MAX,
+    MAINTENANCE_MINUTES_MIN,
+    MAINTENANCE_MINUTES_STEP,
     NOTIFY_DOMAIN,
     PERSISTENT_TARGET,
     REMINDER_MODE_DAILY,
@@ -1107,6 +1112,21 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             max=RETENTION_DAYS_MAX,
                             step=RETENTION_DAYS_STEP,
                             unit_of_measurement="days",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_MAINTENANCE_MINUTES,
+                        default=options.get(
+                            CONF_MAINTENANCE_MINUTES,
+                            DEFAULT_MAINTENANCE_MINUTES,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=MAINTENANCE_MINUTES_MIN,
+                            max=MAINTENANCE_MINUTES_MAX,
+                            step=MAINTENANCE_MINUTES_STEP,
+                            unit_of_measurement="min",
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),

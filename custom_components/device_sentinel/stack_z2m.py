@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.12.3 (2026-08-05)
+# File: stack_z2m.py, Version: 0.12.11 (2026-08-07)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -185,6 +185,18 @@ class Z2MBridgeReader:
         self._availability_enabled: bool | None = None
         self._active_timeout: int | None = None
         self._passive_timeout: int | None = None
+
+    @property
+    def availability_enabled(self) -> bool | None:
+        """Return whether Zigbee2MQTT's availability feature is on.
+
+        Read from bridge info (ruling #236): True or False once info has
+        arrived, None before it. Surfaced on the bridge sensor so a
+        person can see the setting without opening Zigbee2MQTT;
+        never written, because enabling it is Zigbee2MQTT's own
+        configuration.
+        """
+        return self._availability_enabled
 
     @property
     def reachability_known(self) -> bool:

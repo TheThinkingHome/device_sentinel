@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.12.10 (2026-08-07)
+# File: coordinator.py, Version: 0.12.11 (2026-08-07)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -61,20 +61,6 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .messenger import MessengerMixin
-from .notifier import NotifierMixin
-from .journal import JournalMixin
-from .narrative import NarrativeMixin
-from .reports import ReportWritingMixin
-from .detect_battery import BatteryMixin
-from .detect_freeze import FreezeMixin
-from .detect_signal import SignalMixin
-from .interventions import InterventionMixin
-from .problem_list import ProblemListMixin
-from .records import BAD_STATES, _new_device_record, _span
-from .stacks import detect as detect_stack
-from .stacks import device_key
-from .store import StorageMixin
 from .backup import async_take_backup
 from .const import (
     BACKUP_SUFFIX_PREPHASE_C,
@@ -83,9 +69,9 @@ from .const import (
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_EXCLUDED_LABELS,
+    CONF_MAINTENANCE_MINUTES,
     DATA_BRIDGE_SEEN,
     DATA_BROKER_SEEN,
-    DATA_STORMS,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
     DATA_EPISODES,
@@ -93,10 +79,12 @@ from .const import (
     DATA_INCIDENTS,
     DATA_SETUP_COUNT,
     DATA_STATS_EPOCH,
+    DATA_STORMS,
     DATA_SYSTEM_EVENTS,
     DATA_TODO_ITEMS,
     DATA_TODO_JOURNAL,
     DEFAULT_EPISODE_SHARE_PCT,
+    DEFAULT_MAINTENANCE_MINUTES,
     DEFAULT_TAINT_FLOOR_MINUTES,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
@@ -109,10 +97,13 @@ from .const import (
     EPOCH_KEPT,
     FREEZE_CATEGORY_FROZEN,
     INC_CAUSE,
+    LEARNED_MAINTENANCE,
     LEARNED_PAIRING,
     LEARNING_MIN_DAYS,
     LEGACY_CAUSE_UNOBSERVED,
     LOGGER,
+    MAINTENANCE_MINUTES_MAX,
+    MAINTENANCE_MINUTES_MIN,
     RECOVERY_CAUSE_UNOBSERVED,
     RENDER_TICK_SECONDS,
     SHARE_PCT_MAX,
@@ -124,6 +115,8 @@ from .const import (
     STORAGE_KEY,
     STORAGE_VERSION,
     SYS_EPOCH_RESET,
+    SYS_MAINTENANCE_CLOSED,
+    SYS_MAINTENANCE_OPEN,
     SYS_OPTIONS_CHANGED,
     SYS_RESTART,
     SYS_UNCLEAN_RESTART,
@@ -133,6 +126,20 @@ from .const import (
     TODO_DEVICE_ID,
     TODO_KINDS,
 )
+from .detect_battery import BatteryMixin
+from .detect_freeze import FreezeMixin
+from .detect_signal import SignalMixin
+from .interventions import InterventionMixin
+from .journal import JournalMixin
+from .messenger import MessengerMixin
+from .narrative import NarrativeMixin
+from .notifier import NotifierMixin
+from .problem_list import ProblemListMixin
+from .records import BAD_STATES, _new_device_record, _span
+from .reports import ReportWritingMixin
+from .stacks import detect as detect_stack
+from .stacks import device_key
+from .store import StorageMixin
 
 
 class DeviceSentinelCoordinator(
@@ -249,6 +256,14 @@ class DeviceSentinelCoordinator(
         # (ruling #151). Each is (family, event_line, recovery). Cleared on
         # every dispatch so a later sync starts clean.
         self._pending_events: list[tuple[str, str, bool]] = []
+        # The maintenance window (rulings #225 and #238): epoch seconds
+        # of the declared end while a window is open, else None, and
+        # when it was opened for the closing row's duration. In memory
+        # only: a window does not survive a restart, and building
+        # storage for a ten-minute declaration would be storage
+        # without a reader.
+        self._maintenance_until: float | None = None
+        self._maintenance_opened_at: float | None = None
         self._storm_feed_q: dict[str, deque[tuple[float, str]]] = {}
         self._storm_active: dict[str, dict[str, Any]] = {}
         # Which integrations have been announced as pollers this
@@ -1192,6 +1207,23 @@ class DeviceSentinelCoordinator(
                 "discarded as a pairing intervention",
                 device_id,
             )
+        elif self._recovered_during_maintenance(now):
+            # A recovery inside a declared maintenance window is the
+            # person's hands, not the device's own rhythm (rulings #225
+            # and #238). Pairing takes precedence where both windows are
+            # open, because it is the more specific signal: it names
+            # the stack, where maintenance names only the person. Same
+            # retraction as pairing (ruling #166); detections are untouched,
+            # since a device going down during maintenance is not an
+            # intervention.
+            learned = LEARNED_MAINTENANCE
+            if not tainted and learned_gap is not None:
+                self._retract_today_max(record, learned_gap)
+            LOGGER.debug(
+                "Device %s recovered during a maintenance window; gap "
+                "discarded as a hand fix",
+                device_id,
+            )
         self._close_episode(device_id, stamp, learned, taint_seconds)
 
         record[DEV_LAST_ACTIVITY] = stamp
@@ -1341,6 +1373,7 @@ class DeviceSentinelCoordinator(
         runs in the report path, not here).
         """
         self._sweep_storms(dt_util.utcnow().timestamp())
+        self._expire_maintenance(dt_util.utcnow().timestamp())
         self._sample_bridges()
         self._judge_all_devices()
         # The sync follows the sweep every tick, so a freeze the
@@ -1593,6 +1626,135 @@ class DeviceSentinelCoordinator(
         return self._enable_matching_entities(
             self._is_battery_percentage, "battery"
         )
+
+    def awaiting_enable_counts(self) -> dict[str, int]:
+        """Return how many entities each enable button would turn on.
+
+        One registry pass, three counters (ruling #237). The filter is the
+        buttons' own: watched devices, integration-disabled only, so a
+        non-zero count is exactly a press that would do something and
+        zero means the button can hide. User-disabled entities are
+        absent from every count, because the buttons leave them alone.
+        """
+        ent_reg = er.async_get(self.hass)
+        signal = last_seen = battery = 0
+        for ent in list(ent_reg.entities.values()):
+            if ent.device_id not in self._watched:
+                continue
+            if ent.disabled_by is None:
+                continue
+            if ent.disabled_by is er.RegistryEntryDisabler.USER:
+                continue
+            if self._is_signal(ent):
+                signal += 1
+            if self._is_last_seen(ent):
+                last_seen += 1
+            if self._is_battery_percentage(ent):
+                battery += 1
+        return {
+            "signal": signal,
+            "last_seen": last_seen,
+            "battery": battery,
+        }
+
+    # ----------------------------------------------- maintenance mode
+
+    @property
+    def maintenance_until(self) -> float | None:
+        """Return when the open maintenance window ends, or None."""
+        return self._maintenance_until
+
+    @property
+    def maintenance_minutes(self) -> int:
+        """Return the configured window length, clamped to its band."""
+        raw = self.entry.options.get(
+            CONF_MAINTENANCE_MINUTES, DEFAULT_MAINTENANCE_MINUTES
+        )
+        try:
+            minutes = int(raw)
+        except (TypeError, ValueError):
+            minutes = DEFAULT_MAINTENANCE_MINUTES
+        return max(
+            MAINTENANCE_MINUTES_MIN, min(MAINTENANCE_MINUTES_MAX, minutes)
+        )
+
+    async def async_toggle_maintenance(self) -> dict[str, Any]:
+        """Open the maintenance window, or close it early (rulings #225
+        and #238).
+
+        One button, two meanings: pressed while closed it declares
+        that a person is working on the hardware for the configured
+        minutes, pressed while open it ends the declaration now. Both
+        edges are recorded as system events, so the events log
+        explains any discarded recoveries between them. Sensors are
+        refreshed at once rather than waiting for the tick, so the
+        timer flips under the finger that pressed it.
+        """
+        now = dt_util.utcnow().timestamp()
+        if self._maintenance_until is not None and now < self._maintenance_until:
+            opened = self._maintenance_opened_at
+            self._close_maintenance(now, "ended by hand", opened)
+            self._notify()
+            return {"maintenance": "closed"}
+        minutes = self.maintenance_minutes
+        self._maintenance_until = now + minutes * 60.0
+        self._maintenance_opened_at = now
+        self._record_system_event(
+            SYS_MAINTENANCE_OPEN,
+            detail=f"{minutes} minute window",
+            when=now,
+        )
+        LOGGER.info(
+            "Maintenance mode opened for %d minutes; recoveries in "
+            "this window are attributed to the person and not learned",
+            minutes,
+        )
+        self._notify()
+        return {"maintenance": "opened", "minutes": minutes}
+
+    def _close_maintenance(
+        self, when: float, detail: str, opened: float | None
+    ) -> None:
+        """Record the closing edge and clear the window."""
+        duration = when - opened if opened is not None else None
+        self._maintenance_until = None
+        self._maintenance_opened_at = None
+        self._record_system_event(
+            SYS_MAINTENANCE_CLOSED,
+            detail=detail,
+            duration=duration,
+            when=when,
+        )
+        LOGGER.info("Maintenance mode closed (%s)", detail)
+
+    def _expire_maintenance(self, now: float) -> None:
+        """Close a window whose declared end has passed.
+
+        Lazy, on the render tick, so the closing row can be up to a
+        tick late but is stamped at the declared end rather than at
+        the tick that noticed (the same honesty the system events log
+        keeps everywhere: when it happened, not when it was written).
+        """
+        if self._maintenance_until is None:
+            return
+        if now < self._maintenance_until:
+            return
+        self._close_maintenance(
+            self._maintenance_until, "expired", self._maintenance_opened_at
+        )
+
+    def _recovered_during_maintenance(self, now: float) -> bool:
+        """Return whether a maintenance window is open at this moment.
+
+        Fleet-wide by design (ruling #238): the button is global, and the
+        cost of the width is one discarded learning sample for a
+        genuine self-recovery that lands inside the person's ten
+        minutes, the same conservative trade pairing already makes.
+        No grace tail, unlike pairing: the window's end is declared
+        rather than observed late, so it is exact.
+        """
+        self._expire_maintenance(now)
+        return self._maintenance_until is not None
 
 
     @property

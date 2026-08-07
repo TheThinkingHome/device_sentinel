@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.12.4 (2026-08-06)
+# File: sensor.py, Version: 0.12.11 (2026-08-07)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -38,9 +38,14 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import DeviceSentinelConfigEntry
 from .const import (
+    ATTR_AWAITING_BATTERY,
+    ATTR_AWAITING_LAST_SEEN,
+    ATTR_AWAITING_SIGNAL,
+    ATTR_BRIDGE_AVAILABILITY,
     BROKER_SENSOR_NAME,
     BROKER_STATES,
     SENTINEL_TYPE_BROKER,
@@ -65,6 +70,7 @@ from .const import (
     SENTINEL_TYPE_FROZEN_DEVICES,
     SENTINEL_TYPE_LEARNING,
     SENTINEL_TYPE_LOW_BATTERIES,
+    SENTINEL_TYPE_MAINTENANCE,
     SENTINEL_TYPE_SIGNAL_RAILS,
     SENTINEL_TYPE_SIGNAL_WEAK,
     SENTINEL_TYPE_STATUS,
@@ -102,6 +108,7 @@ async def async_setup_entry(
             DeviceSentinelLowBatteriesSensor(coordinator),
             DeviceSentinelFallingBatteriesSensor(coordinator),
             DeviceSentinelFrozenDevicesSensor(coordinator),
+            DeviceSentinelMaintenanceSensor(coordinator),
         ]
     )
     # One bridge sensor per detected coordinator stack, disabled by
@@ -187,12 +194,22 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the identity and storage-proof attributes."""
+        """Return the identity and storage-proof attributes, plus one
+        exact count per enable button (ruling #237): non-zero means a press
+        would do something, so a dashboard can show each button only
+        while it has work. No entity lists; the count is the reader's
+        whole question and a hundred names on a fresh install would be
+        recorder weight with no reader.
+        """
+        counts = self._coordinator.awaiting_enable_counts()
         return {
             **self._identity(),
             ATTR_FIRST_INSTALLED: self._coordinator.first_installed,
             ATTR_STORAGE_HEALTHY: self._coordinator.storage_healthy,
             ATTR_SETUP_COUNT: self._coordinator.setup_count,
+            ATTR_AWAITING_SIGNAL: counts["signal"],
+            ATTR_AWAITING_LAST_SEEN: counts["last_seen"],
+            ATTR_AWAITING_BATTERY: counts["battery"],
         }
 
 
@@ -584,6 +601,31 @@ class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
         }
 
 
+class DeviceSentinelMaintenanceSensor(DeviceSentinelBaseSensor):
+    """When the open maintenance window ends, or unknown when closed.
+
+    A timestamp rather than seconds remaining (ruling #238): a dashboard
+    renders a countdown from a timestamp natively, where a
+    seconds-remaining state would need a write every second to stay
+    true. The state is the whole surface: a time means a window is
+    open and recoveries are being attributed to the person's hands,
+    unknown means the integration is learning normally.
+    """
+
+    _attr_name = "Maintenance: Ends"
+    _attr_icon = "mdi:progress-wrench"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    sentinel_type = SENTINEL_TYPE_MAINTENANCE
+
+    @property
+    def native_value(self) -> Any:
+        """Return the declared end of the open window, or None."""
+        until = self._coordinator.maintenance_until
+        if until is None:
+            return None
+        return dt_util.utc_from_timestamp(until)
+
+
 class DeviceSentinelBrokerSensor(DeviceSentinelBaseSensor):
     """The MQTT broker's own liveness, which nothing else can show.
 
@@ -689,4 +731,13 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
             attrs[ATTR_BRIDGE_PERMIT_JOIN_END] = reader.permit_join_end
             attrs[ATTR_BRIDGE_BASE_TOPIC] = reader.base_topic
             attrs[ATTR_BRIDGE_LAST_HEARD] = reader.last_heard
+            # Whether the stack's availability feature is on, where
+            # the reader knows (ruling #236). Z2M reports it in bridge
+            # info; a stack that cannot say simply lacks the
+            # property and writes nothing. Reported, never written:
+            # turning it on is the stack's configuration.
+            if hasattr(reader, "availability_enabled"):
+                attrs[ATTR_BRIDGE_AVAILABILITY] = (
+                    reader.availability_enabled
+                )
         return attrs
