@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.13 (2026-08-07)
+# File: const.py, Version: 0.12.14 (2026-08-07)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1354,7 +1354,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 241
+HIGHEST_RULING = 243
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1545,16 +1545,23 @@ WIKI_BASE_URL = "https://github.com/TheThinkingHome/device_sentinel/wiki"
 
 
 def _wiki_link(page: str | None = None) -> str:
-    """Return the markdown link a step description renders.
+    """Return the URL of one wiki page.
 
     Page names are the wiki's own titles with spaces as hyphens,
     which is how GitHub builds a wiki URL from a page title. A name
     that does not match a real page yields a link to a page-not-found
     screen rather than an error, so these are checked against the
     live wiki rather than trusted.
+
+    The URL only (ruling #242). This used to return a whole Markdown link
+    reading "Device Sentinel wiki", which put the link text in Python
+    where no translator could reach it, made all six configuration
+    screens advertise the same destination when each goes somewhere
+    different, and produced a nested link on the three screens that
+    wrote their own words around it. Each string now names the page
+    it opens.
     """
-    url = f"{WIKI_BASE_URL}/{page}" if page else WIKI_BASE_URL
-    return f"[Device Sentinel wiki]({url})"
+    return f"{WIKI_BASE_URL}/{page}" if page else WIKI_BASE_URL
 
 
 WIKI_LINK_HOME = _wiki_link()

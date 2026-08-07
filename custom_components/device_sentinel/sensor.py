@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.12.12 (2026-08-07)
+# File: sensor.py, Version: 0.12.14 (2026-08-07)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -650,7 +650,11 @@ class DeviceSentinelBrokerSensor(DeviceSentinelBaseSensor):
     broker and no bridge. Where there is no MQTT at all it reads
     unknown forever and costs one disabled entity.
 
-    Its default follows detection (ruling #239): enabled where a bridge
+    A primary sensor rather than a diagnostic one (ruling #243), for the
+    same reason as the bridge: a broker that has stopped is the
+    single most consequential thing this integration can tell a
+    person, since every MQTT device goes quiet behind it. Its
+    default follows detection (ruling #239): enabled where a bridge
     stack was found, because that house demonstrably runs on this
     broker and the sensor belongs on its first page; disabled
     otherwise, so a house without MQTT never meets a dead sensor. The
@@ -662,7 +666,6 @@ class DeviceSentinelBrokerSensor(DeviceSentinelBaseSensor):
     _attr_icon = "mdi:transit-connection-variant"
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = BROKER_STATES
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
     sentinel_type = SENTINEL_TYPE_BROKER
 
     def __init__(self, coordinator: DeviceSentinelCoordinator) -> None:
@@ -712,8 +715,11 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
     it, so its silence is set aside rather than learned as the
     device's normal rhythm (ruling #145).
 
-    Enabled by default (ruling #239): a bridge sensor is only created
-    where its stack was detected, so its very existence is the
+    A primary sensor rather than a diagnostic one (ruling #243): a
+    coordinator that has stopped is news about the house rather than
+    news about this integration's plumbing, and it belongs beside
+    the counts a person reads. Enabled by default (ruling #239): a bridge
+    sensor is only created where its stack was detected, so its very existence is the
     condition that used to justify keeping it off, and the house it
     appears in demonstrably runs that coordinator. Intervention
     detection works whether or not it is enabled, because the reader
@@ -725,7 +731,6 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
     _attr_icon = "mdi:zigbee"
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = BRIDGE_STATES
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
         self, coordinator: DeviceSentinelCoordinator, stack: str

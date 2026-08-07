@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.12.13 (2026-08-07)
+# File: report_maintainer.py, Version: 0.12.14 (2026-08-07)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -122,7 +122,8 @@ class MaintainerReportMixin:
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
             "",
-            f"How to read this file: {WIKI_LINK_REPORTS}.",
+            f"How to read this file: [The Reports]"
+            f"({WIKI_LINK_REPORTS}) on the Device Sentinel wiki.",
             "",
             "One row per episode: a device whose silence passed its "
             "own learned basis. Devices reporting within their rhythm "
@@ -351,7 +352,8 @@ class MaintainerReportMixin:
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
             "",
-            f"How to read this file: {WIKI_LINK_REPORTS}.",
+            f"How to read this file: [The Reports]"
+            f"({WIKI_LINK_REPORTS}) on the Device Sentinel wiki.",
             "",
             f"All series read newest first. SIGNAL is each device's "
             f"daily signal minima; the line dwell is measured "
@@ -560,7 +562,8 @@ class MaintainerReportMixin:
             "",
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
-            f"How to read this file: {WIKI_LINK_REPORTS}.",
+            f"How to read this file: [The Reports]"
+            f"({WIKI_LINK_REPORTS}) on the Device Sentinel wiki.",
             "",
             f"One row per device. Watching {len(self._watched)} of "
             f"{total}; {len(self._set_aside)} set aside (service "

@@ -15,7 +15,7 @@
     "step": {
       "init": {
         "title": "Device Sentinel Tuning",
-        "description": "Device Sentinel's default settings are good to get you started. When you begin tailoring the integration to your system, work from top to bottom. If you want alerts to reach your phone, begin in Notifications.\n\n**Notifications**: where alerts go, quiet hours, and the daily reminder.\n\n**Global Exclusions**: hardware you never want judged or reported, by anything. To silence just one kind of report for a device, use that section's own exclude list instead.\n\n**Low Battery**: the low threshold, and battery-only excludes.\n\n**Signal Strength**: how weakening radio links are judged against each device's own floor.\n\n**Freeze Detection**: how long a device may go quiet before it is called frozen, set by two grace sliders. Now running.\n\nFull documentation: {wiki_link}.",
+        "description": "Device Sentinel's default settings are good to get you started. When you begin tailoring the integration to your system, work from top to bottom. If you want alerts to reach your phone, begin in Notifications.\n\n**Notifications**: where alerts go, quiet hours, and the daily reminder.\n\n**Global Exclusions**: hardware you never want judged or reported, by anything. To silence just one kind of report for a device, use that section's own exclude list instead.\n\n**Low Battery**: the low threshold, and battery-only excludes.\n\n**Signal Strength**: how weakening radio links are judged against each device's own floor.\n\n**Freeze Detection**: how long a device may go quiet before it is called frozen, set by two grace sliders. Now running.\n\n[All documentation on the Device Sentinel wiki]({wiki_link})",
         "menu_options": {
           "notifications": "Notifications and Daily Brief",
           "exclusions": "Global Exclusions",
@@ -27,7 +27,7 @@
       },
       "notifications": {
         "title": "Notifications and Daily Brief",
-        "description": "Who hears about a problem, and when. [Notification behavior is documented in the wiki.]({wiki_link})",
+        "description": "Who hears about a problem, and when. [Notifications and Daily Brief on the wiki]({wiki_link})",
         "sections": {
           "instant": {
             "name": "Instant Notifications",
@@ -69,7 +69,7 @@
       },
       "exclusions": {
         "title": "Global Exclusions",
-        "description": "Globally excluded items are never reported, by any part of Device Sentinel, but they are still watched and their habits are learned, so undoing an exclusion is instant and nothing is lost.\n\nThe three lists run broad to narrow: integration, label, device. When you exclude at a higher level and save, everything it covers disappears as a choice from the lists below it: exclude an integration and its devices no longer appear and do not need to be removed individually, because the integration already covers them.\n\nFull documentation: {wiki_link}",
+        "description": "Globally excluded items are never reported, by any part of Device Sentinel, but they are still watched and their habits are learned, so undoing an exclusion is instant and nothing is lost.\n\nThe three lists run broad to narrow: integration, label, device. When you exclude at a higher level and save, everything it covers disappears as a choice from the lists below it: exclude an integration and its devices no longer appear and do not need to be removed individually, because the integration already covers them.\n\n[Global Exclusions on the wiki]({wiki_link})",
         "data": {
           "excluded_devices": "Excluded Devices",
           "excluded_labels": "Excluded Labels",
@@ -97,11 +97,11 @@
           "battery_excluded_labels": "Any device carrying one of these labels stops being reported for a low battery. Set the label on the device's own page and it applies here without opening this dialog.",
           "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery reporting."
         },
-        "description": "Every battery Device Sentinel finds is watched by default. The threshold answers which cells are low; the warning days answer which are about to be. A cell at 80 percent falling steadily can have less life left than one sitting at 30 percent that has not moved in a month. A battery is flagged when it is at or below the threshold. Excluding a battery here stops battery reports for that device only; everything else about it stays watched.\n\nThe three lists run broad to narrow: integration, label, device. They work like the Global Exclusions lists: exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.\n\nFull documentation: {wiki_link}"
+        "description": "Every battery Device Sentinel finds is watched by default. The threshold answers which cells are low; the warning days answer which are about to be. A cell at 80 percent falling steadily can have less life left than one sitting at 30 percent that has not moved in a month. A battery is flagged when it is at or below the threshold. Excluding a battery here stops battery reports for that device only; everything else about it stays watched.\n\nThe three lists run broad to narrow: integration, label, device. They work like the Global Exclusions lists: exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.\n\n[Low Battery on the wiki]({wiki_link})"
       },
       "signal": {
         "title": "Signal Strength",
-        "description": "How sharply weakening radio links are flagged, and which devices are left out of signal reporting. Each device's floor is its trimmed minimum: the lowest daily reading over the past two weeks, with the worst few days set aside as anomalies. The goal: some of your devices should show small readings in the 0-5 percent range, so a real problem stands out as big and obvious. Changes apply to readings going forward; a full day shows their true effect. [How Signal Strength Is Judged]({wiki_link}).",
+        "description": "How sharply weakening radio links are flagged, and which devices are left out of signal reporting. Each device's floor is its trimmed minimum: the lowest daily reading over the past two weeks, with the worst few days set aside as anomalies. The goal: some of your devices should show small readings in the 0-5 percent range, so a real problem stands out as big and obvious. Changes apply to readings going forward; a full day shows their true effect. [Signal Strength on the wiki]({wiki_link}).",
         "data": {
           "signal_margin": "Sensitivity",
           "signal_sensitivity": "Anomaly Trim",
@@ -121,7 +121,7 @@
       },
       "freeze": {
         "title": "Freeze Detection",
-        "description": "How long a device may go silent before it is called frozen. Each device is judged against its own learned rhythm, so you are not setting a single timeout; you are setting the grace on top of each device's normal. Delta low is the grace a fast device gets, delta high the grace a slow one gets, and the curve between them is shaped by the two. Raise delta low if a chatty device is flagged too soon; lower delta high if a slow device should be caught faster. [How freeze detection works]({wiki_link}).",
+        "description": "How long a device may go silent before it is called frozen. Each device is judged against its own learned rhythm, so you are not setting a single timeout; you are setting the grace on top of each device's normal. Delta low is the grace a fast device gets, delta high the grace a slow one gets, and the curve between them is shaped by the two. Raise delta low if a chatty device is flagged too soon; lower delta high if a slow device should be caught faster. [Freeze Detection on the wiki]({wiki_link}).",
         "data": {
           "freeze_delta_low": "Delta Low (Fast-Device Grace, Minutes)",
           "freeze_delta_high": "Delta High (Slow-Device Grace, Hours)",
@@ -139,7 +139,7 @@
       },
       "advanced": {
         "title": "Advanced",
-        "description": "Settings most people never need to change. [Each one is documented in the wiki.]({wiki_link})",
+        "description": "Settings most people never need to change. [Advanced on the wiki]({wiki_link})",
         "data": {
           "settle_share_pct": "Notification Debounce",
           "episode_share_pct": "Episode Recording Threshold",
