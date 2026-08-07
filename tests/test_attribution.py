@@ -459,7 +459,7 @@ async def test_a_repeated_storm_reads_as_one_line(hass: HomeAssistant):
     said = coord._house_sentences(rows)
     assert len(said) == 1
     assert said[0].startswith("The tplink_router integration reloaded 20 times")
-    assert "up to 5 device(s) at a time" in said[0]
+    assert "the largest affecting 5 devices" in said[0]
 
 
 async def test_one_storm_keeps_its_own_two_sentences(hass: HomeAssistant):
@@ -502,8 +502,8 @@ async def test_an_orphan_closing_is_never_spoken(hass: HomeAssistant):
         [_event(SYS_STORM_OPEN, "mqtt", T0), good_close, orphan]
     )
     assert len(said) == 2
-    assert "47 device(s)" not in " ".join(said)
-    assert "50 device(s)" in " ".join(said)
+    assert "47 devices" not in " ".join(said)
+    assert "50 devices" in " ".join(said)
 
 
 async def test_a_hostile_device_name_cannot_reach_the_dwell_page(
