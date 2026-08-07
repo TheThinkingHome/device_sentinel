@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_dwell.py, Version: 0.12.8 (2026-08-06)
+# File: report_dwell.py, Version: 0.12.13 (2026-08-07)
 
 """The signal dwell chart and the signal cells of the telemetry.
 
@@ -45,6 +45,7 @@ from .const import (
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
     SIGNAL_TRIM_PER_WEEK,
+    WIKI_BASE_URL,
 )
 
 
@@ -379,7 +380,9 @@ contributes the days it has. This page covers {day_label}, the most
 recent day that has closed, and its dated copy is named for that day
 rather than for the day it was written. It is written beside the
 daily brief and on Regenerate Reports, and renders on a dashboard
-with a Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}.</footer>
+with a Webpage card pointed at {REPORT_SIGNAL_DWELL_URL}. How to read
+this page: <a href="{WIKI_BASE_URL}/Signal-Strength">Signal
+Strength</a> on the Device Sentinel wiki.</footer>
 </body></html>
 """
         directory = self.hass.config.path(REPORT_WWW_DIR)

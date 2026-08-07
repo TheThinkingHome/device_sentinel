@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.11.8 (2026-08-04)
+# File: report_maintainer.py, Version: 0.12.13 (2026-08-07)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -22,6 +22,7 @@ is the coordinator throughout and nothing here stands alone.
 from __future__ import annotations
 
 import os
+
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
@@ -36,7 +37,6 @@ from .const import (
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_SIGNAL_DWELL_DAILY,
-    EPISODE_KEEP_DAYS,
     EP_AT,
     EP_BASIS,
     EP_DEVICE_ID,
@@ -47,6 +47,7 @@ from .const import (
     EP_SINCE,
     EP_TAINT_SECONDS,
     EP_WINDOW,
+    EPISODE_KEEP_DAYS,
     LEARNING_MIN_DAYS,
     LOGGER,
     REPORT_CLASSIFICATION,
@@ -60,6 +61,7 @@ from .const import (
     STORM_WINDOW_SECONDS,
     TRIM_MIN_SAMPLES,
     TRIM_TOP_K,
+    WIKI_LINK_REPORTS,
 )
 
 
@@ -119,6 +121,8 @@ class MaintainerReportMixin:
             "",
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
+            "",
+            f"How to read this file: {WIKI_LINK_REPORTS}.",
             "",
             "One row per episode: a device whose silence passed its "
             "own learned basis. Devices reporting within their rhythm "
@@ -347,6 +351,8 @@ class MaintainerReportMixin:
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
             "",
+            f"How to read this file: {WIKI_LINK_REPORTS}.",
+            "",
             f"All series read newest first. SIGNAL is each device's "
             f"daily signal minima; the line dwell is measured "
             f"against is **bold**, readings below that line are "
@@ -554,6 +560,7 @@ class MaintainerReportMixin:
             "",
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
+            f"How to read this file: {WIKI_LINK_REPORTS}.",
             "",
             f"One row per device. Watching {len(self._watched)} of "
             f"{total}; {len(self._set_aside)} set aside (service "

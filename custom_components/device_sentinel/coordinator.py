@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.12.12 (2026-08-07)
+# File: coordinator.py, Version: 0.12.13 (2026-08-07)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -64,6 +64,7 @@ from homeassistant.util import dt as dt_util
 from .backup import async_take_backup
 from .const import (
     BACKUP_SUFFIX_PREPHASE_C,
+    BACKUP_TAKEN_KEY,
     BRIEF_TRIGGER,
     CONF_EPISODE_SHARE,
     CONF_EXCLUDED_DEVICES,
@@ -223,7 +224,6 @@ class DeviceSentinelCoordinator(
         # and re-walking the registry there would race a rebuild.
         self._device_names: dict[str, str] = {}  # device_id -> name
         self._device_labels: dict[str, frozenset[str]] = {}
-        self._entity_labels: dict[str, frozenset[str]] = {}
         # Exclusion suppresses judgment, not observation: these sets
         # gate reporting only. Clocks, statistics, and vouching keep
         # running for everything in them, so undo is instant and the
@@ -317,15 +317,6 @@ class DeviceSentinelCoordinator(
         self._bridge_down_at: dict[str, float] = {}
         self._pairing_open_at: dict[str, float] = {}
         self._pending_epoch_wipe: int | None = None
-        # True only once the backup taken before the clock fields
-        # were stripped out of the main file is on disk (rulings
-        # #101 and #130). That copy is what a rollback would need,
-        # so nothing strips until it exists, and every main-file
-        # save consults this. False means the main file keeps
-        # carrying the clock copies, which is the harmless
-        # direction: nothing is lost, the split simply is not
-        # finished yet on this install.
-        self._strip_clocks = False
         # Rulings #163 and #167. The first is how many devices this
         # boot reset after an unclean stop, held until setup
         # succeeds so the system event is written beside the
@@ -410,6 +401,26 @@ class DeviceSentinelCoordinator(
         # wipe was narrowed (ruling #207). The ordering it argues for
         # was correct throughout and still is: one field overlapping
         # would be reason enough.
+        # The marker the retired one-time backup wrote (ruling #241). It
+        # named a copy this version never takes, so it is dropped
+        # rather than carried forever in every save. Any epoch
+        # markers beside it stay: #204 still uses that mechanism.
+        taken = loaded.get(BACKUP_TAKEN_KEY)
+        if isinstance(taken, list) and BACKUP_SUFFIX_PREPHASE_C in taken:
+            remaining = [
+                suffix
+                for suffix in taken
+                if suffix != BACKUP_SUFFIX_PREPHASE_C
+            ]
+            if remaining:
+                loaded[BACKUP_TAKEN_KEY] = remaining
+            else:
+                del loaded[BACKUP_TAKEN_KEY]
+            LOGGER.debug(
+                "Dropped the retired pre-strip backup marker from "
+                "storage"
+            )
+
         hot_payload = await self._clock_store.async_load()
         merged = self._merge_clocks(loaded, hot_payload)
         self._note_downtime(loaded, hot_payload)
@@ -518,26 +529,12 @@ class DeviceSentinelCoordinator(
             )
 
         self.data = loaded
-        # The gate on stripping the clock fields out of the main file
-        # (ruling #130), at the one moment it can be honest:
-        # after the load, before the first save of this session. The
-        # copy taken here is the file as the previous version left it,
-        # clocks and all, which is exactly what a rollback needs. The
-        # backup module takes it once and remembers; on every later
-        # boot this returns immediately. A failure means the strip
-        # simply does not happen: the save below and every save after
-        # it keeps writing the clock copies into the main file, which
-        # is the pre-C behaviour and loses nothing.
-        self._strip_clocks = await async_take_backup(
-            self.hass, self.data, BACKUP_SUFFIX_PREPHASE_C
-        )
-        if not self._strip_clocks:
-            LOGGER.error(
-                "The pre-strip storage backup could not be taken, so "
-                "the main file keeps carrying the activity clocks. "
-                "Nothing is lost; the storage split is not finished on "
-                "this install until the backup succeeds"
-            )
+        # The clock fields are the hot file's alone and the main file
+        # never carries copies. The one-time backup that guarded the
+        # transition, and the gate that kept writing copies where it
+        # failed, are gone (ruling #241): every install creates both files
+        # in this shape, so the pre-split state cannot occur. The
+        # marker that recorded the copy is pruned above.
         # Both stamped, and stamped here rather than at the first
         # later save. Setup writes storage directly rather than
         # through _save_now, and an unstamped main file beside a
@@ -846,7 +843,6 @@ class DeviceSentinelCoordinator(
                 excluded_devices[device.id] = "device"
 
         entity_map: dict[str, tuple[str, str | None]] = {}
-        entity_labels: dict[str, frozenset[str]] = {}
         last_seen_entity: dict[str, str] = {}
         device_entries: dict[str, set[str]] = {}
         signal_entities: set[str] = set()
@@ -864,7 +860,6 @@ class DeviceSentinelCoordinator(
                 device_entries.setdefault(ent.device_id, set()).add(
                     ent.config_entry_id
                 )
-            entity_labels[ent.entity_id] = frozenset(ent.labels or ())
             if excluded_labels & set(ent.labels or ()):
                 # An entity carrying an excluded label does not feed
                 # its device's judgment. This is the label axis, not a
@@ -897,7 +892,6 @@ class DeviceSentinelCoordinator(
         self._excluded_devices = excluded_devices
         self._excluded_entities = excluded_entities
         self._entity_map = entity_map
-        self._entity_labels = entity_labels
         self._last_seen_entity = last_seen_entity
         self._device_entries = device_entries
         self._signal_entities = signal_entities

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.12 (2026-08-07)
+# File: const.py, Version: 0.12.13 (2026-08-07)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1354,7 +1354,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 240
+HIGHEST_RULING = 241
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1397,6 +1397,9 @@ SYS_UNCLEAN_RESTART = "unclean_restart"
 # before it strips anything. Named for the state it preserves rather
 # than the release that took it, and kept beside the older backups
 # rather than replacing them.
+# Retired (ruling #241). Nothing takes this backup any more; the name
+# survives only so the load can drop its stale marker from storage
+# written by an older version.
 BACKUP_SUFFIX_PREPHASE_C = "prephase-c"
 BACKUP_TAKEN_KEY = "backup_taken"
 
@@ -1425,7 +1428,7 @@ EPISODE_ENDED_RECONNECT = "intervention (bridge reconnect)"
 # A storm inside startup grace is the restart itself: every device
 # reports at once when Home Assistant returns, which looks exactly
 # like a bridge reconnecting. Naming it correctly matters because
-# the two are different rungs of the recovery ladder, and the brief
+# the two are different events with different reach, and the brief
 # quotes the cause verbatim.
 EPISODE_ENDED_RESTART = "intervention (restart)"
 
@@ -1561,11 +1564,13 @@ WIKI_LINK_EXCLUSIONS = _wiki_link("Global-Exclusions")
 WIKI_LINK_BATTERY = _wiki_link("Low-Battery")
 WIKI_LINK_SIGNAL = _wiki_link("Signal-Strength")
 WIKI_LINK_FREEZE = _wiki_link("Freeze-Detection")
-WIKI_LINK_RECOVERY = _wiki_link("Recovery")
+WIKI_LINK_MAINTENANCE = _wiki_link("Maintenance-Mode")
+WIKI_LINK_INSTALLATION = _wiki_link("Installation-and-Setup")
 WIKI_LINK_LEARNING = _wiki_link("How-Device-Sentinel-Learns")
 WIKI_LINK_DEVICE_PAGE = _wiki_link("The-Device-Page")
 WIKI_LINK_PROBLEM_LIST = _wiki_link("The-Problem-List")
 WIKI_LINK_REPORTS = _wiki_link("The-Reports")
+WIKI_LINK_BATTERY_REPORT = _wiki_link("The-Battery-Report")
 WIKI_LINK_FAQ = _wiki_link("FAQ-and-Troubleshooting")
 
 

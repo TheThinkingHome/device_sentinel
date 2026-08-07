@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.11.9 (2026-08-04)
+# File: store.py, Version: 0.12.13 (2026-08-07)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -114,18 +114,16 @@ class StorageMixin:
         in the one place every main-file write passes through.
 
         The clock fields are stripped out of the main file here
-        (ruling #101). Once the backup taken before that strip is in
-        place, the clock fields stay out of the main file: they
-        are the hot file's job, written every interval, and the copies
-        in the main file existed only as a rollback net. The strip is
-        a filtered view built for the write rather than a mutation,
-        because the live records must keep their clocks for every
-        reader in this process; only the file sheds them.
+        (ruling #101), unconditionally: they are the hot file's job,
+        written every interval, and the copies the main file once
+        carried existed only as a net during the transition, which is
+        over (ruling #241). The strip is a filtered view built for the write
+        rather than a mutation, because the live records must keep
+        their clocks for every reader in this process; only the file
+        sheds them.
         """
         self._cold_dirty = False
         self.data[DATA_SAVED_AT] = dt_util.utcnow().timestamp()
-        if not self._strip_clocks:
-            return self.data
         out = dict(self.data)
         out[DATA_DEVICES] = {
             device_id: (
@@ -146,70 +144,41 @@ class StorageMixin:
     ) -> int:
         """Overlay the hot file's clocks onto the loaded record set.
 
-        After the strip the hot file is the only place clocks live,
-        so the old rule, refuse a suspect hot file and fall back to
-        the main file's copies, had to change with the strip (ruling #101):
-        after it, three of this method's four exits meant "use copies
-        that no longer exist" and a fleet would load with no clocks at
-        all. The decision is now data-driven rather than
-        version-driven: whether the main file still carries clocks is
-        read from the records themselves, so the same code is correct
-        on a freshly stripped install, on one whose backup failed and
-        which still writes the copies, and on a file written before
-        the split with
-        no stamps at all.
+        The hot file is the only place clocks live, so this is not a
+        merge of two opinions but the restoration of the one that
+        exists (ruling #101). The main file never carries copies, and the
+        transitional case where it might, along with the branch that
+        preferred them, is gone (ruling #241).
 
-        Where the main file still carries clocks, the old caution
-        stands: a hot file older than the main file is refused, since
-        overlaying a stale clock would push a device's last activity
-        into the past when a newer copy is sitting right there. Where
-        the main file is bare, the hot file is used whatever its age,
-        because a slightly stale clock self-heals on the device's next
-        report while no clock at all is a fleet-wide reset. A device
-        the main file has never heard of is skipped, because nine
-        fields cannot rebuild a record. Returns how many devices took
-        their clocks from here.
+        The hot file is used whatever its age, because a slightly
+        stale clock self-heals on the device's next report while no
+        clock at all is a fleet-wide reset. A device the main file has
+        never heard of is skipped, because nine fields cannot rebuild
+        a record. Returns how many devices took their clocks from
+        here.
         """
         devices = loaded.get(DATA_DEVICES) or {}
-        cold_has_clocks = any(
-            isinstance(record, dict) and DEV_LAST_ACTIVITY in record
-            for record in devices.values()
-        )
         if not hot:
-            if devices and not cold_has_clocks:
+            if devices:
                 LOGGER.warning(
-                    "The main storage file carries no activity clocks "
-                    "and %s is missing, so every device's clock starts "
-                    "over from this boot. This is expected only if the "
-                    "clocks file was deleted by hand",
+                    "The activity clocks file %s is missing, so every "
+                    "device's clock starts over from this boot. This "
+                    "is expected only if it was deleted by hand",
                     STORAGE_CLOCKS_KEY,
                 )
             return 0
         hot_at = hot.get(DATA_SAVED_AT)
         cold_at = loaded.get(DATA_SAVED_AT)
         if hot_at is None or cold_at is None:
-            # One of the pair predates the stamp, which is every
-            # install's first load after upgrading to the split. Both
-            # files were written together before this release, so the
-            # main file is already current and there is nothing owed.
-            return 0
-        if hot_at < cold_at and cold_has_clocks:
-            LOGGER.warning(
-                "Activity clocks on disk are %.0f s older than the "
-                "main storage file, so they have been left alone. "
-                "While the main file still carries the clocks it is "
-                "the newer source and nothing is lost. From 0.10.5 a "
-                "cold write takes the hot file with it, so seeing "
-                "this at all is worth reporting",
-                cold_at - hot_at,
-            )
+            # One of the pair predates the stamp. Both files are
+            # written together, so the pair is already consistent and
+            # nothing is owed.
             return 0
         if hot_at < cold_at:
             LOGGER.warning(
                 "Activity clocks on disk are %.0f s older than the "
                 "main storage file, which means the last write pair "
-                "was torn between its two files. The main file no "
-                "longer carries clock copies, so the hot file is used "
+                "was torn between its two files. The hot file is used "
                 "regardless: a clock this slightly stale heals on the "
                 "device's next report, while discarding it would reset "
                 "the whole fleet",

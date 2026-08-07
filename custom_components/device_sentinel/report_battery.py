@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.11.10 (2026-08-04)
+# File: report_battery.py, Version: 0.12.13 (2026-08-07)
 
 """The battery report: which cells are going to be low.
 
@@ -45,6 +45,7 @@ from .const import (
     REPORT_BATTERY_PREFIX,
     REPORT_BATTERY_URL,
     REPORT_WWW_DIR,
+    WIKI_BASE_URL,
 )
 
 
@@ -376,7 +377,9 @@ days continue, which a failing cell often does not. Nothing on this
 page raises an alert; the low threshold on the Low Battery
 configuration screen is what does that. Written beside the daily
 brief and on Regenerate Reports, and renders on a dashboard with a
-Webpage card pointed at {REPORT_BATTERY_URL}.</footer>
+Webpage card pointed at {REPORT_BATTERY_URL}. How to read this page:
+<a href="{WIKI_BASE_URL}/The-Battery-Report">The Battery Report</a>
+on the Device Sentinel wiki.</footer>
 </body></html>
 """
         directory = self.hass.config.path(REPORT_WWW_DIR)

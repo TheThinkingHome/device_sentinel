@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.12.9 (2026-08-06)
+# File: interventions.py, Version: 0.12.13 (2026-08-07)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -555,7 +555,7 @@ class InterventionMixin:
                 # startup grace the storm is the restart itself, and
                 # is named as such: the brief quotes this cause, and
                 # crediting a reconnect for a restart's work would
-                # mislead the recovery ladder later.
+                # name the wrong cause on every device it reached.
                 if not polling:
                     self._stamp_intervention(
                         EPISODE_ENDED_RESTART
