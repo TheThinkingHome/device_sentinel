@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_device_page.py, Version: 0.11.11 (2026-08-04)
+# File: test_device_page.py, Version: 0.12.12 (2026-08-07)
 
 """The device page a person actually reads, and its diagnostics journal.
 
@@ -128,8 +128,8 @@ async def test_status_keeps_the_setup_count_as_an_attribute(
 
 async def test_every_count_sensor_carries_a_unit(hass: HomeAssistant):
     entry = await setup_entry(hass)
-    # The three problem sensors are disabled by default; enable them
-    # so their state exists to check.
+    # The count sensors are disabled by default (ruling #239); enable
+    # them so their state exists to check.
     reg = er.async_get(hass)
     for suffix in (
         "signal_rails",
@@ -137,6 +137,9 @@ async def test_every_count_sensor_carries_a_unit(hass: HomeAssistant):
         "low_batteries",
         "falling_batteries",
         "frozen_devices",
+        "tracked_signals",
+        "tracked_batteries",
+        "tracked_devices",
     ):
         eid = reg.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_{suffix}")
         if eid and reg.async_get(eid).disabled:

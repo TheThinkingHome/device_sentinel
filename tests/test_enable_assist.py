@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_enable_assist.py, Version: 0.9.9 (2026-07-26)
+# File: test_enable_assist.py, Version: 0.12.12 (2026-08-07)
 
 """The enable-assist buttons that turn on the diagnostics we learn from.
 
@@ -83,3 +83,32 @@ async def test_enable_assist(hass: HomeAssistant):
             {"entity_id": entity_id},
             blocking=True,
         )
+
+
+async def test_the_press_names_what_it_enabled(hass: HomeAssistant, caplog):
+    """A count on Status is always answerable (ruling #237 keeps the
+    attribute a bare number): the press logs the entity ids it
+    enabled, and a press that enabled nothing names nothing."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", "ea2")},
+        name="EA2",
+    )
+    er.async_get(hass).async_get_or_create(
+        "sensor", "test", "ea2_ls",
+        suggested_object_id="ea2_last_seen",
+        device_id=device.id, config_entry=source,
+        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+    )
+    coord = await setup_coordinator(hass)
+
+    await coord.async_enable_last_seen_entities()
+    assert (
+        "Enable last_seen turned on: sensor.ea2_last_seen" in caplog.text
+    )
+
+    caplog.clear()
+    await coord.async_enable_last_seen_entities()
+    assert "turned on:" not in caplog.text

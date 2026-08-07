@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_maintenance.py, Version: 0.12.11 (2026-08-07)
+# File: tests/test_maintenance.py, Version: 0.12.12 (2026-08-07)
 
 """Maintenance mode and the surfaces that shipped beside it.
 
@@ -366,3 +366,42 @@ async def test_the_bridge_sensor_reports_availability(hass: HomeAssistant):
 
     # The real readers come back before teardown stops them.
     coord._bridge_readers = original
+
+
+async def test_a_restart_closes_the_window_the_stop_interrupted(
+    hass: HomeAssistant,
+):
+    """The events log pairs every edge: a window open at the stop gets
+    its closing row at the next setup, detail "ended by restart", no
+    duration because how long it truly stood cannot be known."""
+    from tests.helpers import setup_entry
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    await coord.async_toggle_maintenance()
+    assert coord.maintenance_until is not None
+    # The stop, mid-window: unload persists, the window dies with the
+    # process, and the open row stays behind in storage.
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coord = entry.runtime_data
+    assert coord.maintenance_until is None
+    rows = _maintenance_rows(coord)
+    assert [row[SYS_KIND] for row in rows] == [
+        SYS_MAINTENANCE_OPEN,
+        SYS_MAINTENANCE_CLOSED,
+    ]
+    assert rows[-1][SYS_DETAIL] == "ended by restart"
+    assert rows[-1][SYS_DURATION] is None
+
+    # A cleanly closed pair is left alone: no second close appears at
+    # the next restart.
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coord = entry.runtime_data
+    assert len(_maintenance_rows(coord)) == 2

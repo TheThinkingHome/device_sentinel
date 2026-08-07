@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal.py, Version: 0.10.18 (2026-08-02)
+# File: test_signal.py, Version: 0.12.12 (2026-08-07)
 
 """Signal detection: the floor line, the dwell timer, and the rail.
 
@@ -556,8 +556,21 @@ async def test_pre_040_storage_gains_the_new_fields(hass: HomeAssistant):
 
 # ------------------------------------------------ the tracked surface
 
+async def _enable_tracked_signals(hass, entry):
+    """Turn on the tracked-signals sensor, disabled by default under
+    #239, so the two tests below have a state to read."""
+    reg = er.async_get(hass)
+    eid = reg.async_get_entity_id(
+        "sensor", "device_sentinel", f"{entry.entry_id}_tracked_signals"
+    )
+    reg.async_update_entity(eid, disabled_by=None)
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
 async def test_tracked_signals_sensor_exists(hass: HomeAssistant):
-    await setup_entry(hass, {CONF_SIGNAL_MARGIN: 0})
+    entry = await setup_entry(hass, {CONF_SIGNAL_MARGIN: 0})
+    await _enable_tracked_signals(hass, entry)
     state = hass.states.get("sensor.device_sentinel_signal_tracked")
     assert state is not None
     assert state.attributes["unit_of_measurement"] == UNIT_SIGNALS
@@ -568,6 +581,7 @@ async def test_tracked_counts_armed_devices_and_splits_by_scale(
 ):
     device = _register_device(hass, "tracked")
     entry = await setup_entry(hass, {CONF_SIGNAL_MARGIN: 0})
+    await _enable_tracked_signals(hass, entry)
     coord = entry.runtime_data
     record = coord.data["devices"][device.id]
     record[DEV_SIGNAL_DAILY_MIN] = [80, 96, 88, 80, 104, 92, 80]

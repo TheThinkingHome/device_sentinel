@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.12.2 (2026-08-05)
+# File: test_notifications.py, Version: 0.12.12 (2026-08-07)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -640,36 +640,18 @@ async def test_card_default_on_when_option_absent():
 
 
 # ==================================================================
-# The opt-in problem counts and the integration picker.
+# Entity defaults and the integration picker.
 # ==================================================================
 
-async def test_problem_counts_are_enabled_by_default(hass: HomeAssistant):
-    """Ruling #212. All five register enabled.
-
-    They were opt-in on the reasoning that the todo list carries
-    trouble devices, which is true of two of them and false of the
-    rest: a weak link and a falling battery never reach that list, so
-    hiding them meant a person had to know a sensor existed before
-    they could see the problem it counts.
-    """
-    entry = await setup_entry(hass)
-    reg = er.async_get(hass)
-    for suffix in (
-        "signal_rails",
-        "signal_weak",
-        "low_batteries",
-        "falling_batteries",
-        "frozen_devices",
-    ):
-        eid = reg.async_get_entity_id(
-            "sensor", DOMAIN, f"{entry.entry_id}_{suffix}"
-        )
-        assert eid is not None, suffix
-        assert reg.async_get(eid).disabled_by is None, suffix
-
+# The problem-count and tracked-count defaults moved twice: opt-in at
+# birth, enabled by #212 when no list carried a weak link, and back to
+# opt-in by #239 once every kind reached the problem list and the
+# facts under #212 had gone stale. The single home for the whole
+# defaults table is tests/test_entity_defaults.py, asserted as one
+# dictionary so a flip is always a decision; nothing here repeats it.
 
 async def test_the_service_count_stays_opt_in(hass: HomeAssistant):
-    """The one that goes the other way (ruling #212). It answers why
+    """Opt-in under #212 and carried forward by #239. It answers why
     a particular device is not watched, which is asked once if ever,
     so it belongs in the registry rather than on the page."""
     entry = await setup_entry(hass)
@@ -679,19 +661,6 @@ async def test_the_service_count_stays_opt_in(hass: HomeAssistant):
     )
     assert eid is not None
     assert reg.async_get(eid).disabled_by is not None
-
-
-async def test_tracked_counts_stay_enabled(hass: HomeAssistant):
-    """The Tracked family is not disabled: those are the always-on
-    overview counts."""
-    entry = await setup_entry(hass)
-    reg = er.async_get(hass)
-    for suffix in ("tracked_signals", "tracked_batteries", "tracked_devices"):
-        eid = reg.async_get_entity_id(
-            "sensor", DOMAIN, f"{entry.entry_id}_{suffix}"
-        )
-        assert eid is not None, suffix
-        assert reg.async_get(eid).disabled_by is None, suffix
 
 
 async def test_battery_low_is_diagnostic(hass: HomeAssistant):

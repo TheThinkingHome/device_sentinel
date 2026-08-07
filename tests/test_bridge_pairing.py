@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_bridge_pairing.py, Version: 0.10.10 (2026-07-30)
+# File: test_bridge_pairing.py, Version: 0.12.12 (2026-08-07)
 
 """Coordinator stacks, the Z2M bridge, and the pairing override.
 
@@ -384,11 +384,12 @@ async def test_bytes_payload_is_decoded(hass: HomeAssistant):
     assert r.state == BRIDGE_BINDING
 
 
-async def test_bridge_sensor_is_created_per_stack_and_disabled(
+async def test_bridge_sensor_is_created_per_stack_and_enabled(
     hass: HomeAssistant,
 ):
-    """A house with a Z2M bridge gets one bridge sensor, and it is
-    disabled by default so it stays off until the user enables it."""
+    """A house with a Z2M bridge gets one bridge sensor, enabled by
+    default (ruling #239): its existence already proves the stack, so
+    there is no house where it arrives irrelevant."""
     # A Z2M bridge device so stack detection reports z2m.
     src = MockConfigEntry(domain="mqtt")
     src.add_to_hass(hass)
@@ -412,7 +413,7 @@ async def test_bridge_sensor_is_created_per_stack_and_disabled(
         if e.platform == "device_sentinel" and "bridge" in (e.unique_id or "")
     ]
     assert len(bridge_entities) == 1
-    assert bridge_entities[0].disabled_by is not None  # disabled by default
+    assert bridge_entities[0].disabled_by is None  # enabled by default
     assert "z2m" in bridge_entities[0].unique_id
 
 
