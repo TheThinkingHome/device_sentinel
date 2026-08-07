@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.8 (2026-08-06)
+# File: const.py, Version: 0.12.9 (2026-08-06)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1319,6 +1319,12 @@ SYS_DEVICES = "devices"
 # reloading is not periodic, and inventing a cadence for it would be
 # the global constant this project keeps overruling (ruling #227).
 DATA_STORMS = "storms"
+# How long a raw storm row is kept. Two days rather than the person's
+# retention: the polling test looks back one hour, and a real reload
+# is already kept for the full retention in the system events log, so
+# a longer window here would store 2.66 MB of a constant against a
+# storage file of about 880 KB (ruling #232).
+STORM_KEEP_SECONDS = 172800.0
 STORM_AT = "at"
 STORM_ENTRY = "entry_id"
 STORM_DOMAIN = "domain"
