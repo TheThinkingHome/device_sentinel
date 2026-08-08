@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.12.16 (2026-08-08)
+# File: sensor.py, Version: 0.12.17 (2026-08-08)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -226,10 +226,16 @@ class DeviceSentinelCoverageSensor(DeviceSentinelBaseSensor):
 
     Named for what it counts rather than for the abstraction:
     "Coverage: 125" left a user to guess the unit and the population.
-    The rest of the split rides in attributes.
+    The rest of the split rides in attributes. The colon form matches
+    every other sensor's Category: State pattern, and the diagnostic
+    category follows the #247 line (ruling #249): how many devices are
+    watched and how many have learned are bookkeeping about the
+    integration, the same species as the tracked counts, not news
+    about the house.
     """
 
-    _attr_name = "Devices Watched"
+    _attr_name = "Devices: Watched"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:radar"
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -261,13 +267,14 @@ class DeviceSentinelLearningSensor(DeviceSentinelBaseSensor):
     An integer rather than "115 of 125" by ruling: a string state
     cannot be compared in an automation and forfeits the state class.
 
-    This is not expected to reach Devices Watched. Devices with no
+    This is not expected to reach Devices: Watched. Devices with no
     heartbeat (buttons, remotes) never establish a rhythm and are
     never judged frozen, by design, so a permanent gap between the
     two counts is the system working.
     """
 
-    _attr_name = "Devices Learned"
+    _attr_name = "Devices: Learned"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:school-outline"
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT

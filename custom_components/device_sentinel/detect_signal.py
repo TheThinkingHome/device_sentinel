@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.12.16 (2026-08-08)
+# File: detect_signal.py, Version: 0.12.17 (2026-08-08)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -515,7 +515,7 @@ class SignalMixin:
         """Return counts of devices with a learned signal floor.
 
         Tracked means the device has a floor and so a live line: the
-        signal analogue of Devices Learned. Split by scale for the
+        signal analogue of Devices: Learned. Split by scale for the
         curious; the dwell rule is identical for both. Learning counts
         devices that report signal but have no floor yet, which since
         the floor exists from the first recorded day means a device
