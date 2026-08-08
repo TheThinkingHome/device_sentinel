@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.11.10 (2026-08-04)
+# File: test_signal_stats.py, Version: 0.12.15 (2026-08-08)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -35,6 +35,20 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
+    DATA_SIGNAL_STRESS,
+    DEV_SIGNAL_DAILY_COUNT,
+    DEV_SIGNAL_DAILY_LINE,
+    DEV_SIGNAL_DAILY_RAIL,
+    DEV_SIGNAL_RAIL_COUNT,
+    EP_AT,
+    EP_DEVICE_ID,
+    EP_ENDED,
+    EP_NAME,
+    EP_SIG_LINE,
+    EP_SIG_MEAN,
+    EP_SIG_VALUE,
+    EP_SIGNAL,
+    EP_SINCE,
     BRIEF_TRIGGER,
     CLOCK_FIELDS,
     CONF_SIGNAL_ANOMALY_TRIM,
@@ -681,8 +695,12 @@ async def test_the_line_can_never_cross_into_the_normal_readings(
 
     line = coord._danger_line(record)
     assert line is not None
-    # 240 + 5% = 252.0 unbounded; 246.21 - 0.5 * 4.41 = 244.005.
-    assert line == pytest.approx(244.005, abs=0.01)
+    # 240 + 5% = 252.0 unbounded. The ceiling is the mean less the
+    # larger of half a deviation (2.205) and the LQI clearance of 8
+    # (ruling #244): 246.21 - 8 = 238.21. Before the clearance the
+    # ceiling sat 2.2 points under the mean, inside the readings a
+    # low-variance device makes every hour.
+    assert line == pytest.approx(238.21, abs=0.01)
     assert line < 246.21
     assert coord._line_is_bounded(record) is True
 
@@ -729,11 +747,14 @@ async def test_the_margin_becomes_a_maximum_on_a_bounded_device(
             options={**coord.entry.options, CONF_SIGNAL_MARGIN: pct},
         )
         lines.append(coord._danger_line(record))
-    # At zero the floor is the line and the ceiling is above it.
-    assert lines[0] == pytest.approx(240.0, abs=0.01)
-    # Beyond that the ceiling holds, so the slider stops mattering.
-    assert lines[1] == lines[2] == lines[3]
-    assert lines[1] == pytest.approx(244.005, abs=0.01)
+    # This device's floor (240) sits within the LQI clearance of its
+    # mean (246.21), so the ceiling (238.21, ruling #244) is below the
+    # floor itself and holds at every slider position, zero included.
+    # A floor inside the noise band is exactly what the clearance
+    # exists to keep the line out of, and min() only ever makes a
+    # device less sensitive.
+    assert lines[0] == lines[1] == lines[2] == lines[3]
+    assert lines[0] == pytest.approx(238.21, abs=0.01)
 
 
 async def test_no_statistics_means_no_ceiling(
@@ -948,4 +969,129 @@ async def test_the_retired_signal_problems_sensor_is_swept(
             "sensor", DOMAIN, f"{entry.entry_id}_signal_problems"
         )
         is None
+    )
+
+
+async def test_the_clearance_frees_a_near_constant_device(
+    hass: HomeAssistant,
+):
+    """Ruling #244, from Master City Blinds on 2026-08-07.
+
+    A motion-blind holding an RSSI inside 2 dB for days: mean -50.92,
+    deviation 1.43. Half a deviation put the ceiling at -51.64,
+    inside the two values the device alternates between, and a day
+    of ordinary -50/-52 chatter read 94.89 percent dwell. With the
+    3 dB RSSI clearance the ceiling sits at -53.92 and both readings
+    are healthy.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "gs5", "Near Constant Blind")
+    record = _seed_signal(
+        coord, device.id, [-54.0] * 14, -50.92, 1.43
+    )
+
+    line = coord._danger_line(record)
+    assert line is not None
+    assert line == pytest.approx(-53.92, abs=0.01)
+    assert -52.0 > line
+    assert coord._line_is_bounded(record) is True
+
+
+async def test_a_zero_deviation_day_cannot_put_the_line_on_the_mean(
+    hass: HomeAssistant,
+):
+    """Dining Shades: deviation exactly 0.00 across a whole day.
+
+    Half of zero is zero, so before ruling #244 the ceiling was the mean
+    itself, and dwell counts at-or-below: a device reading its own
+    mean all day read 100 percent. The clearance makes zero
+    deviation the strongest case rather than the degenerate one.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "gs6", "Constant Shade")
+    record = _seed_signal(coord, device.id, [-64.0] * 14, -60.0, 0.0)
+
+    line = coord._danger_line(record)
+    assert line is not None
+    assert line == pytest.approx(-63.0, abs=0.01)
+    assert -60.0 > line
+
+
+async def test_the_fold_records_count_line_and_rail(
+    hass: HomeAssistant,
+):
+    """Ruling #245: the day folds three more series beside the mean.
+
+    The count says how much weight the day's statistics deserve, the
+    line says what the day's dwell was measured against (read before
+    the fold moves the ceiling), and the rail count says why a day's
+    real statistics are thin. All three trim on the same retention
+    as the series beside them.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "gs7", "Recorded Link")
+    record = _seed_signal(
+        coord, device.id, [100.0] * 14, 140.0, 20.0
+    )
+    line_before = coord._danger_line(record)
+    for value in (140.0, 144.0, 255.0, 136.0, 255.0):
+        coord._feed_signal(record, value, 1000.0)
+
+    coord._roll_signal_stats(record)
+
+    assert record[DEV_SIGNAL_DAILY_COUNT][-1] == 3
+    assert record[DEV_SIGNAL_DAILY_RAIL][-1] == 2
+    assert record[DEV_SIGNAL_DAILY_LINE][-1] == pytest.approx(
+        line_before, abs=0.01
+    )
+    assert record[DEV_SIGNAL_RAIL_COUNT] == 0
+    assert record[DEV_SIGNAL_COUNT] == 0
+
+
+async def test_an_episode_carries_its_signal_snapshot(
+    hass: HomeAssistant,
+):
+    """Ruling #246: the join is captured when the silence begins.
+
+    The anchor is the correlation between signal level and rhythm
+    stress, and the statistics have moved on by the time anyone
+    analyzes them, so the episode row stamps the last reading, the
+    day's running mean and deviation, and the line in effect at its
+    open. A completed episode folds a compact row into the
+    signal_stress series, which rides the history retention rather
+    than the fourteen-day episode trim.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "gs8", "Stressed Link")
+    record = _seed_signal(
+        coord, device.id, [100.0] * 14, 140.0, 20.0
+    )
+    for value in (140.0, 136.0):
+        coord._feed_signal(record, value, 1000.0)
+
+    snapshot = coord._signal_snapshot(record)
+    assert snapshot[EP_SIG_VALUE] == 136.0
+    assert snapshot[EP_SIG_MEAN] == pytest.approx(138.0, abs=0.01)
+    assert snapshot[EP_SIG_LINE] is not None
+
+    episode = {
+        EP_DEVICE_ID: device.id,
+        EP_NAME: "Stressed Link",
+        EP_SINCE: 1000.0,
+        EP_ENDED: "resumed",
+        EP_AT: 5000.0,
+        EP_SIGNAL: snapshot,
+    }
+    coord._fold_signal_stress(episode, 5000.0)
+    rows = coord.data[DATA_SIGNAL_STRESS]
+    assert len(rows) == 1
+    assert rows[0][EP_SIGNAL][EP_SIG_VALUE] == 136.0
+
+    # A row older than the retention window is trimmed by the fold.
+    old_row = dict(episode, **{EP_SINCE: 5000.0 - 400 * 86400.0})
+    coord.data[DATA_SIGNAL_STRESS].append(old_row)
+    coord._fold_signal_stress(episode, 5000.0)
+    assert all(
+        (row.get(EP_SINCE) or 0) >= 5000.0 - coord.retention_days * 86400.0
+        for row in coord.data[DATA_SIGNAL_STRESS]
     )
