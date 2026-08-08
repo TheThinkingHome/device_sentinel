@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.12.5 (2026-08-06)
+# File: journal.py, Version: 0.12.15 (2026-08-08)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -32,10 +32,15 @@ from homeassistant.util import dt as dt_util
 from .const import (
     DATA_DEVICES,
     DATA_EPISODES,
+    DATA_SIGNAL_STRESS,
     DATA_INCIDENTS,
     DATA_SYSTEM_EVENTS,
     DEV_DAILY_MAX,
     DEV_LAST_ACTIVITY,
+    DEV_SIGNAL_COUNT,
+    DEV_SIGNAL_SUM,
+    DEV_SIGNAL_SUM_SQ,
+    DEV_SIGNAL_VALUE,
     CAUSE_EPISODE_SLACK_SECONDS,
     EPISODE_ENDED_RESUMED,
     EPISODE_KEEP_DAYS,
@@ -47,6 +52,11 @@ from .const import (
     EP_LEARNED,
     EP_NAME,
     EP_SINCE,
+    EP_SIG_LINE,
+    EP_SIG_MEAN,
+    EP_SIG_SD,
+    EP_SIG_VALUE,
+    EP_SIGNAL,
     EP_TAINT_SECONDS,
     EP_WINDOW,
     FREEZE_ARMING_DAYS,
@@ -206,6 +216,7 @@ class JournalMixin:
                     EP_LAG: None,
                     EP_LEARNED: None,
                     EP_TAINT_SECONDS: None,
+                    EP_SIGNAL: self._signal_snapshot(record),
                 }
             )
             # The main file, not the routine flag. An episode lives
@@ -215,6 +226,40 @@ class JournalMixin:
             # at all. _mark_cold_dirty raises _dirty too, so nothing
             # the routine tier did is lost by asking for both.
             self._mark_cold_dirty()
+
+    def _signal_snapshot(
+        self, record: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Return the device's signal context at this moment, or None.
+
+        Captured when an episode opens (ruling #246): the last reading,
+        the day's running mean and deviation so far, and the line in
+        effect. The anchor #172 waits on is the correlation between
+        signal level and rhythm stress, and the join must be taken
+        when the silence begins, because the statistics have moved on
+        by the time anyone analyzes them. None where the device
+        reports no signal, which the analysis reads as no evidence
+        rather than as a zero.
+        """
+        value = record.get(DEV_SIGNAL_VALUE)
+        if value is None:
+            return None
+        count = int(record.get(DEV_SIGNAL_COUNT) or 0)
+        mean = sd = None
+        if count > 0:
+            total = float(record.get(DEV_SIGNAL_SUM) or 0.0)
+            squares = float(record.get(DEV_SIGNAL_SUM_SQ) or 0.0)
+            mean = round(total / count, 2)
+            sd = round(
+                max(0.0, squares / count - (total / count) ** 2) ** 0.5, 2
+            )
+        line = self._danger_line(record)
+        return {
+            EP_SIG_VALUE: value,
+            EP_SIG_MEAN: mean,
+            EP_SIG_SD: sd,
+            EP_SIG_LINE: round(line, 2) if line is not None else None,
+        }
 
     def _close_episode(
         self,
@@ -248,10 +293,44 @@ class JournalMixin:
                 )
         if taint_seconds is not None:
             episode[EP_TAINT_SECONDS] = taint_seconds
+        self._fold_signal_stress(episode, now)
         # The ending, the lag and the learned verdict are all cold
         # fields, so the close schedules the main file for the same
         # reason the open does.
         self._mark_cold_dirty()
+
+    def _fold_signal_stress(
+        self, episode: dict[str, Any], now: float
+    ) -> None:
+        """Fold a completed episode into the long-lived anchor series.
+
+        One compact row per episode (ruling #246): who, when the silence
+        began, how long it ran, how it ended, and the signal snapshot
+        from the moment it opened. Episodes themselves are trimmed at
+        fourteen days, which is right for a forensic file and wrong
+        for the anchor: the correlation between signal level and
+        rhythm stress needs seasons of rows, so this series rides the
+        history retention setting instead. Rows without a snapshot
+        are folded too, because a device that reports no signal is
+        evidence about the population even though it cannot anchor a
+        scale.
+        """
+        since = episode.get(EP_SINCE)
+        rows = self.data.setdefault(DATA_SIGNAL_STRESS, [])
+        rows.append(
+            {
+                EP_DEVICE_ID: episode.get(EP_DEVICE_ID),
+                EP_NAME: episode.get(EP_NAME),
+                EP_SINCE: since,
+                EP_AT: episode.get(EP_AT) or now,
+                EP_ENDED: episode.get(EP_ENDED),
+                EP_SIGNAL: episode.get(EP_SIGNAL),
+            }
+        )
+        cutoff = now - self.retention_days * 86400.0
+        self.data[DATA_SIGNAL_STRESS] = [
+            row for row in rows if (row.get(EP_SINCE) or now) >= cutoff
+        ]
 
     def _stamp_intervention(
         self, cause: str, now: float, entry_id: str | None = None

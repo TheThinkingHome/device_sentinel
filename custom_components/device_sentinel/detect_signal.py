@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.11.8 (2026-08-04)
+# File: detect_signal.py, Version: 0.12.15 (2026-08-08)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -41,7 +41,11 @@ from .const import (
     DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_SD,
+    DEV_SIGNAL_DAILY_COUNT,
+    DEV_SIGNAL_DAILY_LINE,
+    DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_DWELL_DAILY,
+    DEV_SIGNAL_RAIL_COUNT,
     DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_SUM,
     DEV_SIGNAL_SUM_SQ,
@@ -49,6 +53,8 @@ from .const import (
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     GOOD_STATE_CEILING_SD,
+    SIGNAL_CEILING_CLEARANCE_LQI,
+    SIGNAL_CEILING_CLEARANCE_RSSI,
     RAIL_CONFIRM_DAYS,
     SIGNAL_ANOMALY_TRIM_MAX,
     SIGNAL_ANOMALY_TRIM_MIN,
@@ -117,6 +123,11 @@ class SignalMixin:
         """
         count = int(record.get(DEV_SIGNAL_COUNT) or 0)
         if count > 0:
+            # The line first, while the mean and deviation series
+            # still end on yesterday: this is the line that judged
+            # the day being folded, and appending today's mean first
+            # would move the ceiling under it (ruling #245).
+            line = self._danger_line(record)
             total = float(record.get(DEV_SIGNAL_SUM) or 0.0)
             squares = float(record.get(DEV_SIGNAL_SUM_SQ) or 0.0)
             mean = total / count
@@ -130,15 +141,26 @@ class SignalMixin:
             record.setdefault(DEV_SIGNAL_DAILY_MAX, []).append(
                 record.get(DEV_SIGNAL_TODAY_MAX)
             )
+            record.setdefault(DEV_SIGNAL_DAILY_COUNT, []).append(count)
+            record.setdefault(DEV_SIGNAL_DAILY_LINE, []).append(
+                round(line, 2) if line is not None else None
+            )
+            record.setdefault(DEV_SIGNAL_DAILY_RAIL, []).append(
+                int(record.get(DEV_SIGNAL_RAIL_COUNT) or 0)
+            )
             for field in (
                 DEV_SIGNAL_DAILY_MEAN,
                 DEV_SIGNAL_DAILY_SD,
                 DEV_SIGNAL_DAILY_MAX,
+                DEV_SIGNAL_DAILY_COUNT,
+                DEV_SIGNAL_DAILY_LINE,
+                DEV_SIGNAL_DAILY_RAIL,
             ):
                 del record[field][:-self.retention_days]
         record[DEV_SIGNAL_SUM] = 0.0
         record[DEV_SIGNAL_SUM_SQ] = 0.0
         record[DEV_SIGNAL_COUNT] = 0
+        record[DEV_SIGNAL_RAIL_COUNT] = 0
         record[DEV_SIGNAL_TODAY_MAX] = None
 
     def _feed_signal(
@@ -161,6 +183,9 @@ class SignalMixin:
         record[DEV_SIGNAL_VALUE] = value
 
         if value in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI):
+            record[DEV_SIGNAL_RAIL_COUNT] = (
+                int(record.get(DEV_SIGNAL_RAIL_COUNT) or 0) + 1
+            )
             return
         today_min = record.get(DEV_SIGNAL_TODAY_MIN)
         if today_min is None or value < today_min:
@@ -303,7 +328,18 @@ class SignalMixin:
         sds = record.get(DEV_SIGNAL_DAILY_SD) or []
         if not means or not sds:
             return None
-        return means[-1] - GOOD_STATE_CEILING_SD * sds[-1]
+        # Half a deviation, but never less than one comfortable step
+        # of the scale (ruling #244). On a device whose whole operating
+        # range spans a quantization step or two, half a deviation is
+        # a fraction of a step and the ceiling lands inside the
+        # readings a healthy device makes every hour, which read
+        # three steady blinds as 52 to 95 percent dwell in one day.
+        clearance = (
+            SIGNAL_CEILING_CLEARANCE_RSSI
+            if means[-1] < 0
+            else SIGNAL_CEILING_CLEARANCE_LQI
+        )
+        return means[-1] - max(GOOD_STATE_CEILING_SD * sds[-1], clearance)
 
     def _line_is_bounded(self, record: dict[str, Any]) -> bool:
         """Return whether the good-state ceiling is what set the line.

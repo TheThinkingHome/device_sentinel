@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.14 (2026-08-07)
+# File: const.py, Version: 0.12.15 (2026-08-08)
 
 """Constants for the Device Sentinel integration."""
 
@@ -365,6 +365,18 @@ DEV_SIGNAL_DWELL_DAILY = "signal_dwell_daily_pct"
 # setting, because it is a guard rather than a preference (ruling
 # #193).
 GOOD_STATE_CEILING_SD = 0.5
+# The ceiling's minimum clearance below the mean, per scale (ruling #244).
+# Half a deviation is the guard on a normal device, but on a device
+# whose whole operating range spans a step or two (the motion-blind
+# family holds an RSSI inside 2 dB for days), half a deviation is a
+# fraction of one quantization step and the ceiling lands inside the
+# readings a healthy device makes every hour. On 7 August that read
+# three healthy blinds as 52 to 95 percent dwell in a single day. The
+# clearance is one comfortable step outside the noise: two LQI
+# quantization steps, or 3 dB of RSSI. On any device whose deviation
+# is ordinary, half a deviation is larger and nothing changes.
+SIGNAL_CEILING_CLEARANCE_LQI = 8.0
+SIGNAL_CEILING_CLEARANCE_RSSI = 3.0
 
 # The good-state statistics. Percentile thresholding is the weakest
 # of the established families and the intended successor is Bayesian,
@@ -387,6 +399,17 @@ DEV_SIGNAL_TODAY_MAX = "signal_today_max"
 DEV_SIGNAL_DAILY_MEAN = "signal_daily_mean"
 DEV_SIGNAL_DAILY_SD = "signal_daily_sd"
 DEV_SIGNAL_DAILY_MAX = "signal_daily_max"
+# Three more daily series beside the mean and deviation (ruling #245),
+# recorded ahead of the #172 successor on the record-first principle:
+# how many real readings the day held (a 6-reading day and a
+# 600-reading day should not weigh the same later), the danger line
+# that was in effect (stored dwell is unreadable later without the
+# line it was measured against), and how many rail readings arrived
+# (a day of thin real statistics should say why).
+DEV_SIGNAL_DAILY_COUNT = "signal_daily_count"
+DEV_SIGNAL_DAILY_LINE = "signal_daily_line"
+DEV_SIGNAL_DAILY_RAIL = "signal_daily_rail"
+DEV_SIGNAL_RAIL_COUNT = "signal_rail_count"
 # last_change is when the signal value last actually moved. Kept for
 # the dwell timer and diagnostics; the rail detector reads the daily
 # low series, not this.
@@ -763,6 +786,10 @@ EPOCH_KEPT = (
     DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_DAILY_MAX,
+    DEV_SIGNAL_DAILY_COUNT,
+    DEV_SIGNAL_DAILY_LINE,
+    DEV_SIGNAL_DAILY_RAIL,
+    DEV_SIGNAL_RAIL_COUNT,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
@@ -787,6 +814,7 @@ CLOCK_FIELDS = (
     DEV_SIGNAL_SUM_SQ,
     DEV_SIGNAL_COUNT,
     DEV_SIGNAL_TODAY_MAX,
+    DEV_SIGNAL_RAIL_COUNT,
 )
 
 SENTINEL_TYPE_LOW_BATTERIES = "low_batteries"
@@ -1354,7 +1382,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 243
+HIGHEST_RULING = 246
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1405,6 +1433,13 @@ BACKUP_TAKEN_KEY = "backup_taken"
 
 DATA_EPISODES = "silence_episodes"
 EPISODE_KEEP_DAYS = 14
+# The long-lived half of the anchor dataset (ruling #246): when an
+# episode closes, a compact row (who, when, how long, how it ended,
+# and the signal snapshot from its open) folds into this series,
+# kept on the history retention setting rather than the fourteen-day
+# episode trim. Episodes explain a fortnight; the anchor needs
+# seasons.
+DATA_SIGNAL_STRESS = "signal_stress"
 EP_DEVICE_ID = "device_id"
 EP_NAME = "name"
 EP_SINCE = "since"
@@ -1422,6 +1457,18 @@ EP_LEARNED = "learned"
 # were guessed from, the recorder-then-flag pattern: record now, rule
 # the defaults after the soak.
 EP_TAINT_SECONDS = "taint_seconds"
+# The device's signal context stamped when the episode opens (ruling #246):
+# the last reading, the day's running mean and deviation so far, and
+# the line in effect. An episode is the fleet's one source of rhythm
+# stress, and the anchor #172 waits on is the correlation between
+# signal level and that stress. The join has to be captured at the
+# moment the silence begins, because by any later analysis the
+# statistics have moved on.
+EP_SIGNAL = "signal"
+EP_SIG_VALUE = "value"
+EP_SIG_MEAN = "mean"
+EP_SIG_SD = "sd"
+EP_SIG_LINE = "line"
 EPISODE_ENDED_RESUMED = "resumed"
 EPISODE_ENDED_REBOOT = "intervention (reboot)"
 EPISODE_ENDED_RECONNECT = "intervention (bridge reconnect)"
