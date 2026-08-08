@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery.py, Version: 0.9.9 (2026-07-26)
+# File: test_battery.py, Version: 0.12.16 (2026-08-08)
 
 """Battery detection: the low verdict and the discharge recorder.
 
@@ -19,6 +19,9 @@ records only, the velocity flag waits on the soak.
 
 import homeassistant.util.dt as dt_util
 from homeassistant.core import HomeAssistant
+
+from custom_components.device_sentinel.detect_battery import BatteryMixin
+from custom_components.device_sentinel.detect_signal import SignalMixin
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
@@ -411,3 +414,80 @@ async def test_naive_last_seen_is_anchored_to_utc(hass: HomeAssistant):
     anchored = naive.replace(tzinfo=dt_util.UTC)
     aware = dt_util.parse_datetime("2026-07-18T12:00:00+00:00")
     assert anchored.timestamp() == aware.timestamp()
+
+
+def _entry(entity_id, device_class="battery", name=None, unique=None):
+    """A minimal registry-entry double for the recognizer tests."""
+
+    class _E:
+        pass
+
+    e = _E()
+    e.entity_id = entity_id
+    e.unique_id = unique or entity_id.split(".", 1)[1]
+    e.original_name = name
+    e.original_device_class = device_class
+    e.device_class = None
+    return e
+
+
+def test_foreign_batteries_are_refused(hass: HomeAssistant):
+    """Ruling #248, from the fleet audit of 8 August.
+
+    The companion app stamps the car's battery and fuel gauge with
+    battery device class, and a paired watch's cell rides on the
+    phone. Every one of these was counted as awaiting enable, and
+    the enabled pair on a tablet was quietly learning a fuel tank as
+    a battery series. The recognizer refuses them; the device's own
+    battery_level beside them stays recognized.
+    """
+    refuse = (
+        "sensor.james_s24_car_battery",
+        "sensor.james_s24_car_fuel",
+        "sensor.kfmawi_car_battery",
+        "sensor.kfmawi_car_fuel",
+        "sensor.randy_iphone_watch_battery_level",
+    )
+    keep = (
+        "sensor.james_s24_battery_level",
+        "sensor.kfmawi_battery_level",
+        "sensor.randy_iphone_battery_level",
+        "sensor.door_master_battery",
+    )
+    for eid in refuse:
+        assert not BatteryMixin._is_battery(_entry(eid)), eid
+        assert not BatteryMixin._is_battery_percentage(_entry(eid)), eid
+    for eid in keep:
+        assert BatteryMixin._is_battery(_entry(eid)), eid
+        assert BatteryMixin._is_battery_percentage(_entry(eid)), eid
+
+
+def test_foreign_radios_are_refused(hass: HomeAssistant):
+    """The phone's bars are not mesh signal (ruling #248).
+
+    WiFi and per-SIM signal_strength sensors carry the right device
+    class and the wrong subject. The bounded _sim_ term catches
+    signal_strength_sim_1 while a device named for a person called
+    Sim cannot match; linkquality, RSSI, and the blinds' own
+    signal_strength stay recognized.
+    """
+    refuse = (
+        "sensor.james_s24_wifi_signal_strength",
+        "sensor.kfmawi_wi_fi_signal_strength",
+        "sensor.james_s24_signal_strength_sim_1",
+        "sensor.galaxy_watch_6_james_galaxy_watch6_y4ya_signal_strength_sim_2",
+    )
+    keep = (
+        "sensor.door_master_linkquality",
+        "sensor.stove_vent_relays_rssi",
+        "sensor.master_city_blinds_signal_strength",
+        "sensor.simons_desk_linkquality",
+    )
+    for eid in refuse:
+        assert not SignalMixin._is_signal(
+            _entry(eid, device_class="signal_strength")
+        ), eid
+    for eid in keep:
+        assert SignalMixin._is_signal(
+            _entry(eid, device_class="signal_strength")
+        ), eid

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entity_defaults.py, Version: 0.12.12 (2026-08-07)
+# File: tests/test_entity_defaults.py, Version: 0.12.16 (2026-08-08)
 
 """Which entities a first install presents, and what deletion leaves.
 
@@ -25,9 +25,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import STORAGE_DIR
 
 from custom_components.device_sentinel.const import (
+    DOMAIN,
     REPORT_DIR,
     REPORT_WWW_DIR,
     STORAGE_CLOCKS_KEY,
@@ -149,3 +151,37 @@ async def test_the_broker_sensor_ships_enabled_where_a_bridge_lives(
     )
     assert bridge is not None
     assert bridge.disabled_by is None
+
+
+async def test_the_count_sensors_split_found_from_watched(
+    hass: HomeAssistant,
+):
+    """Ruling #247: counts of what was found are primary, counts of what
+    is watched are diagnostic.
+
+    Frozen Devices, Low Batteries, Falling Batteries, Signal Weak,
+    and Signal Rails are findings about the house, the same species
+    of fact as a stopped broker (#243), and a person who enables one
+    puts it on a dashboard, which diagnostic entities are left out
+    of. Classification and the three tracked totals describe the
+    integration's own bookkeeping and stay diagnostic.
+    """
+    from homeassistant.const import EntityCategory
+    entry = await setup_entry(hass)
+    reg = er.async_get(hass)
+    found = ("frozen_devices", "low_batteries", "falling_batteries",
+             "signal_weak", "signal_rails")
+    watched = ("classification", "tracked_signals",
+               "tracked_batteries", "tracked_devices")
+    for key in found:
+        eid = reg.async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_{key}"
+        )
+        assert reg.async_get(eid).entity_category is None, key
+    for key in watched:
+        eid = reg.async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_{key}"
+        )
+        assert (
+            reg.async_get(eid).entity_category == EntityCategory.DIAGNOSTIC
+        ), key

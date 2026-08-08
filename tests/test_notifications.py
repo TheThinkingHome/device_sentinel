@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.12.12 (2026-08-07)
+# File: test_notifications.py, Version: 0.12.16 (2026-08-08)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -663,16 +663,21 @@ async def test_the_service_count_stays_opt_in(hass: HomeAssistant):
     assert reg.async_get(eid).disabled_by is not None
 
 
-async def test_battery_low_is_diagnostic(hass: HomeAssistant):
-    """Battery: Low is a diagnostic entity, matching its two problem
-    siblings."""
-    from homeassistant.const import EntityCategory
+async def test_battery_low_is_a_primary_sensor(hass: HomeAssistant):
+    """Battery: Low sits with the primary sensors (ruling #247).
+
+    A count of what was found is news about the house rather than
+    bookkeeping about the integration, the same line #243 drew for
+    the bridge and broker. This test asserted DIAGNOSTIC until the
+    split; the bookkeeping counts (classification and the three
+    tracked totals) still do.
+    """
     entry = await setup_entry(hass)
     reg = er.async_get(hass)
     eid = reg.async_get_entity_id(
         "sensor", DOMAIN, f"{entry.entry_id}_low_batteries"
     )
-    assert reg.async_get(eid).entity_category == EntityCategory.DIAGNOSTIC
+    assert reg.async_get(eid).entity_category is None
 
 
 async def test_integration_picker_offers_only_watched_integrations(
