@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.12.15 (2026-08-08)
+# File: detect_signal.py, Version: 0.12.16 (2026-08-08)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -21,6 +21,7 @@ coordinator throughout and nothing here stands alone.
 from __future__ import annotations
 
 from typing import Any
+
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
@@ -37,28 +38,29 @@ from .const import (
     DEV_SIGNAL_BELOW_SINCE,
     DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_COUNT,
+    DEV_SIGNAL_DAILY_COUNT,
+    DEV_SIGNAL_DAILY_LINE,
     DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_MIN,
-    DEV_SIGNAL_DAILY_SD,
-    DEV_SIGNAL_DAILY_COUNT,
-    DEV_SIGNAL_DAILY_LINE,
     DEV_SIGNAL_DAILY_RAIL,
+    DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_DWELL_DAILY,
-    DEV_SIGNAL_RAIL_COUNT,
     DEV_SIGNAL_LAST_CHANGE,
+    DEV_SIGNAL_RAIL_COUNT,
     DEV_SIGNAL_SUM,
     DEV_SIGNAL_SUM_SQ,
     DEV_SIGNAL_TODAY_MAX,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     GOOD_STATE_CEILING_SD,
-    SIGNAL_CEILING_CLEARANCE_LQI,
-    SIGNAL_CEILING_CLEARANCE_RSSI,
     RAIL_CONFIRM_DAYS,
     SIGNAL_ANOMALY_TRIM_MAX,
     SIGNAL_ANOMALY_TRIM_MIN,
+    SIGNAL_CEILING_CLEARANCE_LQI,
+    SIGNAL_CEILING_CLEARANCE_RSSI,
     SIGNAL_DAYS_KEEP,
+    SIGNAL_FOREIGN_TERMS,
     SIGNAL_MARGIN_MAX,
     SIGNAL_MARGIN_MIN,
     SIGNAL_NAME_TERMS,
@@ -71,6 +73,7 @@ from .const import (
     TODO_DEVICE_ID,
     TODO_KINDS,
 )
+from .detect_battery import _is_foreign
 
 
 class SignalMixin:
@@ -486,7 +489,16 @@ class SignalMixin:
 
     @staticmethod
     def _is_signal(ent: er.RegistryEntry) -> bool:
-        """Recognize a signal-strength entity from registry fields."""
+        """Recognize a signal-strength entity from registry fields.
+
+        A foreign radio is refused first (ruling #248): a phone carries
+        signal_strength sensors for its WiFi and each SIM, which are
+        the phone's bars rather than any mesh link, and tracking them
+        as signal put three cellular radios in the awaiting-enable
+        count forever.
+        """
+        if _is_foreign(ent, SIGNAL_FOREIGN_TERMS):
+            return False
         if str(ent.original_device_class) == "signal_strength" or str(
             getattr(ent, "device_class", None)
         ) == "signal_strength":

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.12.14 (2026-08-07)
+# File: sensor.py, Version: 0.12.16 (2026-08-08)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -426,7 +426,6 @@ class DeviceSentinelSignalRailsSensor(DeviceSentinelBaseSensor):
     _attr_icon = "mdi:access-point-off"
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
     # On by default (ruling #212). The reasoning for hiding these
     # was that the todo list carries trouble devices, which is
@@ -471,7 +470,6 @@ class DeviceSentinelSignalWeakSensor(DeviceSentinelBaseSensor):
     _attr_icon = "mdi:wifi-strength-1-alert"
     _attr_native_unit_of_measurement = UNIT_SIGNALS
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
     sentinel_type = SENTINEL_TYPE_SIGNAL_WEAK
 
@@ -504,7 +502,6 @@ class DeviceSentinelLowBatteriesSensor(DeviceSentinelBaseSensor):
     _attr_icon = "mdi:battery-alert"
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
     # On by default (ruling #212). The reasoning for hiding these
     # was that the todo list carries trouble devices, which is
@@ -556,7 +553,6 @@ class DeviceSentinelFallingBatteriesSensor(DeviceSentinelBaseSensor):
     _attr_icon = "mdi:battery-arrow-down"
     _attr_native_unit_of_measurement = UNIT_BATTERIES
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
     # On by default (ruling #212). The reasoning for hiding these
     # was that the todo list carries trouble devices, which is
@@ -593,7 +589,6 @@ class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
     _attr_icon = "mdi:snowflake-alert"
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
     # On by default (ruling #212). The reasoning for hiding these
     # was that the todo list carries trouble devices, which is
@@ -601,6 +596,9 @@ class DeviceSentinelFrozenDevicesSensor(DeviceSentinelBaseSensor):
     # and a falling battery never reach that list, so hiding
     # them meant a person had to know the sensor existed before
     # they could see the problem.
+    # A finding about the house rather than bookkeeping about the
+    # integration, so it sits with the primary sensors (ruling #247): the
+    # count a person dashboards is the count of what was found.
     sentinel_type = SENTINEL_TYPE_FROZEN_DEVICES
 
     @property

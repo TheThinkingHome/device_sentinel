@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.15 (2026-08-08)
+# File: const.py, Version: 0.12.16 (2026-08-08)
 
 """Constants for the Device Sentinel integration."""
 
@@ -418,6 +418,20 @@ DEV_SIGNAL_LAST_CHANGE = "signal_last_change"
 # Signal-entity recognition terms (Z2M sets no device class on
 # linkquality; ZHA/Z-Wave use device_class signal_strength).
 SIGNAL_NAME_TERMS = ("linkquality", "lqi", "rssi")
+# The foreign-measurement terms (ruling #248). A device class says what
+# kind of measurement an entity is; it says nothing about whose. The
+# companion app stamps the car's battery and fuel gauge with battery
+# class and the phone's WiFi and cellular radios with
+# signal_strength, so a phone on a real fleet offered its car's fuel
+# tank as a battery series and its bars as mesh signal, and an Apple
+# Watch's battery rode on the phone that pairs it. An entity whose
+# id, unique id, or name carries one of these terms is a measurement
+# of something other than the device carrying it, so the recognizers
+# skip it everywhere at once: the enable buttons, the awaiting
+# counts, and the tracking itself. _sim_ is bounded on both sides so
+# a device named for a person called Sim can never match.
+BATTERY_FOREIGN_TERMS = ("car_battery", "car_fuel", "watch_battery")
+SIGNAL_FOREIGN_TERMS = ("wifi", "wi_fi", "cellular", "_sim_")
 
 # Rolling statistics: daily maxima kept per device. 14 days records
 # more than the rolling window will need, so the window-length
@@ -1382,7 +1396,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 246
+HIGHEST_RULING = 248
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1623,7 +1637,8 @@ WIKI_LINK_INSTALLATION = _wiki_link("Installation-and-Setup")
 WIKI_LINK_LEARNING = _wiki_link("How-Device-Sentinel-Learns")
 WIKI_LINK_DEVICE_PAGE = _wiki_link("The-Device-Page")
 WIKI_LINK_PROBLEM_LIST = _wiki_link("The-Problem-List")
-WIKI_LINK_REPORTS = _wiki_link("The-Reports")
+WIKI_LINK_REPORTS = _wiki_link("The-Diagnostic-Reports")
+WIKI_LINK_DWELL_CHART = _wiki_link("The-Signal-Dwell-Chart")
 WIKI_LINK_BATTERY_REPORT = _wiki_link("The-Battery-Report")
 WIKI_LINK_FAQ = _wiki_link("FAQ-and-Troubleshooting")
 

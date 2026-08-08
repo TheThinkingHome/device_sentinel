@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.11.5 (2026-08-04)
+# File: detect_battery.py, Version: 0.12.16 (2026-08-08)
 
 """Battery: the level threshold and what is tracked.
 
@@ -21,14 +21,15 @@ coordinator throughout and nothing here stands alone.
 from __future__ import annotations
 
 from typing import Any
+
 from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
-from .records import BAD_STATES
 
 from .const import (
     BATTERY_CLEAR_MARGIN,
+    BATTERY_FOREIGN_TERMS,
     CONF_BATTERY_EXCLUDED_DEVICES,
     CONF_BATTERY_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_EXCLUDED_LABELS,
@@ -41,6 +42,19 @@ from .const import (
     DEV_BATTERY_VALUE,
     LOGGER,
 )
+from .records import BAD_STATES
+
+
+def _is_foreign(ent: er.RegistryEntry, terms: tuple[str, ...]) -> bool:
+    """Return whether this entity measures something other than the
+    device carrying it (ruling #248), read from its id, unique id, and
+    name the same way every recognizer reads them."""
+    hay = " ".join(
+        str(x)
+        for x in (ent.entity_id, ent.unique_id, ent.original_name)
+        if x
+    ).lower()
+    return any(term in hay for term in terms)
 
 
 class BatteryMixin:
@@ -71,11 +85,17 @@ class BatteryMixin:
         Percentage batteries are sensors with device_class battery;
         binary low flags are binary_sensors with device_class battery.
         Chargers, battery_charging flags, and the like carry other
-        device classes and are correctly ignored.
+        device classes and are correctly ignored. So is a battery
+        that is not this device's own (ruling #248): a phone surfaces its
+        car's battery and fuel gauge with battery class, and its
+        paired watch's cell besides, and reading any of those as the
+        phone's battery hands the falling detector a fuel tank.
         """
         if str(ent.original_device_class or ent.device_class) != "battery":
             return False
-        return ent.entity_id.startswith(("sensor.", "binary_sensor."))
+        if not ent.entity_id.startswith(("sensor.", "binary_sensor.")):
+            return False
+        return not _is_foreign(ent, BATTERY_FOREIGN_TERMS)
 
     @property
     def low_threshold(self) -> float:
@@ -354,7 +374,10 @@ class BatteryMixin:
     @staticmethod
     def _is_battery_percentage(ent: er.RegistryEntry) -> bool:
         """Recognize a battery-percentage sensor, excluding the binary
-        low flag. The percentage is what feeds the discharge series."""
+        low flag and any foreign battery (ruling #248). The percentage is
+        what feeds the discharge series."""
         if str(ent.original_device_class or ent.device_class) != "battery":
             return False
-        return ent.entity_id.startswith("sensor.")
+        if not ent.entity_id.startswith("sensor."):
+            return False
+        return not _is_foreign(ent, BATTERY_FOREIGN_TERMS)

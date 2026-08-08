@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: transport_mqtt.py, Version: 0.12.8 (2026-08-06)
+# File: transport_mqtt.py, Version: 0.12.16 (2026-08-08)
 
 """The MQTT broker itself, watched directly.
 
@@ -277,6 +277,8 @@ def _uptime_seconds(payload: Any) -> float | None:
     # this and an infinity would put its computed start before the
     # epoch, which every consumer would then read as a restart that
     # never happened (ruling #231).
+    # value != value is the NaN test: NaN is the one float that is
+    # not equal to itself, and a JSON payload can carry one.
     if value < 0 or value != value or value > BROKER_UPTIME_CEILING:
         return None
     return value

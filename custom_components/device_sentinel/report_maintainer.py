@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.12.14 (2026-08-07)
+# File: report_maintainer.py, Version: 0.12.16 (2026-08-08)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -122,7 +122,7 @@ class MaintainerReportMixin:
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
             "",
-            f"How to read this file: [The Reports]"
+            f"How to read this file: [The Diagnostic Reports]"
             f"({WIKI_LINK_REPORTS}) on the Device Sentinel wiki.",
             "",
             "One row per episode: a device whose silence passed its "
@@ -352,7 +352,7 @@ class MaintainerReportMixin:
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
             "",
-            f"How to read this file: [The Reports]"
+            f"How to read this file: [The Diagnostic Reports]"
             f"({WIKI_LINK_REPORTS}) on the Device Sentinel wiki.",
             "",
             f"All series read newest first. SIGNAL is each device's "
@@ -425,7 +425,6 @@ class MaintainerReportMixin:
             integration = self._watched.get(device_id, "?")
             device_label = f"{self._report_cell(device_name)} ({integration})"
             daily_maximum_gaps = record.get(DEV_DAILY_MAX) or []
-            operative, _ = self._trimmed_maximum(daily_maximum_gaps)
             rows.append(
                 (
                     device_label,
@@ -562,7 +561,7 @@ class MaintainerReportMixin:
             "",
             f"Written {self._format_report_time(dt_util.now())} "
             f"({trigger})",
-            f"How to read this file: [The Reports]"
+            f"How to read this file: [The Diagnostic Reports]"
             f"({WIKI_LINK_REPORTS}) on the Device Sentinel wiki.",
             "",
             f"One row per device. Watching {len(self._watched)} of "
