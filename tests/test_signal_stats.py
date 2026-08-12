@@ -26,20 +26,43 @@ nothing alerts from it (#59).
 
 from __future__ import annotations
 
+import glob
 import os
 from datetime import timedelta
 
 import pytest
-
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
+    BRIEF_TRIGGER,
+    CLOCK_FIELDS,
+    CONF_SIGNAL_ANOMALY_TRIM,
+    CONF_SIGNAL_EXCLUDED_DEVICES,
+    CONF_SIGNAL_MARGIN,
+    CONF_SIGNAL_RED,
+    DATA_DEVICES,
     DATA_SIGNAL_STRESS,
+    DEV_SIGNAL_COUNT,
     DEV_SIGNAL_DAILY_COUNT,
     DEV_SIGNAL_DAILY_LINE,
+    DEV_SIGNAL_DAILY_MAX,
+    DEV_SIGNAL_DAILY_MEAN,
+    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_RAIL,
+    DEV_SIGNAL_DAILY_SD,
+    DEV_SIGNAL_DWELL_DAILY,
+    DEV_SIGNAL_M2,
+    DEV_SIGNAL_MEAN_RUN,
+    DEV_SIGNAL_P5_STATE,
     DEV_SIGNAL_RAIL_COUNT,
+    DEV_SIGNAL_SUM,
+    DEV_SIGNAL_SUM_SQ,
+    DEV_SIGNAL_TODAY_MAX,
+    DEV_SIGNAL_VALUE,
+    DOMAIN,
     EP_AT,
     EP_DEVICE_ID,
     EP_ENDED,
@@ -49,42 +72,15 @@ from custom_components.device_sentinel.const import (
     EP_SIG_VALUE,
     EP_SIGNAL,
     EP_SINCE,
-    BRIEF_TRIGGER,
-    CLOCK_FIELDS,
-    CONF_SIGNAL_ANOMALY_TRIM,
-    CONF_SIGNAL_EXCLUDED_DEVICES,
-    CONF_SIGNAL_MARGIN,
-    CONF_SIGNAL_RED,
-    DATA_DEVICES,
-    DEV_SIGNAL_COUNT,
-    DEV_SIGNAL_DAILY_MAX,
-    DEV_SIGNAL_DAILY_MEAN,
-    DEV_SIGNAL_DAILY_MIN,
-    DEV_SIGNAL_DAILY_SD,
-    DEV_SIGNAL_DWELL_DAILY,
-    DEV_SIGNAL_M2,
-    DEV_SIGNAL_DAILY_P5,
-    DEV_SIGNAL_DAILY_P50,
-    DEV_SIGNAL_MEAN_RUN,
-    DEV_SIGNAL_P5_STATE,
-    DEV_SIGNAL_SUM,
-    DEV_SIGNAL_SUM_SQ,
-    DEV_SIGNAL_VALUE,
-    DEV_SIGNAL_TODAY_MAX,
-    DOMAIN,
     REPORT_SIGNAL_DWELL,
     REPORT_WWW_DIR,
     SIGNAL_RAIL_LQI,
 )
-
 from custom_components.device_sentinel.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 
 from .helpers import register_device, setup_coordinator, setup_entry
-
-
-import glob
 
 
 def _brief_text(hass: HomeAssistant) -> str:
@@ -187,6 +183,8 @@ async def test_a_day_with_no_readings_appends_nothing(
 
     assert not record.get(DEV_SIGNAL_DAILY_MEAN)
     assert not record.get(DEV_SIGNAL_DAILY_SD)
+    assert not record.get(DEV_SIGNAL_DAILY_P5)
+    assert not record.get(DEV_SIGNAL_DAILY_P50)
 
 
 async def test_the_chart_bands_by_the_red_threshold(
@@ -1115,10 +1113,13 @@ async def test_psquare_matches_ground_truth_on_a_dense_stream(
     day: 1440 minute samples of a two-state (bimodal) link. The
     tolerance is loose because P-Square is a heuristic, but it must
     land in the right neighbourhood or the recording is decoration."""
-    from custom_components.device_sentinel.psquare import (
-        psquare_feed, psquare_new, psquare_read,
-    )
     import random
+
+    from custom_components.device_sentinel.psquare import (
+        psquare_feed,
+        psquare_new,
+        psquare_read,
+    )
     rng = random.Random(41)
     values = [rng.gauss(180, 8) if rng.random() < 0.8 else rng.gauss(90, 6)
               for _ in range(1440)]
@@ -1190,15 +1191,3 @@ async def test_the_fold_records_p5_and_p50_and_sheds_legacy_fields(
     assert record[DEV_SIGNAL_P5_STATE] is None
 
 
-async def test_a_day_with_no_readings_appends_nothing(
-    hass: HomeAssistant
-):
-    """A silent day appends to no daily series, the established
-    alignment rule: mean, sd, and now P5 and P50 always share a
-    length, and dwell alone records regardless."""
-    coord = await setup_coordinator(hass)
-    record = {}
-    coord._roll_signal_stats(record, 86400.0)
-    assert DEV_SIGNAL_DAILY_P5 not in record
-    assert DEV_SIGNAL_DAILY_P50 not in record
-    assert DEV_SIGNAL_DAILY_MEAN not in record
