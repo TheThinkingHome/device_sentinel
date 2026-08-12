@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.12.19 (2026-08-12)
+# File: records.py, Version: 0.12.21 (2026-08-12)
 
 """The device record shape, and the two helpers that read it.
 
@@ -83,6 +83,21 @@ def _span(seconds: float) -> str:
     if seconds < 48 * 3600:
         return f"{seconds / 3600:.1f}h"
     return f"{seconds / 86400:.1f}d"
+
+
+def _reset_signal_day(record: dict[str, Any]) -> None:
+    """Clear the day's signal accumulators and estimators.
+
+    The fold calls this at midnight and the load-time repair calls it
+    on a day a broken version corrupted (rulings #254, #256). One
+    place, because a field added to the day's working set and cleared
+    in only one of the two would leave the other reading yesterday.
+    """
+    record[DEV_SIGNAL_COUNT] = 0
+    record[DEV_SIGNAL_MEAN_RUN] = 0.0
+    record[DEV_SIGNAL_M2] = 0.0
+    record[DEV_SIGNAL_P5_STATE] = None
+    record[DEV_SIGNAL_P50_STATE] = None
 
 
 def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:

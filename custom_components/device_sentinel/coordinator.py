@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.12.20 (2026-08-12)
+# File: coordinator.py, Version: 0.12.21 (2026-08-12)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -85,6 +85,7 @@ from .const import (
     DATA_INCIDENTS,
     DATA_SERIES_STAMPS,
     DATA_SETUP_COUNT,
+    DATA_SIGNAL_DAY_REPAIR,
     DATA_STATS_EPOCH,
     DATA_STORMS,
     DATA_SYSTEM_EVENTS,
@@ -123,6 +124,7 @@ from .const import (
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
     SIGNAL_ARMING_DAYS,
+    SIGNAL_DAY_REPAIR_MARK,
     SIGNAL_DAYS_KEEP,
     STARTUP_GRACE_SECONDS,
     STATS_EPOCH,
@@ -513,6 +515,29 @@ class DeviceSentinelCoordinator(
         # them here keeps a retired key from riding every save.
         loaded.pop("pre_split_backup_taken", None)
         loaded.pop("phase_b_backup_taken", None)
+        # Before the reconciler, which is the last moment the legacy
+        # signal accumulators exist: it removes any key the schema
+        # has dropped (ruling #256).
+        repair = loaded.get(DATA_SIGNAL_DAY_REPAIR) != SIGNAL_DAY_REPAIR_MARK
+        converted, day_reset = self._migrate_signal_accumulators(
+            loaded[DATA_DEVICES], repair
+        )
+        loaded[DATA_SIGNAL_DAY_REPAIR] = SIGNAL_DAY_REPAIR_MARK
+        if converted:
+            LOGGER.info(
+                "Signal statistics: converted the day in progress for "
+                "%d device(s) to the stable accumulator",
+                converted,
+            )
+        if day_reset:
+            LOGGER.warning(
+                "Signal statistics: the day in progress was unusable "
+                "for %d device(s) after an earlier release restarted "
+                "the running mean without its history, so today's "
+                "signal mean and deviation start from now. Nothing "
+                "already recorded is affected",
+                day_reset,
+            )
         removed, filled = self._reconcile_records(
             loaded[DATA_DEVICES], dt_util.utcnow().isoformat()
         )

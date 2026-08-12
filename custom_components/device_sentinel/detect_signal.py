@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.12.19 (2026-08-12)
+# File: detect_signal.py, Version: 0.12.21 (2026-08-12)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -58,8 +58,6 @@ from .const import (
     DEV_SIGNAL_PSQ_TS,
     DEV_SIGNAL_PSQ_VALUE,
     DEV_SIGNAL_RAIL_COUNT,
-    DEV_SIGNAL_SUM,
-    DEV_SIGNAL_SUM_SQ,
     DEV_SIGNAL_TODAY_MAX,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
@@ -91,6 +89,7 @@ from .const import (
 )
 from .detect_battery import _is_foreign
 from .psquare import psquare_feed, psquare_new, psquare_read
+from .records import _reset_signal_day
 
 
 class SignalMixin:
@@ -198,13 +197,7 @@ class SignalMixin:
         # The naive accumulators are legacy after #254: the fold
         # removes them so a migrated record sheds them at its first
         # midnight rather than carrying zeros forever.
-        record.pop(DEV_SIGNAL_SUM, None)
-        record.pop(DEV_SIGNAL_SUM_SQ, None)
-        record[DEV_SIGNAL_COUNT] = 0
-        record[DEV_SIGNAL_MEAN_RUN] = 0.0
-        record[DEV_SIGNAL_M2] = 0.0
-        record[DEV_SIGNAL_P5_STATE] = None
-        record[DEV_SIGNAL_P50_STATE] = None
+        _reset_signal_day(record)
         record[DEV_SIGNAL_RAIL_COUNT] = 0
         record[DEV_SIGNAL_TODAY_MAX] = None
 
@@ -259,34 +252,28 @@ class SignalMixin:
     def _welford_state(
         self, record: dict[str, Any]
     ) -> tuple[int, float, float]:
-        """Return the day's (count, mean, M2), migrating a pre-#254
-        record.
+        """Return the day's (count, running mean, M2).
 
-        An upgraded install carries a partial day in the naive sum
-        and sum-of-squares pair; the conversion is exact (mean is the
-        sum over the count, M2 is the squares less count times the
-        squared mean, clamped at zero), so no day is lost at the
-        seam. Once the Welford fields exist they are the only truth.
-        A count with accumulators of neither generation (an epoch
-        wipe between the upgrade and the first reading) is a day with
-        no usable statistics, and the count resets with it so nothing
-        divides by ghosts.
+        The conversion from the retired sum and sum-of-squares pair
+        runs at load and not here (ruling #256): the reconciler
+        deletes the legacy keys before any reading arrives, so a
+        migration in this path read a record that only looked
+        migrated, restarted the mean at zero against a full count,
+        and drove every running mean toward a tenth of its true
+        value. A count carried with no accumulator behind it is a day
+        with no statistics, and resetting it is what keeps the fold
+        from dividing by a ghost.
         """
         count = int(record.get(DEV_SIGNAL_COUNT) or 0)
-        if DEV_SIGNAL_MEAN_RUN in record:
-            return (
-                count,
-                float(record.get(DEV_SIGNAL_MEAN_RUN) or 0.0),
-                float(record.get(DEV_SIGNAL_M2) or 0.0),
-            )
-        if count > 0 and DEV_SIGNAL_SUM in record:
-            total = float(record.get(DEV_SIGNAL_SUM) or 0.0)
-            squares = float(record.get(DEV_SIGNAL_SUM_SQ) or 0.0)
-            mean = total / count
-            m2 = max(0.0, squares - count * mean * mean)
-            return count, mean, m2
-        record[DEV_SIGNAL_COUNT] = 0
-        return 0, 0.0, 0.0
+        mean = record.get(DEV_SIGNAL_MEAN_RUN)
+        if count > 0 and mean is None:
+            record[DEV_SIGNAL_COUNT] = 0
+            return 0, 0.0, 0.0
+        return (
+            count,
+            float(mean or 0.0),
+            float(record.get(DEV_SIGNAL_M2) or 0.0),
+        )
 
     def _feed_percentiles(
         self,

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.12.13 (2026-08-07)
+# File: store.py, Version: 0.12.21 (2026-08-12)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -23,9 +23,14 @@ from __future__ import annotations
 from typing import Any
 from homeassistant.core import Event, callback
 from homeassistant.util import dt as dt_util
-from .records import _new_device_record, _span
+from .records import _new_device_record, _reset_signal_day, _span
 
 from .const import (
+    DEV_SIGNAL_COUNT,
+    DEV_SIGNAL_M2,
+    DEV_SIGNAL_MEAN_RUN,
+    DEV_SIGNAL_SUM,
+    DEV_SIGNAL_SUM_SQ,
     CLOCK_FIELDS,
     COALESCE_MINUTES_MAX,
     COALESCE_MINUTES_MIN,
@@ -103,6 +108,65 @@ class StorageMixin:
                     record[key] = value
                     filled += 1
         return removed, filled
+
+    @staticmethod
+    def _migrate_signal_accumulators(
+        devices: dict[str, dict[str, Any]], repair: bool
+    ) -> tuple[int, int]:
+        """Convert the day's signal accumulators to Welford's pair.
+
+        Ruling #256. The conversion was written into the reading path
+        in 0.12.19 and never ran: the reconciler below removes any
+        key the schema has dropped and fills any key it has gained,
+        so by the time a reading arrived the legacy sum was already
+        deleted and the running mean already present as zero. The
+        migration read a record that had been made to look migrated.
+        With the legacy count kept and the mean restarted at zero,
+        each later reading moved the mean by only value over count,
+        so a fleet of links averaging 118 carried running means near
+        ten, and the deviation with them.
+
+        So the conversion belongs here, at load, before the
+        reconciler runs, which is also the only moment the legacy
+        pair still exists. Two paths: convert where the legacy pair
+        is present (exact: the mean is the sum over the count, M2 the
+        squares less count times the squared mean), and reset the
+        day where a previous version already destroyed it, which
+        cannot be recovered because the sums it needed are gone.
+
+        The repair is one-shot, gated by a marker in storage, so a
+        later restart cannot drop another day.
+
+        Returns (converted, reset), both zero on an install that
+        never ran the broken versions.
+        """
+        converted = 0
+        reset = 0
+        for record in devices.values():
+            count = int(record.get(DEV_SIGNAL_COUNT) or 0)
+            if DEV_SIGNAL_SUM in record:
+                # Untouched by the broken versions: they deleted this
+                # pair on their first load, so its presence proves
+                # the day is sound and the conversion is exact.
+                if count > 0:
+                    total = float(record.get(DEV_SIGNAL_SUM) or 0.0)
+                    squares = float(record.get(DEV_SIGNAL_SUM_SQ) or 0.0)
+                    mean = total / count
+                    record[DEV_SIGNAL_MEAN_RUN] = mean
+                    record[DEV_SIGNAL_M2] = max(
+                        0.0, squares - count * mean * mean
+                    )
+                    converted += 1
+            elif repair and count > 0:
+                # Ran a broken version: the running mean is a partial
+                # sum against a full count and there is nothing left
+                # to rebuild it from. Dropping the day in progress
+                # costs the hours since midnight and keeps a false
+                # mean and deviation out of the ninety-day series,
+                # which is the trade this repair exists to make.
+                _reset_signal_day(record)
+                reset += 1
+        return converted, reset
 
     @callback
     def _data_to_save(self) -> dict[str, Any]:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.20 (2026-08-12)
+# File: const.py, Version: 0.12.21 (2026-08-12)
 
 """Constants for the Device Sentinel integration."""
 
@@ -352,6 +352,11 @@ SERIES_VERSION_BATTERY = 1
 # joined the recorded set in 0.12.19.
 SERIES_VERSION_SIGNAL = 2
 DATA_SERIES_STAMPS = "series_stamps"
+# One-shot marker for the signal day repair of ruling #256. Carries
+# the version that ran it, so the repair happens once and a later
+# restart cannot drop another day.
+DATA_SIGNAL_DAY_REPAIR = "signal_day_repair"
+SIGNAL_DAY_REPAIR_MARK = "0.12.21"
 AREA_FREEZE = "freeze"
 AREA_BATTERY = "battery"
 AREA_SIGNAL = "signal"
@@ -1530,7 +1535,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 255
+HIGHEST_RULING = 256
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
