@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.12.19 (2026-08-12)
+# File: test_storage_split.py, Version: 0.12.21 (2026-08-12)
 
 """The two files: the shadow, the merge, and the stamps.
 
@@ -18,6 +18,7 @@ Two tests were retired with the transition (ruling #241). The diagnostics phase 
 
 
 
+import pytest
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -788,3 +789,42 @@ def test_the_clock_fields_and_the_wipe_overlap_as_documented():
         "no clock field is wiped, so the merge ordering no longer "
         "matters and the comment arguing for it should be revisited"
     )
+
+async def test_an_upgrade_converts_the_day_before_the_reconciler_runs(
+    hass: HomeAssistant, hass_storage
+):
+    """Ruling #256, end to end through the load path.
+
+    The failure this guards was invisible to every unit test: the
+    conversion was correct in isolation and unreachable in place,
+    because the reconciler runs first and makes an unmigrated record
+    look migrated. So the test drives the whole load, with a stored
+    record carrying the retired accumulators, and asserts the day
+    survived with its real mean rather than restarting at zero.
+    """
+    device, _eid = _register(hass, "mig1", "Upgraded Device")
+    stored = _new_device_record("2026-07-01T00:00:00+00:00", 1000.0)
+    readings = [120.0, 128.0, 112.0, 124.0]
+    stored["signal_count"] = len(readings)
+    stored["signal_sum"] = sum(readings)
+    stored["signal_sum_sq"] = sum(v * v for v in readings)
+    del stored["signal_mean_run"]
+    del stored["signal_m2"]
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {
+            DATA_DEVICES: {device.id: stored},
+            DATA_STATS_EPOCH: STATS_EPOCH,
+        },
+    }
+
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+
+    assert record["signal_count"] == 4
+    assert record["signal_mean_run"] == pytest.approx(121.0)
+    assert record["signal_m2"] == pytest.approx(
+        sum((v - 121.0) ** 2 for v in readings)
+    )
+    assert "signal_sum" not in record
+

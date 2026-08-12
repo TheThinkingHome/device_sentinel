@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.12.19 (2026-08-12)
+# File: test_signal_stats.py, Version: 0.12.21 (2026-08-12)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -61,7 +61,6 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_SUM,
     DEV_SIGNAL_SUM_SQ,
     DEV_SIGNAL_TODAY_MAX,
-    DEV_SIGNAL_VALUE,
     DOMAIN,
     EP_AT,
     EP_DEVICE_ID,
@@ -1151,43 +1150,88 @@ async def test_percentiles_are_time_weighted_not_reading_weighted(
     assert p50 > 90.0
 
 
-async def test_welford_migration_is_exact(hass: HomeAssistant):
-    """A record carrying a pre-#254 partial day (naive sum and sum of
-    squares) continues under Welford with the identical mean and
-    deviation: the migration is arithmetic, not approximation."""
+async def test_the_load_path_converts_a_legacy_day_exactly(
+    hass: HomeAssistant
+):
+    """Ruling #256: the conversion runs at load, before the
+    reconciler deletes the legacy pair, and is arithmetic rather
+    than approximation. Written after the 0.12.19 build shipped the
+    same conversion inside the reading path, where it could never
+    run: by then the reconciler had already removed the sums it
+    needed and inserted the running mean it tested for, so the day
+    restarted at zero against a full count and every running mean on
+    the fleet drifted toward a tenth of its value.
+    """
     coord = await setup_coordinator(hass)
-    values = [140.0, 136.0, 148.0, 132.0]
+    readings = [140.0, 136.0, 148.0, 132.0]
     legacy = {
-        DEV_SIGNAL_COUNT: len(values),
-        DEV_SIGNAL_SUM: sum(values),
-        DEV_SIGNAL_SUM_SQ: sum(v * v for v in values),
-        DEV_SIGNAL_VALUE: values[-1],
+        DEV_SIGNAL_COUNT: len(readings),
+        DEV_SIGNAL_SUM: sum(readings),
+        DEV_SIGNAL_SUM_SQ: sum(v * v for v in readings),
     }
-    coord._feed_signal(legacy, 144.0, 1000.0)
-    everything = values + [144.0]
-    exact_mean = sum(everything) / len(everything)
-    exact_var = sum((v - exact_mean) ** 2 for v in everything) / len(everything)
+
+    converted, reset = coord._migrate_signal_accumulators(
+        {"dev": legacy}, repair=True
+    )
+
+    exact_mean = sum(readings) / len(readings)
+    exact_var = sum(
+        (v - exact_mean) ** 2 for v in readings
+    ) / len(readings)
+    assert (converted, reset) == (1, 0)
     assert legacy[DEV_SIGNAL_MEAN_RUN] == pytest.approx(exact_mean)
-    assert (legacy[DEV_SIGNAL_M2] / legacy[DEV_SIGNAL_COUNT]) == pytest.approx(
+    assert legacy[DEV_SIGNAL_M2] / legacy[DEV_SIGNAL_COUNT] == pytest.approx(
         exact_var
     )
 
 
-async def test_the_fold_records_p5_and_p50_and_sheds_legacy_fields(
+async def test_a_day_a_broken_release_corrupted_is_dropped_once(
+    hass: HomeAssistant
+):
+    """The repair half of #256, and its one-shot gate.
+
+    A record from 0.12.19 or 0.12.20 carries a full count with a
+    running mean built from only the readings since the upgrade, and
+    the sums that could rebuild it are gone. The day in progress is
+    dropped so the fold cannot write a false mean into the ninety-day
+    series, and the marker stops a later restart dropping another.
+    """
+    coord = await setup_coordinator(hass)
+    damaged = {
+        DEV_SIGNAL_COUNT: 126,
+        DEV_SIGNAL_MEAN_RUN: 9.97,
+        DEV_SIGNAL_M2: 119831.0,
+    }
+
+    converted, reset = coord._migrate_signal_accumulators(
+        {"dev": damaged}, repair=True
+    )
+
+    assert (converted, reset) == (0, 1)
+    assert damaged[DEV_SIGNAL_COUNT] == 0
+    assert damaged[DEV_SIGNAL_MEAN_RUN] == 0.0
+    assert damaged[DEV_SIGNAL_P5_STATE] is None
+
+    healthy = {DEV_SIGNAL_COUNT: 40, DEV_SIGNAL_MEAN_RUN: 118.6}
+    assert coord._migrate_signal_accumulators(
+        {"dev": healthy}, repair=False
+    ) == (0, 0)
+    assert healthy[DEV_SIGNAL_COUNT] == 40
+
+
+async def test_the_fold_records_p5_and_p50_and_resets(
     hass: HomeAssistant
 ):
     """Midnight appends the day's percentiles beside mean and sd,
     resets the trackers, and removes the naive accumulators from a
     migrated record so storage sheds them at the first fold."""
     coord = await setup_coordinator(hass)
-    record = {DEV_SIGNAL_SUM: 1.0, DEV_SIGNAL_SUM_SQ: 1.0}
+    record = {}
     coord._feed_signal(record, 120.0, 0.0)
     coord._feed_signal(record, 120.0, 3600.0)
     coord._roll_signal_stats(record, 7200.0)
     assert record[DEV_SIGNAL_DAILY_P5][-1] == pytest.approx(120.0, abs=1.0)
     assert record[DEV_SIGNAL_DAILY_P50][-1] == pytest.approx(120.0, abs=1.0)
-    assert DEV_SIGNAL_SUM not in record
-    assert DEV_SIGNAL_SUM_SQ not in record
     assert record[DEV_SIGNAL_P5_STATE] is None
 
 
