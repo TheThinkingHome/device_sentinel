@@ -230,12 +230,18 @@ def test_reconcile_fills_a_field_the_stored_record_never_had():
     """
     record = _new_device_record("2026-07-19T00:00:00+00:00", 1000.0)
     missing = (
-        "signal_sum",
-        "signal_sum_sq",
         "signal_count",
+        "signal_mean_run",
+        "signal_m2",
+        "signal_p5_state",
+        "signal_p50_state",
+        "signal_psq_value",
+        "signal_psq_ts",
         "signal_today_max",
         "signal_daily_mean",
         "signal_daily_sd",
+        "signal_daily_p5",
+        "signal_daily_p50",
         "signal_daily_max",
     )
     for key in missing:

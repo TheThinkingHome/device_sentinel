@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.12.18 (2026-08-11)
+# File: test_signal_stats.py, Version: 0.12.19 (2026-08-12)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -62,8 +62,14 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_DWELL_DAILY,
+    DEV_SIGNAL_M2,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_SIGNAL_DAILY_P50,
+    DEV_SIGNAL_MEAN_RUN,
+    DEV_SIGNAL_P5_STATE,
     DEV_SIGNAL_SUM,
     DEV_SIGNAL_SUM_SQ,
+    DEV_SIGNAL_VALUE,
     DEV_SIGNAL_TODAY_MAX,
     DOMAIN,
     REPORT_SIGNAL_DWELL,
@@ -112,8 +118,8 @@ async def test_the_accumulators_live_in_the_clock_fields():
     wiring anywhere.
     """
     for field in (
-        DEV_SIGNAL_SUM,
-        DEV_SIGNAL_SUM_SQ,
+        DEV_SIGNAL_MEAN_RUN,
+        DEV_SIGNAL_M2,
         DEV_SIGNAL_COUNT,
         DEV_SIGNAL_TODAY_MAX,
     ):
@@ -123,7 +129,7 @@ async def test_the_accumulators_live_in_the_clock_fields():
 async def test_readings_accumulate_and_rails_do_not(
     hass: HomeAssistant,
 ):
-    """Sum, squares, count, and the day's maximum track real readings.
+    """Welford's mean, M2, count, and the day's maximum track real readings.
 
     A rail value is the type's fill value, not a measurement, so it
     feeds none of them, for the same reason it never feeds the floor.
@@ -136,8 +142,9 @@ async def test_readings_accumulate_and_rails_do_not(
         coord._feed_signal(record, value, 1000.0)
     coord._feed_signal(record, float(SIGNAL_RAIL_LQI), 1000.0)
 
-    assert record[DEV_SIGNAL_SUM] == 330.0
-    assert record[DEV_SIGNAL_SUM_SQ] == 100.0**2 + 120.0**2 + 110.0**2
+    assert record[DEV_SIGNAL_MEAN_RUN] == pytest.approx(110.0)
+    # M2 is the sum of squared distances from the mean: 100+100+0.
+    assert record[DEV_SIGNAL_M2] == pytest.approx(200.0)
     assert record[DEV_SIGNAL_COUNT] == 3
     assert record[DEV_SIGNAL_TODAY_MAX] == 120.0
 
@@ -157,13 +164,14 @@ async def test_the_roll_produces_mean_deviation_and_maximum(
     for value in (100.0, 120.0, 110.0):
         coord._feed_signal(record, value, 1000.0)
 
-    coord._roll_signal_stats(record)
+    coord._roll_signal_stats(record, 86400.0)
 
     assert record[DEV_SIGNAL_DAILY_MEAN][-1] == 110.0
     assert abs(record[DEV_SIGNAL_DAILY_SD][-1] - 8.16) < 0.01
     assert record[DEV_SIGNAL_DAILY_MAX][-1] == 120.0
     assert record[DEV_SIGNAL_COUNT] == 0
-    assert record[DEV_SIGNAL_SUM] == 0.0
+    assert record[DEV_SIGNAL_MEAN_RUN] == 0.0
+    assert record[DEV_SIGNAL_M2] == 0.0
     assert record[DEV_SIGNAL_TODAY_MAX] is None
 
 
@@ -175,7 +183,7 @@ async def test_a_day_with_no_readings_appends_nothing(
     device, _ = register_device(hass, "st3", "Quiet Device")
     record = coord.data[DATA_DEVICES][device.id]
 
-    coord._roll_signal_stats(record)
+    coord._roll_signal_stats(record, 86400.0)
 
     assert not record.get(DEV_SIGNAL_DAILY_MEAN)
     assert not record.get(DEV_SIGNAL_DAILY_SD)
@@ -291,7 +299,7 @@ async def test_the_mean_column_reads_dash_until_a_day_rolls(
     assert coord._format_signal_mean_cell(record) == "-"
     for value in (100.0, 120.0, 110.0):
         coord._feed_signal(record, value, 1000.0)
-    coord._roll_signal_stats(record)
+    coord._roll_signal_stats(record, 86400.0)
     assert coord._format_signal_mean_cell(record) == "110\u00b18.16"
 
 async def test_the_anomaly_row_carries_type_trend_and_room(
@@ -1039,7 +1047,7 @@ async def test_the_fold_records_count_line_and_rail(
     for value in (140.0, 144.0, 255.0, 136.0, 255.0):
         coord._feed_signal(record, value, 1000.0)
 
-    coord._roll_signal_stats(record)
+    coord._roll_signal_stats(record, 86400.0)
 
     assert record[DEV_SIGNAL_DAILY_COUNT][-1] == 3
     assert record[DEV_SIGNAL_DAILY_RAIL][-1] == 2
@@ -1097,3 +1105,100 @@ async def test_an_episode_carries_its_signal_snapshot(
         (row.get(EP_SINCE) or 0) >= 5000.0 - coord.retention_days * 86400.0
         for row in coord.data[DATA_SIGNAL_STRESS]
     )
+
+# ------------------------------------ the percentile recording (#253)
+
+async def test_psquare_matches_ground_truth_on_a_dense_stream(
+    hass: HomeAssistant
+):
+    """The estimator against numpy-style exact percentiles on a dense
+    day: 1440 minute samples of a two-state (bimodal) link. The
+    tolerance is loose because P-Square is a heuristic, but it must
+    land in the right neighbourhood or the recording is decoration."""
+    from custom_components.device_sentinel.psquare import (
+        psquare_feed, psquare_new, psquare_read,
+    )
+    import random
+    rng = random.Random(41)
+    values = [rng.gauss(180, 8) if rng.random() < 0.8 else rng.gauss(90, 6)
+              for _ in range(1440)]
+    p5 = psquare_new()
+    p50 = psquare_new()
+    for v in values:
+        psquare_feed(p5, 0.05, v)
+        psquare_feed(p50, 0.50, v)
+    exact = sorted(values)
+    exact_p5 = exact[int(0.05 * len(exact))]
+    exact_p50 = exact[len(exact) // 2]
+    assert abs(psquare_read(p5, 0.05) - exact_p5) < 6.0
+    assert abs(psquare_read(p50, 0.50) - exact_p50) < 6.0
+
+
+async def test_percentiles_are_time_weighted_not_reading_weighted(
+    hass: HomeAssistant
+):
+    """Ruling #253's whole point: a sparse reporter's held value
+    counts by duration. Two readings, one held for 95 minutes at 100
+    and one for 5 minutes at 40, must give a P50 near 100, where a
+    reading-weighted median of the two values would sit at 70."""
+    coord = await setup_coordinator(hass)
+    record = {}
+    coord._feed_signal(record, 100.0, 0.0)
+    coord._feed_signal(record, 40.0, 95 * 60.0)
+    coord._roll_signal_stats(record, 100 * 60.0)
+    p50 = record[DEV_SIGNAL_DAILY_P50][-1]
+    assert p50 > 90.0
+
+
+async def test_welford_migration_is_exact(hass: HomeAssistant):
+    """A record carrying a pre-#254 partial day (naive sum and sum of
+    squares) continues under Welford with the identical mean and
+    deviation: the migration is arithmetic, not approximation."""
+    coord = await setup_coordinator(hass)
+    values = [140.0, 136.0, 148.0, 132.0]
+    legacy = {
+        DEV_SIGNAL_COUNT: len(values),
+        DEV_SIGNAL_SUM: sum(values),
+        DEV_SIGNAL_SUM_SQ: sum(v * v for v in values),
+        DEV_SIGNAL_VALUE: values[-1],
+    }
+    coord._feed_signal(legacy, 144.0, 1000.0)
+    everything = values + [144.0]
+    exact_mean = sum(everything) / len(everything)
+    exact_var = sum((v - exact_mean) ** 2 for v in everything) / len(everything)
+    assert legacy[DEV_SIGNAL_MEAN_RUN] == pytest.approx(exact_mean)
+    assert (legacy[DEV_SIGNAL_M2] / legacy[DEV_SIGNAL_COUNT]) == pytest.approx(
+        exact_var
+    )
+
+
+async def test_the_fold_records_p5_and_p50_and_sheds_legacy_fields(
+    hass: HomeAssistant
+):
+    """Midnight appends the day's percentiles beside mean and sd,
+    resets the trackers, and removes the naive accumulators from a
+    migrated record so storage sheds them at the first fold."""
+    coord = await setup_coordinator(hass)
+    record = {DEV_SIGNAL_SUM: 1.0, DEV_SIGNAL_SUM_SQ: 1.0}
+    coord._feed_signal(record, 120.0, 0.0)
+    coord._feed_signal(record, 120.0, 3600.0)
+    coord._roll_signal_stats(record, 7200.0)
+    assert record[DEV_SIGNAL_DAILY_P5][-1] == pytest.approx(120.0, abs=1.0)
+    assert record[DEV_SIGNAL_DAILY_P50][-1] == pytest.approx(120.0, abs=1.0)
+    assert DEV_SIGNAL_SUM not in record
+    assert DEV_SIGNAL_SUM_SQ not in record
+    assert record[DEV_SIGNAL_P5_STATE] is None
+
+
+async def test_a_day_with_no_readings_appends_nothing(
+    hass: HomeAssistant
+):
+    """A silent day appends to no daily series, the established
+    alignment rule: mean, sd, and now P5 and P50 always share a
+    length, and dwell alone records regardless."""
+    coord = await setup_coordinator(hass)
+    record = {}
+    coord._roll_signal_stats(record, 86400.0)
+    assert DEV_SIGNAL_DAILY_P5 not in record
+    assert DEV_SIGNAL_DAILY_P50 not in record
+    assert DEV_SIGNAL_DAILY_MEAN not in record

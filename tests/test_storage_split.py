@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.12.15 (2026-08-08)
+# File: test_storage_split.py, Version: 0.12.19 (2026-08-12)
 
 """The two files: the shadow, the merge, and the stamps.
 
@@ -34,6 +34,7 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.device_sentinel import const
 from custom_components.device_sentinel.const import (
     CLOCK_FIELDS,
+    LEGACY_CLOCK_FIELDS,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
     DATA_SAVED_AT,
@@ -155,7 +156,9 @@ async def test_the_clocks_file_is_written(
     assert STORAGE_CLOCKS_KEY in hass_storage
     clocks = _clocks(hass_storage)
     assert device.id in clocks
-    assert set(clocks[device.id]) == set(CLOCK_FIELDS)
+    assert set(clocks[device.id]) == (
+        set(CLOCK_FIELDS) - set(LEGACY_CLOCK_FIELDS)
+    )
 
 
 async def test_the_shadow_agrees_with_storage(
@@ -172,6 +175,9 @@ async def test_the_shadow_agrees_with_storage(
     clocks = _clocks(hass_storage)
     for device_id, record in coord.data[DATA_DEVICES].items():
         for field in CLOCK_FIELDS:
+            if field in LEGACY_CLOCK_FIELDS:
+                assert field not in clocks[device_id]
+                continue
             assert clocks[device_id][field] == record.get(field), (
                 device_id,
                 field,
@@ -607,12 +613,18 @@ async def test_an_older_record_gains_the_fields_this_version_adds(
     device, _eid = _register(hass, "older1", "Older Device")
     stored = _new_device_record("2026-07-01T00:00:00+00:00", 1000.0)
     for key in (
-        "signal_sum",
-        "signal_sum_sq",
         "signal_count",
+        "signal_mean_run",
+        "signal_m2",
+        "signal_p5_state",
+        "signal_p50_state",
+        "signal_psq_value",
+        "signal_psq_ts",
         "signal_today_max",
         "signal_daily_mean",
         "signal_daily_sd",
+        "signal_daily_p5",
+        "signal_daily_p50",
         "signal_daily_max",
     ):
         del stored[key]
