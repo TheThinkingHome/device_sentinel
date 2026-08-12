@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.19 (2026-08-12)
+# File: const.py, Version: 0.12.20 (2026-08-12)
 
 """Constants for the Device Sentinel integration."""
 
@@ -334,6 +334,42 @@ TAINT_FLOOR_MINUTES_MAX = 60
 STATS_EPOCH = "0.2.3"
 DATA_STATS_EPOCH = "stats_epoch"
 
+# The recording-set stamps (ruling #255). Each area carries a version
+# naming the set of daily series it records; storage carries the
+# version last seen and the moment that set began. When a release
+# changes what an area records, its version bumps, the stamp resets,
+# and the Data sensors honestly report zero complete days, because a
+# set that gained a series yesterday has one day of complete history
+# however deep its older members run. The versions are hand-bumped
+# and the bump is a release gate: adding, removing, or changing the
+# meaning of a recorded series without bumping is the one way this
+# can lie. Install-wide rather than per-device, because the question
+# is how long the system has recorded an area in its current shape,
+# not how mature any one device is (device_days carries the volume).
+SERIES_VERSION_FREEZE = 1
+SERIES_VERSION_BATTERY = 1
+# Bumped to 2 by ruling #253: the day's time-weighted P5 and median
+# joined the recorded set in 0.12.19.
+SERIES_VERSION_SIGNAL = 2
+DATA_SERIES_STAMPS = "series_stamps"
+AREA_FREEZE = "freeze"
+AREA_BATTERY = "battery"
+AREA_SIGNAL = "signal"
+
+# What each area counts toward, and the words at the end of the
+# count. Freeze and signal arm at seven days and mature later: the
+# freeze rhythm judges on the most recent fourteen (DAILY_MAX_KEEP),
+# the signal floor on the most recent thirty (SIGNAL_DAYS_KEEP, the
+# widening of ruling #196). Battery's slope reads a fixed seven, and
+# has no second milestone, so it is a two-phase count.
+DATA_STATE_ARMED = "Armed"
+DATA_STATE_LEARNED = "Learned"
+DATA_STATE_TRACKING = "Tracking"
+
+SENTINEL_TYPE_DATA_FREEZE = "data_freeze"
+SENTINEL_TYPE_DATA_BATTERY = "data_battery"
+SENTINEL_TYPE_DATA_SIGNAL = "data_signal"
+
 # Per-device signal fields (linkquality/RSSI, gather-first).
 DEV_SIGNAL_VALUE = "signal_value"
 DEV_SIGNAL_TODAY_MIN = "signal_today_min"
@@ -476,9 +512,12 @@ SIGNAL_FOREIGN_TERMS = ("wifi", "wi_fi", "cellular", "_sim_")
 # more than the rolling window will need, so the window-length
 # tunable can be settled from soak data without re-collecting.
 DAILY_MAX_KEEP = 14
-# DAILY_MAX_KEEP above is the judgment window, and it governs every
-# verdict: the freeze rhythm and the signal floor are both computed
-# from the most recent fourteen days however many are stored. It is
+# DAILY_MAX_KEEP above is the freeze judgment window: the rhythm is
+# computed from the most recent fourteen days however many are
+# stored. The signal floor reads thirty (SIGNAL_DAYS_KEEP): it was
+# fourteen when this note was written and ruling #196 widened it,
+# and the note went stale until the Data sensors of #255 made every
+# window a published number. It is
 # not a user setting, because a threshold that moved with a storage
 # preference would mean two systems detecting differently for no
 # reason anyone chose. Retention is the person's; the judgment window
@@ -776,6 +815,25 @@ DEV_BATTERY_VALUE = "battery_value"
 # waits until this history has depth, the way the dwell danger line
 # waited on the floor.
 DEV_BATTERY_DAILY = "battery_daily_value"
+
+# The series each area records, published in the Data sensors so a
+# reset explains itself: a person seeing zero complete days can read
+# which series the set now holds. Named here, below the fields they
+# name, and read nowhere else.
+SERIES_FREEZE = (DEV_DAILY_MAX,)
+SERIES_BATTERY = (DEV_BATTERY_DAILY,)
+SERIES_SIGNAL = (
+    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_MEAN,
+    DEV_SIGNAL_DAILY_SD,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_SIGNAL_DAILY_P50,
+    DEV_SIGNAL_DAILY_MAX,
+    DEV_SIGNAL_DAILY_COUNT,
+    DEV_SIGNAL_DAILY_LINE,
+    DEV_SIGNAL_DAILY_RAIL,
+    DEV_SIGNAL_DWELL_DAILY,
+)
 
 # Step 6 freeze verdict, stored so it survives a reboot and so the
 # sensor feed can compare and refresh only when it flips, not on
@@ -1472,7 +1530,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 254
+HIGHEST_RULING = 255
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

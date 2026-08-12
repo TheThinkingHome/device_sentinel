@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.12.17 (2026-08-08)
+# File: sensor.py, Version: 0.12.20 (2026-08-12)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -50,6 +50,15 @@ from homeassistant.util import dt as dt_util
 
 from . import DeviceSentinelConfigEntry
 from .const import (
+    AREA_BATTERY,
+    AREA_FREEZE,
+    AREA_SIGNAL,
+    DATA_STATE_ARMED,
+    DATA_STATE_LEARNED,
+    DATA_STATE_TRACKING,
+    SENTINEL_TYPE_DATA_BATTERY,
+    SENTINEL_TYPE_DATA_FREEZE,
+    SENTINEL_TYPE_DATA_SIGNAL,
     ATTR_AWAITING_BATTERY,
     ATTR_AWAITING_LAST_SEEN,
     ATTR_AWAITING_SIGNAL,
@@ -107,6 +116,9 @@ async def async_setup_entry(
             DeviceSentinelStatusSensor(coordinator),
             DeviceSentinelCoverageSensor(coordinator),
             DeviceSentinelLearningSensor(coordinator),
+            DeviceSentinelDataFreezeSensor(coordinator),
+            DeviceSentinelDataBatterySensor(coordinator),
+            DeviceSentinelDataSignalSensor(coordinator),
             DeviceSentinelClassificationSensor(coordinator),
             DeviceSentinelTrackedSignalsSensor(coordinator),
             DeviceSentinelTrackedBatteriesSensor(coordinator),
@@ -289,6 +301,97 @@ class DeviceSentinelLearningSensor(DeviceSentinelBaseSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the full learning buckets."""
         return {**self._identity(), **self._coordinator.learning_buckets}
+
+
+class DeviceSentinelDataSensor(DeviceSentinelBaseSensor):
+    """Base for the three Data sensors (ruling #255).
+
+    Each reports how much complete history stands behind one area of
+    judgment. Complete is the operative word: when a release changes
+    what an area records, the count restarts, because a set that
+    gained a series yesterday has one day of complete history however
+    deep its older members run. Finding this out used to mean reading
+    diagnostics.
+
+    The state counts while the area is still filling and becomes a
+    word when it is full. Freeze and signal have two milestones, the
+    seven-day arming and the judgment window that follows (fourteen
+    days of rhythm, thirty of signal floor), so their middle phase
+    says Armed and keeps counting. Battery's slope reads a fixed
+    seven days and has no second milestone, so it is a two-phase
+    count.
+    """
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    area: str = ""
+    full_word: str = DATA_STATE_LEARNED
+
+    @property
+    def _depth(self) -> dict[str, Any]:
+        """Return this area's depth reading."""
+        return self._coordinator.recording_depth[self.area]
+
+    @property
+    def native_value(self) -> str:
+        """Return the count, or the word once the set is full."""
+        depth = self._depth
+        days = depth["complete_days"]
+        target = depth["learned_days"] or depth["arming_days"]
+        if days >= target:
+            return self.full_word
+        if depth["armed"]:
+            return f"{DATA_STATE_ARMED}, {days} of {target}"
+        return f"{days} of {depth['arming_days']}"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the depth detail, including the fleet's volume."""
+        depth = self._depth
+        return {
+            **self._identity(),
+            "complete_days": depth["complete_days"],
+            "since": depth["since"],
+            "target_days": (
+                depth["learned_days"]
+                if depth["armed"] and depth["learned_days"]
+                else depth["arming_days"]
+            ),
+            "armed": depth["armed"],
+            "device_days": depth["device_days"],
+            "series": depth["series"],
+            "retention_days": depth["retention_days"],
+        }
+
+
+class DeviceSentinelDataFreezeSensor(DeviceSentinelDataSensor):
+    """Complete freeze history: the rhythm behind every freeze
+    verdict."""
+
+    _attr_name = "Data: Freeze"
+    _attr_icon = "mdi:database-clock-outline"
+    area = AREA_FREEZE
+    sentinel_type = SENTINEL_TYPE_DATA_FREEZE
+
+
+class DeviceSentinelDataBatterySensor(DeviceSentinelDataSensor):
+    """Complete battery history: the levels behind the falling
+    trend."""
+
+    _attr_name = "Data: Battery"
+    _attr_icon = "mdi:database-clock-outline"
+    area = AREA_BATTERY
+    full_word = DATA_STATE_TRACKING
+    sentinel_type = SENTINEL_TYPE_DATA_BATTERY
+
+
+class DeviceSentinelDataSignalSensor(DeviceSentinelDataSensor):
+    """Complete signal history: the daily series behind every floor
+    and line."""
+
+    _attr_name = "Data: Signal"
+    _attr_icon = "mdi:database-clock-outline"
+    area = AREA_SIGNAL
+    sentinel_type = SENTINEL_TYPE_DATA_SIGNAL
 
 
 class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.12.13 (2026-08-07)
+# File: coordinator.py, Version: 0.12.20 (2026-08-12)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -63,14 +63,19 @@ from homeassistant.util import dt as dt_util
 
 from .backup import async_take_backup
 from .const import (
+    AREA_BATTERY,
+    AREA_FREEZE,
+    AREA_SIGNAL,
     BACKUP_SUFFIX_PREPHASE_C,
     BACKUP_TAKEN_KEY,
+    BATTERY_SLOPE_DAYS,
     BRIEF_TRIGGER,
     CONF_EPISODE_SHARE,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_EXCLUDED_LABELS,
     CONF_MAINTENANCE_MINUTES,
+    DAILY_MAX_KEEP,
     DATA_BRIDGE_SEEN,
     DATA_BROKER_SEEN,
     DATA_CLEAN_STOP,
@@ -78,6 +83,7 @@ from .const import (
     DATA_EPISODES,
     DATA_FIRST_INSTALLED,
     DATA_INCIDENTS,
+    DATA_SERIES_STAMPS,
     DATA_SETUP_COUNT,
     DATA_STATS_EPOCH,
     DATA_STORMS,
@@ -96,6 +102,7 @@ from .const import (
     DEV_TAINTED,
     DEV_TODAY_MAX,
     EPOCH_KEPT,
+    FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     INC_CAUSE,
     LEARNED_MAINTENANCE,
@@ -107,8 +114,16 @@ from .const import (
     MAINTENANCE_MINUTES_MIN,
     RECOVERY_CAUSE_UNOBSERVED,
     RENDER_TICK_SECONDS,
+    SERIES_BATTERY,
+    SERIES_FREEZE,
+    SERIES_SIGNAL,
+    SERIES_VERSION_BATTERY,
+    SERIES_VERSION_FREEZE,
+    SERIES_VERSION_SIGNAL,
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
+    SIGNAL_ARMING_DAYS,
+    SIGNAL_DAYS_KEEP,
     STARTUP_GRACE_SECONDS,
     STATS_EPOCH,
     STORAGE_CLOCKS_KEY,
@@ -462,6 +477,10 @@ class DeviceSentinelCoordinator(
                             record[field] = value
                     wiped += 1
                 loaded[DATA_STATS_EPOCH] = STATS_EPOCH
+                # The wipe destroys the series themselves, so the
+                # stamps go with them and _reconcile_series_stamps
+                # below writes today's (ruling #255).
+                loaded.pop(DATA_SERIES_STAMPS, None)
             else:
                 LOGGER.warning(
                     "Statistics epoch %s: the pre-wipe backup could "
@@ -481,6 +500,7 @@ class DeviceSentinelCoordinator(
                 STATS_EPOCH,
                 wiped,
             )
+        self._reconcile_series_stamps(loaded)
         # Reconcile every stored record against the schema, both
         # directions. There used to be a prune here and a
         # hand-maintained list of setdefault calls above it, so a
@@ -1459,6 +1479,79 @@ class DeviceSentinelCoordinator(
     def set_aside_count(self) -> int:
         """Return the number of service devices set aside."""
         return len(self._set_aside)
+
+    def _reconcile_series_stamps(self, loaded: dict[str, Any]) -> None:
+        """Stamp each recording area, resetting where its set changed.
+
+        Ruling #255: the Data sensors report complete days, and a set
+        that gained a series yesterday has one day of complete
+        history however deep its older members run. So the stamp
+        moves whenever the area's version differs from the one
+        storage last saw, which covers a fresh install (no stamp), an
+        upgrade that changed a set, and an epoch wipe, whose branch
+        above cleared the stamps so this writes them anew. A release
+        that records nothing new touches nothing here.
+        """
+        stamps = loaded.setdefault(DATA_SERIES_STAMPS, {})
+        now = dt_util.utcnow().isoformat()
+        for area, version in (
+            (AREA_FREEZE, SERIES_VERSION_FREEZE),
+            (AREA_BATTERY, SERIES_VERSION_BATTERY),
+            (AREA_SIGNAL, SERIES_VERSION_SIGNAL),
+        ):
+            stamp = stamps.get(area)
+            if not isinstance(stamp, dict) or stamp.get("version") != version:
+                stamps[area] = {"version": version, "since": now}
+                LOGGER.info(
+                    "Recording set for %s is at version %d; complete "
+                    "history now counts from today",
+                    area,
+                    version,
+                )
+
+    @property
+    def recording_depth(self) -> dict[str, dict[str, Any]]:
+        """Return each area's recording depth (ruling #255).
+
+        complete_days is how long the area's current recording set
+        has been in place, capped at retention because days older
+        than that are gone whatever the stamp says. device_days is
+        the fleet's total volume in that area: the sum of every
+        device's series lengths, which is the number a person has
+        otherwise had to read out of diagnostics.
+        """
+        stamps = self.data.get(DATA_SERIES_STAMPS) or {}
+        now = dt_util.utcnow()
+        devices = self.data.get(DATA_DEVICES, {}).values()
+        out: dict[str, dict[str, Any]] = {}
+        for area, series, arming, learned in (
+            (AREA_FREEZE, SERIES_FREEZE, FREEZE_ARMING_DAYS, DAILY_MAX_KEEP),
+            (AREA_BATTERY, SERIES_BATTERY, BATTERY_SLOPE_DAYS, None),
+            (AREA_SIGNAL, SERIES_SIGNAL, SIGNAL_ARMING_DAYS, SIGNAL_DAYS_KEEP),
+        ):
+            stamp = stamps.get(area) or {}
+            since = stamp.get("since")
+            days = 0
+            if since:
+                started = dt_util.parse_datetime(since)
+                if started is not None:
+                    days = max(0, int((now - started).total_seconds() // 86400))
+            days = min(days, self.retention_days)
+            out[area] = {
+                "complete_days": days,
+                "since": since,
+                "armed": days >= arming,
+                "arming_days": arming,
+                "learned_days": learned,
+                "series": list(series),
+                "device_days": sum(
+                    len(record.get(field) or [])
+                    for record in devices
+                    for field in series
+                ),
+                "retention_days": self.retention_days,
+            }
+        return out
 
     @property
     def learning_buckets(self) -> dict[str, int]:
