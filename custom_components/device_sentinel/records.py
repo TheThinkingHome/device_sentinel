@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.12.15 (2026-08-08)
+# File: records.py, Version: 0.12.19 (2026-08-12)
 
 """The device record shape, and the two helpers that read it.
 
@@ -40,25 +40,30 @@ from .const import (
     DEV_SIGNAL_BELOW_SINCE,
     DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_COUNT,
-    DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_COUNT,
     DEV_SIGNAL_DAILY_LINE,
-    DEV_SIGNAL_DAILY_RAIL,
-    DEV_SIGNAL_RAIL_COUNT,
+    DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_SIGNAL_DAILY_P50,
+    DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_LAST_CHANGE,
-    DEV_SIGNAL_SUM,
-    DEV_SIGNAL_SUM_SQ,
+    DEV_SIGNAL_M2,
+    DEV_SIGNAL_MEAN_RUN,
+    DEV_SIGNAL_P5_STATE,
+    DEV_SIGNAL_P50_STATE,
+    DEV_SIGNAL_PSQ_TS,
+    DEV_SIGNAL_PSQ_VALUE,
+    DEV_SIGNAL_RAIL_COUNT,
     DEV_SIGNAL_TODAY_MAX,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     DEV_TODAY_MAX,
 )
-
 
 BAD_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 
@@ -95,9 +100,15 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_SIGNAL_BELOW_SINCE: None,
         DEV_SIGNAL_BELOW_TODAY: 0.0,
         DEV_SIGNAL_DWELL_DAILY: [],
-        DEV_SIGNAL_SUM: 0.0,
-        DEV_SIGNAL_SUM_SQ: 0.0,
         DEV_SIGNAL_COUNT: 0,
+        DEV_SIGNAL_MEAN_RUN: 0.0,
+        DEV_SIGNAL_M2: 0.0,
+        DEV_SIGNAL_P5_STATE: None,
+        DEV_SIGNAL_P50_STATE: None,
+        DEV_SIGNAL_PSQ_VALUE: None,
+        DEV_SIGNAL_PSQ_TS: None,
+        DEV_SIGNAL_DAILY_P5: [],
+        DEV_SIGNAL_DAILY_P50: [],
         DEV_SIGNAL_TODAY_MAX: None,
         DEV_SIGNAL_DAILY_MEAN: [],
         DEV_SIGNAL_DAILY_SD: [],

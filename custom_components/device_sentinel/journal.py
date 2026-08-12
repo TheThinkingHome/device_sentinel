@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.12.15 (2026-08-08)
+# File: journal.py, Version: 0.12.19 (2026-08-12)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -27,23 +27,19 @@ throughout.
 from __future__ import annotations
 
 from typing import Any
+
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CAUSE_EPISODE_SLACK_SECONDS,
     DATA_DEVICES,
     DATA_EPISODES,
-    DATA_SIGNAL_STRESS,
     DATA_INCIDENTS,
+    DATA_SIGNAL_STRESS,
     DATA_SYSTEM_EVENTS,
     DEV_DAILY_MAX,
     DEV_LAST_ACTIVITY,
-    DEV_SIGNAL_COUNT,
-    DEV_SIGNAL_SUM,
-    DEV_SIGNAL_SUM_SQ,
     DEV_SIGNAL_VALUE,
-    CAUSE_EPISODE_SLACK_SECONDS,
-    EPISODE_ENDED_RESUMED,
-    EPISODE_KEEP_DAYS,
     EP_AT,
     EP_BASIS,
     EP_DEVICE_ID,
@@ -51,19 +47,18 @@ from .const import (
     EP_LAG,
     EP_LEARNED,
     EP_NAME,
-    EP_SINCE,
     EP_SIG_LINE,
     EP_SIG_MEAN,
     EP_SIG_SD,
     EP_SIG_VALUE,
     EP_SIGNAL,
+    EP_SINCE,
     EP_TAINT_SECONDS,
     EP_WINDOW,
+    EPISODE_ENDED_RESUMED,
+    EPISODE_KEEP_DAYS,
     FREEZE_ARMING_DAYS,
     FREEZE_KINDS_FOR_CAUSE,
-    INCIDENT_KEEP_DAYS,
-    INCIDENT_OPENED,
-    INCIDENT_RESOLVED,
     INC_CAUSE,
     INC_DEVICE_ID,
     INC_DURATION,
@@ -71,6 +66,9 @@ from .const import (
     INC_KIND,
     INC_NAME,
     INC_WHEN,
+    INCIDENT_KEEP_DAYS,
+    INCIDENT_OPENED,
+    INCIDENT_RESOLVED,
     LOGGER,
     RECOVERY_CAUSE_UNOBSERVED,
     SYS_DETAIL,
@@ -86,7 +84,6 @@ from .const import (
     TODO_DEVICE_ID,
     TODO_STATUS,
 )
-
 
 # The taint labels a promotion may replace. A taint carries the
 # reason learning skipped a gap rather than a bare flag, so a row can
@@ -244,15 +241,11 @@ class JournalMixin:
         value = record.get(DEV_SIGNAL_VALUE)
         if value is None:
             return None
-        count = int(record.get(DEV_SIGNAL_COUNT) or 0)
+        count, run, m2 = self._welford_state(record)
         mean = sd = None
         if count > 0:
-            total = float(record.get(DEV_SIGNAL_SUM) or 0.0)
-            squares = float(record.get(DEV_SIGNAL_SUM_SQ) or 0.0)
-            mean = round(total / count, 2)
-            sd = round(
-                max(0.0, squares / count - (total / count) ** 2) ** 0.5, 2
-            )
+            mean = round(run, 2)
+            sd = round(max(0.0, m2 / count) ** 0.5, 2)
         line = self._danger_line(record)
         return {
             EP_SIG_VALUE: value,

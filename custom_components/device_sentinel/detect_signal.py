@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.12.18 (2026-08-11)
+# File: detect_signal.py, Version: 0.12.19 (2026-08-12)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -45,10 +45,18 @@ from .const import (
     DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_LAST_CHANGE,
+    DEV_SIGNAL_M2,
+    DEV_SIGNAL_MEAN_RUN,
+    DEV_SIGNAL_P5_STATE,
+    DEV_SIGNAL_P50_STATE,
+    DEV_SIGNAL_PSQ_TS,
+    DEV_SIGNAL_PSQ_VALUE,
     DEV_SIGNAL_RAIL_COUNT,
     DEV_SIGNAL_SUM,
     DEV_SIGNAL_SUM_SQ,
@@ -82,6 +90,7 @@ from .const import (
     TODO_KINDS,
 )
 from .detect_battery import _is_foreign
+from .psquare import psquare_feed, psquare_new, psquare_read
 
 
 class SignalMixin:
@@ -116,39 +125,55 @@ class SignalMixin:
             )
             del record[DEV_SIGNAL_DWELL_DAILY][:-self.retention_days]
         record[DEV_SIGNAL_BELOW_TODAY] = 0.0
-        self._roll_signal_stats(record)
+        self._roll_signal_stats(record, now)
 
-    def _roll_signal_stats(self, record: dict[str, Any]) -> None:
+    def _roll_signal_stats(
+        self, record: dict[str, Any], fold_now: float
+    ) -> None:
         """Close the day's signal distribution into the daily series.
 
         Mean and standard deviation are what the Bayesian successor to
         the current thresholding needs (ruling #172), so they are recorded
-        ahead of it: the day's running sum, sum of squares, and count
-        become one mean, one deviation, and the day's maximum, and the
-        accumulators reset for the new day. The deviation is the
+        ahead of it: the day's Welford accumulators (ruling #254)
+        become one mean and one deviation, the day's maximum rides
+        beside them, the P-Square estimators (ruling #253) become the
+        day's time-weighted 5th percentile and median, and everything
+        resets for the new day. The deviation is the
         population form, and a one-reading day records zero deviation
         rather than none, because one reading genuinely varied by
         nothing. A day with no real readings appends nothing, so the
         three series stay aligned with each other but may be shorter
         than the dwell series, which records whenever a line existed.
         """
-        count = int(record.get(DEV_SIGNAL_COUNT) or 0)
+        # The day's tail: the held value has been accruing minutes
+        # since its last feed, and they belong to the day being
+        # folded (ruling #253).
+        self._feed_percentiles(record, now=fold_now)
+        count, mean, m2 = self._welford_state(record)
         if count > 0:
             # The line first, while the mean and deviation series
             # still end on yesterday: this is the line that judged
             # the day being folded, and appending today's mean first
             # would move the ceiling under it (ruling #245).
             line = self._danger_line(record)
-            total = float(record.get(DEV_SIGNAL_SUM) or 0.0)
-            squares = float(record.get(DEV_SIGNAL_SUM_SQ) or 0.0)
-            mean = total / count
-            variance = max(0.0, squares / count - mean * mean)
+            variance = max(0.0, m2 / count)
             record.setdefault(DEV_SIGNAL_DAILY_MEAN, []).append(
                 round(mean, 2)
             )
             record.setdefault(DEV_SIGNAL_DAILY_SD, []).append(
                 round(variance**0.5, 2)
             )
+            for key, state_key, q in (
+                (DEV_SIGNAL_DAILY_P5, DEV_SIGNAL_P5_STATE, 0.05),
+                (DEV_SIGNAL_DAILY_P50, DEV_SIGNAL_P50_STATE, 0.5),
+            ):
+                state = record.get(state_key)
+                estimate = (
+                    psquare_read(state, q) if state is not None else None
+                )
+                record.setdefault(key, []).append(
+                    round(estimate, 2) if estimate is not None else None
+                )
             record.setdefault(DEV_SIGNAL_DAILY_MAX, []).append(
                 record.get(DEV_SIGNAL_TODAY_MAX)
             )
@@ -162,15 +187,24 @@ class SignalMixin:
             for field in (
                 DEV_SIGNAL_DAILY_MEAN,
                 DEV_SIGNAL_DAILY_SD,
+                DEV_SIGNAL_DAILY_P5,
+                DEV_SIGNAL_DAILY_P50,
                 DEV_SIGNAL_DAILY_MAX,
                 DEV_SIGNAL_DAILY_COUNT,
                 DEV_SIGNAL_DAILY_LINE,
                 DEV_SIGNAL_DAILY_RAIL,
             ):
                 del record[field][:-self.retention_days]
-        record[DEV_SIGNAL_SUM] = 0.0
-        record[DEV_SIGNAL_SUM_SQ] = 0.0
+        # The naive accumulators are legacy after #254: the fold
+        # removes them so a migrated record sheds them at its first
+        # midnight rather than carrying zeros forever.
+        record.pop(DEV_SIGNAL_SUM, None)
+        record.pop(DEV_SIGNAL_SUM_SQ, None)
         record[DEV_SIGNAL_COUNT] = 0
+        record[DEV_SIGNAL_MEAN_RUN] = 0.0
+        record[DEV_SIGNAL_M2] = 0.0
+        record[DEV_SIGNAL_P5_STATE] = None
+        record[DEV_SIGNAL_P50_STATE] = None
         record[DEV_SIGNAL_RAIL_COUNT] = 0
         record[DEV_SIGNAL_TODAY_MAX] = None
 
@@ -204,19 +238,94 @@ class SignalMixin:
         today_max = record.get(DEV_SIGNAL_TODAY_MAX)
         if today_max is None or value > today_max:
             record[DEV_SIGNAL_TODAY_MAX] = value
-        # The good-state accumulators (ruling #172): sum, sum of squares,
-        # count. Three floats carry the day's whole distribution well
-        # enough for a mean and a deviation, and no samples are kept.
-        record[DEV_SIGNAL_SUM] = (
-            float(record.get(DEV_SIGNAL_SUM) or 0.0) + value
-        )
-        record[DEV_SIGNAL_SUM_SQ] = (
-            float(record.get(DEV_SIGNAL_SUM_SQ) or 0.0) + value * value
-        )
-        record[DEV_SIGNAL_COUNT] = (
-            int(record.get(DEV_SIGNAL_COUNT) or 0) + 1
-        )
+        # The good-state accumulators (rulings #172, #254): Welford's
+        # running mean and M2 carry the day's whole distribution well
+        # enough for a mean and a deviation, stably, and no samples
+        # are kept.
+        count, mean, m2 = self._welford_state(record)
+        count += 1
+        delta = value - mean
+        mean += delta / count
+        m2 += delta * (value - mean)
+        record[DEV_SIGNAL_COUNT] = count
+        record[DEV_SIGNAL_MEAN_RUN] = mean
+        record[DEV_SIGNAL_M2] = m2
+        # The time-weighted percentiles (ruling #253): the held value
+        # is fed one observation per whole minute it lasted, then the
+        # new value takes over as the held one.
+        self._feed_percentiles(record, now=now, new_value=value)
         self._feed_dwell(record, value, now)
+
+    def _welford_state(
+        self, record: dict[str, Any]
+    ) -> tuple[int, float, float]:
+        """Return the day's (count, mean, M2), migrating a pre-#254
+        record.
+
+        An upgraded install carries a partial day in the naive sum
+        and sum-of-squares pair; the conversion is exact (mean is the
+        sum over the count, M2 is the squares less count times the
+        squared mean, clamped at zero), so no day is lost at the
+        seam. Once the Welford fields exist they are the only truth.
+        A count with accumulators of neither generation (an epoch
+        wipe between the upgrade and the first reading) is a day with
+        no usable statistics, and the count resets with it so nothing
+        divides by ghosts.
+        """
+        count = int(record.get(DEV_SIGNAL_COUNT) or 0)
+        if DEV_SIGNAL_MEAN_RUN in record:
+            return (
+                count,
+                float(record.get(DEV_SIGNAL_MEAN_RUN) or 0.0),
+                float(record.get(DEV_SIGNAL_M2) or 0.0),
+            )
+        if count > 0 and DEV_SIGNAL_SUM in record:
+            total = float(record.get(DEV_SIGNAL_SUM) or 0.0)
+            squares = float(record.get(DEV_SIGNAL_SUM_SQ) or 0.0)
+            mean = total / count
+            m2 = max(0.0, squares - count * mean * mean)
+            return count, mean, m2
+        record[DEV_SIGNAL_COUNT] = 0
+        return 0, 0.0, 0.0
+
+    def _feed_percentiles(
+        self,
+        record: dict[str, Any],
+        now: float,
+        new_value: float | None = None,
+    ) -> None:
+        """Weigh the held value by its whole minutes, then hold the
+        new one.
+
+        A value counts by duration, not by arrival (ruling #253): a
+        reading held for three hours is 180 observations, a one-off
+        blip inside a busy minute is none. The fractional remainder
+        stays on the clock rather than being dropped, so no time is
+        lost across feeds. Rails never arrive here (the caller
+        returns before the accumulators on a rail), and the held
+        value keeps accruing through silence, matching how dwell
+        reads a silent link.
+        """
+        held = record.get(DEV_SIGNAL_PSQ_VALUE)
+        ts = record.get(DEV_SIGNAL_PSQ_TS)
+        if held is not None and ts is not None:
+            minutes = min(1440, int(max(0.0, now - float(ts)) // 60))
+            if minutes > 0:
+                for state_key, q in (
+                    (DEV_SIGNAL_P5_STATE, 0.05),
+                    (DEV_SIGNAL_P50_STATE, 0.5),
+                ):
+                    state = record.get(state_key)
+                    if state is None:
+                        state = psquare_new()
+                        record[state_key] = state
+                    for _ in range(minutes):
+                        psquare_feed(state, q, float(held))
+                record[DEV_SIGNAL_PSQ_TS] = float(ts) + minutes * 60.0
+        if new_value is not None:
+            if held is None or ts is None:
+                record[DEV_SIGNAL_PSQ_TS] = now
+            record[DEV_SIGNAL_PSQ_VALUE] = float(new_value)
 
     def _feed_dwell(
         self, record: dict[str, Any], value: float, now: float

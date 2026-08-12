@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.18 (2026-08-11)
+# File: const.py, Version: 0.12.19 (2026-08-12)
 
 """Constants for the Device Sentinel integration."""
 
@@ -409,12 +409,34 @@ SIGNAL_CEILING_CLEARANCE_RSSI = 3.0
 # with every reading, which makes them clock-shaped, so they live in
 # the hot file with the other clocks; the rolled series is history and
 # lives in the main file.
-DEV_SIGNAL_SUM = "signal_sum"
-DEV_SIGNAL_SUM_SQ = "signal_sum_sq"
+DEV_SIGNAL_SUM = "signal_sum"  # retired by #254; read once for migration
+DEV_SIGNAL_SUM_SQ = "signal_sum_sq"  # retired by #254; read once for migration
 DEV_SIGNAL_COUNT = "signal_count"
+# Welford accumulators (ruling #254): the day's running mean and its
+# sum of squared distances from that mean (M2). The naive sum and
+# sum-of-squares pair subtracts two large near-equal numbers at the
+# fold, the textbook catastrophic-cancellation site, and can round a
+# near-constant device to a negative variance. Welford carries the
+# spread directly and cannot. Same mean, same deviation, stably.
+DEV_SIGNAL_MEAN_RUN = "signal_mean_run"
+DEV_SIGNAL_M2 = "signal_m2"
+# Streaming percentile states (ruling #253): P-Square estimators for
+# the day's time-weighted 5th percentile and median. Each state is
+# eleven numbers, fed one minute of held value at a time, so a value
+# must persist for about 72 cumulative minutes before it can be the
+# day's sustained low. The daily minimum stays recorded beside them;
+# the fleet measured 47 percent of device-days carrying a minimum
+# the day itself disowns (three deviations under its own mean), and
+# these series exist so the floor's input can be re-ruled on record.
+DEV_SIGNAL_P5_STATE = "signal_p5_state"
+DEV_SIGNAL_P50_STATE = "signal_p50_state"
+DEV_SIGNAL_PSQ_VALUE = "signal_psq_value"
+DEV_SIGNAL_PSQ_TS = "signal_psq_ts"
 DEV_SIGNAL_TODAY_MAX = "signal_today_max"
 DEV_SIGNAL_DAILY_MEAN = "signal_daily_mean"
 DEV_SIGNAL_DAILY_SD = "signal_daily_sd"
+DEV_SIGNAL_DAILY_P5 = "signal_daily_p5"
+DEV_SIGNAL_DAILY_P50 = "signal_daily_p50"
 DEV_SIGNAL_DAILY_MAX = "signal_daily_max"
 # Three more daily series beside the mean and deviation (ruling #245),
 # recorded ahead of the #172 successor on the record-first principle:
@@ -810,12 +832,18 @@ EPOCH_KEPT = (
     DEV_SIGNAL_BELOW_SINCE,
     DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_LAST_CHANGE,
-    DEV_SIGNAL_SUM,
-    DEV_SIGNAL_SUM_SQ,
     DEV_SIGNAL_COUNT,
+    DEV_SIGNAL_MEAN_RUN,
+    DEV_SIGNAL_M2,
+    DEV_SIGNAL_P5_STATE,
+    DEV_SIGNAL_P50_STATE,
+    DEV_SIGNAL_PSQ_VALUE,
+    DEV_SIGNAL_PSQ_TS,
     DEV_SIGNAL_TODAY_MAX,
     DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_SD,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_COUNT,
     DEV_SIGNAL_DAILY_LINE,
@@ -825,6 +853,17 @@ EPOCH_KEPT = (
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
     DEV_BATTERY_DAILY,
+)
+
+# The legacy tail of the hot set (#254): the naive accumulators are
+# read once at upgrade from the clocks file, shed at the first fold,
+# and never written for a fresh record. They stay listed in
+# CLOCK_FIELDS so the merge still carries an upgraded install's
+# partial day; this subset names them so tests can expect their
+# absence from records born after the swap.
+LEGACY_CLOCK_FIELDS = (
+    DEV_SIGNAL_SUM,
+    DEV_SIGNAL_SUM_SQ,
 )
 
 # The hot set, read from the code rather than assumed: these are the
@@ -844,6 +883,12 @@ CLOCK_FIELDS = (
     DEV_SIGNAL_SUM,
     DEV_SIGNAL_SUM_SQ,
     DEV_SIGNAL_COUNT,
+    DEV_SIGNAL_MEAN_RUN,
+    DEV_SIGNAL_M2,
+    DEV_SIGNAL_P5_STATE,
+    DEV_SIGNAL_P50_STATE,
+    DEV_SIGNAL_PSQ_VALUE,
+    DEV_SIGNAL_PSQ_TS,
     DEV_SIGNAL_TODAY_MAX,
     DEV_SIGNAL_RAIL_COUNT,
 )
@@ -1427,7 +1472,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 252
+HIGHEST_RULING = 254
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
