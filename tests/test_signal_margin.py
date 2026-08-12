@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_margin.py, Version: 0.10.13 (2026-08-01)
+# File: test_signal_margin.py, Version: 0.12.18 (2026-08-11)
 
 """The margin above the floor, and why it exists.
 
@@ -26,11 +26,14 @@ hovers just above its own baseline all day registers dwell where it
 used to register nothing, so a slow degradation shows as a rising
 number instead of staying silent until it crosses a line.
 
-The formula is floor + pct * abs(floor). The absolute value is the
-part that matters and the part that is easy to get wrong: LQI runs 0
-to 255 upward while RSSI is negative dBm, so a naive percentage
-inverts the setting on every RSSI device. That case has its own test
-below.
+The formula is floor + pct * (perfect - floor) + lift, with the
+distance frozen at its dropout-point width for floors below dropout
+(rulings #250, #252). Distance from perfect is what makes the wedge
+point the right way on both scales: the old percentage-of-floor
+measured distance from zero, and zero is dead on LQI but perfect on
+RSSI, so the band was widest exactly on the fleet's strongest LQI
+links. Anchors are the working band (LQI 50 to 255, RSSI -90 to
+-20), because no working link lives at the scale ends.
 """
 
 from __future__ import annotations
@@ -40,9 +43,11 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
     CONF_SIGNAL_ANOMALY_TRIM,
+    CONF_SIGNAL_LIFT,
     CONF_SIGNAL_MARGIN,
     DEFAULT_SIGNAL_MARGIN,
     DEV_SIGNAL_DAILY_MIN,
+    SIGNAL_LIFT_MAX,
     SIGNAL_MARGIN_MAX,
 )
 
@@ -68,13 +73,13 @@ async def test_zero_margin_is_the_floor_itself(hass: HomeAssistant):
     coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     line = coord._danger_line(_record(LQI_DAYS))
 
-    assert line == 104.0
+    assert line == 104.0  # floor + 0% of the span + lift 0
 
 
 async def test_the_margin_lifts_the_line_above_the_floor(
     hass: HomeAssistant
 ):
-    """Five percent of a floor of 104 is 5.2, so the line is 109.2.
+    """Five percent of the headroom above a floor of 104 is 7.55.
 
     A device sitting at 108, comfortably above its floor and invisible
     before, now counts as weak.
@@ -82,8 +87,8 @@ async def test_the_margin_lifts_the_line_above_the_floor(
     coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
     line = coord._danger_line(_record(LQI_DAYS))
 
-    assert line == pytest.approx(109.2)
-    assert 108.0 <= line
+    assert line == pytest.approx(104.0 + 0.05 * (255.0 - 104.0))
+    assert 108.0 < line
 
 
 async def test_rssi_moves_the_same_way_as_lqi(hass: HomeAssistant):
@@ -100,22 +105,54 @@ async def test_rssi_moves_the_same_way_as_lqi(hass: HomeAssistant):
     floor = -70.0
 
     assert line > floor
-    assert line == pytest.approx(floor + 0.05 * 70.0)
+    assert line == pytest.approx(floor + 0.05 * (-20.0 - floor))
 
 
-async def test_the_margin_scales_with_the_device(hass: HomeAssistant):
-    """Ruled deliberately: a strong link can absorb larger swings.
+async def test_the_margin_points_at_the_weak_end(hass: HomeAssistant):
+    """Ruling #250's whole point: the wedge narrows as links improve.
 
-    The same percentage is a wider band on a strong device than on a
-    weak one. Recorded as a test rather than left implicit, because it
-    is the consequence most likely to be questioned later.
+    The old percentage-of-floor gave the strong device the wide band
+    (10 units at floor 200 against 2 at floor 40), which watched the
+    fleet's best links hardest. Distance-from-perfect inverts that:
+    the weak device gets the wide band, and below the dropout anchor
+    the width holds at its dropout-point maximum rather than growing
+    on toward the scale end.
     """
     coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
     strong = coord._danger_line(_record([200.0] * 14))
     weak = coord._danger_line(_record([40.0] * 14))
 
-    assert strong - 200.0 == pytest.approx(10.0)
-    assert weak - 40.0 == pytest.approx(2.0)
+    assert strong - 200.0 == pytest.approx(0.05 * 55.0)
+    assert weak - 40.0 == pytest.approx(0.05 * 205.0)  # clamped at DEAD 50
+    assert weak - 40.0 > strong - 200.0
+
+async def test_the_line_dies_at_perfect(hass: HomeAssistant):
+    """A floor of 255 gets no margin at all: line equals floor, and
+    with dwell strictly below the line (ruling #251) a perfect link
+    can never dwell. Before the anchoring, floor 242.86 and above put
+    the five percent line at or past the top of the scale, so the
+    whole remaining scale was inside the band."""
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
+
+    assert coord._danger_line(_record([255.0 - 6.0] * 14)) == pytest.approx(
+        249.0 + 0.05 * 6.0
+    )
+
+async def test_the_lift_raises_every_line_flat(hass: HomeAssistant):
+    """Ruling #252: the lift is purely additive, the same amount at
+    every floor, surviving even where the margin has died, and capped
+    at 2.0 because the fleet replay showed 5.0 re-flagging the
+    strongest links the anchored formula had just freed."""
+    lifted = await setup_coordinator(
+        hass, {CONF_SIGNAL_MARGIN: 5, CONF_SIGNAL_LIFT: 1.0}
+    )
+    flat = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
+    for days in ([40.0] * 14, [200.0] * 14, RSSI_DAYS):
+        low = flat._danger_line(_record(days))
+        high = lifted._danger_line(_record(days))
+        assert high == pytest.approx(low + 1.0)
+    over = await setup_coordinator(hass, {CONF_SIGNAL_LIFT: 9.0})
+    assert over._signal_lift() == SIGNAL_LIFT_MAX
 
 
 async def test_the_default_is_five_percent(hass: HomeAssistant):
@@ -129,7 +166,9 @@ async def test_the_default_is_five_percent(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
 
     assert coord._signal_margin() == DEFAULT_SIGNAL_MARGIN / 100.0
-    assert coord._danger_line(_record(LQI_DAYS)) == pytest.approx(109.2)
+    assert coord._danger_line(_record(LQI_DAYS)) == pytest.approx(
+        104.0 + 0.05 * (255.0 - 104.0)
+    )
 
 
 @pytest.mark.parametrize("value,expected", [(-5, 0.0), (99, 0.10)])
@@ -158,8 +197,12 @@ async def test_the_two_settings_are_independent(hass: HomeAssistant):
 
     # Third lowest is 108, fourth is 112: the trim alone moves the
     # floor, and the margin rides on whichever floor it lands on.
-    assert normal._danger_line(_record(days)) == pytest.approx(108.0 * 1.05)
-    assert deeper._danger_line(_record(days)) == pytest.approx(112.0 * 1.05)
+    assert normal._danger_line(_record(days)) == pytest.approx(
+        108.0 + 0.05 * (255.0 - 108.0)
+    )
+    assert deeper._danger_line(_record(days)) == pytest.approx(
+        112.0 + 0.05 * (255.0 - 112.0)
+    )
 
 
 async def test_no_history_still_has_no_line(hass: HomeAssistant):
@@ -190,3 +233,19 @@ async def test_the_trim_renders_as_a_word(
     coord = await setup_coordinator(hass, {CONF_SIGNAL_ANOMALY_TRIM: value})
 
     assert coord._signal_trim_label() == word
+
+async def test_fleet_fixture_the_design_day_numbers(hass: HomeAssistant):
+    """The 11 August simulation, pinned. Door Entryway (floor 220):
+    the old formula put its line at 231.0, above almost every daily
+    minimum it had ever recorded, and it read 19 percent dwell on an
+    objectively superb link. The anchored line is 221.75. The
+    dropout-zone clamp: a floor-36 night-light plug holds the full
+    10.25-unit dropout-point margin rather than 10.95 and growing."""
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
+
+    entryway = coord._danger_line(_record([220.0] * 14))
+    assert entryway == pytest.approx(220.0 + 0.05 * 35.0)
+    assert entryway < 231.0
+
+    night_light = coord._danger_line(_record([36.0] * 14))
+    assert night_light == pytest.approx(36.0 + 0.05 * 205.0)

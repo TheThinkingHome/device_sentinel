@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.12.15 (2026-08-08)
+# File: test_signal_stats.py, Version: 0.12.18 (2026-08-11)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -710,9 +710,10 @@ async def test_a_device_with_room_is_left_alone(
 ):
     """The guard must not touch the fleet it was not written for.
 
-    Door Gate Garage: floor 124, so the margin is 6.2 points and the
-    line 130.2, while its mean is 192.8. The ceiling sits 54 points
-    above the line and never fires.
+    Door Gate Garage: floor 124, so the anchored margin is 6.55
+    points (five percent of the 131-point headroom) and the line
+    130.55, while its mean is 192.8. The ceiling sits far above the
+    line and never fires.
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "gs2", "Ordinary Link")
@@ -724,7 +725,7 @@ async def test_a_device_with_room_is_left_alone(
         16.41,
     )
 
-    assert coord._danger_line(record) == pytest.approx(130.2, abs=0.01)
+    assert coord._danger_line(record) == pytest.approx(130.55, abs=0.01)
     assert coord._line_is_bounded(record) is False
 
 
@@ -760,8 +761,9 @@ async def test_the_margin_becomes_a_maximum_on_a_bounded_device(
 async def test_no_statistics_means_no_ceiling(
     hass: HomeAssistant,
 ):
-    """A fresh install behaves exactly as it did before the first
-    midnight roll, because there is nothing yet to bound against."""
+    """A fresh install has no mean and deviation yet, so nothing is
+    bounded and the line is the anchored formula alone: floor 240
+    plus five percent of the 15-point headroom."""
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "gs4", "New Link")
     record = coord.data[DATA_DEVICES][device.id]
@@ -769,7 +771,7 @@ async def test_no_statistics_means_no_ceiling(
     record[DEV_SIGNAL_DAILY_MEAN] = []
     record[DEV_SIGNAL_DAILY_SD] = []
 
-    assert coord._danger_line(record) == pytest.approx(252.0, abs=0.01)
+    assert coord._danger_line(record) == pytest.approx(240.75, abs=0.01)
     assert coord._line_is_bounded(record) is False
 
 

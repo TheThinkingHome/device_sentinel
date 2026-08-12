@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal.py, Version: 0.12.12 (2026-08-07)
+# File: test_signal.py, Version: 0.12.18 (2026-08-11)
 
 """Signal detection: the floor line, the dwell timer, and the rail.
 
@@ -218,14 +218,22 @@ async def test_all_rail_history_has_no_floor(hass: HomeAssistant):
     assert coord._danger_line(record) is None
 
 
-async def test_sitting_exactly_at_the_floor_counts(hass: HomeAssistant):
-    """A device sitting on its own trimmed floor is living at its
-    lows, the thing being measured, so it accumulates dwell."""
+async def test_sitting_exactly_at_the_floor_does_not_count(
+    hass: HomeAssistant
+):
+    """Ruling #251: dwell counts strictly below the line. The floor
+    is a value the device actually visits (its trimmed minimum), so
+    at-or-below counting read every visit to a device's own floor as
+    dwell, which is what kept a healthy plateaued link permanently
+    dwelling. At margin 0 the line is the floor, and sitting on it is
+    now ordinary life; one step under it still counts."""
     coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
     record = _record([80.0, 96.0, 88.0])  # k=0, floor 80
     assert coord._danger_line(record) == 80.0
     coord._feed_signal(record, 80.0, 1000.0)
-    assert record[DEV_SIGNAL_BELOW_SINCE] == 1000.0
+    assert record[DEV_SIGNAL_BELOW_SINCE] is None
+    coord._feed_signal(record, 79.0, 2000.0)
+    assert record[DEV_SIGNAL_BELOW_SINCE] == 2000.0
 
 
 # ------------------------------------------- the sensitivity slider

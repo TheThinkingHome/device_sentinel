@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entity_defaults.py, Version: 0.12.16 (2026-08-08)
+# File: tests/test_entity_defaults.py, Version: 0.12.17 (2026-08-08)
 
 """Which entities a first install presents, and what deletion leaves.
 
@@ -164,7 +164,10 @@ async def test_the_count_sensors_split_found_from_watched(
     of fact as a stopped broker (#243), and a person who enables one
     puts it on a dashboard, which diagnostic entities are left out
     of. Classification and the three tracked totals describe the
-    integration's own bookkeeping and stay diagnostic.
+    integration's own bookkeeping and stay diagnostic, and #249 moved
+    Devices: Watched and Devices: Learned to the same side for the
+    same reason, renaming both into the Category: State pattern every
+    other sensor follows.
     """
     from homeassistant.const import EntityCategory
     entry = await setup_entry(hass)
@@ -172,7 +175,8 @@ async def test_the_count_sensors_split_found_from_watched(
     found = ("frozen_devices", "low_batteries", "falling_batteries",
              "signal_weak", "signal_rails")
     watched = ("classification", "tracked_signals",
-               "tracked_batteries", "tracked_devices")
+               "tracked_batteries", "tracked_devices",
+               "coverage", "learning_progress")
     for key in found:
         eid = reg.async_get_entity_id(
             "sensor", DOMAIN, f"{entry.entry_id}_{key}"
