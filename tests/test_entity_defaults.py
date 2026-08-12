@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entity_defaults.py, Version: 0.12.17 (2026-08-08)
+# File: tests/test_entity_defaults.py, Version: 0.12.20 (2026-08-12)
 
 """Which entities a first install presents, and what deletion leaves.
 
@@ -46,6 +46,15 @@ EXPECTED_DEFAULTS = {
     "sensor.device_sentinel_devices_watched": True,
     "sensor.device_sentinel_devices_learned": True,
     "sensor.device_sentinel_maintenance_ends": True,
+    # The Data sensors (ruling #255): on, because the question they
+    # answer (how much history stands behind a verdict) was
+    # previously answerable only by downloading diagnostics, and a
+    # sensor nobody can find does not answer it either. Diagnostic
+    # category, so they sit under the device page's own heading
+    # rather than on the dashboard.
+    "sensor.device_sentinel_data_freeze": True,
+    "sensor.device_sentinel_data_battery": True,
+    "sensor.device_sentinel_data_signal": True,
     "todo.device_sentinel_problem_list": True,
     "button.device_sentinel_enable_signals": True,
     "button.device_sentinel_enable_last_seen": True,
