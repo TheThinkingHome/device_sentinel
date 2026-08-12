@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.12.17 (2026-08-08)
+# File: const.py, Version: 0.12.18 (2026-08-11)
 
 """Constants for the Device Sentinel integration."""
 
@@ -365,6 +365,23 @@ DEV_SIGNAL_DWELL_DAILY = "signal_dwell_daily_pct"
 # setting, because it is a guard rather than a preference (ruling
 # #193).
 GOOD_STATE_CEILING_SD = 0.5
+# The working band of each scale (ruling #250): where a link actually
+# dies and where it is actually perfect. A Zigbee radio's receiver
+# sensitivity sits near -95 to -100 dBm and links degrade below
+# about -85, which maps to roughly LQI 40 to 60 on the common
+# coordinator scales; and no working link reports RSSI near zero, a
+# device beside the coordinator reads about -20. The margin is a
+# percentage of the distance from perfect, so it is widest exactly
+# at the dropout point, holds that width through the dropout zone
+# below it (everything down there is hazard already), and dies to
+# nothing at perfect. The old margin was a percentage of the floor
+# itself, which measured distance from zero on both scales, and zero
+# is dead on LQI and perfect on RSSI: one formula, two opposite
+# behaviours, widest for the strongest LQI links on the fleet.
+SIGNAL_LQI_DEAD = 50.0
+SIGNAL_LQI_PERFECT = 255.0
+SIGNAL_RSSI_DEAD = -90.0
+SIGNAL_RSSI_PERFECT = -20.0
 # The ceiling's minimum clearance below the mean, per scale (ruling #244).
 # Half a deviation is the guard on a normal device, but on a device
 # whose whole operating range spans a step or two (the motion-blind
@@ -964,6 +981,20 @@ SIGNAL_ANOMALY_TRIM_MAX = 2
 # is unaffected until somebody moves it.
 CONF_SIGNAL_MARGIN = "signal_margin"
 DEFAULT_SIGNAL_MARGIN = 5
+# The lift (ruling #252): a flat amount added to the line after the
+# margin, one value for both scales. Zero, the default, is the
+# formula as designed, with the line dying to nothing at perfect.
+# Raising it keeps a thin band alive even at the top of the scale,
+# a deliberate minimum vigilance. Capped at 2 because the top three
+# detents of the proposed 0-to-5 range re-flagged the exact devices
+# the formula change was built to free: on the reference fleet a
+# lift of 5 put Door Entryway back from 7 reporting days to 11.
+CONF_SIGNAL_LIFT = "signal_lift"
+DEFAULT_SIGNAL_LIFT = 0.0
+SIGNAL_LIFT_MIN = 0.0
+SIGNAL_LIFT_MAX = 2.0
+SIGNAL_LIFT_STEP = 0.25
+
 SIGNAL_MARGIN_MIN = 0
 SIGNAL_MARGIN_MAX = 10
 
@@ -1396,7 +1427,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 249
+HIGHEST_RULING = 252
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.12.17 (2026-08-08)
+# File: detect_signal.py, Version: 0.12.18 (2026-08-11)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -29,10 +29,12 @@ from .const import (
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
+    CONF_SIGNAL_LIFT,
     CONF_SIGNAL_MARGIN,
     CONF_SIGNAL_RED,
     DATA_DEVICES,
     DEFAULT_SIGNAL_ANOMALY_TRIM,
+    DEFAULT_SIGNAL_LIFT,
     DEFAULT_SIGNAL_MARGIN,
     DEFAULT_SIGNAL_RED,
     DEV_SIGNAL_BELOW_SINCE,
@@ -61,6 +63,10 @@ from .const import (
     SIGNAL_CEILING_CLEARANCE_RSSI,
     SIGNAL_DAYS_KEEP,
     SIGNAL_FOREIGN_TERMS,
+    SIGNAL_LIFT_MAX,
+    SIGNAL_LIFT_MIN,
+    SIGNAL_LQI_DEAD,
+    SIGNAL_LQI_PERFECT,
     SIGNAL_MARGIN_MAX,
     SIGNAL_MARGIN_MIN,
     SIGNAL_NAME_TERMS,
@@ -68,6 +74,8 @@ from .const import (
     SIGNAL_RAIL_RSSI,
     SIGNAL_RED_MAX,
     SIGNAL_RED_MIN,
+    SIGNAL_RSSI_DEAD,
+    SIGNAL_RSSI_PERFECT,
     SIGNAL_TRIM_LADDER_MAX,
     SIGNAL_TRIM_PER_WEEK,
     TODO_DEVICE_ID,
@@ -233,7 +241,7 @@ class SignalMixin:
         if line is None:
             record[DEV_SIGNAL_BELOW_SINCE] = None
             return
-        if value <= line:
+        if value < line:
             if below_since is None:
                 record[DEV_SIGNAL_BELOW_SINCE] = now
         elif below_since is not None:
@@ -267,10 +275,13 @@ class SignalMixin:
 
         The line sits a margin above that floor rather
         than on it, so a link hovering just above its own baseline
-        registers instead of reading zero all day. The margin is a
-        percentage of the floor's absolute value, which keeps the
-        direction right for RSSI as well as LQI; at zero the line is
-        the floor and the behaviour is what it was before.
+        registers instead of reading zero all day. The margin is the
+        sensitivity percentage of the distance from perfect plus the
+        flat lift (rulings #250, #252): widest at the dropout point,
+        dead at perfect, identical in shape on both scales. Dwell
+        counts strictly below the line (ruling #251), so a zero
+        margin at perfect means never, and a device sitting on its
+        own floor no longer reads as dwelling there.
 
         The margin is then bounded by the device's own spread, and
         the line can never sit higher than the mean of its readings
@@ -300,7 +311,7 @@ class SignalMixin:
             return None
         effective_k = self._signal_effective_k(len(history))
         floor = sorted(history)[effective_k]
-        line = floor + self._signal_margin() * abs(floor)
+        line = floor + self._anchored_margin(floor)
         ceiling = self._good_state_ceiling(record)
         if ceiling is not None:
             return min(line, ceiling)
@@ -360,7 +371,7 @@ class SignalMixin:
         if ceiling is None:
             return False
         floor = sorted(history)[self._signal_effective_k(len(history))]
-        return floor + self._signal_margin() * abs(floor) > ceiling
+        return floor + self._anchored_margin(floor) > ceiling
 
     @staticmethod
     def _signal_history(record: dict[str, Any]) -> list[float]:
@@ -403,12 +414,11 @@ class SignalMixin:
         )
 
     def _signal_margin(self) -> float:
-        """Return the sensitivity margin as a fraction of the floor.
+        """Return the sensitivity as a fraction of the working band.
 
-        Zero is the older behaviour, where the floor was the
-        line. Clamped rather than trusted, because an options value
-        can arrive from a hand-edited entry as well as from the
-        slider.
+        Zero puts the line on the floor plus only the lift. Clamped
+        rather than trusted, because an options value can arrive from
+        a hand-edited entry as well as from the slider.
         """
         margin = float(
             self.entry.options.get(CONF_SIGNAL_MARGIN, DEFAULT_SIGNAL_MARGIN)
@@ -416,6 +426,44 @@ class SignalMixin:
         return max(
             SIGNAL_MARGIN_MIN, min(margin, SIGNAL_MARGIN_MAX)
         ) / 100.0
+
+    def _signal_lift(self) -> float:
+        """Return the flat lift added to every line, in scale units.
+
+        The second sensitivity control (ruling #252): where the
+        percentage sets the wedge's slope, the lift raises the whole
+        line by the same amount at every floor, a minimum vigilance
+        that survives even where the margin has died to nothing at
+        perfect. One value serves both scales because a quarter unit
+        is deliberately small on each. Capped at 2.0 because the
+        fleet replay showed 5.0 re-flagging the strongest links the
+        anchored formula had just freed.
+        """
+        lift = float(
+            self.entry.options.get(CONF_SIGNAL_LIFT, DEFAULT_SIGNAL_LIFT)
+        )
+        return max(SIGNAL_LIFT_MIN, min(lift, SIGNAL_LIFT_MAX))
+
+    def _anchored_margin(self, floor: float) -> float:
+        """Return the margin above this floor, in scale units.
+
+        The sensitivity percentage of the distance from perfect
+        (ruling #250): widest at the dropout point, held at that
+        width through the dropout zone below it, dead at perfect.
+        The old margin was a percentage of the floor itself, which
+        measures distance from zero, and zero is dead on LQI but
+        perfect on RSSI: one formula, two opposite behaviours, and
+        the widest bands on the fleet's strongest LQI links. Anchors
+        are the working band, not the scale ends: no working link
+        lives at LQI 0 or RSSI -100, and none reads LQI 255 (the
+        rail) or RSSI 0.
+        """
+        if floor < 0:
+            dead, perfect = SIGNAL_RSSI_DEAD, SIGNAL_RSSI_PERFECT
+        else:
+            dead, perfect = SIGNAL_LQI_DEAD, SIGNAL_LQI_PERFECT
+        span = max(0.0, perfect - max(floor, dead))
+        return self._signal_margin() * span + self._signal_lift()
 
     def _signal_red(self) -> float:
         """Return the red threshold for the dwell report, clamped."""

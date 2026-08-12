@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_dwell.py, Version: 0.12.16 (2026-08-08)
+# File: report_dwell.py, Version: 0.12.18 (2026-08-11)
 
 """The signal dwell chart and the signal cells of the telemetry.
 
@@ -352,8 +352,8 @@ footer {{ margin-top: 24px; font-size: 12px; color: #5F5E5A; }}
   footer, .empty {{ color: #B4B2A9; }} }}
 </style></head><body>
 <h1>Signal Dwell</h1>
-<p>Written {written}. The share of each day a device spent at or
-below its line. {zeros} device(s) sat at exactly zero on
+<p>Written {written}. The share of each day a device spent below
+its line. {zeros} device(s) sat at exactly zero on
 {day_label} and are not charted.</p>
 <p class='legend'>
 <span><span class='swatch' style='background:#1D9E75'></span>0 to

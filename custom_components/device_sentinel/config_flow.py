@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.12.13 (2026-08-07)
+# File: config_flow.py, Version: 0.12.18 (2026-08-11)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -96,6 +96,7 @@ from .const import (
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
+    CONF_SIGNAL_LIFT,
     CONF_SIGNAL_MARGIN,
     CONF_SIGNAL_RED,
     CONF_TAINT_FLOOR,
@@ -116,6 +117,7 @@ from .const import (
     DEFAULT_RETENTION_DAYS,
     DEFAULT_SETTLE_SHARE_PCT,
     DEFAULT_SIGNAL_ANOMALY_TRIM,
+    DEFAULT_SIGNAL_LIFT,
     DEFAULT_SIGNAL_MARGIN,
     DEFAULT_SIGNAL_RED,
     DEFAULT_TAINT_FLOOR_MINUTES,
@@ -143,6 +145,9 @@ from .const import (
     SHARE_PCT_STEP,
     SIGNAL_ANOMALY_TRIM_MAX,
     SIGNAL_ANOMALY_TRIM_MIN,
+    SIGNAL_LIFT_MAX,
+    SIGNAL_LIFT_MIN,
+    SIGNAL_LIFT_STEP,
     SIGNAL_MARGIN_MAX,
     SIGNAL_MARGIN_MIN,
     SIGNAL_RED_MAX,
@@ -498,6 +503,19 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         )
                     ),
                     vol.Required(
+                        CONF_SIGNAL_LIFT,
+                        default=options.get(
+                            CONF_SIGNAL_LIFT, DEFAULT_SIGNAL_LIFT
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=SIGNAL_LIFT_MIN,
+                            max=SIGNAL_LIFT_MAX,
+                            step=SIGNAL_LIFT_STEP,
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Required(
                         CONF_SIGNAL_RED,
                         default=options.get(
                             CONF_SIGNAL_RED, DEFAULT_SIGNAL_RED
@@ -583,6 +601,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             pruned[CONF_SIGNAL_MARGIN] = int(pruned[CONF_SIGNAL_MARGIN])
         if CONF_SIGNAL_RED in pruned:
             pruned[CONF_SIGNAL_RED] = int(pruned[CONF_SIGNAL_RED])
+        if CONF_SIGNAL_LIFT in pruned:
+            pruned[CONF_SIGNAL_LIFT] = float(pruned[CONF_SIGNAL_LIFT])
         covered = _devices_covered_by(
             signal_rows,
             pruned.get(CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []),
