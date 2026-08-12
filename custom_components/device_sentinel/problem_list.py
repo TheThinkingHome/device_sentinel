@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.12.11 (2026-08-07)
+# File: problem_list.py, Version: 0.13.1 (2026-08-12)
 
 """The problem list: the single memory every channel renders.
 
@@ -127,20 +127,18 @@ class ProblemListMixin:
         section reads as a stable history rather than reshuffling as
         problems come and go around it.
         """
-        self.data[DATA_TODO_ITEMS].sort(
-            key=lambda record: (
-                record.get(TODO_STATUS) == "completed",
-                (
-                    record.get(TODO_ACKED_AT) or ""
-                    if record.get(TODO_STATUS) == "completed"
-                    else (
-                        record.get(TODO_SORT_NAME)
-                        or record.get(TODO_SUMMARY)
-                        or ""
-                    ).lower()
-                ),
+        def order(record: dict[str, Any]) -> tuple[bool, Any]:
+            acknowledged = record.get(TODO_STATUS) == "completed"
+            if acknowledged:
+                return True, record.get(TODO_ACKED_AT) or ""
+            name = (
+                record.get(TODO_SORT_NAME)
+                or record.get(TODO_SUMMARY)
+                or ""
             )
-        )
+            return False, name.lower()
+
+        self.data[DATA_TODO_ITEMS].sort(key=order)
 
     async def async_todo_update(
         self,
@@ -587,6 +585,116 @@ class ProblemListMixin:
         await self.async_update_card()
         await self.async_fire_events(events)
 
+    def _retire_item(
+        self, record: dict[str, Any], device_id: str, now: float
+    ) -> None:
+        """Resolve every kind on an item whose device has recovered.
+
+        The item itself is dropped by the caller; this closes the
+        incident timeline first, so the brief can tell the end of the
+        story as well as its beginning. Acknowledged or not makes no
+        difference: recovery is the automatic re-arm.
+        """
+        name = record.get(TODO_SORT_NAME) or device_id
+        for kind in record.get(TODO_KINDS, {}):
+            self._resolve_incident(device_id, name, kind, now)
+            self._collect_event(
+                kind, name, recovery=True, device_id=device_id
+            )
+
+    def _diff_kinds(
+        self,
+        device_id: str,
+        problem: dict[str, Any],
+        stored_kinds: dict[str, float | None],
+        now: float,
+    ) -> dict[str, float | None]:
+        """Return the item's new kind map, journalling what moved.
+
+        A kind that was already there keeps the item's own stamp when
+        the detection carries none, so a rail's first-seen time is not
+        rewritten on every pass. A kind that has arrived opens an
+        incident; a kind that has gone resolves one, marked superseded
+        where another kind overtook it in the same pass.
+        """
+        new_kinds: dict[str, float | None] = {}
+        for kind, since in problem["kinds"].items():
+            if kind in stored_kinds:
+                new_kinds[kind] = (
+                    since if since is not None else stored_kinds[kind]
+                )
+                continue
+            new_kinds[kind] = since if since is not None else now
+            self._journal_addition(device_id, problem["name"], kind)
+            self._record_incident(
+                device_id, problem["name"], kind, INCIDENT_OPENED
+            )
+            self._collect_event(
+                kind, problem["name"], recovery=False,
+                device_id=device_id, left=problem.get("left"),
+            )
+        gained = set(new_kinds) - set(stored_kinds)
+        for kind in stored_kinds:
+            if kind in new_kinds:
+                continue
+            self._resolve_incident(device_id, problem["name"], kind, now)
+            self._collect_event(
+                kind, problem["name"], recovery=True,
+                device_id=device_id,
+                superseded=self._overtaken(kind, gained),
+            )
+        return new_kinds
+
+    def _new_item(
+        self, device_id: str, problem: dict[str, Any], now: float
+    ) -> dict[str, Any]:
+        """Build the todo row for a device detected for the first time.
+
+        A row a person deleted while the fault still stood comes back,
+        and that return is the list re-adding an item, not the house
+        producing a new fault. Calling it opened put a second opening
+        on a key that already had one pending, which orphaned the
+        first and left a real episode rendering as never resolved.
+        """
+        kinds = {
+            kind: (since if since is not None else now)
+            for kind, since in problem["kinds"].items()
+        }
+        summary, description = self._problem_item_text(
+            problem["name"], kinds, problem["level"],
+            problem.get("left"), device_id,
+        )
+        readded = device_id in self._hand_deleted
+        self._hand_deleted.discard(device_id)
+        for kind in kinds:
+            self._journal_addition(device_id, problem["name"], kind)
+            if readded:
+                self._record_incident(
+                    device_id,
+                    problem["name"],
+                    kind,
+                    INCIDENT_ACTION,
+                    cause=ACTION_READDED,
+                )
+                continue
+            self._record_incident(
+                device_id, problem["name"], kind, INCIDENT_OPENED
+            )
+            self._collect_event(
+                kind, problem["name"], recovery=False,
+                device_id=device_id, left=problem.get("left"),
+            )
+        return {
+            TODO_UID: uuid.uuid4().hex,
+            TODO_DEVICE_ID: device_id,
+            TODO_SUMMARY: summary,
+            TODO_DESCRIPTION: description,
+            TODO_STATUS: "needs_action",
+            TODO_ACKED_AT: None,
+            TODO_SORT_NAME: problem["name"],
+            TODO_KINDS: kinds,
+        }
+
     def _sync_problem_list(self) -> None:
         """Reconcile the todo against the detections, immediately.
 
@@ -615,62 +723,15 @@ class ProblemListMixin:
             device_id = record.get(TODO_DEVICE_ID)
             problem = problems.pop(device_id, None)
             if problem is None:
-                # Every kind cleared: the recovery deletes the item,
-                # acknowledged or not. Each kind resolves on the
-                # incident timeline first, so the brief can tell the
-                # end of the story as well as its beginning.
-                for kind in record.get(TODO_KINDS, {}):
-                    self._resolve_incident(
-                        device_id,
-                        record.get(TODO_SORT_NAME) or device_id,
-                        kind,
-                        now,
-                    )
-                    self._collect_event(
-                        kind,
-                        record.get(TODO_SORT_NAME) or device_id,
-                        recovery=True,
-                        device_id=device_id,
-                    )
+                self._retire_item(record, device_id, now)
                 changed = True
                 continue
             stored_kinds: dict[str, float | None] = record.get(
                 TODO_KINDS, {}
             )
-            new_kinds: dict[str, float | None] = {}
-            for kind, since in problem["kinds"].items():
-                if kind in stored_kinds:
-                    # Keep the item's own stamp when the detection
-                    # carries none, so a rail's first-seen time is
-                    # not rewritten on every pass.
-                    new_kinds[kind] = (
-                        since
-                        if since is not None
-                        else stored_kinds[kind]
-                    )
-                else:
-                    new_kinds[kind] = since if since is not None else now
-                    self._journal_addition(
-                        device_id, problem["name"], kind
-                    )
-                    self._record_incident(
-                        device_id, problem["name"], kind, INCIDENT_OPENED
-                    )
-                    self._collect_event(
-                        kind, problem["name"], recovery=False,
-                        device_id=device_id, left=problem.get("left"),
-                    )
-            gained = set(new_kinds) - set(stored_kinds)
-            for kind in stored_kinds:
-                if kind not in new_kinds:
-                    self._resolve_incident(
-                        device_id, problem["name"], kind, now
-                    )
-                    self._collect_event(
-                        kind, problem["name"], recovery=True,
-                        device_id=device_id,
-                        superseded=self._overtaken(kind, gained),
-                    )
+            new_kinds = self._diff_kinds(
+                device_id, problem, stored_kinds, now
+            )
             summary, description = self._problem_item_text(
                 problem["name"],
                 new_kinds,
@@ -692,52 +753,7 @@ class ProblemListMixin:
             kept.append(record)
 
         for device_id, problem in problems.items():
-            kinds = {
-                kind: (since if since is not None else now)
-                for kind, since in problem["kinds"].items()
-            }
-            summary, description = self._problem_item_text(
-                problem["name"], kinds, problem["level"],
-                problem.get("left"), device_id,
-            )
-            kept.append(
-                {
-                    TODO_UID: uuid.uuid4().hex,
-                    TODO_DEVICE_ID: device_id,
-                    TODO_SUMMARY: summary,
-                    TODO_DESCRIPTION: description,
-                    TODO_STATUS: "needs_action",
-                    TODO_ACKED_AT: None,
-                    TODO_SORT_NAME: problem["name"],
-                    TODO_KINDS: kinds,
-                }
-            )
-            # A row a person deleted while the fault still stood
-            # comes back, and that return is the list re-adding an
-            # item, not the house producing a new fault. Calling it
-            # opened put a second opening on a key that already had
-            # one pending, which orphaned the first and left a real
-            # episode rendering as never resolved.
-            readded = device_id in self._hand_deleted
-            self._hand_deleted.discard(device_id)
-            for kind in kinds:
-                self._journal_addition(device_id, problem["name"], kind)
-                if readded:
-                    self._record_incident(
-                        device_id,
-                        problem["name"],
-                        kind,
-                        INCIDENT_ACTION,
-                        cause=ACTION_READDED,
-                    )
-                    continue
-                self._record_incident(
-                    device_id, problem["name"], kind, INCIDENT_OPENED
-                )
-                self._collect_event(
-                    kind, problem["name"], recovery=False,
-                    device_id=device_id, left=problem.get("left"),
-                )
+            kept.append(self._new_item(device_id, problem, now))
             changed = True
 
         if changed:

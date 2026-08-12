@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.12.21 (2026-08-12)
+# File: coordinator.py, Version: 0.13.1 (2026-08-12)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -227,7 +227,6 @@ class DeviceSentinelCoordinator(
         # and the row still appears.
         self._hand_deleted: set[str] = set()
 
-        # Registry view, rebuilt on registry changes.
         self._entity_map: dict[str, tuple[str, str | None]] = {}
         self._watched: dict[str, str] = {}  # device_id -> integration domain
         # Which coordinator stacks this house runs, derived from the
@@ -265,7 +264,6 @@ class DeviceSentinelCoordinator(
         self._taint_duration: dict[str, float] = {}
         self.deviceless_count: int = 0
 
-        # Grace and storm state.
         self._grace_until: float = 0.0
         self._grace_stamps: int = 0
         self._grace_devices: set[str] = set()
@@ -1055,6 +1053,63 @@ class DeviceSentinelCoordinator(
         return event_data.get("entity_id") in self._entity_map
 
     @callback
+    def _taint_after_absence(
+        self,
+        device_id: str,
+        entity_id: str,
+        pending: tuple[float, str],
+    ) -> None:
+        """Taint a device whose absence outlasted its debounce.
+
+        Called when the device speaks again, because the length of
+        the absence is only known then. A short absence is a mesh
+        blip and the silence around it is still learned; a long one
+        is real downtime and the completed gap is discarded. A second
+        absence inside a gap the taint was already spent on changes
+        nothing, and neither does an absence on a device already
+        tainted.
+
+        The taint carries the reason rather than a flag (ruling
+        #164): the state is in hand here and was previously spent on
+        the log line alone, which is why every excluded gap once read
+        unavailable whatever the device had actually done. A taint
+        raised inside the startup grace window is held in the grace
+        set instead of logged, so the grace release can tell the two
+        apart.
+        """
+        began, bad_state = pending
+        gone = dt_util.utcnow().timestamp() - began
+        if began <= self._taint_consumed_at.get(device_id, 0.0):
+            return
+        record = self.data[DATA_DEVICES].get(device_id)
+        debounce = (
+            self._taint_debounce(record)
+            if record is not None
+            else DEFAULT_TAINT_FLOOR_MINUTES * 60.0
+        )
+        if gone < debounce:
+            return
+        if record is None or record[DEV_TAINTED]:
+            return
+        record[DEV_TAINTED] = (
+            TAINT_UNKNOWN
+            if bad_state == STATE_UNKNOWN
+            else TAINT_UNAVAILABLE
+        )
+        self._taint_duration[device_id] = gone
+        self._dirty = True
+        if dt_util.utcnow().timestamp() < self._grace_until:
+            self._grace_taints.add(device_id)
+            return
+        LOGGER.debug(
+            "Device tainted: %s was %s for %.0f s; its next completed "
+            "gap will not feed learning",
+            entity_id,
+            bad_state,
+            gone,
+        )
+
+    @callback
     def _on_state_changed(self, event: Event) -> None:
         """Handle a state change for a watched device's entity."""
         new_state = event.data.get("new_state")
@@ -1080,41 +1135,7 @@ class DeviceSentinelCoordinator(
             return
         pending = self._pending_unavailable.pop(entity_id, None)
         if pending is not None:
-            began, bad_state = pending
-            gone = dt_util.utcnow().timestamp() - began
-            same_episode = began <= self._taint_consumed_at.get(
-                device_id, 0.0
-            )
-            record = self.data[DATA_DEVICES].get(device_id)
-            debounce = (
-                self._taint_debounce(record)
-                if record is not None
-                else DEFAULT_TAINT_FLOOR_MINUTES * 60.0
-            )
-            if gone >= debounce and not same_episode:
-                if record is not None and not record[DEV_TAINTED]:
-                    # The reason, not a flag (ruling #164). The state is
-                    # already in hand here and was previously spent
-                    # on the log line below, which is why every
-                    # excluded gap read "unavailable" whatever the
-                    # device had actually done.
-                    record[DEV_TAINTED] = (
-                        TAINT_UNKNOWN
-                        if bad_state == STATE_UNKNOWN
-                        else TAINT_UNAVAILABLE
-                    )
-                    self._taint_duration[device_id] = gone
-                    self._dirty = True
-                    if dt_util.utcnow().timestamp() < self._grace_until:
-                        self._grace_taints.add(device_id)
-                    else:
-                        LOGGER.debug(
-                            "Device tainted: %s was %s for %.0f s; its "
-                            "next completed gap will not feed learning",
-                            entity_id,
-                            bad_state,
-                            gone,
-                        )
+            self._taint_after_absence(device_id, entity_id, pending)
         self._record_activity(
             device_id, entry_id, entity_id, new_state.state
         )
@@ -1411,6 +1432,37 @@ class DeviceSentinelCoordinator(
         return min(SHARE_PCT_MAX, max(SHARE_PCT_MIN, raw)) / 100.0
 
 
+    async def _routine_save(self) -> None:
+        """Write the coalesced routine save, if its window has come.
+
+        Routine churn coalesces on one clock (ruling #165): the render
+        tick is the only scheduler, and the deadline is a plain float
+        here rather than state inside two Store objects. The old
+        arrangement gave the cold data its own delayed schedule, and
+        two schedules against one pair of files is the race that let
+        the main file come out newer than the clocks file, the state
+        the final phase of the split cannot survive. A deadline of
+        zero is the first dirty tick of a session and writes
+        immediately, which keeps the first window from silently
+        starting a full interval long.
+
+        The split (ruling #101): routine churn is nine fields per
+        device, so the ordinary window writes the hot file alone, 45
+        KB rather than 335 KB on this fleet. The main file goes first
+        and only when a forensic row is waiting (an episode, an
+        incident, a system event, a registry change), which keeps the
+        hot stamp the newer of the pair. Anything judgment-bearing
+        never reaches here: it is critical and wrote both files
+        within the tick that detected it (ruling #100).
+        """
+        now_mono = self.hass.loop.time()
+        if now_mono >= self._next_routine_save:
+            self._next_routine_save = now_mono + self.coalesce_seconds
+            if self._cold_dirty:
+                await self._store.async_save(self._data_to_save())
+            await self._clock_store.async_save(self._clocks_to_save())
+        self._dirty = False
+
     async def _on_render_tick(self, _now: Any) -> None:
         """Sweep storms, judge freezes, persist if dirty, refresh.
 
@@ -1439,37 +1491,7 @@ class DeviceSentinelCoordinator(
             # interval, so a pending cold flag rides along for free.
             await self._save_now()
         elif self._dirty:
-            # Routine churn coalesces on one clock (ruling #165): this tick
-            # is the only scheduler, and the deadline is a plain float
-            # here rather than state inside two Store objects. The old
-            # arrangement gave the cold data its own delayed schedule,
-            # and two schedules against one pair of files is the race
-            # that let the main file come out newer than the clocks
-            # file, the state the final phase of the split cannot
-            # survive. A deadline of zero is the first dirty tick of a
-            # session and writes immediately, which keeps the first
-            # window from silently starting a full interval long.
-            now_mono = self.hass.loop.time()
-            if now_mono >= self._next_routine_save:
-                self._next_routine_save = now_mono + self.coalesce_seconds
-                if self._cold_dirty:
-                    # A forensic row is waiting (an episode, an
-                    # incident, a system event, a registry change), so
-                    # the main file goes too, first, keeping the hot
-                    # stamp the newer of the pair. Anything
-                    # judgment-bearing never reaches this branch: it
-                    # is critical and wrote both files within the tick
-                    # that detected it (ruling #100).
-                    await self._store.async_save(self._data_to_save())
-                # The split (ruling #101): routine churn is nine
-                # fields per
-                # device, so the ordinary window writes the hot file
-                # alone, 45 KB rather than 335 KB on this fleet, which
-                # is the whole point of the split. The main file then
-                # lacks only clocks, and the next load merges them
-                # back from here.
-                await self._clock_store.async_save(self._clocks_to_save())
-            self._dirty = False
+            await self._routine_save()
         self._notify()
 
 
