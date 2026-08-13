@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.12.21 (2026-08-12)
+# File: test_signal_stats.py, Version: 0.13.5 (2026-08-13)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -58,6 +58,7 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_MEAN_RUN,
     DEV_SIGNAL_P5_STATE,
     DEV_SIGNAL_RAIL_COUNT,
+    DEV_SIGNAL_READS,
     DEV_SIGNAL_SUM,
     DEV_SIGNAL_SUM_SQ,
     DEV_SIGNAL_TODAY_MAX,
@@ -133,14 +134,23 @@ async def test_readings_accumulate_and_rails_do_not(
     device, _ = register_device(hass, "st1", "Stats Device")
     record = coord.data[DATA_DEVICES][device.id]
 
-    for value in (100.0, 120.0, 110.0):
-        coord._feed_signal(record, value, 1000.0)
-    coord._feed_signal(record, float(SIGNAL_RAIL_LQI), 1000.0)
+    # A minute apart, because the mean and deviation weigh minutes
+    # held rather than readings taken (ruling #259): a value fed at
+    # the same instant as the last was held for no time and counts
+    # for nothing. One minute each gives the three equal weight.
+    for index, value in enumerate((100.0, 120.0, 110.0)):
+        coord._feed_signal(record, value, 1000.0 + index * 60.0)
+    coord._feed_signal(record, float(SIGNAL_RAIL_LQI), 1180.0)
 
     assert record[DEV_SIGNAL_MEAN_RUN] == pytest.approx(110.0)
     # M2 is the sum of squared distances from the mean: 100+100+0.
     assert record[DEV_SIGNAL_M2] == pytest.approx(200.0)
-    assert record[DEV_SIGNAL_COUNT] == 3
+    # Two minutes counted, not three: the last value's minute is fed
+    # by the next reading or by the fold, and the rail that follows
+    # returns before the accumulators. The mean is unaffected here
+    # because the unfed value is the mean.
+    assert record[DEV_SIGNAL_COUNT] == 2
+    assert record[DEV_SIGNAL_READS] == 3
     assert record[DEV_SIGNAL_TODAY_MAX] == 120.0
 
 
@@ -156,10 +166,13 @@ async def test_the_roll_produces_mean_deviation_and_maximum(
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "st2", "Stats Device")
     record = coord.data[DATA_DEVICES][device.id]
-    for value in (100.0, 120.0, 110.0):
-        coord._feed_signal(record, value, 1000.0)
+    # A minute each, so the three weigh equally (ruling #259): the
+    # fold feeds the last value's minute itself, which is why the
+    # roll time is one minute past the last reading.
+    for index, value in enumerate((100.0, 120.0, 110.0)):
+        coord._feed_signal(record, value, 1000.0 + index * 60.0)
 
-    coord._roll_signal_stats(record, 86400.0)
+    coord._roll_signal_stats(record, 1180.0)
 
     assert record[DEV_SIGNAL_DAILY_MEAN][-1] == 110.0
     assert abs(record[DEV_SIGNAL_DAILY_SD][-1] - 8.16) < 0.01
@@ -294,9 +307,9 @@ async def test_the_mean_column_reads_dash_until_a_day_rolls(
     record = coord.data[DATA_DEVICES][device.id]
 
     assert coord._format_signal_mean_cell(record) == "-"
-    for value in (100.0, 120.0, 110.0):
-        coord._feed_signal(record, value, 1000.0)
-    coord._roll_signal_stats(record, 86400.0)
+    for index, value in enumerate((100.0, 120.0, 110.0)):
+        coord._feed_signal(record, value, 1000.0 + index * 60.0)
+    coord._roll_signal_stats(record, 1180.0)
     assert coord._format_signal_mean_cell(record) == "110\u00b18.16"
 
 async def test_the_anomaly_row_carries_type_trend_and_room(
@@ -1073,12 +1086,16 @@ async def test_an_episode_carries_its_signal_snapshot(
     record = _seed_signal(
         coord, device.id, [100.0] * 14, 140.0, 20.0
     )
-    for value in (140.0, 136.0):
-        coord._feed_signal(record, value, 1000.0)
+    # A minute apart so the first value is weighed (ruling #259).
+    for index, value in enumerate((140.0, 136.0)):
+        coord._feed_signal(record, value, 1000.0 + index * 60.0)
 
     snapshot = coord._signal_snapshot(record)
     assert snapshot[EP_SIG_VALUE] == 136.0
-    assert snapshot[EP_SIG_MEAN] == pytest.approx(138.0, abs=0.01)
+    # 140 for its one held minute; the 136 that follows has been held
+    # for no time yet, so the day's mean is 140 rather than the
+    # average of the two readings (ruling #259).
+    assert snapshot[EP_SIG_MEAN] == pytest.approx(140.0, abs=0.01)
     assert snapshot[EP_SIG_LINE] is not None
 
     episode = {

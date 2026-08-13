@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.12.21 (2026-08-12)
+# File: test_storage_split.py, Version: 0.13.5 (2026-08-13)
 
 """The two files: the shadow, the merge, and the stamps.
 
@@ -18,15 +18,14 @@ Two tests were retired with the transition (ruling #241). The diagnostics phase 
 
 
 
-import pytest
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
@@ -35,10 +34,10 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.device_sentinel import const
 from custom_components.device_sentinel.const import (
     CLOCK_FIELDS,
-    LEGACY_CLOCK_FIELDS,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
     DATA_SAVED_AT,
+    DATA_SIGNAL_WEIGHTING,
     DATA_STATS_EPOCH,
     DEV_BATTERY_DAILY,
     DEV_DAILY_MAX,
@@ -53,16 +52,16 @@ from custom_components.device_sentinel.const import (
     DEV_TAINTED,
     EPOCH_KEPT,
     INCIDENT_OPENED,
+    LEGACY_CLOCK_FIELDS,
+    SIGNAL_WEIGHTING_MARK,
     STATS_EPOCH,
     STORAGE_CLOCKS_KEY,
     STORAGE_COALESCE_SECONDS,
     STORAGE_KEY,
 )
-
 from custom_components.device_sentinel.coordinator import (
     _new_device_record,
 )
-
 from tests.helpers import setup_entry
 
 DOMAIN = "device_sentinel"
@@ -402,6 +401,11 @@ async def test_the_epoch_wipe_still_has_the_last_word(
         "data": {
             DATA_DEVICES: {device.id: stale},
             DATA_STATS_EPOCH: "an-older-epoch",
+            # Past the weighting change of ruling #259, so the
+            # one-shot clearing of the mean and deviation does not
+            # fire here and this test asks only what it means to
+            # ask: what an epoch wipe keeps.
+            DATA_SIGNAL_WEIGHTING: SIGNAL_WEIGHTING_MARK,
             DATA_SAVED_AT: 1000.0,
         },
     }
@@ -670,6 +674,10 @@ async def test_an_epoch_wipe_keeps_what_cannot_be_rebuilt(
         "data": {
             DATA_DEVICES: {device.id: stale},
             DATA_STATS_EPOCH: "an-older-epoch",
+            # Past the weighting change of ruling #259, so
+            # the one-shot clearing does not fire and this
+            # test asks only what an epoch wipe keeps.
+            DATA_SIGNAL_WEIGHTING: SIGNAL_WEIGHTING_MARK,
             DATA_SAVED_AT: 1000.0,
         },
     }
