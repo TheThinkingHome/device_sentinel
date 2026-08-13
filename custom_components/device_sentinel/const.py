@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.13.8 (2026-08-13)
+# File: const.py, Version: 0.13.9 (2026-08-13)
 
 """Constants for the Device Sentinel integration."""
 
@@ -948,7 +948,6 @@ EPOCH_KEPT = (
 # partial day; this subset names them so tests can expect their
 # absence from records born after the swap.
 LEGACY_CLOCK_FIELDS = (
-    DEV_SIGNAL_READS,
     DEV_SIGNAL_SUM,
     DEV_SIGNAL_SUM_SQ,
 )
@@ -976,6 +975,13 @@ CLOCK_FIELDS = (
     DEV_SIGNAL_P50_STATE,
     DEV_SIGNAL_PSQ_VALUE,
     DEV_SIGNAL_PSQ_TS,
+    # Written on every reading like the rest of the day's
+    # working set, and left out of this tuple when it was added
+    # (ruling #263). A hot field kept only in the cold file is
+    # written when something else forces a cold save, so a
+    # restart brought back a stale count beside a current mean
+    # and the day folded a report count too low.
+    DEV_SIGNAL_READS,
     DEV_SIGNAL_TODAY_MAX,
     DEV_SIGNAL_RAIL_COUNT,
 )
@@ -1559,7 +1565,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 262
+HIGHEST_RULING = 263
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
