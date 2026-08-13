@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.12.10 (2026-08-07)
+# File: test_reports.py, Version: 0.13.3 (2026-08-13)
 
 """The diagnostic files: telemetry and classification.
 
@@ -422,13 +422,19 @@ async def test_three_enable_buttons_exist_and_press(hass: HomeAssistant):
 # ==================================================================
 
 def _plain_device(hass, uid, name):
+    """Build a watched device: one entity, because ruling #257 sets
+    aside a device with none."""
     source = MockConfigEntry(domain="test", title="Source")
     source.add_to_hass(hass)
-    return dr.async_get(hass).async_get_or_create(
+    device = dr.async_get(hass).async_get_or_create(
         config_entry_id=source.entry_id,
         identifiers={("test", uid)},
         name=name,
     )
+    er.async_get(hass).async_get_or_create(
+        "sensor", "test", uid, device_id=device.id, config_entry=source
+    )
+    return device
 
 
 async def test_status_grammar(hass: HomeAssistant):

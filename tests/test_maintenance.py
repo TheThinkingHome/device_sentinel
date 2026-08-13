@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_maintenance.py, Version: 0.12.12 (2026-08-07)
+# File: tests/test_maintenance.py, Version: 0.13.3 (2026-08-13)
 
 """Maintenance mode and the surfaces that shipped beside it.
 
@@ -255,8 +255,8 @@ async def test_status_counts_what_each_enable_button_would_do(
     hass: HomeAssistant,
 ):
     """The awaiting-enable counts (ruling #237): exact, no lists, and
-    user-disabled entities are in no count because the buttons leave
-    them alone."""
+    every disabled entity is counted, whoever disabled it, because
+    the buttons enable every one of them (ruling #257)."""
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device = dr.async_get(hass).async_get_or_create(
@@ -281,11 +281,11 @@ async def test_status_counts_what_each_enable_button_would_do(
     coord = entry.runtime_data
 
     counts = coord.awaiting_enable_counts()
-    assert counts == {"signal": 0, "last_seen": 1, "battery": 0}
+    assert counts == {"signal": 1, "last_seen": 1, "battery": 0}
 
     status = hass.states.get("sensor.device_sentinel_status")
     assert status.attributes[ATTR_AWAITING_LAST_SEEN] == 1
-    assert status.attributes[ATTR_AWAITING_SIGNAL] == 0
+    assert status.attributes[ATTR_AWAITING_SIGNAL] == 1
     assert status.attributes[ATTR_AWAITING_BATTERY] == 0
 
     # Pressing the button empties its count: the attribute and the

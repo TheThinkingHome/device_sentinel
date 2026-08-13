@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_classification.py, Version: 0.11.11 (2026-08-04)
+# File: test_classification.py, Version: 0.13.3 (2026-08-13)
 
 """How devices are counted and attributed to integrations.
 
@@ -66,14 +66,26 @@ async def test_attribution_uses_primary_config_entry(hass: HomeAssistant):
 # The classification report is one combined table.
 # ==================================================================
 
-def _class_device(hass, uid, name):
+def _class_device(hass, uid, name, entities=1):
+    """Build a registry device with N enabled entities.
+
+    An entity is not decoration here: ruling #257 sets aside a device
+    with nothing enabled, because it has no way to speak, so a
+    fixture without one is no longer a watched device.
+    """
     src = MockConfigEntry(domain="test", title="Source")
     src.add_to_hass(hass)
-    return dr.async_get(hass).async_get_or_create(
+    device = dr.async_get(hass).async_get_or_create(
         config_entry_id=src.entry_id,
         identifiers={("test", uid)},
         name=name,
     )
+    for index in range(entities):
+        er.async_get(hass).async_get_or_create(
+            "sensor", "test", f"{uid}_{index}",
+            device_id=device.id, config_entry=src,
+        )
+    return device
 
 
 def _class_rows(hass):

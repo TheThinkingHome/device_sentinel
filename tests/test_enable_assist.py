@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_enable_assist.py, Version: 0.12.12 (2026-08-07)
+# File: test_enable_assist.py, Version: 0.13.3 (2026-08-13)
 
 """The enable-assist buttons that turn on the diagnostics we learn from.
 
@@ -11,7 +11,7 @@ Some integrations ship signal, last-seen, and battery entities disabled
 by default. The assist buttons enable those, so the integration can
 learn from them, while leaving anything a person disabled themselves
 alone. This test proves that split: integration-disabled entities are
-enabled, user-disabled ones are respected, and unrelated entities are
+enabled whoever disabled them (ruling #257), and unrelated entities are
 untouched.
 """
 
@@ -53,18 +53,15 @@ async def test_enable_assist(hass: HomeAssistant):
     )
     coord = await setup_coordinator(hass)
 
-    # Signals: the linkquality entity is user-disabled, so it is
-    # skipped, not enabled. Each kind is now its own method.
+    # Signals: the linkquality entity was disabled by hand, and the
+    # button enables it anyway, counting how many it reversed.
     result = await coord.async_enable_signal_entities()
-    assert result == {"enabled": 0, "skipped_user": 1}
-    assert (
-        ent_reg.async_get(user_disabled.entity_id).disabled_by
-        is er.RegistryEntryDisabler.USER
-    )
+    assert result == {"enabled": 1, "by_hand": 1}
+    assert ent_reg.async_get(user_disabled.entity_id).disabled_by is None
 
     # Last seen: the integration-disabled last_seen entity is enabled.
     result = await coord.async_enable_last_seen_entities()
-    assert result == {"enabled": 1, "skipped_user": 0}
+    assert result == {"enabled": 1, "by_hand": 0}
     assert ent_reg.async_get(int_disabled.entity_id).disabled_by is None
 
     # The plain temperature sensor is neither, so it stays disabled
