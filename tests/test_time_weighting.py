@@ -1,7 +1,7 @@
 """Tests for weighing the day by minutes rather than readings.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_time_weighting.py, Version: 0.13.6 (2026-08-13)
+# File: test_time_weighting.py, Version: 0.13.7 (2026-08-13)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -240,4 +240,57 @@ async def test_a_device_whose_integration_is_still_loading_is_kept(
 
     assert device.id in coord._watched
     assert device.id not in coord._set_aside
+
+async def test_the_clearing_runs_again_for_an_install_past_the_first_mark(
+    hass: HomeAssistant,
+):
+    """Ruling #261. The first marker was set by a version that
+    cleared the recorded days but left the day accumulating, so an
+    install that had already passed it would have folded the hybrid
+    row anyway. The marker's value changes, which runs the clearing
+    once more, this time taking the day with it.
+    """
+    device, _ = register_device(hass, "tw9", "Half-cleared Device")
+    coord = await setup_coordinator(hass)
+    loaded = {
+        DATA_DEVICES: {
+            device.id: {
+                DEV_SIGNAL_COUNT: 293,
+                DEV_SIGNAL_MEAN_RUN: 108.0,
+            }
+        },
+        DATA_SIGNAL_WEIGHTING: "minutes",
+    }
+
+    coord._clear_reading_weighted_series(loaded)
+
+    assert loaded[DATA_DEVICES][device.id][DEV_SIGNAL_COUNT] == 0
+    assert loaded[DATA_SIGNAL_WEIGHTING] == SIGNAL_WEIGHTING_MARK
+
+
+async def test_the_grace_close_re_reads_the_registry(
+    hass: HomeAssistant,
+):
+    """The second half of ruling #260: the no-entities rule is held
+    during startup, so something has to look again when the window
+    shuts, or a device that genuinely has none stays watched until an
+    unrelated registry change.
+    """
+    coord = await setup_coordinator(hass)
+    source = MockConfigEntry(domain="test", title="Bare Source")
+    source.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", "bare_after_grace")},
+        name="Bare After Grace",
+    )
+    coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+    coord._rebuild_registry_view()
+    assert device.id in coord._watched
+
+    coord._grace_until = 0.0
+    coord._on_grace_closed(None)
+
+    assert device.id not in coord._watched
+    assert device.id in coord._set_aside
 
