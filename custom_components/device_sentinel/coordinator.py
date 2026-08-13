@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.13.7 (2026-08-13)
+# File: coordinator.py, Version: 0.13.10 (2026-08-13)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -342,6 +342,14 @@ class DeviceSentinelCoordinator(
         self._bridge_seen: dict[str, str] = {}
         self._pairing_seen: dict[str, bool] = {}
         self._bridge_down_at: dict[str, float] = {}
+        # When the broker went down, or None while it is up. The
+        # reporting layer reads it through upstream_down_since
+        # (ruling #264).
+        self._broker_down_at: float | None = None
+        # The upstream outages already announced, and the moment each
+        # was first seen, so the first push sounds and later ones do
+        # not (ruling #265).
+        self._upstream_announced: dict[str, float] = {}
         self._pairing_open_at: dict[str, float] = {}
         self._pending_epoch_wipe: int | None = None
         # Rulings #163 and #167. The first is how many devices this

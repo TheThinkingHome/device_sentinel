@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.12.2 (2026-08-05)
+# File: notifier.py, Version: 0.13.10 (2026-08-13)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -212,6 +212,55 @@ class NotifierMixin:
             data.update(_ANDROID_SILENT)
             data.update(_APPLE_SILENT)
         return {"title": title, "message": message, "data": data}
+
+    async def async_push_upstream(
+        self, name: str, count: int, recovered: bool = False
+    ) -> None:
+        """Push the one message an upstream outage deserves.
+
+        Ruling #265. The devices do not fall in one tick: Home
+        Assistant marks each entity unavailable as it notices, so the
+        reference system produced a push per tick until the add-on
+        came back. The first message about an upstream sounds; every
+        later one about the same upstream is silent and carries the
+        current tally, so a person always sees the true count without
+        being told about it again. Recovery is silent too, as every
+        recovery is.
+        """
+        heard = name in self._upstream_announced
+        if recovered:
+            self._upstream_announced.pop(name, None)
+            message = (
+                f"{name} is back. {count} device(s) had gone quiet."
+                if count
+                else f"{name} is back."
+            )
+        else:
+            self._upstream_announced[name] = count
+            message = (
+                f"{name} is down. {count} device(s) unavailable, "
+                f"and they are symptoms rather than faults."
+            )
+        payload: dict[str, Any] = {
+            "title": "Device Sentinel: upstream",
+            "message": message,
+            "data": {"tag": f"device_sentinel_upstream_{name}"},
+        }
+        if heard or recovered:
+            payload["data"].update(_ANDROID_SILENT)
+            payload["data"].update(_APPLE_SILENT)
+        for target in self._high_priority_targets():
+            domain, _, service = target.partition(".")
+            if not service:
+                continue
+            try:
+                await self.hass.services.async_call(
+                    domain, service, payload, blocking=True
+                )
+            except Exception as err:  # noqa: BLE001 - one bad target
+                LOGGER.warning(
+                    "Device Sentinel could not push to %s: %s", target, err
+                )
 
     async def _push_family_event(
         self, family: str, event_line: str, recovery: bool

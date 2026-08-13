@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.13.7 (2026-08-13)
+# File: interventions.py, Version: 0.13.10 (2026-08-13)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -30,7 +30,7 @@ from collections import deque
 from typing import Any
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
-from .stacks import make_reader
+from .stacks import make_reader, reader_for_domain
 from .transport_mqtt import MQTTBrokerReader
 
 from .const import (
@@ -49,6 +49,7 @@ from .const import (
     SYS_BROKER_DOWN,
     SYS_BROKER_UP,
     BRIDGE_DOWN,
+    BROKER_LABEL,
     BRIDGE_SEEN_SINCE,
     BRIDGE_SEEN_STATE,
     BRIDGE_STATES,
@@ -262,10 +263,14 @@ class InterventionMixin:
         elif was is not None and was != state:
             if state == BROKER_DOWN:
                 stored[BRIDGE_SEEN_SINCE] = now
+                # The moment the reporting layer measures from
+                # (ruling #264), kept beside the bridges' own stamps.
+                self._broker_down_at = now
                 self._record_system_event(
                     SYS_BROKER_DOWN, scope=BROKER_SCOPE
                 )
             elif was == BROKER_DOWN:
+                self._broker_down_at = None
                 since = stored.pop(BRIDGE_SEEN_SINCE, None)
                 self._record_system_event(
                     SYS_BROKER_UP,
@@ -302,6 +307,48 @@ class InterventionMixin:
         if session_start is None:
             return False
         return last_alive <= started <= session_start + 1.0
+
+    def upstream_down_since(self, device_id: str) -> tuple[str, float] | None:
+        """Return the upstream that is down for this device, and when.
+
+        Ruling #264. A stopped broker or bridge does not break
+        seventy-six devices; it breaks one thing, and the devices are
+        symptoms. The verdicts stay, because they are true, and the
+        reporting layer asks this before it speaks so a person is
+        told the cause rather than the casualty list.
+
+        The broker outranks any bridge, because a broker that is down
+        takes every bridge with it and two problems for one fault is
+        the same noise in a smaller font. A device on a stack with no
+        reader, or on no stack at all, has no upstream anyone can see
+        and is always reported on its own.
+        """
+        broker_since = self._broker_down_at
+        if broker_since is not None:
+            return BROKER_LABEL, broker_since
+        stack = self._stack_for_device(device_id)
+        if stack is None:
+            return None
+        since = self._bridge_down_at.get(stack)
+        if since is None:
+            return None
+        return stack, since
+
+    def upstream_down_since_for(self, name: str) -> float | None:
+        """Return when a named upstream went down, or None if it is up."""
+        if name == BROKER_LABEL:
+            return self._broker_down_at
+        return self._bridge_down_at.get(name)
+
+    def _stack_for_device(self, device_id: str) -> str | None:
+        """Return the stack whose bridge owns this device, if any."""
+        domain = self._watched.get(device_id)
+        if domain is None:
+            return None
+        for stack, reader in self._bridge_readers.items():
+            if reader_for_domain({stack: reader}, domain) is not None:
+                return stack
+        return None
 
     @property
     def broker_state(self) -> str:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.13.2 (2026-08-13)
+# File: detect_freeze.py, Version: 0.13.10 (2026-08-13)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -599,6 +599,51 @@ class FreezeMixin:
             )
         rows.sort(key=lambda row: (row["category"], row["name"]))
         return rows
+
+    @property
+    def reportable_down_rows(self) -> list[dict[str, Any]]:
+        """Return the down devices worth reporting on their own.
+
+        Ruling #264: while a device's upstream is down, its verdict is
+        recorded and not reported, because the fault is the upstream
+        and the devices are its symptoms. Stopping one add-on on the
+        reference system raised seventy-four problems and pushed a
+        notification naming seventy-four devices without naming the
+        bridge, which is the one thing a person can act on.
+
+        Two devices survive the suppression. One whose verdict began
+        before the upstream went down is genuinely broken and was
+        broken already, so it keeps its row rather than vanishing into
+        the outage and reappearing when the outage clears. One still
+        down after the upstream returns is the most useful row of the
+        week: everything else came back and this did not.
+        """
+        rows: list[dict[str, Any]] = []
+        for row in self.frozen_devices_list:
+            upstream = self.upstream_down_since(row["device_id"])
+            if upstream is None:
+                rows.append(row)
+                continue
+            _name, down_since = upstream
+            since = row.get("since")
+            if since is not None and since < down_since:
+                rows.append(row)
+        return rows
+
+    @property
+    def suppressed_down_counts(self) -> dict[str, int]:
+        """Return how many devices each downed upstream is masking."""
+        counts: dict[str, int] = {}
+        for row in self.frozen_devices_list:
+            upstream = self.upstream_down_since(row["device_id"])
+            if upstream is None:
+                continue
+            name, down_since = upstream
+            since = row.get("since")
+            if since is not None and since < down_since:
+                continue
+            counts[name] = counts.get(name, 0) + 1
+        return counts
 
     @property
     def frozen_devices_count(self) -> int:

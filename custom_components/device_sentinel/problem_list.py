@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.13.1 (2026-08-12)
+# File: problem_list.py, Version: 0.13.10 (2026-08-13)
 
 """The problem list: the single memory every channel renders.
 
@@ -58,6 +58,7 @@ from .const import (
     TODO_STATUS,
     TODO_SUMMARY,
     TODO_UID,
+    UPSTREAM_SETTLE_SECONDS,
 )
 
 
@@ -255,9 +256,21 @@ class ProblemListMixin:
                 },
             )
 
-        for row in self.frozen_devices_list:
+        for row in self.reportable_down_rows:
             entry = _entry(row["device_id"], row.get("name"))
             entry["kinds"][row["category"]] = row.get("since")
+
+        # One row for the fault itself (ruling #264). The devices it
+        # masks are counted in the summary rather than listed, so the
+        # person is told what to fix.
+        for name, count in self.suppressed_down_counts.items():
+            problems[f"upstream:{name}"] = {
+                "name": name,
+                "kinds": {"upstream": self.upstream_down_since_for(name)},
+                "level": None,
+                "left": None,
+                "count": count,
+            }
 
         for row in self.battery_low_list:
             entry = _entry(row["device_id"], row.get("name"))
@@ -576,14 +589,46 @@ class ProblemListMixin:
         """
         events = list(self._pending_events)
         self._pending_events.clear()
-        self.hass.async_create_task(self._run_dispatch(events))
+        self.hass.async_create_task(
+            self._run_dispatch(events, self._upstream_messages())
+        )
+
+    def _upstream_messages(self) -> list[tuple[str, int, bool]]:
+        """Return the upstream pushes this sync owes, if any.
+
+        Ruling #265: an outage settles before it is announced, because
+        the devices arrive over tens of seconds and a count taken at
+        the first one is wrong. After the settle the count is pushed
+        whenever it changes, silently after the first, so the tally on
+        the phone is always current and only the first makes a sound.
+        A recovery is announced once the upstream is back, carrying
+        how many had gone quiet.
+        """
+        now = dt_util.utcnow().timestamp()
+        counts = self.suppressed_down_counts
+        messages: list[tuple[str, int, bool]] = []
+        for name, count in counts.items():
+            since = self.upstream_down_since_for(name)
+            if since is None or now - since < UPSTREAM_SETTLE_SECONDS:
+                continue
+            if self._upstream_announced.get(name) == count:
+                continue
+            messages.append((name, count, False))
+        for name, count in list(self._upstream_announced.items()):
+            if name not in counts and self.upstream_down_since_for(name) is None:
+                messages.append((name, count, True))
+        return messages
 
     async def _run_dispatch(
-        self, events: list[tuple[str, str, bool]]
+        self,
+        events: list[tuple[str, str, bool]],
+        upstream: list[tuple[str, int, bool]] | None = None,
     ) -> None:
-        """Await the card refresh and the event pushes."""
+        """Await the card refresh and the pushes."""
         await self.async_update_card()
         await self.async_fire_events(events)
+        for name, count, recovered in upstream or ():
+            await self.async_push_upstream(name, count, recovered)
 
     def _retire_item(
         self, record: dict[str, Any], device_id: str, now: float

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.13.9 (2026-08-13)
+# File: const.py, Version: 0.13.10 (2026-08-13)
 
 """Constants for the Device Sentinel integration."""
 
@@ -95,6 +95,20 @@ BROKER_RUNNING = "running"
 BROKER_DOWN = "down"
 BROKER_UNKNOWN = "unknown"
 BROKER_STATES = [BROKER_RUNNING, BROKER_DOWN, BROKER_UNKNOWN]
+
+# The name the broker carries when it is the upstream a device is
+# reported under (ruling #264). Not a stack: no bridge owns it, and
+# it outranks every bridge, because a broker that is down takes them
+# all with it.
+BROKER_LABEL = "MQTT broker"
+
+# How long an upstream outage is allowed to settle before it is
+# reported (ruling #265). Devices do not fall in one tick: Home
+# Assistant marks each entity unavailable as it notices, so a count
+# taken immediately is wrong and a message per tick is a burst. The
+# same window is used on the way back, so a device that did not
+# return is named once the others have.
+UPSTREAM_SETTLE_SECONDS = 60.0
 BROKER_SENSOR_NAME = "Broker: MQTT"
 
 ATTR_BROKER_STARTED = "broker_started"
@@ -1565,7 +1579,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 263
+HIGHEST_RULING = 265
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
