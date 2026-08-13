@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_classification.py, Version: 0.13.3 (2026-08-13)
+# File: test_classification.py, Version: 0.13.4 (2026-08-13)
 
 """How devices are counted and attributed to integrations.
 
@@ -26,6 +26,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
+    SET_ASIDE_SERVICE,
     CONF_EXCLUDED_DEVICES,
     DATA_DEVICES,
 )
@@ -124,7 +125,9 @@ async def test_one_table_three_states(hass: HomeAssistant):
 
     # A service device is set aside, no watched check.
     service_row = next(r for r in rows if "Device Sentinel" in r)
-    assert "\u2713" in service_row  # in the SET ASIDE column
+    # The reason, not a tick: a disabled device and a service
+    # device read identically in a column that can only say yes.
+    assert SET_ASIDE_SERVICE in service_row
 
     # Alphabetical: Alpha before Bravo.
     assert text.index("Alpha Excluded") < text.index("Bravo Watched")
