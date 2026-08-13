@@ -1,7 +1,7 @@
 """Tests for weighing the day by minutes rather than readings.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_time_weighting.py, Version: 0.13.5 (2026-08-13)
+# File: test_time_weighting.py, Version: 0.13.6 (2026-08-13)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -15,6 +15,9 @@ the mean while the median ignored the difference.
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
@@ -181,3 +184,60 @@ async def test_the_deviation_measures_the_spread_of_time(
     variance = record[DEV_SIGNAL_M2] / record[DEV_SIGNAL_COUNT]
     assert record[DEV_SIGNAL_COUNT] == 120
     assert variance**0.5 == pytest.approx(50.0)
+
+async def test_the_clearing_takes_the_day_in_progress(
+    hass: HomeAssistant,
+):
+    """The accumulator carried across the upgrade too (ruling #260).
+
+    Built by counting readings, continued by counting minutes, it
+    would have folded one hybrid row at the first midnight: exactly
+    the mixed figure the clearing exists to prevent, on the one day
+    it can happen. The day restarts from the upgrade instead.
+    """
+    device, _ = register_device(hass, "tw8", "Mid-day Device")
+    coord = await setup_coordinator(hass)
+    loaded = {
+        DATA_DEVICES: {
+            device.id: {
+                DEV_SIGNAL_DAILY_MEAN: [120.0],
+                DEV_SIGNAL_COUNT: 240,
+                DEV_SIGNAL_MEAN_RUN: 118.0,
+                DEV_SIGNAL_M2: 900.0,
+            }
+        }
+    }
+
+    coord._clear_reading_weighted_series(loaded)
+
+    record = loaded[DATA_DEVICES][device.id]
+    assert record[DEV_SIGNAL_COUNT] == 0
+    assert record[DEV_SIGNAL_MEAN_RUN] == 0.0
+    assert record[DEV_SIGNAL_M2] == 0.0
+
+
+async def test_a_device_whose_integration_is_still_loading_is_kept(
+    hass: HomeAssistant,
+):
+    """Ruling #260. Integrations register their entities as they
+    load, so during the startup window a device with none is usually
+    one whose owner has not finished. Setting it aside then and
+    bringing it back a second later cost eighteen devices their first
+    gap on every restart of the reference system, each discarded as
+    administrative by the rule written for a disabling.
+    """
+    coord = await setup_coordinator(hass)
+    source = MockConfigEntry(domain="test", title="Loading Source")
+    source.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", "loading")},
+        name="Still Loading",
+    )
+    coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+
+    coord._rebuild_registry_view()
+
+    assert device.id in coord._watched
+    assert device.id not in coord._set_aside
+

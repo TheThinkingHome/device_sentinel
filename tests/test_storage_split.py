@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.13.5 (2026-08-13)
+# File: test_storage_split.py, Version: 0.13.6 (2026-08-13)
 
 """The two files: the shadow, the merge, and the stamps.
 
@@ -22,7 +22,6 @@ from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -829,10 +828,14 @@ async def test_an_upgrade_converts_the_day_before_the_reconciler_runs(
     entry = await setup_entry(hass)
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
 
-    assert record["signal_count"] == 4
-    assert record["signal_mean_run"] == pytest.approx(121.0)
-    assert record["signal_m2"] == pytest.approx(
-        sum((v - 121.0) ** 2 for v in readings)
-    )
+    # The conversion ran (its arithmetic is pinned by the unit test
+    # in test_signal_stats), and the weighting change of ruling #259
+    # then dropped the day it converted, because a day accumulated by
+    # counting readings cannot continue by counting minutes. What
+    # this test guards is the load path: the legacy fields reach the
+    # conversion before the reconciler deletes them, and the record
+    # comes out clean rather than half-migrated.
+    assert record["signal_count"] == 0
+    assert record["signal_mean_run"] == 0.0
     assert "signal_sum" not in record
 

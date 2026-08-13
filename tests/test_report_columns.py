@@ -1,7 +1,7 @@
 """Tests for what the reports say about set-aside devices and dwell.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_report_columns.py, Version: 0.13.4 (2026-08-13)
+# File: test_report_columns.py, Version: 0.13.6 (2026-08-13)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -83,6 +83,10 @@ async def test_each_reason_is_named_in_the_classification(
         name="Bare One",
     )
     coord = await setup_coordinator(hass)
+    # Past the startup window, where the no-entities rule is held
+    # because an integration may still be loading (ruling #260).
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     text = _classification(hass)

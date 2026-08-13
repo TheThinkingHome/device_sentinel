@@ -1,7 +1,7 @@
 """Tests for setting disabled devices aside.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_set_aside.py, Version: 0.13.3 (2026-08-13)
+# File: test_set_aside.py, Version: 0.13.6 (2026-08-13)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -73,6 +73,11 @@ async def test_a_device_with_no_entities_is_set_aside(hass: HomeAssistant):
     switch on, so the silence says nothing either way."""
     device = _device(hass, "sa2", "Empty Device", entities=0)
     coord = await setup_coordinator(hass)
+    # Past the startup window: during it a device with no entities is
+    # usually one whose integration has not finished loading, so the
+    # rule is held (ruling #260).
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
 
     assert device.id not in coord._watched
     assert coord._set_aside[device.id][2] == SET_ASIDE_NO_ENTITIES
