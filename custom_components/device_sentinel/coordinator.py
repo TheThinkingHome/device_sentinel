@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.13.3 (2026-08-13)
+# File: coordinator.py, Version: 0.13.5 (2026-08-13)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -89,6 +89,7 @@ from .const import (
     DATA_SERIES_STAMPS,
     DATA_SETUP_COUNT,
     DATA_SIGNAL_DAY_REPAIR,
+    DATA_SIGNAL_WEIGHTING,
     DATA_STATS_EPOCH,
     DATA_STORMS,
     DATA_SYSTEM_EVENTS,
@@ -102,7 +103,9 @@ from .const import (
     DEV_FROZEN_CATEGORY,
     DEV_LAST_ACTIVITY,
     DEV_SET_ASIDE_SINCE,
+    DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_TODAY_MIN,
     DEV_TAINTED,
     DEV_TODAY_MAX,
@@ -123,9 +126,6 @@ from .const import (
     SERIES_BATTERY,
     SERIES_FREEZE,
     SERIES_SIGNAL,
-    SERIES_VERSION_BATTERY,
-    SERIES_VERSION_FREEZE,
-    SERIES_VERSION_SIGNAL,
     SET_ASIDE_DISABLED,
     SET_ASIDE_NO_ENTITIES,
     SET_ASIDE_SERVICE,
@@ -134,6 +134,7 @@ from .const import (
     SIGNAL_ARMING_DAYS,
     SIGNAL_DAY_REPAIR_MARK,
     SIGNAL_DAYS_KEEP,
+    SIGNAL_WEIGHTING_MARK,
     STARTUP_GRACE_SECONDS,
     STATS_EPOCH,
     STORAGE_CLOCKS_KEY,
@@ -488,9 +489,10 @@ class DeviceSentinelCoordinator(
                             record[field] = value
                     wiped += 1
                 loaded[DATA_STATS_EPOCH] = STATS_EPOCH
-                # The wipe destroys the series themselves, so the
-                # stamps go with them and _reconcile_series_stamps
-                # below writes today's (ruling #255).
+                # The wipe destroys the series themselves, and the
+                # depth is read from the series (ruling #258), so the
+                # stamps an older version left behind are pruned here
+                # and nothing replaces them.
                 loaded.pop(DATA_SERIES_STAMPS, None)
             else:
                 LOGGER.warning(
@@ -511,7 +513,6 @@ class DeviceSentinelCoordinator(
                 STATS_EPOCH,
                 wiped,
             )
-        self._reconcile_series_stamps(loaded)
         # Reconcile every stored record against the schema, both
         # directions. There used to be a prune here and a
         # hand-maintained list of setdefault calls above it, so a
@@ -547,6 +548,7 @@ class DeviceSentinelCoordinator(
                 "already recorded is affected",
                 day_reset,
             )
+        self._clear_reading_weighted_series(loaded)
         removed, filled = self._reconcile_records(
             loaded[DATA_DEVICES], dt_util.utcnow().isoformat()
         )
@@ -1656,75 +1658,93 @@ class DeviceSentinelCoordinator(
         """Return the number of service devices set aside."""
         return len(self._set_aside)
 
-    def _reconcile_series_stamps(self, loaded: dict[str, Any]) -> None:
-        """Stamp each recording area, resetting where its set changed.
+    def _clear_reading_weighted_series(
+        self, loaded: dict[str, Any]
+    ) -> None:
+        """Drop the mean and deviation days recorded by reading count.
 
-        Ruling #255: the Data sensors report complete days, and a set
-        that gained a series yesterday has one day of complete
-        history however deep its older members run. So the stamp
-        moves whenever the area's version differs from the one
-        storage last saw, which covers a fresh install (no stamp), an
-        upgrade that changed a set, and an epoch wipe, whose branch
-        above cleared the stamps so this writes them anew. A release
-        that records nothing new touches nothing here.
+        Ruling #259 moved both onto the minute clock the percentiles
+        already used. The two weightings answer different questions,
+        so a series holding some of each could not be separated by
+        any later analysis, and the September formula work reads
+        exactly these series. Cleared once, under a marker, so a
+        restart cannot throw away days recorded since. Nothing else
+        goes: the minima, the percentiles, the dwell, and the lines
+        mean today what they meant yesterday.
         """
-        stamps = loaded.setdefault(DATA_SERIES_STAMPS, {})
-        now = dt_util.utcnow().isoformat()
-        for area, version in (
-            (AREA_FREEZE, SERIES_VERSION_FREEZE),
-            (AREA_BATTERY, SERIES_VERSION_BATTERY),
-            (AREA_SIGNAL, SERIES_VERSION_SIGNAL),
-        ):
-            stamp = stamps.get(area)
-            if not isinstance(stamp, dict) or stamp.get("version") != version:
-                stamps[area] = {"version": version, "since": now}
-                LOGGER.info(
-                    "Recording set for %s is at version %d; complete "
-                    "history now counts from today",
-                    area,
-                    version,
-                )
+        if loaded.get(DATA_SIGNAL_WEIGHTING) == SIGNAL_WEIGHTING_MARK:
+            return
+        cleared = 0
+        for record in loaded.get(DATA_DEVICES, {}).values():
+            if record.get(DEV_SIGNAL_DAILY_MEAN) or record.get(
+                DEV_SIGNAL_DAILY_SD
+            ):
+                record[DEV_SIGNAL_DAILY_MEAN] = []
+                record[DEV_SIGNAL_DAILY_SD] = []
+                cleared += 1
+        loaded[DATA_SIGNAL_WEIGHTING] = SIGNAL_WEIGHTING_MARK
+        if cleared:
+            LOGGER.info(
+                "Signal mean and deviation now weigh minutes rather "
+                "than readings, so the recorded days for %d device(s) "
+                "were cleared: the two are not comparable and a mixed "
+                "series could not be separated later. Minima, "
+                "percentiles, dwell, and every other recording are "
+                "untouched",
+                cleared,
+            )
 
     @property
     def recording_depth(self) -> dict[str, dict[str, Any]]:
-        """Return each area's recording depth (ruling #255).
+        """Return each area's recording depth, read from the series.
 
-        complete_days is how long the area's current recording set
-        has been in place, capped at retention because days older
-        than that are gone whatever the stamp says. device_days is
-        the fleet's total volume in that area: the sum of every
-        device's series lengths, which is the number a person has
-        otherwise had to read out of diagnostics.
+        Ruling #258: the count is the record itself rather than a
+        stamp beside it. For one device, an area's complete days is
+        the length of its shortest series, since a set that gained a
+        series yesterday has one day of complete history however deep
+        its older members run; fleet-wide it is the highest of those,
+        because the question is how long this system has recorded the
+        area, not whether every device is mature.
+
+        Two faults go with the stamp that carried this before. It
+        counted whole 24-hour blocks from the moment a version first
+        ran, so the number ticked at whatever hour that happened to
+        be and read zero for a day on a system recording for months.
+        And it had to be told when a recording set changed, by a hand
+        edit to a version constant that a release could forget. The
+        series cannot forget: add one and it is empty, so it is the
+        shortest, so the area reads zero on its own.
+
+        device_days is the fleet's total volume in the area, which is
+        the number a person has otherwise had to read out of
+        diagnostics.
         """
-        stamps = self.data.get(DATA_SERIES_STAMPS) or {}
-        now = dt_util.utcnow()
-        devices = self.data.get(DATA_DEVICES, {}).values()
+        devices = list(self.data.get(DATA_DEVICES, {}).values())
         out: dict[str, dict[str, Any]] = {}
         for area, series, arming, learned in (
             (AREA_FREEZE, SERIES_FREEZE, FREEZE_ARMING_DAYS, DAILY_MAX_KEEP),
             (AREA_BATTERY, SERIES_BATTERY, BATTERY_SLOPE_DAYS, None),
             (AREA_SIGNAL, SERIES_SIGNAL, SIGNAL_ARMING_DAYS, SIGNAL_DAYS_KEEP),
         ):
-            stamp = stamps.get(area) or {}
-            since = stamp.get("since")
             days = 0
-            if since:
-                started = dt_util.parse_datetime(since)
-                if started is not None:
-                    days = max(0, int((now - started).total_seconds() // 86400))
+            device_days = 0
+            for record in devices:
+                lengths = [len(record.get(field) or []) for field in series]
+                device_days += sum(lengths)
+                if max(lengths, default=0) == 0:
+                    # Nothing recorded in this area for this device,
+                    # so it is silent on the question rather than an
+                    # answer of zero.
+                    continue
+                days = max(days, min(lengths))
             days = min(days, self.retention_days)
             out[area] = {
                 "complete_days": days,
-                "since": since,
                 "armed": days >= arming,
                 "arming_days": arming,
                 "learned_days": learned,
                 "series": list(series),
-                "device_days": sum(
-                    len(record.get(field) or [])
-                    for record in devices
-                    for field in series
-                ),
+                "device_days": device_days,
                 "retention_days": self.retention_days,
             }
         return out

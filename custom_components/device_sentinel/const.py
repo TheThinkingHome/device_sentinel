@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.13.4 (2026-08-13)
+# File: const.py, Version: 0.13.5 (2026-08-13)
 
 """Constants for the Device Sentinel integration."""
 
@@ -339,27 +339,27 @@ TAINT_FLOOR_MINUTES_MAX = 60
 STATS_EPOCH = "0.2.3"
 DATA_STATS_EPOCH = "stats_epoch"
 
-# The recording-set stamps (ruling #255). Each area carries a version
-# naming the set of daily series it records; storage carries the
-# version last seen and the moment that set began. When a release
-# changes what an area records, its version bumps, the stamp resets,
-# and the Data sensors honestly report zero complete days, because a
-# set that gained a series yesterday has one day of complete history
-# however deep its older members run. The versions are hand-bumped
-# and the bump is a release gate: adding, removing, or changing the
-# meaning of a recorded series without bumping is the one way this
-# can lie. Install-wide rather than per-device, because the question
-# is how long the system has recorded an area in its current shape,
-# not how mature any one device is (device_days carries the volume).
-SERIES_VERSION_FREEZE = 1
-SERIES_VERSION_BATTERY = 1
-# Bumped to 2 by ruling #253: the day's time-weighted P5 and median
-# joined the recorded set in 0.12.19.
-SERIES_VERSION_SIGNAL = 2
+# The Data sensors read each area's depth from its own series
+# (ruling #258), so nothing here names a version and nothing has to
+# be bumped when a release changes what is recorded: a new series is
+# empty, which makes it the shortest, which resets the area on its
+# own. DATA_SERIES_STAMPS survives only as the key an older version
+# wrote, pruned from storage on the first load.
 DATA_SERIES_STAMPS = "series_stamps"
+
 # One-shot marker for the signal day repair of ruling #256. Carries
 # the version that ran it, so the repair happens once and a later
 # restart cannot drop another day.
+DATA_SIGNAL_DAY_REPAIR = "signal_day_repair"
+SIGNAL_DAY_REPAIR_MARK = "0.12.21"
+
+# The mean and deviation changed from counting readings to weighing
+# minutes (ruling #259), so their recorded days are not comparable
+# across the change. The series are cleared once, under this marker,
+# rather than left mixed, because no later analysis could separate
+# the two halves.
+DATA_SIGNAL_WEIGHTING = "signal_weighting"
+SIGNAL_WEIGHTING_MARK = "minutes"
 # Why a device is set aside: recorded rather than inferred, because
 # the classification file has to say which, and because only one of
 # the three can end (ruling #257).
@@ -367,8 +367,6 @@ SET_ASIDE_SERVICE = "service"
 SET_ASIDE_DISABLED = "disabled"
 SET_ASIDE_NO_ENTITIES = "no entities"
 
-DATA_SIGNAL_DAY_REPAIR = "signal_day_repair"
-SIGNAL_DAY_REPAIR_MARK = "0.12.21"
 AREA_FREEZE = "freeze"
 AREA_BATTERY = "battery"
 AREA_SIGNAL = "signal"
@@ -465,6 +463,11 @@ SIGNAL_CEILING_CLEARANCE_RSSI = 3.0
 DEV_SIGNAL_SUM = "signal_sum"  # retired by #254; read once for migration
 DEV_SIGNAL_SUM_SQ = "signal_sum_sq"  # retired by #254; read once for migration
 DEV_SIGNAL_COUNT = "signal_count"
+# The day's reading count, kept apart from DEV_SIGNAL_COUNT now that
+# the latter counts minutes rather than reports (ruling #259). The
+# daily count series is deliberately a count of reports: it answers
+# how often a device spoke, which no time-weighted figure can.
+DEV_SIGNAL_READS = "signal_reads"
 # Welford accumulators (ruling #254): the day's running mean and its
 # sum of squared distances from that mean (M2). The naive sum and
 # sum-of-squares pair subtracts two large near-equal numbers at the
@@ -899,6 +902,7 @@ DEV_FROZEN_SINCE = "frozen_since"
 # this behind, and the failure would have been a field quietly
 # surviving a wipe (ruling #207).
 EPOCH_KEPT = (
+    DEV_SIGNAL_READS,
     DEV_SET_ASIDE_SINCE,
     DEV_LAST_ACTIVITY,
     DEV_FIRST_OBSERVED,
@@ -938,6 +942,7 @@ EPOCH_KEPT = (
 # partial day; this subset names them so tests can expect their
 # absence from records born after the swap.
 LEGACY_CLOCK_FIELDS = (
+    DEV_SIGNAL_READS,
     DEV_SIGNAL_SUM,
     DEV_SIGNAL_SUM_SQ,
 )
@@ -1548,7 +1553,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 257
+HIGHEST_RULING = 259
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

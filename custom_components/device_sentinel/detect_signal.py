@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.13.2 (2026-08-13)
+# File: detect_signal.py, Version: 0.13.5 (2026-08-13)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -58,10 +58,12 @@ from .const import (
     DEV_SIGNAL_PSQ_TS,
     DEV_SIGNAL_PSQ_VALUE,
     DEV_SIGNAL_RAIL_COUNT,
+    DEV_SIGNAL_READS,
     DEV_SIGNAL_TODAY_MAX,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     GOOD_STATE_CEILING_SD,
+    LOGGER,
     RAIL_CONFIRM_DAYS,
     SIGNAL_ANOMALY_TRIM_MAX,
     SIGNAL_ANOMALY_TRIM_MIN,
@@ -173,10 +175,38 @@ class SignalMixin:
                 record.setdefault(key, []).append(
                     round(estimate, 2) if estimate is not None else None
                 )
+            folded_p5 = (record.get(DEV_SIGNAL_DAILY_P5) or [None])[-1]
+            folded_p50 = (record.get(DEV_SIGNAL_DAILY_P50) or [None])[-1]
+            if (
+                folded_p5 is not None
+                and folded_p50 is not None
+                and folded_p5 > folded_p50
+            ):
+                # Cannot happen in the data, since both read the same
+                # values through the same clock, so it is the
+                # estimators crossing: two independent approximations
+                # of numbers that a flat day makes nearly equal. The
+                # marker states are written down because the reset
+                # below destroys them, and one instance in seventy-nine
+                # devices was not reproducible from the folded figures
+                # alone.
+                LOGGER.info(
+                    "Signal percentiles crossed on a fold: P5 %.2f "
+                    "above P50 %.2f, over %d minutes and %d reading(s). "
+                    "P5 markers %s, P50 markers %s",
+                    folded_p5,
+                    folded_p50,
+                    count,
+                    int(record.get(DEV_SIGNAL_READS) or 0),
+                    record.get(DEV_SIGNAL_P5_STATE),
+                    record.get(DEV_SIGNAL_P50_STATE),
+                )
             record.setdefault(DEV_SIGNAL_DAILY_MAX, []).append(
                 record.get(DEV_SIGNAL_TODAY_MAX)
             )
-            record.setdefault(DEV_SIGNAL_DAILY_COUNT, []).append(count)
+            record.setdefault(DEV_SIGNAL_DAILY_COUNT, []).append(
+                int(record.get(DEV_SIGNAL_READS) or 0)
+            )
             record.setdefault(DEV_SIGNAL_DAILY_LINE, []).append(
                 round(line, 2) if line is not None else None
             )
@@ -225,27 +255,21 @@ class SignalMixin:
                 int(record.get(DEV_SIGNAL_RAIL_COUNT) or 0) + 1
             )
             return
+        record[DEV_SIGNAL_READS] = int(record.get(DEV_SIGNAL_READS) or 0) + 1
         today_min = record.get(DEV_SIGNAL_TODAY_MIN)
         if today_min is None or value < today_min:
             record[DEV_SIGNAL_TODAY_MIN] = value
         today_max = record.get(DEV_SIGNAL_TODAY_MAX)
         if today_max is None or value > today_max:
             record[DEV_SIGNAL_TODAY_MAX] = value
-        # The good-state accumulators (rulings #172, #254): Welford's
-        # running mean and M2 carry the day's whole distribution well
-        # enough for a mean and a deviation, stably, and no samples
-        # are kept.
-        count, mean, m2 = self._welford_state(record)
-        count += 1
-        delta = value - mean
-        mean += delta / count
-        m2 += delta * (value - mean)
-        record[DEV_SIGNAL_COUNT] = count
-        record[DEV_SIGNAL_MEAN_RUN] = mean
-        record[DEV_SIGNAL_M2] = m2
-        # The time-weighted percentiles (ruling #253): the held value
-        # is fed one observation per whole minute it lasted, then the
-        # new value takes over as the held one.
+        # The day's four figures all weigh minutes (ruling #259): the
+        # mean and deviation are fed by _feed_percentiles on the same
+        # clock as P5 and the median, so a device reporting once an
+        # hour is measured the same way as one reporting every
+        # minute, and the four can be read side by side. Counting
+        # readings instead let a busy hour outvote a quiet one, and
+        # on this fleet reporting rates differ by two orders of
+        # magnitude.
         self._feed_percentiles(record, now=now, new_value=value)
         self._feed_dwell(record, value, now)
 
@@ -308,6 +332,15 @@ class SignalMixin:
                         record[state_key] = state
                     for _ in range(minutes):
                         psquare_feed(state, q, float(held))
+                count, mean, m2 = self._welford_state(record)
+                for _ in range(minutes):
+                    count += 1
+                    delta = float(held) - mean
+                    mean += delta / count
+                    m2 += delta * (float(held) - mean)
+                record[DEV_SIGNAL_COUNT] = count
+                record[DEV_SIGNAL_MEAN_RUN] = mean
+                record[DEV_SIGNAL_M2] = m2
                 record[DEV_SIGNAL_PSQ_TS] = float(ts) + minutes * 60.0
         if new_value is not None:
             if held is None or ts is None:

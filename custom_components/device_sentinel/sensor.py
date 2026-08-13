@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.12.20 (2026-08-12)
+# File: sensor.py, Version: 0.13.5 (2026-08-13)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -53,19 +53,10 @@ from .const import (
     AREA_BATTERY,
     AREA_FREEZE,
     AREA_SIGNAL,
-    DATA_STATE_ARMED,
-    DATA_STATE_LEARNED,
-    DATA_STATE_TRACKING,
-    SENTINEL_TYPE_DATA_BATTERY,
-    SENTINEL_TYPE_DATA_FREEZE,
-    SENTINEL_TYPE_DATA_SIGNAL,
     ATTR_AWAITING_BATTERY,
     ATTR_AWAITING_LAST_SEEN,
     ATTR_AWAITING_SIGNAL,
     ATTR_BRIDGE_AVAILABILITY,
-    BROKER_SENSOR_NAME,
-    BROKER_STATES,
-    SENTINEL_TYPE_BROKER,
     ATTR_BRIDGE_BASE_TOPIC,
     ATTR_BRIDGE_LAST_HEARD,
     ATTR_BRIDGE_PERMIT_JOIN_END,
@@ -79,10 +70,19 @@ from .const import (
     BRIDGE_SENSOR_NAMES,
     BRIDGE_STATES,
     BRIDGE_UNKNOWN,
+    BROKER_SENSOR_NAME,
+    BROKER_STATES,
+    DATA_STATE_ARMED,
+    DATA_STATE_LEARNED,
+    DATA_STATE_TRACKING,
     DOMAIN,
     SENTINEL_TYPE_BRIDGE,
+    SENTINEL_TYPE_BROKER,
     SENTINEL_TYPE_CLASSIFICATION,
     SENTINEL_TYPE_COVERAGE,
+    SENTINEL_TYPE_DATA_BATTERY,
+    SENTINEL_TYPE_DATA_FREEZE,
+    SENTINEL_TYPE_DATA_SIGNAL,
     SENTINEL_TYPE_FALLING_BATTERIES,
     SENTINEL_TYPE_FROZEN_DEVICES,
     SENTINEL_TYPE_LEARNING,
@@ -350,7 +350,6 @@ class DeviceSentinelDataSensor(DeviceSentinelBaseSensor):
         return {
             **self._identity(),
             "complete_days": depth["complete_days"],
-            "since": depth["since"],
             "target_days": (
                 depth["learned_days"]
                 if depth["armed"] and depth["learned_days"]
