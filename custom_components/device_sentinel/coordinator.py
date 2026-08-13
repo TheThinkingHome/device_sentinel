@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.13.5 (2026-08-13)
+# File: coordinator.py, Version: 0.13.6 (2026-08-13)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -163,7 +163,7 @@ from .messenger import MessengerMixin
 from .narrative import NarrativeMixin
 from .notifier import NotifierMixin
 from .problem_list import ProblemListMixin
-from .records import BAD_STATES, _new_device_record, _span
+from .records import BAD_STATES, _new_device_record, _reset_signal_day, _span
 from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
 from .stacks import device_key
@@ -948,7 +948,19 @@ class DeviceSentinelCoordinator(
                         is_binary,
                     )
 
+        in_grace = dt_util.utcnow().timestamp() < self._grace_until
         for device_id in [d for d in watched if d not in with_entities]:
+            if in_grace:
+                # Integrations register their entities as they load,
+                # so during the startup window a device with none is
+                # usually one whose owner has not finished, not one
+                # that will never speak. Setting it aside then and
+                # bringing it back a second later cost eighteen
+                # devices their first gap on every restart, discarded
+                # as administrative by the rule that exists for a
+                # disabling (ruling #260). The window is what it is
+                # for: things are still arriving.
+                continue
             # No entities at all: nothing exists that could ever
             # report, and nothing a person could switch on, so its
             # silence says nothing (ruling #257). A device whose
@@ -1682,6 +1694,13 @@ class DeviceSentinelCoordinator(
                 record[DEV_SIGNAL_DAILY_MEAN] = []
                 record[DEV_SIGNAL_DAILY_SD] = []
                 cleared += 1
+            # The day in progress too (ruling #260). Its accumulator
+            # was built by counting readings and would carry on by
+            # counting minutes, so the first row folded after the
+            # upgrade would mix both weightings: the one row the
+            # clearing exists to prevent. The cost is the hours since
+            # midnight on the day of the upgrade.
+            _reset_signal_day(record)
         loaded[DATA_SIGNAL_WEIGHTING] = SIGNAL_WEIGHTING_MARK
         if cleared:
             LOGGER.info(
