@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.13.5 (2026-08-13)
+# File: detect_signal.py, Version: 0.13.8 (2026-08-13)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -90,7 +90,11 @@ from .const import (
     TODO_KINDS,
 )
 from .detect_battery import _is_foreign
-from .psquare import psquare_feed, psquare_new, psquare_read
+from .psquare import (
+    psquare_feed_many,
+    psquare_new,
+    psquare_read,
+)
 from .records import _reset_signal_day
 
 
@@ -151,6 +155,13 @@ class SignalMixin:
         # folded (ruling #253).
         self._feed_percentiles(record, now=fold_now)
         count, mean, m2 = self._welford_state(record)
+        if count == 0 and int(record.get(DEV_SIGNAL_READS) or 0) > 0:
+            # Readings that never completed a whole held minute, so
+            # the day weighs nothing (ruling #262). Without this the
+            # reads counter survived the fold and was counted into
+            # the next day, which put one device's report count on
+            # the wrong row. The day is dropped, not carried.
+            record[DEV_SIGNAL_READS] = 0
         if count > 0:
             # The line first, while the mean and deviation series
             # still end on yesterday: this is the line that judged
@@ -330,14 +341,20 @@ class SignalMixin:
                     if state is None:
                         state = psquare_new()
                         record[state_key] = state
-                    for _ in range(minutes):
-                        psquare_feed(state, q, float(held))
+                    psquare_feed_many(state, q, float(held), minutes)
+                # Welford for a repeated value has a closed form, so
+                # the day's mean and deviation cost the same whether
+                # the value was held for a minute or a day (ruling
+                # #262). This ran as a loop and a restart after an
+                # outage could hand it a day's worth per device, on
+                # the event loop, at the moment Home Assistant is
+                # busiest. Identical arithmetic, proven against the
+                # loop rather than assumed.
                 count, mean, m2 = self._welford_state(record)
-                for _ in range(minutes):
-                    count += 1
-                    delta = float(held) - mean
-                    mean += delta / count
-                    m2 += delta * (float(held) - mean)
+                delta = float(held) - mean
+                count += minutes
+                mean += minutes * delta / count
+                m2 += minutes * delta * (float(held) - mean)
                 record[DEV_SIGNAL_COUNT] = count
                 record[DEV_SIGNAL_MEAN_RUN] = mean
                 record[DEV_SIGNAL_M2] = m2
