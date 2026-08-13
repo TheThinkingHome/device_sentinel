@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.13.1 (2026-08-12)
+# File: coordinator.py, Version: 0.13.2 (2026-08-13)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -70,11 +70,14 @@ from .const import (
     BACKUP_TAKEN_KEY,
     BATTERY_SLOPE_DAYS,
     BRIEF_TRIGGER,
+    CONF_BATTERY_EXCLUDED_DEVICES,
     CONF_EPISODE_SHARE,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_EXCLUDED_LABELS,
+    CONF_FREEZE_EXCLUDED_DEVICES,
     CONF_MAINTENANCE_MINUTES,
+    CONF_SIGNAL_EXCLUDED_DEVICES,
     DAILY_MAX_KEEP,
     DATA_BRIDGE_SEEN,
     DATA_BROKER_SEEN,
@@ -239,6 +242,9 @@ class DeviceSentinelCoordinator(
         # time. The options cascade reads them on every form open,
         # and re-walking the registry there would race a rebuild.
         self._device_names: dict[str, str] = {}  # device_id -> name
+        # device_id -> the name a person is shown, which carries
+        # the integration where the plain name is not unique.
+        self._display_names: dict[str, str] = {}
         self._device_labels: dict[str, frozenset[str]] = {}
         # Exclusion suppresses judgment, not observation: these sets
         # gate reporting only. Clocks, statistics, and vouching keep
@@ -926,6 +932,25 @@ class DeviceSentinelCoordinator(
                         is_binary,
                     )
 
+        # A name shared by more than one watched device cannot be
+        # acted on: the reports print the name alone, so three
+        # registry devices called Bluetooth Proxy 2d8900 produce one
+        # row a person cannot find. The integration is appended to
+        # those and to no others, because a parenthetical on every
+        # row is decoration where the name is already unique.
+        seen: dict[str, int] = {}
+        for shared_name in device_names.values():
+            seen[shared_name] = seen.get(shared_name, 0) + 1
+        display_names = {
+            device_id: (
+                f"{plain} ({watched[device_id]})"
+                if seen.get(plain, 0) > 1
+                else plain
+            )
+            for device_id, plain in device_names.items()
+        }
+
+        self._display_names = display_names
         self._watched = watched
         self._stacks = stacks
         self._stack_keys = stack_keys
@@ -1042,8 +1067,38 @@ class DeviceSentinelCoordinator(
     @callback
     def _on_registry_updated(self, event: Event) -> None:
         """Rebuild the registry view when devices or entities change."""
+        if event.data.get("action") == "remove":
+            self._log_removed_exclusion(event.data.get("device_id"))
         self._rebuild_registry_view()
         self._notify()
+
+    @callback
+    def _log_removed_exclusion(self, device_id: str | None) -> None:
+        """Name a departing device that carries an exclusion pick.
+
+        The pick is pruned the next time its screen is saved, and by
+        then the device is gone from the registry and only its id
+        remains, which tells a person nothing. This is the last
+        moment its name exists, so the name is written down here.
+        """
+        if device_id is None or device_id not in self._device_names:
+            return
+        keys = (
+            CONF_EXCLUDED_DEVICES,
+            CONF_BATTERY_EXCLUDED_DEVICES,
+            CONF_FREEZE_EXCLUDED_DEVICES,
+            CONF_SIGNAL_EXCLUDED_DEVICES,
+        )
+        options = self.entry.options
+        if not any(device_id in options.get(key, []) for key in keys):
+            return
+        LOGGER.info(
+            "%s (%s) has been removed from Home Assistant and carried a "
+            "Device Sentinel exclusion; the setting is dropped the next "
+            "time its screen is saved",
+            self._device_names.get(device_id, device_id),
+            device_id,
+        )
 
     # ---------------------------------------------------------- intake
 

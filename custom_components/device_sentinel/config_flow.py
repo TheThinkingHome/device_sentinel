@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.12.18 (2026-08-11)
+# File: config_flow.py, Version: 0.13.2 (2026-08-13)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -47,6 +47,7 @@ front door for them to navigate from.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import voluptuous as vol
@@ -58,6 +59,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import selector
 
 from .const import (
@@ -184,6 +186,75 @@ def _discover_notify_targets(hass: Any) -> list[str]:
     return sorted(targets)
 
 
+def _device_options(
+    rows: list[dict[str, Any]],
+    picks: list[str],
+    covered: set[str],
+    label_for: Callable[[dict[str, Any]], str],
+    dev_reg: dr.DeviceRegistry,
+) -> list[selector.SelectOptionDict]:
+    """Return a picker's options, including any pick the rows lack.
+
+    A screen must be able to show every value it holds. Each picker
+    builds from a narrower set than the registry: the battery screen
+    lists devices that have a battery entity, the signal screen those
+    that report a signal, and both drop a device the moment that
+    entity is disabled. A pick left holding such a device seeded the
+    form with a value its own selector rejected, and the save failed
+    for the whole screen rather than the one pick, so no exclusion of
+    any kind could be changed while one such id sat in the options.
+
+    So a pick whose device is still in the registry is offered back,
+    named, and the person decides. Disabling an entity for an
+    afternoon is a normal thing to do and must not quietly cost the
+    exclusion that goes with it. A pick whose device the registry no
+    longer holds is not offered here at all: it is pruned on save,
+    which is the one case where absence is proof rather than
+    inference (ruling #45).
+    """
+    options = [
+        selector.SelectOptionDict(
+            value=row["device_id"], label=label_for(row)
+        )
+        for row in rows
+        if row["device_id"] not in covered
+    ]
+    listed = {option["value"] for option in options}
+    for device_id in picks:
+        if device_id in listed or device_id in covered:
+            continue
+        device = dev_reg.async_get(device_id)
+        if device is None:
+            continue
+        name = device.name_by_user or device.name or device_id
+        options.append(
+            selector.SelectOptionDict(
+                value=device_id, label=f"{name} (not currently listed)"
+            )
+        )
+    return options
+
+
+def _surviving_picks(
+    picks: list[str], covered: set[str], dev_reg: dr.DeviceRegistry
+) -> list[str]:
+    """Return the picks worth keeping: covered ones go, deleted ones go.
+
+    Ruling #45 prunes on proof and never on absence, and a device
+    missing from the registry is proof: the registry holds every
+    device of every config entry, loaded or not, enabled or not, so
+    an id it cannot find belongs to hardware that has been removed.
+    Its name went with it, which is why keeping the pick helps nobody:
+    it can only ever be shown as a raw id.
+    """
+    return [
+        device_id
+        for device_id in picks
+        if device_id not in covered
+        and dev_reg.async_get(device_id) is not None
+    ]
+
+
 def _devices_covered_by(
     rows: list[dict[str, Any]],
     excluded_integrations: list[str],
@@ -295,7 +366,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             return self.async_create_entry(
                 data={
                     **self.config_entry.options,
-                    **self._pruned_battery_input(user_input, battery_rows),
+                    **self._pruned_battery_input(
+                        user_input, battery_rows, dr.async_get(self.hass)
+                    ),
                 }
             )
         options = self.config_entry.options
@@ -313,14 +386,14 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         # device an integration or label exclude already reaches is
         # gone from it. Options forms are static once rendered, so
         # the filter applies at each open, one save behind the tick.
-        device_options = [
-            selector.SelectOptionDict(
-                value=row["device_id"],
-                label=f"{row['name']} ({row['entity_id']})",
-            )
-            for row in battery_rows
-            if row["device_id"] not in covered
-        ]
+        dev_reg = dr.async_get(self.hass)
+        device_options = _device_options(
+            battery_rows,
+            options.get(CONF_BATTERY_EXCLUDED_DEVICES, []),
+            covered,
+            lambda row: f"{row['name']} ({row['entity_id']})",
+            dev_reg,
+        )
         integration_options = sorted(
             {
                 row["integration"]
@@ -390,13 +463,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     ),
                     vol.Optional(
                         CONF_BATTERY_EXCLUDED_DEVICES,
-                        default=[
-                            device_id
-                            for device_id in options.get(
-                                CONF_BATTERY_EXCLUDED_DEVICES, []
-                            )
-                            if device_id not in covered
-                        ],
+                        default=_surviving_picks(
+                            options.get(CONF_BATTERY_EXCLUDED_DEVICES, []),
+                            covered,
+                            dev_reg,
+                        ),
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=device_options,
@@ -410,7 +481,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
 
     @staticmethod
     def _pruned_battery_input(
-        user_input: dict[str, Any], battery_rows: list[dict[str, Any]]
+        user_input: dict[str, Any],
+        battery_rows: list[dict[str, Any]],
+        dev_reg: dr.DeviceRegistry,
     ) -> dict[str, Any]:
         """Drop device picks the same save's broader excludes cover.
 
@@ -425,11 +498,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             pruned.get(CONF_BATTERY_EXCLUDED_INTEGRATIONS, []),
             pruned.get(CONF_BATTERY_EXCLUDED_LABELS, []),
         )
-        pruned[CONF_BATTERY_EXCLUDED_DEVICES] = [
-            device_id
-            for device_id in pruned.get(CONF_BATTERY_EXCLUDED_DEVICES, [])
-            if device_id not in covered
-        ]
+        pruned[CONF_BATTERY_EXCLUDED_DEVICES] = _surviving_picks(
+            pruned.get(CONF_BATTERY_EXCLUDED_DEVICES, []), covered, dev_reg
+        )
         return pruned
 
     async def async_step_signal(
@@ -457,7 +528,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             return self.async_create_entry(
                 data={
                     **self.config_entry.options,
-                    **self._pruned_signal_input(user_input, signal_rows),
+                    **self._pruned_signal_input(
+                        user_input, signal_rows, dr.async_get(self.hass)
+                    ),
                 }
             )
         options = self.config_entry.options
@@ -468,14 +541,14 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         )
         globally = _globally_excluded(signal_rows, options)
         covered = covered | globally
-        device_options = [
-            selector.SelectOptionDict(
-                value=row["device_id"],
-                label=f"{row['name']} ({row['integration']})",
-            )
-            for row in signal_rows
-            if row["device_id"] not in covered
-        ]
+        dev_reg = dr.async_get(self.hass)
+        device_options = _device_options(
+            signal_rows,
+            options.get(CONF_SIGNAL_EXCLUDED_DEVICES, []),
+            covered,
+            lambda row: f"{row['name']} ({row['integration']})",
+            dev_reg,
+        )
         integration_options = sorted(
             {
                 row["integration"]
@@ -566,13 +639,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     ),
                     vol.Optional(
                         CONF_SIGNAL_EXCLUDED_DEVICES,
-                        default=[
-                            device_id
-                            for device_id in options.get(
-                                CONF_SIGNAL_EXCLUDED_DEVICES, []
-                            )
-                            if device_id not in covered
-                        ],
+                        default=_surviving_picks(
+                            options.get(CONF_SIGNAL_EXCLUDED_DEVICES, []),
+                            covered,
+                            dev_reg,
+                        ),
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=device_options,
@@ -586,7 +657,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
 
     @staticmethod
     def _pruned_signal_input(
-        user_input: dict[str, Any], signal_rows: list[dict[str, Any]]
+        user_input: dict[str, Any],
+        signal_rows: list[dict[str, Any]],
+        dev_reg: dr.DeviceRegistry,
     ) -> dict[str, Any]:
         """Drop device picks the same save's broader excludes cover,
         and round the slider to the integer it is. Same determinism
@@ -608,11 +681,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             pruned.get(CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []),
             pruned.get(CONF_SIGNAL_EXCLUDED_LABELS, []),
         )
-        pruned[CONF_SIGNAL_EXCLUDED_DEVICES] = [
-            device_id
-            for device_id in pruned.get(CONF_SIGNAL_EXCLUDED_DEVICES, [])
-            if device_id not in covered
-        ]
+        pruned[CONF_SIGNAL_EXCLUDED_DEVICES] = _surviving_picks(
+            pruned.get(CONF_SIGNAL_EXCLUDED_DEVICES, []), covered, dev_reg
+        )
         return pruned
 
     async def async_step_freeze(
@@ -649,7 +720,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             return self.async_create_entry(
                 data={
                     **self.config_entry.options,
-                    **self._pruned_freeze_input(user_input, device_rows),
+                    **self._pruned_freeze_input(
+                        user_input, device_rows, dr.async_get(self.hass)
+                    ),
                 }
             )
         options = self.config_entry.options
@@ -660,14 +733,14 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         )
         globally = _globally_excluded(device_rows, options)
         covered = covered | globally
-        device_options = [
-            selector.SelectOptionDict(
-                value=row["device_id"],
-                label=f"{row['name']} ({row['integration']})",
-            )
-            for row in device_rows
-            if row["device_id"] not in covered
-        ]
+        dev_reg = dr.async_get(self.hass)
+        device_options = _device_options(
+            device_rows,
+            options.get(CONF_FREEZE_EXCLUDED_DEVICES, []),
+            covered,
+            lambda row: f"{row['name']} ({row['integration']})",
+            dev_reg,
+        )
         integration_options = sorted(
             {
                 row["integration"]
@@ -733,13 +806,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     ),
                     vol.Optional(
                         CONF_FREEZE_EXCLUDED_DEVICES,
-                        default=[
-                            device_id
-                            for device_id in options.get(
-                                CONF_FREEZE_EXCLUDED_DEVICES, []
-                            )
-                            if device_id not in covered
-                        ],
+                        default=_surviving_picks(
+                            options.get(CONF_FREEZE_EXCLUDED_DEVICES, []),
+                            covered,
+                            dev_reg,
+                        ),
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=device_options,
@@ -753,7 +824,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
 
     @staticmethod
     def _pruned_freeze_input(
-        user_input: dict[str, Any], device_rows: list[dict[str, Any]]
+        user_input: dict[str, Any],
+        device_rows: list[dict[str, Any]],
+        dev_reg: dr.DeviceRegistry,
     ) -> dict[str, Any]:
         """Round the two deltas and drop device picks a broader freeze
         exclude already covers, the same determinism rule as signal
@@ -766,11 +839,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             pruned.get(CONF_FREEZE_EXCLUDED_INTEGRATIONS, []),
             pruned.get(CONF_FREEZE_EXCLUDED_LABELS, []),
         )
-        pruned[CONF_FREEZE_EXCLUDED_DEVICES] = [
-            device_id
-            for device_id in pruned.get(CONF_FREEZE_EXCLUDED_DEVICES, [])
-            if device_id not in covered
-        ]
+        pruned[CONF_FREEZE_EXCLUDED_DEVICES] = _surviving_picks(
+            pruned.get(CONF_FREEZE_EXCLUDED_DEVICES, []), covered, dev_reg
+        )
         return pruned
 
     async def async_step_exclusions(
@@ -807,7 +878,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 data={
                     **self.config_entry.options,
                     **self._pruned_exclusion_input(
-                        user_input, device_rows
+                        user_input, device_rows, dr.async_get(self.hass)
                     ),
                 }
             )
@@ -826,19 +897,19 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         covered_devices = _devices_covered_by(
             device_rows, excluded_integrations, excluded_labels
         )
-        surviving_device_picks = [
-            device_id
-            for device_id in options.get(CONF_EXCLUDED_DEVICES, [])
-            if device_id not in covered_devices
-        ]
-        device_options = [
-            selector.SelectOptionDict(
-                value=row["device_id"],
-                label=f"{row['name']} ({row['integration']})",
-            )
-            for row in device_rows
-            if row["device_id"] not in covered_devices
-        ]
+        dev_reg = dr.async_get(self.hass)
+        surviving_device_picks = _surviving_picks(
+            options.get(CONF_EXCLUDED_DEVICES, []),
+            covered_devices,
+            dev_reg,
+        )
+        device_options = _device_options(
+            device_rows,
+            options.get(CONF_EXCLUDED_DEVICES, []),
+            covered_devices,
+            lambda row: f"{row['name']} ({row['integration']})",
+            dev_reg,
+        )
         return self.async_show_form(
             step_id="exclusions",
             description_placeholders={"wiki_link": WIKI_LINK_EXCLUSIONS},
@@ -878,6 +949,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     def _pruned_exclusion_input(
         user_input: dict[str, Any],
         device_rows: list[dict[str, Any]],
+        dev_reg: dr.DeviceRegistry,
     ) -> dict[str, Any]:
         """Drop device picks the same save's broader excludes cover.
 
@@ -891,11 +963,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         covered_devices = _devices_covered_by(
             device_rows, excluded_integrations, excluded_labels
         )
-        pruned[CONF_EXCLUDED_DEVICES] = [
-            device_id
-            for device_id in pruned.get(CONF_EXCLUDED_DEVICES, [])
-            if device_id not in covered_devices
-        ]
+        pruned[CONF_EXCLUDED_DEVICES] = _surviving_picks(
+            pruned.get(CONF_EXCLUDED_DEVICES, []), covered_devices, dev_reg
+        )
         return pruned
 
     async def async_step_notifications(

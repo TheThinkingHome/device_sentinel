@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.12.21 (2026-08-12)
+# File: detect_signal.py, Version: 0.13.2 (2026-08-13)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -739,7 +739,7 @@ class SignalMixin:
             if self.signal_railed(record):
                 problems.append(
                     {
-                        "name": self._device_names.get(device_id),
+                        "name": self._display_names.get(device_id),
                         "device_id": device_id,
                         "kind": "rail",
                         "value": record.get(DEV_SIGNAL_VALUE),
@@ -838,7 +838,7 @@ class SignalMixin:
         rows = [
             {
                 "device_id": device_id,
-                "name": self._device_names.get(device_id, device_id),
+                "name": self._display_names.get(device_id, device_id),
                 "integration": self._watched.get(device_id, "?"),
                 "labels": self._device_labels.get(
                     device_id, frozenset()

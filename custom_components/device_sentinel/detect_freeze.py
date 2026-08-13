@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.12.10 (2026-08-07)
+# File: detect_freeze.py, Version: 0.13.2 (2026-08-13)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -558,7 +558,7 @@ class FreezeMixin:
         """Return the freeze-eligible devices, for the attribute."""
         return sorted(
             (
-                {"name": self._device_names.get(device_id)}
+                {"name": self._display_names.get(device_id)}
                 for device_id, record in self.data.get(
                     DATA_DEVICES, {}
                 ).items()
