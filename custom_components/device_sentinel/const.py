@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.13.0 (2026-08-12)
+# File: const.py, Version: 0.13.3 (2026-08-13)
 
 """Constants for the Device Sentinel integration."""
 
@@ -150,6 +150,10 @@ LEARNED_PAIRING = "no (pairing)"
 # Its own word for the same reason pairing has one: the episode report
 # should say which intervention explained the discard.
 LEARNED_MAINTENANCE = "no (maintenance)"
+# A gap that spans a disabling is administrative, not the device's
+# own rhythm (ruling #257). Same class as pairing and maintenance:
+# a hand caused the silence, so the gap is refused and retracted.
+LEARNED_DISABLED = "no (disabled)"
 
 # The maintenance window (rulings #225 and #238): a button-declared span in
 # which any recovery is attributed to the person's hands rather than
@@ -289,6 +293,7 @@ DEV_DAILY_MAX = "daily_max"
 DEV_TODAY_MAX = "today_max"
 DEV_FIRST_OBSERVED = "first_observed"
 DEV_EVENT_COUNT = "event_count"
+DEV_SET_ASIDE_SINCE = "set_aside_since"
 DEV_TAINTED = "tainted"
 
 # Provisional tunables from the telemetry layer. Set from reasoning
@@ -355,6 +360,13 @@ DATA_SERIES_STAMPS = "series_stamps"
 # One-shot marker for the signal day repair of ruling #256. Carries
 # the version that ran it, so the repair happens once and a later
 # restart cannot drop another day.
+# Why a device is set aside: recorded rather than inferred, because
+# the classification file has to say which, and because only one of
+# the three can end (ruling #257).
+SET_ASIDE_SERVICE = "service"
+SET_ASIDE_DISABLED = "disabled"
+SET_ASIDE_NO_ENTITIES = "no enabled entities"
+
 DATA_SIGNAL_DAY_REPAIR = "signal_day_repair"
 SIGNAL_DAY_REPAIR_MARK = "0.12.21"
 AREA_FREEZE = "freeze"
@@ -887,6 +899,7 @@ DEV_FROZEN_SINCE = "frozen_since"
 # this behind, and the failure would have been a field quietly
 # surviving a wipe (ruling #207).
 EPOCH_KEPT = (
+    DEV_SET_ASIDE_SINCE,
     DEV_LAST_ACTIVITY,
     DEV_FIRST_OBSERVED,
     DEV_SIGNAL_VALUE,
@@ -1535,7 +1548,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 256
+HIGHEST_RULING = 257
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.13.2 (2026-08-13)
+# File: coordinator.py, Version: 0.13.3 (2026-08-13)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -101,6 +101,7 @@ from .const import (
     DEV_EVENT_COUNT,
     DEV_FROZEN_CATEGORY,
     DEV_LAST_ACTIVITY,
+    DEV_SET_ASIDE_SINCE,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_TODAY_MIN,
     DEV_TAINTED,
@@ -109,6 +110,7 @@ from .const import (
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     INC_CAUSE,
+    LEARNED_DISABLED,
     LEARNED_MAINTENANCE,
     LEARNED_PAIRING,
     LEARNING_MIN_DAYS,
@@ -124,6 +126,9 @@ from .const import (
     SERIES_VERSION_BATTERY,
     SERIES_VERSION_FREEZE,
     SERIES_VERSION_SIGNAL,
+    SET_ASIDE_DISABLED,
+    SET_ASIDE_NO_ENTITIES,
+    SET_ASIDE_SERVICE,
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
     SIGNAL_ARMING_DAYS,
@@ -867,7 +872,14 @@ class DeviceSentinelCoordinator(
             if stack is not None:
                 stacks.add(stack)
             if device.entry_type is dr.DeviceEntryType.SERVICE:
-                set_aside[device.id] = (name, domain)
+                set_aside[device.id] = (name, domain, SET_ASIDE_SERVICE)
+                continue
+            if device.disabled_by is not None:
+                # Disabled by a person, by its integration, or by a
+                # disabled config entry. It cannot report, so judging
+                # its silence is noise, and reporting it is the
+                # false negative issue #1 describes (ruling #257).
+                set_aside[device.id] = (name, domain, SET_ASIDE_DISABLED)
                 continue
             watched[device.id] = domain
             # What the owning stack calls this device, where it can
@@ -898,6 +910,7 @@ class DeviceSentinelCoordinator(
         signal_devices: set[str] = set()
         battery_entity: dict[str, tuple[str, bool]] = {}
         deviceless = 0
+        with_entities: set[str] = set()
         for ent in ent_reg.entities.values():
             if ent.device_id is None:
                 deviceless += 1
@@ -905,6 +918,7 @@ class DeviceSentinelCoordinator(
             if ent.device_id not in watched:
                 continue
             entity_map[ent.entity_id] = (ent.device_id, ent.config_entry_id)
+            with_entities.add(ent.device_id)
             if ent.config_entry_id is not None:
                 device_entries.setdefault(ent.device_id, set()).add(
                     ent.config_entry_id
@@ -931,6 +945,21 @@ class DeviceSentinelCoordinator(
                         ent.entity_id,
                         is_binary,
                     )
+
+        for device_id in [d for d in watched if d not in with_entities]:
+            # No entities at all: nothing exists that could ever
+            # report, and nothing a person could switch on, so its
+            # silence says nothing (ruling #257). A device whose
+            # entities are all disabled is a different case and stays
+            # watched: those entities exist, the never-reported row
+            # is the prompt, and the person can enable them or
+            # exclude the device.
+            set_aside[device_id] = (
+                device_names.get(device_id, device_id),
+                watched.pop(device_id),
+                SET_ASIDE_NO_ENTITIES,
+            )
+            device_names.pop(device_id, None)
 
         # A name shared by more than one watched device cannot be
         # acted on: the reports print the name alone, so three
@@ -979,21 +1008,44 @@ class DeviceSentinelCoordinator(
                     now_iso, self._seed_from_last_seen(device_id)
                 )
                 self._mark_cold_dirty()
+        now_stamp = dt_util.utcnow().timestamp()
         for device_id in list(devices):
-            if device_id not in watched:
-                del devices[device_id]
-                self._mark_cold_dirty()
+            if device_id in watched:
+                continue
+            if device_id in set_aside:
+                # Set aside, not gone: a person disabling an
+                # integration for an afternoon must not lose what the
+                # house spent weeks learning (ruling #257). The record
+                # is kept untouched and unjudged, and the stamp lets
+                # the gap that spans the absence be refused on return.
+                if devices[device_id].get(DEV_SET_ASIDE_SINCE) is None:
+                    devices[device_id][DEV_SET_ASIDE_SINCE] = now_stamp
+                    self._mark_cold_dirty()
+                continue
+            del devices[device_id]
+            self._mark_cold_dirty()
 
         if audit and set_aside:
+            # Named by reason: service devices are furniture, but a
+            # disabled one is a person's choice and a device with
+            # nothing enabled may be an accident, and a person
+            # looking for a missing device needs to tell them apart.
+            counts: dict[str, int] = {}
+            for _name, _domain, reason in set_aside.values():
+                counts[reason] = counts.get(reason, 0) + 1
             LOGGER.info(
-                "Set aside %d service devices from telemetry",
+                "Set aside %d device(s) from judgment: %s",
                 len(set_aside),
+                ", ".join(
+                    f"{count} {reason}"
+                    for reason, count in sorted(counts.items())
+                ),
             )
             LOGGER.debug(
-                "Service devices set aside: %s",
+                "Devices set aside: %s",
                 "; ".join(
-                    f"{name} ({domain})"
-                    for name, domain in sorted(set_aside.values())
+                    f"{name} ({domain}, {reason})"
+                    for name, domain, reason in sorted(set_aside.values())
                 ),
             )
 
@@ -1334,6 +1386,22 @@ class DeviceSentinelCoordinator(
                 "discarded as a pairing intervention",
                 device_id,
             )
+        elif record.get(DEV_SET_ASIDE_SINCE) is not None:
+            # The device was set aside for part of this gap, so the
+            # silence is a disabled entity or integration rather than
+            # the device's own rhythm (ruling #257). Same treatment as
+            # pairing and maintenance: refused and retracted, so a
+            # fortnight switched off cannot teach a fortnight-long
+            # window. The stamp is cleared by the registry rebuild
+            # that brought the device back.
+            learned = LEARNED_DISABLED
+            if not tainted and learned_gap is not None:
+                self._retract_today_max(record, learned_gap)
+            LOGGER.debug(
+                "Device %s returned from being set aside; gap "
+                "discarded as administrative",
+                device_id,
+            )
         elif self._recovered_during_maintenance(now):
             # A recovery inside a declared maintenance window is the
             # person's hands, not the device's own rhythm (rulings #225
@@ -1355,6 +1423,12 @@ class DeviceSentinelCoordinator(
 
         record[DEV_LAST_ACTIVITY] = stamp
         record[DEV_EVENT_COUNT] = int(record[DEV_EVENT_COUNT]) + 1
+        if record.get(DEV_SET_ASIDE_SINCE) is not None:
+            # Spent: the gap spanning the absence has been judged
+            # above, and the next silence is the device's own again.
+            # Cleared here rather than when the registry brought it
+            # back, which happens before it speaks (ruling #257).
+            record[DEV_SET_ASIDE_SINCE] = None
         self._dirty = True
 
         # Recovery is live: a device the protocol has heard from is
@@ -1678,7 +1752,7 @@ class DeviceSentinelCoordinator(
             breakdown.setdefault(
                 domain, {"watched": 0, "set_aside": 0}
             )["watched"] += 1
-        for _name, domain in self._set_aside.values():
+        for _name, domain, _reason in self._set_aside.values():
             breakdown.setdefault(
                 domain, {"watched": 0, "set_aside": 0}
             )["set_aside"] += 1
@@ -1758,11 +1832,15 @@ class DeviceSentinelCoordinator(
         matches: Callable[[er.RegistryEntry], bool],
         kind: str,
     ) -> dict[str, int]:
-        """Enable integration-disabled entities a matcher recognizes,
-        on watched devices. User-disabled entities are respected and
-        only counted, never re-enabled: a user who turned something
-        off meant it. Home Assistant reloads the owning config entries
-        automatically a short delay after enabling.
+        """Enable every disabled entity a matcher recognizes.
+
+        Whoever disabled it (ruling #257). The button names the
+        action, and a person pressing Enable Battery is asking for
+        the battery entities to come on: declining part of the job
+        because they turned one off themselves reads as the tool
+        second-guessing them, and they would then have to go and do
+        by hand exactly what they just asked for. Home Assistant
+        reloads the owning config entries a short delay after.
 
         Split by kind (signals, last_seen, battery) so a user can
         enable exactly the diagnostic they want without turning on the
@@ -1771,27 +1849,32 @@ class DeviceSentinelCoordinator(
         ent_reg = er.async_get(self.hass)
         enabled = 0
         enabled_ids: list[str] = []
-        skipped_user = 0
+        by_hand = 0
         for ent in list(ent_reg.entities.values()):
-            if ent.device_id not in self._watched:
+            if (
+                ent.device_id not in self._watched
+                and ent.device_id not in self._set_aside
+            ):
                 continue
             if not matches(ent):
                 continue
             if ent.disabled_by is None:
                 continue
             if ent.disabled_by is er.RegistryEntryDisabler.USER:
-                skipped_user += 1
-                continue
+                # Counted as well as enabled, because a sweep that
+                # reverses a person's own choice should say how often
+                # it did so.
+                by_hand += 1
             ent_reg.async_update_entity(ent.entity_id, disabled_by=None)
             enabled += 1
             enabled_ids.append(ent.entity_id)
         LOGGER.info(
-            "Enable %s: enabled %d entities; %d left alone because a "
-            "user disabled them. Home Assistant reloads the owning "
-            "integrations shortly",
+            "Enable %s: enabled %d entities, %d of them disabled by "
+            "hand. Home Assistant reloads the owning integrations "
+            "shortly",
             kind,
             enabled,
-            skipped_user,
+            by_hand,
         )
         if enabled_ids:
             # Named, so a person who wonders where a count on the
@@ -1800,7 +1883,7 @@ class DeviceSentinelCoordinator(
             LOGGER.info(
                 "Enable %s turned on: %s", kind, ", ".join(enabled_ids)
             )
-        return {"enabled": enabled, "skipped_user": skipped_user}
+        return {"enabled": enabled, "by_hand": by_hand}
 
     async def async_enable_signal_entities(self) -> dict[str, int]:
         """Enable integration-disabled signal-strength entities."""
@@ -1840,20 +1923,21 @@ class DeviceSentinelCoordinator(
     def awaiting_enable_counts(self) -> dict[str, int]:
         """Return how many entities each enable button would turn on.
 
-        One registry pass, three counters (ruling #237). The filter is the
-        buttons' own: watched devices, integration-disabled only, so a
-        non-zero count is exactly a press that would do something and
-        zero means the button can hide. User-disabled entities are
-        absent from every count, because the buttons leave them alone.
+        One registry pass, three counters (ruling #237). The filter is
+        the buttons' own, so a non-zero count is exactly a press that
+        would do something and zero means the button can hide. Every
+        disabled entity is counted, whoever disabled it, because the
+        buttons now enable every one of them (ruling #257).
         """
         ent_reg = er.async_get(self.hass)
         signal = last_seen = battery = 0
         for ent in list(ent_reg.entities.values()):
-            if ent.device_id not in self._watched:
+            if (
+                ent.device_id not in self._watched
+                and ent.device_id not in self._set_aside
+            ):
                 continue
             if ent.disabled_by is None:
-                continue
-            if ent.disabled_by is er.RegistryEntryDisabler.USER:
                 continue
             if self._is_signal(ent):
                 signal += 1

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: button.py, Version: 0.12.11 (2026-08-07)
+# File: button.py, Version: 0.13.3 (2026-08-13)
 
 """Button platform for the Device Sentinel integration.
 
@@ -95,9 +95,10 @@ async def async_setup_entry(
 class DeviceSentinelActionButton(ButtonEntity):
     """A Device Sentinel button that runs one coordinator action.
 
-    The enable buttons each walk the entity registry for entities of
-    their kind that an integration shipped turned off, and turn them
-    on, on watched devices only, leaving user-disabled entities alone.
+    The enable buttons each walk the entity registry for disabled
+    entities of their kind and turn them on, whoever disabled them
+    (ruling #257), on watched and set-aside devices alike, since the
+    state that set a device aside is the state the button fixes.
     The regenerate button judges every device and rewrites every
     report on demand. Each button is a thin wrapper around the async
     action it is given; the action carries the behavior.

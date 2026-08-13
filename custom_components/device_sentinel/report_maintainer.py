@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.12.16 (2026-08-08)
+# File: report_maintainer.py, Version: 0.13.3 (2026-08-13)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -549,9 +549,12 @@ class MaintainerReportMixin:
                     str(copies) if copies > 1 else "",
                 )
             )
-        for name, integration_domain in self._set_aside.values():
+        for name, integration_domain, reason in self._set_aside.values():
+            # The reason is named rather than left to be guessed: a
+            # disabled device looks identical to a service device in
+            # a column that only says yes (ruling #257).
             rows.append(
-                (name, integration_domain, "", "", "yes", "")
+                (name, integration_domain, "", "", reason, "")
             )
         rows.sort(key=lambda row: row[0].lower())
 
