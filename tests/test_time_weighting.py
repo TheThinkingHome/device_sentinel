@@ -1,7 +1,7 @@
 """Tests for weighing the day by minutes rather than readings.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_time_weighting.py, Version: 0.13.7 (2026-08-13)
+# File: test_time_weighting.py, Version: 0.13.8 (2026-08-13)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -23,6 +23,7 @@ from custom_components.device_sentinel.const import (
     DATA_DEVICES,
     DATA_SIGNAL_WEIGHTING,
     DEV_SIGNAL_COUNT,
+    DEV_SIGNAL_DAILY_COUNT,
     DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_P50,
@@ -293,4 +294,104 @@ async def test_the_grace_close_re_reads_the_registry(
 
     assert device.id not in coord._watched
     assert device.id in coord._set_aside
+
+async def test_a_held_value_costs_the_same_whatever_it_lasts(
+    hass: HomeAssistant,
+):
+    """Ruling #262. Welford for a repeated value has a closed form,
+    so a value held for a full day is one arithmetic step rather than
+    1440. The figures must match the loop exactly, which is what this
+    pins: a day at one level, then a second level, against the
+    textbook running update.
+    """
+    device, _ = register_device(hass, "cf1", "Closed Form Device")
+    coord = await setup_coordinator(hass)
+    record = coord.data[DATA_DEVICES][device.id]
+
+    coord._feed_signal(record, 120.0, 0.0)
+    coord._feed_signal(record, 180.0, 600 * 60.0)
+    coord._feed_signal(record, 180.0, 900 * 60.0)
+
+    count = 0
+    mean = 0.0
+    m2 = 0.0
+    for value in [120.0] * 600 + [180.0] * 300:
+        count += 1
+        delta = value - mean
+        mean += delta / count
+        m2 += delta * (value - mean)
+
+    assert record[DEV_SIGNAL_COUNT] == count
+    assert record[DEV_SIGNAL_MEAN_RUN] == pytest.approx(mean)
+    assert record[DEV_SIGNAL_M2] == pytest.approx(m2)
+
+
+async def test_the_bulk_percentile_feed_matches_the_loop(
+    hass: HomeAssistant,
+):
+    """The estimator has no closed form for a repeat, so the bulk
+    feed still iterates; what it drops is the per-observation state
+    slicing. Identical results rather than an approximation, which is
+    the only reason it is allowed to exist.
+    """
+    from custom_components.device_sentinel.psquare import (
+        psquare_feed,
+        psquare_feed_many,
+        psquare_new,
+    )
+
+    for quantile in (0.05, 0.5):
+        one_at_a_time = psquare_new()
+        in_bulk = psquare_new()
+        for value in (140.0, 96.0, 168.0, 120.0, 152.0, 108.0):
+            psquare_feed(one_at_a_time, quantile, value)
+            psquare_feed(in_bulk, quantile, value)
+        for _ in range(500):
+            psquare_feed(one_at_a_time, quantile, 132.0)
+        psquare_feed_many(in_bulk, quantile, 132.0, 500)
+
+        assert one_at_a_time == in_bulk
+
+
+async def test_the_bulk_feed_bootstraps_the_same_way(
+    hass: HomeAssistant,
+):
+    """A fresh estimator handed a long repeat has to bootstrap first,
+    which the bulk path defers to the single feed rather than
+    reimplementing."""
+    from custom_components.device_sentinel.psquare import (
+        psquare_feed,
+        psquare_feed_many,
+        psquare_new,
+    )
+
+    one_at_a_time = psquare_new()
+    in_bulk = psquare_new()
+    for _ in range(40):
+        psquare_feed(one_at_a_time, 0.05, 144.0)
+    psquare_feed_many(in_bulk, 0.05, 144.0, 40)
+
+    assert one_at_a_time == in_bulk
+
+
+async def test_a_day_of_readings_with_no_held_minute_is_dropped(
+    hass: HomeAssistant,
+):
+    """Ruling #262. A device can report several times inside one
+    minute at the very end of a day, which weighs nothing, so the day
+    folds nothing. The reads counter has to go with it: carried
+    forward, it put one device's report count on the following day's
+    row.
+    """
+    device, _ = register_device(hass, "cf2", "Late Reporter")
+    coord = await setup_coordinator(hass)
+    record = coord.data[DATA_DEVICES][device.id]
+    coord._feed_signal(record, 140.0, 86_399.0)
+    coord._feed_signal(record, 144.0, 86_399.5)
+    assert record[DEV_SIGNAL_READS] == 2
+
+    coord._roll_signal_stats(record, 86_400.0)
+
+    assert record[DEV_SIGNAL_READS] == 0
+    assert not record.get(DEV_SIGNAL_DAILY_COUNT)
 
