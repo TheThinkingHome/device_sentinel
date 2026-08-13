@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_exclusions.py, Version: 0.9.9 (2026-07-26)
+# File: test_exclusions.py, Version: 0.13.2 (2026-08-13)
 
 """Exclusion: watched and recorded, but not judged or reported.
 
@@ -475,6 +475,20 @@ def test_coverage_is_positive_only():
     assert _devices_covered_by(rows, ["spook"], ["ice"]) == set()
 
 
+class _FakeRegistry:
+    """A registry that holds exactly the ids it is given.
+
+    The pruner asks it whether a picked device still exists, which is
+    the proof ruling #45 requires before dropping a pick.
+    """
+
+    def __init__(self, ids: set[str]):
+        self._ids = ids
+
+    def async_get(self, device_id: str):
+        return object() if device_id in self._ids else None
+
+
 def test_prune_drops_superseded_device_pick():
     rows = [
         {"device_id": "a", "integration": "spook", "labels": frozenset()},
@@ -486,6 +500,7 @@ def test_prune_drops_superseded_device_pick():
             CONF_EXCLUDED_DEVICES: ["a"],
         },
         rows,
+        _FakeRegistry({row['device_id'] for row in rows}),
     )
     assert pruned[CONF_EXCLUDED_DEVICES] == []
 
@@ -503,6 +518,7 @@ def test_prune_settles_the_whole_ladder_in_one_save():
             CONF_EXCLUDED_DEVICES: ["a"],
         },
         device_rows,
+        _FakeRegistry({row['device_id'] for row in device_rows}),
     )
     assert pruned[CONF_EXCLUDED_DEVICES] == []
 
@@ -522,6 +538,7 @@ def test_prune_keeps_picks_no_broader_kind_covers():
             CONF_EXCLUDED_DEVICES: ["a"],
         },
         device_rows,
+        _FakeRegistry({row['device_id'] for row in device_rows}),
     )
     assert pruned[CONF_EXCLUDED_DEVICES] == ["a"]
 
@@ -543,6 +560,7 @@ def test_battery_prune_drops_superseded_device_pick():
             CONF_BATTERY_EXCLUDED_DEVICES: ["a"],
         },
         rows,
+        _FakeRegistry({row['device_id'] for row in rows}),
     )
     assert pruned[CONF_BATTERY_EXCLUDED_DEVICES] == []
 
