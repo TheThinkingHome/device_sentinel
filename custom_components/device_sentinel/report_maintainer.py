@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.13.3 (2026-08-13)
+# File: report_maintainer.py, Version: 0.13.4 (2026-08-13)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -569,7 +569,8 @@ class MaintainerReportMixin:
             "",
             f"One row per device. Watching {len(self._watched)} of "
             f"{total}; {len(self._set_aside)} set aside (service "
-            f"devices with no hardware to watch); {self.deviceless_count} "
+            f"devices, disabled devices, and devices with no "
+            f"entities); {self.deviceless_count} "
             f"deviceless entities visible only at entity level. Every "
             f"device is watched and recorded; EXCLUDED only suppresses "
             f"judgment and reporting, and names why. COPIES above 1 is a "
@@ -582,7 +583,7 @@ class MaintainerReportMixin:
         ]
         for name, integration, watched, excluded, set_aside, copies in rows:
             watched_mark = "\u2713" if watched else ""
-            set_aside_mark = "\u2713" if set_aside else ""
+            set_aside_mark = set_aside or ""
             lines.append(
                 f"| {self._report_cell(name)} | {integration} | "
                 f"{watched_mark} | "

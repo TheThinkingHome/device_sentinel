@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.13.3 (2026-08-13)
+# File: const.py, Version: 0.13.4 (2026-08-13)
 
 """Constants for the Device Sentinel integration."""
 
@@ -365,7 +365,7 @@ DATA_SERIES_STAMPS = "series_stamps"
 # the three can end (ruling #257).
 SET_ASIDE_SERVICE = "service"
 SET_ASIDE_DISABLED = "disabled"
-SET_ASIDE_NO_ENTITIES = "no enabled entities"
+SET_ASIDE_NO_ENTITIES = "no entities"
 
 DATA_SIGNAL_DAY_REPAIR = "signal_day_repair"
 SIGNAL_DAY_REPAIR_MARK = "0.12.21"

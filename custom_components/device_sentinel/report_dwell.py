@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_dwell.py, Version: 0.12.18 (2026-08-11)
+# File: report_dwell.py, Version: 0.13.4 (2026-08-13)
 
 """The signal dwell chart and the signal cells of the telemetry.
 
@@ -33,6 +33,8 @@ from .const import (
     DATA_DEVICES,
     DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_VALUE,
@@ -170,6 +172,8 @@ class DwellChartMixin:
                         -1
                     ],
                     "sd": (record.get(DEV_SIGNAL_DAILY_SD) or [None])[-1],
+                    "p5": (record.get(DEV_SIGNAL_DAILY_P5) or [None])[-1],
+                    "p50": (record.get(DEV_SIGNAL_DAILY_P50) or [None])[-1],
                 }
             )
         return out
@@ -287,6 +291,14 @@ class DwellChartMixin:
                     if a["mean"] is not None and a["sd"] is not None
                     else "from tonight"
                 )
+                p5 = (
+                    f"{a['p5']:.0f}" if a["p5"] is not None else "from tonight"
+                )
+                p50 = (
+                    f"{a['p50']:.0f}"
+                    if a["p50"] is not None
+                    else "from tonight"
+                )
                 if a["previous"] is None:
                     trend = "first day"
                 else:
@@ -306,6 +318,7 @@ class DwellChartMixin:
                     f"<td>{escape(str(a['integration'] or ''))}</td>"
                     f"<td>{escape(str(a['area'] or ''))}</td>"
                     f"<td>{floor}</td><td>{value}</td>"
+                    f"<td>{p5}</td><td>{p50}</td>"
                     f"<td>{mean}</td></tr>"
                 )
             anomaly_html = (
@@ -320,9 +333,33 @@ class DwellChartMixin:
                 "<th>Prior Day</th>"
                 "<th>Days Over Red</th><th>Integration</th>"
                 "<th>Area</th><th>Floor</th><th>Now</th>"
+                "<th>P5</th><th>Median</th>"
                 "<th>Mean\u00b1SD</th></tr>"
                 + "".join(cells)
                 + "</table>"
+                + "<p class='legend'>"
+                "<b>Dwell</b> is the share of the day the device spent "
+                "below its own danger line. "
+                "<b>Prior Day</b> is the day before, with an arrow for "
+                "the direction. "
+                "<b>Days Over Red</b> counts consecutive days above the "
+                "red threshold. "
+                "<b>Floor</b> is the learned baseline the danger line "
+                "is built on, the worst level the link repeatably "
+                "reaches. "
+                "<b>Now</b> is the latest reading. "
+                "<b>P5</b> is the level the link stayed above for 95 "
+                "percent of the day, weighted by how long each value "
+                "was held, so a single dropped packet does not set it. "
+                "<b>Median</b> is the middle of the day on the same "
+                "weighting. "
+                "<b>Mean\u00b1SD</b> is the day's average and how far "
+                "the readings spread around it, counted once per "
+                "reading rather than by duration. "
+                "A column reads <i>from tonight</i> where the series "
+                "has no entry yet, which is every device on the first "
+                "day after a change to what is recorded."
+                "</p>"
             )
 
         html = f"""<!DOCTYPE html>
