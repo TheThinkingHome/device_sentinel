@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.12.13 (2026-08-07)
+# File: interventions.py, Version: 0.13.7 (2026-08-13)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -771,7 +771,18 @@ class InterventionMixin:
 
     @callback
     def _on_grace_closed(self, _now: Any) -> None:
-        """Log the startup grace summary."""
+        """Log the startup grace summary and re-read the registry.
+
+        The rebuild is the second half of ruling #260. Setting a
+        device aside for having no entities is held during the
+        startup window, because an integration that has not finished
+        loading has none yet; without a rebuild when the window
+        shuts, a device that genuinely has none stays watched until
+        some unrelated registry change happens to trigger one, and
+        reports as never having spoken in the meantime, which is the
+        white noise the rule exists to end (ruling #261).
+        """
+        self._rebuild_registry_view()
         LOGGER.debug(
             "Startup grace closed after %d s: %d stamps across %d devices "
             "excluded from learning; %d boot-blip taints aggregated",

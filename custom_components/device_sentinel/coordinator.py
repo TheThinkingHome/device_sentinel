@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.13.6 (2026-08-13)
+# File: coordinator.py, Version: 0.13.7 (2026-08-13)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -548,6 +548,12 @@ class DeviceSentinelCoordinator(
                 "already recorded is affected",
                 day_reset,
             )
+        # The depth is read from the series now (ruling #258), so the
+        # stamps an older version wrote are dead weight. Pruned on
+        # every load rather than only inside the epoch branch, which
+        # does not run on an ordinary start and left the key in place
+        # indefinitely (ruling #261).
+        loaded.pop(DATA_SERIES_STAMPS, None)
         self._clear_reading_weighted_series(loaded)
         removed, filled = self._reconcile_records(
             loaded[DATA_DEVICES], dt_util.utcnow().isoformat()

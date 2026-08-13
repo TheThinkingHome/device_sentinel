@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.13.6 (2026-08-13)
+# File: const.py, Version: 0.13.7 (2026-08-13)
 
 """Constants for the Device Sentinel integration."""
 
@@ -359,7 +359,13 @@ SIGNAL_DAY_REPAIR_MARK = "0.12.21"
 # rather than left mixed, because no later analysis could separate
 # the two halves.
 DATA_SIGNAL_WEIGHTING = "signal_weighting"
-SIGNAL_WEIGHTING_MARK = "minutes"
+# Bumped once (ruling #261): 0.13.5 cleared the recorded days but
+# left the day already accumulating, which had been built by counting
+# readings and carried on by counting minutes. An install that had
+# already passed the first marker would have folded that hybrid row,
+# so the marker changes value to run the clearing once more, this
+# time taking the day in progress with it.
+SIGNAL_WEIGHTING_MARK = "minutes-2"
 # Why a device is set aside: recorded rather than inferred, because
 # the classification file has to say which, and because only one of
 # the three can end (ruling #257).
@@ -1553,7 +1559,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 260
+HIGHEST_RULING = 261
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
