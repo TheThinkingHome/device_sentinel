@@ -40,6 +40,8 @@ event rather than as an abstraction.
 
 from __future__ import annotations
 
+import time
+
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
@@ -78,10 +80,19 @@ from custom_components.device_sentinel.const import (
 
 from .helpers import register_device, setup_entry
 
-# The 31 July cut, in the clock the integration stores.
-ANCHOR = 1785508505.0        # 09:35:05, the last clocks write
-MOTION_BATH_MAIN = 1785509047.0   # 09:44:07, inside the unsaved window
-WINDOW_LIVING_LEFT = 1785508500.0  # 09:35, just before the anchor
+# The cut, in the clock the integration stores. Anchored to the run
+# rather than to a calendar date. These fixtures have to sit inside
+# the fourteen-day episode retention and still be in the past, and a
+# literal date satisfies both for only a fortnight after it is
+# written: on 14 August 2026 the closed-episode row aged out of
+# retention and was pruned before the assertion could read it.
+# An hour back is far enough for a clock to postdate the anchor and
+# near enough that nothing is old news.
+_CUT = time.time() - 3600.0
+ANCHOR = _CUT                       # the last clocks write
+MOTION_BATH_MAIN = _CUT + 542.0     # inside the unsaved window
+WINDOW_LIVING_LEFT = _CUT - 5.0     # just before the anchor
+FIRST_OBSERVED = _CUT - 1508505.0   # about seventeen days before the cut
 
 
 def _record(last_activity, today_max=None, tainted=False):
@@ -90,7 +101,7 @@ def _record(last_activity, today_max=None, tainted=False):
         DEV_LAST_ACTIVITY: last_activity,
         DEV_TODAY_MAX: today_max,
         DEV_EVENT_COUNT: 4200,
-        DEV_FIRST_OBSERVED: 1784000000.0,
+        DEV_FIRST_OBSERVED: FIRST_OBSERVED,
         DEV_TAINTED: tainted,
     }
 
@@ -249,7 +260,7 @@ async def test_the_learned_series_and_identity_are_untouched(
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
 
     assert record[DEV_EVENT_COUNT] == 4200
-    assert record[DEV_FIRST_OBSERVED] == 1784000000.0
+    assert record[DEV_FIRST_OBSERVED] == FIRST_OBSERVED
 
 
 async def test_a_taint_does_not_survive_a_reset_clock(

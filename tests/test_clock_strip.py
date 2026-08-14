@@ -35,6 +35,7 @@ Three tests were retired with the transition they guarded (ruling #241): the bac
 from __future__ import annotations
 
 import os
+import time
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -55,7 +56,11 @@ from custom_components.device_sentinel.const import (
 
 from .helpers import register_device, setup_entry
 
-NOW = 1785600000.0
+# Anchored to the run rather than to a calendar date, for the reason
+# recorded in test_unclean_restart: a literal epoch ages, and these
+# fixtures have to stay inside the retention windows they are read
+# against. An hour back leaves room for a hot file stamped later.
+NOW = time.time() - 3600.0
 
 
 @pytest.fixture(autouse=True)
