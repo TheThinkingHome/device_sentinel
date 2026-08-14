@@ -25,13 +25,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: home-assistant/actions/hassfest@master
+      # Pinned to a commit rather than a branch. A branch reference
+      # runs whatever that branch holds at the moment the job starts,
+      # so whoever controls it controls what runs here. Dependabot
+      # raises a pull request when either action moves, which keeps
+      # the checks current without the reference being open-ended.
+      # home-assistant/actions master, 2026-08-03.
+      - uses: home-assistant/actions/hassfest@a7c616ce81ccda50150bf1595786c71b1883fabb
 
   hacs:
     name: HACS validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: hacs/action@main
+      # hacs/action main, 2026-06-08. Tags on this action stopped at
+      # 22.5.0, so the maintained line is the branch and a commit is
+      # the only fixed point available.
+      - uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa
         with:
           category: integration
