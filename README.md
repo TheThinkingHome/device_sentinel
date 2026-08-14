@@ -11,7 +11,7 @@
 
 **Your dashboard cannot tell a quiet device from a dead one. Device Sentinel can, and it watches the batteries and radio links that fail first.**
 
-## Where This Stands
+## Integration Status
 
 | Area | Status | What that means |
 |---|---|---|
