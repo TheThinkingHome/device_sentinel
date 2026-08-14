@@ -11,9 +11,17 @@
 
 **Your dashboard cannot tell a quiet device from a dead one. Device Sentinel can, and it watches the batteries and radio links that fail first.**
 
-## Pre-Release Notice
+## Where This Stands
 
-> Device Sentinel is in active, rapid development and breaking changes will occur. Please read all release notes carefully before updating. The integration is fully functional and actively producing real freeze, battery, and signal data for live environments.
+| Area | Status | What that means |
+|---|---|---|
+| Freeze detection | Stable | Per-device rhythms are fully modeled. Verdicts accurately distinguish between frozen, unavailable, unknown, and never reported states. The core logic is settled and unchanged in this release. |
+| Battery | Stable | Dual-evaluation is live: cells are judged against a fixed threshold and a predictive time-to-empty trend. Works on any device that reports a battery level. |
+| Signal | Experimental | This feature is strictly experimental. Baseline floors, danger lines, dwell times, and fleet charts are actively recorded and visualized. Currently, only railed links trigger phone alerts. The core alerting formula is still being tuned, and recorded metrics will shift as it is finalized. |
+| Zigbee2MQTT | Working | Supports pairing window recognition, bridge and broker outage detection, and bridge/broker sensor integration. Provides a second-opinion availability check alongside freeze verdicts. |
+| ZHA and Z-Wave | Coordinator features not built | These features will be built in a later release. To help build them, please see the [ZHA](https://github.com/TheThinkingHome/device_sentinel/wiki/ZHA) and [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) documentation. |
+
+> Device Sentinel is under active development and breaking changes will occur. Please read all release notes carefully before updating.
 >
 > For installation and configuration, see the [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki).
 
@@ -59,15 +67,15 @@ And two that give you warning first:
 |---|---|---|
 | **Low battery** | The level falls past your threshold, default twenty percent, and stays there. | Warning while you can still act, rather than a post-mortem once the device has gone quiet. |
 | **Falling battery** | The cell is projected to reach empty inside your chosen horizon, default thirty days, from how fast it is actually dropping. | The earlier warning. A cell at 24 percent falling steadily can have less life left than one sitting at 80 that has not moved in a month. |
-| **Weak or railed signal** | A link that spends much of its day at or below that device's own learned floor, or stuck at the value that means no reading at all. | Links degrade before they fail. This is the part you can fix with a repeater. Weak links are listed and charted today; only the railed case reaches your phone, until the alerting formula has earned trust. |
+| **Weak or railed signal** | A link that spends much of its day below its own danger line, which sits just above the floor that device has actually held, or stuck at the value that means no reading at all. | Links degrade before they fail. This is the part you can fix with a repeater. Weak links are listed and charted today; only the railed case reaches your phone, until the alerting formula has earned trust. |
 
 ## What You Get
 
 ### It Watches Everything From The Moment You Install It
 
-There is no watch list to maintain. Every device in your registry is observed from the start, so the leak sensor you paired last month is already covered, and the one you pair tomorrow will be too. Non-hardware entries like Sun, Backup, and HACS classify themselves out.
+There is no watch list to maintain. Every device in your registry is observed from the start, so the leak sensor you paired last month is already covered, and the one you pair tomorrow will be too. Non-hardware entries like Sun, Backup, and HACS classify themselves out, and so does anything Home Assistant has disabled, since a disabled device cannot report and watching for its silence would say nothing.
 
-It cannot watch what your integrations ship switched off, and most of them ship battery, signal, and last-seen entities disabled. Three buttons turn them on in bulk, one per kind, leaving alone anything you disabled on purpose.
+It cannot watch what your integrations ship switched off, and most of them ship battery, signal, and last-seen entities disabled. Three buttons turn them on in bulk, one per kind. Each turns on every disabled entity of its kind, including any you switched off yourself, so leave a button alone if there is something you meant to keep off.
 
 ![The Device Sentinel device page in Home Assistant, with its three enable buttons and diagnostic sensors](https://xeazy.com/wp-content/uploads/integration_page.webp)
 
@@ -81,7 +89,7 @@ The time left is said in words rather than days, "empty in about 2 weeks" rather
 
 ![Device Sentinel battery decay against signal dwell](https://xeazy.com/wp-content/uploads/Battery-Decay-Signal-Dwell.png)
 
-A radio link is watched against the floor that device has actually held over the past thirty days, and what gets reported is dwell: how much of the day it spent down at that floor. A link stuck at its rail, the 255 or the minus 128 that means the field was filled in rather than measured, is called out for what it is rather than read as a strong signal.
+A radio link is watched against the floor that device has actually held over the past thirty days, and what gets reported is dwell: how much of the day it spent below the danger line that sits just above that floor. A link stuck at its rail, the 255 or the minus 128 that means the field was filled in rather than measured, is called out for what it is rather than read as a strong signal.
 
 ![The Device Sentinel signal dwell chart, one colored bar per device showing how much of the day its radio link spent below its own learned floor](https://xeazy.com/wp-content/uploads/signal_report.webp)
 
@@ -96,7 +104,7 @@ Every fault, whatever kind, lands in one Home Assistant to-do list. A device tha
 ### Alerts That Respect Your Evening
 
 - **A dashboard card** that is always current and never makes a sound. When nothing is wrong it says so.
-- **Phone pushes** for real faults, one per kind rather than one per device, so a bridge dropping forty sensors is one message. Faults arrive audibly, recoveries silently.
+- **Phone pushes** for real faults, one per kind rather than one per device. When a bridge or broker goes down, the devices behind it are counted rather than listed, and you get one message naming the thing you can actually fix. Faults arrive audibly, recoveries silently.
 - **A daily brief** in plain language: two paragraphs on what happened and what is still broken, then the exact times. Delivered by email or push on your schedule.
 
 Quiet hours hold every phone push, while the card and the morning brief still carry what happened. A new fault waits a short, per-device moment before it reaches you, so a problem that fixes itself in thirty seconds never wakes you at all.
@@ -173,7 +181,7 @@ The [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki) is the full 
 - [The Battery Report](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Battery-Report)
 - [Signal Strength](https://github.com/TheThinkingHome/device_sentinel/wiki/Signal-Strength)
 - [The Problem List](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Problem-List)
-- [The Reports](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Reports)
+- [The Diagnostic Reports](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Diagnostic-Reports)
 - [FAQ and Troubleshooting](https://github.com/TheThinkingHome/device_sentinel/wiki/FAQ-and-Troubleshooting)
 
 ## On The Roadmap
