@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.13.10 (2026-08-13)
+# File: notifier.py, Version: 0.13.11 (2026-08-13)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -56,6 +56,7 @@ from .const import (
     PERSISTENT_CREATE,
     PERSISTENT_DISMISS,
     PERSISTENT_TARGET,
+    STACK_DISPLAY_NAMES,
 )
 
 # A message with this flag set is delivered without a sound. Recoveries
@@ -131,6 +132,19 @@ class NotifierMixin:
         """
         acknowledged = self._acknowledged_devices()
         parts: list[str] = []
+        if family == "freeze":
+            # The card is a human surface and follows the same rule as
+            # the list and the pushes (ruling #266): while an upstream
+            # is down its casualties are counted, not named. The
+            # sensors and the telemetry audit keep the full list,
+            # because they say what is true rather than what is worth
+            # reading.
+            for name, count in self.suppressed_down_counts.items():
+                display = STACK_DISPLAY_NAMES.get(name, name)
+                plural = "" if count == 1 else "s"
+                parts.append(
+                    f"{display} down, {count} device{plural} unavailable"
+                )
         if family == "battery":
             # Two sources, because low and falling are two questions
             # and the card was reading only the first: a cell heading
@@ -185,7 +199,7 @@ class NotifierMixin:
                 kind = row.get("kind") or "low"
                 parts.append(f"{name} {_SUMMARY_WORD.get(kind, kind)}")
         elif family == "freeze":
-            for row in self.frozen_devices_list:
+            for row in self.reportable_down_rows:
                 if row.get("device_id") in acknowledged:
                     continue
                 name = row.get("name") or row.get("device_id")

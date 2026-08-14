@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.13.10 (2026-08-13)
+# File: problem_list.py, Version: 0.13.11 (2026-08-13)
 
 """The problem list: the single memory every channel renders.
 
@@ -58,6 +58,8 @@ from .const import (
     TODO_STATUS,
     TODO_SUMMARY,
     TODO_UID,
+    STACK_DISPLAY_NAMES,
+    UPSTREAM_KIND,
     UPSTREAM_SETTLE_SECONDS,
 )
 
@@ -266,10 +268,13 @@ class ProblemListMixin:
         for name, count in self.suppressed_down_counts.items():
             problems[f"upstream:{name}"] = {
                 "name": name,
-                "kinds": {"upstream": self.upstream_down_since_for(name)},
-                "level": None,
+                "kinds": {
+                    UPSTREAM_KIND: self.upstream_down_since_for(
+                        name
+                    )
+                },
+                "level": count,
                 "left": None,
-                "count": count,
             }
 
         for row in self.battery_low_list:
@@ -335,6 +340,49 @@ class ProblemListMixin:
             return "signal (rail)"
         return kind.replace("_", " ")
 
+    def _upstream_item_text(
+        self, name: str, kinds: dict[str, float | None], count: Any
+    ) -> tuple[str, str]:
+        """Return the summary and description for a downed upstream.
+
+        Ruling #266. The per-device grammar produced "z2m: upstream",
+        which is accurate and tells a person nothing: not what z2m
+        is, not what it means for their house, not what to do. This
+        row is the only one on the list that names a cause rather
+        than a casualty, so it says so in words.
+
+        The count is in the summary and moves as devices fall, which
+        is safe: the sync keeps an existing kind's stamp unless the
+        detection carries its own, and this one carries the moment
+        the upstream went down, which does not move while it stays
+        down. So the text can be rewritten every pass and the SINCE
+        column and the duration beside it stay pinned to the outage.
+        """
+        display = STACK_DISPLAY_NAMES.get(name, name)
+        devices = int(count or 0)
+        plural = "" if devices == 1 else "s"
+        summary = f"{display} down: {devices} device{plural} unavailable"
+        since = kinds.get(UPSTREAM_KIND)
+        when = (
+            self._format_report_time(
+                dt_util.as_local(dt_util.utc_from_timestamp(since))
+            )
+            if since is not None
+            else None
+        )
+        opening = (
+            f"{display} stopped reporting at {when}."
+            if when
+            else f"{display} is not reporting."
+        )
+        return summary, (
+            f"{opening} The {devices} device{plural} behind it are "
+            f"unavailable because of it rather than on their own, so "
+            f"they are counted here instead of listed. Their verdicts "
+            f"are recorded and clear when it returns; anything still "
+            f"down afterward is listed on its own."
+        )
+
     def _problem_item_text(
         self,
         name: str,
@@ -364,6 +412,8 @@ class ProblemListMixin:
         order = [kind for kind in kinds if kind not in tail]
         order += [kind for kind in tail if kind in kinds]
 
+        if UPSTREAM_KIND in kinds:
+            return self._upstream_item_text(name, kinds, level)
         words = [self._kind_word(kind, level, left) for kind in order]
         # The falling clause names the battery unless the level
         # clause already did, so one item says the noun once and an
@@ -642,6 +692,8 @@ class ProblemListMixin:
         """
         name = record.get(TODO_SORT_NAME) or device_id
         for kind in record.get(TODO_KINDS, {}):
+            if kind == UPSTREAM_KIND:
+                continue
             self._resolve_incident(device_id, name, kind, now)
             self._collect_event(
                 kind, name, recovery=True, device_id=device_id
@@ -670,6 +722,12 @@ class ProblemListMixin:
                 )
                 continue
             new_kinds[kind] = since if since is not None else now
+            if kind == UPSTREAM_KIND:
+                # No incident, no event, no journal line (ruling
+                # #266): those are a device's story and this row is a
+                # bridge. The outage has its own system event and its
+                # own push already.
+                continue
             self._journal_addition(device_id, problem["name"], kind)
             self._record_incident(
                 device_id, problem["name"], kind, INCIDENT_OPENED
@@ -712,6 +770,8 @@ class ProblemListMixin:
         readded = device_id in self._hand_deleted
         self._hand_deleted.discard(device_id)
         for kind in kinds:
+            if kind == UPSTREAM_KIND:
+                continue
             self._journal_addition(device_id, problem["name"], kind)
             if readded:
                 self._record_incident(

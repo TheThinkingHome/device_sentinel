@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.13.10 (2026-08-13)
+# File: const.py, Version: 0.13.11 (2026-08-13)
 
 """Constants for the Device Sentinel integration."""
 
@@ -100,6 +100,16 @@ BROKER_STATES = [BROKER_RUNNING, BROKER_DOWN, BROKER_UNKNOWN]
 # reported under (ruling #264). Not a stack: no bridge owns it, and
 # it outranks every bridge, because a broker that is down takes them
 # all with it.
+# What a stack is called when a person reads it (ruling #266). The
+# internal key is the domain the stacks module uses; a to-do row
+# saying "z2m: upstream" is accurate and tells nobody anything.
+STACK_DISPLAY_NAMES = {
+    "z2m": "Zigbee2MQTT",
+    "zha": "ZHA",
+    "zwave_js": "Z-Wave",
+    "matter": "Matter",
+}
+
 BROKER_LABEL = "MQTT broker"
 
 # How long an upstream outage is allowed to settle before it is
@@ -1369,6 +1379,12 @@ TODO_KIND_UNAVAILABLE = FREEZE_CATEGORY_UNAVAILABLE
 TODO_KIND_UNKNOWN = FREEZE_CATEGORY_UNKNOWN
 TODO_KIND_NOT_REPORTED = FREEZE_CATEGORY_NOT_REPORTED
 TODO_KIND_SIGNAL = "signal"
+# Not a TODO_KIND_: those are device faults, and every one has a
+# route to the card, an event wording, and a state template, which a
+# test asserts. This names a cause rather than a device, carries its
+# own sentence, and takes no part in the incident timeline, so it is
+# deliberately outside that family (ruling #266).
+UPSTREAM_KIND = "upstream"
 
 # Every problem kind, in one place. Five tables map a kind to words
 # and each was written by hand, so adding the falling kind gave it
@@ -1579,7 +1595,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 265
+HIGHEST_RULING = 266
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
