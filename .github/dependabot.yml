@@ -1,0 +1,24 @@
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+#
+# The workflow actions are pinned to commits so that a branch owner
+# cannot change what runs in this repository's CI without a commit
+# being reviewed here first. A pinned commit that is never updated
+# goes stale, and a stale hassfest validates the manifest against last
+# year's rules rather than the current ones, so this raises a pull
+# request when an action moves. The pull request is the review step
+# that a branch reference does not have.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
