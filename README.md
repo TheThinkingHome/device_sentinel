@@ -21,10 +21,6 @@
 | Zigbee2MQTT | Working | Supports pairing window recognition, bridge and broker outage detection, and bridge/broker sensor integration. Provides a second-opinion availability check alongside freeze verdicts. |
 | ZHA and Z-Wave | Coordinator features not built | These features will be built in a later release. To help build them, please see the [ZHA](https://github.com/TheThinkingHome/device_sentinel/wiki/ZHA) and [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) documentation. |
 
-> Device Sentinel is under active development and breaking changes will occur. Please read all release notes carefully before updating.
->
-> For installation and configuration, see the [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki).
-
 ## The Problem
 
 Home Assistant reacts to what devices tell it. When a device stops telling it anything, the last thing it said stays on your dashboard forever. Nothing turns red. Nothing goes unavailable. The reading just stops changing, and it keeps looking perfectly reasonable.
