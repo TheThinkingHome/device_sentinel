@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.12.16 (2026-08-08)
+# File: test_notifications.py, Version: 0.13.11 (2026-08-13)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -307,6 +307,7 @@ class _Harness(NotifierMixin):
         freeze=None,
         acknowledged=None,
         falling=None,
+        suppressed=None,
     ):
         self._high = high_targets
         self._battery = battery or []
@@ -314,6 +315,7 @@ class _Harness(NotifierMixin):
         self._signal = signal or []
         self._freeze = freeze or []
         self._acknowledged = set(acknowledged or [])
+        self._suppressed = suppressed or {}
         self.sent = []
         self.entry = type("E", (), {"options": {}})()
         self.hass = type(
@@ -347,6 +349,18 @@ class _Harness(NotifierMixin):
     @property
     def frozen_devices_list(self):
         return self._freeze
+
+    @property
+    def reportable_down_rows(self):
+        """What the card and the pushes read (ruling #266): the down
+        devices worth naming, which is all of them unless an upstream
+        is masking some."""
+        return self._freeze
+
+    @property
+    def suppressed_down_counts(self):
+        """How many devices each downed upstream is masking."""
+        return self._suppressed
 
 
 async def test_fault_is_audible_recovery_is_silent():

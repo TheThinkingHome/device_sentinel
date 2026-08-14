@@ -1,7 +1,7 @@
 """Reporting an upstream outage as one fault, not seventy-six.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_upstream_reporting.py, Version: 0.13.10 (2026-08-13)
+# File: test_upstream_reporting.py, Version: 0.13.11 (2026-08-13)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -18,6 +18,7 @@ from homeassistant.core import HomeAssistant
 from custom_components.device_sentinel.const import (
     BROKER_LABEL,
     DATA_DEVICES,
+    DATA_TODO_ITEMS,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     UPSTREAM_SETTLE_SECONDS,
@@ -152,3 +153,71 @@ async def test_the_recovery_is_announced_once(hass: HomeAssistant):
     coord._broker_down_at = None
 
     assert coord._upstream_messages() == [(BROKER_LABEL, 12, True)]
+
+async def test_the_upstream_row_reads_like_a_sentence(
+    hass: HomeAssistant,
+):
+    """Ruling #266. The row said "z2m: upstream", which is accurate
+    and tells a person nothing: not what z2m is, not what it means
+    for their house, not what to do about it."""
+    device, _ = register_device(hass, "up9", "Casualty")
+    coord = await setup_coordinator(hass)
+    _down(coord, device.id, since=2000.0)
+    coord._bridge_down_at["z2m"] = 1500.0
+    coord._watched[device.id] = "mqtt"
+
+    summary, description = coord._upstream_item_text(
+        "z2m", {"upstream": 1500.0}, 74
+    )
+
+    assert summary == "Zigbee2MQTT down: 74 devices unavailable"
+    assert "stopped reporting at" in description
+    assert "listed on its own" in description
+
+
+async def test_one_casualty_reads_in_the_singular(hass: HomeAssistant):
+    """A row that says "1 devices" is the kind of detail that makes a
+    person doubt the rest of it."""
+    coord = await setup_coordinator(hass)
+
+    summary, _ = coord._upstream_item_text("z2m", {"upstream": 1500.0}, 1)
+
+    assert summary == "Zigbee2MQTT down: 1 device unavailable"
+
+
+async def test_the_count_changes_and_the_stamp_does_not(
+    hass: HomeAssistant,
+):
+    """The question ruled before this was built: a count in the
+    summary rewrites the row as devices fall, and the row must keep
+    the moment the outage began or the SINCE column and the duration
+    beside it become a lie. The sync keeps an existing kind's stamp
+    unless the detection carries its own, and this one carries the
+    moment the upstream went down, which does not move.
+    """
+    first, _ = register_device(hass, "upa", "First Casualty")
+    second, _ = register_device(hass, "upb", "Second Casualty")
+    coord = await setup_coordinator(hass)
+    coord._broker_down_at = 1500.0
+    _down(coord, first.id, since=2000.0)
+
+    coord._sync_problem_list()
+    row = next(
+        item
+        for item in coord.data[DATA_TODO_ITEMS]
+        if "unavailable" in item["summary"]
+    )
+    first_summary, first_since = row["summary"], row["kinds"]["upstream"]
+
+    _down(coord, second.id, since=2100.0)
+    coord._sync_problem_list()
+    row = next(
+        item
+        for item in coord.data[DATA_TODO_ITEMS]
+        if "unavailable" in item["summary"]
+    )
+
+    assert first_summary != row["summary"]
+    assert "2 devices" in row["summary"]
+    assert row["kinds"]["upstream"] == first_since
+
