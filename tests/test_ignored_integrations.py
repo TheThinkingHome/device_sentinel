@@ -191,3 +191,46 @@ async def test_the_registry_still_holds_the_device(hass: HomeAssistant):
     coordinator._rebuild_registry_view()
     assert dr.async_get(hass).async_get(device.id) is not None
     assert eids
+
+async def test_a_set_aside_device_reaches_no_surface(hass: HomeAssistant):
+    """The fault 0.14.1 exposed and 0.14.2 fixes.
+
+    Every surface but one walked the record store directly, on the
+    assumption that a record implies a watched device. Ruling #257
+    broke that assumption and the ignore list made twenty-two of them
+    at once: the battery report called ignored phones watched cells,
+    and one of them reached the problem list.
+    """
+    device, _eids = register_device(hass, "phone", name="Oneplus Pad")
+    coordinator, _entry = await _coordinator(
+        hass, {CONF_IGNORED_INTEGRATIONS: []}
+    )
+    coordinator._rebuild_registry_view()
+    assert device.id in dict(coordinator.watched_records())
+
+    hass.config_entries.async_update_entry(
+        _entry, options={CONF_IGNORED_INTEGRATIONS: ["test"]}
+    )
+    await hass.async_block_till_done()
+    coordinator._rebuild_registry_view()
+
+    # The record is still there, and no surface may read it.
+    assert device.id in coordinator.data[DATA_DEVICES]
+    assert device.id not in dict(coordinator.watched_records())
+
+
+async def test_the_picker_hides_an_integration_already_set_aside(
+    hass: HomeAssistant,
+):
+    """Offering it would change nothing, and it buries the real
+    choices under add-ons and dashboard cards. On the reference fleet
+    this took the list from thirty-two entries to fifteen."""
+    coordinator, _entry = await _coordinator(
+        hass, {CONF_IGNORED_INTEGRATIONS: []}
+    )
+    coordinator._rebuild_registry_view()
+    breakdown = coordinator.classification_breakdown
+    offered = {d for d, c in breakdown.items() if c.get("watched")}
+    hidden = {d for d, c in breakdown.items() if not c.get("watched")}
+    assert hidden, "expected at least one wholly set-aside integration"
+    assert not (offered & hidden)
