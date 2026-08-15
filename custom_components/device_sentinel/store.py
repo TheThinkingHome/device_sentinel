@@ -350,6 +350,31 @@ class StorageMixin:
         )
         return minutes * 60.0
 
+    def watched_records(self) -> list[tuple[str, dict[str, Any]]]:
+        """Return the records of devices currently being watched.
+
+        A record used to imply a watched device, so every surface
+        walked the record store directly. That stopped being true
+        when a set-aside device began keeping what it had learned
+        (ruling #257), and the ignore list made twenty-two of them at
+        once: the battery report went on calling phones watched cells
+        while the classification file three columns over called them
+        ignored, and one of them reached the problem list asking a
+        person to act on a device this integration had been told to
+        stop looking at.
+
+        So the rule is one line and lives in one place: a surface
+        that reads the record store filters to the watched set first.
+        The record survives, unjudged and unreported, exactly as the
+        exclusion ladders promise; what stops is the reporting of it.
+        """
+        devices = self.data.get(DATA_DEVICES) or {}
+        return [
+            (device_id, record)
+            for device_id, record in devices.items()
+            if device_id in self._watched
+        ]
+
     @property
     def ignored_integrations(self) -> frozenset[str]:
         """Return the integrations never to watch.

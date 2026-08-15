@@ -35,7 +35,6 @@ from .const import (
     BATTERY_READABLE_MAX,
     BATTERY_SLOPE_DAYS,
     CONF_BATTERY_DAYS,
-    DATA_DEVICES,
     DEFAULT_BATTERY_DAYS,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
@@ -110,7 +109,7 @@ class BatteryReportMixin:
         flat: list[dict[str, Any]] = []
         unreadable: list[dict[str, Any]] = []
         absent: list[dict[str, Any]] = []
-        for device_id, record in self.data.get(DATA_DEVICES, {}).items():
+        for device_id, record in self.watched_records():
             if device_id in self._excluded_devices:
                 continue
             if self._battery_excluded(device_id):

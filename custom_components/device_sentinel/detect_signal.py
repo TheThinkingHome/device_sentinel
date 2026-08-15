@@ -716,7 +716,7 @@ class SignalMixin:
         exclusion suppresses judgment, not observation.
         """
         counts = {"lqi": 0, "rssi": 0, "learning": 0}
-        for record in self.data.get(DATA_DEVICES, {}).values():
+        for _device_id, record in self.watched_records():
             line = self._danger_line(record)
             if line is None:
                 if record.get(DEV_SIGNAL_VALUE) is not None:
@@ -740,7 +740,7 @@ class SignalMixin:
         watched = counts["lqi"] + counts["rssi"]
         excluded = sum(
             1
-            for device_id, record in self.data.get(DATA_DEVICES, {}).items()
+            for device_id, record in self.watched_records()
             if self._danger_line(record) is not None
             and self._signal_excluded(device_id)
         )
@@ -781,7 +781,7 @@ class SignalMixin:
         they stay off this list until re-included by hand.
         """
         problems: list[dict[str, Any]] = []
-        for device_id, record in self.data.get(DATA_DEVICES, {}).items():
+        for device_id, record in self.watched_records():
             if self._signal_excluded(device_id):
                 continue
             if self.signal_railed(record):

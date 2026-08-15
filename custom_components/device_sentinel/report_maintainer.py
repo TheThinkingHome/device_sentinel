@@ -30,7 +30,6 @@ from .const import (
     CONF_TAINT_FLOOR,
     CONF_TAINT_SHARE,
     DAILY_MAX_KEEP,
-    DATA_DEVICES,
     DATA_EPISODES,
     DEFAULT_TAINT_FLOOR_MINUTES,
     DEFAULT_TAINT_SHARE_PCT,
@@ -415,7 +414,7 @@ class MaintainerReportMixin:
             "|---|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
-        for device_id, record in self.data[DATA_DEVICES].items():
+        for device_id, record in self.watched_records():
             device = dev_reg.async_get(device_id)
             device_name = (
                 (device.name_by_user or device.name or device_id)

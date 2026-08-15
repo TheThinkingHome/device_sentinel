@@ -66,7 +66,7 @@ class DwellChartMixin:
         the header says how many sat at zero so the count is not lost.
         """
         rows: list[tuple[str, str, float]] = []
-        for device_id, record in self.data[DATA_DEVICES].items():
+        for device_id, record in self.watched_records():
             # Both ladders apply. The signal-only list is this
             # surface's own release valve, and the global ladder
             # excludes the device from judgment and reporting
@@ -93,7 +93,7 @@ class DwellChartMixin:
         """Return how many recorded devices sat at exactly zero
         yesterday, for the chart header."""
         zeros = 0
-        for device_id, record in self.data[DATA_DEVICES].items():
+        for device_id, record in self.watched_records():
             if self._signal_excluded(device_id) or (
                 device_id in self._excluded_devices
             ):

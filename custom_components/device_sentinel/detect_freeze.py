@@ -548,7 +548,7 @@ class FreezeMixin:
         """
         return sum(
             1
-            for device_id, record in self.data.get(DATA_DEVICES, {}).items()
+            for device_id, record in self.watched_records()
             if len(record.get(DEV_DAILY_MAX) or []) >= LEARNING_MIN_DAYS
             and device_id not in self._excluded_devices
         )
@@ -580,9 +580,7 @@ class FreezeMixin:
         verdict, so undoing an exclude shows them again at once.
         """
         rows: list[dict[str, Any]] = []
-        for device_id, record in self.data[DATA_DEVICES].items():
-            if device_id not in self._watched:
-                continue
+        for device_id, record in self.watched_records():
             if device_id in self._excluded_devices:
                 continue
             category = record.get(DEV_FROZEN_CATEGORY)

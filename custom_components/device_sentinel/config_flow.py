@@ -1135,14 +1135,23 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 CONF_IGNORED_INTEGRATIONS, DEFAULT_IGNORED_INTEGRATIONS
             )
         )
-        # Watched and set-aside domains both, because ignoring an
-        # integration takes it out of the watched set: a picker built
-        # from watched rows alone would forget the choice it had just
-        # made and leave it unreachable from the screen that made it.
-        # An integration since uninstalled survives as a custom value
-        # rather than failing the form (the 0.13.2 fault).
+        # Integrations with something left to ignore, plus the ones
+        # already ignored. An integration whose devices are every one
+        # of them set aside already is not offered: Device Sentinel
+        # has classified them out, and ignoring them would change
+        # nothing while burying the real choices under three dozen
+        # add-ons and dashboard cards. The already-ignored are kept
+        # because ignoring took them out of the watched set, and a
+        # picker that forgot them would strand a choice it had just
+        # made. An integration since uninstalled survives as a custom
+        # value rather than failing the form (the 0.13.2 fault).
+        breakdown = self.config_entry.runtime_data.classification_breakdown
         integration_domains = sorted(
-            set(self.config_entry.runtime_data.classification_breakdown)
+            {
+                domain
+                for domain, counts in breakdown.items()
+                if counts.get("watched")
+            }
             | set(ignored)
         )
 
