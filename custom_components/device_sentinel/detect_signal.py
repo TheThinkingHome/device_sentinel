@@ -70,7 +70,6 @@ from .const import (
     SIGNAL_CEILING_CLEARANCE_LQI,
     SIGNAL_CEILING_CLEARANCE_RSSI,
     SIGNAL_DAYS_KEEP,
-    SIGNAL_FOREIGN_TERMS,
     SIGNAL_LIFT_MAX,
     SIGNAL_LIFT_MIN,
     SIGNAL_LQI_DEAD,
@@ -89,7 +88,6 @@ from .const import (
     TODO_DEVICE_ID,
     TODO_KINDS,
 )
-from .detect_battery import _is_foreign
 from .psquare import (
     psquare_feed_many,
     psquare_new,
@@ -685,14 +683,14 @@ class SignalMixin:
     def _is_signal(ent: er.RegistryEntry) -> bool:
         """Recognize a signal-strength entity from registry fields.
 
-        A foreign radio is refused first (ruling #248): a phone carries
-        signal_strength sensors for its WiFi and each SIM, which are
-        the phone's bars rather than any mesh link, and tracking them
-        as signal put three cellular radios in the awaiting-enable
-        count forever.
+        The foreign-radio name test of ruling #248 was deleted here.
+        A phone's bars are not a mesh link, but no name distinguishes
+        them: the test caught an ESPHome node's own RSSI, whose
+        sensor is called WiFi Signal, and missed the phone's cellular
+        radio, whose sensor is not called cellular. A phone arrives on
+        an integration the ignore list refuses whole, so nothing that
+        reaches here is another device's radio.
         """
-        if _is_foreign(ent, SIGNAL_FOREIGN_TERMS):
-            return False
         if str(ent.original_device_class) == "signal_strength" or str(
             getattr(ent, "device_class", None)
         ) == "signal_strength":

@@ -127,6 +127,7 @@ from .const import (
     SERIES_FREEZE,
     SERIES_SIGNAL,
     SET_ASIDE_DISABLED,
+    SET_ASIDE_IGNORED,
     SET_ASIDE_NO_ENTITIES,
     SET_ASIDE_SERVICE,
     SHARE_PCT_MAX,
@@ -868,6 +869,7 @@ class DeviceSentinelCoordinator(
         excluded_integrations = set(
             options.get(CONF_EXCLUDED_INTEGRATIONS, [])
         )
+        ignored_integrations = self.ignored_integrations
 
         watched: dict[str, str] = {}
         device_names: dict[str, str] = {}
@@ -887,6 +889,15 @@ class DeviceSentinelCoordinator(
             stack = detect_stack(domain, device)
             if stack is not None:
                 stacks.add(stack)
+            if domain in ignored_integrations:
+                # The person asked for this integration never to be
+                # watched, so their reason is the one recorded even
+                # where another would also fit. Everything else on
+                # this ladder is a fact about the device; this is a
+                # decision about it, and a decision outranks a fact
+                # when the question is why you cannot see something.
+                set_aside[device.id] = (name, domain, SET_ASIDE_IGNORED)
+                continue
             if device.entry_type is dr.DeviceEntryType.SERVICE:
                 set_aside[device.id] = (name, domain, SET_ASIDE_SERVICE)
                 continue
@@ -1510,9 +1521,43 @@ class DeviceSentinelCoordinator(
         if text is not None:
             await self.async_send_brief(text)
 
+    def _discard_ignored_records(self) -> None:
+        """Drop what an ignored integration recorded before it was.
+
+        Here rather than on the save that ignored it, because this is
+        the fold, and the fold is already the one place the record
+        changes size: lowering how much history to keep does not
+        delete anything when the slider moves either, it shortens the
+        series at the next rollover. So a person who ignores an
+        integration by mistake has until midnight to take it back with
+        nothing lost, and record-shrinking stays in one place instead
+        of two.
+
+        Set aside for any other reason keeps its record untouched
+        (ruling #257): a disabling is Home Assistant's doing and may
+        last an afternoon, while this is a person saying the data is
+        not worth keeping.
+        """
+        devices = self.data.get(DATA_DEVICES) or {}
+        dropped = [
+            device_id
+            for device_id, (_name, _domain, reason) in self._set_aside.items()
+            if reason == SET_ASIDE_IGNORED and device_id in devices
+        ]
+        for device_id in dropped:
+            del devices[device_id]
+        if dropped:
+            self._mark_cold_dirty()
+            LOGGER.info(
+                "Ignored integrations: discarded the records of %d device(s) "
+                "at the fold",
+                len(dropped),
+            )
+
     async def _on_midnight(self, _now: Any) -> None:
         """Roll today's maxima into the bounded daily set."""
         now = dt_util.utcnow().timestamp()
+        self._discard_ignored_records()
         pushed = 0
         for record in self.data[DATA_DEVICES].values():
             if record[DEV_TODAY_MAX] is not None:
@@ -1939,7 +1984,7 @@ class DeviceSentinelCoordinator(
         return {"enabled": enabled, "by_hand": by_hand}
 
     async def async_enable_signal_entities(self) -> dict[str, int]:
-        """Enable integration-disabled signal-strength entities."""
+        """Enable every disabled signal-strength entity (ruling #257)."""
         return self._enable_matching_entities(self._is_signal, "signals")
 
     async def async_regenerate_reports(self) -> dict[str, int]:
@@ -1956,13 +2001,13 @@ class DeviceSentinelCoordinator(
         return {"regenerated": 2}
 
     async def async_enable_last_seen_entities(self) -> dict[str, int]:
-        """Enable integration-disabled last_seen entities."""
+        """Enable every disabled last_seen entity (ruling #257)."""
         return self._enable_matching_entities(
             self._is_last_seen, "last_seen"
         )
 
     async def async_enable_battery_entities(self) -> dict[str, int]:
-        """Enable integration-disabled battery-percentage entities.
+        """Enable every disabled battery-percentage entity (ruling #257).
 
         Percentage batteries only (the sensor, not the binary low
         flag): the percentage is what the discharge series records,

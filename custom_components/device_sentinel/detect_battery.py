@@ -29,7 +29,6 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     BATTERY_CLEAR_MARGIN,
-    BATTERY_FOREIGN_TERMS,
     CONF_BATTERY_EXCLUDED_DEVICES,
     CONF_BATTERY_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_EXCLUDED_LABELS,
@@ -43,18 +42,6 @@ from .const import (
     LOGGER,
 )
 from .records import BAD_STATES
-
-
-def _is_foreign(ent: er.RegistryEntry, terms: tuple[str, ...]) -> bool:
-    """Return whether this entity measures something other than the
-    device carrying it (ruling #248), read from its id, unique id, and
-    name the same way every recognizer reads them."""
-    hay = " ".join(
-        str(x)
-        for x in (ent.entity_id, ent.unique_id, ent.original_name)
-        if x
-    ).lower()
-    return any(term in hay for term in terms)
 
 
 class BatteryMixin:
@@ -85,17 +72,14 @@ class BatteryMixin:
         Percentage batteries are sensors with device_class battery;
         binary low flags are binary_sensors with device_class battery.
         Chargers, battery_charging flags, and the like carry other
-        device classes and are correctly ignored. So is a battery
-        that is not this device's own (ruling #248): a phone surfaces its
-        car's battery and fuel gauge with battery class, and its
-        paired watch's cell besides, and reading any of those as the
-        phone's battery hands the falling detector a fuel tank.
+        device classes and are correctly ignored. The foreign
+        batteries ruling #248 filtered by name, a phone's car and its
+        paired watch, arrive on an integration the ignore list now
+        refuses whole, so no name test is left here.
         """
         if str(ent.original_device_class or ent.device_class) != "battery":
             return False
-        if not ent.entity_id.startswith(("sensor.", "binary_sensor.")):
-            return False
-        return not _is_foreign(ent, BATTERY_FOREIGN_TERMS)
+        return ent.entity_id.startswith(("sensor.", "binary_sensor."))
 
     @property
     def low_threshold(self) -> float:
@@ -374,10 +358,7 @@ class BatteryMixin:
     @staticmethod
     def _is_battery_percentage(ent: er.RegistryEntry) -> bool:
         """Recognize a battery-percentage sensor, excluding the binary
-        low flag and any foreign battery (ruling #248). The percentage is
-        what feeds the discharge series."""
+        low flag. The percentage is what feeds the discharge series."""
         if str(ent.original_device_class or ent.device_class) != "battery":
             return False
-        if not ent.entity_id.startswith("sensor."):
-            return False
-        return not _is_foreign(ent, BATTERY_FOREIGN_TERMS)
+        return ent.entity_id.startswith("sensor.")

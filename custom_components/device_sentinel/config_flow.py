@@ -76,6 +76,7 @@ from .const import (
     CONF_EPISODE_SHARE,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
+    CONF_IGNORED_INTEGRATIONS,
     CONF_EXCLUDED_LABELS,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
@@ -106,6 +107,7 @@ from .const import (
     DEFAULT_BATTERY_DAYS,
     DEFAULT_COALESCE_MINUTES,
     DEFAULT_EPISODE_SHARE_PCT,
+    DEFAULT_IGNORED_INTEGRATIONS,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
     DEFAULT_FREEZE_DELTA_LOW_MIN,
     DEFAULT_LOW_THRESHOLD,
@@ -1128,6 +1130,21 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 data={**self.config_entry.options, **user_input}
             )
         options = self.config_entry.options
+        ignored = list(
+            options.get(
+                CONF_IGNORED_INTEGRATIONS, DEFAULT_IGNORED_INTEGRATIONS
+            )
+        )
+        # Watched and set-aside domains both, because ignoring an
+        # integration takes it out of the watched set: a picker built
+        # from watched rows alone would forget the choice it had just
+        # made and leave it unreachable from the screen that made it.
+        # An integration since uninstalled survives as a custom value
+        # rather than failing the form (the 0.13.2 fault).
+        integration_domains = sorted(
+            set(self.config_entry.runtime_data.classification_breakdown)
+            | set(ignored)
+        )
 
         def share_selector() -> selector.NumberSelector:
             """A ten-to-ninety percent slider in steps of ten."""
@@ -1219,6 +1236,16 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             step=MAINTENANCE_MINUTES_STEP,
                             unit_of_measurement="min",
                             mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_IGNORED_INTEGRATIONS, default=ignored
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=integration_domains,
+                            multiple=True,
+                            custom_value=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
                 }

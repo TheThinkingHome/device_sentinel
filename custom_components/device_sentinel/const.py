@@ -396,6 +396,25 @@ SIGNAL_WEIGHTING_MARK = "minutes-2"
 SET_ASIDE_SERVICE = "service"
 SET_ASIDE_DISABLED = "disabled"
 SET_ASIDE_NO_ENTITIES = "no entities"
+SET_ASIDE_IGNORED = "ignored"
+
+# The integrations a person has asked never to watch. Exclusion in
+# every other place suppresses judgment and reporting and keeps the
+# record; this suppresses the watching itself, because some
+# integrations publish measurements of nothing this house can be
+# judged on. A phone travels and carries a cellular radio, a wall
+# tablet's battery is charged rather than replaced, Spook describes
+# Home Assistant rather than hardware, and a ping probe answers on
+# every poll so it can never fall silent. The default is a starting
+# point rather than a rule: it is the person's list, and the first
+# save makes it theirs.
+CONF_IGNORED_INTEGRATIONS = "ignored_integrations"
+DEFAULT_IGNORED_INTEGRATIONS = (
+    "mobile_app",
+    "fully_kiosk",
+    "spook",
+    "ping",
+)
 
 AREA_FREEZE = "freeze"
 AREA_BATTERY = "battery"
@@ -543,20 +562,13 @@ DEV_SIGNAL_LAST_CHANGE = "signal_last_change"
 # Signal-entity recognition terms (Z2M sets no device class on
 # linkquality; ZHA/Z-Wave use device_class signal_strength).
 SIGNAL_NAME_TERMS = ("linkquality", "lqi", "rssi")
-# The foreign-measurement terms (ruling #248). A device class says what
-# kind of measurement an entity is; it says nothing about whose. The
-# companion app stamps the car's battery and fuel gauge with battery
-# class and the phone's WiFi and cellular radios with
-# signal_strength, so a phone on a real fleet offered its car's fuel
-# tank as a battery series and its bars as mesh signal, and an Apple
-# Watch's battery rode on the phone that pairs it. An entity whose
-# id, unique id, or name carries one of these terms is a measurement
-# of something other than the device carrying it, so the recognizers
-# skip it everywhere at once: the enable buttons, the awaiting
-# counts, and the tracking itself. _sim_ is bounded on both sides so
-# a device named for a person called Sim can never match.
-BATTERY_FOREIGN_TERMS = ("car_battery", "car_fuel", "watch_battery")
-SIGNAL_FOREIGN_TERMS = ("wifi", "wi_fi", "cellular", "_sim_")
+# The foreign-measurement terms of ruling #248 were deleted here. They
+# named entities by what somebody had called them, which caught an
+# ESPHome node's own RSSI because the sensor is called WiFi Signal and
+# missed a phone's cellular radio because the sensor is not called
+# cellular. Every entity they existed to refuse arrives on an
+# integration the ignore list now refuses whole, so nothing reaches
+# either recognizer to be filtered by name.
 
 # Rolling statistics: daily maxima kept per device. 14 days records
 # more than the rolling window will need, so the window-length

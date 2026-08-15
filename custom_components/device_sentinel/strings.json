@@ -104,7 +104,7 @@
         "description": "How sharply weakening radio links are flagged, and which devices are left out of signal reporting. Each device's floor is its trimmed minimum: the lowest daily reading over the past thirty days, with the worst few days set aside as anomalies. The goal: some of your devices should show small readings in the 0-5 percent range, so a real problem stands out as big and obvious. Changes apply to readings going forward; a full day shows their true effect. [Signal Strength on the wiki]({wiki_link}).",
         "data": {
           "signal_margin": "Sensitivity",
-          "signal_lift": "Line lift",
+          "signal_lift": "Line Lift",
           "signal_sensitivity": "Anomaly Trim",
           "signal_red_threshold": "Red Threshold",
           "signal_excluded_integrations": "Integrations Excluded from Signal Reporting",
@@ -149,7 +149,8 @@
           "taint_share_pct": "Unavailable Debounce for Slow Reporting Devices",
           "storage_write_minutes": "Storage Write Interval",
           "history_days": "How Much History to Keep",
-          "maintenance_minutes": "Maintenance Window in Minutes"
+          "maintenance_minutes": "Maintenance Window in Minutes",
+          "ignored_integrations": "Integrations to ignore"
         },
         "data_description": {
           "settle_share_pct": "The amount of time, as a share of a device's learned reporting gap, that a problem must persist before you are notified. It applies to battery, signal, and freeze alike, and delays only the high-priority phone alert. At 30 percent a fast device clears about a minute of hiccups and a slow one about half an hour. Higher means fewer messages about brief problems that fix themselves; lower means you hear sooner.",
@@ -158,7 +159,8 @@
           "taint_share_pct": "Debounce added to the floor as a percentage of the device's freeze window, so a slow-reporting device is given proportionally more and a fast one is governed by the floor alone. A device that becomes unreachable and returns within the combined time is learned. Longer than this is reported as downtime and the recovery a likely human fix, so a repaired device never inflates its own patience.",
           "storage_write_minutes": "The amount of time routine activity is held in memory before it is written to disk. Set longer for slower hardware and hubs writing data to an SD card. Longer risks losing timer data should your system suffer a power loss. Events are written when they happen, so risk is minimal.",
           "history_days": "How many days of daily battery, signal, and unavailable and freeze gap records are kept for studying long trends. 30 days is necessary, but some trends can only be seen with longer time periods.",
-          "maintenance_minutes": "How long the Maintenance Mode button declares you at work on the hardware. A device that recovers inside the window is treated as your fix, and its silence is not learned as normal."
+          "maintenance_minutes": "How long the Maintenance Mode button declares you at work on the hardware. A device that recovers inside the window is treated as your fix, and its silence is not learned as normal.",
+          "ignored_integrations": "Devices on these integrations are never watched, never learned and never recorded. This is not the same as excluding them, which only stops them being reported: anything already recorded here is discarded at midnight, and until then removing an integration from this list restores it untouched. After midnight, removing it starts that integration over with no history and a fresh seven-day arming period. The starting list is the integrations that publish measurements of nothing your house can be judged on: phones and tablets that travel and are charged rather than replaced, Spook, which describes Home Assistant rather than hardware, and ping, which answers on every poll and so can never fall silent."
         }
       }
     }

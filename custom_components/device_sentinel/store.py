@@ -35,6 +35,7 @@ from .const import (
     COALESCE_MINUTES_MAX,
     COALESCE_MINUTES_MIN,
     CONF_COALESCE_MINUTES,
+    CONF_IGNORED_INTEGRATIONS,
     CONF_RETENTION_DAYS,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
@@ -44,6 +45,7 @@ from .const import (
     DATA_SETUP_COUNT,
     DATA_TODO_ITEMS,
     DEFAULT_COALESCE_MINUTES,
+    DEFAULT_IGNORED_INTEGRATIONS,
     DEFAULT_RETENTION_DAYS,
     DEV_LAST_ACTIVITY,
     DEV_TAINTED,
@@ -347,6 +349,22 @@ class StorageMixin:
             COALESCE_MINUTES_MAX, max(COALESCE_MINUTES_MIN, raw)
         )
         return minutes * 60.0
+
+    @property
+    def ignored_integrations(self) -> frozenset[str]:
+        """Return the integrations never to watch.
+
+        A person's list, defaulting to the four that publish
+        measurements of nothing this house can be judged on. The
+        default applies only while the option has never been saved:
+        once the screen is submitted the list is theirs, empty
+        included, because a default that reasserted itself would make
+        the setting impossible to switch off.
+        """
+        stored = self.entry.options.get(CONF_IGNORED_INTEGRATIONS)
+        if stored is None:
+            return frozenset(DEFAULT_IGNORED_INTEGRATIONS)
+        return frozenset(stored)
 
     @property
     def retention_days(self) -> int:

@@ -396,12 +396,15 @@ class DeviceSentinelDataSignalSensor(DeviceSentinelDataSensor):
 class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):
     """Soak diagnostic: the per-integration classification breakdown."""
 
-    _attr_name = "Service Devices Ignored"
+    # Named for what it counts rather than for one of its reasons.
+    # It began as service devices alone and now holds four: service,
+    # disabled, no entities, and an integration the person ignores.
+    _attr_name = "Devices: Set Aside"
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:filter-outline"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-        # Off by default. It answers why a particular device is not
+    # Off by default. It answers why a particular device is not
     # watched, which is a question asked once if ever, so it
     # belongs in the registry rather than on the page
     # (ruling #212).
