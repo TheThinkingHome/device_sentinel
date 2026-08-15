@@ -84,6 +84,8 @@ from .const import (
     DATA_CLEAN_STOP,
     DATA_DEVICES,
     DATA_EPISODES,
+    INC_DEVICE_ID,
+    EP_DEVICE_ID,
     DATA_FIRST_INSTALLED,
     DATA_INCIDENTS,
     DATA_SERIES_STAMPS,
@@ -1521,6 +1523,26 @@ class DeviceSentinelCoordinator(
         if text is not None:
             await self.async_send_brief(text)
 
+    @property
+    def _ignored_device_ids(self) -> set[str]:
+        """Return the devices set aside because their integration is
+        ignored.
+
+        The enable buttons reach a set-aside device on purpose
+        (ruling #257): a device Home Assistant disabled comes back by
+        having its entities switched on, so refusing to offer that
+        would withhold the fix. Ignoring inverts it. A person who put
+        an integration on that list is not waiting for its entities
+        to be enabled, and a sweep that turned on the battery sensors
+        of every phone in the house would be doing the opposite of
+        what they asked for.
+        """
+        return {
+            device_id
+            for device_id, (_name, _domain, reason) in self._set_aside.items()
+            if reason == SET_ASIDE_IGNORED
+        }
+
     def _discard_ignored_records(self) -> None:
         """Drop what an ignored integration recorded before it was.
 
@@ -1538,20 +1560,51 @@ class DeviceSentinelCoordinator(
         last an afternoon, while this is a person saying the data is
         not worth keeping.
         """
+        ignored = self._ignored_device_ids
+        if not ignored:
+            return
         devices = self.data.get(DATA_DEVICES) or {}
-        dropped = [
-            device_id
-            for device_id, (_name, _domain, reason) in self._set_aside.items()
-            if reason == SET_ASIDE_IGNORED and device_id in devices
-        ]
+        dropped = [device_id for device_id in ignored if device_id in devices]
         for device_id in dropped:
             del devices[device_id]
-        if dropped:
+
+        # The episodes and incidents go with the record, and an open
+        # episode is the reason this cannot be left to the age prune.
+        # An episode is completed by its device speaking again, and an
+        # ignored device is no longer walked, so one still open when
+        # the integration was ignored can never be closed by anything.
+        # It would then be counted as an orphan at every boot, which
+        # is the one diagnostic that exists to catch a closing that
+        # never reached disk (ruling #167), and a permanent false
+        # positive there costs more than the rows are worth. They are
+        # dropped rather than stamped because the promise is that an
+        # ignored integration is never recorded, and an episode is a
+        # record.
+        episodes = self.data.get(DATA_EPISODES) or []
+        kept_episodes = [
+            episode
+            for episode in episodes
+            if episode.get(EP_DEVICE_ID) not in ignored
+        ]
+        incidents = self.data.get(DATA_INCIDENTS) or []
+        kept_incidents = [
+            row for row in incidents if row.get(INC_DEVICE_ID) not in ignored
+        ]
+        shed_episodes = len(episodes) - len(kept_episodes)
+        shed_incidents = len(incidents) - len(kept_incidents)
+        if shed_episodes:
+            self.data[DATA_EPISODES] = kept_episodes
+        if shed_incidents:
+            self.data[DATA_INCIDENTS] = kept_incidents
+
+        if dropped or shed_episodes or shed_incidents:
             self._mark_cold_dirty()
             LOGGER.info(
-                "Ignored integrations: discarded the records of %d device(s) "
-                "at the fold",
+                "Ignored integrations: discarded %d device record(s), "
+                "%d episode(s) and %d incident(s) at the fold",
                 len(dropped),
+                shed_episodes,
+                shed_incidents,
             )
 
     async def _on_midnight(self, _now: Any) -> None:
@@ -1945,6 +1998,7 @@ class DeviceSentinelCoordinator(
         others. Each kind is its own button, its own press.
         """
         ent_reg = er.async_get(self.hass)
+        ignored = self._ignored_device_ids
         enabled = 0
         enabled_ids: list[str] = []
         by_hand = 0
@@ -1953,6 +2007,8 @@ class DeviceSentinelCoordinator(
                 ent.device_id not in self._watched
                 and ent.device_id not in self._set_aside
             ):
+                continue
+            if ent.device_id in ignored:
                 continue
             if not matches(ent):
                 continue
@@ -2028,12 +2084,15 @@ class DeviceSentinelCoordinator(
         buttons now enable every one of them (ruling #257).
         """
         ent_reg = er.async_get(self.hass)
+        ignored = self._ignored_device_ids
         signal = last_seen = battery = 0
         for ent in list(ent_reg.entities.values()):
             if (
                 ent.device_id not in self._watched
                 and ent.device_id not in self._set_aside
             ):
+                continue
+            if ent.device_id in ignored:
                 continue
             if ent.disabled_by is None:
                 continue
