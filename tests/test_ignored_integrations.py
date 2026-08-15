@@ -39,7 +39,12 @@ from homeassistant.helpers import device_registry as dr
 from custom_components.device_sentinel.const import (
     CONF_IGNORED_INTEGRATIONS,
     DATA_DEVICES,
+    DATA_EPISODES,
+    DATA_INCIDENTS,
     DEFAULT_IGNORED_INTEGRATIONS,
+    EP_DEVICE_ID,
+    EP_ENDED,
+    INC_DEVICE_ID,
     SET_ASIDE_IGNORED,
 )
 
@@ -234,3 +239,83 @@ async def test_the_picker_hides_an_integration_already_set_aside(
     hidden = {d for d, c in breakdown.items() if not c.get("watched")}
     assert hidden, "expected at least one wholly set-aside integration"
     assert not (offered & hidden)
+
+
+async def test_an_open_episode_does_not_outlive_its_record(
+    hass: HomeAssistant,
+):
+    """The orphan the first build left behind.
+
+    An episode is completed by its device speaking again, and an
+    ignored device is no longer walked, so one still open at the
+    moment the integration was ignored could never be closed by
+    anything. It would then be counted as an orphan at every boot,
+    turning the one diagnostic that catches a closing which never
+    reached disk (ruling #167) into a permanent false positive.
+    """
+    device, _eids = register_device(hass, "probe", name="SLZB_06M")
+    coordinator, _entry = await _coordinator(
+        hass, {CONF_IGNORED_INTEGRATIONS: []}
+    )
+    coordinator._rebuild_registry_view()
+    coordinator.data.setdefault(DATA_EPISODES, []).append(
+        {EP_DEVICE_ID: device.id, EP_ENDED: None, "name": "SLZB_06M"}
+    )
+    coordinator.data.setdefault(DATA_INCIDENTS, []).append(
+        {INC_DEVICE_ID: device.id, "name": "SLZB_06M", "when": 0.0}
+    )
+
+    hass.config_entries.async_update_entry(
+        _entry, options={CONF_IGNORED_INTEGRATIONS: ["test"]}
+    )
+    await hass.async_block_till_done()
+    coordinator._rebuild_registry_view()
+    coordinator._discard_ignored_records()
+
+    assert device.id not in coordinator.data[DATA_DEVICES]
+    assert not [
+        e
+        for e in coordinator.data.get(DATA_EPISODES) or []
+        if e.get(EP_DEVICE_ID) == device.id
+    ]
+    assert not [
+        r
+        for r in coordinator.data.get(DATA_INCIDENTS) or []
+        if r.get(INC_DEVICE_ID) == device.id
+    ]
+
+
+async def test_another_devices_episode_is_left_alone(hass: HomeAssistant):
+    """The discard reaches exactly the ignored ones."""
+    keeper, _ = register_device(hass, "door", name="Door Master")
+    coordinator, _entry = await _coordinator(
+        hass, {CONF_IGNORED_INTEGRATIONS: ["absent_integration"]}
+    )
+    coordinator._rebuild_registry_view()
+    coordinator.data.setdefault(DATA_EPISODES, []).append(
+        {EP_DEVICE_ID: keeper.id, EP_ENDED: None, "name": "Door Master"}
+    )
+
+    coordinator._discard_ignored_records()
+
+    assert keeper.id in coordinator.data[DATA_DEVICES]
+    assert len(coordinator.data.get(DATA_EPISODES) or []) == 1
+
+
+async def test_the_enable_buttons_leave_an_ignored_device_alone(
+    hass: HomeAssistant,
+):
+    """Ruling #257 made the buttons reach a set-aside device, because
+    a disabled one comes back by having its entities switched on.
+    Ignoring inverts that: a person who put an integration on the list
+    is not waiting for its battery sensors to be enabled."""
+    register_device(hass, "phone", name="James S24+", entity_domain="sensor")
+    coordinator, _entry = await _coordinator(
+        hass, {CONF_IGNORED_INTEGRATIONS: ["test"]}
+    )
+    coordinator._rebuild_registry_view()
+
+    ignored = coordinator._ignored_device_ids
+    assert ignored, "expected the phone to be set aside as ignored"
+    counts = coordinator.awaiting_enable_counts()
+    assert counts == {"signal": 0, "last_seen": 0, "battery": 0}
