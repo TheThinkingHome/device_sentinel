@@ -198,6 +198,10 @@ An integration keeps its own clocks and its own storage. A device twenty hours i
 
 The full story: [From Blueprints to Integration: Why Device Sentinel Exists](https://xeazy.com/reliable-home-assistant-dead-sensor-detection/). Blueprints live in the [Automations](https://github.com/TheThinkingHome/Automations) repository.
 
+## AI Disclosure
+
+See [AI_DISCLOSURE.md](AI_DISCLOSURE.md).
+
 ## License
 
 GPL-3.0-or-later. Copyright (C) 2026 James Lander, The Thinking Home.
