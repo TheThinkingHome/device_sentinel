@@ -71,7 +71,7 @@ EXPECTED_DEFAULTS = {
     "sensor.device_sentinel_battery_low": False,
     "sensor.device_sentinel_battery_falling": False,
     "sensor.device_sentinel_device_frozen": False,
-    "sensor.device_sentinel_service_devices_ignored": False,
+    "sensor.device_sentinel_devices_set_aside": False,
     # The conditional: this test house has no bridge stack, so the
     # broker sensor ships off. The other branch has its own test.
     "sensor.device_sentinel_broker_mqtt": False,

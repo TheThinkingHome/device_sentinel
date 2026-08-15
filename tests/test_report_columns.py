@@ -101,16 +101,17 @@ async def test_each_reason_is_named_in_the_classification(
     assert SET_ASIDE_NO_ENTITIES in rows["Bare One"]
 
 
-async def test_the_header_names_all_three_causes(hass: HomeAssistant):
+async def test_the_header_names_every_cause(hass: HomeAssistant):
     """The sentence called every set-aside device a service device,
-    which stopped being true the moment disabled devices joined
-    them."""
+    which stopped being true the moment disabled devices joined them,
+    and again when a person could ignore a whole integration."""
     coord = await setup_coordinator(hass)
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     text = _classification(hass)
 
-    assert "service devices, disabled devices, and devices with no" in text
+    assert "service devices, disabled devices, devices with no" in text
+    assert "integrations you asked to ignore" in text
     assert "no hardware to watch" not in text
 
 

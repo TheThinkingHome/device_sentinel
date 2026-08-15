@@ -44,6 +44,7 @@ from custom_components.device_sentinel.const import (
     CONF_BATTERY_EXCLUDED_LABELS,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
+    CONF_IGNORED_INTEGRATIONS,
     CONF_EXCLUDED_LABELS,
     CONF_FREEZE_EXCLUDED_DEVICES,
     DATA_DEVICES,
@@ -365,7 +366,12 @@ async def test_watched_rows_carry_integration_for_collided_names(
     picker labels need to tell them apart."""
     _named_device(hass, "mqtt", "panel_mqtt", "NSPanel Pro Randy")
     _named_device(hass, "mobile_app", "panel_app", "NSPanel Pro Randy")
-    coord = await setup_coordinator(hass)
+    # mobile_app is on the default ignore list, and this test is
+    # about the name collision rather than the ignoring, so the
+    # list is emptied to keep both panels watched.
+    coord = await setup_coordinator(
+        hass, {CONF_IGNORED_INTEGRATIONS: []}
+    )
 
     rows = [
         r
@@ -384,7 +390,12 @@ async def test_the_two_panels_are_distinct_device_ids(hass: HomeAssistant):
     d1 = _named_device(hass, "mqtt", "panel_mqtt", "NSPanel Pro Randy")
     d2 = _named_device(hass, "mobile_app", "panel_app", "NSPanel Pro Randy")
     assert d1.id != d2.id
-    coord = await setup_coordinator(hass)
+    # mobile_app is on the default ignore list, and this test is
+    # about the name collision rather than the ignoring, so the
+    # list is emptied to keep both panels watched.
+    coord = await setup_coordinator(
+        hass, {CONF_IGNORED_INTEGRATIONS: []}
+    )
     ids = {
         r["device_id"]
         for r in coord.watched_device_rows
@@ -402,7 +413,10 @@ async def test_exclude_option_labels_disambiguate_by_integration(
     labels off the rendered schema."""
     _named_device(hass, "mqtt", "panel_mqtt", "NSPanel Pro Randy")
     _named_device(hass, "mobile_app", "panel_app", "NSPanel Pro Randy")
-    entry = await setup_entry(hass)
+    # mobile_app is on the default ignore list, and this test is
+    # about the name collision rather than the ignoring, so the
+    # list is emptied to keep both panels watched.
+    entry = await setup_entry(hass, {CONF_IGNORED_INTEGRATIONS: []})
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
