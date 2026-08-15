@@ -42,6 +42,8 @@ from custom_components.device_sentinel.const import (
     DATA_EPISODES,
     DATA_INCIDENTS,
     DEFAULT_IGNORED_INTEGRATIONS,
+    DEV_DAILY_MAX,
+    DEV_TODAY_MAX,
     EP_DEVICE_ID,
     EP_ENDED,
     INC_DEVICE_ID,
@@ -319,3 +321,71 @@ async def test_the_enable_buttons_leave_an_ignored_device_alone(
     assert ignored, "expected the phone to be set aside as ignored"
     counts = coordinator.awaiting_enable_counts()
     assert counts == {"signal": 0, "last_seen": 0, "battery": 0}
+
+
+async def test_the_fold_discards_and_then_folds_the_survivors(
+    hass: HomeAssistant,
+):
+    """The seam between the two halves of midnight.
+
+    Both halves were proven on their own and their joint was not: the
+    discard was only ever called directly, and every other test of the
+    rollover runs with nothing ignored. So the one thing no test
+    covered was the order they run in, with the discard deleting
+    records out of the very dictionary the fold is about to walk.
+
+    Nothing here waits for a real midnight. A fold happens once and
+    proves the seam for that night; a test proves it on every release
+    after this one.
+    """
+    keeper, _ = register_device(hass, "door", name="Door Master")
+    goner, _ = register_device(hass, "phone", name="James S24+")
+    coordinator, _entry = await _coordinator(
+        hass, {CONF_IGNORED_INTEGRATIONS: []}
+    )
+    coordinator._rebuild_registry_view()
+
+    # Both carry a day in progress and a series to fold it into.
+    for device in (keeper, goner):
+        record = coordinator.data[DATA_DEVICES][device.id]
+        record[DEV_DAILY_MAX] = [60.0, 61.0]
+        record[DEV_TODAY_MAX] = 62.0
+    coordinator.data.setdefault(DATA_EPISODES, []).append(
+        {EP_DEVICE_ID: goner.id, EP_ENDED: None, "name": "James S24+"}
+    )
+    coordinator.data.setdefault(DATA_INCIDENTS, []).append(
+        {INC_DEVICE_ID: goner.id, "name": "James S24+", "when": 0.0}
+    )
+
+    # The phone's integration is ignored from here on.
+    hass.config_entries.async_update_entry(
+        _entry, options={CONF_IGNORED_INTEGRATIONS: ["test_phone"]}
+    )
+    await hass.async_block_till_done()
+    coordinator._set_aside[goner.id] = (
+        "James S24+",
+        "test_phone",
+        SET_ASIDE_IGNORED,
+    )
+    coordinator._watched.pop(goner.id, None)
+
+    await coordinator._on_midnight(None)
+
+    # The ignored device left, taking its episode and incident.
+    assert goner.id not in coordinator.data[DATA_DEVICES]
+    assert not [
+        e
+        for e in coordinator.data.get(DATA_EPISODES) or []
+        if e.get(EP_DEVICE_ID) == goner.id
+    ]
+    assert not [
+        r
+        for r in coordinator.data.get(DATA_INCIDENTS) or []
+        if r.get(INC_DEVICE_ID) == goner.id
+    ]
+
+    # The survivor folded its day in the same pass, which is the half
+    # a discard walking the wrong dictionary would have broken.
+    kept = coordinator.data[DATA_DEVICES][keeper.id]
+    assert kept[DEV_DAILY_MAX] == [60.0, 61.0, 62.0]
+    assert kept[DEV_TODAY_MAX] is None
