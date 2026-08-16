@@ -41,6 +41,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import STORAGE_DIR
 
 from .const import (
+    BACKUP_LAST_GOOD_SUFFIX,
     BACKUP_TAKEN_KEY,
     LOGGER,
     STORAGE_CLOCKS_KEY,
@@ -134,4 +135,49 @@ async def async_take_backup(
         STORAGE_KEY,
         STORAGE_CLOCKS_KEY,
     )
+    return True
+
+
+async def async_refresh_last_good(hass: HomeAssistant) -> bool:
+    """Overwrite the rolling last-good copy of both storage files.
+
+    Unlike async_take_backup this is not once-per-suffix: it is meant
+    to be taken again and again, and the newest copy is the one worth
+    having. What makes it safe to overwrite is that the caller only
+    calls it after a shape check reported nothing (ruling #278), so
+    the copy is by construction of a file the checks passed. A boot or
+    a fold that found a fault does not call this, and last-good is
+    left as the previous clean copy: it lags a repaired boot by one,
+    which is the direction it should lag.
+
+    Returns True when both files were copied, False on any failure. A
+    False here is a log line and nothing else; a backup that could not
+    be refreshed is a stale backup, not a broken integration.
+    """
+    pairs = [
+        (
+            _storage_path(hass, key),
+            _storage_path(hass, f"{key}.{BACKUP_LAST_GOOD_SUFFIX}"),
+        )
+        for key in (STORAGE_KEY, STORAGE_CLOCKS_KEY)
+    ]
+
+    def _copy_all() -> bool:
+        return all(
+            _copy_one(source, destination) for source, destination in pairs
+        )
+
+    try:
+        copied = await hass.async_add_executor_job(_copy_all)
+    except OSError as err:
+        LOGGER.warning(
+            "Storage last-good copy could not be refreshed: %s", err
+        )
+        return False
+    if not copied:
+        LOGGER.warning(
+            "Storage last-good copy did not produce the expected files"
+        )
+        return False
+    LOGGER.debug("Storage last-good copy refreshed")
     return True

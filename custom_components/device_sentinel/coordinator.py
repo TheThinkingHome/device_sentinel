@@ -61,8 +61,10 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .backup import async_take_backup
+from .normalise import check_records
+from .backup import async_refresh_last_good, async_take_backup
 from .const import (
+    SYS_STORAGE_SHAPE,
     AREA_BATTERY,
     AREA_FREEZE,
     AREA_SIGNAL,
@@ -606,6 +608,7 @@ class DeviceSentinelCoordinator(
             )
 
         self.data = loaded
+        await self._check_storage_shape("load")
         # The clock fields are the hot file's alone and the main file
         # never carries copies. The one-time backup that guarded the
         # transition, and the gate that kept writing copies where it
@@ -1547,6 +1550,53 @@ class DeviceSentinelCoordinator(
             if reason == SET_ASIDE_IGNORED
         }
 
+    async def _check_storage_shape(self, moment: str) -> None:
+        """Check every record's shape, report what does not fit, and
+        refresh the last-good copy only when nothing does.
+
+        Two moments call this (ruling #278): after load, and after
+        the midnight fold once its records are folded and saved. The
+        second is the guarantee that a system which never restarts
+        still gets a fresh copy every night, and it distinguishes a
+        fault the fold itself produced from one that came off disk,
+        because a record the fold has just written and got wrong is
+        the integration's own doing and reads so in the log.
+
+        This release reports and touches nothing. Every fault goes to
+        the log, and one system event per moment carries the count so
+        it reaches the brief and the diagnostics. Only when a week of
+        loads and folds has shown the checks quiet on good data does
+        the next release give them the power to repair, and the copy
+        this refreshes is what it will repair from.
+        """
+        faults = check_records(self.data.get(DATA_DEVICES))
+        if not faults:
+            await async_refresh_last_good(self.hass)
+            return
+        source = "the fold produced" if moment == "fold" else "storage holds"
+        for device_id, field, why in faults[:50]:
+            LOGGER.warning(
+                "Storage shape: %s a record that does not fit: device %s, "
+                "field %s: %s. Nothing was changed.",
+                source,
+                device_id,
+                field,
+                why,
+            )
+        if len(faults) > 50:
+            LOGGER.warning(
+                "Storage shape: %d further fault(s) not listed", len(faults) - 50
+            )
+        fields = sorted({field for _d, field, _w in faults})
+        self._record_system_event(
+            SYS_STORAGE_SHAPE,
+            detail=f"{moment}: {len(faults)} fault(s) in "
+            f"{len({d for d, _f, _w in faults})} record(s): "
+            + ", ".join(fields[:8])
+            + (", ..." if len(fields) > 8 else ""),
+            devices=len({d for d, _f, _w in faults}),
+        )
+
     def _discard_ignored_records(self) -> None:
         """Drop what an ignored integration recorded before it was.
 
@@ -1636,6 +1686,7 @@ class DeviceSentinelCoordinator(
         self._sync_problem_list()
         if pushed or self._dirty or self._critical:
             await self._save_now()
+        await self._check_storage_shape("fold")
         LOGGER.debug(
             "Day rollover: pushed daily maxima for %d of %d watched devices",
             pushed,

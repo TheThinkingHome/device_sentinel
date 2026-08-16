@@ -1607,7 +1607,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 277
+HIGHEST_RULING = 278
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1633,6 +1633,14 @@ SYS_MAINTENANCE_OPEN = "maintenance_open"
 SYS_MAINTENANCE_CLOSED = "maintenance_closed"
 SYS_EPOCH_RESET = "epoch_reset"
 SYS_OPTIONS_CHANGED = "options_changed"
+
+# A load or a fold found a stored record whose shape did not match
+# what the code expects (ruling #278). Recorded as a system event so it
+# reaches the brief and the diagnostics, because a warning in the log
+# is read once and a diagnostics file is read by the maintainer. This
+# release only reports; nothing is repaired until a week of loads and
+# folds has shown the checks fire on nothing good.
+SYS_STORAGE_SHAPE = "storage_shape"
 
 # How long an interruption must last before the daily brief says
 # anything about it (ruling #275). In Short is read rather than
@@ -1668,6 +1676,14 @@ SYS_UNCLEAN_RESTART = "unclean_restart"
 # written by an older version.
 BACKUP_SUFFIX_PREPHASE_C = "prephase-c"
 BACKUP_TAKEN_KEY = "backup_taken"
+
+# The rolling copy of both storage files, overwritten only after a
+# load or a fold whose shape check reported nothing (ruling #278). It
+# is a byte copy of what was on disk, so it is only ever a copy of a
+# file the checks passed, and it can never hold a value they would
+# reject. Nothing reads it yet; the release that repairs from it comes
+# after the checks have proved themselves quiet on good data.
+BACKUP_LAST_GOOD_SUFFIX = "last-good"
 
 DATA_EPISODES = "silence_episodes"
 EPISODE_KEEP_DAYS = 14
