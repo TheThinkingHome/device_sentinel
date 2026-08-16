@@ -25,6 +25,16 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
+    DATA_SYSTEM_EVENTS,
+    SYS_WHEN,
+    SYS_KIND,
+    SYS_SCOPE,
+    SYS_DURATION,
+    SYS_DETAIL,
+    SYS_DEVICES,
+    SYS_RESTART,
+    SYS_OPTIONS_CHANGED,
+    SYS_BRIDGE_UP,
     CONF_EXCLUDED_DEVICES,
     DATA_INCIDENTS,
     DEV_BATTERY_LOW,
@@ -429,22 +439,28 @@ async def test_acknowledged_device_leaves_the_whole_brief(
     assert "| Quiet Please |" not in text
 
 
-async def test_the_house_speaks_even_on_an_empty_morning(
+async def test_an_ordinary_restart_is_not_worth_a_sentence(
     hass: HomeAssistant, read_brief
 ):
-    """A restart is worth knowing about with nothing else to report.
+    """In Short reports the abnormal; the table reports everything.
 
-    It also explains the rest of the brief: a device revived by a
-    reboot reads as a mystery unless the reboot is written down
-    somewhere a reader will see it.
+    This reverses ruling #230, which held that a second restart is a
+    second event a person wants to see. It was decided when restarts
+    were rare, and a day carrying sixteen house sentences that read
+    almost identically to the table beneath them showed it was
+    wrong. A restart of a few seconds is a quiet night, and the row
+    stays in Last 24 Hours for anyone looking a time up.
     """
     _register(hass, "h1", "Untroubled")
     coord = await setup_coordinator(hass)
     await hass.async_add_executor_job(coord._write_reports, "test")
 
     text = read_brief(hass)
-    assert "The system restarted" in text
+    short = text.split("## Last 24 Hours")[0]
+    assert "The system restarted" not in short
+    assert "The system was unwatched" not in short
     assert "Nothing has happened since" in text
+    # Not lost, only moved: the table still carries it.
     assert "| The system |" in text
 
 
@@ -602,9 +618,17 @@ async def test_two_breaks_in_one_window_give_two_episodes(
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = read_brief(hass)
     prose = text[text.index("## In Short"): text.index("## Now")]
-    assert prose.count("Twice Sensor") == 2
-    assert "and recovered 1.0h later." in prose
-    assert "and recovered 2.0h later." in prose
+    # The prose says it once, with the count and the total, because a
+    # device that goes and returns twice is one thing happening
+    # repeatedly (ruling #276). The pairing this test exists for is
+    # asserted on the table, where each break keeps its own row and
+    # its own duration: crossed pairing would show one 3.0h silence.
+    assert prose.count("Twice Sensor") == 1
+    assert "went silent twice" in prose
+    assert "3.0h in total" in prose
+    rows = text[text.index("## Last 24 Hours"):]
+    assert "1.0h" in rows
+    assert "2.0h" in rows
 
 
 async def test_a_recovery_older_than_the_window_stands_alone(
@@ -668,3 +692,95 @@ async def test_every_generated_heading_is_title_case(
         assert heading.lower() not in text.replace(
             heading.lower().replace(" ", "_"), ""
         ), f"{name} still carries a sentence-case heading"
+
+
+async def test_a_noisy_day_reads_as_two_sentences(
+    hass: HomeAssistant, read_brief
+):
+    """The day that prompted ruling #275, replayed.
+
+    On 15 August the reference system restarted seven times, changed
+    settings five times, and cycled its bridge twice, and In Short
+    carried sixteen sentences that read almost identically to the
+    table beneath them. Every restart was about thirty seconds and
+    every bridge outage a reboot artefact, so under the abnormal-only
+    rule none of them earns a sentence and the paragraph says the one
+    thing a person can act on: what they changed.
+    """
+    coord = await setup_coordinator(hass)
+    base = coord.data[DATA_SYSTEM_EVENTS] = []
+    now = dt_util.utcnow().timestamp()
+    for offset, span in enumerate((37.0, 30.0, 0.0, 27.0, 27.0, 29.0, 26.0)):
+        base.append({
+            SYS_WHEN: now - 3600.0 + offset * 60.0,
+            SYS_KIND: SYS_RESTART,
+            SYS_SCOPE: "system",
+            SYS_DURATION: span,
+            SYS_DETAIL: None,
+            SYS_DEVICES: None,
+        })
+    for offset, detail in enumerate((
+        "excluded_integrations",
+        "ignored_integrations, maintenance_minutes",
+        "ignored_integrations",
+        "excluded_integrations",
+        "ignored_integrations",
+    )):
+        base.append({
+            SYS_WHEN: now - 1800.0 + offset * 60.0,
+            SYS_KIND: SYS_OPTIONS_CHANGED,
+            SYS_SCOPE: "system",
+            SYS_DURATION: None,
+            SYS_DETAIL: detail,
+            SYS_DEVICES: None,
+        })
+    for offset, span in enumerate((60.0, 180.0)):
+        base.append({
+            SYS_WHEN: now - 900.0 + offset * 60.0,
+            SYS_KIND: SYS_BRIDGE_UP,
+            SYS_SCOPE: "z2m",
+            SYS_DURATION: span,
+            SYS_DETAIL: None,
+            SYS_DEVICES: None,
+        })
+
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = read_brief(hass)
+    short = text[text.index("## In Short"): text.index("## Now")]
+
+    # Nothing abnormal happened, so nothing about the house is said
+    # beyond the one thing a person did.
+    assert "The system was unwatched" not in short
+    assert "The system restarted" not in short
+    assert "bridge" not in short
+    # Named by their screen labels, deduplicated, said once.
+    assert "Settings changed 5 times:" in short
+    assert "Globally Excluded Integrations" in short
+    assert "Integrations to Ignore" in short
+    assert "Maintenance Window in Minutes" in short
+    assert short.count("Settings changed") == 1
+    assert "ignored_integrations" not in short
+
+
+async def test_one_long_outage_is_the_only_thing_said(
+    hass: HomeAssistant, read_brief
+):
+    """Silence is the default; length is what earns a sentence."""
+    coord = await setup_coordinator(hass)
+    now = dt_util.utcnow().timestamp()
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        {SYS_WHEN: now - 3600.0, SYS_KIND: SYS_RESTART, SYS_SCOPE: "system",
+         SYS_DURATION: 28.0, SYS_DETAIL: None, SYS_DEVICES: None},
+        {SYS_WHEN: now - 1800.0, SYS_KIND: SYS_BRIDGE_UP, SYS_SCOPE: "z2m",
+         SYS_DURATION: 120.0, SYS_DETAIL: None, SYS_DEVICES: None},
+        {SYS_WHEN: now - 900.0, SYS_KIND: SYS_BRIDGE_UP, SYS_SCOPE: "z2m",
+         SYS_DURATION: 1020.0, SYS_DETAIL: None, SYS_DEVICES: None},
+    ]
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    short = read_brief(hass)
+    short = short[short.index("## In Short"): short.index("## Now")]
+
+    assert "The z2m bridge was down for 17m" in short
+    # The two-minute artefact and the 28-second restart say nothing.
+    assert short.count("bridge") == 1
+    assert "The system was unwatched" not in short

@@ -545,7 +545,11 @@ async def test_the_battery_screen_carries_both_questions(
     assert offered[0] == CONF_LOW_THRESHOLD
     assert offered[1] == CONF_BATTERY_DAYS
     labels = _strings()["options"]["step"]["battery"]["data"]
-    assert labels[CONF_BATTERY_DAYS] == "Days Till Empty"
+    # The label says what the setting does rather than naming a
+    # quantity, so a reader can tell it warns rather than reports
+    # (ruling #277). Pinned because the field it belongs to is
+    # what 0.11.3 shipped without.
+    assert labels[CONF_BATTERY_DAYS] == "Days Till Empty Warning"
 
 
 async def test_the_threshold_range_comes_from_the_constants(
