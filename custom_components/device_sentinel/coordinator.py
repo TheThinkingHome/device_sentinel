@@ -261,7 +261,11 @@ class DeviceSentinelCoordinator(
         # rhythm history carries no holes.
         self._excluded_devices: dict[str, str] = {}  # device_id -> reason
         self._excluded_entities: dict[str, str] = {}  # entity_id -> reason
-        self._set_aside: dict[str, tuple[str, str]] = {}  # id -> (name, domain)
+        # id -> (name, domain, reason). The reason is one of the
+        # SET_ASIDE_* constants and has been the third element since
+        # 0.13.3, when a device disabled by Home Assistant joined
+        # service devices as a thing to set aside (ruling #257).
+        self._set_aside: dict[str, tuple[str, str, str]] = {}
         self._last_seen_entity: dict[str, str] = {}  # device_id -> entity_id
         self._device_entries: dict[str, set[str]] = {}
         self._signal_entities: set[str] = set()
