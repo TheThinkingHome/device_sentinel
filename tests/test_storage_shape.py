@@ -1,0 +1,222 @@
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: test_storage_shape.py, Version: 0.15.2 (2026-08-17)
+
+"""The shape check reports and touches nothing; last-good follows it.
+
+Ruling #278. An adversarial pass planted a storage file whose devices
+key was a string and setup would not start, then one record whose
+daily_max was None and the fold raised on it and skipped every device
+after. This release watches for both without acting on either: the
+check names what does not fit, and the last-good copy is refreshed
+only when it names nothing. The release that repairs waits until a
+week of loads and folds has shown the checks quiet on good data.
+
+The two tests that matter most are the last two. One proves the check
+is silent on a record shaped exactly as the code writes it, which is
+the false-positive case that would make the whole thing dangerous.
+The other proves it is silent on the reference fleet's real file, 118
+records read off disk, which is the same claim on data nobody wrote
+for a test.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import os
+from pathlib import Path
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import STORAGE_DIR
+
+from custom_components.device_sentinel.const import (
+    BACKUP_LAST_GOOD_SUFFIX,
+    DATA_DEVICES,
+    DATA_SYSTEM_EVENTS,
+    DEV_DAILY_MAX,
+    DEV_EVENT_COUNT,
+    DEV_SIGNAL_DAILY_MIN,
+    DEV_TAINTED,
+    DEV_TODAY_MAX,
+    STORAGE_CLOCKS_KEY,
+    STORAGE_KEY,
+    SYS_KIND,
+    SYS_STORAGE_SHAPE,
+)
+from custom_components.device_sentinel.normalise import check_records
+from custom_components.device_sentinel.records import _new_device_record
+
+import pytest
+
+from .helpers import register_device, setup_entry
+
+
+@pytest.fixture(autouse=True)
+def _clean_storage_files(hass: HomeAssistant):
+    """The harness mocks Store in memory and shares one config
+    directory across tests. These tests write real files, so they
+    start and end with none of theirs present."""
+    def _sweep():
+        directory = hass.config.path(STORAGE_DIR)
+        if not os.path.isdir(directory):
+            return
+        for name in os.listdir(directory):
+            if name.startswith(STORAGE_KEY) or name.startswith(STORAGE_CLOCKS_KEY):
+                os.remove(os.path.join(directory, name))
+    _sweep()
+    yield
+    _sweep()
+
+
+def _plant(hass: HomeAssistant, key: str, body: str) -> None:
+    path = os.path.join(hass.config.path(STORAGE_DIR), key)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(body)
+
+
+def _last_good(hass: HomeAssistant, key: str) -> Path:
+    return Path(hass.config.path(STORAGE_DIR)) / f"{key}.{BACKUP_LAST_GOOD_SUFFIX}"
+
+
+def _shape_events(coord) -> list[dict]:
+    return [
+        e for e in coord.data.get(DATA_SYSTEM_EVENTS) or []
+        if e.get(SYS_KIND) == SYS_STORAGE_SHAPE
+    ]
+
+
+# ---------------------------------------------------------------- unit
+
+
+def test_a_fresh_record_has_no_faults():
+    """The template must pass its own check, or every new device fires."""
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", None)
+    assert check_records({"d1": rec}) == []
+
+
+def test_a_learned_record_has_no_faults():
+    """A record shaped as the estimators actually write it: p5 state as a
+    list, count and rail series as ints, everything else float."""
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    rec[DEV_DAILY_MAX] = [60.0, 61.5, 59.0]
+    rec[DEV_TODAY_MAX] = 62.0
+    rec[DEV_EVENT_COUNT] = 4321
+    rec["signal_p5_state"] = [1.0, 2.0, 3.0, 4.0, 5.0]
+    rec["signal_p50_state"] = [1.0, 2.0, 3.0, 4.0, 5.0]
+    rec["signal_daily_count"] = [400, 512, 380]
+    rec["signal_daily_rail"] = [0, 0, 1]
+    rec["signal_daily_min"] = [120.0, 118.0, 124.0]
+    rec["battery_since"] = "2026-08-01T00:00:00+00:00"
+    rec["frozen_category"] = "frozen"
+    assert check_records({"d1": rec}) == []
+
+
+def test_every_planted_corruption_is_named():
+    """The faults the adversarial pass planted, and a few more."""
+    good = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    cases = {
+        "series_none": (DEV_DAILY_MAX, None),
+        "series_string": (DEV_DAILY_MAX, "sixty"),
+        "series_with_nan": (DEV_DAILY_MAX, [1.0, math.nan]),
+        "series_with_inf": (DEV_DAILY_MAX, [1.0, math.inf]),
+        "series_with_string": (DEV_SIGNAL_DAILY_MIN, [1.0, "x"]),
+        "series_with_bool": (DEV_DAILY_MAX, [1.0, True]),
+        "scalar_nan": (DEV_TODAY_MAX, math.nan),
+        "scalar_string": (DEV_TODAY_MAX, "5"),
+        "int_as_float": (DEV_EVENT_COUNT, 3.0),
+        "int_as_bool": (DEV_EVENT_COUNT, True),
+        "bool_as_int": (DEV_TAINTED, 1),
+    }
+    for label, (field, value) in cases.items():
+        rec = dict(good)
+        rec[field] = value
+        faults = check_records({"d1": rec})
+        assert faults, f"{label}: no fault reported"
+        assert any(f[1] == field for f in faults), f"{label}: wrong field named"
+
+    # a whole record that is not a dict, and a devices map that is not
+    assert check_records({"d1": "garbage"})[0][1] == "*"
+    assert check_records("garbage")[0][1] == "devices"
+
+
+def test_a_missing_and_an_unknown_field_are_both_named():
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    del rec[DEV_TAINTED]
+    rec["some_old_field"] = 1
+    faults = check_records({"d1": rec})
+    named = {(f, w) for _d, f, w in faults}
+    assert (DEV_TAINTED, "missing") in named
+    assert ("some_old_field", "unknown field") in named
+
+
+def test_the_check_changes_nothing():
+    """The whole point of the first release."""
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    rec[DEV_DAILY_MAX] = None
+    rec[DEV_TODAY_MAX] = math.nan
+    before = json.dumps(rec, sort_keys=True, default=str)
+    check_records({"d1": rec})
+    assert json.dumps(rec, sort_keys=True, default=str) == before
+
+
+# ---------------------------------------------------- integration level
+
+
+async def test_a_clean_check_refreshes_last_good(hass: HomeAssistant):
+    """The Store is mocked in memory, so the on-disk pair is planted by
+    hand; what is under test is that a clean check copies both."""
+    register_device(hass, "ok1", name="Fine")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._rebuild_registry_view()
+    _plant(hass, STORAGE_KEY, "main-v1")
+    _plant(hass, STORAGE_CLOCKS_KEY, "clocks-v1")
+
+    await coord._check_storage_shape("load")
+
+    assert _last_good(hass, STORAGE_KEY).read_text() == "main-v1"
+    assert _last_good(hass, STORAGE_CLOCKS_KEY).read_text() == "clocks-v1"
+    assert not _shape_events(coord)
+
+
+async def test_a_faulty_record_reports_and_withholds_last_good(
+    hass: HomeAssistant,
+):
+    register_device(hass, "bad1", name="Broken")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._rebuild_registry_view()
+    _plant(hass, STORAGE_KEY, "main-v1")
+    _plant(hass, STORAGE_CLOCKS_KEY, "clocks-v1")
+    await coord._check_storage_shape("load")
+    assert _last_good(hass, STORAGE_KEY).read_text() == "main-v1"
+
+    # the file on disk moves on, and one record in memory goes bad
+    _plant(hass, STORAGE_KEY, "main-v2-corrupt")
+    device_id = next(iter(coord.data[DATA_DEVICES]))
+    coord.data[DATA_DEVICES][device_id][DEV_DAILY_MAX] = None
+    await coord._check_storage_shape("fold")
+
+    events = _shape_events(coord)
+    assert len(events) == 1
+    assert events[0]["detail"].startswith("fold:")
+    assert DEV_DAILY_MAX in events[0]["detail"]
+    # last-good still holds the clean copy, not the corrupt file
+    assert _last_good(hass, STORAGE_KEY).read_text() == "main-v1"
+    # and the record itself was not touched
+    assert coord.data[DATA_DEVICES][device_id][DEV_DAILY_MAX] is None
+
+
+async def test_the_reference_fleet_is_clean():
+    """118 real records off the Panorama's disk. Not a fixture."""
+    here = Path(__file__).parent / "fixtures" / "panorama_records_2026-08-16.json"
+    if not here.exists():
+        return
+    devices = json.loads(here.read_text())
+    assert len(devices) >= 100
+    assert check_records(devices) == []
