@@ -502,3 +502,32 @@ async def test_an_interrupted_write_leaves_no_fragment(
     with open(target, encoding="utf-8") as handle:
         assert handle.read() == "the whole previous report"
     os.rmdir(f"{target}.tmp")
+
+
+async def test_the_page_names_the_settings_that_govern_it(
+    hass: HomeAssistant,
+):
+    """A reader who wants fewer rows must be able to find the slider.
+
+    The footer said "the low threshold", which described the setting
+    rather than naming it, and stopped naming anything at all when
+    the label became Low Battery Threshold in 0.15.0. The Falling
+    table never named the setting that decides who appears in it.
+    Both now name the setting and the screen, the way the dwell
+    chart's footer already did.
+    """
+    coord = await setup_coordinator(hass)
+    dying, _ = register_device(hass, "bat1", "Door 2nd Bedroom")
+    _seed(coord, dying.id, DYING, 12.0, low=True,
+          since="2026-08-03T06:41:02+00:00")
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    # The template wraps its prose, so a phrase can span a newline.
+    # HTML does not care and neither should the assertion.
+    page = " ".join(_page(hass).split())
+
+    assert "the Low Battery Threshold on the Low Battery" in page
+    assert "Configure, Low Battery" in page
+    assert "Days Till Empty Warning setting" in page
+    # The description that named nothing is gone.
+    assert "the low threshold on the Low Battery" not in page
