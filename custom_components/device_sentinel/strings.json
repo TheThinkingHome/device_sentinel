@@ -71,9 +71,9 @@
         "title": "Global Exclusions",
         "description": "Globally excluded items are never reported, by any part of Device Sentinel, but they are still watched and their habits are learned, so undoing an exclusion is instant and nothing is lost.\n\nThe three lists run broad to narrow: integration, label, device. When you exclude at a higher level and save, everything it covers disappears as a choice from the lists below it: exclude an integration and its devices no longer appear and do not need to be removed individually, because the integration already covers them.\n\n[Global Exclusions on the wiki]({wiki_link})",
         "data": {
-          "excluded_devices": "Excluded Devices",
-          "excluded_labels": "Excluded Labels",
-          "excluded_integrations": "Excluded Integrations"
+          "excluded_devices": "Globally Excluded Devices",
+          "excluded_labels": "Globally Excluded Labels",
+          "excluded_integrations": "Globally Excluded Integrations"
         },
         "data_description": {
           "excluded_devices": "These devices are never reported.",
@@ -84,11 +84,11 @@
       "battery": {
         "title": "Low Battery",
         "data": {
-          "low_threshold": "Battery Low Threshold (%)",
-          "battery_days_till_empty": "Days Till Empty",
-          "battery_excluded_integrations": "Battery-Excluded Integrations",
-          "battery_excluded_labels": "Battery-Excluded Labels",
-          "battery_excluded_devices": "Battery-Excluded Devices"
+          "low_threshold": "Low Battery Threshold",
+          "battery_days_till_empty": "Days Till Empty Warning",
+          "battery_excluded_integrations": "Integrations Excluded from Battery Reporting",
+          "battery_excluded_labels": "Labels Excluded from Battery Reporting",
+          "battery_excluded_devices": "Devices Excluded from Battery Reporting"
         },
         "data_description": {
           "low_threshold": "A battery at or below this level is flagged low.",
@@ -144,13 +144,13 @@
         "description": "Settings most people never need to change. [Advanced on the wiki]({wiki_link})",
         "data": {
           "settle_share_pct": "Notification Debounce",
-          "episode_share_pct": "Episode Recording Threshold",
+          "episode_share_pct": "Silence Episode Recording Threshold",
           "taint_floor_minutes": "Unavailable Debounce for Fast Reporting Devices",
           "taint_share_pct": "Unavailable Debounce for Slow Reporting Devices",
           "storage_write_minutes": "Storage Write Interval",
           "history_days": "How Much History to Keep",
           "maintenance_minutes": "Maintenance Window in Minutes",
-          "ignored_integrations": "Integrations to ignore"
+          "ignored_integrations": "Integrations to Ignore"
         },
         "data_description": {
           "settle_share_pct": "The amount of time, as a share of a device's learned reporting gap, that a problem must persist before you are notified. It applies to battery, signal, and freeze alike, and delays only the high-priority phone alert. At 30 percent a fast device clears about a minute of hiccups and a slow one about half an hour. Higher means fewer messages about brief problems that fix themselves; lower means you hear sooner.",

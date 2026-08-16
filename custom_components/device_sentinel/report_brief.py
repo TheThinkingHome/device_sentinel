@@ -21,6 +21,7 @@ is the coordinator throughout and nothing here stands alone.
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import timedelta
 from html import escape
@@ -30,6 +31,7 @@ from homeassistant.util import dt as dt_util
 
 from . import attribution
 from .const import (
+    BRIEF_NOTEWORTHY_SECONDS,
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
@@ -432,40 +434,166 @@ class BriefMixin:
             return f"settings changed ({detail})" if detail else "settings changed"
         return str(kind)
 
+    def _option_label(self, key: str) -> str:
+        """Return the label a person saw on the screen for an option.
+
+        Read from strings.json rather than a table kept beside it. A
+        table would say what somebody once believed the screen said,
+        and the two would part on the first label anybody improved.
+        The file is the screen, so this cannot drift and a new option
+        arrives already named. The raw key is the fallback, which is
+        wrong but visible.
+        """
+        labels = self._option_labels()
+        return labels.get(key.strip(), key.strip())
+
+    def _option_labels(self) -> dict[str, str]:
+        """Return every option key's screen label, read once."""
+        cached = getattr(self, "_option_label_cache", None)
+        if cached is not None:
+            return cached
+        labels: dict[str, str] = {}
+        try:
+            path = os.path.join(os.path.dirname(__file__), "strings.json")
+            with open(path, encoding="utf-8") as handle:
+                steps = json.load(handle)["options"]["step"]
+            for body in steps.values():
+                for key, label in (body.get("data") or {}).items():
+                    labels[key] = label
+        except (OSError, ValueError, KeyError):
+            labels = {}
+        self._option_label_cache = labels
+        return labels
+
     def _house_sentences(
         self, sys_events: list[dict[str, Any]]
     ) -> list[str]:
-        """Return what happened to the house, repetition collapsed.
+        """Return what happened to the house, abnormal only.
 
-        Restarts and bridge outages arrive one at a time, so these
-        sentences were written one per event and that was right. A
-        storm is the first house event that can repeat: an
-        integration polling every device on a timer trips the storm
-        detector every cycle, and the reference fleet produced twenty
-        in an hour, which filled the brief with forty sentences
-        saying the same thing (ruling #230). Device floods were
-        collapsed in 0.12.5 and this is the same wall one layer up.
+        In Short is read rather than scanned, and a paragraph that
+        reports normal behaviour is a paragraph nobody finishes
+        (ruling #275). So an interruption earns a sentence only by
+        lasting longer than BRIEF_NOTEWORTHY_SECONDS, and then only
+        the longest one is told: seven restarts of thirty seconds are
+        not seven events, they are a quiet night, and the Last 24
+        Hours table below carries every one for anyone who wants
+        them.
 
-        Only storms are grouped, and only per integration. Everything
-        else keeps its own sentence, because a second restart is a
-        second event a person wants to see.
+        This overturns ruling #230, which held that a second restart
+        is a second event a person wants to see. It is not. That was
+        decided when restarts were rare on the reference system, and
+        a day with sixteen house sentences reading almost identically
+        to the table beneath them showed it was wrong.
+
+        Two things are always said, because neither is ever noise. A
+        storm is somebody's integration misbehaving, already grouped
+        per integration (ruling #230). A settings change is a person
+        acting on their own system, and it is the reason tomorrow's
+        data will differ from today's, so it is named with what
+        changed.
         """
         rows = sorted(sys_events, key=lambda row: row[SYS_WHEN])
+        said: list[str] = []
+        said += self._quiet_run_sentences(rows)
+        said += self._storm_sentences(rows)
+        said += self._options_sentence(rows)
+        said += self._other_house_sentences(rows)
+        return said
+
+    def _longest(
+        self, rows: list[dict[str, Any]], kind: str, scope: str | None = None
+    ) -> dict[str, Any] | None:
+        """Return the longest run of one kind, when it is noteworthy."""
+        candidates = [
+            row
+            for row in rows
+            if row[SYS_KIND] == kind
+            and (scope is None or row.get(SYS_SCOPE) == scope)
+            and (row.get(SYS_DURATION) or 0) >= BRIEF_NOTEWORTHY_SECONDS
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda row: row.get(SYS_DURATION) or 0)
+
+    def _quiet_run_sentences(
+        self, rows: list[dict[str, Any]]
+    ) -> list[str]:
+        """Return sentences for the interruptions worth telling.
+
+        A restart, a bridge outage and a broker outage are the same
+        shape of thing: the house stopped listening for a while. Each
+        is silent unless one instance ran long, and then it is told
+        on its own, with its length and its time, because that is the
+        only part a reader can act on.
+        """
+        said: list[str] = []
+        worst = self._longest(rows, SYS_RESTART)
+        if worst is not None:
+            said.append(
+                "The system was unwatched for "
+                f"{self._human_span(worst[SYS_DURATION])} at "
+                f"{self._brief_moment(worst[SYS_WHEN])}."
+            )
+        scopes: list[str] = []
+        for row in rows:
+            scope = row.get(SYS_SCOPE)
+            if row[SYS_KIND] == SYS_BRIDGE_UP and scope not in scopes:
+                scopes.append(scope)
+        for scope in scopes:
+            worst = self._longest(rows, SYS_BRIDGE_UP, scope)
+            if worst is not None:
+                said.append(
+                    f"The {scope} bridge was down for "
+                    f"{self._human_span(worst[SYS_DURATION])} at "
+                    f"{self._brief_moment(worst[SYS_WHEN])}."
+                )
+        worst = self._longest(rows, SYS_BROKER_UP)
+        if worst is not None:
+            said.append(
+                "The MQTT broker was down for "
+                f"{self._human_span(worst[SYS_DURATION])} at "
+                f"{self._brief_moment(worst[SYS_WHEN])}."
+            )
+        return said
+
+    def _options_sentence(self, rows: list[dict[str, Any]]) -> list[str]:
+        """Return one sentence naming what a person changed.
+
+        Never suppressed however often it happens, because this is
+        the sentence that explains why tomorrow's numbers moved. The
+        settings are named by their screen labels, deduplicated and
+        in the order first touched, since a person who changed the
+        same one five times changed one setting.
+        """
+        changes = [row for row in rows if row[SYS_KIND] == SYS_OPTIONS_CHANGED]
+        if not changes:
+            return []
+        names: list[str] = []
+        for row in changes:
+            for key in (row.get(SYS_DETAIL) or "").split(","):
+                label = self._option_label(key)
+                if label and label not in names:
+                    names.append(label)
+        listed = ", ".join(names)
+        if len(changes) == 1:
+            when = self._brief_moment(changes[0][SYS_WHEN])
+            return [f"Settings changed at {when}: {listed}."]
+        return [f"Settings changed {len(changes)} times: {listed}."]
+
+    def _storm_sentences(self, rows: list[dict[str, Any]]) -> list[str]:
+        """Return the storm sentences, grouped per integration.
+
+        A storm is an integration republishing its whole fleet, which
+        is never normal and never suppressed. Grouping is ruling
+        #230's, unchanged: a polling integration trips the detector
+        every cycle and the reference fleet produced twenty in an
+        hour.
+        """
         storms: dict[str, list[dict[str, Any]]] = {}
-        # Paired in time order, so a closing is only spoken where an
-        # opening preceded it. A closing with no opening says an
-        # integration settled when nothing was ever said to have
-        # started: 0.12.6 wrote one of those for a storm inside
-        # startup grace, and the row stays on disk until it ages
-        # out, so the reader refuses it as well as the writer
-        # (ruling #230). Counting per scope alone was not enough,
-        # because an integration can have a real storm and an orphan
-        # closing in the same window.
         pending: dict[str, int] = {}
         orphans: set[int] = set()
         for row in rows:
-            kind = row[SYS_KIND]
-            scope = row[SYS_SCOPE]
+            kind, scope = row[SYS_KIND], row[SYS_SCOPE]
             if kind == SYS_STORM_OPEN:
                 storms.setdefault(scope, []).append(row)
                 pending[scope] = pending.get(scope, 0) + 1
@@ -477,21 +605,19 @@ class BriefMixin:
         said: list[str] = []
         grouped: set[str] = set()
         for row in rows:
-            kind = row[SYS_KIND]
-            scope = row[SYS_SCOPE]
-            if kind in (SYS_STORM_OPEN, SYS_STORM_CLOSED):
-                if id(row) in orphans:
-                    continue
-                opens = storms.get(scope) or []
-                if len(opens) < 2:
-                    said.append(self._system_event_sentence(row))
-                    continue
-                if scope in grouped:
-                    continue
-                grouped.add(scope)
-                said.append(self._compose_storm_run(scope, opens, rows))
+            kind, scope = row[SYS_KIND], row[SYS_SCOPE]
+            if kind not in (SYS_STORM_OPEN, SYS_STORM_CLOSED):
                 continue
-            said.append(self._system_event_sentence(row))
+            if id(row) in orphans:
+                continue
+            opens = storms.get(scope) or []
+            if len(opens) < 2:
+                said.append(self._system_event_sentence(row))
+                continue
+            if scope in grouped:
+                continue
+            grouped.add(scope)
+            said.append(self._compose_storm_run(scope, opens, rows))
         return said
 
     def _compose_storm_run(
@@ -523,6 +649,32 @@ class BriefMixin:
             f"The {scope} integration reloaded {len(opens)} times "
             f"between {first} and {last}{tail}."
         )
+
+    def _other_house_sentences(
+        self, rows: list[dict[str, Any]]
+    ) -> list[str]:
+        """Return the house events that are neither runs nor storms.
+
+        Pairing windows, maintenance mode and an unclean restart keep
+        one sentence each. Every one of them is either rare or the
+        person's own doing, so none of them can flood the paragraph
+        the way a restart can.
+        """
+        handled = {
+            SYS_RESTART,
+            SYS_BRIDGE_DOWN,
+            SYS_BRIDGE_UP,
+            SYS_BROKER_DOWN,
+            SYS_BROKER_UP,
+            SYS_STORM_OPEN,
+            SYS_STORM_CLOSED,
+            SYS_OPTIONS_CHANGED,
+        }
+        return [
+            self._system_event_sentence(row)
+            for row in rows
+            if row[SYS_KIND] not in handled
+        ]
 
     def _tell_episodes(
         self,
@@ -574,7 +726,91 @@ class BriefMixin:
             groups.setdefault(key, []).append((opened, resolved))
         for key, members in groups.items():
             told[placed[key]] = self._compose_flood(key, members, spans)
-        return [line for line in told if line]
+        return self._collapse_flapping(
+            [line for line in told if line], pairs
+        )
+
+    def _collapse_flapping(
+        self,
+        told: list[str],
+        pairs: list[tuple[dict[str, Any], dict[str, Any] | None]],
+    ) -> list[str]:
+        """Return the told episodes with a flapping device said once.
+
+        Ruling #228 collapsed a flood across devices: one broker
+        outage taking seventy-four of them is one sentence. This
+        collapses the other axis, one device across time. A device
+        that stopped and recovered five times produced five sentences
+        that differed only in their clock times, and five of those
+        say less than one sentence with a count and a total does.
+
+        Unlike the house events, a count is the information here. An
+        interruption that repeats is not normal behaviour the way a
+        nightly reboot is: it is the shape of a dying device, and the
+        number of times is the symptom (ruling #276).
+        """
+        by_device: dict[str, list[tuple[dict, dict | None]]] = {}
+        for opened, resolved in pairs:
+            by_device.setdefault(opened[INC_DEVICE_ID], []).append(
+                (opened, resolved)
+            )
+        # A device that has never reported is one standing condition,
+        # not a device going and returning, so it keeps the sentence
+        # that says so. Pairing sees two rows and would otherwise
+        # read them as two silences.
+        flapping = {
+            device_id: members
+            for device_id, members in by_device.items()
+            if len(members) > 1
+            and not any(
+                opened.get(INC_KIND) == TODO_KIND_NOT_REPORTED
+                for opened, _resolved in members
+            )
+        }
+        if not flapping:
+            return told
+        kept = [
+            line
+            for line in told
+            if not any(
+                line.startswith(members[0][0][INC_NAME])
+                for members in flapping.values()
+            )
+        ]
+        for members in flapping.values():
+            kept.append(self._compose_flapping(members))
+        return kept
+
+    def _compose_flapping(
+        self, members: list[tuple[dict[str, Any], dict[str, Any] | None]]
+    ) -> str:
+        """Return one sentence for a device that went and came back
+        more than once: how often, and how long it was gone in all."""
+        name = members[0][0][INC_NAME]
+        went, state = self._flap_verbs(members[0][0])
+        total = sum(
+            (resolved.get(INC_DURATION) or 0.0)
+            for _opened, resolved in members
+            if resolved is not None
+        )
+        recovered = sum(1 for _o, r in members if r is not None)
+        count = "twice" if len(members) == 2 else f"{len(members)} times"
+        span = self._human_span(total) if total else None
+        tail = f", {state} for {span} in total" if span else ""
+        if recovered == len(members):
+            return f"{name} {went} {count} and recovered each time{tail}."
+        return f"{name} {went} {count} and is still {state}{tail}."
+
+    def _flap_verbs(self, opened: dict[str, Any]) -> tuple[str, str]:
+        """Return the going and the being for a kind of interruption.
+
+        A repeated interruption needs both: what the device did, and
+        what it was while it did it. One word cannot carry "went
+        unavailable" and "unavailable for 8m in total" at once.
+        """
+        if opened.get(INC_KIND) == TODO_KIND_UNAVAILABLE:
+            return "went unavailable", "unavailable"
+        return "went silent", "silent"
 
     def _compose_flood(
         self,

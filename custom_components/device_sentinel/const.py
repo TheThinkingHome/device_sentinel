@@ -1607,7 +1607,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 266
+HIGHEST_RULING = 277
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1633,6 +1633,19 @@ SYS_MAINTENANCE_OPEN = "maintenance_open"
 SYS_MAINTENANCE_CLOSED = "maintenance_closed"
 SYS_EPOCH_RESET = "epoch_reset"
 SYS_OPTIONS_CHANGED = "options_changed"
+
+# How long an interruption must last before the daily brief says
+# anything about it (ruling #275). In Short is read rather than
+# scanned, so a normal event earns no sentence: the tables below
+# carry every one for anyone looking. Five minutes was measured, not
+# chosen. On the reference fleet 113 restarts fall in two bands, 92
+# of them under 40 seconds and 20 between 99 and 126 seconds for the
+# nightly reboot, and one at 45 minutes; and 11 bridge outages run
+# 1.0 to 4.0 minutes for reboot artefacts against 11, 17 and 22 for
+# the real ones. Two minutes would have named the nightly reboot
+# twenty times; five names the one restart and the three outages that
+# were genuinely abnormal.
+BRIEF_NOTEWORTHY_SECONDS = 300.0
 # A restart with no clean-stop marker behind it (ruling #163).
 # Distinct from SYS_RESTART because the consequences differ: an
 # ordinary restart keeps every clock, this one resets all but the
