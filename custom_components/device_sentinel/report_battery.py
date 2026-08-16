@@ -359,7 +359,9 @@ threshold.</p>
 rate is the median daily change over the last {BATTERY_SLOPE_DAYS}
 days, and how long is left is the current level divided by it. It is
 said in words rather than a count of days on purpose: the projection
-moves, and it moves further the further out it reaches.</p>
+moves, and it moves further the further out it reaches. A cell reaches
+this table when its projection falls inside your Days Till Empty
+Warning setting, on the same screen as the threshold.</p>
 {falling_block}
 <h2>Under the Threshold</h2>
 {low_block}
@@ -373,8 +375,9 @@ moves, and it moves further the further out it reaches.</p>
 a steady reading is a healthy one rather than a stale one. Days left
 is a projection and it moves: it assumes the last {BATTERY_SLOPE_DAYS}
 days continue, which a failing cell often does not. Nothing on this
-page raises an alert; the low threshold on the Low Battery
-configuration screen is what does that. Written beside the daily
+page raises an alert; the Low Battery Threshold on the Low Battery
+configuration screen is what does that: Settings, Devices and
+Services, Device Sentinel, Configure, Low Battery. Written beside the daily
 brief and on Regenerate Reports, and renders on a dashboard with a
 Webpage card pointed at {REPORT_BATTERY_URL}. How to read this page:
 <a href="{WIKI_BASE_URL}/The-Battery-Report">The Battery Report</a>
