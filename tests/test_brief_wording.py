@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.11.8 (2026-08-04)
+# File: test_brief_wording.py, Version: 0.15.5 (2026-08-17)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -784,3 +784,68 @@ async def test_one_long_outage_is_the_only_thing_said(
     # The two-minute artefact and the 28-second restart say nothing.
     assert short.count("bridge") == 1
     assert "The system was unwatched" not in short
+
+
+async def test_every_system_event_kind_has_a_sentence(
+    hass: HomeAssistant,
+):
+    """No event kind may render as its own name (ruling #287).
+
+    storage_shape was added to the events log by 0.15.2 and never
+    given a branch in either renderer, so the brief read
+    "storage_shape at Aug 17, 8:14 AM" in the one section written for
+    a person, and the table below it read "The system | storage_shape".
+    Both renderers end in a fallback that prints the raw kind, and
+    nothing said which kinds were missing. This walks const.py, so a
+    kind added tomorrow fails here rather than appearing in somebody's
+    brief.
+    """
+    import custom_components.device_sentinel.const as const
+
+    kinds = sorted(
+        value
+        for name, value in vars(const).items()
+        if name.startswith("SYS_")
+        and isinstance(value, str)
+        and name
+        not in (
+            "SYS_WHEN",
+            "SYS_KIND",
+            "SYS_SCOPE",
+            "SYS_SCOPE_SYSTEM",
+            "SYS_DETAIL",
+            "SYS_DURATION",
+            "SYS_DEVICES",
+        )
+    )
+    assert len(kinds) >= 15, "the kind list did not build"
+    coord = await setup_coordinator(hass)
+    writer = coord
+    when = 1786970561.0
+    missing_sentence = []
+    missing_phrase = []
+    for kind in kinds:
+        row = {
+            const.SYS_KIND: kind,
+            const.SYS_SCOPE: "z2m",
+            const.SYS_WHEN: when,
+            const.SYS_DETAIL: "a detail",
+            const.SYS_DURATION: 120.0,
+            const.SYS_DEVICES: 3,
+        }
+        sentence = writer._system_event_sentence(row)
+        phrase = writer._system_event_phrase(row)
+        # The fallback has one shape, "<kind> at <when>.", so match
+        # that rather than searching for the kind anywhere: "restart"
+        # is a substring of the perfectly good sentence "The system
+        # restarted at ...".
+        if sentence.startswith(f"{kind} at "):
+            missing_sentence.append(kind)
+        if phrase == kind:
+            missing_phrase.append(kind)
+    assert not missing_sentence, (
+        f"kinds rendering as their own name in prose: {missing_sentence}"
+    )
+    assert not missing_phrase, (
+        f"kinds rendering as their own name in the table: {missing_phrase}"
+    )

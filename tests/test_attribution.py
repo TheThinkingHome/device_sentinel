@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.15.3 (2026-08-17)
+# File: tests/test_attribution.py, Version: 0.15.5 (2026-08-17)
 
 """What explains an incident, and what a flood reads as.
 
@@ -32,6 +32,7 @@ from custom_components.device_sentinel.const import (
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
     SYS_BRIDGE_DOWN,
+    SYS_BRIDGE_UP,
     SYS_BROKER_DOWN,
     SYS_BROKER_UP,
     SYS_DEVICES,
@@ -775,3 +776,93 @@ async def test_storm_rows_are_trimmed_at_two_days(hass: HomeAssistant):
     coord._trim_storms(T0)
     assert len(coord.data[DATA_STORMS]) == 1
     assert STORM_KEEP_SECONDS == 172800.0
+
+
+def test_an_unclosed_window_does_not_stay_open_forever():
+    """The 17 August fault: a bridge outage from the 2nd was still
+    explaining recoveries on the 17th (ruling #287).
+
+    An opening whose closing was never written stayed open with no
+    upper bound, and attribute() prefers the earliest window, so an
+    ancient orphan beat every real candidate.
+    """
+    events = [
+        {SYS_KIND: SYS_BRIDGE_DOWN, SYS_SCOPE: "z2m", SYS_WHEN: T0},
+        {SYS_KIND: SYS_RESTART, SYS_SCOPE: "system",
+         SYS_WHEN: T0 + 100, SYS_DURATION: 30.0},
+    ]
+    wins = [w for w in attribution.windows(events)
+            if w.kind == SYS_BRIDGE_DOWN]
+    assert len(wins) == 1
+    assert wins[0].end == T0 + 100, "the restart did not bound it"
+    assert wins[0].inferred_end is True
+    # A recovery a day later is not explained by it.
+    assert attribution.attribute(
+        attribution.windows(events), "mqtt", "z2m",
+        T0 + 86400, T0 + 86500,
+    ) is None
+
+
+def test_the_same_thing_opening_again_bounds_the_last_one():
+    """A bridge cannot go down twice without coming up in between,
+    so the second opening is proof the first ended."""
+    events = [
+        {SYS_KIND: SYS_STORM_OPEN, SYS_SCOPE: "tplink_router",
+         SYS_WHEN: T0},
+        {SYS_KIND: SYS_STORM_OPEN, SYS_SCOPE: "tplink_router",
+         SYS_WHEN: T0 + 36},
+    ]
+    wins = attribution.windows(events)
+    first, second = wins[0], wins[1]
+    assert first.end == T0 + 36 and first.inferred_end is True
+    assert second.end is None and second.inferred_end is False
+
+
+def test_a_window_with_nothing_after_it_stays_open():
+    """A bridge that is down right now is in effect, and bounding it
+    would lose the true attribution this file exists for."""
+    events = [{SYS_KIND: SYS_BRIDGE_DOWN, SYS_SCOPE: "z2m", SYS_WHEN: T0}]
+    win = attribution.windows(events)[0]
+    assert win.end is None and win.inferred_end is False
+    assert win.in_effect_at(T0 + 86400) is True
+
+
+def test_an_observed_pair_is_not_marked_inferred():
+    """The ordinary case has to stay ordinary."""
+    events = [
+        {SYS_KIND: SYS_BRIDGE_DOWN, SYS_SCOPE: "z2m", SYS_WHEN: T0},
+        {SYS_KIND: SYS_BRIDGE_UP, SYS_SCOPE: "z2m",
+         SYS_WHEN: T0 + 175, SYS_DURATION: 175.0},
+    ]
+    win = attribution.windows(events)[0]
+    assert win.end == T0 + 175
+    assert win.inferred_end is False
+    assert attribution.phrase(win) == (
+        "the z2m bridge going down and coming back"
+    )
+
+
+def test_an_inferred_end_never_claims_a_recovery():
+    """We know it ended. We do not know it came back."""
+    events = [
+        {SYS_KIND: SYS_BRIDGE_DOWN, SYS_SCOPE: "z2m", SYS_WHEN: T0},
+        {SYS_KIND: SYS_RESTART, SYS_SCOPE: "system",
+         SYS_WHEN: T0 + 100, SYS_DURATION: 30.0},
+    ]
+    win = attribution.windows(events)[0]
+    assert attribution.phrase(win) == "the z2m bridge going down"
+    assert "coming back" not in attribution.phrase(win)
+
+
+def test_a_device_silenced_at_the_moment_it_opened_keeps_its_cause():
+    """Bounding rather than discarding, so a true attribution
+    survives. The orphan still explains what it really caused."""
+    events = [
+        {SYS_KIND: SYS_BRIDGE_DOWN, SYS_SCOPE: "z2m", SYS_WHEN: T0},
+        {SYS_KIND: SYS_RESTART, SYS_SCOPE: "system",
+         SYS_WHEN: T0 + 100, SYS_DURATION: 30.0},
+    ]
+    win = attribution.attribute(
+        attribution.windows(events), "mqtt", "z2m", T0 + 5, T0 + 60
+    )
+    assert win is not None and win.kind == SYS_BRIDGE_DOWN
