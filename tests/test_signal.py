@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal.py, Version: 0.12.18 (2026-08-11)
+# File: test_signal.py, Version: 0.15.4 (2026-08-17)
 
 """Signal detection: the floor line, the dwell timer, and the rail.
 
@@ -45,6 +45,7 @@ from custom_components.device_sentinel.const import (
     SIGNAL_RAIL_RSSI,
     UNIT_SIGNALS,
 )
+from custom_components.device_sentinel.detect_signal import SignalMixin
 from custom_components.device_sentinel.coordinator import (
     _new_device_record,
 )
@@ -632,3 +633,139 @@ async def test_out_of_band_slider_falls_back_to_normal(hass: HomeAssistant):
     one, never blank."""
     coord = await _slider_coord(hass, 99)
     assert coord._signal_trim_label() == "Deepest"
+
+
+def _sig_entry(entity_id, device_class=None, unit=None, name=None):
+    """A registry-entry double carrying a unit (ruling #283)."""
+
+    class _E:
+        pass
+
+    e = _E()
+    e.entity_id = entity_id
+    e.unique_id = entity_id.split(".", 1)[1]
+    e.original_name = name
+    e.original_device_class = device_class
+    e.device_class = None
+    e.unit_of_measurement = unit
+    e.original_unit_of_measurement = unit
+    return e
+
+
+def test_a_percentage_called_rssi_is_refused():
+    """Tasmota's inversion, refused by unit rather than by vendor.
+
+    Tasmota reports RSSI as a 0 to 100 quality figure and Signal as
+    the dBm, so on a Tasmota device an entity called RSSI carries a
+    percentage. All seven such devices on the first ZHA fleet to send
+    data were consistent with 2 x (dBm + 100) clamped, one sitting
+    exactly on the clamp at -50 dBm against 100 percent, so it
+    restates a number already recorded.
+    """
+    for unit in ("%", "percent", "PERCENTAGE", " % "):
+        assert not SignalMixin._is_signal(
+            _sig_entry("sensor.tasmota_e13_rssi", unit=unit)
+        ), unit
+
+
+def test_the_dbm_entity_beside_it_is_kept():
+    """The same device's real measurement is untouched."""
+    assert SignalMixin._is_signal(
+        _sig_entry(
+            "sensor.tasmota_e13_signal",
+            device_class="signal_strength",
+            unit="dBm",
+        )
+    )
+
+
+def test_the_signal_strength_class_is_never_refused():
+    """Home Assistant permits only dB and dBm for that class, so an
+    entity carrying it cannot be a percentage and never reaches the
+    unit test. Asserted anyway, because the class is the one path
+    that must not depend on a unit being present."""
+    for unit in ("dBm", "dB", None, "%"):
+        assert SignalMixin._is_signal(
+            _sig_entry(
+                "sensor.master_city_blinds_signal_strength",
+                device_class="signal_strength",
+                unit=unit,
+            )
+        ), unit
+
+
+def test_a_unitless_name_match_is_kept():
+    """The narrowness of #283, which is the whole point of it.
+
+    Nothing in any diagnostics says what unit a Zigbee2MQTT
+    linkquality entity carries. A rule refusing every unrecognized
+    unit would have taken signal from 74 devices on the reference
+    fleet if the guess were wrong, so only a percentage is refused
+    and everything else is kept.
+    """
+    for unit in (None, "", "lqi", "LQI", "dBm", "arbitrary"):
+        assert SignalMixin._is_signal(
+            _sig_entry("sensor.door_master_linkquality", unit=unit)
+        ), unit
+
+
+def test_the_registry_unit_wins_over_the_original():
+    """A person can change a unit, and the changed one is what the
+    state carries, so it is the one that decides."""
+    ent = _sig_entry("sensor.plug_rssi", unit=None)
+    ent.original_unit_of_measurement = "dBm"
+    ent.unit_of_measurement = "%"
+    assert not SignalMixin._is_signal(ent)
+    ent.unit_of_measurement = "dBm"
+    ent.original_unit_of_measurement = "%"
+    assert SignalMixin._is_signal(ent)
+
+
+def test_an_entity_with_no_unit_attribute_at_all_is_kept():
+    """Older registry doubles and any entry without the field.
+
+    The recognizer must not depend on an attribute existing, because
+    a missing unit is not a percentage.
+    """
+
+    class _Bare:
+        entity_id = "sensor.door_master_lqi"
+        unique_id = "door_master_lqi"
+        original_name = None
+        original_device_class = None
+        device_class = None
+
+    assert SignalMixin._is_signal(_Bare())
+
+
+def test_the_two_real_fleets_classify_as_expected():
+    """Every signal entity naming pattern seen on either fleet.
+
+    The reference fleet loses nothing, and the ZHA fleet loses only
+    the percentage.
+    """
+    kept = [
+        _sig_entry("sensor.door_master_linkquality"),
+        _sig_entry("sensor.temperature_outdoors_linkquality"),
+        _sig_entry(
+            "sensor.stove_vent_relays_signal",
+            device_class="signal_strength",
+            unit="dBm",
+        ),
+        _sig_entry(
+            "sensor.master_city_blinds_signal_strength",
+            device_class="signal_strength",
+            unit="dBm",
+        ),
+        _sig_entry("sensor.s25_main_bath_toilet_leak_lqi"),
+        _sig_entry(
+            "sensor.s25_main_bath_toilet_leak_rssi",
+            device_class="signal_strength",
+            unit="dBm",
+        ),
+    ]
+    for ent in kept:
+        assert SignalMixin._is_signal(ent), ent.entity_id
+    assert not SignalMixin._is_signal(
+        _sig_entry("sensor.e13_grumpy_desk_dragon_light_rssi", unit="%")
+    )
