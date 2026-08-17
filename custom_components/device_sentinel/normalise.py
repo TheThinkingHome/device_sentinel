@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.15.3 (2026-08-17)
+# File: normalise.py, Version: 0.15.6 (2026-08-17)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -99,6 +99,9 @@ from .const import (
     DEV_TAINTED,
     DEV_TODAY_MAX,
     TAINT_REASONS,
+    DEV_SIGNAL_ALT,
+    DEV_SIGNAL_SCALE,
+    SIGNAL_ALT_FIELDS,
 )
 
 # The kinds a field may hold. Each is a plain predicate over one value.
@@ -110,6 +113,7 @@ FLOAT_SERIES = "list of numbers"
 INT_SERIES = "list of integers"
 STATE = "None or list of numbers"
 TAINT = "False or a taint reason"
+ALT = "None or a second-scale block"
 
 # Every field a record is expected to hold, and what shape it takes.
 # A key absent from this table is reported as unknown; a key in this
@@ -121,6 +125,8 @@ EXPECTED: dict[str, str] = {
     DEV_FIRST_OBSERVED: STRING,
     DEV_EVENT_COUNT: INTEGER,
     DEV_TAINTED: TAINT,
+    DEV_SIGNAL_SCALE: STRING,
+    DEV_SIGNAL_ALT: ALT,
     DEV_SET_ASIDE_SINCE: NUMBER,
     DEV_SIGNAL_VALUE: NUMBER,
     DEV_SIGNAL_TODAY_MIN: NUMBER,
@@ -207,6 +213,31 @@ def _fault(kind: str, value: Any) -> str | None:
             return _describe(value)
         bad = [x for x in value if not (isinstance(x, int) and not isinstance(x, bool))]
         return None if not bad else f"{len(bad)} bad element(s), first {_describe(bad[0])}"
+    if kind == ALT:
+        # None, or a block holding exactly the recording fields under
+        # the record's own names, each checked by the same table that
+        # checks the primary (ruling #286). A whole key rather than a
+        # scattering of optional fields, so every record still holds
+        # the same field count and the check above stays as strict as
+        # it was: nothing here is allowed to be absent-or-present.
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            return _describe(value)
+        extra = sorted(set(value) - set(SIGNAL_ALT_FIELDS))
+        if extra:
+            return f"unknown field(s) in the block: {', '.join(extra)}"
+        missing = sorted(set(SIGNAL_ALT_FIELDS) - set(value))
+        if missing:
+            return f"missing from the block: {', '.join(missing)}"
+        for field in SIGNAL_ALT_FIELDS:
+            inner = EXPECTED.get(field)
+            if inner is None or inner == ALT:
+                continue
+            fault = _fault(inner, value[field])
+            if fault is not None:
+                return f"{field}: {fault}"
+        return None
     if kind == TAINT:
         # False or one of the four reasons, tested by identity for the
         # False so that 0 and 1 are both faults: the field was a flag

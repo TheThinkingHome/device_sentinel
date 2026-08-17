@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.15.4 (2026-08-17)
+# File: coordinator.py, Version: 0.15.6 (2026-08-17)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -111,6 +111,7 @@ from .const import (
     DEV_LAST_ACTIVITY,
     DEV_SET_ASIDE_SINCE,
     DEV_SIGNAL_DAILY_MEAN,
+    DEV_SIGNAL_ALT,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_TODAY_MIN,
@@ -553,6 +554,21 @@ class DeviceSentinelCoordinator(
             loaded[DATA_DEVICES], repair
         )
         loaded[DATA_SIGNAL_DAY_REPAIR] = SIGNAL_DAY_REPAIR_MARK
+        # A history holding two scales at once cannot be separated
+        # after the fact, so it goes (ruling #282). Judged on the
+        # data rather than on a version, so a device that grows a
+        # second signal entity next month is treated the same.
+        mixed = self._clear_mixed_signal(loaded[DATA_DEVICES])
+        if mixed:
+            LOGGER.warning(
+                "Signal history discarded for %d device(s) whose "
+                "recorded readings held two different measurements at "
+                "once, RSSI in dBm and LQI on 0 to 255. The two are "
+                "recorded apart from now on and nothing says which "
+                "past reading came from which sensor: %s",
+                len(mixed),
+                ", ".join(self._device_name(d) for d in mixed[:20]),
+            )
         if converted:
             LOGGER.info(
                 "Signal statistics: converted the day in progress for "
@@ -1689,12 +1705,19 @@ class DeviceSentinelCoordinator(
                 del record[DEV_DAILY_MAX][:-self.retention_days]
                 record[DEV_TODAY_MAX] = None
                 pushed += 1
-            if record.get(DEV_SIGNAL_TODAY_MIN) is not None:
-                record[DEV_SIGNAL_DAILY_MIN].append(
-                    record[DEV_SIGNAL_TODAY_MIN]
-                )
-                del record[DEV_SIGNAL_DAILY_MIN][:-self.retention_days]
-                record[DEV_SIGNAL_TODAY_MIN] = None
+            # The day's low, for the primary and for a second scale
+            # if the device has one (ruling #285).
+            for bucket in (record, record.get(DEV_SIGNAL_ALT)):
+                if bucket is None:
+                    continue
+                if bucket.get(DEV_SIGNAL_TODAY_MIN) is not None:
+                    bucket[DEV_SIGNAL_DAILY_MIN].append(
+                        bucket[DEV_SIGNAL_TODAY_MIN]
+                    )
+                    del bucket[DEV_SIGNAL_DAILY_MIN][
+                        :-self.retention_days
+                    ]
+                    bucket[DEV_SIGNAL_TODAY_MIN] = None
             self._roll_dwell(record, now)
             self._roll_battery(record)
         # The roll is what confirms a rail (three daily lows at the

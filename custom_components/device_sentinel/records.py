@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.13.5 (2026-08-13)
+# File: records.py, Version: 0.15.6 (2026-08-17)
 
 """The device record shape, and the two helpers that read it.
 
@@ -63,6 +63,8 @@ from .const import (
     DEV_SIGNAL_TODAY_MAX,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
+    DEV_SIGNAL_ALT,
+    DEV_SIGNAL_SCALE,
     DEV_TAINTED,
     DEV_TODAY_MAX,
 )
@@ -116,6 +118,11 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         # aside otherwise, so a gap spanning a disabling is refused
         # rather than learned (ruling #257).
         DEV_SET_ASIDE_SINCE: None,
+        # Which scale the fields below are measured on, and the
+        # second scale when a device publishes one (ruling #285).
+        # None until the first reading says.
+        DEV_SIGNAL_SCALE: None,
+        DEV_SIGNAL_ALT: None,
         DEV_SIGNAL_VALUE: None,
         DEV_SIGNAL_TODAY_MIN: None,
         DEV_SIGNAL_DAILY_MIN: [],

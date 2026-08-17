@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.12.21 (2026-08-12)
+# File: store.py, Version: 0.15.6 (2026-08-17)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -27,10 +27,18 @@ from .records import _new_device_record, _reset_signal_day, _span
 
 from .const import (
     DEV_SIGNAL_COUNT,
+    DEV_SIGNAL_DAILY_MAX,
+    DEV_SIGNAL_DAILY_MEAN,
+    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_M2,
     DEV_SIGNAL_MEAN_RUN,
     DEV_SIGNAL_SUM,
     DEV_SIGNAL_SUM_SQ,
+    DEV_SIGNAL_TODAY_MAX,
+    DEV_SIGNAL_TODAY_MIN,
+    DEV_SIGNAL_VALUE,
     CLOCK_FIELDS,
     COALESCE_MINUTES_MAX,
     COALESCE_MINUTES_MIN,
@@ -169,6 +177,65 @@ class StorageMixin:
                 _reset_signal_day(record)
                 reset += 1
         return converted, reset
+
+    def _clear_mixed_signal(self, devices: dict[str, Any]) -> list[str]:
+        """Discard a signal history that holds two scales at once.
+
+        Until 0.15.6 every entity matching the signal recognizer fed
+        one series, so a ZHA device's RSSI in dBm and its LQI on 0 to
+        255 both landed in the same numbers (ruling #282). Nothing in
+        the stored figures says which reading came from which sensor,
+        so the mixture cannot be separated after the fact and the
+        history has to go.
+
+        The test is the data rather than a version marker: a retained
+        series that runs from negative to positive is not one
+        measurement, whatever wrote it. That finds the Tasmota
+        devices too, whose percentage 0.15.4 stopped accepting but
+        whose recorded days still hold it, and it keeps working for a
+        device that grows a second entity next month. On the fleet
+        that found this, the test picks out 7 of 7 Tasmota devices
+        and 34 of 39 ZHA devices, and none of the 118 on a fleet that
+        publishes one scale per device.
+        """
+        cleared: list[str] = []
+        for device_id, record in devices.items():
+            seen: list[float] = []
+            for field in (
+                DEV_SIGNAL_DAILY_MAX,
+    DEV_SIGNAL_DAILY_MEAN,
+    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_SIGNAL_DAILY_P50,
+                DEV_SIGNAL_DAILY_MAX,
+                DEV_SIGNAL_DAILY_MEAN,
+                DEV_SIGNAL_DAILY_P5,
+                DEV_SIGNAL_DAILY_P50,
+            ):
+                seen.extend(
+                    value
+                    for value in (record.get(field) or [])
+                    if isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                )
+            for field in (
+                DEV_SIGNAL_VALUE,
+                DEV_SIGNAL_TODAY_MIN,
+                DEV_SIGNAL_TODAY_MAX,
+            ):
+                value = record.get(field)
+                if isinstance(value, (int, float)) and not isinstance(
+                    value, bool
+                ):
+                    seen.append(value)
+            if not seen or min(seen) >= 0 or max(seen) < 0:
+                continue
+            fresh = _new_device_record("", None)
+            for field in fresh:
+                if field.startswith("signal_"):
+                    record[field] = fresh[field]
+            cleared.append(device_id)
+        return cleared
 
     @callback
     def _data_to_save(self) -> dict[str, Any]:

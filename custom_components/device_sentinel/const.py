@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.15.5 (2026-08-17)
+# File: const.py, Version: 0.15.6 (2026-08-17)
 
 """Constants for the Device Sentinel integration."""
 
@@ -572,6 +572,69 @@ DEV_SIGNAL_RAIL_COUNT = "signal_rail_count"
 # low series, not this.
 DEV_SIGNAL_LAST_CHANGE = "signal_last_change"
 
+# The two scales a link is measured on, and where the second one
+# lives (rulings #282, #284, #285, #286).
+#
+# RSSI is the radio's own power reading in dBm and is negative at any
+# Zigbee receiver; LQI is the mesh's quality score on 0 to 255. A
+# device that publishes both had them landing in one series until
+# 0.15.6: one ZHA device spanned -66 to 247 inside two hours, and
+# every figure drawn from such a series is void.
+#
+# Scale is decided by the sign of the reading rather than by a label.
+# Across the two fleets that have sent data, 4,209 negative readings
+# and 4,040 non-negative, with no overlap: positives run 0 to 255 and
+# negatives -106 to -1. Zero is a valid LQI meaning the worst the
+# scale can express and is not a plausible RSSI, so it belongs with
+# LQI. The rails below have told the scales apart by value since
+# signal shipped.
+SIGNAL_SCALE_RSSI = "rssi"
+SIGNAL_SCALE_LQI = "lqi"
+DEV_SIGNAL_SCALE = "signal_scale"
+
+# The second scale, when a device has one: None, or a block holding
+# the same recording fields under the same names. One key rather than
+# a fixed set of extra fields, because JSON stores field names and an
+# empty block of twenty-one of them costs 531 bytes on every record
+# in every fleet, most of which will never have a second scale. Null
+# costs 20 (ruling #286).
+#
+# The names inside are the record's own names rather than short
+# forms. Short names measured 8 KB smaller on a 276-device ZHA fleet
+# and would need a map between two spellings of one field, which is
+# the object #277 refused: a second copy that parts from the first
+# the day somebody adds a field and updates only one of them.
+DEV_SIGNAL_ALT = "signal_alt"
+
+# What the alternate block carries: everything recorded, and nothing
+# judged. The line, the dwell timer and the below-the-line clock stay
+# on the primary alone, because #285 records both scales and judges
+# only one until the data says which deserves it.
+SIGNAL_ALT_FIELDS = (
+    DEV_SIGNAL_SCALE,
+    DEV_SIGNAL_VALUE,
+    DEV_SIGNAL_TODAY_MIN,
+    DEV_SIGNAL_TODAY_MAX,
+    DEV_SIGNAL_COUNT,
+    DEV_SIGNAL_READS,
+    DEV_SIGNAL_MEAN_RUN,
+    DEV_SIGNAL_M2,
+    DEV_SIGNAL_P5_STATE,
+    DEV_SIGNAL_P50_STATE,
+    DEV_SIGNAL_PSQ_VALUE,
+    DEV_SIGNAL_PSQ_TS,
+    DEV_SIGNAL_LAST_CHANGE,
+    DEV_SIGNAL_RAIL_COUNT,
+    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_MAX,
+    DEV_SIGNAL_DAILY_MEAN,
+    DEV_SIGNAL_DAILY_SD,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_SIGNAL_DAILY_P50,
+    DEV_SIGNAL_DAILY_COUNT,
+    DEV_SIGNAL_DAILY_RAIL,
+)
+
 # Signal-entity recognition terms (Z2M sets no device class on
 # linkquality; ZHA/Z-Wave use device_class signal_strength).
 SIGNAL_NAME_TERMS = ("linkquality", "lqi", "rssi")
@@ -981,7 +1044,15 @@ DEV_FROZEN_SINCE = "frozen_since"
 # constant's value changing would have moved CLOCK_FIELDS and left
 # this behind, and the failure would have been a field quietly
 # surviving a wipe (ruling #207).
+# The second scale's soak is kept for the same reason the first
+# one's is: an epoch reset drops learned rhythm and keeps signal
+# history, and keeping one scale's while destroying the other's would
+# leave a device half remembered. The scale label rides with it,
+# because a block whose partner had been forgotten would let the next
+# reading put the same scale on both sides of the record.
 EPOCH_KEPT = (
+    DEV_SIGNAL_SCALE,
+    DEV_SIGNAL_ALT,
     DEV_SIGNAL_READS,
     DEV_SET_ASIDE_SINCE,
     DEV_LAST_ACTIVITY,
@@ -1645,7 +1716,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 287
+HIGHEST_RULING = 288
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

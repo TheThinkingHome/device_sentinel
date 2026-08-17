@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.15.4 (2026-08-17)
+# File: detect_signal.py, Version: 0.15.6 (2026-08-17)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -76,8 +76,13 @@ from .const import (
     SIGNAL_LQI_PERFECT,
     SIGNAL_MARGIN_MAX,
     SIGNAL_MARGIN_MIN,
+    SIGNAL_ALT_FIELDS,
     SIGNAL_NAME_TERMS,
     SIGNAL_REFUSED_UNITS,
+    SIGNAL_SCALE_LQI,
+    SIGNAL_SCALE_RSSI,
+    DEV_SIGNAL_ALT,
+    DEV_SIGNAL_SCALE,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
     SIGNAL_RED_MAX,
@@ -95,6 +100,81 @@ from .psquare import (
     psquare_read,
 )
 from .records import _reset_signal_day
+
+
+def scale_of(value: float) -> str:
+    """Return which scale a reading is on, from its sign (ruling #284).
+
+    RSSI is power in dBm and is negative at any Zigbee receiver. LQI
+    runs 0 to 255. Across the two fleets that have sent data there is
+    no overlap: 4,209 negative readings and 4,040 non-negative,
+    positives spanning 0 to 255 and negatives -106 to -1.
+
+    Zero goes to LQI. It is a valid link quality, the worst the scale
+    can express, and it is not a plausible received power: 0 dBm is a
+    milliwatt arriving at a Zigbee receiver.
+    """
+    return SIGNAL_SCALE_RSSI if value < 0 else SIGNAL_SCALE_LQI
+
+
+def _new_alt_block(scale: str) -> dict[str, Any]:
+    """An empty second-scale block, holding only what is recorded."""
+    block: dict[str, Any] = {}
+    for field in SIGNAL_ALT_FIELDS:
+        if field == DEV_SIGNAL_SCALE:
+            block[field] = scale
+        elif field.endswith(("_state",)):
+            block[field] = None
+        elif field.startswith("signal_daily_"):
+            block[field] = []
+        elif field in ("signal_count", "signal_reads", "signal_rail_count"):
+            block[field] = 0
+        elif field in ("signal_mean_run", "signal_m2"):
+            block[field] = 0.0
+        else:
+            block[field] = None
+    return block
+
+
+def signal_bucket(record: dict[str, Any], scale: str) -> dict[str, Any]:
+    """Return the place a reading on this scale belongs.
+
+    The primary scale's fields sit at the top of the record, where
+    every report, sensor and chart already reads them. A second scale
+    goes in signal_alt under the same names, recorded and not judged
+    (rulings #285, #286).
+
+    RSSI takes precedence where a device has both. A device whose LQI
+    entity happened to report first therefore has to hand the primary
+    over when its RSSI arrives, and the block already holding LQI
+    becomes the alternate. Doing it by swapping the two rather than
+    by discarding either keeps whatever each has already learned.
+    """
+    current = record.get(DEV_SIGNAL_SCALE)
+    if current is None:
+        record[DEV_SIGNAL_SCALE] = scale
+        return record
+    if scale == current:
+        return record
+    alt = record.get(DEV_SIGNAL_ALT)
+    if scale == SIGNAL_SCALE_RSSI:
+        # The new scale outranks the sitting one, so they trade
+        # places: what was primary moves into the block, and the
+        # block's contents, if any, come up to the top.
+        demoted = {
+            field: record.get(field) for field in SIGNAL_ALT_FIELDS
+        }
+        demoted[DEV_SIGNAL_SCALE] = current
+        promoted = alt if alt is not None else _new_alt_block(scale)
+        for field in SIGNAL_ALT_FIELDS:
+            record[field] = promoted.get(field)
+        record[DEV_SIGNAL_SCALE] = scale
+        record[DEV_SIGNAL_ALT] = demoted
+        return record
+    if alt is None:
+        alt = _new_alt_block(scale)
+        record[DEV_SIGNAL_ALT] = alt
+    return alt
 
 
 def _entity_unit(ent: er.RegistryEntry) -> str:
@@ -152,6 +232,15 @@ class SignalMixin:
     def _roll_signal_stats(
         self, record: dict[str, Any], fold_now: float
     ) -> None:
+        """Fold the primary, then the second scale if there is one."""
+        self._roll_one_scale(record, fold_now, judged=True)
+        alt = record.get(DEV_SIGNAL_ALT)
+        if alt is not None:
+            self._roll_one_scale(alt, fold_now, judged=False)
+
+    def _roll_one_scale(
+        self, record: dict[str, Any], fold_now: float, judged: bool = True
+    ) -> None:
         """Close the day's signal distribution into the daily series.
 
         Mean and standard deviation are what the Bayesian successor to
@@ -184,7 +273,7 @@ class SignalMixin:
             # still end on yesterday: this is the line that judged
             # the day being folded, and appending today's mean first
             # would move the ceiling under it (ruling #245).
-            line = self._danger_line(record)
+            line = self._danger_line(record) if judged else None
             variance = max(0.0, m2 / count)
             record.setdefault(DEV_SIGNAL_DAILY_MEAN, []).append(
                 round(mean, 2)
@@ -235,22 +324,25 @@ class SignalMixin:
             record.setdefault(DEV_SIGNAL_DAILY_COUNT, []).append(
                 int(record.get(DEV_SIGNAL_READS) or 0)
             )
-            record.setdefault(DEV_SIGNAL_DAILY_LINE, []).append(
-                round(line, 2) if line is not None else None
-            )
+            if judged:
+                record.setdefault(DEV_SIGNAL_DAILY_LINE, []).append(
+                    round(line, 2) if line is not None else None
+                )
             record.setdefault(DEV_SIGNAL_DAILY_RAIL, []).append(
                 int(record.get(DEV_SIGNAL_RAIL_COUNT) or 0)
             )
-            for field in (
+            trimmed = [
                 DEV_SIGNAL_DAILY_MEAN,
                 DEV_SIGNAL_DAILY_SD,
                 DEV_SIGNAL_DAILY_P5,
                 DEV_SIGNAL_DAILY_P50,
                 DEV_SIGNAL_DAILY_MAX,
                 DEV_SIGNAL_DAILY_COUNT,
-                DEV_SIGNAL_DAILY_LINE,
                 DEV_SIGNAL_DAILY_RAIL,
-            ):
+            ]
+            if judged:
+                trimmed.append(DEV_SIGNAL_DAILY_LINE)
+            for field in trimmed:
                 del record[field][:-self.retention_days]
         # The naive accumulators are legacy after #254: the fold
         # removes them so a migrated record sheds them at its first
@@ -273,23 +365,29 @@ class SignalMixin:
         the gap since last_change is how long the signal has been
         flat while the device kept reporting.
         """
-        previous = record.get(DEV_SIGNAL_VALUE)
+        # Which of the device's scales this reading belongs to. The
+        # primary is the record itself; a second scale is its own
+        # block, recorded and never judged (rulings #284, #285).
+        bucket = signal_bucket(record, scale_of(value))
+        judged = bucket is record
+
+        previous = bucket.get(DEV_SIGNAL_VALUE)
         if previous is None or value != previous:
-            record[DEV_SIGNAL_LAST_CHANGE] = now
-        record[DEV_SIGNAL_VALUE] = value
+            bucket[DEV_SIGNAL_LAST_CHANGE] = now
+        bucket[DEV_SIGNAL_VALUE] = value
 
         if value in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI):
-            record[DEV_SIGNAL_RAIL_COUNT] = (
-                int(record.get(DEV_SIGNAL_RAIL_COUNT) or 0) + 1
+            bucket[DEV_SIGNAL_RAIL_COUNT] = (
+                int(bucket.get(DEV_SIGNAL_RAIL_COUNT) or 0) + 1
             )
             return
-        record[DEV_SIGNAL_READS] = int(record.get(DEV_SIGNAL_READS) or 0) + 1
-        today_min = record.get(DEV_SIGNAL_TODAY_MIN)
+        bucket[DEV_SIGNAL_READS] = int(bucket.get(DEV_SIGNAL_READS) or 0) + 1
+        today_min = bucket.get(DEV_SIGNAL_TODAY_MIN)
         if today_min is None or value < today_min:
-            record[DEV_SIGNAL_TODAY_MIN] = value
-        today_max = record.get(DEV_SIGNAL_TODAY_MAX)
+            bucket[DEV_SIGNAL_TODAY_MIN] = value
+        today_max = bucket.get(DEV_SIGNAL_TODAY_MAX)
         if today_max is None or value > today_max:
-            record[DEV_SIGNAL_TODAY_MAX] = value
+            bucket[DEV_SIGNAL_TODAY_MAX] = value
         # The day's four figures all weigh minutes (ruling #259): the
         # mean and deviation are fed by _feed_percentiles on the same
         # clock as P5 and the median, so a device reporting once an
@@ -298,8 +396,12 @@ class SignalMixin:
         # readings instead let a busy hour outvote a quiet one, and
         # on this fleet reporting rates differ by two orders of
         # magnitude.
-        self._feed_percentiles(record, now=now, new_value=value)
-        self._feed_dwell(record, value, now)
+        self._feed_percentiles(bucket, now=now, new_value=value)
+        if judged:
+            # The dwell timer runs against the danger line, and the
+            # line belongs to the primary alone until the data says
+            # which scale deserves to be judged (ruling #285).
+            self._feed_dwell(record, value, now)
 
     def _welford_state(
         self, record: dict[str, Any]
