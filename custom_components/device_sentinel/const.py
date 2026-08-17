@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.15.3 (2026-08-17)
+# File: const.py, Version: 0.15.4 (2026-08-17)
 
 """Constants for the Device Sentinel integration."""
 
@@ -575,6 +575,31 @@ DEV_SIGNAL_LAST_CHANGE = "signal_last_change"
 # Signal-entity recognition terms (Z2M sets no device class on
 # linkquality; ZHA/Z-Wave use device_class signal_strength).
 SIGNAL_NAME_TERMS = ("linkquality", "lqi", "rssi")
+
+# Units that mean the entity is not a signal measurement at all
+# (ruling #283). Tasmota reports RSSI as a 0 to 100 quality figure
+# and Signal as the dBm, inverted from every other vendor, so on a
+# Tasmota device an entity called RSSI carries a percentage and
+# reaches the recognizer through the name term above. It is derived
+# rather than measured: on the first ZHA fleet to send data, all
+# seven Tasmota devices were consistent with 2 x (dBm + 100) clamped
+# to 0 and 100, one of them sitting exactly on the clamp at -50 dBm
+# against 100 percent. It restates a number already recorded.
+#
+# The refusal is by unit and not by vendor, because #248 named
+# entities by what somebody had called them and was wrong in both
+# directions. Home Assistant permits only dB and dBm for
+# device_class signal_strength, so an entity carrying that class can
+# never be a percentage and is never reached by this test.
+#
+# It is also deliberately narrow. A rule that refused every unit it
+# did not recognize was rejected: nothing in any diagnostics carries
+# the unit of a Zigbee2MQTT linkquality entity, and a rule written
+# against a guess would have taken signal away from 74 devices on
+# the reference fleet if the guess were wrong. Refusing one unit
+# fails toward recording, which is visible and fixable, rather than
+# toward silence.
+SIGNAL_REFUSED_UNITS = ("%", "percent", "percentage")
 # The foreign-measurement terms of ruling #248 were deleted here. They
 # named entities by what somebody had called them, which caught an
 # ESPHome node's own RSSI because the sensor is called WiFi Signal and
@@ -1620,7 +1645,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 278
+HIGHEST_RULING = 286
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

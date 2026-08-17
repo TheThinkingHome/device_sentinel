@@ -77,6 +77,7 @@ from .const import (
     SIGNAL_MARGIN_MAX,
     SIGNAL_MARGIN_MIN,
     SIGNAL_NAME_TERMS,
+    SIGNAL_REFUSED_UNITS,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
     SIGNAL_RED_MAX,
@@ -94,6 +95,24 @@ from .psquare import (
     psquare_read,
 )
 from .records import _reset_signal_day
+
+
+def _entity_unit(ent: er.RegistryEntry) -> str:
+    """Return an entity's unit, preferring the registry's override.
+
+    A person can change a unit in the registry, and the changed one
+    is what the state will carry, so it is the one that decides.
+    """
+    for name in ("unit_of_measurement", "original_unit_of_measurement"):
+        value = getattr(ent, name, None)
+        if value:
+            return str(value).strip().lower()
+    return ""
+
+
+def _is_percentage(ent: er.RegistryEntry) -> bool:
+    """Is this entity measured in percent (ruling #283)?"""
+    return _entity_unit(ent) in SIGNAL_REFUSED_UNITS
 
 
 class SignalMixin:
@@ -700,7 +719,14 @@ class SignalMixin:
             for x in (ent.entity_id, ent.unique_id, ent.original_name)
             if x
         ).lower()
-        return any(term in hay for term in SIGNAL_NAME_TERMS)
+        if not any(term in hay for term in SIGNAL_NAME_TERMS):
+            return False
+        # Matched by name only, so the unit decides (ruling #283). A
+        # percentage here is a quality figure wearing the name of a
+        # measurement, which is Tasmota's RSSI. Home Assistant allows
+        # only dB and dBm for the signal_strength class, so nothing
+        # carrying that class reaches this line.
+        return not _is_percentage(ent)
 
     @property
     def signal_tracked(self) -> dict[str, int]:

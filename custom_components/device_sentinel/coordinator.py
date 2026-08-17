@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.15.3 (2026-08-17)
+# File: coordinator.py, Version: 0.15.4 (2026-08-17)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -42,7 +42,7 @@ Core rules implemented here, all ruled in the project document:
 
 from __future__ import annotations
 
-from collections import deque
+from collections import Counter, deque
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
@@ -164,7 +164,7 @@ from .const import (
 )
 from .detect_battery import BatteryMixin
 from .detect_freeze import FreezeMixin
-from .detect_signal import SignalMixin
+from .detect_signal import SignalMixin, _entity_unit, _is_percentage
 from .interventions import InterventionMixin
 from .journal import JournalMixin
 from .messenger import MessengerMixin
@@ -946,6 +946,9 @@ class DeviceSentinelCoordinator(
         last_seen_entity: dict[str, str] = {}
         device_entries: dict[str, set[str]] = {}
         signal_entities: set[str] = set()
+        signal_units: Counter[str] = Counter()
+        per_device_signals: Counter[str] = Counter()
+        refused_signals: list[str] = []
         signal_devices: set[str] = set()
         battery_entity: dict[str, tuple[str, bool]] = {}
         deviceless = 0
@@ -975,6 +978,14 @@ class DeviceSentinelCoordinator(
                 if ent.disabled_by is None:
                     signal_entities.add(ent.entity_id)
                     signal_devices.add(ent.device_id)
+                    signal_units[_entity_unit(ent) or "(none)"] += 1
+                    per_device_signals[ent.device_id] += 1
+            elif ent.disabled_by is None and _is_percentage(ent):
+                # Refused by #283, and counted rather than dropped in
+                # silence: a refusal nobody can see is the same
+                # mistake as a check that only reports when it is
+                # quiet.
+                refused_signals.append(ent.entity_id)
             if ent.disabled_by is None and self._is_battery(ent):
                 is_binary = ent.entity_id.startswith("binary_sensor.")
                 current = battery_entity.get(ent.device_id)
@@ -1043,6 +1054,9 @@ class DeviceSentinelCoordinator(
         self._last_seen_entity = last_seen_entity
         self._device_entries = device_entries
         self._signal_entities = signal_entities
+        self._log_signal_census(
+            signal_units, per_device_signals, refused_signals
+        )
         self._signal_devices = signal_devices
         self._battery_entity = battery_entity
         self._battery_entity_reverse = {
@@ -2096,6 +2110,51 @@ class DeviceSentinelCoordinator(
                 "Enable %s turned on: %s", kind, ", ".join(enabled_ids)
             )
         return {"enabled": enabled, "by_hand": by_hand}
+
+    def _log_signal_census(
+        self,
+        units: Counter,
+        per_device: Counter,
+        refused: list[str],
+    ) -> None:
+        """Say what signal units this fleet actually publishes.
+
+        Written because the next release has to classify the two
+        scales apart, and nothing anywhere records what unit a
+        Zigbee2MQTT linkquality entity carries or a ZHA LQI sensor
+        carries. Guessing was the alternative and #283 rejected it.
+        One line per start, so two fleets answer it without shipping
+        an observation release ahead of the recording one.
+
+        The second line is the count that matters more: a device with
+        more than one accepted signal entity is a device whose series
+        is a mixture of two measurements (ruling #282). On a
+        Zigbee2MQTT fleet it is zero, which is why the fault was
+        invisible for the life of the project.
+        """
+        if not units:
+            return
+        spread = ", ".join(
+            f"{unit} x{count}" for unit, count in sorted(units.items())
+        )
+        LOGGER.info("Signal units in use: %s", spread)
+        doubled = sorted(
+            device for device, count in per_device.items() if count > 1
+        )
+        if doubled:
+            LOGGER.info(
+                "%d device(s) report more than one signal entity, so "
+                "their signal series mixes two measurements: %s",
+                len(doubled),
+                ", ".join(self._device_name(d) for d in doubled[:20]),
+            )
+        if refused:
+            LOGGER.info(
+                "%d signal entity(s) refused as a percentage rather "
+                "than a measurement: %s",
+                len(refused),
+                ", ".join(sorted(refused)[:20]),
+            )
 
     async def async_enable_signal_entities(self) -> dict[str, int]:
         """Enable every disabled signal-strength entity (ruling #257)."""
