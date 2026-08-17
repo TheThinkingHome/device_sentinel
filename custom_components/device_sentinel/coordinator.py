@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.13.10 (2026-08-13)
+# File: coordinator.py, Version: 0.15.3 (2026-08-17)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -29,9 +29,12 @@ Core rules implemented here, all ruled in the project document:
 - Service-type devices are classified out entirely (no clocks, no
   statistics, no storage), with a startup audit log naming them.
 - The completed-gap principle: learning ingests only finished gaps.
-- The startup grace and the storm detector exclude echo stamps
-  (restored states, republishes) from learning while still keeping
-  the activity clock current.
+- The startup grace and the storm detector count the bursts a
+  restart or a reconnect produces. Neither excludes anything from
+  learning: an echo carries no evidence that the device spoke,
+  because the protocol clock behind it has not moved, and for a
+  device without one the exclusions were discarding the only
+  evidence there was (rulings #124 and #125).
 - The taint rule: a gap that spans an unavailable stretch is an
   outage, not normal silence, and never feeds statistics.
 - Daily maxima roll at local midnight into a bounded per-device set.

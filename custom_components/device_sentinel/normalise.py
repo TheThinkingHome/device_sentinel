@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.15.2 (2026-08-17)
+# File: normalise.py, Version: 0.15.3 (2026-08-17)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -42,6 +42,16 @@ hold integers where every sibling holds floats. A checker written from
 the template alone would have fired on every device on the first boot.
 The shapes below were read off a live file of 118 records before a
 line was written.
+
+And why a file is not enough either. That file was a snapshot, and a
+snapshot cannot show a field whose type depends on what the fleet was
+doing at the time. Every one of its 118 records held tainted as False,
+because nothing was tainted that minute, so the field was recorded as
+a boolean when #164 had already made it False or one of four reason
+strings. It fired on the first live taint, on 17 August, and cost that
+boot its last-good copy. A field is checked against what the code can
+write into it, not against what one file happened to hold; the test
+beside this walks the TAINT_REASONS tuple for exactly that reason.
 """
 
 from __future__ import annotations
@@ -88,6 +98,7 @@ from .const import (
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     DEV_TODAY_MAX,
+    TAINT_REASONS,
 )
 
 # The kinds a field may hold. Each is a plain predicate over one value.
@@ -98,6 +109,7 @@ BOOLEAN = "boolean"
 FLOAT_SERIES = "list of numbers"
 INT_SERIES = "list of integers"
 STATE = "None or list of numbers"
+TAINT = "False or a taint reason"
 
 # Every field a record is expected to hold, and what shape it takes.
 # A key absent from this table is reported as unknown; a key in this
@@ -108,7 +120,7 @@ EXPECTED: dict[str, str] = {
     DEV_TODAY_MAX: NUMBER,
     DEV_FIRST_OBSERVED: STRING,
     DEV_EVENT_COUNT: INTEGER,
-    DEV_TAINTED: BOOLEAN,
+    DEV_TAINTED: TAINT,
     DEV_SET_ASIDE_SINCE: NUMBER,
     DEV_SIGNAL_VALUE: NUMBER,
     DEV_SIGNAL_TODAY_MIN: NUMBER,
@@ -195,6 +207,14 @@ def _fault(kind: str, value: Any) -> str | None:
             return _describe(value)
         bad = [x for x in value if not (isinstance(x, int) and not isinstance(x, bool))]
         return None if not bad else f"{len(bad)} bad element(s), first {_describe(bad[0])}"
+    if kind == TAINT:
+        # False or one of the four reasons, tested by identity for the
+        # False so that 0 and 1 are both faults: the field was a flag
+        # before #164 and an integer in it is a record written by
+        # something that still thinks it is one.
+        if value is False or value in TAINT_REASONS:
+            return None
+        return _describe(value)
     if kind == STATE:
         if value is None:
             return None

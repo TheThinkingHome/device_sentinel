@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.13.11 (2026-08-13)
+# File: const.py, Version: 0.15.3 (2026-08-17)
 
 """Constants for the Device Sentinel integration."""
 
@@ -232,6 +232,19 @@ TAINT_BRIDGE_DOWN = "bridge down"
 # nothing on disk can tell them apart. It outranks a bridge outage,
 # since a bridge that went quiet during one went quiet because of it.
 TAINT_UNCLEAN_SHUTDOWN = "unclean shutdown"
+
+# Every value the reason field may hold besides False, named here so
+# the shape check can accept exactly these and nothing else, and so a
+# fifth reason added later has one place to join rather than two that
+# must be kept in step. Constants rather than literals, for the reason
+# EPOCH_KEPT was corrected (ruling #207): a value changed in one place
+# and spelled by hand in another parts silently.
+TAINT_REASONS = (
+    TAINT_UNAVAILABLE,
+    TAINT_UNKNOWN,
+    TAINT_BRIDGE_DOWN,
+    TAINT_UNCLEAN_SHUTDOWN,
+)
 
 # The sensinel_type stem for a bridge sensor; the stack is appended so
 # each stack's sensor has a stable unique id.

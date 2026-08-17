@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.13.10 (2026-08-13)
+# File: interventions.py, Version: 0.15.3 (2026-08-17)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -787,21 +787,34 @@ class InterventionMixin:
         duration = (
             storm["last_met"] - storm["start"] + STORM_RELEASE_SECONDS
         )
+        announce = storm.get("announce", storm.get("recorded", True))
         if storm.get("recorded", True):
             self._close_storm_row(
                 entry_id, now, duration, len(storm["devices"])
             )
-        if storm.get("announce", storm.get("recorded", True)):
+        if announce:
             self._record_system_event(
                 SYS_STORM_CLOSED,
                 scope=domain,
                 duration=duration,
                 devices=len(storm["devices"]),
             )
-        if storm["stamps"]:
+        # The fourth surface a poller is silent on. #232 named three,
+        # the opening event, the closing event and the episode stamp,
+        # and this line was gated on the count instead, so an
+        # integration ruled exempt went on announcing itself about a
+        # hundred times an hour in a log a person reads. An
+        # integration whose bursts are its own polling cadence is
+        # behaving normally, and normal behaviour is not information.
+        # The wording is corrected with it: nothing is excluded from
+        # learning by a storm and nothing has been since taint became
+        # the only surviving exclusion (rulings #124 and #125), so the
+        # count is named for what it is, the reports seen inside the
+        # burst.
+        if announce and storm["stamps"]:
             LOGGER.debug(
-                "Storm on %s ended: %d devices, %d stamps excluded from "
-                "learning, %.1f s duration",
+                "Storm on %s ended: %d devices, %d report(s) inside the "
+                "burst, %.1f s duration",
                 domain,
                 len(storm["devices"]),
                 storm["stamps"],
@@ -831,8 +844,14 @@ class InterventionMixin:
         """
         self._rebuild_registry_view()
         LOGGER.debug(
-            "Startup grace closed after %d s: %d stamps across %d devices "
-            "excluded from learning; %d boot-blip taints aggregated",
+            # Same correction as the storm line: the grace window
+            # excludes nothing from learning and has not since taint
+            # became the only surviving exclusion (rulings #124 and
+            # #125). The count is the reports that arrived inside the
+            # window, which is worth one line at every start.
+            "Startup grace closed after %d s: %d report(s) across %d "
+            "device(s) inside the window; %d boot-blip taints "
+            "aggregated",
             STARTUP_GRACE_SECONDS,
             self._grace_stamps,
             len(self._grace_devices),
