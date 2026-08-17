@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.12.11 (2026-08-07)
+# File: report_brief.py, Version: 0.15.5 (2026-08-17)
 
 """The daily brief: the one report written for a person.
 
@@ -70,6 +70,7 @@ from .const import (
     SYS_EPOCH_RESET,
     SYS_KIND,
     SYS_OPTIONS_CHANGED,
+    SYS_STORAGE_SHAPE,
     SYS_MAINTENANCE_CLOSED,
     SYS_MAINTENANCE_OPEN,
     SYS_PAIRING_CLOSED,
@@ -364,6 +365,18 @@ class BriefMixin:
         if kind == SYS_OPTIONS_CHANGED:
             extra = f": {detail}" if detail else ""
             return f"Settings changed at {when}{extra}."
+        if kind == SYS_STORAGE_SHAPE:
+            # The check writes what it found rather than a count on
+            # its own, because a person reading this cannot act on a
+            # number and can act on a field name. It touches nothing
+            # (ruling #278), so the sentence says so: this is a
+            # report, not damage, and the reader should not go
+            # looking for what was changed.
+            extra = f" ({detail})" if detail else ""
+            return (
+                f"The storage check found a record that does not fit "
+                f"at {when}{extra}. Nothing was changed."
+            )
         return f"{kind} at {when}."
 
     def _system_event_phrase(self, row: dict[str, Any]) -> str:
@@ -432,6 +445,12 @@ class BriefMixin:
             return f"learned statistics reset ({detail})" if detail else "learned statistics reset"
         if kind == SYS_OPTIONS_CHANGED:
             return f"settings changed ({detail})" if detail else "settings changed"
+        if kind == SYS_STORAGE_SHAPE:
+            return (
+                f"storage check: {detail}"
+                if detail
+                else "storage check found a record that does not fit"
+            )
         return str(kind)
 
     def _option_label(self, key: str) -> str:

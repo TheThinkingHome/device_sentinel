@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: attribution.py, Version: 0.12.6 (2026-08-06)
+# File: attribution.py, Version: 0.15.5 (2026-08-17)
 
 """Which recorded event explains an incident, and which do not.
 
@@ -95,15 +95,31 @@ _EDGE_SECONDS = 90.0
 class Window:
     """One recorded intervention, with a span and a reach."""
 
-    __slots__ = ("kind", "scope", "start", "end", "devices")
+    __slots__ = (
+        "kind",
+        "scope",
+        "start",
+        "end",
+        "devices",
+        "inferred_end",
+    )
 
-    def __init__(self, kind, scope, start, end, devices=None):
-        """Hold what an intervention was, when, and how big."""
+    def __init__(
+        self, kind, scope, start, end, devices=None, inferred_end=False
+    ):
+        """Hold what an intervention was, when, and how big.
+
+        inferred_end says the closing was never recorded and this end
+        was worked out rather than seen (ruling #287). It changes what
+        may be said about the window: we know the thing ended, and we
+        do not know that it recovered.
+        """
         self.kind = kind
         self.scope = scope
         self.start = start
         self.end = end
         self.devices = devices
+        self.inferred_end = inferred_end
 
     @property
     def key(self) -> tuple[str, str, float]:
@@ -148,9 +164,30 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
     """Return every intervention window in the system events log.
 
     Openings are paired with their closings by kind and scope, so a
-    bridge outage becomes one window rather than two moments. An
-    opening with no closing yet stays open, which is correct: the
-    thing is still happening.
+    bridge outage becomes one window rather than two moments.
+
+    An opening whose closing was never recorded used to stay open
+    forever, and forever is not a figure of speech: a bridge outage
+    from 2 August was still explaining recoveries on the 17th,
+    because attribute() prefers the earliest window and an unbounded
+    one beats every real candidate. On the reference fleet 23 windows
+    were in that state, and the brief credited a device's 03:23
+    recovery to a bridge that went down fifteen days earlier.
+
+    The cause is ordinary and permanent: the opening is written, the
+    system restarts, and the closing is never written because the
+    storm or the outage only existed in memory. So the rule has to
+    work forever rather than clean up once (ruling #287). An unclosed
+    window ends at the first restart after it opened, or at the next
+    opening of the same kind and scope, whichever comes first. Both
+    are proof that it must have ended: a system that restarted lost
+    it, and a bridge cannot go down twice without coming up in
+    between. Against the reference fleet the restart bound closes 3
+    and the next-opening bound closes 20, and neither alone reaches
+    all 23.
+
+    An opening with nothing after it stays open, which is still
+    correct: a bridge that is down right now is in effect.
     """
     found: list[Window] = []
     pending: dict[tuple[str, str], Window] = {}
@@ -161,12 +198,27 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
         if when is None:
             continue
         if kind in (SYS_RESTART, SYS_UNCLEAN_RESTART):
+            # Anything still open did not survive this, and the
+            # closing was never going to be written. Bounded at the
+            # moment the system came back rather than the moment it
+            # went down, because the outage ran through the gap and
+            # the restart's own window covers the gap itself.
+            for open_window in pending.values():
+                open_window.end = when
+                open_window.inferred_end = True
+            pending.clear()
             span = row.get(SYS_DURATION) or 0.0
             found.append(
                 Window(kind, scope, when - span, when + _RESTART_TAIL_SECONDS)
             )
             continue
         if kind in _PAIRS:
+            previous = pending.get((kind, scope))
+            if previous is not None:
+                # The same thing opening again is proof the last one
+                # ended, whether or not anybody wrote it down.
+                previous.end = when
+                previous.inferred_end = True
             window = Window(kind, scope, when, None, row.get(SYS_DEVICES))
             pending[(kind, scope)] = window
             found.append(window)
@@ -232,6 +284,22 @@ _PHRASE = {
 }
 
 
+# What may be said about a window whose closing was never recorded.
+# The wording above is written for an observed pair, and two of them
+# assert a return: a bridge or a broker "going down and coming back".
+# For an inferred end we know the thing ended and we do not know that
+# it came back, so the claim is dropped rather than repeated on
+# evidence that does not exist (ruling #287).
+_PHRASE_INFERRED = {
+    SYS_BRIDGE_DOWN: "the {scope} bridge going down",
+    SYS_BROKER_DOWN: "the MQTT broker going down",
+}
+
+
 def phrase(window: Window) -> str:
     """Return the clause naming an intervention, without punctuation."""
+    if getattr(window, "inferred_end", False):
+        wording = _PHRASE_INFERRED.get(window.kind)
+        if wording is not None:
+            return wording.format(scope=window.scope)
     return _PHRASE.get(window.kind, window.kind).format(scope=window.scope)
