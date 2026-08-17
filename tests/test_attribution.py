@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.12.9 (2026-08-06)
+# File: tests/test_attribution.py, Version: 0.15.3 (2026-08-17)
 
 """What explains an incident, and what a flood reads as.
 
@@ -16,6 +16,8 @@ most recent silence episode, whenever that was (ruling #228).
 """
 
 from __future__ import annotations
+
+import logging
 
 from homeassistant.core import HomeAssistant
 
@@ -672,6 +674,90 @@ async def test_a_poller_stamps_no_episode(hass: HomeAssistant):
     assert len(stamped) == STORM_EXEMPT_PER_HOUR, (
         "a poller kept stamping interventions after being recognised"
     )
+
+
+async def test_a_poller_says_nothing_in_the_log(
+    hass: HomeAssistant, caplog
+):
+    """The fourth surface a poller is silent on (ruling #232).
+
+    #232 named three, the opening event, the closing event and the
+    episode stamp, and the debug line was gated on the report count
+    instead. On 17 August the reference fleet wrote 742 of them in
+    seven and a half hours, 379 after tplink_router had been
+    reclassified, in a log a person reads to find out what is wrong.
+    An integration whose bursts are its own polling cadence is
+    behaving normally, and normal behaviour is not information.
+    """
+    from custom_components.device_sentinel.const import (
+        STORM_DEVICE_THRESHOLD,
+        STORM_EXEMPT_PER_HOUR,
+    )
+
+    coord = await setup_coordinator(hass)
+    entry_id = coord.entry.entry_id
+    coord._grace_until = 0.0
+
+    at = T0
+    for _cycle in range(STORM_EXEMPT_PER_HOUR):
+        coord._storm_active.clear()
+        coord._storm_feed_q.clear()
+        for index in range(STORM_DEVICE_THRESHOLD + 2):
+            coord._storm_feed(entry_id, f"d{index}", at)
+            storm = coord._storm_active.get(entry_id)
+            if storm is not None:
+                storm["stamps"] += 1
+        coord._sweep_storms(at + 30)
+        at += 60
+    assert coord._is_polling_integration(entry_id, at)
+
+    # Now it is a known poller. Everything after this is its cadence.
+    with caplog.at_level(logging.DEBUG, logger="custom_components.device_sentinel"):
+        caplog.clear()
+        for _cycle in range(4):
+            coord._storm_active.clear()
+            coord._storm_feed_q.clear()
+            for index in range(STORM_DEVICE_THRESHOLD + 2):
+                coord._storm_feed(entry_id, f"d{index}", at)
+                storm = coord._storm_active.get(entry_id)
+                if storm is not None:
+                    storm["stamps"] += 1
+            coord._sweep_storms(at + 30)
+            at += 60
+    assert "Storm on" not in caplog.text, (
+        "a reclassified poller went on announcing every burst"
+    )
+
+
+async def test_a_real_storm_still_says_so_and_no_longer_claims_an_exclusion(
+    hass: HomeAssistant, caplog
+):
+    """The half that must survive the gate.
+
+    A hub reconnecting is not normal and stays in the log. What
+    changed is the wording: a storm excludes nothing from learning
+    and has not since taint became the only surviving exclusion
+    (rulings #124 and #125), so the count is named for what it is.
+    """
+    from custom_components.device_sentinel.const import (
+        STORM_DEVICE_THRESHOLD,
+    )
+
+    coord = await setup_coordinator(hass)
+    entry_id = coord.entry.entry_id
+    coord._grace_until = 0.0
+
+    with caplog.at_level(logging.DEBUG, logger="custom_components.device_sentinel"):
+        for index in range(STORM_DEVICE_THRESHOLD + 2):
+            coord._storm_feed(entry_id, f"d{index}", T0)
+            storm = coord._storm_active.get(entry_id)
+            if storm is not None:
+                storm["stamps"] += 1
+        coord._sweep_storms(T0 + 30)
+
+    assert "Storm on" in caplog.text
+    assert "report(s) inside the burst" in caplog.text
+    assert "excluded from learning" not in caplog.text
 
 
 async def test_storm_rows_are_trimmed_at_two_days(hass: HomeAssistant):

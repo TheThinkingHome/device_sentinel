@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.15.2 (2026-08-17)
+# File: test_storage_shape.py, Version: 0.15.3 (2026-08-17)
 
 """The shape check reports and touches nothing; last-good follows it.
 
@@ -14,6 +14,14 @@ after. This release watches for both without acting on either: the
 check names what does not fit, and the last-good copy is refreshed
 only when it names nothing. The release that repairs waits until a
 week of loads and folds has shown the checks quiet on good data.
+
+Added at 0.15.3, the taint tests. The 118-record fixture below holds
+tainted as False on every record, because nothing was tainted the
+minute it was captured, so it recorded a boolean for a field #164 had
+already made False or one of four reason strings. A snapshot cannot
+show a field whose type depends on what the fleet was doing, so the
+reasons are walked from the TAINT_REASONS tuple instead: a fifth
+reason added later fails the suite rather than the fleet.
 
 The two tests that matter most are the last two. One proves the check
 is silent on a record shaped exactly as the code writes it, which is
@@ -46,6 +54,7 @@ from custom_components.device_sentinel.const import (
     STORAGE_KEY,
     SYS_KIND,
     SYS_STORAGE_SHAPE,
+    TAINT_REASONS,
 )
 from custom_components.device_sentinel.normalise import check_records
 from custom_components.device_sentinel.records import _new_device_record
@@ -220,3 +229,47 @@ async def test_the_reference_fleet_is_clean():
     devices = json.loads(here.read_text())
     assert len(devices) >= 100
     assert check_records(devices) == []
+
+
+def test_every_taint_reason_passes_the_check():
+    """The fault of 17 August, asserted so it cannot return.
+
+    The reason field is False or one of the four constants (ruling
+    #164), and the check called it a boolean because the file the
+    shapes were read from had no live taint in it. Walking the tuple
+    rather than naming the four means a fifth reason fails here rather
+    than costing a boot its last-good copy.
+    """
+    for reason in TAINT_REASONS:
+        rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+        rec[DEV_TAINTED] = reason
+        assert check_records({"d1": rec}) == [], f"{reason} reported"
+
+
+def test_the_exact_record_that_fired_on_17_august():
+    """Temperature Outdoors, tainted 'unknown' at 04:22 and still
+    tainted when the 08:14 load checked it."""
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    rec[DEV_TAINTED] = "unknown"
+    assert check_records({"efb080fd7ba6963b0c93eedd78dde4f8": rec}) == []
+
+
+def test_a_clean_record_is_false_and_not_merely_falsy():
+    """False passes; the falsy things that are not it do not.
+
+    The field was a boolean flag before #164 and every read of it is
+    a truthiness test, so a 0 or a 1 written by something that still
+    thinks it is one would go unnoticed everywhere else. This is the
+    one place it should be caught, and the existing bool_as_int case
+    above is the same assertion from the other side.
+    """
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    assert rec[DEV_TAINTED] is False
+    assert check_records({"d1": rec}) == []
+    for wrong in (0, 1, True, "", "sometimes", None, ["unknown"]):
+        bad = dict(rec)
+        bad[DEV_TAINTED] = wrong
+        faults = check_records({"d1": bad})
+        assert any(
+            field == DEV_TAINTED for _d, field, _w in faults
+        ), f"{wrong!r} was accepted"
