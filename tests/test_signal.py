@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal.py, Version: 0.15.4 (2026-08-17)
+# File: test_signal.py, Version: 0.15.6 (2026-08-17)
 
 """Signal detection: the floor line, the dwell timer, and the rail.
 
@@ -28,6 +28,11 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
+    DEV_SIGNAL_ALT,
+    DEV_SIGNAL_READS,
+    DEV_SIGNAL_SCALE,
+    SIGNAL_SCALE_LQI,
+    SIGNAL_SCALE_RSSI,
     CONF_SIGNAL_ANOMALY_TRIM,
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
@@ -45,7 +50,11 @@ from custom_components.device_sentinel.const import (
     SIGNAL_RAIL_RSSI,
     UNIT_SIGNALS,
 )
-from custom_components.device_sentinel.detect_signal import SignalMixin
+from custom_components.device_sentinel.detect_signal import (
+    SignalMixin,
+    scale_of,
+    signal_bucket,
+)
 from custom_components.device_sentinel.coordinator import (
     _new_device_record,
 )
@@ -769,3 +778,88 @@ def test_the_two_real_fleets_classify_as_expected():
     assert not SignalMixin._is_signal(
         _sig_entry("sensor.e13_grumpy_desk_dragon_light_rssi", unit="%")
     )
+
+
+def test_the_sign_decides_the_scale():
+    """RSSI is negative at any Zigbee receiver; LQI runs 0 to 255
+    (ruling #284). Zero is a valid link quality and not a plausible
+    received power, so it belongs with LQI."""
+    for value in (-1.0, -66.0, -106.0, -128.0):
+        assert scale_of(value) == SIGNAL_SCALE_RSSI, value
+    for value in (0.0, 1.0, 94.0, 247.0, 255.0):
+        assert scale_of(value) == SIGNAL_SCALE_LQI, value
+
+
+def test_one_scale_stays_at_the_top_of_the_record():
+    """A Zigbee2MQTT device publishes linkquality alone, so nothing
+    about it changes: no block is allocated and it costs 20 bytes."""
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    bucket = signal_bucket(rec, SIGNAL_SCALE_LQI)
+    assert bucket is rec
+    assert rec[DEV_SIGNAL_SCALE] == SIGNAL_SCALE_LQI
+    assert rec[DEV_SIGNAL_ALT] is None
+
+
+def test_a_second_scale_gets_its_own_block():
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    signal_bucket(rec, SIGNAL_SCALE_RSSI)
+    alt = signal_bucket(rec, SIGNAL_SCALE_LQI)
+    assert alt is not rec
+    assert alt is rec[DEV_SIGNAL_ALT]
+    assert alt[DEV_SIGNAL_SCALE] == SIGNAL_SCALE_LQI
+    assert rec[DEV_SIGNAL_SCALE] == SIGNAL_SCALE_RSSI
+    # and the block holds no judgment fields
+    assert "signal_dwell_daily_pct" not in alt
+    assert "signal_daily_line" not in alt
+
+
+def test_rssi_takes_the_primary_even_when_lqi_arrived_first():
+    """Precedence is RSSI (ruling #285), and a ZHA device's LQI
+    entity may well report first. The two trade places rather than
+    either being discarded, so nothing already learned is lost."""
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    lqi = signal_bucket(rec, SIGNAL_SCALE_LQI)
+    assert lqi is rec
+    rec[DEV_SIGNAL_VALUE] = 215.0
+    rec[DEV_SIGNAL_DAILY_MIN] = [200.0, 205.0]
+    rec[DEV_SIGNAL_READS] = 41
+
+    rssi = signal_bucket(rec, SIGNAL_SCALE_RSSI)
+    assert rssi is rec
+    assert rec[DEV_SIGNAL_SCALE] == SIGNAL_SCALE_RSSI
+    # the LQI it had learned moved down, intact
+    alt = rec[DEV_SIGNAL_ALT]
+    assert alt[DEV_SIGNAL_SCALE] == SIGNAL_SCALE_LQI
+    assert alt[DEV_SIGNAL_VALUE] == 215.0
+    assert alt[DEV_SIGNAL_DAILY_MIN] == [200.0, 205.0]
+    assert alt[DEV_SIGNAL_READS] == 41
+    # and the top is clear for RSSI rather than holding LQI's numbers
+    assert rec[DEV_SIGNAL_VALUE] is None
+    assert rec[DEV_SIGNAL_DAILY_MIN] == []
+    assert rec[DEV_SIGNAL_READS] == 0
+
+
+def test_lqi_never_displaces_rssi():
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    signal_bucket(rec, SIGNAL_SCALE_RSSI)
+    rec[DEV_SIGNAL_VALUE] = -70.0
+    signal_bucket(rec, SIGNAL_SCALE_LQI)
+    assert rec[DEV_SIGNAL_SCALE] == SIGNAL_SCALE_RSSI
+    assert rec[DEV_SIGNAL_VALUE] == -70.0
+
+
+def test_routing_is_stable_however_the_readings_interleave():
+    """Whatever order the two entities report in, the device ends up
+    with RSSI on top and LQI in the block."""
+    import itertools
+
+    for order in itertools.permutations(
+        [-70.0, 215.0, -66.0, 247.0, -71.0]
+    ):
+        rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+        for value in order:
+            bucket = signal_bucket(rec, scale_of(value))
+            bucket[DEV_SIGNAL_VALUE] = value
+        assert rec[DEV_SIGNAL_SCALE] == SIGNAL_SCALE_RSSI, order
+        assert rec[DEV_SIGNAL_VALUE] < 0, order
+        assert rec[DEV_SIGNAL_ALT][DEV_SIGNAL_VALUE] > 0, order

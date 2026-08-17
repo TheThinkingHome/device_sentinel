@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.15.3 (2026-08-17)
+# File: test_storage_shape.py, Version: 0.15.6 (2026-08-17)
 
 """The shape check reports and touches nothing; last-good follows it.
 
@@ -47,7 +47,6 @@ from custom_components.device_sentinel.const import (
     DATA_SYSTEM_EVENTS,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
-    DEV_SIGNAL_DAILY_MIN,
     DEV_TAINTED,
     DEV_TODAY_MAX,
     STORAGE_CLOCKS_KEY,
@@ -55,7 +54,13 @@ from custom_components.device_sentinel.const import (
     SYS_KIND,
     SYS_STORAGE_SHAPE,
     TAINT_REASONS,
+    DEV_SIGNAL_ALT,
+    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_READS,
+    DEV_SIGNAL_VALUE,
+    SIGNAL_SCALE_LQI,
 )
+from custom_components.device_sentinel.detect_signal import _new_alt_block
 from custom_components.device_sentinel.normalise import check_records
 from custom_components.device_sentinel.records import _new_device_record
 
@@ -222,13 +227,66 @@ async def test_a_faulty_record_reports_and_withholds_last_good(
 
 
 async def test_the_reference_fleet_is_clean():
-    """118 real records off the Panorama's disk. Not a fixture."""
+    """118 real records off the Panorama's disk. Not a fixture.
+
+    The file is a snapshot from 16 August and the schema has moved
+    since, so the reconciler's job is done here first: a record that
+    predates a field arrives at the check with the field filled, not
+    missing. Filling from the template rather than by name keeps this
+    from having to be edited every time the schema gains something.
+    """
     here = Path(__file__).parent / "fixtures" / "panorama_records_2026-08-16.json"
     if not here.exists():
         return
     devices = json.loads(here.read_text())
     assert len(devices) >= 100
+    template = _new_device_record("2026-08-16T00:00:00+00:00", None)
+    for record in devices.values():
+        for field, blank in template.items():
+            record.setdefault(field, blank)
     assert check_records(devices) == []
+
+
+async def test_a_second_scale_block_is_checked_inside():
+    """The alternate block is one field, so the record still holds
+    exactly the same field count and nothing became optional
+    (ruling #286). What is inside it is checked by the same table
+    that checks the primary."""
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    assert rec[DEV_SIGNAL_ALT] is None
+    assert check_records({"d1": rec}) == []
+
+    good = _new_alt_block(SIGNAL_SCALE_LQI)
+    rec[DEV_SIGNAL_ALT] = good
+    assert check_records({"d1": rec}) == [], "a fresh block was reported"
+
+    # A wrong type inside the block is named with its field.
+    for field, wrong in (
+        (DEV_SIGNAL_VALUE, "loud"),
+        (DEV_SIGNAL_DAILY_MIN, "not a series"),
+        (DEV_SIGNAL_READS, 3.5),
+    ):
+        bad = dict(good)
+        bad[field] = wrong
+        rec[DEV_SIGNAL_ALT] = bad
+        faults = check_records({"d1": rec})
+        assert faults, f"{field} was accepted"
+        assert field in faults[0][2], faults
+
+    # Structural damage to the block itself.
+    for wrong in ("a string", 7, [], True):
+        rec[DEV_SIGNAL_ALT] = wrong
+        assert check_records({"d1": rec}), f"{wrong!r} was accepted"
+
+    short = dict(good)
+    del short[DEV_SIGNAL_VALUE]
+    rec[DEV_SIGNAL_ALT] = short
+    assert "missing from the block" in check_records({"d1": rec})[0][2]
+
+    extra = dict(good)
+    extra["signal_dwell_daily_pct"] = []
+    rec[DEV_SIGNAL_ALT] = extra
+    assert "unknown field(s)" in check_records({"d1": rec})[0][2]
 
 
 def test_every_taint_reason_passes_the_check():
