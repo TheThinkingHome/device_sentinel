@@ -13,13 +13,15 @@
 
 ## Integration Status
 
-| Area | Status | What that means |
-|---|---|---|
-| Freeze detection | Stable | Per-device rhythms are fully modeled. Verdicts accurately distinguish between frozen, unavailable, unknown, and never reported states. The core logic is settled and unchanged in this release. |
-| Battery | Stable | Dual-evaluation is live: cells are judged against a fixed threshold and a predictive time-to-empty trend. Works on any device that reports a battery level. |
-| Signal | Experimental | This feature is strictly experimental. Baseline floors, danger lines, dwell times, and fleet charts are actively recorded and visualized. Currently, only railed links trigger phone alerts. The core alerting formula is still being tuned, and recorded metrics will shift as it is finalized. |
-| Zigbee2MQTT | Working | Supports pairing window recognition, bridge and broker outage detection, and bridge/broker sensor integration. Provides a second-opinion availability check alongside freeze verdicts. |
-| ZHA and Z-Wave | Coordinator features not built | These features will be built in a later release. To help build them, please see the [ZHA](https://github.com/TheThinkingHome/device_sentinel/wiki/ZHA) and [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) documentation. |
+| Area             | Status                         | What that means                                                                                                                                                                                          |
+| ---------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Freeze detection | Stable                         | Per-device rhythms are fully modeled. Verdicts accurately distinguish between frozen, unavailable, unknown, and never reported states. The core logic is settled and unchanged in this release.          |
+| Battery          | Stable                         | Dual-evaluation is live: cells are judged against a fixed threshold and a predictive time-to-empty trend. Works on any device that reports a battery level.                                              |
+| Signal           | Experimental                   | Baseline floors, danger lines, dwell times, and fleet charts are actively recorded and visualized. Where a device exposes both, RSSI and LQI are now recorded side by side. Only railed links trigger phone alerts. The core alerting formula is still being tuned, and recorded metrics will shift as it is finalized. |
+| Storage          | Hardening (Verify and Backup live) | The **Verify, Backup, Heal, Restore** framework guards the learned data against corruption. Verify and Backup are live and under test in this release. Heal and Restore follow once the checks have proven quiet on good data. |
+| Zigbee2MQTT      | Working                        | Supports pairing window recognition, bridge and broker outage detection, and bridge/broker sensor integration. Provides a second-opinion availability check alongside freeze verdicts.                   |
+| ZHA              | In progress                    | Coordinator support has begun. Thank you to Tim for working with me to start building it out. See the [ZHA](https://github.com/TheThinkingHome/device_sentinel/wiki/ZHA) documentation to follow along or contribute. |
+| Z-Wave           | Coordinator features not built | Not started. If interested, see the [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) documentation to contribute.                                                                |
 
 ## The Problem
 
