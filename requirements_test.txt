@@ -2,3 +2,7 @@
 # proven against (HA 2025.1.4 under Python 3.12; the 2026-era API
 # delta is hand-audited, and the Panorama proof gate is final).
 pytest-homeassistant-custom-component==0.13.205
+#
+# The suite must run serially (no pytest -n). The harness shares one
+# testing_config/www/ across xdist workers, so parallel runs race the
+# daily brief's atomic write and fail intermittently. See pytest.ini.
