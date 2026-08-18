@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_retention.py, Version: 0.11.8 (2026-08-04)
+# File: test_retention.py, Version: 0.15.8 (2026-08-18)
 
 """How much is kept, and what reads only a window of it.
 
@@ -48,7 +48,7 @@ from custom_components.device_sentinel.const import (
     EPISODE_ENDED_RESUMED,
     EPISODE_KEEP_DAYS,
     FREEZE_CATEGORY_FROZEN,
-    FREEZE_CATEGORY_NOT_REPORTED,
+    FREEZE_CATEGORY_NEVER_REPORTED,
     FREEZE_CATEGORY_UNAVAILABLE,
     FREEZE_CATEGORY_UNKNOWN,
     INCIDENT_KEEP_DAYS,
@@ -69,9 +69,9 @@ from custom_components.device_sentinel.const import (
     SYS_RESTART,
     SYS_WHEN,
     TODO_KINDS_ALL,
-    TODO_KIND_BATTERY,
+    TODO_KIND_LOW_BATTERY,
     TODO_KIND_FROZEN,
-    TODO_KIND_NOT_REPORTED,
+    TODO_KIND_NEVER_REPORTED,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
 )
@@ -219,7 +219,7 @@ async def test_freeze_kinds_alias_their_verdicts(hass: HomeAssistant):
     assert TODO_KIND_FROZEN == FREEZE_CATEGORY_FROZEN
     assert TODO_KIND_UNAVAILABLE == FREEZE_CATEGORY_UNAVAILABLE
     assert TODO_KIND_UNKNOWN == FREEZE_CATEGORY_UNKNOWN
-    assert TODO_KIND_NOT_REPORTED == FREEZE_CATEGORY_NOT_REPORTED
+    assert TODO_KIND_NEVER_REPORTED == FREEZE_CATEGORY_NEVER_REPORTED
 
 
 async def test_every_kind_has_words_everywhere(
@@ -263,7 +263,7 @@ async def test_every_kind_has_words_everywhere(
     # or a standing state. A battery level is phrased from its own
     # reading rather than a template, so it is absent by design.
     for kind in TODO_KINDS_ALL:
-        if kind in (TODO_KIND_BATTERY, TODO_KIND_NOT_REPORTED):
+        if kind in (TODO_KIND_LOW_BATTERY, TODO_KIND_NEVER_REPORTED):
             continue
         assert kind in coord._EVENT_WORDING, kind
         assert kind in coord._STATE_TEMPLATE, kind

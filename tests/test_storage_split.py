@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.15.6 (2026-08-17)
+# File: test_storage_split.py, Version: 0.15.8 (2026-08-18)
 
 """The two files: the shadow, the merge, and the stamps.
 
@@ -18,6 +18,7 @@ Two tests were retired with the transition (ruling #241). The diagnostics phase 
 
 
 
+import time
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -42,6 +43,12 @@ from custom_components.device_sentinel.const import (
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
+    TODO_KIND_FALLING_BATTERY,
+    TODO_KIND_FROZEN,
+    TODO_KIND_LOW_BATTERY,
+    TODO_KIND_NEVER_REPORTED,
+    TODO_KIND_RAILED_SIGNAL,
+    TODO_KIND_UNAVAILABLE,
     DEV_FROZEN_CATEGORY,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_MEAN,
@@ -63,6 +70,8 @@ from custom_components.device_sentinel.coordinator import (
     _new_device_record,
 )
 from tests.helpers import setup_coordinator, setup_entry
+
+_RECENT = time.time() - 3600.0
 
 DOMAIN = "device_sentinel"
 
@@ -936,3 +945,170 @@ async def test_the_clear_does_not_run_twice(
     record[const.DEV_SIGNAL_DAILY_MIN] = [-70.0, -68.0, -71.0]
     assert coord._clear_mixed_signal(coord.data[DATA_DEVICES]) == []
     assert record[const.DEV_SIGNAL_DAILY_MIN] == [-70.0, -68.0, -71.0]
+
+
+async def test_stored_kinds_are_renamed_at_load(
+    hass: HomeAssistant, hass_storage
+):
+    """The 0.15.8 rewrite, driven through the real load path (#299).
+
+    Four problem kinds were renamed before the event payload could
+    publish them and make them a contract. Stored history keeps what
+    was written at the time, so the incidents, the additions journal
+    and the list itself are brought onto the one vocabulary here.
+    """
+    device, _eid = _register(hass, "kd1", "Renamed Device")
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {
+            DATA_DEVICES: {},
+            DATA_STATS_EPOCH: STATS_EPOCH,
+            const.DATA_INCIDENTS: [
+                {"device_id": device.id, "name": "A", "kind": "battery",
+                 "event": "opened", "when": _RECENT},
+                {"device_id": device.id, "name": "A",
+                 "kind": "battery_falling", "event": "opened",
+                 "when": _RECENT + 1},
+                {"device_id": device.id, "name": "A", "kind": "signal",
+                 "event": "opened", "when": _RECENT + 2},
+                {"device_id": device.id, "name": "A",
+                 "kind": "not_reported", "event": "opened",
+                 "when": _RECENT + 3},
+                {"device_id": device.id, "name": "A",
+                 "kind": "unavailable", "event": "opened",
+                 "when": _RECENT + 4},
+                {"device_id": device.id, "name": "A", "kind": "upstream",
+                 "event": "opened", "when": _RECENT + 5},
+            ],
+            const.DATA_TODO_JOURNAL: [
+                {"device_id": device.id, "name": "A",
+                 "kind": "battery_falling", "when": "2026-08-13T00:00:00"},
+                {"device_id": device.id, "name": "A", "kind": "frozen",
+                 "when": "2026-08-13T00:00:01"},
+            ],
+            const.DATA_SYSTEM_EVENTS: [
+                {"when": _RECENT, "kind": "restart", "scope": "system"},
+                {"when": _RECENT + 1, "kind": "storm_open", "scope": "mqtt"},
+                {"when": _RECENT + 2, "kind": "bridge_down", "scope": "z2m"},
+            ],
+        },
+    }
+
+    coord = await setup_coordinator(hass)
+
+    # Setup appends its own incidents, so the seeded six are the
+    # prefix rather than the whole list.
+    kinds = [row["kind"] for row in coord.data[const.DATA_INCIDENTS]][:6]
+    assert kinds == [
+        TODO_KIND_LOW_BATTERY,
+        TODO_KIND_FALLING_BATTERY,
+        TODO_KIND_RAILED_SIGNAL,
+        TODO_KIND_NEVER_REPORTED,
+        TODO_KIND_UNAVAILABLE,
+        const.UPSTREAM_KIND,
+    ], kinds
+
+    journal = [e["kind"] for e in coord.data[const.DATA_TODO_JOURNAL]]
+    assert journal == [TODO_KIND_FALLING_BATTERY, TODO_KIND_FROZEN]
+
+    # The list itself is engine-owned, so a seeded item whose device
+    # has no live fault is purged by the sync before it can be read
+    # back here. Its path is asserted on the loader's own dictionary:
+    # a kind is a key and its value is the moment it was added, which
+    # has to survive the rebuild.
+    loaded = {
+        const.DATA_TODO_ITEMS: [
+            {const.TODO_KINDS: {"battery": 900.0, "frozen": 901.0}}
+        ]
+    }
+    assert coord._rename_stored_kinds(loaded) == 1
+    assert loaded[const.DATA_TODO_ITEMS][0][const.TODO_KINDS] == {
+        TODO_KIND_LOW_BATTERY: 900.0,
+        TODO_KIND_FROZEN: 901.0,
+    }
+
+    # The system events carry fourteen values of their own under the
+    # same field name. A sweep over every "kind" in the file would
+    # have rewritten these into nonsense.
+    seeded = [
+        e["kind"]
+        for e in coord.data[const.DATA_SYSTEM_EVENTS]
+        if e.get("when", 0) >= _RECENT
+    ]
+    assert seeded[:3] == ["restart", "storm_open", "bridge_down"], seeded
+
+
+async def test_the_kind_rename_does_not_run_twice(
+    hass: HomeAssistant, hass_storage
+):
+    """A value already correct is not a key in the map, so a second
+    start rewrites nothing and an unknown value passes through."""
+    device, _eid = _register(hass, "kd2", "Already Renamed")
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {
+            DATA_DEVICES: {},
+            DATA_STATS_EPOCH: STATS_EPOCH,
+            const.DATA_INCIDENTS: [
+                {"device_id": device.id, "name": "A",
+                 "kind": TODO_KIND_LOW_BATTERY, "event": "opened",
+                 "when": _RECENT},
+                {"device_id": device.id, "name": "A",
+                 "kind": "a_kind_from_the_future", "event": "opened",
+                 "when": _RECENT + 1},
+            ],
+        },
+    }
+    coord = await setup_coordinator(hass)
+    assert coord._rename_stored_kinds(coord.data) == 0
+    assert [r["kind"] for r in coord.data[const.DATA_INCIDENTS]] == [
+        TODO_KIND_LOW_BATTERY,
+        "a_kind_from_the_future",
+    ]
+
+
+def test_no_source_file_holds_a_retired_kind_spelling():
+    """The four old spellings live in one place and one place only.
+
+    LEGACY_KIND_RENAMES is the map that brings stored history onto
+    the current vocabulary, so its keys are the old words by design,
+    and the comments that explain why a rename happened may name them
+    too. Anywhere else in code is a table that was missed.
+    """
+    package = Path(const.__file__).parent
+    # Only the spellings that are unambiguous. "battery" and "signal"
+    # are still live words: they name the notification families and a
+    # settings section, which is the collision the rename resolved
+    # rather than a leftover.
+    retired = ('"battery_falling"', '"not_reported"', '"rail"')
+    offenders = []
+    for path in sorted(package.glob("*.py")):
+        inside_map = False
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            if line.startswith("LEGACY_KIND_RENAMES"):
+                inside_map = True
+            elif inside_map and line.startswith("}"):
+                inside_map = False
+            code = line.split("#", 1)[0]
+            if inside_map or not code.strip():
+                continue
+            for word in retired:
+                if word in code:
+                    offenders.append(
+                        f"{path.name}:{number}: {line.strip()}"
+                    )
+    assert not offenders, "retired spellings still in source:\n" + "\n".join(
+        offenders
+    )
+
+
+def test_the_notification_tags_were_not_swept_up_by_the_rename():
+    """The phone tags are identities already on every installed
+    phone, and a rename of the kinds must never touch them: changing
+    one costs a duplicate notification for no gain (#299)."""
+    assert const.NOTIFY_FAMILY_IDS == {
+        "battery": "device_sentinel_battery",
+        "signal": "device_sentinel_signal",
+        "freeze": "device_sentinel_freeze",
+    }
+    assert const.NOTIFY_FAMILY_TITLES[const.NOTIFY_FAMILY_FREEZE] == "Device"

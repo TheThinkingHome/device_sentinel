@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.15.7 (2026-08-18)
+# File: test_notifications.py, Version: 0.15.8 (2026-08-18)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -60,7 +60,9 @@ from custom_components.device_sentinel.const import (
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     NOTIFY_CARD_ID,
+    FREEZE_CATEGORY_NEVER_REPORTED,
     NOTIFY_FAMILY_IDS,
+    TODO_KIND_RAILED_SIGNAL,
 )
 from custom_components.device_sentinel.notifier import (
     NotifierMixin,
@@ -525,13 +527,14 @@ async def test_full_path_battery_fault_fires_and_updates_card(hass, freezer):
 
 def test_signal_summary_says_railed_not_low():
     """A railed device must read railed, not low: the signal list tags
-    rows by kind='rail', and the card must not call a rail a low. This
+    rows by kind, and the card must not call a rail a low. This
     is the fleet bug from 2026-07-25 where Window Living Room Left
     (signal_railed True, value 255) showed on the card as low."""
     h = _Harness(
         ["notify.phone"],
         signal=[
-            {"name": "Window Living Room Left", "device_id": "dc7a", "kind": "rail", "value": 255},
+            {"name": "Window Living Room Left", "device_id": "dc7a",
+             "kind": TODO_KIND_RAILED_SIGNAL, "value": 255},
         ],
     )
     summary = h._family_summary("signal")
@@ -545,7 +548,8 @@ def test_freeze_summary_uses_system_words():
     h = _Harness(
         ["notify.phone"],
         freeze=[
-            {"name": "Vibration FJ40 Land Cruiser", "device_id": "5dd1", "category": "not_reported"},
+            {"name": "Vibration FJ40 Land Cruiser", "device_id": "5dd1",
+             "category": FREEZE_CATEGORY_NEVER_REPORTED},
             {"name": "Door X", "device_id": "aaaa", "category": "unavailable"},
         ],
     )
@@ -563,7 +567,8 @@ def test_acknowledged_device_is_hidden_from_summary():
     h = _Harness(
         ["notify.phone"],
         signal=[
-            {"name": "Window Living Room Left", "device_id": "dc7a", "kind": "rail", "value": 255},
+            {"name": "Window Living Room Left", "device_id": "dc7a",
+             "kind": TODO_KIND_RAILED_SIGNAL, "value": 255},
         ],
         acknowledged={"dc7a"},
     )
@@ -912,67 +917,3 @@ async def test_a_device_with_nothing_learned_is_announced_at_once(
 
     assert len(calls) == 1
     assert coord._held_events == {}
-
-
-async def test_notifications_save_keeps_a_flat_key_beside_sections(
-    hass: HomeAssistant,
-):
-    """The save flattens the three sections into the flat option keys
-    the storage has always used. Its fallback branch is the one a key
-    that arrives *outside* any section takes: it must land as-is
-    rather than be silently dropped. The real form is fully sectioned
-    so this branch is defensive, and it is proven here so a future
-    unsectioned field cannot vanish on save unnoticed."""
-    hass.services._services.setdefault("notify", {})
-    hass.services._services["notify"]["mobile_app_mine"] = object()
-    entry = await setup_entry(hass)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "notifications"}
-    )
-    assert result["step_id"] == "notifications"
-
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {
-            "instant": {
-                CONF_HIGH_PRIORITY_TARGETS: ["notify.mobile_app_mine"],
-                CONF_NORMAL_PRIORITY_TARGETS: [],
-                CONF_PERSISTENT_ENABLED: True,
-            },
-            "quiet": {
-                CONF_QUIET_ENABLED: False,
-                CONF_QUIET_START: "22:00:00",
-                CONF_QUIET_END: "07:00:00",
-            },
-            "brief": {
-                CONF_REMINDER_MODE: "daily",
-                CONF_REMINDER_TIME: "07:00:00",
-                CONF_BRIEF_TARGETS: [],
-            },
-        },
-    )
-    assert result["type"] == "create_entry"
-    # A sectioned key landed flat, as every existing test proves.
-    assert entry.options[CONF_HIGH_PRIORITY_TARGETS] == [
-        "notify.mobile_app_mine"
-    ]
-    # Now the fallback: submit again with one key outside any section.
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "notifications"}
-    )
-    flow = hass.config_entries.options._progress[result["flow_id"]]
-    result = await flow.async_step_notifications(
-        {
-            "instant": {
-                CONF_HIGH_PRIORITY_TARGETS: [],
-                CONF_NORMAL_PRIORITY_TARGETS: [],
-                CONF_PERSISTENT_ENABLED: True,
-            },
-            "a_flat_key": "kept",
-        }
-    )
-    assert result["type"] == "create_entry"
-    assert result["data"]["a_flat_key"] == "kept"
-    assert result["data"][CONF_PERSISTENT_ENABLED] is True

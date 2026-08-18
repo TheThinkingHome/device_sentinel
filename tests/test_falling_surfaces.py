@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_falling_surfaces.py, Version: 0.12.2 (2026-08-05)
+# File: tests/test_falling_surfaces.py, Version: 0.15.8 (2026-08-18)
 
 """The falling battery on the phone and the card, and the crossing.
 
@@ -41,9 +41,15 @@ from custom_components.device_sentinel.const import (
     DEV_FIRST_OBSERVED,
     DEV_LAST_ACTIVITY,
     NOTIFY_KIND_FAMILY,
-    TODO_KIND_BATTERY,
-    TODO_KIND_BATTERY_FALLING,
+    FREEZE_CATEGORY_NEVER_REPORTED,
     TODO_KINDS_ALL,
+    TODO_KIND_FROZEN,
+    TODO_KIND_FALLING_BATTERY,
+    TODO_KIND_LOW_BATTERY,
+    TODO_KIND_NEVER_REPORTED,
+    TODO_KIND_RAILED_SIGNAL,
+    TODO_KIND_UNAVAILABLE,
+    TODO_KIND_UNKNOWN,
 )
 from tests.helpers import setup_coordinator
 
@@ -52,13 +58,22 @@ from tests.helpers import setup_coordinator
 # the card fails here rather than showing a person an all-clear
 # while the list says otherwise (ruling #220).
 CARD_SOURCE = {
-    "frozen": ("frozen_devices_list", {"category": "frozen"}),
-    "unavailable": ("frozen_devices_list", {"category": "unavailable"}),
-    "unknown": ("frozen_devices_list", {"category": "unknown"}),
-    "not_reported": ("frozen_devices_list", {"category": "not_reported"}),
-    "signal": ("signal_problem_list", {"kind": "rail"}),
-    "battery": ("battery_low_list", {"level": 4.0}),
-    "battery_falling": (
+    TODO_KIND_FROZEN: ("frozen_devices_list", {"category": "frozen"}),
+    TODO_KIND_UNAVAILABLE: (
+        "frozen_devices_list",
+        {"category": "unavailable"},
+    ),
+    TODO_KIND_UNKNOWN: ("frozen_devices_list", {"category": "unknown"}),
+    TODO_KIND_NEVER_REPORTED: (
+        "frozen_devices_list",
+        {"category": FREEZE_CATEGORY_NEVER_REPORTED},
+    ),
+    TODO_KIND_RAILED_SIGNAL: (
+        "signal_problem_list",
+        {"kind": TODO_KIND_RAILED_SIGNAL},
+    ),
+    TODO_KIND_LOW_BATTERY: ("battery_low_list", {"level": 4.0}),
+    TODO_KIND_FALLING_BATTERY: (
         "battery_falling_list",
         {"level": 24.0, "left": "about 2 weeks"},
     ),
@@ -197,7 +212,7 @@ async def test_the_crossing_announces_the_level_and_not_a_recovery(
         record["device_id"]: set(record["kinds"])
         for record in coord.data["todo_items"]
     }
-    assert kinds[device.id] == {TODO_KIND_BATTERY}
+    assert kinds[device.id] == {TODO_KIND_LOW_BATTERY}
 
     assert [recovery for _, _, recovery in collected] == [False]
     assert "no longer" not in collected[0][1]
@@ -299,7 +314,7 @@ async def test_an_acknowledged_falling_cell_leaves_the_card(
     coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0})
     _seed(coord, device.id, 24.0)
     coord._sync_problem_list()
-    assert TODO_KIND_BATTERY_FALLING in coord.data["todo_items"][0]["kinds"]
+    assert TODO_KIND_FALLING_BATTERY in coord.data["todo_items"][0]["kinds"]
 
     for item in coord.data["todo_items"]:
         item["status"] = "completed"

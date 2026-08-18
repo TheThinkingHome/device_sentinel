@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze.py, Version: 0.10.2 (2026-07-28)
+# File: test_freeze.py, Version: 0.15.8 (2026-08-18)
 
 """The freeze, unavailable, unknown, and never-reported detector.
 
@@ -52,7 +52,7 @@ from custom_components.device_sentinel.const import (
     DEV_LAST_ACTIVITY,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
-    FREEZE_CATEGORY_NOT_REPORTED,
+    FREEZE_CATEGORY_NEVER_REPORTED,
     FREEZE_CATEGORY_UNAVAILABLE,
     FREEZE_CATEGORY_UNKNOWN,
     FREEZE_NOT_REPORTED_SECONDS,
@@ -413,7 +413,7 @@ async def test_silent_since_install_is_not_reported(hass: HomeAssistant):
     now = 1_784_600_000.0  # well past 3 days after 2026-07-08
     assert (
         coord._device_down_category(device.id, record, now)
-        == FREEZE_CATEGORY_NOT_REPORTED
+        == FREEZE_CATEGORY_NEVER_REPORTED
     )
 
 
@@ -453,7 +453,7 @@ async def test_a_device_that_reported_once_is_not_not_reported(
     # not frozen; the point is it never takes the not_reported branch.)
     assert (
         coord._device_down_category(device.id, record, now)
-        != FREEZE_CATEGORY_NOT_REPORTED
+        != FREEZE_CATEGORY_NEVER_REPORTED
     )
 
 
@@ -468,7 +468,7 @@ async def test_freeze_exclude_suppresses_every_verdict(hass: HomeAssistant):
     # Without the exclude it would be not_reported.
     assert (
         coord._device_down_category(device.id, record, now)
-        == FREEZE_CATEGORY_NOT_REPORTED
+        == FREEZE_CATEGORY_NEVER_REPORTED
     )
     # Add the device to the freeze exclude and it goes quiet.
     hass.config_entries.async_update_entry(
@@ -515,7 +515,7 @@ async def test_old_record_judges_without_crashing(hass: HomeAssistant):
     # The whole sweep runs without raising, and the ghost, well past
     # the 48-hour grace, is flagged not_reported.
     coord._judge_all_devices()
-    assert record["frozen_category"] == FREEZE_CATEGORY_NOT_REPORTED
+    assert record["frozen_category"] == FREEZE_CATEGORY_NEVER_REPORTED
 
 
 async def test_every_old_record_in_the_sweep_is_judged(hass: HomeAssistant):
@@ -530,8 +530,8 @@ async def test_every_old_record_in_the_sweep_is_judged(hass: HomeAssistant):
     coord.data["devices"][first.id] = first_record
     coord.data["devices"][second.id] = second_record
     coord._judge_all_devices()
-    assert first_record["frozen_category"] == FREEZE_CATEGORY_NOT_REPORTED
-    assert second_record["frozen_category"] == FREEZE_CATEGORY_NOT_REPORTED
+    assert first_record["frozen_category"] == FREEZE_CATEGORY_NEVER_REPORTED
+    assert second_record["frozen_category"] == FREEZE_CATEGORY_NEVER_REPORTED
 
 
 # ==================================================================

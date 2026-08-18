@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_journal.py, Version: 0.11.8 (2026-08-04)
+# File: test_journal.py, Version: 0.15.8 (2026-08-18)
 
 """The forensic record: incidents, episodes, and system events.
 
@@ -25,6 +25,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
+    TODO_KIND_LOW_BATTERY,
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
@@ -437,7 +438,7 @@ async def test_battery_resolution_has_no_cause(hass: HomeAssistant):
     record[DEV_BATTERY_LOW] = False
     coord._sync_problem_list()
     resolved = _events(coord, INCIDENT_RESOLVED)
-    assert resolved[-1][INC_KIND] == "battery"
+    assert resolved[-1][INC_KIND] == TODO_KIND_LOW_BATTERY
     assert resolved[-1][INC_CAUSE] is None
 
 

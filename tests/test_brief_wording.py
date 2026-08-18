@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.15.5 (2026-08-17)
+# File: test_brief_wording.py, Version: 0.15.8 (2026-08-18)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -58,7 +58,7 @@ from custom_components.device_sentinel.const import (
     INC_WHEN,
     RECOVERY_CAUSE_UNOBSERVED,
     TODO_KIND_FROZEN,
-    TODO_KIND_NOT_REPORTED,
+    TODO_KIND_NEVER_REPORTED,
 )
 
 from tests.helpers import setup_coordinator
@@ -657,9 +657,9 @@ async def test_a_never_reported_device_is_never_paired(
     coord = await setup_coordinator(hass)
     _seed(coord, [
         ("d1", "Ghost Device", INCIDENT_OPENED,
-         {INC_KIND: TODO_KIND_NOT_REPORTED}),
+         {INC_KIND: TODO_KIND_NEVER_REPORTED}),
         ("d1", "Ghost Device", INCIDENT_RESOLVED,
-         {INC_KIND: TODO_KIND_NOT_REPORTED, INC_DURATION: 3600.0}),
+         {INC_KIND: TODO_KIND_NEVER_REPORTED, INC_DURATION: 3600.0}),
     ])
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = read_brief(hass)

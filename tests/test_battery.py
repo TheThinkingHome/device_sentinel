@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery.py, Version: 0.12.16 (2026-08-08)
+# File: test_battery.py, Version: 0.15.8 (2026-08-18)
 
 """Battery detection: the low verdict and the discharge recorder.
 
@@ -215,7 +215,11 @@ async def test_list_shape_and_order(hass: HomeAssistant):
         "Battery Device 6", "Battery Device 7",
     ]
     row = rows[0]
-    assert row["kind"] == "device"
+    # The kind field the blueprint's row contract carried was written
+    # here and read nowhere, so it went with the rename that gave the
+    # problem kinds one vocabulary (ruling #299). Asserted absent so
+    # nothing puts it back for the shape's sake.
+    assert "kind" not in row
     assert row["level"] == 10.0
     assert row["since"] is not None
     assert row["area"] == "Unassigned"

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.11.13 (2026-08-04)
+# File: test_todo.py, Version: 0.15.8 (2026-08-18)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -54,8 +54,8 @@ from custom_components.device_sentinel.const import (
     SIGNAL_PROBLEM_ADDITION,
     STARTUP_GRACE_SECONDS,
     TODO_JOURNAL_KEEP,
-    TODO_KIND_BATTERY,
-    TODO_KIND_BATTERY_FALLING,
+    TODO_KIND_LOW_BATTERY,
+    TODO_KIND_FALLING_BATTERY,
 )
 
 from tests.helpers import setup_coordinator, setup_entry
@@ -345,10 +345,10 @@ async def test_one_item_per_device_across_lists(hass: HomeAssistant):
     item = _item_for(coord, device.id)
     assert item["summary"] == "FJ40 Vibration: unavailable, battery 14%"
     assert set(item["kinds"]) == {
-        FREEZE_CATEGORY_UNAVAILABLE, TODO_KIND_BATTERY,
+        FREEZE_CATEGORY_UNAVAILABLE, TODO_KIND_LOW_BATTERY,
     }
     # The battery since came through as epoch seconds.
-    assert isinstance(item["kinds"][TODO_KIND_BATTERY], float)
+    assert isinstance(item["kinds"][TODO_KIND_LOW_BATTERY], float)
     assert "since" in (item["description"] or "")
 
 
@@ -376,7 +376,7 @@ async def test_kind_joins_and_leaves_one_item(hass: HomeAssistant):
     item = _item_for(coord, device.id)
     assert item["uid"] == uid
     assert item["summary"] == "Laundry Leak: battery 9%"
-    assert list(item["kinds"]) == [TODO_KIND_BATTERY]
+    assert list(item["kinds"]) == [TODO_KIND_LOW_BATTERY]
 
 
 async def test_acknowledged_item_updates_and_recovers(
@@ -459,9 +459,9 @@ async def test_journal_and_dispatcher_on_addition(hass: HomeAssistant):
     journal = coord.data[DATA_TODO_JOURNAL]
     kinds = [(e["name"], e["kind"]) for e in journal]
     assert ("Porch Motion", FREEZE_CATEGORY_FROZEN) in kinds
-    assert ("Porch Motion", TODO_KIND_BATTERY) in kinds
+    assert ("Porch Motion", TODO_KIND_LOW_BATTERY) in kinds
     assert [h["kind"] for h in heard] == [
-        FREEZE_CATEGORY_FROZEN, TODO_KIND_BATTERY,
+        FREEZE_CATEGORY_FROZEN, TODO_KIND_LOW_BATTERY,
     ]
     # A clean pass adds nothing.
     before = len(journal)
@@ -630,7 +630,7 @@ async def test_low_and_falling_read_as_one_line(
 
     summary, _description = coord._problem_item_text(
         "Dying Cell",
-        {TODO_KIND_BATTERY: None, TODO_KIND_BATTERY_FALLING: None},
+        {TODO_KIND_LOW_BATTERY: None, TODO_KIND_FALLING_BATTERY: None},
         16.0,
         "about 2 weeks",
     )
@@ -690,7 +690,7 @@ async def test_the_falling_line_says_what_is_empty(
 
     alone, _ = coord._problem_item_text(
         "Falling Cell",
-        {TODO_KIND_BATTERY_FALLING: None},
+        {TODO_KIND_FALLING_BATTERY: None},
         None,
         "about 2 weeks",
     )
@@ -698,7 +698,7 @@ async def test_the_falling_line_says_what_is_empty(
 
     both, _ = coord._problem_item_text(
         "Dying Cell",
-        {TODO_KIND_BATTERY: None, TODO_KIND_BATTERY_FALLING: None},
+        {TODO_KIND_LOW_BATTERY: None, TODO_KIND_FALLING_BATTERY: None},
         16.0,
         "about 2 weeks",
     )
@@ -707,6 +707,6 @@ async def test_the_falling_line_says_what_is_empty(
 
     # No projection yet, so it says the direction without a time.
     vague, _ = coord._problem_item_text(
-        "Vague Cell", {TODO_KIND_BATTERY_FALLING: None}, None, None
+        "Vague Cell", {TODO_KIND_FALLING_BATTERY: None}, None, None
     )
     assert vague == "Vague Cell: battery running down"

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_maintenance.py, Version: 0.13.3 (2026-08-13)
+# File: tests/test_maintenance.py, Version: 0.15.8 (2026-08-18)
 
 """Maintenance mode and the surfaces that shipped beside it.
 
@@ -33,6 +33,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
+    TODO_KIND_LOW_BATTERY,
     ATTR_AWAITING_BATTERY,
     ATTR_AWAITING_LAST_SEEN,
     ATTR_AWAITING_SIGNAL,
@@ -328,7 +329,8 @@ async def test_the_battery_conviction_carries_the_intervention_line(
     )
     assert sentence in description
     _summary, description = coord._problem_item_text(
-        "Batt One", {"battery": None}, 12, device_id=device.id
+        "Batt One", {TODO_KIND_LOW_BATTERY: None}, 12,
+        device_id=device.id
     )
     assert sentence not in description
 
