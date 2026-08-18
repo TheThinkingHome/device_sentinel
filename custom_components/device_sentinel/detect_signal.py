@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.15.6 (2026-08-17)
+# File: detect_signal.py, Version: 0.15.8 (2026-08-18)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -80,6 +80,7 @@ from .const import (
     SIGNAL_NAME_TERMS,
     SIGNAL_REFUSED_UNITS,
     SIGNAL_SCALE_LQI,
+    TODO_KIND_RAILED_SIGNAL,
     SIGNAL_SCALE_RSSI,
     DEV_SIGNAL_ALT,
     DEV_SIGNAL_SCALE,
@@ -917,7 +918,7 @@ class SignalMixin:
                     {
                         "name": self._display_names.get(device_id),
                         "device_id": device_id,
-                        "kind": "rail",
+                        "kind": TODO_KIND_RAILED_SIGNAL,
                         "value": record.get(DEV_SIGNAL_VALUE),
                     }
                 )
@@ -933,7 +934,7 @@ class SignalMixin:
         # (ruling #211).
         # Rail problems first, then by name: a rail is a fault and a
         # low is a weak link.
-        problems.sort(key=lambda row: (row["kind"] != "rail", row["name"] or ""))
+        problems.sort(key=lambda row: (row["kind"] != TODO_KIND_RAILED_SIGNAL, row["name"] or ""))
         return problems
 
     @property

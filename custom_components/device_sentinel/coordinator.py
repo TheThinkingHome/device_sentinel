@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.15.6 (2026-08-17)
+# File: coordinator.py, Version: 0.15.8 (2026-08-18)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -416,6 +416,9 @@ class DeviceSentinelCoordinator(
         for entry in loaded.get(DATA_INCIDENTS) or []:
             if entry.get(INC_CAUSE) == LEGACY_CAUSE_UNOBSERVED:
                 entry[INC_CAUSE] = RECOVERY_CAUSE_UNOBSERVED
+        # And the same treatment for the four kinds renamed at 0.15.8,
+        # for the same reason one release later (ruling #299).
+        self._rename_stored_kinds(loaded)
         # The list is engine-owned. Anything stored without a
         # device_id is a hand-typed item from the pre-sync backbone
         # (the create feature is gone with this release) and is

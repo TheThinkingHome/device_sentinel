@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.12.5 (2026-08-06)
+# File: narrative.py, Version: 0.15.8 (2026-08-18)
 
 """How to say what happened: the composer.
 
@@ -51,11 +51,11 @@ from .const import (
     RECOVERY_CAUSE_UNOBSERVED,
     TODO_DEVICE_ID,
     TODO_KINDS,
-    TODO_KIND_BATTERY,
-    TODO_KIND_BATTERY_FALLING,
+    TODO_KIND_LOW_BATTERY,
+    TODO_KIND_FALLING_BATTERY,
     TODO_KIND_FROZEN,
-    TODO_KIND_NOT_REPORTED,
-    TODO_KIND_SIGNAL,
+    TODO_KIND_NEVER_REPORTED,
+    TODO_KIND_RAILED_SIGNAL,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
     TODO_SORT_NAME,
@@ -79,13 +79,13 @@ class NarrativeMixin:
         TODO_KIND_UNAVAILABLE,
         TODO_KIND_FROZEN,
         TODO_KIND_UNKNOWN,
-        TODO_KIND_NOT_REPORTED,
-        TODO_KIND_BATTERY,
+        TODO_KIND_NEVER_REPORTED,
+        TODO_KIND_LOW_BATTERY,
         # A forecast ranks below the level it forecasts: a cell that
         # has crossed the threshold is more urgent than one heading
         # for it (ruling #215).
-        TODO_KIND_BATTERY_FALLING,
-        TODO_KIND_SIGNAL,
+        TODO_KIND_FALLING_BATTERY,
+        TODO_KIND_RAILED_SIGNAL,
     )
 
     # A never-reported device has no moment of failure, so its
@@ -96,19 +96,19 @@ class NarrativeMixin:
         TODO_KIND_FROZEN,
         TODO_KIND_UNAVAILABLE,
         TODO_KIND_UNKNOWN,
-        TODO_KIND_SIGNAL,
-        TODO_KIND_BATTERY,
+        TODO_KIND_RAILED_SIGNAL,
+        TODO_KIND_LOW_BATTERY,
     )
 
     _EVENT_WORDING = {
         TODO_KIND_FROZEN: "stopped reporting",
         TODO_KIND_UNAVAILABLE: "went unavailable",
         TODO_KIND_UNKNOWN: "went unknown",
-        TODO_KIND_SIGNAL: "signal railed",
+        TODO_KIND_RAILED_SIGNAL: "signal railed",
         # Present tense, because nothing happened to the device: what
         # changed is what the readings now say about where it is
         # heading (ruling #215).
-        TODO_KIND_BATTERY_FALLING: "battery is running down",
+        TODO_KIND_FALLING_BATTERY: "battery is running down",
     }
 
     # Each kind carries its own duration template rather than sharing
@@ -126,14 +126,14 @@ class NarrativeMixin:
             "is unavailable",
         ),
         TODO_KIND_UNKNOWN: ("has been unknown for {ago}", "is unknown"),
-        TODO_KIND_SIGNAL: (
+        TODO_KIND_RAILED_SIGNAL: (
             "signal has been railed for {ago}",
             "signal is railed",
         ),
         # No duration, because how long the projection has stood is
         # not the interesting number; how long the cell has is, and
         # the brief's own falling line carries that.
-        TODO_KIND_BATTERY_FALLING: (
+        TODO_KIND_FALLING_BATTERY: (
             "battery is running down",
             "battery is running down",
         ),
@@ -187,7 +187,7 @@ class NarrativeMixin:
         name = row[INC_NAME]
         kind = row[INC_KIND]
         when = self._clock(row[INC_WHEN])
-        if kind == TODO_KIND_BATTERY:
+        if kind == TODO_KIND_LOW_BATTERY:
             phrase = self._battery_phrase(row[INC_DEVICE_ID], False)
             return f"{name} {phrase} at {when}"
         wording = self._EVENT_WORDING.get(kind, kind)
@@ -215,7 +215,7 @@ class NarrativeMixin:
             if row.get(INC_DURATION) is None:
                 return f"{name} recovered at {when}{tail}."
             return f"{name} recovered at {when} after {span}{tail}."
-        if kind == TODO_KIND_NOT_REPORTED:
+        if kind == TODO_KIND_NEVER_REPORTED:
             return f"{name} has never reported since it was discovered."
         return f"{self._opening_clause(row)}."
 
@@ -378,13 +378,13 @@ class NarrativeMixin:
             if since
             else None
         )
-        if worst == TODO_KIND_NOT_REPORTED:
+        if worst == TODO_KIND_NEVER_REPORTED:
             clause = (
                 f"has never reported in {ago}"
                 if ago
                 else "has never reported"
             )
-        elif worst == TODO_KIND_BATTERY:
+        elif worst == TODO_KIND_LOW_BATTERY:
             clause = self._battery_phrase(device_id, True)
         else:
             with_age, without_age = self._STATE_TEMPLATE.get(

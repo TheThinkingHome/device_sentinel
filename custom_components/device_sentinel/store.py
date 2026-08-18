@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.15.6 (2026-08-17)
+# File: store.py, Version: 0.15.8 (2026-08-18)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -26,6 +26,11 @@ from homeassistant.util import dt as dt_util
 from .records import _new_device_record, _reset_signal_day, _span
 
 from .const import (
+    DATA_INCIDENTS,
+    DATA_TODO_JOURNAL,
+    INC_KIND,
+    LEGACY_KIND_RENAMES,
+    TODO_KINDS,
     DEV_SIGNAL_COUNT,
     DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_MEAN,
@@ -177,6 +182,78 @@ class StorageMixin:
                 _reset_signal_day(record)
                 reset += 1
         return converted, reset
+
+    def _rename_stored_kinds(self, loaded: dict[str, Any]) -> int:
+        """Bring stored history onto the one kind vocabulary (#299).
+
+        Four problem kinds were renamed for 0.15.8, before the event
+        payload could publish them and make them a contract nobody
+        could change again. Stored history keeps whatever spelling was
+        written at the time, so a brief drawing on it would have read
+        one vocabulary out of a file holding two, which is #215
+        arriving by a different road.
+
+        Three named passes and never a walk over every "kind" in the
+        file. The system events list carries fourteen values of its
+        own under that same field name, and a sweep would rewrite
+        every one of them into nonsense. Each list here is named
+        because it holds a problem kind, and a list not named is a
+        list that does not.
+
+        Idempotent by construction: a value already correct is not a
+        key in the map and is left alone, so the second start rewrites
+        nothing. An unrecognized value passes through untouched rather
+        than being dropped, so a record written by a later version
+        survives a downgrade.
+        """
+        renamed = 0
+
+        # The incident timeline, which the brief and the maintainer
+        # report both read to write their sentences.
+        for entry in loaded.get(DATA_INCIDENTS) or []:
+            fresh = LEGACY_KIND_RENAMES.get(entry.get(INC_KIND))
+            if fresh is not None:
+                entry[INC_KIND] = fresh
+                renamed += 1
+
+        # The additions journal, capped at a count rather than an age,
+        # so on a quiet fleet an old spelling could sit here for
+        # months. It stops being write-only the moment events fire
+        # from this same boundary (ruling #289).
+        for entry in loaded.get(DATA_TODO_JOURNAL) or []:
+            fresh = LEGACY_KIND_RENAMES.get(entry.get(INC_KIND))
+            if fresh is not None:
+                entry[INC_KIND] = fresh
+                renamed += 1
+
+        # The list itself, where a kind is a dictionary key and the
+        # value is the moment it was added, so the entry is rebuilt
+        # rather than reassigned.
+        for item in loaded.get(DATA_TODO_ITEMS) or []:
+            kinds = item.get(TODO_KINDS)
+            if not isinstance(kinds, dict):
+                continue
+            rebuilt = {
+                LEGACY_KIND_RENAMES.get(kind, kind): when
+                for kind, when in kinds.items()
+            }
+            if rebuilt != kinds:
+                renamed += sum(
+                    1 for kind in kinds if kind in LEGACY_KIND_RENAMES
+                )
+                item[TODO_KINDS] = rebuilt
+
+        if renamed:
+            LOGGER.info(
+                "Renamed %d stored problem kind(s) onto the current "
+                "vocabulary: %s",
+                renamed,
+                ", ".join(
+                    f"{was} to {now}"
+                    for was, now in LEGACY_KIND_RENAMES.items()
+                ),
+            )
+        return renamed
 
     def _clear_mixed_signal(self, devices: dict[str, Any]) -> list[str]:
         """Discard a signal history that holds two scales at once.

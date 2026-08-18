@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.15.5 (2026-08-17)
+# File: report_brief.py, Version: 0.15.8 (2026-08-18)
 
 """The daily brief: the one report written for a person.
 
@@ -82,11 +82,11 @@ from .const import (
     SYS_WHEN,
     TODO_DEVICE_ID,
     TODO_KINDS,
-    TODO_KIND_BATTERY,
-    TODO_KIND_BATTERY_FALLING,
+    TODO_KIND_LOW_BATTERY,
+    TODO_KIND_FALLING_BATTERY,
     TODO_KIND_FROZEN,
-    TODO_KIND_NOT_REPORTED,
-    TODO_KIND_SIGNAL,
+    TODO_KIND_NEVER_REPORTED,
+    TODO_KIND_RAILED_SIGNAL,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
     TODO_SORT_NAME,
@@ -205,7 +205,7 @@ class BriefMixin:
         if event == INCIDENT_ACKNOWLEDGED:
             # Legacy rows only, removable after 2026-08-11.
             return "acknowledged"
-        if kind == TODO_KIND_BATTERY:
+        if kind == TODO_KIND_LOW_BATTERY:
             # Borrowed from the composer so the table and the prose
             # cannot disagree about the same event: one composer
             # serves every channel, so nothing is described two ways
@@ -213,11 +213,11 @@ class BriefMixin:
             return self._battery_phrase(row[INC_DEVICE_ID], False)
         wording = {
             TODO_KIND_FROZEN: "stopped reporting",
-            TODO_KIND_NOT_REPORTED: "has never reported",
+            TODO_KIND_NEVER_REPORTED: "has never reported",
             TODO_KIND_UNAVAILABLE: "went unavailable",
             TODO_KIND_UNKNOWN: "went unknown",
-            TODO_KIND_SIGNAL: "signal railed",
-            TODO_KIND_BATTERY_FALLING: "battery is running down",
+            TODO_KIND_RAILED_SIGNAL: "signal railed",
+            TODO_KIND_FALLING_BATTERY: "battery is running down",
         }
         return wording.get(kind, kind)
 
@@ -261,12 +261,12 @@ class BriefMixin:
             for kind, since in (record.get(TODO_KINDS) or {}).items():
                 problem = {
                     TODO_KIND_FROZEN: "stopped reporting",
-                    TODO_KIND_NOT_REPORTED: "never reported",
+                    TODO_KIND_NEVER_REPORTED: "never reported",
                     TODO_KIND_UNAVAILABLE: "unavailable",
                     TODO_KIND_UNKNOWN: "unknown",
-                    TODO_KIND_SIGNAL: "signal railed",
-                    TODO_KIND_BATTERY: self._brief_battery_text(device_id),
-                    TODO_KIND_BATTERY_FALLING: (
+                    TODO_KIND_RAILED_SIGNAL: "signal railed",
+                    TODO_KIND_LOW_BATTERY: self._brief_battery_text(device_id),
+                    TODO_KIND_FALLING_BATTERY: (
                         self._brief_falling_text(device_id)
                     ),
                 }.get(kind, kind)
@@ -782,7 +782,7 @@ class BriefMixin:
             for device_id, members in by_device.items()
             if len(members) > 1
             and not any(
-                opened.get(INC_KIND) == TODO_KIND_NOT_REPORTED
+                opened.get(INC_KIND) == TODO_KIND_NEVER_REPORTED
                 for opened, _resolved in members
             )
         }
@@ -1030,7 +1030,7 @@ class BriefMixin:
                 # for the moment the device broke (ruling #118).
                 when = (
                     f"discovered {self._brief_moment(since)}"
-                    if kind == TODO_KIND_NOT_REPORTED
+                    if kind == TODO_KIND_NEVER_REPORTED
                     else self._brief_moment(since)
                 )
                 lines.append(
@@ -1049,9 +1049,9 @@ class BriefMixin:
             seen: dict[str, str] = {}
             for name, _problem, _since, kind, device_id in now_rows:
                 if kind in (
-                    TODO_KIND_BATTERY,
-                    TODO_KIND_BATTERY_FALLING,
-                    TODO_KIND_SIGNAL,
+                    TODO_KIND_LOW_BATTERY,
+                    TODO_KIND_FALLING_BATTERY,
+                    TODO_KIND_RAILED_SIGNAL,
                 ):
                     continue
                 phrase = self.reachability_phrase(device_id)

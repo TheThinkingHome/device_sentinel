@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.15.6 (2026-08-17)
+# File: const.py, Version: 0.15.8 (2026-08-18)
 
 """Constants for the Device Sentinel integration."""
 
@@ -793,7 +793,7 @@ FREEZE_CATEGORY_PRIORITY = (
 # first-observed clears even a once-a-day device, which will have
 # spoken twice by then, so total silence past it is a device that
 # never started, not one still warming up.
-FREEZE_CATEGORY_NOT_REPORTED = "not_reported"
+FREEZE_CATEGORY_NEVER_REPORTED = "never_reported"
 FREEZE_NOT_REPORTED_SECONDS = 48.0 * 3600.0
 
 # A device mid-transition flips its entities to unavailable in quick
@@ -1387,31 +1387,38 @@ PERSISTENT_DISMISS = "dismiss"
 # always shows its most recent event and summary; faults are audible
 # on the device's own system sound, recoveries are sent silently.
 NOTIFY_CARD_ID = "device_sentinel_state"
+
+# The three notification families. A family is not a problem kind and
+# never was, but until 0.15.8 two of them were spelled the same as a
+# kind, so "battery" meant a fault in one table and a family in
+# another and the reader had to know which table they were in. The
+# kinds were renamed (ruling #299) and the families are named here so
+# neither has to be guessed from context again.
+NOTIFY_FAMILY_BATTERY = "battery"
+NOTIFY_FAMILY_SIGNAL = "signal"
+NOTIFY_FAMILY_FREEZE = "freeze"
+NOTIFY_FAMILIES_ALL = (
+    NOTIFY_FAMILY_BATTERY,
+    NOTIFY_FAMILY_SIGNAL,
+    NOTIFY_FAMILY_FREEZE,
+)
+
+# The phone's notification tag per family: a push carrying a tag
+# replaces the previous one rather than stacking beside it, so all
+# battery news collapses into one entry on the lock screen. These
+# values are deliberately not renamed and must not be swept up by a
+# rename of the kinds. They are identities already living on every
+# installed phone, and changing one costs a duplicate notification
+# for no gain (ruling #299).
 NOTIFY_FAMILY_IDS = {
-    "battery": "device_sentinel_battery",
-    "signal": "device_sentinel_signal",
-    "freeze": "device_sentinel_freeze",
-}
-# The freeze family covers every liveness kind; a battery or signal
-# kind maps to its own family, and anything else is a freeze-family
-# event. This is the map from a problem kind to its notification family.
-NOTIFY_KIND_FAMILY = {
-    "battery": "battery",
-    # A forecast is battery news, not device news. Absent from this
-    # table it fell through to the freeze family, so a running-down
-    # cell arrived on the phone titled Device (ruling #220).
-    "battery_falling": "battery",
-    "signal": "signal",
-    "rail": "signal",
-    "frozen": "freeze",
-    "unavailable": "freeze",
-    "unknown": "freeze",
-    "not_reported": "freeze",
+    NOTIFY_FAMILY_BATTERY: "device_sentinel_battery",
+    NOTIFY_FAMILY_SIGNAL: "device_sentinel_signal",
+    NOTIFY_FAMILY_FREEZE: "device_sentinel_freeze",
 }
 NOTIFY_FAMILY_TITLES = {
-    "battery": "Battery",
-    "signal": "Signal",
-    "freeze": "Device",
+    NOTIFY_FAMILY_BATTERY: "Battery",
+    NOTIFY_FAMILY_SIGNAL: "Signal",
+    NOTIFY_FAMILY_FREEZE: "Device",
 }
 # The email's subject, and the brief's own title, kept as one string
 # so the document and the message it arrives in cannot disagree.
@@ -1487,19 +1494,43 @@ TODO_ACKED_AT = "acked_at"
 # Everything that turns a kind into words keys off these names, so a
 # rename fails at import rather than quietly printing a raw kind
 # into somebody's daily brief.
-TODO_KIND_BATTERY = "battery"
+TODO_KIND_LOW_BATTERY = "low_battery"
 # A cell projected to reach empty inside the person's horizon. A
 # different kind from the one above and not a lesser version of it:
 # low is a level that has been crossed, falling is one that is going
 # to be, and a cell at eighty percent dropping steadily can have less
 # life left than one sitting at thirty that has not moved in a month.
 # They combine into one line when a device has both (ruling #213).
-TODO_KIND_BATTERY_FALLING = "battery_falling"
+TODO_KIND_FALLING_BATTERY = "falling_battery"
 TODO_KIND_FROZEN = FREEZE_CATEGORY_FROZEN
 TODO_KIND_UNAVAILABLE = FREEZE_CATEGORY_UNAVAILABLE
 TODO_KIND_UNKNOWN = FREEZE_CATEGORY_UNKNOWN
-TODO_KIND_NOT_REPORTED = FREEZE_CATEGORY_NOT_REPORTED
-TODO_KIND_SIGNAL = "signal"
+TODO_KIND_NEVER_REPORTED = FREEZE_CATEGORY_NEVER_REPORTED
+TODO_KIND_RAILED_SIGNAL = "railed_signal"
+# The signal problem rows tag a railed link with the kind above and
+# leave a merely low one untagged. This names that default so the
+# absence reads as a decision rather than an oversight; it is a row
+# tag and not a problem kind, so it is not in TODO_KINDS_ALL.
+SIGNAL_ROW_LOW = "low"
+
+# The spellings four problem kinds carried before 0.15.8, and the
+# only place the old vocabulary is allowed to appear. Stored history
+# keeps whatever was written at the time, so the incidents, the
+# additions journal and the to-do items are rewritten once at load
+# and the fleet then speaks one vocabulary rather than two (ruling
+# #299).
+#
+# Three named passes rather than one walk over every "kind" in the
+# file: the system events list carries its own vocabulary of fourteen
+# values under the same field name, and a generic sweep would destroy
+# every one of them.
+LEGACY_KIND_RENAMES = {
+    "battery": TODO_KIND_LOW_BATTERY,
+    "battery_falling": TODO_KIND_FALLING_BATTERY,
+    "signal": TODO_KIND_RAILED_SIGNAL,
+    "rail": TODO_KIND_RAILED_SIGNAL,
+    "not_reported": TODO_KIND_NEVER_REPORTED,
+}
 # Not a TODO_KIND_: those are device faults, and every one has a
 # route to the card, an event wording, and a state template, which a
 # test asserts. This names a cause rather than a device, carries its
@@ -1517,11 +1548,24 @@ TODO_KINDS_ALL = (
     TODO_KIND_FROZEN,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
-    TODO_KIND_NOT_REPORTED,
-    TODO_KIND_BATTERY,
-    TODO_KIND_BATTERY_FALLING,
-    TODO_KIND_SIGNAL,
+    TODO_KIND_NEVER_REPORTED,
+    TODO_KIND_LOW_BATTERY,
+    TODO_KIND_FALLING_BATTERY,
+    TODO_KIND_RAILED_SIGNAL,
 )
+
+# The freeze family covers every liveness kind; a battery or signal
+# kind maps to its own family, and anything else is a freeze-family
+# event. This is the map from a problem kind to its notification family.
+NOTIFY_KIND_FAMILY = {
+    TODO_KIND_LOW_BATTERY: NOTIFY_FAMILY_BATTERY,
+    TODO_KIND_FALLING_BATTERY: NOTIFY_FAMILY_BATTERY,
+    TODO_KIND_RAILED_SIGNAL: NOTIFY_FAMILY_SIGNAL,
+    TODO_KIND_FROZEN: NOTIFY_FAMILY_FREEZE,
+    TODO_KIND_UNAVAILABLE: NOTIFY_FAMILY_FREEZE,
+    TODO_KIND_UNKNOWN: NOTIFY_FAMILY_FREEZE,
+    TODO_KIND_NEVER_REPORTED: NOTIFY_FAMILY_FREEZE,
+}
 
 # The additions journal. Every item added and every kind that joins
 # an existing item is recorded here and announced on the dispatcher
@@ -1603,8 +1647,17 @@ ACTION_READDED = "readded"
 # event; one closed on Tuesday is not (ruling #228).
 CAUSE_EPISODE_SLACK_SECONDS = 120.0
 
+# Named from the constants rather than spelled by hand. Written as
+# literals, this set survived the 0.15.8 rename untouched and would
+# have quietly stopped crediting a cause to a never-reported
+# recovery, which is #215 in its sixth table (ruling #299).
 FREEZE_KINDS_FOR_CAUSE = frozenset(
-    {"frozen", "unavailable", "unknown", "not_reported"}
+    {
+        TODO_KIND_FROZEN,
+        TODO_KIND_UNAVAILABLE,
+        TODO_KIND_UNKNOWN,
+        TODO_KIND_NEVER_REPORTED,
+    }
 )
 
 # The daily brief (ruling #116). One file per day beside the other
@@ -1716,7 +1769,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 288
+HIGHEST_RULING = 299
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

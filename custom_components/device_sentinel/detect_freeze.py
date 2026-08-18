@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.13.10 (2026-08-13)
+# File: detect_freeze.py, Version: 0.15.8 (2026-08-18)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -54,7 +54,7 @@ from .const import (
     DEV_TODAY_MAX,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
-    FREEZE_CATEGORY_NOT_REPORTED,
+    FREEZE_CATEGORY_NEVER_REPORTED,
     FREEZE_CATEGORY_PRIORITY,
     FREEZE_CATEGORY_UNAVAILABLE,
     FREEZE_CATEGORY_UNKNOWN,
@@ -322,7 +322,7 @@ class FreezeMixin:
                 except (ValueError, AttributeError):
                     age = 0.0
                 if age >= FREEZE_NOT_REPORTED_SECONDS:
-                    return FREEZE_CATEGORY_NOT_REPORTED
+                    return FREEZE_CATEGORY_NEVER_REPORTED
             return None
 
         window = self._freeze_window(record)

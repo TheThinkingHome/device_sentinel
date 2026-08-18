@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.13.2 (2026-08-13)
+# File: detect_battery.py, Version: 0.15.8 (2026-08-18)
 
 """Battery: the level threshold and what is tracked.
 
@@ -183,7 +183,12 @@ class BatteryMixin:
 
         Row shape follows the blueprint contract: name, entity_id,
         area, level, since (below-threshold-since), last_seen (the
-        battery entity's own last report), age, kind: device.
+        battery entity's own last report), age.
+
+        The kind field the blueprint's contract carried was written
+        here and read nowhere, so it went with the rename that gave
+        the problem kinds one vocabulary (ruling #299). A name for a
+        value nobody consumes is a name that will be wrong later.
         """
         dev_reg = dr.async_get(self.hass)
         area_reg_names: dict[str, str] = {}
@@ -240,7 +245,6 @@ class BatteryMixin:
                     "age": (
                         dt_util.get_age(since_dt) if since_dt else "unknown"
                     ),
-                    "kind": "device",
                 }
             )
         rows.sort(key=lambda row: (row["area"], row["name"]))

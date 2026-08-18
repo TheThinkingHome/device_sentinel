@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.13.11 (2026-08-13)
+# File: problem_list.py, Version: 0.15.8 (2026-08-18)
 
 """The problem list: the single memory every channel renders.
 
@@ -42,6 +42,7 @@ from .const import (
     DEV_DAILY_MAX,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
+    NOTIFY_FAMILY_FREEZE,
     NOTIFY_KIND_FAMILY,
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
@@ -51,9 +52,13 @@ from .const import (
     TODO_DEVICE_ID,
     TODO_JOURNAL_KEEP,
     TODO_KINDS,
-    TODO_KIND_BATTERY,
-    TODO_KIND_BATTERY_FALLING,
-    TODO_KIND_SIGNAL,
+    TODO_KIND_FALLING_BATTERY,
+    TODO_KIND_FROZEN,
+    TODO_KIND_LOW_BATTERY,
+    TODO_KIND_NEVER_REPORTED,
+    TODO_KIND_RAILED_SIGNAL,
+    TODO_KIND_UNAVAILABLE,
+    TODO_KIND_UNKNOWN,
     TODO_SORT_NAME,
     TODO_STATUS,
     TODO_SUMMARY,
@@ -64,14 +69,18 @@ from .const import (
 )
 
 
+# Keyed by problem kind, so every key is a TODO_KIND_ and nothing
+# else. The "rail" entry that sat here until 0.15.8 was a signal row
+# kind rather than a problem kind and could never be reached; the
+# rows carry TODO_KIND_RAILED_SIGNAL now and the two vocabularies
+# have become one (ruling #299).
 _EVENT_WORD = {
-    "battery": "low",
-    "signal": "low signal",
-    "rail": "railed",
-    "frozen": "frozen",
-    "unavailable": "unavailable",
-    "unknown": "unknown",
-    "not_reported": "never reporting",
+    TODO_KIND_LOW_BATTERY: "low",
+    TODO_KIND_RAILED_SIGNAL: "railed",
+    TODO_KIND_FROZEN: "frozen",
+    TODO_KIND_UNAVAILABLE: "unavailable",
+    TODO_KIND_UNKNOWN: "unknown",
+    TODO_KIND_NEVER_REPORTED: "never reporting",
 }
 
 # The kinds whose push line is written rather than assembled from
@@ -83,14 +92,14 @@ _EVENT_WORD = {
 # can carry a level and a forecast and "recovered" would not say
 # which of them ended (ruling #220).
 _FAULT_LINE = {
-    TODO_KIND_BATTERY_FALLING: (
+    TODO_KIND_FALLING_BATTERY: (
         "{name} battery is running down, empty in {left}",
         "{name} battery is running down",
     ),
 }
 _RECOVERY_LINE = {
-    TODO_KIND_BATTERY: "{name} battery is no longer low",
-    TODO_KIND_BATTERY_FALLING: "{name} battery is no longer running down",
+    TODO_KIND_LOW_BATTERY: "{name} battery is no longer low",
+    TODO_KIND_FALLING_BATTERY: "{name} battery is no longer running down",
 }
 
 class ProblemListMixin:
@@ -281,7 +290,7 @@ class ProblemListMixin:
             entry = _entry(row["device_id"], row.get("name"))
             since = row.get("since")
             since_dt = dt_util.parse_datetime(since) if since else None
-            entry["kinds"][TODO_KIND_BATTERY] = (
+            entry["kinds"][TODO_KIND_LOW_BATTERY] = (
                 since_dt.timestamp() if since_dt else None
             )
             entry["level"] = row.get("level")
@@ -298,14 +307,14 @@ class ProblemListMixin:
         # ticked off a forecast still watches it come true.
         for row in self.battery_falling_list:
             entry = _entry(row["device_id"], row.get("name"))
-            entry["kinds"][TODO_KIND_BATTERY_FALLING] = None
+            entry["kinds"][TODO_KIND_FALLING_BATTERY] = None
             entry["left"] = row.get("left")
             if entry["level"] is None:
                 entry["level"] = row.get("level")
 
         for row in self.signal_problem_list:
             entry = _entry(row["device_id"], row.get("name"))
-            entry["kinds"][TODO_KIND_SIGNAL] = None
+            entry["kinds"][TODO_KIND_RAILED_SIGNAL] = None
 
         return problems
 
@@ -321,12 +330,12 @@ class ProblemListMixin:
         report and the brief use, which are words rather than a count
         of days because the projection moves (ruling #197).
         """
-        if kind == TODO_KIND_BATTERY:
+        if kind == TODO_KIND_LOW_BATTERY:
             if level is None:
                 return "battery low"
             shown = int(level) if float(level).is_integer() else level
             return f"battery {shown}%"
-        if kind == TODO_KIND_BATTERY_FALLING:
+        if kind == TODO_KIND_FALLING_BATTERY:
             # The noun is carried, because the item may say this and
             # nothing else: "Door 2nd Bedroom: empty in about 2 weeks"
             # sitting beside "Soil Irrigation: battery 0%" leaves a
@@ -336,7 +345,7 @@ class ProblemListMixin:
             if left:
                 return f"empty in {left}"
             return "battery running down"
-        if kind == TODO_KIND_SIGNAL:
+        if kind == TODO_KIND_RAILED_SIGNAL:
             return "signal (rail)"
         return kind.replace("_", " ")
 
@@ -405,9 +414,9 @@ class ProblemListMixin:
         2 weeks" rather than two phrases stacked (ruling #213).
         """
         tail = (
-            TODO_KIND_BATTERY,
-            TODO_KIND_BATTERY_FALLING,
-            TODO_KIND_SIGNAL,
+            TODO_KIND_LOW_BATTERY,
+            TODO_KIND_FALLING_BATTERY,
+            TODO_KIND_RAILED_SIGNAL,
         )
         order = [kind for kind in kinds if kind not in tail]
         order += [kind for kind in tail if kind in kinds]
@@ -419,10 +428,10 @@ class ProblemListMixin:
         # clause already did, so one item says the noun once and an
         # item carrying only the forecast still says what is empty
         # (ruling #216).
-        if TODO_KIND_BATTERY_FALLING in order and (
-            TODO_KIND_BATTERY not in order
+        if TODO_KIND_FALLING_BATTERY in order and (
+            TODO_KIND_LOW_BATTERY not in order
         ):
-            index = order.index(TODO_KIND_BATTERY_FALLING)
+            index = order.index(TODO_KIND_FALLING_BATTERY)
             if words[index].startswith("empty in "):
                 words[index] = f"battery {words[index]}"
         summary = f"{name}: " + ", ".join(words)
@@ -444,9 +453,9 @@ class ProblemListMixin:
         # what the kinds above say.
         if device_id is not None and any(
             kind not in (
-                TODO_KIND_BATTERY,
-                TODO_KIND_BATTERY_FALLING,
-                TODO_KIND_SIGNAL,
+                TODO_KIND_LOW_BATTERY,
+                TODO_KIND_FALLING_BATTERY,
+                TODO_KIND_RAILED_SIGNAL,
             )
             for kind in order
         ):
@@ -586,7 +595,7 @@ class ProblemListMixin:
         line = self._event_line(kind, name, when, recovery, left)
         if (
             not recovery
-            and family == "freeze"
+            and family == NOTIFY_FAMILY_FREEZE
             and device_id in self._battery_entity
         ):
             # A convicted battery device cannot be reached by radio;

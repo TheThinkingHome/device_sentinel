@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.13.11 (2026-08-13)
+# File: notifier.py, Version: 0.15.8 (2026-08-18)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -51,8 +51,17 @@ from .const import (
     DEFAULT_QUIET_START,
     LOGGER,
     NOTIFY_CARD_ID,
+    NOTIFY_FAMILY_BATTERY,
+    NOTIFY_FAMILY_FREEZE,
     NOTIFY_FAMILY_IDS,
+    NOTIFY_FAMILY_SIGNAL,
     NOTIFY_FAMILY_TITLES,
+    SIGNAL_ROW_LOW,
+    TODO_KIND_FROZEN,
+    TODO_KIND_NEVER_REPORTED,
+    TODO_KIND_RAILED_SIGNAL,
+    TODO_KIND_UNAVAILABLE,
+    TODO_KIND_UNKNOWN,
     PERSISTENT_CREATE,
     PERSISTENT_DISMISS,
     PERSISTENT_TARGET,
@@ -67,13 +76,19 @@ _APPLE_SILENT = {"push": {"interruption-level": "passive"}}
 # The word the card and pushes use for each internal kind, matching the
 # briefs and the problem list so a device reads the same everywhere. A
 # rail is not a low; a not_reported device reads as never reported.
+# Keyed by the kind a row carries. The signal rows tag a railed link
+# and leave a merely low one untagged, so SIGNAL_ROW_LOW is the
+# default rather than a kind anything writes. Until 0.15.8 the railed
+# rows said "rail" here while the problem list called the same thing
+# "signal", which is why the family map had to list both; the rows
+# carry TODO_KIND_RAILED_SIGNAL now (ruling #299).
 _SUMMARY_WORD = {
-    "rail": "railed",
-    "low": "low signal",
-    "frozen": "frozen",
-    "unavailable": "unavailable",
-    "unknown": "unknown",
-    "not_reported": "never reported",
+    TODO_KIND_RAILED_SIGNAL: "railed",
+    SIGNAL_ROW_LOW: "low signal",
+    TODO_KIND_FROZEN: "frozen",
+    TODO_KIND_UNAVAILABLE: "unavailable",
+    TODO_KIND_UNKNOWN: "unknown",
+    TODO_KIND_NEVER_REPORTED: "never reported",
 }
 
 
@@ -132,7 +147,7 @@ class NotifierMixin:
         """
         acknowledged = self._acknowledged_devices()
         parts: list[str] = []
-        if family == "freeze":
+        if family == NOTIFY_FAMILY_FREEZE:
             # The card is a human surface and follows the same rule as
             # the list and the pushes (ruling #266): while an upstream
             # is down its casualties are counted, not named. The
@@ -145,7 +160,7 @@ class NotifierMixin:
                 parts.append(
                     f"{display} down, {count} device{plural} unavailable"
                 )
-        if family == "battery":
+        if family == NOTIFY_FAMILY_BATTERY:
             # Two sources, because low and falling are two questions
             # and the card was reading only the first: a cell heading
             # for empty never reached it at all, so a card could read
@@ -186,7 +201,7 @@ class NotifierMixin:
                 else:
                     rows[key] = f"{name} {clause}"
             parts.extend(rows.values())
-        elif family == "signal":
+        elif family == NOTIFY_FAMILY_SIGNAL:
             # The signal list tags each row by kind, not category, and
             # a rail is not a low: a railed device shows a stale
             # perfect reading held at the protocol's fill value, which
@@ -196,9 +211,9 @@ class NotifierMixin:
                 if row.get("device_id") in acknowledged:
                     continue
                 name = row.get("name") or row.get("device_id")
-                kind = row.get("kind") or "low"
+                kind = row.get("kind") or SIGNAL_ROW_LOW
                 parts.append(f"{name} {_SUMMARY_WORD.get(kind, kind)}")
-        elif family == "freeze":
+        elif family == NOTIFY_FAMILY_FREEZE:
             for row in self.reportable_down_rows:
                 if row.get("device_id") in acknowledged:
                     continue
