@@ -912,3 +912,67 @@ async def test_a_device_with_nothing_learned_is_announced_at_once(
 
     assert len(calls) == 1
     assert coord._held_events == {}
+
+
+async def test_notifications_save_keeps_a_flat_key_beside_sections(
+    hass: HomeAssistant,
+):
+    """The save flattens the three sections into the flat option keys
+    the storage has always used. Its fallback branch is the one a key
+    that arrives *outside* any section takes: it must land as-is
+    rather than be silently dropped. The real form is fully sectioned
+    so this branch is defensive, and it is proven here so a future
+    unsectioned field cannot vanish on save unnoticed."""
+    hass.services._services.setdefault("notify", {})
+    hass.services._services["notify"]["mobile_app_mine"] = object()
+    entry = await setup_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "notifications"}
+    )
+    assert result["step_id"] == "notifications"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "instant": {
+                CONF_HIGH_PRIORITY_TARGETS: ["notify.mobile_app_mine"],
+                CONF_NORMAL_PRIORITY_TARGETS: [],
+                CONF_PERSISTENT_ENABLED: True,
+            },
+            "quiet": {
+                CONF_QUIET_ENABLED: False,
+                CONF_QUIET_START: "22:00:00",
+                CONF_QUIET_END: "07:00:00",
+            },
+            "brief": {
+                CONF_REMINDER_MODE: "daily",
+                CONF_REMINDER_TIME: "07:00:00",
+                CONF_BRIEF_TARGETS: [],
+            },
+        },
+    )
+    assert result["type"] == "create_entry"
+    # A sectioned key landed flat, as every existing test proves.
+    assert entry.options[CONF_HIGH_PRIORITY_TARGETS] == [
+        "notify.mobile_app_mine"
+    ]
+    # Now the fallback: submit again with one key outside any section.
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "notifications"}
+    )
+    flow = hass.config_entries.options._progress[result["flow_id"]]
+    result = await flow.async_step_notifications(
+        {
+            "instant": {
+                CONF_HIGH_PRIORITY_TARGETS: [],
+                CONF_NORMAL_PRIORITY_TARGETS: [],
+                CONF_PERSISTENT_ENABLED: True,
+            },
+            "a_flat_key": "kept",
+        }
+    )
+    assert result["type"] == "create_entry"
+    assert result["data"]["a_flat_key"] == "kept"
+    assert result["data"][CONF_PERSISTENT_ENABLED] is True

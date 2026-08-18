@@ -46,7 +46,18 @@ from custom_components.device_sentinel.const import (
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_IGNORED_INTEGRATIONS,
     CONF_EXCLUDED_LABELS,
+    CONF_FREEZE_DELTA_HIGH,
+    CONF_FREEZE_DELTA_LOW,
     CONF_FREEZE_EXCLUDED_DEVICES,
+    CONF_FREEZE_EXCLUDED_INTEGRATIONS,
+    CONF_FREEZE_EXCLUDED_LABELS,
+    CONF_SIGNAL_ANOMALY_TRIM,
+    CONF_SIGNAL_EXCLUDED_DEVICES,
+    CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
+    CONF_SIGNAL_EXCLUDED_LABELS,
+    CONF_SIGNAL_LIFT,
+    CONF_SIGNAL_MARGIN,
+    CONF_SIGNAL_RED,
     DATA_DEVICES,
     DEAD_OPTION_KEYS,
     DEV_EVENT_COUNT,
@@ -579,6 +590,230 @@ def test_battery_prune_drops_superseded_device_pick():
     assert pruned[CONF_BATTERY_EXCLUDED_DEVICES] == []
 
 
+# The freeze and signal pruners are siblings of the battery one and
+# were the only two saves the suite never exercised. Each has two
+# jobs the battery test could not prove for it: round its own
+# sliders to the type the option is (the deltas and three signal
+# knobs are integers, the lift is a float), and settle its own
+# exclusion ladder on save the way battery does. Both are checked
+# here so a regression in either save cannot pass unnoticed.
+
+_FREEZE_ROWS = [
+    {
+        "device_id": "a",
+        "integration": "mobile_app",
+        "labels": frozenset(),
+        "name": "Phone",
+    },
+    {
+        "device_id": "b",
+        "integration": "mqtt",
+        "labels": frozenset({"noisy"}),
+        "name": "Motion Hall",
+    },
+    {
+        "device_id": "c",
+        "integration": "mqtt",
+        "labels": frozenset(),
+        "name": "Door Front",
+    },
+]
+
+
+def test_freeze_prune_rounds_the_deltas_to_integers():
+    """The two deltas arrive from a slider as floats and are stored
+    as the integers they are. A stray 2.0 must not survive a save."""
+    pruned = DeviceSentinelOptionsFlow._pruned_freeze_input(
+        {
+            CONF_FREEZE_DELTA_LOW: 3.0,
+            CONF_FREEZE_DELTA_HIGH: 8.0,
+            CONF_FREEZE_EXCLUDED_INTEGRATIONS: [],
+            CONF_FREEZE_EXCLUDED_LABELS: [],
+            CONF_FREEZE_EXCLUDED_DEVICES: [],
+        },
+        _FREEZE_ROWS,
+        _FakeRegistry({"a", "b", "c"}),
+    )
+    assert pruned[CONF_FREEZE_DELTA_LOW] == 3
+    assert isinstance(pruned[CONF_FREEZE_DELTA_LOW], int)
+    assert pruned[CONF_FREEZE_DELTA_HIGH] == 8
+    assert isinstance(pruned[CONF_FREEZE_DELTA_HIGH], int)
+
+
+def test_freeze_prune_drops_superseded_device_pick():
+    """A device pick the same save's integration exclude covers is
+    dropped, the same determinism rule as battery."""
+    pruned = DeviceSentinelOptionsFlow._pruned_freeze_input(
+        {
+            CONF_FREEZE_DELTA_LOW: 3,
+            CONF_FREEZE_DELTA_HIGH: 8,
+            CONF_FREEZE_EXCLUDED_INTEGRATIONS: ["mobile_app"],
+            CONF_FREEZE_EXCLUDED_LABELS: [],
+            CONF_FREEZE_EXCLUDED_DEVICES: ["a"],
+        },
+        _FREEZE_ROWS,
+        _FakeRegistry({"a", "b", "c"}),
+    )
+    assert pruned[CONF_FREEZE_EXCLUDED_DEVICES] == []
+
+
+def test_freeze_prune_settles_label_and_keeps_the_uncovered_pick():
+    """A label exclude prunes the device it reaches; a pick that no
+    broader kind covers stands. Both halves in one save so the ladder
+    is proven to settle rather than merely to drop."""
+    pruned = DeviceSentinelOptionsFlow._pruned_freeze_input(
+        {
+            CONF_FREEZE_DELTA_LOW: 3,
+            CONF_FREEZE_DELTA_HIGH: 8,
+            CONF_FREEZE_EXCLUDED_INTEGRATIONS: [],
+            CONF_FREEZE_EXCLUDED_LABELS: ["noisy"],
+            CONF_FREEZE_EXCLUDED_DEVICES: ["b", "c"],
+        },
+        _FREEZE_ROWS,
+        _FakeRegistry({"a", "b", "c"}),
+    )
+    # b is reached by the label and goes; c is covered by nothing and stays.
+    assert pruned[CONF_FREEZE_EXCLUDED_DEVICES] == ["c"]
+
+
+def test_freeze_prune_drops_a_deleted_device_pick():
+    """A pick for a device the registry no longer holds is dropped on
+    proof of absence, so a stale id cannot wedge the save (ruling #45)."""
+    pruned = DeviceSentinelOptionsFlow._pruned_freeze_input(
+        {
+            CONF_FREEZE_DELTA_LOW: 3,
+            CONF_FREEZE_DELTA_HIGH: 8,
+            CONF_FREEZE_EXCLUDED_INTEGRATIONS: [],
+            CONF_FREEZE_EXCLUDED_LABELS: [],
+            CONF_FREEZE_EXCLUDED_DEVICES: ["c", "gone"],
+        },
+        _FREEZE_ROWS,
+        _FakeRegistry({"a", "b", "c"}),  # "gone" was deleted
+    )
+    assert pruned[CONF_FREEZE_EXCLUDED_DEVICES] == ["c"]
+
+
+_SIGNAL_ROWS = [
+    {
+        "device_id": "a",
+        "integration": "mobile_app",
+        "labels": frozenset(),
+        "entity_id": "sensor.phone_rssi",
+        "name": "Phone",
+    },
+    {
+        "device_id": "b",
+        "integration": "mqtt",
+        "labels": frozenset({"far"}),
+        "entity_id": "sensor.blinds_rssi",
+        "name": "Master Park Blinds",
+    },
+    {
+        "device_id": "c",
+        "integration": "mqtt",
+        "labels": frozenset(),
+        "entity_id": "sensor.door_lqi",
+        "name": "Door Entryway",
+    },
+]
+
+
+def test_signal_prune_rounds_the_sliders_to_their_types():
+    """Trim, margin and red threshold are integers; the lift is a
+    float. Each arrives from its slider as a float and is stored as
+    the type the option declares."""
+    pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
+        {
+            CONF_SIGNAL_ANOMALY_TRIM: 1.0,
+            CONF_SIGNAL_MARGIN: 5.0,
+            CONF_SIGNAL_RED: 10.0,
+            CONF_SIGNAL_LIFT: 2,
+            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: [],
+            CONF_SIGNAL_EXCLUDED_LABELS: [],
+            CONF_SIGNAL_EXCLUDED_DEVICES: [],
+        },
+        _SIGNAL_ROWS,
+        _FakeRegistry({"a", "b", "c"}),
+    )
+    for key, want in (
+        (CONF_SIGNAL_ANOMALY_TRIM, 1),
+        (CONF_SIGNAL_MARGIN, 5),
+        (CONF_SIGNAL_RED, 10),
+    ):
+        assert pruned[key] == want
+        assert isinstance(pruned[key], int), key
+    assert pruned[CONF_SIGNAL_LIFT] == 2.0
+    assert isinstance(pruned[CONF_SIGNAL_LIFT], float)
+
+
+def test_signal_prune_leaves_absent_sliders_absent():
+    """A save that carries only the exclusion fields must not invent
+    the slider keys: each cast is guarded by an `in` test so a partial
+    input passes through with the keys it came with."""
+    pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
+        {
+            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: [],
+            CONF_SIGNAL_EXCLUDED_LABELS: [],
+            CONF_SIGNAL_EXCLUDED_DEVICES: ["c"],
+        },
+        _SIGNAL_ROWS,
+        _FakeRegistry({"a", "b", "c"}),
+    )
+    for key in (
+        CONF_SIGNAL_ANOMALY_TRIM,
+        CONF_SIGNAL_MARGIN,
+        CONF_SIGNAL_RED,
+        CONF_SIGNAL_LIFT,
+    ):
+        assert key not in pruned, key
+    assert pruned[CONF_SIGNAL_EXCLUDED_DEVICES] == ["c"]
+
+
+def test_signal_prune_drops_superseded_device_pick():
+    """A device pick the same save's integration exclude covers is
+    dropped, the same determinism rule as battery."""
+    pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
+        {
+            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: ["mobile_app"],
+            CONF_SIGNAL_EXCLUDED_LABELS: [],
+            CONF_SIGNAL_EXCLUDED_DEVICES: ["a"],
+        },
+        _SIGNAL_ROWS,
+        _FakeRegistry({"a", "b", "c"}),
+    )
+    assert pruned[CONF_SIGNAL_EXCLUDED_DEVICES] == []
+
+
+def test_signal_prune_settles_label_and_keeps_the_uncovered_pick():
+    """A label exclude prunes the device it reaches; a pick nothing
+    broader covers stands. The ladder settles in one save."""
+    pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
+        {
+            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: [],
+            CONF_SIGNAL_EXCLUDED_LABELS: ["far"],
+            CONF_SIGNAL_EXCLUDED_DEVICES: ["b", "c"],
+        },
+        _SIGNAL_ROWS,
+        _FakeRegistry({"a", "b", "c"}),
+    )
+    assert pruned[CONF_SIGNAL_EXCLUDED_DEVICES] == ["c"]
+
+
+def test_signal_prune_drops_a_deleted_device_pick():
+    """A pick for a device the registry no longer holds is dropped on
+    proof of absence, never on a guess (ruling #45)."""
+    pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
+        {
+            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: [],
+            CONF_SIGNAL_EXCLUDED_LABELS: [],
+            CONF_SIGNAL_EXCLUDED_DEVICES: ["c", "gone"],
+        },
+        _SIGNAL_ROWS,
+        _FakeRegistry({"a", "b", "c"}),
+    )
+    assert pruned[CONF_SIGNAL_EXCLUDED_DEVICES] == ["c"]
+
+
 # The live coordinator, where the ruling has to hold.
 
 
@@ -747,6 +982,88 @@ async def test_options_flow_prunes_on_save(hass: HomeAssistant):
     assert result["type"] == "create_entry"
     assert entry.options[CONF_EXCLUDED_DEVICES] == []
     assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == ["test"]
+
+
+async def test_options_flow_freeze_save_prunes_on_save(hass: HomeAssistant):
+    """Drive the actual Freeze dialog, the sibling of the exclusions
+    save above: a device pick is submitted alongside an integration
+    exclude that covers it, and the pick is gone from stored options
+    while the deltas land as the integers they are. This is the
+    save-button path the pruner unit tests cannot reach."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, _ = _ladder_device(hass, source, 7)
+    entry = await setup_entry(hass, {})
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "freeze"}
+    )
+    assert result["step_id"] == "freeze"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_FREEZE_DELTA_LOW: 3.0,
+            CONF_FREEZE_DELTA_HIGH: 8.0,
+            CONF_FREEZE_EXCLUDED_INTEGRATIONS: ["test"],
+            CONF_FREEZE_EXCLUDED_LABELS: [],
+            CONF_FREEZE_EXCLUDED_DEVICES: [device.id],
+        },
+    )
+    await hass.async_block_till_done()
+    assert result["type"] == "create_entry"
+    assert entry.options[CONF_FREEZE_EXCLUDED_DEVICES] == []
+    assert entry.options[CONF_FREEZE_EXCLUDED_INTEGRATIONS] == ["test"]
+    assert entry.options[CONF_FREEZE_DELTA_LOW] == 3
+    assert isinstance(entry.options[CONF_FREEZE_DELTA_LOW], int)
+    assert entry.options[CONF_FREEZE_DELTA_HIGH] == 8
+    assert isinstance(entry.options[CONF_FREEZE_DELTA_HIGH], int)
+
+
+async def test_options_flow_signal_save_prunes_on_save(hass: HomeAssistant):
+    """Drive the actual Signal dialog: the same superseded-pick prune
+    on save, plus the four knobs landing as their declared types.
+    The device carries no signal entity here, so it is not on the
+    signal rows and cannot be covered by the ladder; a device pick
+    for it survives, which is the correct outcome for a pick nothing
+    broader reaches. What this proves is the save path itself:
+    the form submits, the entry is created, the knobs are cast."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    _ladder_device(hass, source, 8)
+    entry = await setup_entry(hass, {})
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "signal"}
+    )
+    assert result["step_id"] == "signal"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_SIGNAL_ANOMALY_TRIM: 1.0,
+            CONF_SIGNAL_MARGIN: 5.0,
+            CONF_SIGNAL_RED: 10.0,
+            CONF_SIGNAL_LIFT: 2,
+            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: ["test"],
+            CONF_SIGNAL_EXCLUDED_LABELS: [],
+            CONF_SIGNAL_EXCLUDED_DEVICES: [],
+        },
+    )
+    await hass.async_block_till_done()
+    assert result["type"] == "create_entry"
+    assert entry.options[CONF_SIGNAL_EXCLUDED_INTEGRATIONS] == ["test"]
+    for key, want in (
+        (CONF_SIGNAL_ANOMALY_TRIM, 1),
+        (CONF_SIGNAL_MARGIN, 5),
+        (CONF_SIGNAL_RED, 10),
+    ):
+        assert entry.options[key] == want
+        assert isinstance(entry.options[key], int), key
+    assert entry.options[CONF_SIGNAL_LIFT] == 2.0
+    assert isinstance(entry.options[CONF_SIGNAL_LIFT], float)
 
 
 async def test_options_flow_hides_covered_devices(hass: HomeAssistant):
