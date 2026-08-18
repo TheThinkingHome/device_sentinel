@@ -41,6 +41,7 @@ from custom_components.device_sentinel.const import (
     DEV_BATTERY_DAILY,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
+    DEV_FIRST_OBSERVED,
     DEV_FROZEN_CATEGORY,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_MEAN,
@@ -61,7 +62,7 @@ from custom_components.device_sentinel.const import (
 from custom_components.device_sentinel.coordinator import (
     _new_device_record,
 )
-from tests.helpers import setup_entry
+from tests.helpers import setup_coordinator, setup_entry
 
 DOMAIN = "device_sentinel"
 
@@ -839,3 +840,99 @@ async def test_an_upgrade_converts_the_day_before_the_reconciler_runs(
     assert record["signal_mean_run"] == 0.0
     assert "signal_sum" not in record
 
+
+
+async def test_a_mixed_signal_history_is_cleared_at_load(
+    hass: HomeAssistant, hass_storage
+):
+    """The 0.15.6 discard, driven through the real load path.
+
+    Simulating the function against real records showed it picks the
+    right devices, but nothing drove it through setup, where it runs
+    before the reconciler and beside two other migrations. This seeds
+    a record holding both scales, starts the integration for real,
+    and reads what came out.
+    """
+    mixed, _eid = _register(hass, "mix1", "ZHA Toilet Leak")
+    clean, _eid2 = _register(hass, "cln1", "Zigbee2MQTT Door")
+
+    bad = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    bad[const.DEV_SIGNAL_DAILY_MIN] = [-66.0, 215.0, -70.0, 247.0]
+    bad[const.DEV_SIGNAL_DAILY_MEAN] = [90.5, -68.0]
+    bad[const.DEV_SIGNAL_VALUE] = 247.0
+    # Everything that is not signal, which must survive untouched.
+    bad[DEV_EVENT_COUNT] = 4211
+    bad[DEV_DAILY_MAX] = [120.0, 130.5]
+    bad[DEV_FIRST_OBSERVED] = "2026-07-11T00:00:00+00:00"
+
+    good = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    good[const.DEV_SIGNAL_DAILY_MIN] = [200.0, 0.0, 255.0]
+    good[const.DEV_SIGNAL_VALUE] = 214.0
+    good[DEV_EVENT_COUNT] = 88
+
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {
+            DATA_DEVICES: {mixed.id: bad, clean.id: good},
+            DATA_STATS_EPOCH: STATS_EPOCH,
+        },
+    }
+
+    coord = await setup_coordinator(hass)
+    after_bad = coord.data[DATA_DEVICES][mixed.id]
+    after_good = coord.data[DATA_DEVICES][clean.id]
+
+    # The mixed one lost its signal history and nothing else.
+    assert after_bad[const.DEV_SIGNAL_DAILY_MIN] == []
+    assert after_bad[const.DEV_SIGNAL_DAILY_MEAN] == []
+    assert after_bad[const.DEV_SIGNAL_VALUE] is None
+    assert after_bad[DEV_EVENT_COUNT] == 4211
+    assert after_bad[DEV_DAILY_MAX] == [120.0, 130.5]
+    assert after_bad[DEV_FIRST_OBSERVED] == (
+        "2026-07-11T00:00:00+00:00"
+    )
+
+    # An all-LQI history including a zero is one measurement, and is
+    # the case the rule must never touch.
+    # The durable series is what the clear is about. The day's own
+    # counters are not asserted here: a fold at load clears those for
+    # every device, cleared or not, and that is not this rule's doing.
+    assert after_good[const.DEV_SIGNAL_DAILY_MIN] == [200.0, 0.0, 255.0]
+    assert after_good[const.DEV_SIGNAL_VALUE] == 214.0
+
+    # Both records carry the new fields, whether they were cleared or
+    # reconciled into having them.
+    for record in (after_bad, after_good):
+        assert const.DEV_SIGNAL_SCALE in record
+        assert const.DEV_SIGNAL_ALT in record
+        assert record[const.DEV_SIGNAL_ALT] is None
+
+    # And the load leaves a file the shape check accepts, which is
+    # what the last-good copy is gated on (ruling #278).
+    from custom_components.device_sentinel.normalise import check_records
+
+    assert check_records(coord.data[DATA_DEVICES]) == []
+
+
+async def test_the_clear_does_not_run_twice(
+    hass: HomeAssistant, hass_storage
+):
+    """A second start must find nothing to do, so a device is not
+    re-cleared every restart once it has been dealt with."""
+    device, _eid = _register(hass, "mix2", "Cleared Once")
+    bad = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    bad[const.DEV_SIGNAL_DAILY_MIN] = [-70.0, 215.0]
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {
+            DATA_DEVICES: {device.id: bad},
+            DATA_STATS_EPOCH: STATS_EPOCH,
+        },
+    }
+    coord = await setup_coordinator(hass)
+    record = coord.data[DATA_DEVICES][device.id]
+    assert record[const.DEV_SIGNAL_DAILY_MIN] == []
+    # Feed it a clean single-scale history and start again.
+    record[const.DEV_SIGNAL_DAILY_MIN] = [-70.0, -68.0, -71.0]
+    assert coord._clear_mixed_signal(coord.data[DATA_DEVICES]) == []
+    assert record[const.DEV_SIGNAL_DAILY_MIN] == [-70.0, -68.0, -71.0]
