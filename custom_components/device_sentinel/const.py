@@ -2136,7 +2136,8 @@ WIKI_LINK_REPORTS = _wiki_link("The-Diagnostic-Reports")
 WIKI_LINK_DWELL_CHART = _wiki_link("The-Signal-Dwell-Chart")
 WIKI_LINK_BATTERY_REPORT = _wiki_link("The-Battery-Report")
 WIKI_LINK_FAQ = _wiki_link("FAQ-and-Troubleshooting")
-WIKI_LINK_EVENTS = _wiki_link("Events-and-Repairs")
+WIKI_LINK_EVENTS = _wiki_link("Automation-Events")
+WIKI_LINK_REPAIRS = _wiki_link("Repairs")
 
 
 # The device page's vocabulary. Home Assistant gives entities no

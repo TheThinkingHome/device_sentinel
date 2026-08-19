@@ -77,8 +77,8 @@ from .const import (
     REPAIR_NO_DELIVERY,
     REPAIR_NOTIFY_TARGET_MISSING,
     REPAIR_STORAGE_SHAPE,
-    WIKI_LINK_EVENTS,
     WIKI_LINK_NOTIFICATIONS,
+    WIKI_LINK_REPAIRS,
 )
 
 
@@ -272,7 +272,7 @@ def _evaluate_storage_shape(
         REPAIR_STORAGE_SHAPE,
         severity=ir.IssueSeverity.ERROR,
         is_fixable=False,
-        learn_more_url=WIKI_LINK_EVENTS,
+        learn_more_url=WIKI_LINK_REPAIRS,
         placeholders={
             "count": str(len(devices)),
             "records": "record" if len(devices) == 1 else "records",
@@ -318,7 +318,7 @@ def _evaluate_entities_disabled(
         REPAIR_ENTITIES_DISABLED,
         severity=ir.IssueSeverity.WARNING,
         is_fixable=True,
-        learn_more_url=WIKI_LINK_EVENTS,
+        learn_more_url=WIKI_LINK_REPAIRS,
         placeholders={
             "count": str(total),
             "entities": "entity" if total == 1 else "entities",
