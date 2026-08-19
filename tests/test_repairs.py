@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_repairs.py, Version: 0.16.0 (2026-08-19)
+# File: test_repairs.py, Version: 0.16.1 (2026-08-19)
 
 """What reaches the Repairs panel, and what is kept out of it.
 
@@ -244,7 +244,13 @@ async def test_recurrence_updates_rather_than_stacks(
 async def test_entities_disabled_raised_and_fixed(
     hass: HomeAssistant,
 ) -> None:
-    """Raised on a disabled entity, and the fix flow enables it."""
+    """Raised on a disabled entity, and the fix flow enables it.
+
+    Grace close raises it here because a test install has no stored
+    version, so every setup reads as an upgrade, which is the
+    condition of ruling #303. The two tests below pin that rather
+    than leaving it as an accident of the fixture.
+    """
     entry = await setup_entry(hass)
     coordinator = entry.runtime_data
     _disabled_battery_entity(hass, "dev_batt")
@@ -281,6 +287,131 @@ async def test_entities_disabled_absent_when_nothing_is_off(
     coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
+
+
+async def test_disabled_entities_are_not_raised_at_every_restart(
+    hass: HomeAssistant, hass_storage
+) -> None:
+    """An ordinary restart says nothing about disabled entities
+    (ruling #303).
+
+    Seven restarts in one day on the reference fleet is what this
+    exists for: the condition has not moved, so meeting the badge
+    seven times is noise. Storage is seeded with the running version
+    so this start is not an upgrade.
+    """
+    from custom_components.device_sentinel.const import (
+        DATA_LAST_VERSION,
+        DATA_DEVICES as _DEVICES,
+    )
+
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": {_DEVICES: {}, DATA_LAST_VERSION: "0.16.1"},
+    }
+    entry = await setup_entry(hass)
+    coordinator = entry.runtime_data
+    coordinator.version = "0.16.1"
+    coordinator._version_changed = False
+    _disabled_battery_entity(hass, "dev_quiet")
+    coordinator._rebuild_registry_view()
+
+    coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
+    await hass.async_block_till_done()
+    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
+
+    # The fold is where it does reach a person.
+    coordinator._evaluate_repairs(REPAIR_MOMENT_FOLD)
+    await hass.async_block_till_done()
+    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is not None
+
+
+async def test_an_upgrade_raises_it_without_waiting_for_midnight(
+    hass: HomeAssistant,
+) -> None:
+    """The first start on a new version checks straight away
+    (ruling #303).
+
+    An integration update is when diagnostics arrive turned off, so a
+    person who has just upgraded is the one person for whom this is
+    news the same day.
+    """
+    entry = await setup_entry(hass)
+    coordinator = entry.runtime_data
+    assert coordinator._version_changed is True
+    _disabled_battery_entity(hass, "dev_upgraded")
+    coordinator._rebuild_registry_view()
+    coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
+    await hass.async_block_till_done()
+    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is not None
+
+
+async def test_a_set_aside_device_never_raises_it(
+    hass: HomeAssistant,
+) -> None:
+    """A device Home Assistant disabled raises nothing (ruling #302).
+
+    The loop this closes: the sweep enabled the entities of a disabled
+    device, Home Assistant re-disabled them at the next registry
+    write, and the count never reached zero. As a button that was a
+    number nobody watched; as a Repair it is a badge that returns
+    after every Fix.
+    """
+    from homeassistant.helpers import device_registry as dr
+
+    entry = await setup_entry(hass)
+    coordinator = entry.runtime_data
+    device, (entity_id,) = register_device(hass, "dev_off")
+    registry = er.async_get(hass)
+    registry.async_update_entity(
+        entity_id, device_class="battery", unit_of_measurement="%"
+    )
+    dr.async_get(hass).async_update_device(
+        device.id, disabled_by=dr.DeviceEntryDisabler.USER
+    )
+    await hass.async_block_till_done()
+    coordinator._rebuild_registry_view()
+
+    assert device.id in coordinator._set_aside
+    assert coordinator.awaiting_enable_counts()["battery"] == 0
+
+    coordinator._evaluate_repairs(REPAIR_MOMENT_FOLD)
+    await hass.async_block_till_done()
+    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
+
+
+async def test_an_excluded_device_still_raises_it(
+    hass: HomeAssistant,
+) -> None:
+    """Exclusion suppresses judgment, never learning (ruling #302).
+
+    So an excluded device is watched, its readings still feed the
+    statistics, and a disabled reading on one is still work the button
+    would do.
+    """
+    from custom_components.device_sentinel.const import (
+        CONF_EXCLUDED_DEVICES,
+    )
+
+    device, (entity_id,) = register_device(hass, "dev_excluded")
+    registry = er.async_get(hass)
+    registry.async_update_entity(
+        entity_id,
+        device_class="battery",
+        unit_of_measurement="%",
+        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+    )
+    entry = await setup_entry(hass, {CONF_EXCLUDED_DEVICES: [device.id]})
+    coordinator = entry.runtime_data
+    coordinator._rebuild_registry_view()
+
+    assert device.id in coordinator._watched
+    assert coordinator.awaiting_enable_counts()["battery"] == 1
+
+    coordinator._evaluate_repairs(REPAIR_MOMENT_FOLD)
+    await hass.async_block_till_done()
+    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is not None
 
 
 # -------------------------------------------- notify_target_missing

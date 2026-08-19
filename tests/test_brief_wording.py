@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.15.8 (2026-08-18)
+# File: test_brief_wording.py, Version: 0.16.1 (2026-08-19)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -58,10 +58,11 @@ from custom_components.device_sentinel.const import (
     INC_WHEN,
     RECOVERY_CAUSE_UNOBSERVED,
     TODO_KIND_FROZEN,
+    TODO_KIND_UNAVAILABLE,
     TODO_KIND_NEVER_REPORTED,
 )
 
-from tests.helpers import setup_coordinator
+from tests.helpers import register_device, setup_coordinator
 
 DOMAIN = "device_sentinel"
 
@@ -849,3 +850,116 @@ async def test_every_system_event_kind_has_a_sentence(
     assert not missing_phrase, (
         f"kinds rendering as their own name in the table: {missing_phrase}"
     )
+
+
+async def test_a_flapping_device_is_not_told_twice(hass: HomeAssistant):
+    """A collapsed flood of flapping devices goes (ruling #304).
+
+    Reproduced from 19 August. Two devices, SLZB-06 and Presence
+    Guest, were revived by every one of the day's restarts, so each
+    restart grouped them into "2 devices went unavailable at ...".
+    The flapping collapse then dropped lines that started with a
+    device name, which those do not, so the brief carried nine of
+    them beside the two flapping sentences that already said it.
+    Twelve sentences became three when the collapse was decided from
+    the devices behind each line instead.
+    """
+    coord = await setup_coordinator(hass)
+    first, _ = register_device(hass, "flap_a", name="SLZB-06")
+    second, _ = register_device(hass, "flap_b", name="Presence Guest")
+    coord._rebuild_registry_view()
+
+    base = 1_787_000_000.0
+    events = []
+    pairs = []
+    for index in range(3):
+        at = base + index * 3600.0
+        events.append(
+            {SYS_WHEN: at, SYS_KIND: SYS_RESTART, SYS_SCOPE: "system"}
+        )
+        for device in (first, second):
+            opened = {
+                INC_DEVICE_ID: device.id,
+                INC_NAME: device.name,
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_OPENED,
+                INC_WHEN: at + 1.0,
+                INC_DURATION: None,
+            }
+            closed = {
+                INC_DEVICE_ID: device.id,
+                INC_NAME: device.name,
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_RESOLVED,
+                INC_WHEN: at + 61.0,
+                INC_DURATION: 60.0,
+            }
+            pairs.append((opened, closed))
+
+    told = coord._tell_episodes(pairs, events)
+
+    # One sentence per flapping device and nothing else: the grouped
+    # "2 devices ..." lines said the same thing in nine more.
+    assert len(told) == 2
+    assert not any(line.startswith("2 devices") for line in told)
+    assert any(line.startswith("SLZB-06") for line in told)
+    assert any(line.startswith("Presence Guest") for line in told)
+
+
+async def test_a_real_outage_keeps_its_line(hass: HomeAssistant):
+    """A flood is only dropped when every device in it is flapping.
+
+    The other half of #304. An outage that took a steady device as
+    well as a flapping one is news the flapping sentence does not
+    carry, so its line stays.
+    """
+    coord = await setup_coordinator(hass)
+    flapper, _ = register_device(hass, "flap_c", name="SLZB-06")
+    steady, _ = register_device(hass, "steady_a", name="Door Laundry")
+    coord._rebuild_registry_view()
+
+    base = 1_787_000_000.0
+    events = [{SYS_WHEN: base, SYS_KIND: SYS_RESTART, SYS_SCOPE: "system"}]
+    pairs = []
+    for device in (flapper, steady):
+        pairs.append((
+            {
+                INC_DEVICE_ID: device.id,
+                INC_NAME: device.name,
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_OPENED,
+                INC_WHEN: base + 1.0,
+                INC_DURATION: None,
+            },
+            {
+                INC_DEVICE_ID: device.id,
+                INC_NAME: device.name,
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_RESOLVED,
+                INC_WHEN: base + 61.0,
+                INC_DURATION: 60.0,
+            },
+        ))
+    # The flapper alone goes down a second time, with no house event.
+    pairs.append((
+        {
+            INC_DEVICE_ID: flapper.id,
+            INC_NAME: flapper.name,
+            INC_KIND: TODO_KIND_UNAVAILABLE,
+            INC_EVENT: INCIDENT_OPENED,
+            INC_WHEN: base + 7200.0,
+            INC_DURATION: None,
+        },
+        {
+            INC_DEVICE_ID: flapper.id,
+            INC_NAME: flapper.name,
+            INC_KIND: TODO_KIND_UNAVAILABLE,
+            INC_EVENT: INCIDENT_RESOLVED,
+            INC_WHEN: base + 7260.0,
+            INC_DURATION: 60.0,
+        },
+    ))
+
+    told = coord._tell_episodes(pairs, events)
+    assert any("2 devices" in line for line in told)
+    assert any(line.startswith("SLZB-06") for line in told)
