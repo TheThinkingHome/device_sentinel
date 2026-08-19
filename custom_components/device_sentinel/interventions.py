@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.15.3 (2026-08-17)
+# File: interventions.py, Version: 0.16.0 (2026-08-19)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -34,6 +34,7 @@ from .stacks import make_reader, reader_for_domain
 from .transport_mqtt import MQTTBrokerReader
 
 from .const import (
+    REPAIR_MOMENT_GRACE,
     BROKER_DOWN,
     BROKER_RUNNING,
     BROKER_SCOPE,
@@ -843,6 +844,10 @@ class InterventionMixin:
         white noise the rule exists to end (ruling #261).
         """
         self._rebuild_registry_view()
+        # After the rebuild, so the awaiting-enable counts are taken
+        # against the registry view this close has just corrected
+        # rather than the one the startup window left behind.
+        self._evaluate_repairs(REPAIR_MOMENT_GRACE)
         LOGGER.debug(
             # Same correction as the storm line: the grace window
             # excludes nothing from learning and has not since taint

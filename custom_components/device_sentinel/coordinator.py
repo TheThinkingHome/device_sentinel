@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.15.9 (2026-08-18)
+# File: coordinator.py, Version: 0.16.0 (2026-08-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -65,8 +65,10 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .normalise import check_records
+from .repairs import async_evaluate
 from .backup import async_refresh_last_good, async_take_backup
 from .const import (
+    REPAIR_MOMENT_FOLD,
     SYS_STORAGE_SHAPE,
     AREA_BATTERY,
     AREA_FREEZE,
@@ -375,6 +377,10 @@ class DeviceSentinelCoordinator(
         self._pending_unclean: int | None = None
         self._orphan_episodes: dict[str, Any] = {}
         self._options_seen: dict[str, Any] = dict(entry.options)
+        # What the last shape check found, held for the Repairs pass
+        # because the load check runs inside the grace and the issue
+        # is raised when the grace closes (ruling #300).
+        self._shape_faults: list[tuple[str, str, str]] = []
 
     # ------------------------------------------------------------- setup
 
@@ -1608,6 +1614,12 @@ class DeviceSentinelCoordinator(
         this refreshes is what it will repair from.
         """
         faults = check_records(self.data.get(DATA_DEVICES))
+        # Kept for the Repairs pass, which runs at grace close rather
+        # than here. The load check fires inside the startup grace,
+        # where nothing is announced (ruling #291), so the result has
+        # to survive the wait rather than the issue being raised from
+        # inside the window.
+        self._shape_faults = faults
         if not faults:
             await async_refresh_last_good(self.hass)
             return
@@ -1633,6 +1645,44 @@ class DeviceSentinelCoordinator(
             + ", ".join(fields[:8])
             + (", ..." if len(fields) > 8 else ""),
             devices=len({d for d, _f, _w in faults}),
+        )
+
+    @callback
+    def _evaluate_repairs(self, moment: str) -> None:
+        """Reconcile the Repairs panel against how things stand now.
+
+        Two moments and no tick (ruling #300): the startup grace
+        closing, and the midnight fold. Nothing is announced inside
+        the grace (ruling #291), which is why the load-time shape
+        check stores its result rather than raising from where it
+        runs, and why this is the first chance a fault found at load
+        has to reach a person.
+
+        Every reading is taken here and handed over, so repairs.py
+        holds the rules and the coordinator holds the measurements.
+        The registry walk behind the awaiting counts is the expensive
+        part, and running it twice a day rather than on a tick is the
+        reason there is no tick.
+        """
+        days_installed: float | None = None
+        first = self.first_installed
+        if first:
+            try:
+                installed = dt_util.parse_datetime(first)
+            except (TypeError, ValueError):
+                installed = None
+            if installed is not None:
+                days_installed = (
+                    dt_util.utcnow() - installed
+                ).total_seconds() / 86400.0
+        async_evaluate(
+            self.hass,
+            self.entry,
+            moment,
+            shape_faults=self._shape_faults,
+            awaiting=self.awaiting_enable_counts(),
+            days_installed=days_installed,
+            namer=self._device_name,
         )
 
     def _discard_ignored_records(self) -> None:
@@ -1732,6 +1782,7 @@ class DeviceSentinelCoordinator(
         if pushed or self._dirty or self._critical:
             await self._save_now()
         await self._check_storage_shape("fold")
+        self._evaluate_repairs(REPAIR_MOMENT_FOLD)
         LOGGER.debug(
             "Day rollover: pushed daily maxima for %d of %d watched devices",
             pushed,

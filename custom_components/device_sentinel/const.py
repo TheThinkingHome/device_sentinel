@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.15.9 (2026-08-18)
+# File: const.py, Version: 0.16.0 (2026-08-19)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1810,7 +1810,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 299
+HIGHEST_RULING = 301
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1844,6 +1844,58 @@ SYS_OPTIONS_CHANGED = "options_changed"
 # release only reports; nothing is repaired until a week of loads and
 # folds has shown the checks fire on nothing good.
 SYS_STORAGE_SHAPE = "storage_shape"
+
+# The Repairs surface (rulings #292 to #297, #300 and #301). Four
+# identifiers, each naming a problem class rather than an occurrence,
+# because one issue per class is what keeps a recurrence from stacking
+# a second row beside the first. They are deliberately stable across
+# releases: storage_shape gains its fix flow when Heal ships and must
+# attach to the issue a person already has open rather than appearing
+# beside it as a stranger.
+#
+# These are also the translation keys, so a value here has a matching
+# entry under "issues" in strings.json and translations/en.json.
+# Repairs renders from the translation files alone, so an identifier
+# without one shows a person a raw key.
+#
+# storage_shape shares its spelling with the system event above and
+# is a separate constant on purpose: one names a row in the events
+# log and the other names a card in Settings, and a single name read
+# by both would make a later rename of either look safe when it is
+# not.
+REPAIR_STORAGE_SHAPE = "storage_shape"
+REPAIR_ENTITIES_DISABLED = "entities_disabled"
+REPAIR_NOTIFY_TARGET_MISSING = "notify_target_missing"
+REPAIR_NO_DELIVERY = "no_delivery_configured"
+REPAIRS_ALL = (
+    REPAIR_STORAGE_SHAPE,
+    REPAIR_ENTITIES_DISABLED,
+    REPAIR_NOTIFY_TARGET_MISSING,
+    REPAIR_NO_DELIVERY,
+)
+
+# The two moments a Repair is evaluated (ruling #300): when the
+# startup grace closes, and after the midnight fold. Not the render
+# tick, because an issue that reappears while a person is reading it
+# is worse than one raised a few hours late, and none of these four
+# conditions changes on a timescale a tick would catch.
+REPAIR_MOMENT_GRACE = "grace"
+REPAIR_MOMENT_FOLD = "fold"
+
+# How many things a Repair card names before it starts counting.
+# A card is read in a dialog rather than scrolled, and the full list
+# is already in the log and the diagnostics.
+REPAIR_DETAIL_MAX = 3
+
+# How long an install may go with nowhere to send anything before it
+# is worth saying so (ruling #301). Seven days rather than
+# immediately, because a person setting the integration up must not
+# be interrupted on their first evening by a badge telling them they
+# have not finished. Seven is the week freeze detection already asks
+# for, and by then a person has had seven daily briefs they never
+# received, which is what makes it a settled state rather than one
+# they are passing through.
+NO_DELIVERY_MIN_DAYS = 7.0
 
 # How long an interruption must last before the daily brief says
 # anything about it (ruling #275). In Short is read rather than
@@ -2084,6 +2136,7 @@ WIKI_LINK_REPORTS = _wiki_link("The-Diagnostic-Reports")
 WIKI_LINK_DWELL_CHART = _wiki_link("The-Signal-Dwell-Chart")
 WIKI_LINK_BATTERY_REPORT = _wiki_link("The-Battery-Report")
 WIKI_LINK_FAQ = _wiki_link("FAQ-and-Troubleshooting")
+WIKI_LINK_EVENTS = _wiki_link("Events-and-Repairs")
 
 
 # The device page's vocabulary. Home Assistant gives entities no

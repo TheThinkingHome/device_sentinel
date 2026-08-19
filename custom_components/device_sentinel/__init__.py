@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.12.12 (2026-08-07)
+# File: __init__.py, Version: 0.16.0 (2026-08-19)
 
 """The Device Sentinel integration.
 
@@ -47,6 +47,7 @@ from .const import (
     STORAGE_KEY,
 )
 from .coordinator import DeviceSentinelCoordinator
+from .repairs import async_clear_all
 
 # No NUMBER platform since 0.11.10. It carried one entity, the
 # battery threshold as a dashboard slider, put there because the
@@ -208,6 +209,12 @@ async def async_unload_entry(
 ) -> bool:
     """Unload a Device Sentinel config entry."""
     LOGGER.debug("Device Sentinel unloading")
+    # Nothing this integration raised may outlive it (rulings #240 and
+    # #294). The issues are not persistent, so a restart clears them
+    # on its own; this covers the reload and the uninstall, where
+    # there is no restart to do it and a badge would otherwise stay
+    # lit over an integration that is no longer running.
+    async_clear_all(hass)
     await entry.runtime_data.async_shutdown()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
