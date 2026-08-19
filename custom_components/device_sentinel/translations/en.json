@@ -173,5 +173,37 @@
         "none": "Never"
       }
     }
+  },
+  "issues": {
+    "storage_shape": {
+      "title": "Device Sentinel Found a Problem in Its Storage",
+      "description": "Device Sentinel checked its storage and found {count} {records} that do not fit the shape it expects.\n\n{detail}\n\nNothing has been changed and no history has been lost. A copy of the last storage file that passed every check has been kept. Repairing a record from that copy is not built yet, so this issue reports and does nothing.\n\nThis clears itself when the next check finds nothing."
+    },
+    "entities_disabled": {
+      "title": "Device Sentinel Cannot See Everything It Watches",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Turn On the Entities Device Sentinel Watches",
+            "description": "{count} {entities} that Device Sentinel reads are turned off in Home Assistant: {detail}.\n\nWhile they are off, those devices are watched with less to go on: a battery that cannot be read is not tracked, and a signal that cannot be read has no floor to fall from.\n\nSubmit to turn them on. Nothing else about those devices changes, and you can turn any of them off again in Home Assistant at any time."
+          }
+        }
+      }
+    },
+    "notify_target_missing": {
+      "title": "A Device Sentinel Notification Target No Longer Exists",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Remove Notification Targets That No Longer Exist",
+            "description": "{count} notification {targets} in Device Sentinel's settings point at a service Home Assistant no longer has: {detail}.\n\nEvery message sent to those targets fails and is written to the log, so Device Sentinel goes on watching and tells nobody. This usually means a companion app was removed or renamed.\n\nSubmit to remove them from Device Sentinel's settings. Your other targets are left alone. If this leaves you with none, set a new one in Notifications and Daily Brief."
+          }
+        }
+      }
+    },
+    "no_delivery_configured": {
+      "title": "Device Sentinel Has Nowhere to Send Anything",
+      "description": "Device Sentinel has been watching your devices for {days} days and has no way to tell you about a problem. No targets are set for alerts or for the daily brief.\n\nThe persistent card is on, so problems do appear in Home Assistant's notification panel, but nothing reaches a phone or an inbox.\n\nSet a target under Settings, Devices and Services, Device Sentinel, Configure, Notifications and Daily Brief."
+    }
   }
 }
