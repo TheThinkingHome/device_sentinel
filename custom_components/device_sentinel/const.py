@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.15.8 (2026-08-18)
+# File: const.py, Version: 0.15.9 (2026-08-18)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1554,6 +1554,34 @@ TODO_KINDS_ALL = (
     TODO_KIND_RAILED_SIGNAL,
 )
 
+# What Device Sentinel says on the bus. Three names rather than one
+# type with an action field, because an automation triggers on
+# event_type and a distinct name is what a person types into the
+# trigger box (ruling #289).
+EVENT_FAULT = "device_sentinel_fault"
+EVENT_RECOVERED = "device_sentinel_recovered"
+EVENT_ACKNOWLEDGED = "device_sentinel_acknowledged"
+
+# Worst first, so kinds[0] is the headline and an automation reads it
+# without a template. Unavailable leads because
+# FREEZE_CATEGORY_PRIORITY already ruled it above frozen: an
+# unavailable device is honestly absent and a frozen one is lying.
+TODO_KIND_SEVERITY = (
+    TODO_KIND_UNAVAILABLE,
+    TODO_KIND_FROZEN,
+    TODO_KIND_UNKNOWN,
+    TODO_KIND_NEVER_REPORTED,
+    TODO_KIND_LOW_BATTERY,
+    TODO_KIND_FALLING_BATTERY,
+    TODO_KIND_RAILED_SIGNAL,
+)
+
+
+# What the payload says when a device has no area. The reports have
+# said this for as long as they have existed, and a template joining
+# a null into a message renders the word None at a person.
+UNASSIGNED_AREA = "Unassigned"
+
 # The freeze family covers every liveness kind; a battery or signal
 # kind maps to its own family, and anything else is a freeze-family
 # event. This is the map from a problem kind to its notification family.
@@ -1677,6 +1705,19 @@ FREEZE_KINDS_FOR_CAUSE = frozenset(
 # which is the fault this constant exists to prevent recurring.
 BRIEF_TRIGGER = "daily brief"
 RECOVERY_CAUSE_UNOBSERVED = "no intervention recorded"
+
+# How a silence ended, in the words the payload uses. Three values
+# because two would have meant guessing: the stored cause is null on
+# 180 of the reference fleet's 256 resolved incidents, and those nulls
+# are a battery with no lever to name and a silence whose episode fell
+# outside #228's slack wearing one value (ruling #291).
+RECOVERY_BY_SELF = "self"
+RECOVERY_BY_INTERVENTION = "intervention"
+RECOVERY_BY_UNKNOWN = "unknown"
+RECOVERY_CAUSES_INTERVENTION = frozenset(
+    {"bridge reconnect", "reboot", "unclean shutdown"}
+)
+RECOVERY_CAUSES_SELF = frozenset({RECOVERY_CAUSE_UNOBSERVED})
 # The wording this replaced, still sitting in stored incidents from
 # before the wording changed. Migrated at load rather than left to
 # age out, because the composer tests for the current string and

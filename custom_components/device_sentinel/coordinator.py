@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.15.8 (2026-08-18)
+# File: coordinator.py, Version: 0.15.9 (2026-08-18)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -166,6 +166,7 @@ from .const import (
 from .detect_battery import BatteryMixin
 from .detect_freeze import FreezeMixin
 from .detect_signal import SignalMixin, _entity_unit, _is_percentage
+from .events import EventMixin
 from .interventions import InterventionMixin
 from .journal import JournalMixin
 from .messenger import MessengerMixin
@@ -180,6 +181,7 @@ from .store import StorageMixin
 
 
 class DeviceSentinelCoordinator(
+    EventMixin,
     ReportWritingMixin,
     NarrativeMixin,
     JournalMixin,
@@ -2136,6 +2138,18 @@ class DeviceSentinelCoordinator(
                 "Enable %s turned on: %s", kind, ", ".join(enabled_ids)
             )
         return {"enabled": enabled, "by_hand": by_hand}
+
+    @callback
+    def _in_startup_grace(self) -> bool:
+        """Is the integration still inside its startup grace?
+
+        Everything reports at once on a restart and none of it is
+        news, which is why the integration already refuses to judge
+        inside the grace. The bus follows the same rule: a fault
+        still true when grace ends is announced then, once
+        (ruling #291).
+        """
+        return dt_util.utcnow().timestamp() < self._grace_until
 
     def _log_signal_census(
         self,

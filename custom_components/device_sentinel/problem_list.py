@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.15.8 (2026-08-18)
+# File: problem_list.py, Version: 0.15.9 (2026-08-18)
 
 """The problem list: the single memory every channel renders.
 
@@ -29,6 +29,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
+from .events import sort_kinds
 from .const import (
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
@@ -202,6 +203,42 @@ class ProblemListMixin:
                         kind=kind,
                         event=INCIDENT_ACTION,
                         cause=cause,
+                    )
+                # Ticking has an event of its own. Unticking does
+                # not: it is the soft un-acknowledge, so the fault
+                # fires again carrying renewed, and an automation
+                # needs no knowledge of acknowledgment at all
+                # (ruling #289).
+                name = (
+                    record.get(TODO_SORT_NAME) or record[TODO_DEVICE_ID]
+                )
+                kinds = [
+                    kind
+                    for kind in record.get(TODO_KINDS, {})
+                    if kind != UPSTREAM_KIND
+                ]
+                if status == "completed":
+                    self.fire_acknowledged(
+                        record[TODO_DEVICE_ID], name, kinds
+                    )
+                else:
+                    stamps = record.get(TODO_KINDS, {})
+                    since = min(
+                        (
+                            stamps[k]
+                            for k in kinds
+                            if stamps.get(k) is not None
+                        ),
+                        default=dt_util.utcnow().timestamp(),
+                    )
+                    self.fire_fault(
+                        record[TODO_DEVICE_ID],
+                        name,
+                        kinds,
+                        dt_util.utc_from_timestamp(since)
+                        .astimezone(dt_util.DEFAULT_TIME_ZONE)
+                        .isoformat(),
+                        renewed=True,
                     )
             break
         self._sort_todo_items()
@@ -700,12 +737,28 @@ class ProblemListMixin:
         difference: recovery is the automatic re-arm.
         """
         name = record.get(TODO_SORT_NAME) or device_id
-        for kind in record.get(TODO_KINDS, {}):
-            if kind == UPSTREAM_KIND:
-                continue
+        kinds = record.get(TODO_KINDS, {})
+        # Worst first, and every kind fires as it becomes the top,
+        # so a line carrying two faults answers both rather than
+        # leaving one unanswered. A device leaving the list can
+        # therefore fire more than one recovery in the same instant,
+        # which was ruled the lesser evil: an automation pairing
+        # faults to recoveries stays balanced (ruling #289).
+        for kind in sort_kinds([k for k in kinds if k != UPSTREAM_KIND]):
+            opened = kinds.get(kind)
             self._resolve_incident(device_id, name, kind, now)
             self._collect_event(
                 kind, name, recovery=True, device_id=device_id
+            )
+            self.fire_recovered(
+                device_id,
+                name,
+                kind,
+                None if opened is None else now - opened,
+                self._recovery_cause(
+                    device_id,
+                    self._incident_opened_at(device_id, kind) or 0.0,
+                ),
             )
 
     def _diff_kinds(
@@ -746,15 +799,34 @@ class ProblemListMixin:
                 device_id=device_id, left=problem.get("left"),
             )
         gained = set(new_kinds) - set(stored_kinds)
-        for kind in stored_kinds:
-            if kind in new_kinds:
-                continue
+        # Clearing worst first, so each kind is judged against what
+        # is still on the line above it. A kind that is the highest
+        # when it goes fires a recovery; a lesser one under a worse
+        # one is silent, and becomes the highest itself once that
+        # worse one has gone (ruling #289).
+        standing = dict(stored_kinds)
+        for kind in sort_kinds(
+            [k for k in stored_kinds if k not in new_kinds]
+        ):
+            top = sort_kinds(standing)[0] if standing else None
+            opened = standing.pop(kind, None)
             self._resolve_incident(device_id, problem["name"], kind, now)
             self._collect_event(
                 kind, problem["name"], recovery=True,
                 device_id=device_id,
                 superseded=self._overtaken(kind, gained),
             )
+            if kind == top:
+                self.fire_recovered(
+                    device_id,
+                    problem["name"],
+                    kind,
+                    None if opened is None else now - opened,
+                    self._recovery_cause(
+                        device_id,
+                        self._incident_opened_at(device_id, kind) or 0.0,
+                    ),
+                )
         return new_kinds
 
     def _new_item(
@@ -798,6 +870,12 @@ class ProblemListMixin:
                 kind, problem["name"], recovery=False,
                 device_id=device_id, left=problem.get("left"),
             )
+        # One event for the device, now that every kind is known.
+        # Not inside the loop above: _journal_addition runs once per
+        # kind, and firing there would give a device landing with two
+        # faults two events, undoing #213's collapse on the bus while
+        # it holds on the screen (ruling #289).
+        self._fire_fault_for(device_id, problem, kinds, now)
         return {
             TODO_UID: uuid.uuid4().hex,
             TODO_DEVICE_ID: device_id,
@@ -808,6 +886,40 @@ class ProblemListMixin:
             TODO_SORT_NAME: problem["name"],
             TODO_KINDS: kinds,
         }
+
+    def _fire_fault_for(
+        self,
+        device_id: str,
+        problem: dict[str, Any],
+        kinds: dict[str, float | None],
+        now: float,
+        *,
+        renewed: bool = False,
+    ) -> None:
+        """Announce one device's faults, carrying what they need.
+
+        The battery and signal figures ride along only when a kind
+        that needs them is on the line, so an automation can read
+        them without first checking whether they mean anything.
+        """
+        announced = [k for k in kinds if k != UPSTREAM_KIND]
+        if not announced:
+            return
+        since = min(
+            (kinds[k] for k in announced if kinds[k] is not None),
+            default=now,
+        )
+        self.fire_fault(
+            device_id,
+            problem["name"],
+            announced,
+            dt_util.utc_from_timestamp(since)
+            .astimezone(dt_util.DEFAULT_TIME_ZONE)
+            .isoformat(),
+            renewed=renewed,
+            level=problem.get("level"),
+            signal_value=problem.get("signal_value"),
+        )
 
     def _sync_problem_list(self) -> None:
         """Reconcile the todo against the detections, immediately.
@@ -846,6 +958,8 @@ class ProblemListMixin:
             new_kinds = self._diff_kinds(
                 device_id, problem, stored_kinds, now
             )
+            if set(new_kinds) - set(stored_kinds):
+                self._fire_fault_for(device_id, problem, new_kinds, now)
             summary, description = self._problem_item_text(
                 problem["name"],
                 new_kinds,
