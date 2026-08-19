@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.15.8 (2026-08-18)
+# File: test_todo.py, Version: 0.15.9 (2026-08-18)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -39,15 +39,21 @@ from custom_components.device_sentinel.const import (
     DATA_INCIDENTS,
     DATA_TODO_JOURNAL,
     DEV_BATTERY_DAILY,
-    DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
-    DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     FREEZE_ARMING_DAYS,
+    EVENT_ACKNOWLEDGED,
+    EVENT_FAULT,
+    EVENT_RECOVERED,
     FREEZE_CATEGORY_FROZEN,
+    DEV_BATTERY_LOW,
+    DEV_BATTERY_VALUE,
+    TODO_KIND_FROZEN,
+    TODO_KIND_UNAVAILABLE,
+    UNASSIGNED_AREA,
     FREEZE_CATEGORY_UNAVAILABLE,
     INCIDENT_OPENED,
     INC_EVENT,
@@ -710,3 +716,291 @@ async def test_the_falling_line_says_what_is_empty(
         "Vague Cell", {TODO_KIND_FALLING_BATTERY: None}, None, None
     )
     assert vague == "Vague Cell: battery running down"
+
+
+# --------------------------------------------------------- bus events
+
+
+def _listen(hass, event_type):
+    """Collect every event of one type, in order."""
+    seen: list[dict] = []
+    hass.bus.async_listen(event_type, lambda event: seen.append(event.data))
+    return seen
+
+
+async def test_a_fault_fires_once_on_the_transition(hass: HomeAssistant):
+    """The event rides the problem-list boundary, not the verdict.
+
+    That boundary already carries the debounce and the collapse, so an
+    automation gets the same filtering a person gets (ruling #289). It
+    fires when the line appears and stays quiet while it stands.
+    """
+    device, eids = _register_device(hass, "e1", "Attic Sensor")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._grace_until = 0.0
+    faults = _listen(hass, EVENT_FAULT)
+    hass.states.async_set(eids["plain"], "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+
+    assert len(faults) == 1, faults
+    payload = faults[0]
+    assert payload["device_id"] == device.id
+    assert payload["name"] == "Attic Sensor"
+    assert payload["kinds"] == [TODO_KIND_FROZEN]
+    assert payload["renewed"] is False
+    assert payload["area"] == UNASSIGNED_AREA
+
+    # Re-evaluating the same standing fault says nothing more.
+    coord._sync_problem_list()
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    assert len(faults) == 1, faults
+
+
+async def test_the_since_stamp_is_timezone_aware(hass: HomeAssistant):
+    """An automation comparing it to now() needs the offset."""
+    device, eids = _register_device(hass, "e2", "Attic Sensor")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._grace_until = 0.0
+    faults = _listen(hass, EVENT_FAULT)
+    hass.states.async_set(eids["plain"], "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+
+    parsed = dt_util.parse_datetime(faults[0]["since"])
+    assert parsed is not None and parsed.tzinfo is not None
+
+
+async def test_nothing_fires_during_the_startup_grace(hass: HomeAssistant):
+    """Everything reports at once on a restart and none of it is news
+    (ruling #291)."""
+    device, eids = _register_device(hass, "e3", "Attic Sensor")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+    faults = _listen(hass, EVENT_FAULT)
+    hass.states.async_set(eids["plain"], "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    assert faults == []
+
+    # And it is announced once the grace ends, rather than lost.
+    coord._grace_until = 0.0
+    _clear_freeze(coord, device.id)
+    coord._sync_problem_list()
+    _freeze(coord, device.id, since=2_000_000.0)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    assert len(faults) == 1, faults
+
+
+async def test_a_recovery_names_the_kind_and_how_it_ended(
+    hass: HomeAssistant,
+):
+    device, eids = _register_device(hass, "e4", "Attic Sensor")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._grace_until = 0.0
+    recovered = _listen(hass, EVENT_RECOVERED)
+    hass.states.async_set(eids["plain"], "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+
+    _clear_freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+
+    assert len(recovered) == 1, recovered
+    payload = recovered[0]
+    assert payload["kind"] == TODO_KIND_FROZEN
+    assert payload["device_id"] == device.id
+    assert payload["down_for"] is not None
+    # Three values, and unknown when nobody knows (ruling #291).
+    assert payload["resolved_by"] in {"self", "intervention", "unknown"}
+
+
+async def test_ticking_fires_and_unticking_renews_the_fault(
+    hass: HomeAssistant,
+):
+    """Unticking has no event of its own: it is the soft
+    un-acknowledge, so the fault fires again carrying renewed and an
+    automation needs no knowledge of acknowledgment (ruling #289)."""
+    device, eids = _register_device(hass, "e5", "Attic Sensor")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._grace_until = 0.0
+    faults = _listen(hass, EVENT_FAULT)
+    acked = _listen(hass, EVENT_ACKNOWLEDGED)
+    hass.states.async_set(eids["plain"], "21.5")
+    _freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    items = await _items(hass)
+
+    await hass.services.async_call(
+        "todo", "update_item",
+        {"entity_id": LIST_ENTITY, "item": items[0]["uid"],
+         "status": "completed"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert len(acked) == 1, acked
+    assert acked[0]["kinds"] == [TODO_KIND_FROZEN]
+    assert len(faults) == 1, "ticking must not re-announce the fault"
+
+    await hass.services.async_call(
+        "todo", "update_item",
+        {"entity_id": LIST_ENTITY, "item": items[0]["uid"],
+         "status": "needs_action"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert len(faults) == 2, faults
+    assert faults[-1]["renewed"] is True
+    assert len(acked) == 1, "unticking has no acknowledged event"
+
+
+async def test_two_faults_at_once_fire_one_event_worst_first(
+    hass: HomeAssistant,
+):
+    """#213's collapse holds on the bus as well as on the screen.
+
+    _journal_addition runs once per kind, so firing there would give
+    this device two events. The fire point is after the kind map has
+    settled, and kinds[0] is the headline (ruling #289).
+    """
+    device, eids = _register_device(hass, "e6", "Attic Sensor", battery=True)
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._grace_until = 0.0
+    faults = _listen(hass, EVENT_FAULT)
+    # Both faults are staged behind the grace, so they land in one
+    # sync pass. Set them the other way round and the battery reading
+    # itself makes the device alive, which clears the freeze: a device
+    # reporting its cell is not an unavailable device.
+    coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+    hass.states.async_set(eids["plain"], "21.5")
+    hass.states.async_set(eids["pct"], "4")
+    await hass.async_block_till_done()
+    _freeze(coord, device.id, category=FREEZE_CATEGORY_UNAVAILABLE)
+    coord._grace_until = 0.0
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+
+    assert len(faults) == 1, faults
+    kinds = faults[0]["kinds"]
+    assert set(kinds) == {TODO_KIND_UNAVAILABLE, TODO_KIND_LOW_BATTERY}
+    assert kinds[0] == TODO_KIND_UNAVAILABLE, "unavailable leads"
+    assert faults[0]["battery_level"] == 4.0
+
+
+async def test_a_whole_line_clearing_answers_every_fault(
+    hass: HomeAssistant,
+):
+    """Option A, ruled 18 August: every kind that landed is answered
+    by exactly one recovery, so a device leaving the list can fire
+    more than once in the same instant. The alternative left a fault
+    with no answer, which an automation cannot recover from."""
+    device, eids = _register_device(hass, "e7", "Attic Sensor", battery=True)
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._grace_until = 0.0
+    recovered = _listen(hass, EVENT_RECOVERED)
+    coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+    hass.states.async_set(eids["plain"], "21.5")
+    hass.states.async_set(eids["pct"], "4")
+    await hass.async_block_till_done()
+    _freeze(coord, device.id, category=FREEZE_CATEGORY_UNAVAILABLE)
+    coord._grace_until = 0.0
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+
+    _clear_freeze(coord, device.id)
+    hass.states.async_set(eids["pct"], "88")
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+
+    kinds = [payload["kind"] for payload in recovered]
+    assert kinds == [TODO_KIND_UNAVAILABLE, TODO_KIND_LOW_BATTERY], kinds
+
+
+async def test_a_lesser_kind_clearing_under_a_worse_one_is_silent(
+    hass: HomeAssistant,
+):
+    """The recovery names the worst thing, so a battery clearing
+    while the device is still unavailable says nothing. It fires
+    later, once it is the worst thing left."""
+    device, eids = _register_device(hass, "e8", "Attic Sensor", battery=True)
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._grace_until = 0.0
+    recovered = _listen(hass, EVENT_RECOVERED)
+    coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+    hass.states.async_set(eids["plain"], "21.5")
+    hass.states.async_set(eids["pct"], "4")
+    await hass.async_block_till_done()
+    _freeze(coord, device.id, category=FREEZE_CATEGORY_UNAVAILABLE)
+    coord._grace_until = 0.0
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+
+    # The battery recovers first; the device is still unavailable.
+    # Driven on the record rather than through a state, because the
+    # reading itself would revive the device and clear the freeze
+    # with it: a real unavailable device has stopped reporting its
+    # cell, and its last known level is what stands.
+    record = coord.data["devices"][device.id]
+    record[DEV_BATTERY_VALUE] = 88.0
+    record[DEV_BATTERY_LOW] = False
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    assert recovered == [], recovered
+
+    # Then the device comes back, and only that fires.
+    _clear_freeze(coord, device.id)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    assert [p["kind"] for p in recovered] == [TODO_KIND_UNAVAILABLE]
+
+
+async def test_a_low_cell_then_the_device_vanishes(hass: HomeAssistant):
+    """The real order: a cell reads low, then the device goes quiet.
+
+    The low reading is the last thing it said, so the battery fault
+    stands while the device is unavailable. Two faults on one line,
+    arriving in two passes, so two events: the second carries both
+    kinds with unavailable leading, because a new fault is news.
+    """
+    device, eids = _register_device(hass, "e9", "Attic Sensor", battery=True)
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._grace_until = 0.0
+    faults = _listen(hass, EVENT_FAULT)
+    recovered = _listen(hass, EVENT_RECOVERED)
+
+    hass.states.async_set(eids["plain"], "21.5")
+    hass.states.async_set(eids["pct"], "4")
+    await hass.async_block_till_done()
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    assert [p["kinds"] for p in faults] == [[TODO_KIND_LOW_BATTERY]]
+
+    # Now it stops reporting. The last cell reading stands.
+    _freeze(coord, device.id, category=FREEZE_CATEGORY_UNAVAILABLE)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+
+    assert len(faults) == 2, faults
+    assert faults[1]["kinds"] == [
+        TODO_KIND_UNAVAILABLE,
+        TODO_KIND_LOW_BATTERY,
+    ]
+    assert faults[1]["battery_level"] == 4.0
+    assert recovered == [], "nothing recovered, it got worse"
