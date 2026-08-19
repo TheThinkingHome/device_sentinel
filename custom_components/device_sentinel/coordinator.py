@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.16.1 (2026-08-19)
+# File: coordinator.py, Version: 0.16.2 (2026-08-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -113,7 +113,13 @@ from .const import (
     DEV_FROZEN_CATEGORY,
     DEV_LAST_ACTIVITY,
     DEV_SET_ASIDE_SINCE,
+    DEV_SIGNAL_DAILY_COUNT,
+    DEV_SIGNAL_DAILY_LINE,
+    DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_MEAN,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_SIGNAL_DAILY_P50,
+    DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_ALT,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_SD,
@@ -642,6 +648,7 @@ class DeviceSentinelCoordinator(
             )
 
         self.data = loaded
+        self._trim_fabricated_signal_days(loaded)
         # Is this start an upgrade? Read before the marker is moved
         # on, because the answer is the difference between what the
         # file says and what is running. An integration that has just
@@ -1611,6 +1618,93 @@ class DeviceSentinelCoordinator(
             for device_id, (_name, _domain, reason) in self._set_aside.items()
             if reason == SET_ASIDE_IGNORED
         }
+
+    def _trim_fabricated_signal_days(
+        self, loaded: dict[str, Any]
+    ) -> None:
+        """Remove the rows the unguarded fold wrote, once, at load.
+
+        Before ruling #305 the signal fold appended a full day even
+        when the device had produced no reading, because the
+        time-weighted count stays above zero through silence. Such a
+        row is identifiable forever: its entry in the reading-count
+        series is 0 and its rail entry is 0, a combination the
+        guarded fold can no longer write, since a genuinely rail-only
+        day carries its rail count and a spoken day carries its
+        reads. The whole row is dropped from every series at that
+        index rather than the None being plucked from the maximum,
+        because the fabrication landed in seven series and removing
+        it from one would leave the other six misaligned; dropping
+        the row also puts them back in step with signal_daily_min,
+        which always had the guard.
+
+        On a fleet the fault never touched, no row matches and this
+        walks the records and does nothing, which is why it can run
+        at every load rather than needing a version gate. Repair
+        work ahead of the Heal release, ruled narrowly (ruling
+        #305): the faulty rows were withholding the last-good backup
+        (#278 refreshes only on a clean check), and waiting sixty
+        days for retention to age them out is sixty days without a
+        backup.
+        """
+        devices = loaded.get(DATA_DEVICES) or {}
+        series = (
+            DEV_SIGNAL_DAILY_MEAN,
+            DEV_SIGNAL_DAILY_SD,
+            DEV_SIGNAL_DAILY_P5,
+            DEV_SIGNAL_DAILY_P50,
+            DEV_SIGNAL_DAILY_MAX,
+            DEV_SIGNAL_DAILY_LINE,
+            DEV_SIGNAL_DAILY_RAIL,
+        )
+        for device_id, record in devices.items():
+            for block in (record, record.get(DEV_SIGNAL_ALT)):
+                if not isinstance(block, dict):
+                    continue
+                counts = block.get(DEV_SIGNAL_DAILY_COUNT)
+                if not isinstance(counts, list):
+                    continue
+                rails = block.get(DEV_SIGNAL_DAILY_RAIL)
+                rails = rails if isinstance(rails, list) else []
+                fabricated = [
+                    index
+                    for index, count in enumerate(counts)
+                    if count == 0
+                    and not (
+                        index < len(rails) and (rails[index] or 0) > 0
+                    )
+                ]
+                if not fabricated:
+                    continue
+                # Tail-aligned deletion, not head-aligned. The seven
+                # series were appended together by the fold, so their
+                # tails describe the same days, but their heads may
+                # not: a fleet that predates a series' introduction
+                # carries different lengths (the reference fleet's
+                # maximum runs to 17 where its count runs to 11), and
+                # deleting head index 3 from both would remove two
+                # different days. Index i in the count series is the
+                # day at offset len(counts) - i from the tail, and
+                # that offset finds the same day in every series
+                # whatever its length.
+                total = len(counts)
+                for index in reversed(fabricated):
+                    offset = total - index
+                    del counts[index]
+                    for key in series:
+                        value = block.get(key)
+                        if not isinstance(value, list):
+                            continue
+                        aligned = len(value) - offset
+                        if 0 <= aligned < len(value):
+                            del value[aligned]
+                LOGGER.info(
+                    "Removed %d fabricated signal day(s) from %s: "
+                    "rows written for days the device never reported "
+                    "(ruling #305)",
+                    len(fabricated),
+                    (record.get("name") or device_id),
+                )
 
     async def _check_storage_shape(self, moment: str) -> None:
         """Check every record's shape, report what does not fit, and

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.16.1 (2026-08-19)
+# File: const.py, Version: 0.16.2 (2026-08-19)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1450,6 +1450,27 @@ DEFAULT_REMINDER_TIME = "08:00:00"
 CONF_SETTLE_SHARE = "settle_share_pct"
 DEFAULT_SETTLE_SHARE_PCT = 30
 CONF_EPISODE_SHARE = "episode_share_pct"
+
+# How many unexplained interruptions put a device in the brief's
+# repeat-offender section (ruling #305). An interruption is
+# unexplained when no restart, bridge outage, broker outage, reload
+# or pairing window covers it, judged by the same attribution the
+# rest of the brief uses. The filter is the detector: counting every
+# opening put 71 reference devices at exactly 2 from the nightly
+# reboot and the SLZB-06's one continuous fault at the top of the
+# list; counting unexplained openings left one genuine flapper on
+# the reference fleet and named, on the first external fleet, the
+# exact TV its owner had written about, unprompted. Neither fleet
+# had a device at exactly 2, so the floor is a judgment: anything
+# the filter cannot explain twice is worth one line, and a fleet
+# where 2 turns out noisy has the slider.
+CONF_REPEAT_FLOOR = "repeat_floor"
+DEFAULT_REPEAT_FLOOR = 2
+REPEAT_FLOOR_MIN = 1
+REPEAT_FLOOR_MAX = 4
+# The section reads up to this many days of incidents, growing from
+# day one rather than waiting for a full week (ruling #305).
+REPEAT_WINDOW_DAYS = 7.0
 DEFAULT_EPISODE_SHARE_PCT = 50
 SHARE_PCT_MIN = 10
 SHARE_PCT_MAX = 90
@@ -1818,7 +1839,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 304
+HIGHEST_RULING = 305
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

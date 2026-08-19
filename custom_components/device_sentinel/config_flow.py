@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.13.2 (2026-08-13)
+# File: config_flow.py, Version: 0.16.2 (2026-08-19)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -74,6 +74,7 @@ from .const import (
     CONF_BRIEF_TARGETS,
     CONF_COALESCE_MINUTES,
     CONF_EPISODE_SHARE,
+    CONF_REPEAT_FLOOR,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_IGNORED_INTEGRATIONS,
@@ -107,6 +108,9 @@ from .const import (
     DEFAULT_BATTERY_DAYS,
     DEFAULT_COALESCE_MINUTES,
     DEFAULT_EPISODE_SHARE_PCT,
+    DEFAULT_REPEAT_FLOOR,
+    REPEAT_FLOOR_MAX,
+    REPEAT_FLOOR_MIN,
     DEFAULT_IGNORED_INTEGRATIONS,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
     DEFAULT_FREEZE_DELTA_LOW_MIN,
@@ -1184,6 +1188,19 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             CONF_EPISODE_SHARE, DEFAULT_EPISODE_SHARE_PCT
                         ),
                     ): share_selector(),
+                    vol.Required(
+                        CONF_REPEAT_FLOOR,
+                        default=options.get(
+                            CONF_REPEAT_FLOOR, DEFAULT_REPEAT_FLOOR
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=REPEAT_FLOOR_MIN,
+                            max=REPEAT_FLOOR_MAX,
+                            step=1,
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
                     vol.Required(
                         CONF_TAINT_FLOOR,
                         default=options.get(

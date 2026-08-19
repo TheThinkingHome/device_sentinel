@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.12.13 (2026-08-07)
+# File: diagnostics.py, Version: 0.16.2 (2026-08-19)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -31,6 +31,7 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from . import DeviceSentinelConfigEntry
 from .const import (
@@ -41,6 +42,7 @@ from .const import (
     CONF_NORMAL_PRIORITY_TARGETS,
     DAILY_MAX_KEEP,
     DATA_DEVICES,
+    DATA_LAST_VERSION,
     DATA_STATS_EPOCH,
     DATA_TODO_ITEMS,
     DATA_EPISODES,
@@ -86,6 +88,44 @@ def _taint_reasons(episodes: list[dict[str, Any]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def _diagnostic_entities(
+    hass: HomeAssistant, coordinator: Any, device_id: str
+) -> list[dict[str, Any]]:
+    """Return the device's diagnostic entities, enabled or not.
+
+    Read live from the registry at download time and stored nowhere,
+    the same sources the enable buttons walk, so what this reports
+    and what a press would do cannot drift apart.
+    """
+    ent_reg = er.async_get(hass)
+    rows: list[dict[str, Any]] = []
+    for ent in er.async_entries_for_device(
+        ent_reg, device_id, include_disabled_entities=True
+    ):
+        if coordinator._is_signal(ent):
+            kind = "signal"
+        elif coordinator._is_battery(ent):
+            kind = "battery"
+        elif coordinator._is_last_seen(ent):
+            kind = "last_seen"
+        else:
+            continue
+        state = hass.states.get(ent.entity_id)
+        rows.append(
+            {
+                "entity_id": ent.entity_id,
+                "kind": kind,
+                "disabled_by": (
+                    str(ent.disabled_by.value)
+                    if ent.disabled_by is not None
+                    else None
+                ),
+                "state": state.state if state else None,
+            }
+        )
+    return rows
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: DeviceSentinelConfigEntry
 ) -> dict[str, Any]:
@@ -122,6 +162,16 @@ async def async_get_config_entry_diagnostics(
                 else "recorded"
             ),
             "excluded": coordinator._excluded_devices.get(device_id),
+            # Every diagnostic entity this device offers, enabled or
+            # not, with its live state. This is what separates a
+            # device that is switched off from one whose entities are
+            # disabled from one the integration is deaf to: all three
+            # read event_count 0 in the record, and 27 devices on the
+            # first external fleet could not be told apart without it
+            # (ruling #305).
+            "entities": _diagnostic_entities(
+                hass, coordinator, device_id
+            ),
             "statistics": record,
             "window_basis": window_basis,
             "set_aside_indices": sorted(set_aside_indices),
@@ -193,6 +243,10 @@ async def async_get_config_entry_diagnostics(
             "first_installed": coordinator.first_installed,
             "setup_count": coordinator.setup_count,
             "stats_epoch": coordinator.data.get(DATA_STATS_EPOCH),
+            # The version that last wrote this file, so an upgrade
+            # start is verifiable from a download (ruling #303 gave
+            # it a job; this made it visible).
+            "last_version": coordinator.data.get(DATA_LAST_VERSION),
         },
         "tunables": {
             "startup_grace_seconds": STARTUP_GRACE_SECONDS,
@@ -249,6 +303,11 @@ async def async_get_config_entry_diagnostics(
                 }
             ),
         },
+        # The enable buttons' own counts, so the one Repair a new
+        # install is likely to raise can be supported from a download
+        # rather than from a screenshot of the Status sensor's
+        # attributes (ruling #305).
+        "awaiting_enable": coordinator.awaiting_enable_counts(),
         "battery": {
             "low_count": coordinator.battery_low_count,
             "low_list": coordinator.battery_low_list,

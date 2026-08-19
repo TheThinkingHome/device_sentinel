@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.15.6 (2026-08-17)
+# File: normalise.py, Version: 0.16.2 (2026-08-19)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -110,6 +110,15 @@ INTEGER = "integer"
 STRING = "string or None"
 BOOLEAN = "boolean"
 FLOAT_SERIES = "list of numbers"
+# A daily statistic that a rail-only day legitimately cannot supply:
+# the row is written to keep the eight series aligned, and the value
+# is null because no reading existed to compute one (ruling #305).
+# Three of these (P5, P50, line) could already be written null by the
+# estimators before rail days existed, so the stricter kind was a
+# latent copy of the fold fault, waiting for a fleet whose estimator
+# state was empty at a fold (#279: a field is checked against what
+# the code can write, not what it usually writes).
+NULLABLE_FLOAT_SERIES = "list of numbers or None"
 INT_SERIES = "list of integers"
 STATE = "None or list of numbers"
 TAINT = "False or a taint reason"
@@ -142,14 +151,14 @@ EXPECTED: dict[str, str] = {
     DEV_SIGNAL_P50_STATE: STATE,
     DEV_SIGNAL_PSQ_VALUE: NUMBER,
     DEV_SIGNAL_PSQ_TS: NUMBER,
-    DEV_SIGNAL_DAILY_P5: FLOAT_SERIES,
-    DEV_SIGNAL_DAILY_P50: FLOAT_SERIES,
+    DEV_SIGNAL_DAILY_P5: NULLABLE_FLOAT_SERIES,
+    DEV_SIGNAL_DAILY_P50: NULLABLE_FLOAT_SERIES,
     DEV_SIGNAL_TODAY_MAX: NUMBER,
-    DEV_SIGNAL_DAILY_MEAN: FLOAT_SERIES,
-    DEV_SIGNAL_DAILY_SD: FLOAT_SERIES,
-    DEV_SIGNAL_DAILY_MAX: FLOAT_SERIES,
+    DEV_SIGNAL_DAILY_MEAN: NULLABLE_FLOAT_SERIES,
+    DEV_SIGNAL_DAILY_SD: NULLABLE_FLOAT_SERIES,
+    DEV_SIGNAL_DAILY_MAX: NULLABLE_FLOAT_SERIES,
     DEV_SIGNAL_DAILY_COUNT: INT_SERIES,
-    DEV_SIGNAL_DAILY_LINE: FLOAT_SERIES,
+    DEV_SIGNAL_DAILY_LINE: NULLABLE_FLOAT_SERIES,
     DEV_SIGNAL_DAILY_RAIL: INT_SERIES,
     DEV_SIGNAL_RAIL_COUNT: INTEGER,
     DEV_SIGNAL_LAST_CHANGE: NUMBER,
@@ -207,6 +216,11 @@ def _fault(kind: str, value: Any) -> str | None:
         if not isinstance(value, list):
             return _describe(value)
         bad = [x for x in value if not _is_number(x)]
+        return None if not bad else f"{len(bad)} bad element(s), first {_describe(bad[0])}"
+    if kind == NULLABLE_FLOAT_SERIES:
+        if not isinstance(value, list):
+            return _describe(value)
+        bad = [x for x in value if x is not None and not _is_number(x)]
         return None if not bad else f"{len(bad)} bad element(s), first {_describe(bad[0])}"
     if kind == INT_SERIES:
         if not isinstance(value, list):

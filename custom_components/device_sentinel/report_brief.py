@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.16.1 (2026-08-19)
+# File: report_brief.py, Version: 0.16.2 (2026-08-19)
 
 """The daily brief: the one report written for a person.
 
@@ -31,6 +31,11 @@ from homeassistant.util import dt as dt_util
 
 from . import attribution
 from .const import (
+    CONF_REPEAT_FLOOR,
+    DEFAULT_REPEAT_FLOOR,
+    REPEAT_FLOOR_MAX,
+    REPEAT_FLOOR_MIN,
+    REPEAT_WINDOW_DAYS,
     BRIEF_NOTEWORTHY_SECONDS,
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
@@ -101,6 +106,16 @@ def _plural(count: int) -> str:
     is an evasion rather than a shorthand (ruling #233).
     """
     return f"{count} device" if count == 1 else f"{count} devices"
+
+
+# What a repeat-offender line calls one occurrence of each kind.
+# "Interruption" covers the freeze family; the battery kinds get
+# their own noun because "unexplained interruption" misdescribes a
+# threshold crossing (ruling #305).
+_REPEAT_NOUNS = {
+    TODO_KIND_LOW_BATTERY: "low-battery alarm",
+    TODO_KIND_FALLING_BATTERY: "falling-battery alarm",
+}
 
 
 class BriefMixin:
@@ -805,6 +820,13 @@ class BriefMixin:
                 for opened, _resolved in members
             )
         }
+        # Remembered for the repeat-offender section (ruling #305,
+        # amended): a device the day's flapping sentence already
+        # carries is not named again below unless its pattern spans
+        # more than this one brief, because the same device in two
+        # sentences of one paragraph is the duplication #276 and
+        # #304 both exist to prevent.
+        self._flapping_told = set(flapping)
         if not flapping:
             return [line for line, _who in told]
         kept = [
@@ -882,6 +904,123 @@ class BriefMixin:
             )
         return f"{len(members)} devices {word} at {when}, with {clause}."
 
+    def _repeat_offender_lines(self, now: float) -> list[str]:
+        """Return one line per device that keeps failing on its own.
+
+        The brief's answer to the device nobody can detect (ruling
+        #305): a TV that reads unavailable whenever a person turns it
+        off, a sensor whose dying cell crosses the battery threshold
+        hundreds of times a day. The integration cannot tell either
+        from a real fault at the moment it judges, so instead of a
+        verdict it shows the pattern and the person decides, which is
+        how the reference LG TV and the first external fleet's
+        propane sensor both end: ignored or excluded by their owner,
+        on evidence.
+
+        Only unexplained interruptions count. An opening that a
+        restart, an outage, a reload or a pairing window covers is
+        already explained, and counting it made the nightly reboot
+        the loudest thing on the reference fleet: 71 devices at
+        exactly two openings each, and the one device everybody
+        already knew about at the top. The attribution is the same
+        module the episode sentences use, so one opening can never
+        be explained in one paragraph and counted as a mystery in
+        the next.
+
+        Reads up to REPEAT_WINDOW_DAYS of incidents, from day one,
+        so the view grows with the record rather than waiting for a
+        week to exist. The line carries the count, the days it
+        spread over, and the worst day, because "18 over 6 days" is
+        a failing device and "15, all on one day" was one bad
+        afternoon, and the reader should not need arithmetic to
+        tell them apart (ruling #305).
+        """
+        rows = self.data.get(DATA_INCIDENTS) or []
+        events = self.data.get(DATA_SYSTEM_EVENTS) or []
+        cutoff = now - REPEAT_WINDOW_DAYS * 86400.0
+        floor_raw = self.entry.options.get(
+            CONF_REPEAT_FLOOR, DEFAULT_REPEAT_FLOOR
+        )
+        try:
+            floor = int(floor_raw)
+        except (TypeError, ValueError):
+            floor = DEFAULT_REPEAT_FLOOR
+        floor = max(REPEAT_FLOOR_MIN, min(REPEAT_FLOOR_MAX, floor))
+        wins = attribution.windows(events)
+        resolved: dict[tuple[str, str], list[float]] = {}
+        for row in rows:
+            if row.get(INC_EVENT) == INCIDENT_RESOLVED:
+                resolved.setdefault(
+                    (row.get(INC_DEVICE_ID), row.get(INC_KIND)), []
+                ).append(row.get(INC_WHEN) or 0.0)
+        found: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in rows:
+            if row.get(INC_EVENT) != INCIDENT_OPENED:
+                continue
+            when = row.get(INC_WHEN) or 0.0
+            if when < cutoff:
+                continue
+            device_id = row.get(INC_DEVICE_ID)
+            ends = [
+                t
+                for t in resolved.get(
+                    (device_id, row.get(INC_KIND)), []
+                )
+                if t >= when
+            ]
+            closed = min(ends) if ends else None
+            window = attribution.attribute(
+                wins,
+                self._watched.get(device_id),
+                self._device_stack(device_id),
+                when,
+                closed,
+            )
+            if window is not None:
+                continue
+            key = (device_id, row.get(INC_KIND))
+            entry = found.setdefault(
+                key,
+                {"name": row.get(INC_NAME), "n": 0, "days": {}},
+            )
+            entry["n"] += 1
+            day = dt_util.as_local(
+                dt_util.utc_from_timestamp(when)
+            ).strftime("%Y-%m-%d")
+            entry["days"][day] = entry["days"].get(day, 0) + 1
+        lines: list[str] = []
+        already_told = getattr(self, "_flapping_told", set())
+        for (device_id, kind), entry in sorted(
+            found.items(), key=lambda item: -item[1]["n"]
+        ):
+            if entry["n"] < floor:
+                continue
+            if len(entry["days"]) == 1 and device_id in already_told:
+                # The whole pattern is today, and today's flapping
+                # sentence already says it (ruling #305, amended by
+                # the collision test): this line's job is the
+                # pattern the day's sentences cannot show, and a
+                # one-day pattern is not one of those.
+                continue
+            noun = _REPEAT_NOUNS.get(kind, "interruption")
+            day_count = len(entry["days"])
+            worst = max(entry["days"].values())
+            if day_count == 1:
+                spread = "all on one day"
+            elif worst > 1:
+                spread = (
+                    f"over {day_count} days, "
+                    f"worst day {worst}"
+                )
+            else:
+                spread = f"over {day_count} days"
+            lines.append(
+                f"{entry['name']}: {entry['n']} unexplained "
+                f"{noun}{'s' if entry['n'] != 1 else ''} "
+                f"{spread}, nothing intervened."
+            )
+        return lines
+
     def _brief_prose(
         self,
         incidents: list[dict[str, Any]],
@@ -933,6 +1072,14 @@ class BriefMixin:
             lines += [f"Nothing has happened since {since_text}.", ""]
         if standing:
             lines += ["Right now: " + " ".join(standing), ""]
+        repeats = self._repeat_offender_lines(
+            dt_util.utcnow().timestamp()
+        )
+        if repeats:
+            lines += [
+                "Keeps failing on its own: " + " ".join(repeats),
+                "",
+            ]
         else:
             lines += ["Nothing needs attention right now.", ""]
         return lines

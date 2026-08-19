@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.15.8 (2026-08-18)
+# File: detect_signal.py, Version: 0.16.2 (2026-08-19)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -253,9 +253,26 @@ class SignalMixin:
         resets for the new day. The deviation is the
         population form, and a one-reading day records zero deviation
         rather than none, because one reading genuinely varied by
-        nothing. A day with no real readings appends nothing, so the
-        three series stay aligned with each other but may be shorter
-        than the dwell series, which records whenever a line existed.
+        nothing.
+
+        A row is written only for a day the device actually spoke
+        (ruling #305). The Welford count alone cannot decide that:
+        it is time-weighted and the held value keeps accruing
+        minutes through silence (ruling #253), so a device that
+        reported once and went quiet still weighed a full day at
+        every following fold, and the fold wrote a fabricated row,
+        statistics copied from the last real reading, deviation
+        zero, and None in the maximum. Nine such rows on the first
+        external fleet; the reference fleet cannot produce one
+        because every device on it reports daily. So the gate is
+        the reads counter, which only a real reading moves. A day
+        of nothing but rail readings writes the row too, rail count
+        real and every statistic null, because three consecutive
+        rail days are the confirmation the rail verdict needs
+        (ruling #78) and dropping the day would break the count. A
+        day with neither writes nothing, so these series stay
+        aligned with each other but may be shorter than the dwell
+        series, which records whenever a line existed.
         """
         # The day's tail: the held value has been accruing minutes
         # since its last feed, and they belong to the day being
@@ -269,7 +286,9 @@ class SignalMixin:
             # the next day, which put one device's report count on
             # the wrong row. The day is dropped, not carried.
             record[DEV_SIGNAL_READS] = 0
-        if count > 0:
+        reads = int(record.get(DEV_SIGNAL_READS) or 0)
+        rails = int(record.get(DEV_SIGNAL_RAIL_COUNT) or 0)
+        if count > 0 and reads > 0:
             # The line first, while the mean and deviation series
             # still end on yesterday: this is the line that judged
             # the day being folded, and appending today's mean first
@@ -322,9 +341,7 @@ class SignalMixin:
             record.setdefault(DEV_SIGNAL_DAILY_MAX, []).append(
                 record.get(DEV_SIGNAL_TODAY_MAX)
             )
-            record.setdefault(DEV_SIGNAL_DAILY_COUNT, []).append(
-                int(record.get(DEV_SIGNAL_READS) or 0)
-            )
+            record.setdefault(DEV_SIGNAL_DAILY_COUNT, []).append(reads)
             if judged:
                 record.setdefault(DEV_SIGNAL_DAILY_LINE, []).append(
                     round(line, 2) if line is not None else None
@@ -332,6 +349,40 @@ class SignalMixin:
             record.setdefault(DEV_SIGNAL_DAILY_RAIL, []).append(
                 int(record.get(DEV_SIGNAL_RAIL_COUNT) or 0)
             )
+            trimmed = [
+                DEV_SIGNAL_DAILY_MEAN,
+                DEV_SIGNAL_DAILY_SD,
+                DEV_SIGNAL_DAILY_P5,
+                DEV_SIGNAL_DAILY_P50,
+                DEV_SIGNAL_DAILY_MAX,
+                DEV_SIGNAL_DAILY_COUNT,
+                DEV_SIGNAL_DAILY_RAIL,
+            ]
+            if judged:
+                trimmed.append(DEV_SIGNAL_DAILY_LINE)
+            for field in trimmed:
+                del record[field][:-self.retention_days]
+        elif rails > 0:
+            # A rail-only day: the device spoke, and everything it
+            # said was the stuck value the estimators refuse. There
+            # is no statistic to record and there is evidence to
+            # keep, so the row is written with the rail count real
+            # and every statistic null (ruling #305). The count
+            # entry is 0 because zero real readings arrived, which
+            # is also what the one-time trim keys on, so the trim
+            # skips rows whose rail entry is above zero.
+            for key in (
+                DEV_SIGNAL_DAILY_MEAN,
+                DEV_SIGNAL_DAILY_SD,
+                DEV_SIGNAL_DAILY_P5,
+                DEV_SIGNAL_DAILY_P50,
+                DEV_SIGNAL_DAILY_MAX,
+            ):
+                record.setdefault(key, []).append(None)
+            record.setdefault(DEV_SIGNAL_DAILY_COUNT, []).append(0)
+            if judged:
+                record.setdefault(DEV_SIGNAL_DAILY_LINE, []).append(None)
+            record.setdefault(DEV_SIGNAL_DAILY_RAIL, []).append(rails)
             trimmed = [
                 DEV_SIGNAL_DAILY_MEAN,
                 DEV_SIGNAL_DAILY_SD,
