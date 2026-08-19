@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.15.8 (2026-08-18)
+# File: report_brief.py, Version: 0.16.1 (2026-08-19)
 
 """The daily brief: the one report written for a person.
 
@@ -716,6 +716,9 @@ class BriefMixin:
         """
         spans = attribution.windows(sys_events or [])
         told: list[str] = []
+        # Which devices each sentence is about, kept beside it rather
+        # than read back out of its words (ruling #304).
+        owners: list[set[str]] = []
         groups: dict[Any, list[tuple[dict, dict | None]]] = {}
         placed: dict[Any, int] = {}
         for opened, resolved in pairs:
@@ -737,21 +740,25 @@ class BriefMixin:
                     if resolved is not None
                     else self._compose_event(opened)
                 )
+                owners.append({device_id})
                 continue
             key = (window.key, opened[INC_KIND], resolved is not None)
             if key not in placed:
                 placed[key] = len(told)
                 told.append("")
+                owners.append(set())
+            owners[placed[key]].add(device_id)
             groups.setdefault(key, []).append((opened, resolved))
         for key, members in groups.items():
             told[placed[key]] = self._compose_flood(key, members, spans)
-        return self._collapse_flapping(
-            [line for line in told if line], pairs
-        )
+        kept = [
+            (line, who) for line, who in zip(told, owners) if line
+        ]
+        return self._collapse_flapping(kept, pairs)
 
     def _collapse_flapping(
         self,
-        told: list[str],
+        told: list[tuple[str, set[str]]],
         pairs: list[tuple[dict[str, Any], dict[str, Any] | None]],
     ) -> list[str]:
         """Return the told episodes with a flapping device said once.
@@ -767,6 +774,18 @@ class BriefMixin:
         interruption that repeats is not normal behaviour the way a
         nightly reboot is: it is the shape of a dying device, and the
         number of times is the symptom (ruling #276).
+
+        Which sentences to drop is decided from the devices behind
+        each one rather than from its opening words (ruling #304).
+        The first version compared the line against the device's
+        name, which cannot see a sentence that names no device: two
+        flapping devices collapsed into "2 devices went unavailable
+        at 3:35 PM" survived the filter, so 19 August's brief carried
+        nine of those beside the two flapping sentences that already
+        said it. A sentence goes only when every device in it is
+        flapping. A real outage of seventy-four devices that happens
+        to include one keeps its line, because the outage is news the
+        flapping sentence does not carry.
         """
         by_device: dict[str, list[tuple[dict, dict | None]]] = {}
         for opened, resolved in pairs:
@@ -787,14 +806,11 @@ class BriefMixin:
             )
         }
         if not flapping:
-            return told
+            return [line for line, _who in told]
         kept = [
             line
-            for line in told
-            if not any(
-                line.startswith(members[0][0][INC_NAME])
-                for members in flapping.values()
-            )
+            for line, who in told
+            if not (who and who <= set(flapping))
         ]
         for members in flapping.values():
             kept.append(self._compose_flapping(members))

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.16.0 (2026-08-19)
+# File: coordinator.py, Version: 0.16.1 (2026-08-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -99,6 +99,7 @@ from .const import (
     DATA_SETUP_COUNT,
     DATA_SIGNAL_DAY_REPAIR,
     DATA_SIGNAL_WEIGHTING,
+    DATA_LAST_VERSION,
     DATA_STATS_EPOCH,
     DATA_STORMS,
     DATA_SYSTEM_EVENTS,
@@ -381,6 +382,9 @@ class DeviceSentinelCoordinator(
         # because the load check runs inside the grace and the issue
         # is raised when the grace closes (ruling #300).
         self._shape_faults: list[tuple[str, str, str]] = []
+        # Whether this start is running a different version from the
+        # one that last wrote storage (ruling #303). Set at load.
+        self._version_changed = False
 
     # ------------------------------------------------------------- setup
 
@@ -638,6 +642,23 @@ class DeviceSentinelCoordinator(
             )
 
         self.data = loaded
+        # Is this start an upgrade? Read before the marker is moved
+        # on, because the answer is the difference between what the
+        # file says and what is running. An integration that has just
+        # updated is the moment new diagnostics arrive turned off,
+        # which is the one condition the disabled-entities Repair is
+        # written for (ruling #303).
+        self._version_changed = (
+            loaded.get(DATA_LAST_VERSION) != self.version
+        )
+        if self._version_changed:
+            LOGGER.info(
+                "Device Sentinel is running %s where storage was last "
+                "written by %s",
+                self.version,
+                loaded.get(DATA_LAST_VERSION) or "an earlier version",
+            )
+        loaded[DATA_LAST_VERSION] = self.version
         await self._check_storage_shape("load")
         # The clock fields are the hot file's alone and the main file
         # never carries copies. The one-time backup that guarded the
@@ -1579,14 +1600,11 @@ class DeviceSentinelCoordinator(
         """Return the devices set aside because their integration is
         ignored.
 
-        The enable buttons reach a set-aside device on purpose
-        (ruling #257): a device Home Assistant disabled comes back by
-        having its entities switched on, so refusing to offer that
-        would withhold the fix. Ignoring inverts it. A person who put
-        an integration on that list is not waiting for its entities
-        to be enabled, and a sweep that turned on the battery sensors
-        of every phone in the house would be doing the opposite of
-        what they asked for.
+        Read by the record discard and the episode cleanup. The
+        enable buttons no longer need it: they reach watched devices
+        only (ruling #302), and every ignored device is set aside, so
+        the narrower filter already covers what this used to exclude
+        from them.
         """
         return {
             device_id
@@ -1682,6 +1700,7 @@ class DeviceSentinelCoordinator(
             shape_faults=self._shape_faults,
             awaiting=self.awaiting_enable_counts(),
             days_installed=days_installed,
+            version_changed=self._version_changed,
             namer=self._device_name,
         )
 
@@ -2136,30 +2155,35 @@ class DeviceSentinelCoordinator(
     ) -> dict[str, int]:
         """Enable every disabled entity a matcher recognizes.
 
-        Whoever disabled it (ruling #257). The button names the
-        action, and a person pressing Enable Battery is asking for
-        the battery entities to come on: declining part of the job
+        On a watched device, whoever disabled the entity (ruling
+        #302). A person pressing Enable Battery is asking for the
+        battery entities to come on: declining part of the job
         because they turned one off themselves reads as the tool
         second-guessing them, and they would then have to go and do
-        by hand exactly what they just asked for. Home Assistant
-        reloads the owning config entries a short delay after.
+        by hand exactly what they just asked for. An excluded device
+        is watched and still learns, so it is reached like any other;
+        exclusion suppresses judgment and reporting, never learning.
+
+        A set-aside device is not reached, which corrects the third
+        consequence of #257. Its entities cannot be usefully turned
+        on: Home Assistant re-disables the entities of a disabled
+        device at the next registry write, so the sweep enabled them,
+        the registry put them back, and the count never reached zero.
+        An ignored integration is set aside too, and a person who
+        asked for a phone never to be watched is not waiting for its
+        battery sensor to be switched on. Home Assistant reloads the
+        owning config entries a short delay after.
 
         Split by kind (signals, last_seen, battery) so a user can
         enable exactly the diagnostic they want without turning on the
         others. Each kind is its own button, its own press.
         """
         ent_reg = er.async_get(self.hass)
-        ignored = self._ignored_device_ids
         enabled = 0
         enabled_ids: list[str] = []
         by_hand = 0
         for ent in list(ent_reg.entities.values()):
-            if (
-                ent.device_id not in self._watched
-                and ent.device_id not in self._set_aside
-            ):
-                continue
-            if ent.device_id in ignored:
+            if ent.device_id not in self._watched:
                 continue
             if not matches(ent):
                 continue
@@ -2287,20 +2311,15 @@ class DeviceSentinelCoordinator(
 
         One registry pass, three counters (ruling #237). The filter is
         the buttons' own, so a non-zero count is exactly a press that
-        would do something and zero means the button can hide. Every
-        disabled entity is counted, whoever disabled it, because the
-        buttons now enable every one of them (ruling #257).
+        would do something and zero means the button can hide. On a
+        watched device every disabled entity is counted, whoever
+        disabled it, because the buttons enable every one of them; a
+        set-aside device is counted by neither (ruling #302).
         """
         ent_reg = er.async_get(self.hass)
-        ignored = self._ignored_device_ids
         signal = last_seen = battery = 0
         for ent in list(ent_reg.entities.values()):
-            if (
-                ent.device_id not in self._watched
-                and ent.device_id not in self._set_aside
-            ):
-                continue
-            if ent.device_id in ignored:
+            if ent.device_id not in self._watched:
                 continue
             if ent.disabled_by is None:
                 continue

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.16.0 (2026-08-19)
+# File: repairs.py, Version: 0.16.1 (2026-08-19)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -290,7 +290,9 @@ def _evaluate_entities_disabled(
     One issue rather than three, so a fresh install lights the badge
     once and clears it once. The counts are the enable buttons' own,
     so a non-zero count is exactly a press that would do something
-    (ruling #237).
+    (ruling #237), and both now read watched devices alone, so a
+    device Home Assistant disabled can no longer raise an issue whose
+    fix Home Assistant immediately undoes (ruling #302).
 
     The fix is a confirmation rather than a form with a checkbox per
     kind. The form was the plan and was dropped on James's ruling: a
@@ -408,21 +410,32 @@ def async_evaluate(
     shape_faults: list[tuple[str, str, str]],
     awaiting: dict[str, int],
     days_installed: float | None,
+    version_changed: bool,
     namer: Any,
 ) -> None:
     """Reconcile every issue against the conditions as they stand now.
 
-    One pass over all four, raising what holds and clearing what does
-    not, so an issue can never be left open by a path that forgot to
-    clear it. The caller supplies the readings rather than this module
-    reaching back into the coordinator for them, which keeps the rules
-    here and the measurements where they are taken.
+    One pass, raising what holds and clearing what does not, so an
+    issue can never be left open by a path that forgot to clear it.
+    The caller supplies the readings rather than this module reaching
+    back into the coordinator for them, which keeps the rules here and
+    the measurements where they are taken.
+
+    Two of the four are narrower than the two moments (ruling #303).
+    Disabled entities are judged at the fold, and additionally on the
+    first start after Device Sentinel's own version changed, because
+    that is when an integration update re-ships its diagnostics turned
+    off and it is the only way the state arrives. Judging it at every
+    grace close meant a person who restarted seven times in a day met
+    the same badge seven times over a condition that had not moved.
+    Nothing configured is the fold alone (ruling #301).
     """
     _evaluate_storage_shape(hass, shape_faults, namer)
-    _evaluate_entities_disabled(hass, awaiting, entry.entry_id)
     _evaluate_notify_targets(
         hass, missing_targets(hass, entry), entry.entry_id
     )
+    if moment == REPAIR_MOMENT_FOLD or version_changed:
+        _evaluate_entities_disabled(hass, awaiting, entry.entry_id)
     if moment == REPAIR_MOMENT_FOLD:
         _evaluate_no_delivery(
             hass, delivery_is_configured(entry), days_installed

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.16.0 (2026-08-19)
+# File: const.py, Version: 0.16.1 (2026-08-19)
 
 """Constants for the Device Sentinel integration."""
 
@@ -375,6 +375,14 @@ TAINT_FLOOR_MINUTES_MAX = 60
 # and identity survive.
 STATS_EPOCH = "0.2.3"
 DATA_STATS_EPOCH = "stats_epoch"
+
+# The version that last ran, stored so a start can tell an upgrade
+# from an ordinary restart (ruling #303). It lives beside the epoch
+# marker at the top of the file rather than inside a device record,
+# so it is outside everything the shape check reads and costs the
+# record schema nothing. Absent on a file written by an older
+# version, which reads as an upgrade, which it is.
+DATA_LAST_VERSION = "last_version"
 
 # The Data sensors read each area's depth from its own series
 # (ruling #258), so nothing here names a version and nothing has to
@@ -1810,7 +1818,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 301
+HIGHEST_RULING = 304
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
