@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_journal.py, Version: 0.15.8 (2026-08-18)
+# File: test_journal.py, Version: 0.16.2 (2026-08-19)
 
 """The forensic record: incidents, episodes, and system events.
 
@@ -552,3 +552,47 @@ async def test_a_restart_stamps_everything(hass: HomeAssistant):
         row[EP_ENDED] == EPISODE_ENDED_RECONNECT
         for row in coord.data[DATA_EPISODES]
     )
+
+
+async def test_diagnostics_carry_the_support_fields(
+    hass: HomeAssistant,
+):
+    """last_version, the awaiting counts, and per-device entities.
+
+    The three additions of ruling #305, each closing a question the
+    first external fleet's files could not answer: whether an
+    upgrade start was detected, whether the enable buttons have work
+    waiting, and whether a silent device is off, disabled, or
+    unheard.
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    from custom_components.device_sentinel.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
+
+    device, entity_id, _ = _register(hass, "d2", "Support Sensor")
+    ent_reg = er.async_get(hass)
+    ent_reg.async_update_entity(
+        entity_id, device_class="battery", unit_of_measurement="%"
+    )
+    entry = MockConfigEntry(domain=DOMAIN, title="Device Sentinel", data={})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coord = entry.runtime_data
+    hass.states.async_set(entity_id, "77")
+
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert diag["storage"]["last_version"] == coord.version
+    assert set(diag["awaiting_enable"]) == {
+        "signal",
+        "last_seen",
+        "battery",
+    }
+    rows = diag["devices"][device.id]["entities"]
+    battery_rows = [r for r in rows if r["kind"] == "battery"]
+    assert battery_rows and battery_rows[0]["entity_id"] == entity_id
+    assert battery_rows[0]["disabled_by"] is None
+    assert battery_rows[0]["state"] == "77"

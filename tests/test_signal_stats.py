@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.13.5 (2026-08-13)
+# File: test_signal_stats.py, Version: 0.16.2 (2026-08-19)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -52,6 +52,7 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_RAIL,
+    DEV_SIGNAL_SCALE,
     DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_M2,
@@ -197,6 +198,136 @@ async def test_a_day_with_no_readings_appends_nothing(
     assert not record.get(DEV_SIGNAL_DAILY_SD)
     assert not record.get(DEV_SIGNAL_DAILY_P5)
     assert not record.get(DEV_SIGNAL_DAILY_P50)
+
+
+async def test_a_held_value_cannot_fabricate_a_day(
+    hass: HomeAssistant,
+):
+    """A silent day writes no row however long the value was held.
+
+    The fault this pins (ruling #305): the Welford count is
+    time-weighted and the held value accrues minutes through silence
+    (#253), so a device that reported once and went quiet weighed a
+    full day at every following fold and the fold wrote a row of
+    statistics for a day that never happened, with None in the
+    maximum. Nine such rows on the first external fleet.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "st4", "Once Device")
+    record = coord.data[DATA_DEVICES][device.id]
+
+    # One real reading on day one.
+    coord._feed_signal(record, -60.0, 1000.0)
+    coord._roll_signal_stats(record, 86400.0)
+    assert len(record.get(DEV_SIGNAL_DAILY_MEAN) or []) == 1
+
+    # Silence through day two: the held value accrues weight but no
+    # reading arrives, which is the exact state that fabricated rows.
+    coord._roll_signal_stats(record, 2 * 86400.0)
+
+    assert len(record.get(DEV_SIGNAL_DAILY_MEAN) or []) == 1
+    assert len(record.get(DEV_SIGNAL_DAILY_MAX) or []) == 1
+    assert None not in (record.get(DEV_SIGNAL_DAILY_MAX) or [])
+    assert len(record.get(DEV_SIGNAL_DAILY_COUNT) or []) == 1
+
+
+async def test_a_rail_only_day_writes_the_rail_and_nulls(
+    hass: HomeAssistant,
+):
+    """A day of nothing but rails keeps its evidence (ruling #305).
+
+    Three consecutive rail days are what confirms a rail (#78), so
+    the day cannot be dropped; and there is no statistic to record,
+    so the row carries the rail count, a zero reading count, and
+    null in every statistic, keeping the eight series aligned.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "st5", "Railed Device")
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_SIGNAL_SCALE] = "lqi"
+
+    coord._feed_signal(record, 255.0, 1000.0)
+    coord._feed_signal(record, 255.0, 2000.0)
+    coord._roll_signal_stats(record, 86400.0)
+
+    assert record.get(DEV_SIGNAL_DAILY_RAIL) == [2]
+    assert record.get(DEV_SIGNAL_DAILY_COUNT) == [0]
+    assert record.get(DEV_SIGNAL_DAILY_MEAN) == [None]
+    assert record.get(DEV_SIGNAL_DAILY_MAX) == [None]
+
+    # And the shape check accepts what the fold just wrote.
+    from custom_components.device_sentinel.normalise import (
+        check_records,
+    )
+
+    faults = check_records({device.id: record})
+    signal_faults = [f for f in faults if "signal_daily" in f[1]]
+    assert signal_faults == []
+
+
+async def test_the_trim_removes_only_fabricated_rows(
+    hass: HomeAssistant, hass_storage
+):
+    """The load trim drops the unguarded fold's rows and nothing else.
+
+    Keyed on a zero reading count with a zero rail count, the
+    combination the guarded fold can no longer write. A rail-only
+    row shares the zero count and must survive (ruling #305).
+    """
+    from custom_components.device_sentinel.const import (
+        DATA_LAST_VERSION,
+        DATA_SIGNAL_DAY_REPAIR,
+        DATA_SIGNAL_WEIGHTING,
+        DATA_STATS_EPOCH,
+        SIGNAL_DAY_REPAIR_MARK,
+        SIGNAL_WEIGHTING_MARK,
+        STATS_EPOCH,
+        STORAGE_KEY,
+    )
+
+    from custom_components.device_sentinel.records import (
+        _new_device_record,
+    )
+
+    record = _new_device_record("2026-08-01T00:00:00+00:00", None)
+    record.update(
+        {
+            DEV_SIGNAL_DAILY_MEAN: [-65.0, -65.0, None, -64.0],
+            DEV_SIGNAL_DAILY_SD: [0.5, 0.0, None, 0.4],
+            DEV_SIGNAL_DAILY_P5: [-66.0, -66.0, None, -65.0],
+            DEV_SIGNAL_DAILY_P50: [-65.0, -65.0, None, -64.0],
+            DEV_SIGNAL_DAILY_MAX: [-64.0, None, None, -63.0],
+            DEV_SIGNAL_DAILY_LINE: [-70.0, -70.0, None, -70.0],
+            DEV_SIGNAL_DAILY_COUNT: [12, 0, 0, 9],
+            DEV_SIGNAL_DAILY_RAIL: [0, 0, 3, 0],
+        }
+    )
+    device, _ = register_device(hass, "st6", "Trim Target")
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            DATA_DEVICES: {device.id: record},
+            DATA_LAST_VERSION: "0.16.2",
+            DATA_STATS_EPOCH: STATS_EPOCH,
+            # The one-shot migration markers, all satisfied, so the
+            # only load-path change acting on this fixture is the
+            # trim under test.
+            DATA_SIGNAL_WEIGHTING: SIGNAL_WEIGHTING_MARK,
+            DATA_SIGNAL_DAY_REPAIR: SIGNAL_DAY_REPAIR_MARK,
+        },
+    }
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    stored = coord.data[DATA_DEVICES][device.id]
+
+    # Index 1 was fabricated (count 0, rail 0) and goes. Index 2 is
+    # a rail-only day (count 0, rail 3) and stays. Real days stay.
+    assert stored[DEV_SIGNAL_DAILY_COUNT] == [12, 0, 9]
+    assert stored[DEV_SIGNAL_DAILY_RAIL] == [0, 3, 0]
+    assert stored[DEV_SIGNAL_DAILY_MEAN] == [-65.0, None, -64.0]
+    assert stored[DEV_SIGNAL_DAILY_MAX] == [-64.0, None, -63.0]
+    assert stored[DEV_SIGNAL_DAILY_LINE] == [-70.0, None, -70.0]
 
 
 async def test_the_chart_bands_by_the_red_threshold(
@@ -1252,3 +1383,66 @@ async def test_the_fold_records_p5_and_p50_and_resets(
     assert record[DEV_SIGNAL_P5_STATE] is None
 
 
+async def test_the_trim_aligns_series_from_the_tail(
+    hass: HomeAssistant, hass_storage
+):
+    """Unequal series lengths delete the same day, not the same index.
+
+    On a fleet that predates a series' introduction the heads differ
+    while the tails describe the same days (the reference fleet's
+    maximum runs to 17 where its count runs to 11), so a trim that
+    deleted head index N from every series would remove different
+    days from different series. Found adversarially before any fleet
+    could (ruling #305).
+    """
+    from custom_components.device_sentinel.const import (
+        DATA_LAST_VERSION,
+        DATA_SIGNAL_DAY_REPAIR,
+        DATA_SIGNAL_WEIGHTING,
+        DATA_STATS_EPOCH,
+        SIGNAL_DAY_REPAIR_MARK,
+        SIGNAL_WEIGHTING_MARK,
+        STATS_EPOCH,
+        STORAGE_KEY,
+    )
+    from custom_components.device_sentinel.records import (
+        _new_device_record,
+    )
+
+    record = _new_device_record("2026-08-01T00:00:00+00:00", None)
+    record.update(
+        {
+            # The maximum predates the count by two days: its head
+            # carries -90 and -80 from before the count existed.
+            # The count's index 1 (a fabricated day) is the
+            # maximum's index 3.
+            DEV_SIGNAL_DAILY_MAX: [-90.0, -80.0, -64.0, None, -63.0],
+            DEV_SIGNAL_DAILY_MEAN: [-65.0, -65.0, -64.0],
+            DEV_SIGNAL_DAILY_SD: [0.5, 0.0, 0.4],
+            DEV_SIGNAL_DAILY_P5: [-66.0, -66.0, -65.0],
+            DEV_SIGNAL_DAILY_P50: [-65.0, -65.0, -64.0],
+            DEV_SIGNAL_DAILY_LINE: [-70.0, -70.0, -70.0],
+            DEV_SIGNAL_DAILY_COUNT: [12, 0, 9],
+            DEV_SIGNAL_DAILY_RAIL: [0, 0, 0],
+        }
+    )
+    device, _ = register_device(hass, "st7", "Tail Target")
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            DATA_DEVICES: {device.id: record},
+            DATA_LAST_VERSION: "0.16.2",
+            DATA_STATS_EPOCH: STATS_EPOCH,
+            DATA_SIGNAL_WEIGHTING: SIGNAL_WEIGHTING_MARK,
+            DATA_SIGNAL_DAY_REPAIR: SIGNAL_DAY_REPAIR_MARK,
+        },
+    }
+    entry = await setup_entry(hass)
+    stored = entry.runtime_data.data[DATA_DEVICES][device.id]
+
+    assert stored[DEV_SIGNAL_DAILY_COUNT] == [12, 9]
+    # The head survives untouched; the fabricated day went from the
+    # tail-aligned position, not from head index 1.
+    assert stored[DEV_SIGNAL_DAILY_MAX] == [-90.0, -80.0, -64.0, -63.0]
+    assert stored[DEV_SIGNAL_DAILY_MEAN] == [-65.0, -64.0]

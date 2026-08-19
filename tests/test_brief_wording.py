@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.16.1 (2026-08-19)
+# File: test_brief_wording.py, Version: 0.16.2 (2026-08-19)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -963,3 +963,191 @@ async def test_a_real_outage_keeps_its_line(hass: HomeAssistant):
     told = coord._tell_episodes(pairs, events)
     assert any("2 devices" in line for line in told)
     assert any(line.startswith("SLZB-06") for line in told)
+
+
+async def test_repeat_offenders_count_only_unexplained(
+    hass: HomeAssistant,
+):
+    """A device revived by every restart earns no line (ruling #305).
+
+    Counting every opening made the nightly reboot the loudest thing
+    on the reference fleet: 71 devices at exactly two openings each.
+    The filter is the detector, so an opening a restart covers must
+    not count, and a device whose every interruption had no
+    explanation must.
+    """
+    coord = await setup_coordinator(hass)
+    explained, _ = register_device(hass, "ro1", name="Reboot Rider")
+    flapper, _ = register_device(hass, "ro2", name="True Flapper")
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    incidents = []
+    events = []
+    for index in range(3):
+        at = now - (index + 1) * 7200.0
+        events.append(
+            {SYS_WHEN: at, SYS_KIND: SYS_RESTART, SYS_SCOPE: "system"}
+        )
+        # One opening inside the restart window: explained.
+        incidents.append(
+            {
+                INC_DEVICE_ID: explained.id,
+                INC_NAME: "Reboot Rider",
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_OPENED,
+                INC_WHEN: at + 10.0,
+                INC_DURATION: None,
+            }
+        )
+        # One opening two hours from any event: unexplained.
+        incidents.append(
+            {
+                INC_DEVICE_ID: flapper.id,
+                INC_NAME: "True Flapper",
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_OPENED,
+                INC_WHEN: at + 3600.0,
+                INC_DURATION: None,
+            }
+        )
+    coord.data[DATA_INCIDENTS] = incidents
+    coord.data[DATA_SYSTEM_EVENTS] = events
+
+    lines = coord._repeat_offender_lines(now)
+
+    assert len(lines) == 1
+    assert lines[0].startswith("True Flapper: 3 unexplained")
+    assert "Reboot Rider" not in " ".join(lines)
+
+
+async def test_the_repeat_line_says_the_spread(hass: HomeAssistant):
+    """"18 over 6 days" and "15 all on one day" read differently.
+
+    The reader must not need arithmetic to tell a failing device
+    from one bad afternoon (ruling #305), so the line carries the
+    count, the days, and the worst day.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "ro3", name="One Bad Day")
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    incidents = [
+        {
+            INC_DEVICE_ID: device.id,
+            INC_NAME: "One Bad Day",
+            INC_KIND: TODO_KIND_UNAVAILABLE,
+            INC_EVENT: INCIDENT_OPENED,
+            INC_WHEN: now - 90000.0 - index * 60.0,
+            INC_DURATION: None,
+        }
+        for index in range(4)
+    ]
+    coord.data[DATA_INCIDENTS] = incidents
+    coord.data[DATA_SYSTEM_EVENTS] = []
+
+    lines = coord._repeat_offender_lines(now)
+    assert len(lines) == 1
+    assert "all on one day" in lines[0]
+
+
+async def test_the_repeat_floor_is_the_slider(hass: HomeAssistant):
+    """Below the floor a device is not named; the slider moves it."""
+    from custom_components.device_sentinel.const import (
+        CONF_REPEAT_FLOOR,
+    )
+
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "ro4", name="Twice Device")
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    coord.data[DATA_INCIDENTS] = [
+        {
+            INC_DEVICE_ID: device.id,
+            INC_NAME: "Twice Device",
+            INC_KIND: TODO_KIND_UNAVAILABLE,
+            INC_EVENT: INCIDENT_OPENED,
+            INC_WHEN: now - 40000.0 - index * 50000.0,
+            INC_DURATION: None,
+        }
+        for index in range(2)
+    ]
+    coord.data[DATA_SYSTEM_EVENTS] = []
+
+    # Default floor 2: two unexplained openings are named.
+    assert len(coord._repeat_offender_lines(now)) == 1
+
+    # Floor raised to 3: the same record earns no line.
+    hass.config_entries.async_update_entry(
+        coord.entry,
+        options={**coord.entry.options, CONF_REPEAT_FLOOR: 3},
+    )
+    assert coord._repeat_offender_lines(now) == []
+
+
+async def test_a_multi_day_pattern_earns_both_sentences(
+    hass: HomeAssistant,
+):
+    """The suppression is for one-day patterns only (ruling #305).
+
+    A device flapping today whose unexplained record spans several
+    days is exactly what the repeat line exists to show, so it keeps
+    its line beside today's flapping sentence, while a device whose
+    whole record is today is said once.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "ro5", name="Week Flapper")
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    incidents = []
+    # Two openings today, resolved, so the flapping sentence fires.
+    for index in range(2):
+        at = now - 3600.0 - index * 1800.0
+        incidents.append(
+            {
+                INC_DEVICE_ID: device.id,
+                INC_NAME: "Week Flapper",
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_OPENED,
+                INC_WHEN: at,
+                INC_DURATION: None,
+            }
+        )
+        incidents.append(
+            {
+                INC_DEVICE_ID: device.id,
+                INC_NAME: "Week Flapper",
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_RESOLVED,
+                INC_WHEN: at + 60.0,
+                INC_DURATION: 60.0,
+            }
+        )
+    # And two more openings three days ago.
+    for index in range(2):
+        incidents.append(
+            {
+                INC_DEVICE_ID: device.id,
+                INC_NAME: "Week Flapper",
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_OPENED,
+                INC_WHEN: now - 3 * 86400.0 - index * 1800.0,
+                INC_DURATION: None,
+            }
+        )
+    coord.data[DATA_INCIDENTS] = incidents
+    coord.data[DATA_SYSTEM_EVENTS] = []
+
+    prose = "\n".join(
+        coord._brief_prose(
+            [r for r in incidents if r[INC_WHEN] >= now - 86400.0],
+            [],
+            now - 86400.0,
+            [],
+        )
+    )
+    assert "went unavailable twice" in prose
+    assert "unexplained interruptions over" in prose
