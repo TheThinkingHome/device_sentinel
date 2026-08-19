@@ -53,8 +53,6 @@ from custom_components.device_sentinel.const import (
 from custom_components.device_sentinel import repairs as repairs_module
 from custom_components.device_sentinel.records import _new_device_record
 
-import pytest
-
 from .helpers import register_device, setup_coordinator, setup_entry
 
 
