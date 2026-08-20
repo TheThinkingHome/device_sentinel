@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: trim.py, Version: 0.16.6 (2026-08-20)
+# File: trim.py, Version: 0.16.7 (2026-08-20)
 
 """Erasing one device's or one integration's learned history.
 
@@ -190,7 +190,14 @@ def describe(
         for label, value in removed.items()
         if value
     )
-    return f"{'; '.join(picked)}: {counts or 'nothing recorded'}"
+    # "Nothing recorded" said on its own read as a failed trim on the
+    # first live one, when an ignored television was picked and had
+    # no record to delete because an ignored device's record goes at
+    # the fold. The trim did exactly what it should; the sentence has
+    # to say that rather than leave a person wondering whether the
+    # tool works.
+    outcome = counts or "nothing was recorded for it, so nothing went"
+    return f"{'; '.join(picked)}: {outcome}"
 
 
 def log_result(

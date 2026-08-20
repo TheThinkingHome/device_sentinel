@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.16.6 (2026-08-20)
+# File: coordinator.py, Version: 0.16.7 (2026-08-20)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -2182,6 +2182,35 @@ class DeviceSentinelCoordinator(
     # ------------------------------------------- the problem-list sync
 
 
+    def _trim_name(self, device_id: str) -> str:
+        """Return a name for a device the trim event can carry.
+
+        Three maps, because the trim reaches wider than anything else
+        does. The display names cover watched devices; the set-aside
+        map carries its own name in its tuple; and the registry
+        answers for a device that is in neither, which is how a
+        picked id that has since gone still reads as something.
+
+        Found on the first live trim: an ignored television was
+        erased and the brief recorded a thirty-two character hex id,
+        because the lookup read the watched map alone (ruling #307
+        widened the picker to every detected device and this reader
+        had not been widened with it). An event naming a device by
+        id answers nothing a month later, which is the reason the
+        ruling says the event names devices rather than counting
+        them.
+        """
+        name = self._display_names.get(device_id)
+        if name:
+            return name
+        aside = self._set_aside.get(device_id)
+        if aside:
+            return aside[0]
+        device = dr.async_get(self.hass).async_get(device_id)
+        if device is not None:
+            return device.name_by_user or device.name or device_id
+        return device_id
+
     async def _apply_trim_selection(
         self, options: dict[str, Any]
     ) -> None:
@@ -2230,10 +2259,7 @@ class DeviceSentinelCoordinator(
                 ) in self._set_aside.items()
                 if domain in wanted
             }
-        names = [
-            self._display_names.get(device_id, device_id)
-            for device_id in targets
-        ]
+        names = [self._trim_name(device_id) for device_id in targets]
 
         try:
             stamp = await self.hass.async_add_executor_job(
@@ -2292,8 +2318,16 @@ class DeviceSentinelCoordinator(
         await self._apply_trim_selection(after)
         self._rebuild_registry_view()
         moved = sorted(
-            key for key in set(before) | set(after)
+            key
+            for key in set(before) | set(after)
             if before.get(key) != after.get(key)
+            # The trim pickers are an action rather than a setting,
+            # and they move twice per trim: once when a person picks
+            # something and once when the save empties them again.
+            # The trim writes its own event, so naming them here put
+            # three rows in the brief for one deed and told a reader
+            # that a setting had changed when none had (ruling #307).
+            and key not in (CONF_TRIM_DEVICES, CONF_TRIM_INTEGRATIONS)
         )
         if moved:
             # Which setting moved, not merely that one did. A row
