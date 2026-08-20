@@ -1481,6 +1481,18 @@ async def test_a_rail_day_does_not_crash_the_readers(
     assert coord._good_state_ceiling(record) == ceiling_before
     coord._danger_line(record)
 
+    # Every reader at once: the whole report pipeline renders over
+    # the null day. The outage had two readers with the same fault
+    # and the sweep that fixed the first was truncated and missed
+    # the second, so this test stops trusting sweeps: a reader
+    # anywhere in the render path that cannot read a rail-only row
+    # fails here rather than on a fleet.
+    await hass.async_add_executor_job(coord._write_reports)
+    telemetry = open(
+        hass.config.path("device_sentinel/device_telemetry.md")
+    ).read()
+    assert "Railed All Day" in telemetry
+
     # A record that has only ever railed has no ceiling.
     other, _ = register_device(hass, "st9", "Born Railed")
     fresh = coord.data[DATA_DEVICES][other.id]
