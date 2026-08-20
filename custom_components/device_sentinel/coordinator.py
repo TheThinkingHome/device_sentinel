@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.16.2 (2026-08-19)
+# File: coordinator.py, Version: 0.16.6 (2026-08-20)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -64,6 +64,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from . import trim
 from .normalise import check_records
 from .repairs import async_evaluate
 from .backup import async_refresh_last_good, async_take_backup
@@ -100,6 +101,8 @@ from .const import (
     DATA_SIGNAL_DAY_REPAIR,
     DATA_SIGNAL_WEIGHTING,
     DATA_LAST_VERSION,
+    CONF_TRIM_DEVICES,
+    CONF_TRIM_INTEGRATIONS,
     DATA_STATS_EPOCH,
     DATA_STORMS,
     DATA_SYSTEM_EVENTS,
@@ -154,6 +157,7 @@ from .const import (
     SIGNAL_DAYS_KEEP,
     SIGNAL_WEIGHTING_MARK,
     STARTUP_GRACE_SECONDS,
+    TRIM_BACKUP_DIR,
     STATS_EPOCH,
     STORAGE_CLOCKS_KEY,
     STORAGE_CLOCKS_VERSION,
@@ -165,6 +169,7 @@ from .const import (
     SYS_MAINTENANCE_OPEN,
     SYS_OPTIONS_CHANGED,
     SYS_RESTART,
+    SYS_TRIMMED,
     SYS_UNCLEAN_RESTART,
     TAINT_UNAVAILABLE,
     TAINT_UNKNOWN,
@@ -2177,6 +2182,99 @@ class DeviceSentinelCoordinator(
     # ------------------------------------------- the problem-list sync
 
 
+    async def _apply_trim_selection(
+        self, options: dict[str, Any]
+    ) -> None:
+        """Erase what the two Advanced pickers name, then empty them.
+
+        An action wearing an option's clothes (ruling #307). Saving
+        the screen is what performs it, which is the one place in
+        this flow where a save has a side effect beyond storing what
+        it was given, so the pickers are cleared here: without that,
+        every later save and every reload would delete again, and the
+        person would never be able to change another setting without
+        re-erasing the device they trimmed last week.
+
+        Order matters and is the safety property. The copy is taken
+        first and the deletion only proceeds if it landed, because
+        the copy is the only way back. Then the deletion, then the
+        pickers are emptied, then storage is written at once rather
+        than at the next interval, so a restart in the seconds after
+        a trim cannot resurrect what was just erased or, worse, lose
+        the emptied pickers and run the deletion a second time.
+
+        Idempotent on purpose: a device with nothing left to delete
+        is a valid pick and produces an event saying nothing was
+        recorded. A faulty record can read as empty and that is
+        exactly the device a person will be told to choose.
+        """
+        domains = list(options.get(CONF_TRIM_INTEGRATIONS) or [])
+        device_ids = list(options.get(CONF_TRIM_DEVICES) or [])
+        if not domains and not device_ids:
+            return
+
+        targets = set(device_ids)
+        if domains:
+            wanted = set(domains)
+            targets |= {
+                device_id
+                for device_id, domain in self._watched.items()
+                if domain in wanted
+            }
+            targets |= {
+                device_id
+                for device_id, (
+                    _name,
+                    domain,
+                    _reason,
+                ) in self._set_aside.items()
+                if domain in wanted
+            }
+        names = [
+            self._display_names.get(device_id, device_id)
+            for device_id in targets
+        ]
+
+        try:
+            stamp = await self.hass.async_add_executor_job(
+                trim.write_backup,
+                self.hass.config.path(TRIM_BACKUP_DIR),
+                dt_util.now(),
+                self._data_to_save(),
+                self._clocks_to_save(),
+            )
+        except OSError as error:
+            # Nothing is deleted. The pickers keep their selection so
+            # the person can see what did not happen and try again.
+            LOGGER.error(
+                "Trim abandoned: the storage copy could not be "
+                "written to %s (%s). Nothing was deleted",
+                            error,
+            )
+            return
+
+        # The clock file is derived from the records at save time
+        # rather than held separately, so deleting the record deletes
+        # the clock entry with it and the next save writes a clock
+        # file that no longer names the device.
+        removed = trim.trim_devices(self.data, targets)
+        trim.log_result(stamp, removed, names)
+        self._record_system_event(
+            SYS_TRIMMED,
+            detail=trim.describe(removed, names, domains),
+            devices=len(targets) or None,
+        )
+        self.hass.config_entries.async_update_entry(
+            self.entry,
+            options={
+                **options,
+                CONF_TRIM_INTEGRATIONS: [],
+                CONF_TRIM_DEVICES: [],
+            },
+        )
+        self._options_seen = dict(self.entry.options)
+        await self._save_now()
+
     async def async_options_updated(self) -> None:
         """Re-judge the fleet under new options, live, no restart."""
         # Home Assistant has already replaced the entry's options by
@@ -2187,6 +2285,11 @@ class DeviceSentinelCoordinator(
         before = self._options_seen
         after = dict(self.entry.options)
         self._options_seen = after
+        # The trim runs before anything re-judges, so the rest of
+        # this method sees the fleet as it is after the deletion
+        # rather than judging records that are about to vanish
+        # (ruling #307).
+        await self._apply_trim_selection(after)
         self._rebuild_registry_view()
         moved = sorted(
             key for key in set(before) | set(after)
@@ -2217,6 +2320,56 @@ class DeviceSentinelCoordinator(
             await self._save_now()
         self._notify()
 
+
+    @property
+    def trimmable_device_rows(self) -> list[dict[str, Any]]:
+        """Return every device the integration knows, for the trim
+        pickers.
+
+        Wider than watched_device_rows on purpose (ruling #307).
+        Nothing is filtered: watched, excluded, ignored and
+        set-aside devices are all offered, and so is a device that
+        currently holds no record at all. The exclusions pickers can
+        narrow to what an exclusion would change, because offering a
+        pointless exclusion is only clutter. A trim picker cannot,
+        because a faulty record can read as empty and the
+        empty-looking device is exactly the one a person will be
+        told to choose; a filter keyed on holding a record would
+        hide the case the feature exists for.
+
+        The integration is shown beside the name because a fleet can
+        carry the same name on two registry devices, and the person
+        being walked through this over email has to pick the right
+        one first time.
+        """
+        rows = [
+            {
+                "device_id": device_id,
+                "name": self._device_names.get(device_id, device_id),
+                "integration": integration_domain,
+                "labels": self._device_labels.get(
+                    device_id, frozenset()
+                ),
+            }
+            for device_id, integration_domain in self._watched.items()
+        ]
+        rows += [
+            {
+                "device_id": device_id,
+                "name": name,
+                "integration": domain,
+                "labels": self._device_labels.get(
+                    device_id, frozenset()
+                ),
+            }
+            for device_id, (
+                name,
+                domain,
+                _reason,
+            ) in self._set_aside.items()
+        ]
+        rows.sort(key=lambda row: (row["name"] or "").lower())
+        return rows
 
     @property
     def watched_device_rows(self) -> list[dict[str, Any]]:

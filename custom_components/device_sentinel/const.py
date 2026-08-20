@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.16.2 (2026-08-19)
+# File: const.py, Version: 0.16.6 (2026-08-20)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1839,7 +1839,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 305
+HIGHEST_RULING = 307
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1865,6 +1865,30 @@ SYS_MAINTENANCE_OPEN = "maintenance_open"
 SYS_MAINTENANCE_CLOSED = "maintenance_closed"
 SYS_EPOCH_RESET = "epoch_reset"
 SYS_OPTIONS_CHANGED = "options_changed"
+
+# A person deliberately erased a device's or an integration's learned
+# history from the Advanced screen (ruling #307). Recorded because it
+# is the one destructive act the integration performs on a person's
+# instruction, and because the statistics after it begin from nothing:
+# an event log that did not say so would leave a device looking newly
+# discovered for no reason. It is also what keeps attribution correct,
+# since a trimmed device's first incidents must not be explained by
+# windows that predate its rebirth.
+SYS_TRIMMED = "trimmed"
+
+# Where a trim writes its copy of storage before deleting anything.
+# One stamped pair per trim, never overwritten, so a sequence of
+# trims cannot bury the state the first one started from, and never
+# the nightly last-good pair, which stays exactly what the fold left.
+# The folder does not clean itself; the help text says so rather than
+# any silent expiry.
+TRIM_BACKUP_DIR = "device_sentinel/trim_backups"
+
+# The two pickers. Both are actions wearing an option's clothes: the
+# save applies them and then writes them back empty, so a reload
+# cannot delete a second time.
+CONF_TRIM_INTEGRATIONS = "trim_integrations"
+CONF_TRIM_DEVICES = "trim_devices"
 
 # A load or a fold found a stored record whose shape did not match
 # what the code expects (ruling #278). Recorded as a system event so it

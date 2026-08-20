@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.16.2 (2026-08-19)
+# File: report_brief.py, Version: 0.16.6 (2026-08-20)
 
 """The daily brief: the one report written for a person.
 
@@ -75,6 +75,7 @@ from .const import (
     SYS_EPOCH_RESET,
     SYS_KIND,
     SYS_OPTIONS_CHANGED,
+    SYS_TRIMMED,
     SYS_STORAGE_SHAPE,
     SYS_MAINTENANCE_CLOSED,
     SYS_MAINTENANCE_OPEN,
@@ -380,6 +381,17 @@ class BriefMixin:
         if kind == SYS_OPTIONS_CHANGED:
             extra = f": {detail}" if detail else ""
             return f"Settings changed at {when}{extra}."
+        if kind == SYS_TRIMMED:
+            # The one destructive act performed on a person's
+            # instruction, so the brief carries it even though the
+            # person did it themselves (ruling #307). A week later
+            # the question is why a device's history begins on a
+            # Tuesday, and this is the sentence that answers it.
+            extra = f" ({detail})" if detail else ""
+            return (
+                f"Learned history was erased at {when}{extra}. A copy "
+                f"of storage was written first."
+            )
         if kind == SYS_STORAGE_SHAPE:
             # The check writes what it found rather than a count on
             # its own, because a person reading this cannot act on a
@@ -460,6 +472,12 @@ class BriefMixin:
             return f"learned statistics reset ({detail})" if detail else "learned statistics reset"
         if kind == SYS_OPTIONS_CHANGED:
             return f"settings changed ({detail})" if detail else "settings changed"
+        if kind == SYS_TRIMMED:
+            return (
+                f"learned history erased ({detail})"
+                if detail
+                else "learned history erased"
+            )
         if kind == SYS_STORAGE_SHAPE:
             return (
                 f"storage check: {detail}"

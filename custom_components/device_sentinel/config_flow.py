@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.16.5 (2026-08-20)
+# File: config_flow.py, Version: 0.16.6 (2026-08-20)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -75,6 +75,8 @@ from .const import (
     CONF_COALESCE_MINUTES,
     CONF_EPISODE_SHARE,
     CONF_REPEAT_FLOOR,
+    CONF_TRIM_DEVICES,
+    CONF_TRIM_INTEGRATIONS,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_IGNORED_INTEGRATIONS,
@@ -1172,10 +1174,37 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         configuration says what a setting does and the wiki says why.
         """
         if user_input is not None:
+            # The trim pair arrives nested under its section, and the
+            # stored keys stay flat: the trim options are read by the
+            # coordinator by name, and a section is a way of drawing
+            # the screen rather than a change to what is stored.
+            flat: dict[str, Any] = {}
+            for key, value in user_input.items():
+                if isinstance(value, dict):
+                    flat.update(value)
+                else:
+                    flat[key] = value
             return self.async_create_entry(
-                data={**self.config_entry.options, **user_input}
+                data={**self.config_entry.options, **flat}
             )
         options = self.config_entry.options
+        # The trim pickers offer everything the integration knows,
+        # unfiltered, and are shown empty every time: they name what
+        # to erase on this save, not a setting the entry holds
+        # (ruling #307). The save applies them and writes them back
+        # empty, so a value seeded here would delete again at the
+        # next save of any setting on this screen.
+        trim_rows = self.config_entry.runtime_data.trimmable_device_rows
+        trim_device_options = [
+            selector.SelectOptionDict(
+                value=row["device_id"],
+                label=f"{row['name']} ({row['integration']})",
+            )
+            for row in trim_rows
+        ]
+        trim_integration_options = sorted(
+            {row["integration"] for row in trim_rows}
+        )
 
         def share_selector() -> selector.NumberSelector:
             """A ten-to-ninety percent slider in steps of ten."""
@@ -1266,6 +1295,53 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             unit_of_measurement="days",
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
+                    ),
+                    # Optional rather than required: a save that
+                    # omits the section entirely is a save that
+                    # trims nothing, which is what every save of
+                    # this screen does except the rare one that
+                    # means to erase something.
+                    vol.Optional("data_trim"): section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    CONF_TRIM_INTEGRATIONS, default=[]
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=(
+                                            trim_integration_options
+                                        ),
+                                        multiple=True,
+                                        custom_value=False,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                                vol.Optional(
+                                    CONF_TRIM_DEVICES, default=[]
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=trim_device_options,
+                                        multiple=True,
+                                        custom_value=False,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                            }
+                        ),
+                        # Collapsed: the screen's other settings are
+                        # things a person tunes, and this is the one
+                        # that destroys data, so it does not sit open
+                        # under the cursor of somebody adjusting a
+                        # slider (ruling #307).
+                        {"collapsed": True},
                     ),
                     vol.Required(
                         CONF_MAINTENANCE_MINUTES,

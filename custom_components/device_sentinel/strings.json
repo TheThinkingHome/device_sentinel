@@ -163,6 +163,20 @@
           "storage_write_minutes": "The amount of time routine activity is held in memory before it is written to disk. Set longer for slower hardware and hubs writing data to an SD card. Longer risks losing timer data should your system suffer a power loss. Events are written when they happen, so risk is minimal.",
           "history_days": "How many days of daily battery, signal, and unavailable and freeze gap records are kept for studying long trends. 30 days is necessary, but some trends can only be seen with longer time periods.",
           "maintenance_minutes": "How long the Maintenance Mode button declares you at work on the hardware. A device that recovers inside the window is treated as your fix, and its silence is not learned as normal."
+        },
+        "sections": {
+          "data_trim": {
+            "name": "Data Trim",
+            "description": "Use this tool when support requests it, or when corrupted data demands a clean start. Saving this screen clears the statistics, silence episodes, incidents, and Problem List entries of whatever you select below. As a safeguard, the system writes a backup to config/device_sentinel/trim_backups before erasing anything, and those backups are kept until you delete them yourself. The devices themselves remain untouched. They reappear within seconds to begin learning a new baseline, keeping all existing ignores and exclusions intact. Both selection boxes empty themselves after execution to prevent accidental double-wipes.",
+            "data": {
+              "trim_integrations": "Trim Integration History",
+              "trim_devices": "Trim Device History"
+            },
+            "data_description": {
+              "trim_integrations": "Erases the learned history of every device from the selected integrations.",
+              "trim_devices": "Erases the learned history of any devices selected here."
+            }
+          }
         }
       }
     }
