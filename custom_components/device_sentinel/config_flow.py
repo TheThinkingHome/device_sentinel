@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.16.2 (2026-08-19)
+# File: config_flow.py, Version: 0.16.4 (2026-08-20)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -853,13 +853,20 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     async def async_step_exclusions(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """The exclude surface: four selectors, one list, every family.
+        """The exclude surface: the ignore list and four exclude
+        selectors, every way of narrowing attention in one place.
 
-        Exclusion suppresses judgment, not observation (a ruled
-        decision): excluded devices and entities keep their clocks,
-        statistics, and vouching, so undo is instant and the rhythm
-        history carries no holes. Changes apply live on save through
-        the options update listener, no restart.
+        Two different verbs live on this screen and the distinction is
+        the screen's whole job (moved here from Advanced in 0.16.4,
+        where it read as an expert setting and turned out to be the
+        first thing a diverse fleet needs). Exclude watches but
+        silences: an excluded device still learns, still counts, and
+        is never reported, so undo is instant and the rhythm history
+        carries no holes. Ignore discards: an ignored integration's
+        devices are set aside, nothing is learned and nothing is
+        kept, which is for integrations with nothing worth watching
+        at all. Changes apply live on save through the options update
+        listener, no restart.
 
         The four kinds are a priority ladder, broadest first:
         integration, label, device, entity. Each picker lists only
@@ -889,6 +896,31 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 }
             )
         options = self.config_entry.options
+        ignored = list(
+            options.get(
+                CONF_IGNORED_INTEGRATIONS, DEFAULT_IGNORED_INTEGRATIONS
+            )
+        )
+        # The ignore picker offers integrations with something left to
+        # ignore, plus the ones already ignored. An integration whose
+        # devices are every one of them set aside already is not
+        # offered: Device Sentinel has classified them out, and
+        # ignoring them would change nothing while burying the real
+        # choices under three dozen add-ons and dashboard cards. The
+        # already-ignored are kept because ignoring took them out of
+        # the watched set, and a picker that forgot them would strand
+        # a choice it had just made. An integration since uninstalled
+        # survives as a custom value rather than failing the form
+        # (the 0.13.2 fault).
+        breakdown = self.config_entry.runtime_data.classification_breakdown
+        ignorable_domains = sorted(
+            {
+                domain
+                for domain, counts in breakdown.items()
+                if counts.get("watched")
+            }
+            | set(ignored)
+        )
         # Offer only integrations that own a watched device. An
         # integration whose devices are all service-type was never
         # watched, so excluding it would do nothing; listing every
@@ -921,6 +953,16 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             description_placeholders={"wiki_link": WIKI_LINK_EXCLUSIONS},
             data_schema=vol.Schema(
                 {
+                    vol.Optional(
+                        CONF_IGNORED_INTEGRATIONS, default=ignored
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=ignorable_domains,
+                            multiple=True,
+                            custom_value=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
                     vol.Optional(
                         CONF_EXCLUDED_INTEGRATIONS,
                         default=excluded_integrations,
@@ -1134,30 +1176,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 data={**self.config_entry.options, **user_input}
             )
         options = self.config_entry.options
-        ignored = list(
-            options.get(
-                CONF_IGNORED_INTEGRATIONS, DEFAULT_IGNORED_INTEGRATIONS
-            )
-        )
-        # Integrations with something left to ignore, plus the ones
-        # already ignored. An integration whose devices are every one
-        # of them set aside already is not offered: Device Sentinel
-        # has classified them out, and ignoring them would change
-        # nothing while burying the real choices under three dozen
-        # add-ons and dashboard cards. The already-ignored are kept
-        # because ignoring took them out of the watched set, and a
-        # picker that forgot them would strand a choice it had just
-        # made. An integration since uninstalled survives as a custom
-        # value rather than failing the form (the 0.13.2 fault).
-        breakdown = self.config_entry.runtime_data.classification_breakdown
-        integration_domains = sorted(
-            {
-                domain
-                for domain, counts in breakdown.items()
-                if counts.get("watched")
-            }
-            | set(ignored)
-        )
 
         def share_selector() -> selector.NumberSelector:
             """A ten-to-ninety percent slider in steps of ten."""
@@ -1262,16 +1280,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             step=MAINTENANCE_MINUTES_STEP,
                             unit_of_measurement="min",
                             mode=selector.NumberSelectorMode.SLIDER,
-                        )
-                    ),
-                    vol.Optional(
-                        CONF_IGNORED_INTEGRATIONS, default=ignored
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=integration_domains,
-                            multiple=True,
-                            custom_value=True,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
                 }
