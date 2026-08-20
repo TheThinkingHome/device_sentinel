@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.16.2 (2026-08-19)
+# File: test_signal_stats.py, Version: 0.16.3 (2026-08-20)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -1446,3 +1446,45 @@ async def test_the_trim_aligns_series_from_the_tail(
     # tail-aligned position, not from head index 1.
     assert stored[DEV_SIGNAL_DAILY_MAX] == [-90.0, -80.0, -64.0, -63.0]
     assert stored[DEV_SIGNAL_DAILY_MEAN] == [-65.0, -64.0]
+
+
+async def test_a_rail_day_does_not_crash_the_readers(
+    hass: HomeAssistant,
+):
+    """The ceiling, the line, and the reports survive a null day.
+
+    The 20 August outage: the first fold under the #305 guard wrote a
+    rail-only row with null statistics, exactly as designed, and
+    _good_state_ceiling read means[-1] unguarded, so the morning
+    report write took the whole integration down. The ceiling now
+    rests on the most recent day that has statistics, and a record
+    whose every day is rail-only has no ceiling rather than a crash.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "st8", "Railed All Day")
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_SIGNAL_SCALE] = "lqi"
+
+    # Day one: real readings, so the ceiling has something to rest on.
+    coord._feed_signal(record, 180.0, 1000.0)
+    coord._feed_signal(record, 184.0, 2000.0)
+    coord._roll_signal_stats(record, 86400.0)
+    ceiling_before = coord._good_state_ceiling(record)
+    assert ceiling_before is not None
+
+    # Day two: nothing but rails, the row the outage was made of.
+    coord._feed_signal(record, 255.0, 86400.0 + 1000.0)
+    coord._roll_signal_stats(record, 2 * 86400.0)
+    assert (record.get(DEV_SIGNAL_DAILY_MEAN) or [])[-1] is None
+
+    # The readers all survive, and the ceiling rests on day one.
+    assert coord._good_state_ceiling(record) == ceiling_before
+    coord._danger_line(record)
+
+    # A record that has only ever railed has no ceiling.
+    other, _ = register_device(hass, "st9", "Born Railed")
+    fresh = coord.data[DATA_DEVICES][other.id]
+    fresh[DEV_SIGNAL_SCALE] = "lqi"
+    coord._feed_signal(fresh, 255.0, 1000.0)
+    coord._roll_signal_stats(fresh, 86400.0)
+    assert coord._good_state_ceiling(fresh) is None
