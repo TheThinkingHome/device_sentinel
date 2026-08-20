@@ -69,13 +69,15 @@
       },
       "exclusions": {
         "title": "Global Exclusions",
-        "description": "Globally excluded items are never reported, by any part of Device Sentinel, but they are still watched and their habits are learned, so undoing an exclusion is instant and nothing is lost.\n\nThe three lists run broad to narrow: integration, label, device. When you exclude at a higher level and save, everything it covers disappears as a choice from the lists below it: exclude an integration and its devices no longer appear and do not need to be removed individually, because the integration already covers them.\n\n[Global Exclusions on the wiki]({wiki_link})",
+        "description": "Two ways to narrow attention, and the difference matters. Ignoring discards: devices on an ignored integration are set aside, nothing is learned and nothing is kept. Excluding silences: an excluded item is never reported by any part of Device Sentinel, but it is still watched and its habits are still learned, so undoing an exclusion is instant and nothing is lost.\n\nThe three exclusion lists run broad to narrow: integration, label, device. When you exclude at a higher level and save, anything it covers is removed from the lists below it, so one choice is stored one way.\n\n[Global Exclusions on the wiki]({wiki_link})",
         "data": {
+          "ignored_integrations": "Integrations to Ignore",
           "excluded_devices": "Globally Excluded Devices",
           "excluded_labels": "Globally Excluded Labels",
           "excluded_integrations": "Globally Excluded Integrations"
         },
         "data_description": {
+          "ignored_integrations": "Devices on these integrations are set aside completely: never watched, never learned, never recorded, and anything already recorded is discarded at the next nightly rollover. Use this for integrations with nothing worth watching at all, like phone apps, cloud services, and helpers that only derive values from real devices. To keep learning a device but stop hearing about it, use an exclusion below instead.",
           "excluded_devices": "These devices are never reported.",
           "excluded_labels": "Devices and entities carrying these labels are excluded. This is the one exclusion you can set without opening this dialog: tag the device or entity from its own page.",
           "excluded_integrations": "Excludes every device the integration owns. Hardware it merely sees but does not own is not caught: a router tracking a camera does not drag the camera with it."
@@ -150,8 +152,7 @@
           "taint_share_pct": "Unavailable Debounce for Slow Reporting Devices",
           "storage_write_minutes": "Storage Write Interval",
           "history_days": "How Much History to Keep",
-          "maintenance_minutes": "Maintenance Window in Minutes",
-          "ignored_integrations": "Integrations to Ignore"
+          "maintenance_minutes": "Maintenance Window in Minutes"
         },
         "data_description": {
           "settle_share_pct": "The amount of time, as a share of a device's learned reporting gap, that a problem must persist before you are notified. It applies to battery, signal, and freeze alike, and delays only the high-priority phone alert. At 30 percent a fast device clears about a minute of hiccups and a slow one about half an hour. Higher means fewer messages about brief problems that fix themselves; lower means you hear sooner.",
@@ -161,8 +162,7 @@
           "taint_share_pct": "Debounce added to the floor as a percentage of the device's freeze window, so a slow-reporting device is given proportionally more and a fast one is governed by the floor alone. A device that becomes unreachable and returns within the combined time is learned. Longer than this is reported as downtime and the recovery a likely human fix, so a repaired device never inflates its own patience.",
           "storage_write_minutes": "The amount of time routine activity is held in memory before it is written to disk. Set longer for slower hardware and hubs writing data to an SD card. Longer risks losing timer data should your system suffer a power loss. Events are written when they happen, so risk is minimal.",
           "history_days": "How many days of daily battery, signal, and unavailable and freeze gap records are kept for studying long trends. 30 days is necessary, but some trends can only be seen with longer time periods.",
-          "maintenance_minutes": "How long the Maintenance Mode button declares you at work on the hardware. A device that recovers inside the window is treated as your fix, and its silence is not learned as normal.",
-          "ignored_integrations": "Devices on these integrations are never watched, never learned and never recorded. This is not the same as excluding them, which only stops them being reported: anything already recorded here is discarded at midnight, and until then removing an integration from this list restores it untouched. After midnight, removing it starts that integration over with no history and a fresh seven-day arming period. The starting list is the integrations that publish measurements of nothing your house can be judged on: phones and tablets that travel and are charged rather than replaced, Spook, which describes Home Assistant rather than hardware, and ping, which answers on every poll and so can never fall silent."
+          "maintenance_minutes": "How long the Maintenance Mode button declares you at work on the hardware. A device that recovers inside the window is treated as your fix, and its silence is not learned as normal."
         }
       }
     }
