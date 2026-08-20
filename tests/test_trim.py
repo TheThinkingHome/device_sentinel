@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_trim.py, Version: 0.16.6 (2026-08-20)
+# File: test_trim.py, Version: 0.16.7 (2026-08-20)
 
 """The trim choosers: erasing one device's history on purpose."""
 from __future__ import annotations
@@ -332,3 +332,115 @@ async def test_the_section_arrives_nested_and_stores_flat(
     assert coord.data[DATA_DEVICES][target.id][
         DEV_SIGNAL_DAILY_MIN
     ] == []
+
+
+async def test_an_ignored_device_is_named_not_numbered(
+    hass: HomeAssistant,
+):
+    """The event names a set-aside device, not its id (ruling #307).
+
+    Found on the first live trim: an ignored television was erased
+    and the brief recorded a thirty-two character hex id, because the
+    name lookup read the watched map alone while the picker had been
+    widened to every detected device. An event naming a device by id
+    answers nothing a month later.
+    """
+    from homeassistant.helpers import device_registry as dr
+
+    from custom_components.device_sentinel.const import (
+        CONF_IGNORED_INTEGRATIONS,
+    )
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    target, _ = register_device(hass, "ig1", "The Television")
+    coord._rebuild_registry_view()
+    domain = coord._watched[target.id]
+
+    # Ignore its integration, which sets the device aside and takes
+    # it out of the watched name map.
+    await _save_options(
+        hass, entry, **{CONF_IGNORED_INTEGRATIONS: [domain]}
+    )
+    assert target.id in coord._set_aside
+
+    await _save_options(hass, entry, **{CONF_TRIM_DEVICES: [target.id]})
+
+    event = next(
+        row
+        for row in coord.data[DATA_SYSTEM_EVENTS]
+        if row[SYS_KIND] == SYS_TRIMMED
+    )
+    detail = event.get("detail") or ""
+    assert "The Television" in detail
+    assert target.id not in detail
+    # Ignoring sets a device aside at once but its record survives
+    # until the next fold discards it, so this trim did have
+    # something to take.
+    assert "1 records" in detail
+    assert dr.async_get(hass).async_get(target.id) is not None
+
+
+async def test_a_trim_with_nothing_to_take_says_why(
+    hass: HomeAssistant,
+):
+    """On the first live trim an ignored television whose record had
+    already gone at a fold produced "nothing recorded", which reads
+    as a failed tool rather than a completed no-op (ruling #307)."""
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    target, _ = register_device(hass, "empty1", "Already Gone")
+    coord._rebuild_registry_view()
+    coord.data[DATA_DEVICES].pop(target.id, None)
+
+    await _save_options(hass, entry, **{CONF_TRIM_DEVICES: [target.id]})
+
+    event = next(
+        row
+        for row in coord.data[DATA_SYSTEM_EVENTS]
+        if row[SYS_KIND] == SYS_TRIMMED
+    )
+    detail = event.get("detail") or ""
+    assert "Already Gone" in detail
+    assert "nothing was recorded for it" in detail
+
+
+async def test_the_trim_pickers_are_not_a_settings_change(
+    hass: HomeAssistant,
+):
+    """One deed, one row. The pickers move twice per trim, once when
+    picked and once when the save empties them, so naming them put
+    three events in the brief for one action (ruling #307)."""
+    from custom_components.device_sentinel.const import (
+        SYS_OPTIONS_CHANGED,
+    )
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    target, _ = register_device(hass, "noise1", "Quiet Trim")
+    coord._rebuild_registry_view()
+    _furnish(coord, target.id, "Quiet Trim")
+    before = [
+        row
+        for row in coord.data[DATA_SYSTEM_EVENTS]
+        if row[SYS_KIND] == SYS_OPTIONS_CHANGED
+    ]
+
+    await _save_options(hass, entry, **{CONF_TRIM_DEVICES: [target.id]})
+
+    after = [
+        row
+        for row in coord.data[DATA_SYSTEM_EVENTS]
+        if row[SYS_KIND] == SYS_OPTIONS_CHANGED
+    ]
+    assert len(after) == len(before)
+    assert (
+        len(
+            [
+                row
+                for row in coord.data[DATA_SYSTEM_EVENTS]
+                if row[SYS_KIND] == SYS_TRIMMED
+            ]
+        )
+        == 1
+    )
