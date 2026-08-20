@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_dwell.py, Version: 0.13.4 (2026-08-13)
+# File: report_dwell.py, Version: 0.16.3 (2026-08-20)
 
 """The signal dwell chart and the signal cells of the telemetry.
 
@@ -551,6 +551,18 @@ Signal Dwell Chart</a> on the Device Sentinel wiki.</footer>
         """
         means = record.get(DEV_SIGNAL_DAILY_MEAN) or []
         deviations = record.get(DEV_SIGNAL_DAILY_SD) or []
-        if not means or not deviations:
-            return "-"
-        return f"{means[-1]:g}\u00b1{deviations[-1]:g}"
+        # The newest day that has statistics. A rail-only day writes
+        # null into both series (ruling #305), and this cell read
+        # [-1] unguarded: the second of two readers with that fault,
+        # missed because the sweep that found the first was
+        # truncated. The rail-day test now drives the whole report
+        # pipeline over a null day so a further missed reader fails
+        # in the suite rather than on a fleet.
+        for index in range(len(means) - 1, -1, -1):
+            if index < len(deviations) and means[
+                index
+            ] is not None and deviations[index] is not None:
+                return (
+                    f"{means[index]:g}\u00b1{deviations[index]:g}"
+                )
+        return "-"
