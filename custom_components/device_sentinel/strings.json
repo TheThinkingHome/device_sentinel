@@ -69,7 +69,7 @@
       },
       "exclusions": {
         "title": "Global Exclusions",
-        "description": "Two ways to narrow attention, and the difference matters. Ignoring discards: devices on an ignored integration are set aside, nothing is learned and nothing is kept. Excluding silences: an excluded item is never reported by any part of Device Sentinel, but it is still watched and its habits are still learned, so undoing an exclusion is instant and nothing is lost.\n\nThe three exclusion lists run broad to narrow: integration, label, device. When you exclude at a higher level and save, anything it covers is removed from the lists below it, so one choice is stored one way.\n\n[Global Exclusions on the wiki]({wiki_link})",
+        "description": "The integration offers two ways to tune which devices it watches and how it reports.\n\nIntegrations to Ignore: Devices from an ignored integration are completely set aside. Nothing is learned, no data is kept, and they never appear in reports or notifications.\n\nGlobally Excluded Integrations, Labels, and Devices: An excluded item is still watched and its data is stored, but it is kept off the Problem List and out of reports and alerts. So if you remove the exclusion later, the device can resume reporting immediately, because its history is already at hand.\n\nThe three exclusion lists run broad to narrow: integration, label, device. When you exclude at a higher level and save, the system automatically removes anything covered by that choice from the lists below it. One choice is stored exactly one way.\n\n[Global Exclusions on the wiki]({wiki_link})",
         "data": {
           "ignored_integrations": "Integrations to Ignore",
           "excluded_devices": "Globally Excluded Devices",
@@ -77,10 +77,10 @@
           "excluded_integrations": "Globally Excluded Integrations"
         },
         "data_description": {
-          "ignored_integrations": "Devices on these integrations are set aside completely: never watched, never learned, never recorded, and anything already recorded is discarded at the next nightly rollover. Use this for integrations with nothing worth watching at all, like phone apps, cloud services, and helpers that only derive values from real devices. To keep learning a device but stop hearing about it, use an exclusion below instead.",
-          "excluded_devices": "These devices are never reported.",
-          "excluded_labels": "Devices and entities carrying these labels are excluded. This is the one exclusion you can set without opening this dialog: tag the device or entity from its own page.",
-          "excluded_integrations": "Excludes every device the integration owns. Hardware it merely sees but does not own is not caught: a router tracking a camera does not drag the camera with it."
+          "ignored_integrations": "The system completely ignores devices from these integrations. It learns no rhythms, records no data, and generates no reports. If you add a new integration to this list, anything already recorded for its devices is discarded at the next nightly rollover. This is the right tool for phone apps, cloud services, and virtual helpers that do not represent physical hardware. If you want to silence alerts for a device while keeping its history, use the exclusion lists below instead.",
+          "excluded_devices": "This applies the exact same exclusion rules as the lists above, but targets individual pieces of hardware. Add a specific device here to take it off the Problem List and mute its reports and notifications.",
+          "excluded_labels": "The system excludes any device or entity carrying these labels. You can manage this exclusion without ever opening this dialog. Simply apply the label on the hardware's own device page, and Device Sentinel stops reporting on it.",
+          "excluded_integrations": "Excludes every device the integration owns. Its devices will be learned and recorded, but will not appear on the Problem List or in any reports or notifications."
         }
       },
       "battery": {
