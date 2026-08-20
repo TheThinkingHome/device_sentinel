@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_ignored_integrations.py, Version: 0.14.1 (2026-08-14)
+# File: test_ignored_integrations.py, Version: 0.16.4 (2026-08-20)
 
 """Integrations a person asks never to be watched.
 
@@ -389,3 +389,53 @@ async def test_the_fold_discards_and_then_folds_the_survivors(
     kept = coordinator.data[DATA_DEVICES][keeper.id]
     assert kept[DEV_DAILY_MAX] == [60.0, 61.0, 62.0]
     assert kept[DEV_TODAY_MAX] is None
+
+
+async def test_the_ignore_list_lives_on_the_exclusions_screen(
+    hass: HomeAssistant,
+):
+    """Moved from Advanced in 0.16.4, where it read as an expert
+    setting and turned out to be the first thing a diverse fleet
+    needs. The picker sits above the exclude selectors so the two
+    verbs are read together, and a save from that screen stores the
+    ignore list beside the exclusions.
+    """
+    from homeassistant.data_entry_flow import FlowResultType
+
+    from custom_components.device_sentinel.const import (
+        CONF_EXCLUDED_DEVICES,
+        CONF_EXCLUDED_INTEGRATIONS,
+        CONF_EXCLUDED_LABELS,
+    )
+
+    entry = await setup_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exclusions"}
+    )
+    assert result["step_id"] == "exclusions"
+    fields = list(result["data_schema"].schema)
+    assert str(fields[0]) == CONF_IGNORED_INTEGRATIONS
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_IGNORED_INTEGRATIONS: ["mobile_app", "tile"],
+            CONF_EXCLUDED_INTEGRATIONS: [],
+            CONF_EXCLUDED_LABELS: [],
+            CONF_EXCLUDED_DEVICES: [],
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_IGNORED_INTEGRATIONS] == [
+        "mobile_app",
+        "tile",
+    ]
+
+    # And Advanced no longer offers it.
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "advanced"}
+    )
+    advanced_fields = [str(key) for key in result["data_schema"].schema]
+    assert CONF_IGNORED_INTEGRATIONS not in advanced_fields
