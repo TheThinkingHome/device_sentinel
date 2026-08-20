@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.16.2 (2026-08-19)
+# File: detect_signal.py, Version: 0.16.3 (2026-08-20)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -657,7 +657,24 @@ class SignalMixin:
         """
         means = record.get(DEV_SIGNAL_DAILY_MEAN) or []
         sds = record.get(DEV_SIGNAL_DAILY_SD) or []
-        if not means or not sds:
+        # The most recent day that has statistics at all. A rail-only
+        # day writes null into both series on purpose (ruling #305),
+        # and the ceiling's job is to bound the line by the device's
+        # real behaviour, so it rests on the last day that had any.
+        # Reading [-1] unguarded took the integration down on the
+        # first fleet where a device railed a whole day: the fold
+        # wrote the row exactly as designed and this reader was the
+        # one that had not learned to read it (#279, applied to
+        # readers: accept what the code can write).
+        mean = sd = None
+        for index in range(len(means) - 1, -1, -1):
+            if index < len(sds) and means[index] is not None and sds[
+                index
+            ] is not None:
+                mean = means[index]
+                sd = sds[index]
+                break
+        if mean is None or sd is None:
             return None
         # Half a deviation, but never less than one comfortable step
         # of the scale (ruling #244). On a device whose whole operating
@@ -667,10 +684,10 @@ class SignalMixin:
         # three steady blinds as 52 to 95 percent dwell in one day.
         clearance = (
             SIGNAL_CEILING_CLEARANCE_RSSI
-            if means[-1] < 0
+            if mean < 0
             else SIGNAL_CEILING_CLEARANCE_LQI
         )
-        return means[-1] - max(GOOD_STATE_CEILING_SD * sds[-1], clearance)
+        return mean - max(GOOD_STATE_CEILING_SD * sd, clearance)
 
     def _line_is_bounded(self, record: dict[str, Any]) -> bool:
         """Return whether the good-state ceiling is what set the line.
