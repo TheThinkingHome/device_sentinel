@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.16.13 (2026-08-21)
+# File: config_flow.py, Version: 0.16.14 (2026-08-21)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -336,6 +336,35 @@ class DeviceSentinelConfigFlow(ConfigFlow, domain=DOMAIN):
 class DeviceSentinelOptionsFlow(OptionsFlow):
     """A menu branching to each configuration surface."""
 
+    async def _save_and_return(
+        self, changed: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """Write a section's settings and go back to the menu.
+
+        Ruling #313. Every section used to end by creating the entry,
+        which writes the options and ends the flow in one call, and
+        ending the flow is what closed the dialog and put a person
+        back in Home Assistant. Tim Plas, working through six screens
+        on a fleet of 332 devices, called that annoying, and he is
+        right: a menu you are thrown out of after each visit is a
+        menu you visit once.
+
+        Writing without ending is `async_update_entry`, which fires
+        the same update listener the integration already registers,
+        so the running coordinator picks the change up exactly as it
+        did before. Nothing is reloaded; options are applied in place.
+
+        Each section saves itself. A person who submits three
+        sections and then closes the dialog keeps all three, and one
+        who abandons a section loses only that section's edits, which
+        is what the X on a form has always meant.
+        """
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            options={**self.config_entry.options, **changed},
+        )
+        return await self.async_step_init()
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -379,13 +408,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """
         battery_rows = self.config_entry.runtime_data.detected_batteries
         if user_input is not None:
-            return self.async_create_entry(
-                data={
-                    **self.config_entry.options,
-                    **self._pruned_battery_input(
-                        user_input, battery_rows, dr.async_get(self.hass)
-                    ),
-                }
+            return await self._save_and_return(
+                self._pruned_battery_input(
+                    user_input, battery_rows, dr.async_get(self.hass)
+                )
             )
         options = self.config_entry.options
         covered = _devices_covered_by(
@@ -543,13 +569,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """
         signal_rows = self.config_entry.runtime_data.detected_signals
         if user_input is not None:
-            return self.async_create_entry(
-                data={
-                    **self.config_entry.options,
-                    **self._pruned_signal_input(
-                        user_input, signal_rows, dr.async_get(self.hass)
-                    ),
-                }
+            return await self._save_and_return(
+                self._pruned_signal_input(
+                    user_input, signal_rows, dr.async_get(self.hass)
+                )
             )
         options = self.config_entry.options
         covered = _devices_covered_by(
@@ -739,13 +762,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """
         device_rows = self.config_entry.runtime_data.watched_device_rows
         if user_input is not None:
-            return self.async_create_entry(
-                data={
-                    **self.config_entry.options,
-                    **self._pruned_freeze_input(
-                        user_input, device_rows, dr.async_get(self.hass)
-                    ),
-                }
+            return await self._save_and_return(
+                self._pruned_freeze_input(
+                    user_input, device_rows, dr.async_get(self.hass)
+                )
             )
         options = self.config_entry.options
         covered = _devices_covered_by(
@@ -905,13 +925,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         coordinator = self.config_entry.runtime_data
         device_rows = coordinator.watched_device_rows
         if user_input is not None:
-            return self.async_create_entry(
-                data={
-                    **self.config_entry.options,
-                    **self._pruned_exclusion_input(
-                        user_input, device_rows, dr.async_get(self.hass)
-                    ),
-                }
+            return await self._save_and_return(
+                self._pruned_exclusion_input(
+                    user_input, device_rows, dr.async_get(self.hass)
+                )
             )
         options = self.config_entry.options
         ignored = list(
@@ -1072,9 +1089,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 for target in flat.get(CONF_NORMAL_PRIORITY_TARGETS, [])
                 if target not in high
             ]
-            return self.async_create_entry(
-                data={**self.config_entry.options, **flat}
-            )
+            return await self._save_and_return(flat)
         options = self.config_entry.options
         discovered = _discover_notify_targets(self.hass)
 
@@ -1203,9 +1218,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     flat.update(value)
                 else:
                     flat[key] = value
-            return self.async_create_entry(
-                data={**self.config_entry.options, **flat}
-            )
+            return await self._save_and_return(flat)
         options = self.config_entry.options
         # The trim pickers offer everything the integration knows,
         # unfiltered, and are shown empty every time: they name what
