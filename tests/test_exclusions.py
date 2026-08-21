@@ -57,7 +57,10 @@ from custom_components.device_sentinel.const import (
     CONF_SIGNAL_EXCLUDED_LABELS,
     CONF_SIGNAL_LIFT,
     CONF_SIGNAL_MARGIN,
-    CONF_SIGNAL_RED,
+    CONF_BADDAY_BASELINE_DAYS,
+    CONF_BADDAY_DROP_LQI,
+    CONF_BADDAY_DROP_RSSI,
+    CONF_BADDAY_SENSITIVITY,
     DATA_DEVICES,
     DEAD_OPTION_KEYS,
     DEV_EVENT_COUNT,
@@ -719,14 +722,18 @@ _SIGNAL_ROWS = [
 
 
 def test_signal_prune_rounds_the_sliders_to_their_types():
-    """Trim, margin and red threshold are integers; the lift is a
-    float. Each arrives from its slider as a float and is stored as
-    the type the option declares."""
+    """Trim, margin, the two drops and the baseline days are
+    integers; the lift and the bad-day sensitivity are floats. Each
+    arrives from its slider as a float and is stored as the type the
+    option declares (ruling #310 for the four bad-day sliders)."""
     pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
         {
             CONF_SIGNAL_ANOMALY_TRIM: 1.0,
             CONF_SIGNAL_MARGIN: 5.0,
-            CONF_SIGNAL_RED: 10.0,
+            CONF_BADDAY_DROP_LQI: 25.0,
+            CONF_BADDAY_DROP_RSSI: 6.0,
+            CONF_BADDAY_BASELINE_DAYS: 7.0,
+            CONF_BADDAY_SENSITIVITY: 4,
             CONF_SIGNAL_LIFT: 2,
             CONF_SIGNAL_EXCLUDED_INTEGRATIONS: [],
             CONF_SIGNAL_EXCLUDED_LABELS: [],
@@ -738,12 +745,16 @@ def test_signal_prune_rounds_the_sliders_to_their_types():
     for key, want in (
         (CONF_SIGNAL_ANOMALY_TRIM, 1),
         (CONF_SIGNAL_MARGIN, 5),
-        (CONF_SIGNAL_RED, 10),
+        (CONF_BADDAY_DROP_LQI, 25),
+        (CONF_BADDAY_DROP_RSSI, 6),
+        (CONF_BADDAY_BASELINE_DAYS, 7),
     ):
         assert pruned[key] == want
         assert isinstance(pruned[key], int), key
     assert pruned[CONF_SIGNAL_LIFT] == 2.0
     assert isinstance(pruned[CONF_SIGNAL_LIFT], float)
+    assert pruned[CONF_BADDAY_SENSITIVITY] == 4.0
+    assert isinstance(pruned[CONF_BADDAY_SENSITIVITY], float)
 
 
 def test_signal_prune_leaves_absent_sliders_absent():
@@ -762,7 +773,10 @@ def test_signal_prune_leaves_absent_sliders_absent():
     for key in (
         CONF_SIGNAL_ANOMALY_TRIM,
         CONF_SIGNAL_MARGIN,
-        CONF_SIGNAL_RED,
+        CONF_BADDAY_BASELINE_DAYS,
+        CONF_BADDAY_DROP_LQI,
+        CONF_BADDAY_DROP_RSSI,
+        CONF_BADDAY_SENSITIVITY,
         CONF_SIGNAL_LIFT,
     ):
         assert key not in pruned, key
@@ -1045,7 +1059,7 @@ async def test_options_flow_signal_save_prunes_on_save(hass: HomeAssistant):
         {
             CONF_SIGNAL_ANOMALY_TRIM: 1.0,
             CONF_SIGNAL_MARGIN: 5.0,
-            CONF_SIGNAL_RED: 10.0,
+            CONF_BADDAY_DROP_LQI: 25.0,
             CONF_SIGNAL_LIFT: 2,
             CONF_SIGNAL_EXCLUDED_INTEGRATIONS: ["test"],
             CONF_SIGNAL_EXCLUDED_LABELS: [],
@@ -1058,7 +1072,7 @@ async def test_options_flow_signal_save_prunes_on_save(hass: HomeAssistant):
     for key, want in (
         (CONF_SIGNAL_ANOMALY_TRIM, 1),
         (CONF_SIGNAL_MARGIN, 5),
-        (CONF_SIGNAL_RED, 10),
+        (CONF_BADDAY_DROP_LQI, 25),
     ):
         assert entry.options[key] == want
         assert isinstance(entry.options[key], int), key

@@ -40,13 +40,13 @@ from custom_components.device_sentinel.const import (
     CONF_SIGNAL_ANOMALY_TRIM,
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_MARGIN,
-    CONF_SIGNAL_RED,
     DATA_DEVICES,
     DATA_SIGNAL_STRESS,
     DEV_SIGNAL_COUNT,
     DEV_SIGNAL_DAILY_COUNT,
     DEV_SIGNAL_DAILY_LINE,
     DEV_SIGNAL_DAILY_MAX,
+    DEV_BATTERY_VALUE,
     DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_P5,
@@ -73,7 +73,7 @@ from custom_components.device_sentinel.const import (
     EP_SIG_VALUE,
     EP_SIGNAL,
     EP_SINCE,
-    REPORT_SIGNAL_DWELL,
+    REPORT_SIGNAL,
     REPORT_WWW_DIR,
     SIGNAL_RAIL_LQI,
 )
@@ -97,7 +97,7 @@ def _brief_text(hass: HomeAssistant) -> str:
 
 def _report_path(hass: HomeAssistant) -> str:
     return os.path.join(
-        hass.config.path(REPORT_WWW_DIR), REPORT_SIGNAL_DWELL
+        hass.config.path(REPORT_WWW_DIR), REPORT_SIGNAL
     )
 
 
@@ -330,103 +330,96 @@ async def test_the_trim_removes_only_fabricated_rows(
     assert stored[DEV_SIGNAL_DAILY_LINE] == [-70.0, None, -70.0]
 
 
-async def test_the_chart_bands_by_the_red_threshold(
+async def test_a_bad_day_gets_a_biography_and_a_calm_device_does_not(
     hass: HomeAssistant,
 ):
-    """Green to 5 fixed, yellow to the slider, red above it.
+    """The page describes the devices that changed and only those.
 
-    Three devices at 3, 8, and 15 percent against a red threshold of
-    10 paint one bar of each color, and the file says where the
-    threshold is set, which was ruled into the footer.
+    A device whose P5 fell 60 points below a tight week is a bad day
+    on every gate (ruling #310); a steady neighbour renders in the
+    strip and nowhere else.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
-    for key, name, pct in (
-        ("g", "Green Device", 3.0),
-        ("y", "Yellow Device", 8.0),
-        ("r", "Red Device", 15.0),
-    ):
-        device, _ = register_device(hass, key, name)
-        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [pct]
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    html = _read(hass)
-
-    charts = html.index("class='charts'")
-    green = html.index("Green Device", charts)
-    assert "#1D9E75" in html[green : green + 400]
-    yellow = html.index("Yellow Device", charts)
-    assert "#EDA100" in html[yellow : yellow + 400]
-    red = html.index("Red Device", charts)
-    assert "#D03B3B" in html[red : red + 400]
-    assert "Red Threshold slider" in html
-    assert "configuration screen" in html
-
-
-async def test_every_red_device_is_an_anomaly(hass: HomeAssistant):
-    """Red is the cut (ruled 2026-08-02, revised from red plus five).
-
-    A device over the threshold appears in the anomaly table with its
-    streak of consecutive days over red, and a device under it does
-    not.
-    """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    coord = await setup_coordinator(hass, {})
     hot, _ = register_device(hass, "an1", "Anomalous Device")
-    coord.data[DATA_DEVICES][hot.id][DEV_SIGNAL_DWELL_DAILY] = [
-        2.0,
-        12.0,
-        14.0,
-        13.0,
+    coord.data[DATA_DEVICES][hot.id][DEV_SIGNAL_DAILY_P5] = [
+        160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
     ]
     calm, _ = register_device(hass, "an2", "Calm Device")
-    coord.data[DATA_DEVICES][calm.id][DEV_SIGNAL_DWELL_DAILY] = [8.0]
+    coord.data[DATA_DEVICES][calm.id][DEV_SIGNAL_DAILY_P5] = [
+        150.0, 151.0, 149.0, 150.0, 152.0, 150.0, 151.0,
+    ]
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     html = _read(hass)
 
-    # Sliced to the charts block rather than to the word Yesterday,
-    # which the headings stopped saying when they gained their dates
-    # (ruling #190).
-    anomaly_section = html[
-        html.index("Anomalies") : html.index("<div class='charts'>")
-    ]
-    assert "Anomalous Device" in anomaly_section
-    assert "3 day(s)" in anomaly_section
-    assert "Calm Device" not in anomaly_section
+    section = html[html.index("Devices That Had a Bad Day"):]
+    assert "Anomalous Device" in section
+    assert "It has not come back." in section
+    assert "Calm Device" not in section
     assert "Calm Device" in html
 
 
-async def test_a_quiet_fleet_writes_no_anomaly_section(
+async def test_a_cluster_is_one_sentence_with_the_router_hint(
     hass: HomeAssistant,
 ):
-    """The section exists only when there is something to say."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
-    device, _ = register_device(hass, "q1", "Quiet Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [1.0]
+    """Two devices falling on the same day share a headline.
+
+    Four mysteries against one dead router is the whole value of the
+    sentence (ruling #310), so the shared-cause hint is pinned.
+    """
+    coord = await setup_coordinator(hass, {})
+    for key, name in (("c1", "First Victim"), ("c2", "Second Victim")):
+        device, _ = register_device(hass, key, name)
+        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
+            160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
+        ]
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     html = _read(hass)
 
-    assert "Anomalies" not in html
+    assert "Signal fell sharply on 2 devices" in html
+    assert "First Victim and Second Victim" in html
+    assert "usually share a router" in html
+
+
+async def test_a_quiet_fleet_says_so_in_plain_words(
+    hass: HomeAssistant,
+):
+    """No bad day writes the quiet sentence, not an empty box."""
+    coord = await setup_coordinator(hass, {})
+    device, _ = register_device(hass, "q1", "Quiet Device")
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
+        150.0, 151.0, 149.0, 150.0, 152.0, 150.0, 151.0,
+    ]
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    html = _read(hass)
+
+    assert "No device had a bad signal day" in html
     assert "Quiet Device" in html
 
 
-async def test_the_brief_points_at_the_chart_only_with_anomalies(
+async def test_the_brief_carries_no_signal_anomaly_line(
     hass: HomeAssistant,
 ):
-    """One line, only on mornings it is true."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    """Dwell's brief line is retired with dwell (ruling #310).
+
+    The bad-day sentence lives on the signal report until its
+    thresholds have earned the brief, so even a screaming device
+    puts nothing about signal in the morning prose.
+    """
+    coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "b1", "Anomalous Device")
     record = coord.data[DATA_DEVICES][device.id]
     record[DEV_SIGNAL_DWELL_DAILY] = [20.0]
+    record[DEV_SIGNAL_DAILY_P5] = [
+        160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
+    ]
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     brief = _brief_text(hass)
-    assert "Signal dwell anomalies" in brief
-    assert "Anomalous Device" in brief
-
-    record[DEV_SIGNAL_DWELL_DAILY] = [1.0]
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    assert "Signal dwell anomalies" not in _brief_text(hass)
+    assert "Signal dwell anomalies" not in brief
+    assert "Signal fell sharply" not in brief
 
 
 async def test_the_mean_column_reads_dash_until_a_day_rolls(
@@ -443,104 +436,43 @@ async def test_the_mean_column_reads_dash_until_a_day_rolls(
     coord._roll_signal_stats(record, 1180.0)
     assert coord._format_signal_mean_cell(record) == "110\u00b18.16"
 
-async def test_the_anomaly_row_carries_type_trend_and_room(
-    hass: HomeAssistant,
-):
-    """The additions ruled 2026-08-02, asserted on the file.
+async def test_the_strip_orders_worst_first(hass: HomeAssistant):
+    """The page opens on what matters (ruling #310).
 
-    The floor carries its type tag, because a table mixing 176 and
-    -68 is unreadable without one; the prior day and its arrow say
-    which way the link is moving; and the first day before any mean
-    has rolled reads "from tonight" rather than a question mark that
-    looks like a lookup failure.
+    A reader who stops after the first rows has seen the devices
+    that moved. Order is by the deepest fall anywhere in the strip,
+    so yesterday's victim outranks today's calm fleet.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
-    device, _ = register_device(hass, "tt1", "Trending Device")
-    record = coord.data[DATA_DEVICES][device.id]
-    record[DEV_SIGNAL_DWELL_DAILY] = [8.0, 14.0]
-    record["signal_daily_min"] = [100.0] * 14
-    falling, _ = register_device(hass, "tt2", "Falling Device")
-    coord.data[DATA_DEVICES][falling.id][DEV_SIGNAL_DWELL_DAILY] = [
-        14.0,
-        12.0,
+    coord = await setup_coordinator(hass, {})
+    fell, _ = register_device(hass, "o1", "Fallen Device")
+    coord.data[DATA_DEVICES][fell.id][DEV_SIGNAL_DAILY_P5] = [
+        160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
+    ]
+    calm, _ = register_device(hass, "o2", "Calm Device")
+    coord.data[DATA_DEVICES][calm.id][DEV_SIGNAL_DAILY_P5] = [
+        150.0, 151.0, 149.0, 150.0, 152.0, 150.0, 151.0,
     ]
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     html = _read(hass)
-    section = html[
-        html.index("Anomalies") : html.index("<div class='charts'>")
+
+    assert html.index("Fallen Device") < html.index("Calm Device")
+
+
+async def test_a_bad_day_is_ringed_in_the_strip(hass: HomeAssistant):
+    """The ring is the strip's only verdict marker (ruling #310):
+    shading says how far, the ring says it crossed both gates."""
+    coord = await setup_coordinator(hass, {})
+    device, _ = register_device(hass, "r1", "Ringed Device")
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
+        160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
     ]
 
-    assert "LQI" in section
-    assert "8.0% \u2191" in section
-    assert "14.0% \u2193" in section
-    assert "from tonight" in section
-    assert "Prior Day" in section
-
-
-async def test_the_chart_label_carries_the_room(hass: HomeAssistant):
-    """A bar reads name and area, so room clustering shows in the
-    chart itself rather than only in the anomaly table."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
-    device, _ = register_device(hass, "rm1", "Roomed Device")
-    from homeassistant.helpers import area_registry as ar
-    from homeassistant.helpers import device_registry as dr
-
-    area = ar.async_get(hass).async_get_or_create("Boiler Room")
-    dr.async_get(hass).async_update_device(device.id, area_id=area.id)
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [3.0]
-
     await hass.async_add_executor_job(coord._write_reports, "manual")
     html = _read(hass)
 
-    assert "Roomed Device (Boiler Room)" in html
+    assert "stroke='#1a1a19'" in html
 
-
-async def test_the_bars_are_thin(hass: HomeAssistant):
-    """17px per device with 12px labels (revised 2026-08-02), pinned
-    so a sweep can neither re-inflate the page nor shrink the text
-    back to unreadable."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
-    device, _ = register_device(hass, "th1", "Thin Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [3.0]
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    html = _read(hass)
-
-    assert "height='13'" in html
-    assert "height='22'" not in html
-    assert "height='12'" not in html
-    assert "font-size='12'" in html
-    assert "charts" in html
-
-async def test_a_globally_excluded_device_is_not_charted(
-    hass: HomeAssistant,
-):
-    """Both exclusion ladders apply to the chart and its anomalies.
-
-    Found live on 2026-08-02: two devices excluded globally by
-    integration were charted, one as an anomaly. The global ladder
-    suppresses judgment and reporting everywhere, and this page is
-    reporting.
-    """
-    from custom_components.device_sentinel.const import (
-        CONF_EXCLUDED_INTEGRATIONS,
-    )
-
-    coord = await setup_coordinator(
-        hass,
-        {
-            CONF_SIGNAL_RED: 10,
-            CONF_EXCLUDED_INTEGRATIONS: ["test"],
-        },
-    )
-    device, _ = register_device(hass, "gx1", "Ghost Tablet")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [20.0]
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    html = _read(hass)
-
-    assert "Ghost Tablet" not in html
 
 async def test_the_brief_is_also_a_page_under_www(
     hass: HomeAssistant,
@@ -548,13 +480,18 @@ async def test_the_brief_is_also_a_page_under_www(
     """Rung one of the www ladder (#178): daily_brief.html.
 
     Rendered from the Markdown text itself so the two briefs cannot
-    drift: the heading, the problem table, and the anomaly pointer
+    drift: the heading, the problem table, and the report pointer
     all arrive as HTML, the pointer as a live link, and the page
-    carries the same dark-mode stylesheet approach as the chart.
+    carries the same dark-mode stylesheet approach as the report.
+    The pointer asserted is the battery report's, because dwell's
+    anomaly line is retired (ruling #310) and the bad-day sentence
+    has not yet earned the brief.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "bh1", "Anomalous Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [20.0]
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_BATTERY_VALUE] = 40.0
+    record["battery_daily_value"] = [80.0, 70.0, 60.0, 50.0, 40.0]
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
 
@@ -567,12 +504,7 @@ async def test_the_brief_is_also_a_page_under_www(
     assert "<h1>Device Sentinel Daily Brief</h1>" in page
     assert "<h2>In Short</h2>" in page
     assert "<table>" in page and "<th>DEVICE</th>" in page
-    # The href is absolute where Home Assistant knows its URL, so
-    # the assertion pins the path and the anchor rather than a host.
-    assert "/local/device_sentinel/signal_dwell.html'>" in page
-    assert "the signal dwell chart</a>" in page
     assert "prefers-color-scheme: dark" in page
-    assert "Anomalous Device" in page
 
 
 async def test_the_html_brief_tracks_the_markdown(
@@ -684,7 +616,7 @@ async def test_every_www_file_is_dated_and_trimmed(
     directory = hass.config.path(REPORT_WWW_DIR)
     os.makedirs(directory, exist_ok=True)
     for day in range(1, BRIEF_KEEP_DAYS + 5):
-        name = f"signal_dwell_2026-06-{day:02d}.html"
+        name = f"signal_report_2026-06-{day:02d}.html"
         with open(
             os.path.join(directory, name), "w", encoding="utf-8"
         ) as handle:
@@ -692,18 +624,20 @@ async def test_every_www_file_is_dated_and_trimmed(
 
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "dt1", "Dated Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [3.0]
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
+        150.0, 151.0, 149.0, 150.0, 152.0,
+    ]
     await hass.async_add_executor_job(coord._write_reports, "manual")
 
     dated = sorted(
-        _glob.glob(os.path.join(directory, "signal_dwell_2*.html"))
+        _glob.glob(os.path.join(directory, "signal_report_2*.html"))
     )
     assert len(dated) == BRIEF_KEEP_DAYS
     # Today's dated file and the current file are the same document.
     with open(dated[-1], encoding="utf-8") as handle:
         newest = handle.read()
     with open(
-        os.path.join(directory, "signal_dwell.html"), encoding="utf-8"
+        os.path.join(directory, "signal_report.html"), encoding="utf-8"
     ) as handle:
         current = handle.read()
     assert newest == current
@@ -723,9 +657,11 @@ async def test_the_link_is_external_then_internal_never_relative(
     internal, then nothing. This environment configures no external
     URL, so the rendered link must carry the internal host.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "ex1", "Anomalous Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [20.0]
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_BATTERY_VALUE] = 40.0
+    record["battery_daily_value"] = [80.0, 70.0, 60.0, 50.0, 40.0]
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     path = os.path.join(
@@ -734,45 +670,32 @@ async def test_the_link_is_external_then_internal_never_relative(
     with open(path, encoding="utf-8") as handle:
         page = handle.read()
 
-    assert "href='/local/device_sentinel/signal_dwell.html'" not in page
+    assert "href='/local/device_sentinel/battery_report.html'" not in page
     assert (
         "href='http://10.10.10.10:8123"
-        "/local/device_sentinel/signal_dwell.html'" in page
+        "/local/device_sentinel/battery_report.html'" in page
     )
 
 
 async def test_the_chart_names_the_days_it_covers(
     hass: HomeAssistant,
 ):
-    """Ruling #190, found by reading the live pages on 2026-08-03.
-
-    Every heading said Yesterday, or Last 7 Days, with no date
-    anywhere on the page, so a chart opened later could not say
-    which days it was about.
-    """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
-    device, _ = register_device(hass, "lbl1", "Labelled Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [20.0]
+    """Every date on the page is its own, never "yesterday" (ruling
+    #190): the header names the closed day it covers."""
+    coord = await setup_coordinator(hass, {})
+    device, _ = register_device(hass, "dn1", "Dated Device")
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
+        150.0, 151.0, 149.0, 150.0, 152.0, 150.0, 151.0,
+    ]
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
-    with open(
-        os.path.join(hass.config.path(REPORT_WWW_DIR), REPORT_SIGNAL_DWELL),
-        encoding="utf-8",
-    ) as handle:
-        page = handle.read()
+    html = _read(hass)
 
-    covered = dt_util.now().date() - timedelta(days=1)
-    day = covered.strftime("%b %-d")
-    week = (covered - timedelta(days=6)).strftime("%b %-d")
-    month = (covered - timedelta(days=29)).strftime("%b %-d")
-
-    assert f"<h2>{day}</h2>" in page
-    assert f"<h2>7 Days, {week} to {day} (Mean)</h2>" in page
-    assert f"<h2>30 Days, {month} to {day} (Mean)</h2>" in page
-    # The bare words are gone, so nothing on the page is undated.
-    assert "<h2>Yesterday</h2>" not in page
-    assert "threshold yesterday" not in page
-    assert f"threshold on {day}" in page
+    covered = (dt_util.now().date() - timedelta(days=1)).strftime(
+        "%b %-d"
+    )
+    assert f"Covering {covered}, the most recent day that" in html
+    assert f"<h2>{covered}</h2>" in html
 
 
 async def test_the_dated_chart_is_named_for_the_day_it_covers(
@@ -782,7 +705,7 @@ async def test_the_dated_chart_is_named_for_the_day_it_covers(
 
     Dwell rolls at midnight, so a chart written on the 3rd carries
     the 2nd's figures. It was named for the write, so the file called
-    signal_dwell_2026-08-02 held the 1st, while the brief's dated
+    signal_report_2026-08-02 held the 1st, while the brief's dated
     file for the same date held the 2nd. Two files, one date, two
     days.
     """
@@ -797,13 +720,13 @@ async def test_the_dated_chart_is_named_for_the_day_it_covers(
     assert os.path.isfile(
         os.path.join(
             directory,
-            f"signal_dwell_{covered.strftime('%Y-%m-%d')}.html",
+            f"signal_report_{covered.strftime('%Y-%m-%d')}.html",
         )
     )
     # No dated chart for today, because today's dwell has not closed.
     today = dt_util.now().date().strftime("%Y-%m-%d")
     assert not os.path.isfile(
-        os.path.join(directory, f"signal_dwell_{today}.html")
+        os.path.join(directory, f"signal_report_{today}.html")
     )
 
 
@@ -1028,17 +951,21 @@ async def test_weak_links_are_counted_apart_from_rails(
     Falling are, and the weak rule is the one the brief and the chart
     already use.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    coord = await setup_coordinator(hass, {})
     weak, _ = register_device(hass, "sp1", "Weak Link")
     fine, _ = register_device(hass, "sp2", "Fine Link")
-    coord.data[DATA_DEVICES][weak.id][DEV_SIGNAL_DWELL_DAILY] = [4.0, 35.0]
-    coord.data[DATA_DEVICES][fine.id][DEV_SIGNAL_DWELL_DAILY] = [0.0, 2.0]
+    coord.data[DATA_DEVICES][weak.id][DEV_SIGNAL_DAILY_P5] = [
+        160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
+    ]
+    coord.data[DATA_DEVICES][fine.id][DEV_SIGNAL_DAILY_P5] = [
+        150.0, 151.0, 149.0, 150.0, 152.0, 150.0, 151.0,
+    ]
 
     rows = coord.signal_weak_list
     assert [row["name"] for row in rows] == ["Weak Link"]
     assert coord.signal_weak_count == 1
     assert rows[0]["device_id"] == weak.id
-    assert rows[0]["dwell"] == 35.0
+    assert rows[0]["fall"] == 60.0
 
     # And it stays off the list that notifies, which is the whole
     # point of the split (rulings #59 and #210).
@@ -1054,10 +981,12 @@ async def test_a_signal_excluded_device_is_not_counted_low(
 ):
     """Exclusion suppresses judgment, so it suppresses this too."""
     coord = await setup_coordinator(
-        hass, {CONF_SIGNAL_RED: 10, CONF_SIGNAL_EXCLUDED_DEVICES: []}
+        hass, {CONF_SIGNAL_EXCLUDED_DEVICES: []}
     )
     weak, _ = register_device(hass, "sp3", "Excluded Link")
-    coord.data[DATA_DEVICES][weak.id][DEV_SIGNAL_DWELL_DAILY] = [4.0, 35.0]
+    coord.data[DATA_DEVICES][weak.id][DEV_SIGNAL_DAILY_P5] = [
+        160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
+    ]
     assert coord.signal_weak_count == 1
 
     hass.config_entries.async_update_entry(
@@ -1077,14 +1006,20 @@ async def test_a_low_clears_the_moment_its_dwell_falls_back(
     acknowledgment and leaves no record: a dashboard shows the fleet
     as it stands and the device drops off when it recovers.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "sp4", "Recovering Link")
     record = coord.data[DATA_DEVICES][device.id]
 
-    record[DEV_SIGNAL_DWELL_DAILY] = [4.0, 35.0]
+    record[DEV_SIGNAL_DAILY_P5] = [
+        160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
+    ]
     assert coord.signal_weak_count == 1
 
-    record[DEV_SIGNAL_DWELL_DAILY] = [4.0, 35.0, 2.0]
+    # The next folded day holds its level, so the fall is no longer
+    # news and the device drops off.
+    record[DEV_SIGNAL_DAILY_P5] = [
+        160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0, 158.0,
+    ]
     assert coord.signal_weak_count == 0
 
 
@@ -1095,7 +1030,7 @@ async def test_a_railed_device_is_not_counted_twice(
     the guard a stuck device would appear in both counts and a person
     adding them would see one fault as two.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_RED: 10})
+    coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "sp5", "Railed Link")
     record = coord.data[DATA_DEVICES][device.id]
     record[DEV_SIGNAL_DAILY_MIN] = [255.0] * 4

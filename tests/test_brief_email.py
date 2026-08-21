@@ -38,7 +38,7 @@ from custom_components.device_sentinel.const import (
     REMINDER_MODE_DAILY,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
-    REPORT_SIGNAL_DWELL_URL,
+    REPORT_SIGNAL_URL,
     TODO_DEVICE_ID,
     TODO_KINDS,
     TODO_KIND_FROZEN,
@@ -427,8 +427,8 @@ async def test_the_chart_link_prefers_the_external_url(
     hass.config.internal_url = "http://192.168.1.10:8123"
     hass.config.external_url = "https://panorama.example.com"
     assert (
-        coord._absolute_url(REPORT_SIGNAL_DWELL_URL)
-        == "https://panorama.example.com" + REPORT_SIGNAL_DWELL_URL
+        coord._absolute_url(REPORT_SIGNAL_URL)
+        == "https://panorama.example.com" + REPORT_SIGNAL_URL
     )
 
 
@@ -446,8 +446,8 @@ async def test_the_chart_link_falls_back_to_the_internal_url(
     coord = await setup_coordinator(hass)
     hass.config.external_url = None
     hass.config.internal_url = "http://192.168.1.10:8123"
-    link = coord._absolute_url(REPORT_SIGNAL_DWELL_URL)
-    assert link == "http://192.168.1.10:8123" + REPORT_SIGNAL_DWELL_URL
+    link = coord._absolute_url(REPORT_SIGNAL_URL)
+    assert link == "http://192.168.1.10:8123" + REPORT_SIGNAL_URL
     assert not link.startswith("/")
 
 
@@ -462,10 +462,10 @@ async def test_the_emailed_chart_link_is_absolute_in_the_page(
     page = coord._render_brief_html(
         "# Device Sentinel Daily Brief\n"
         "\n"
-        f"Details and the full chart: {REPORT_SIGNAL_DWELL_URL}\n"
+        f"Details and the full report: {REPORT_SIGNAL_URL}\n"
     )
     assert (
-        f"<a href='http://192.168.1.10:8123{REPORT_SIGNAL_DWELL_URL}'>"
+        f"<a href='http://192.168.1.10:8123{REPORT_SIGNAL_URL}'>"
         in page
     )
-    assert f"href='{REPORT_SIGNAL_DWELL_URL}'" not in page
+    assert f"href='{REPORT_SIGNAL_URL}'" not in page

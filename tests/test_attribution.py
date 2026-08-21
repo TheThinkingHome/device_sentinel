@@ -509,10 +509,11 @@ async def test_an_orphan_closing_is_never_spoken(hass: HomeAssistant):
     assert "50 devices" in " ".join(said)
 
 
-async def test_a_hostile_device_name_cannot_reach_the_dwell_page(
+async def test_a_hostile_device_name_cannot_reach_the_signal_page(
     hass: HomeAssistant,
 ):
-    """The signal dwell page escaped nothing until 0.12.8.
+    """The old dwell page escaped nothing until 0.12.8, and its
+    replacement keeps the discipline.
 
     A device name is not always the reader's own words: MQTT
     discovery lets a device advertise its own, so an angle bracket
@@ -522,7 +523,13 @@ async def test_a_hostile_device_name_cannot_reach_the_dwell_page(
     """
     coord = await setup_coordinator(hass)
     evil = "<img src=x onerror=alert(1)>"
-    chart = coord._dwell_bar_svg([("d1", evil, 64.0)], 40.0)
+    row = {
+        "name": evil,
+        "readings": [None, None, None, None],
+        "bad_days": 0,
+        "series": [100.0] * 4,
+    }
+    chart = coord._signal_strip_svg([row])
     assert "<img" not in chart
     assert "&lt;img" in chart
 
