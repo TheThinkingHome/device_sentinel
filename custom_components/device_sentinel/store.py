@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.15.8 (2026-08-18)
+# File: store.py, Version: 0.16.8 (2026-08-20)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -280,12 +280,8 @@ class StorageMixin:
             seen: list[float] = []
             for field in (
                 DEV_SIGNAL_DAILY_MAX,
-    DEV_SIGNAL_DAILY_MEAN,
-    DEV_SIGNAL_DAILY_MIN,
-    DEV_SIGNAL_DAILY_P5,
-    DEV_SIGNAL_DAILY_P50,
-                DEV_SIGNAL_DAILY_MAX,
                 DEV_SIGNAL_DAILY_MEAN,
+                DEV_SIGNAL_DAILY_MIN,
                 DEV_SIGNAL_DAILY_P5,
                 DEV_SIGNAL_DAILY_P50,
             ):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.16.7 (2026-08-20)
+# File: coordinator.py, Version: 0.16.8 (2026-08-20)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -2275,7 +2275,8 @@ class DeviceSentinelCoordinator(
             LOGGER.error(
                 "Trim abandoned: the storage copy could not be "
                 "written to %s (%s). Nothing was deleted",
-                            error,
+                self.hass.config.path(TRIM_BACKUP_DIR),
+                error,
             )
             return
 

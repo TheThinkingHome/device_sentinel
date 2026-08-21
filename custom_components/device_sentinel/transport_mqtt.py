@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: transport_mqtt.py, Version: 0.12.16 (2026-08-08)
+# File: transport_mqtt.py, Version: 0.16.8 (2026-08-20)
 
 """The MQTT broker itself, watched directly.
 
@@ -131,7 +131,6 @@ class MQTTBrokerReader:
                 "Device Sentinel: could not watch %s, so the broker "
                 "state stays unknown (%s)",
                 BROKER_TOPIC_UPTIME,
-    BROKER_UPTIME_CEILING,
                 err,
             )
             return False
