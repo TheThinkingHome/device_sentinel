@@ -421,9 +421,11 @@ async def test_the_ignore_list_lives_on_the_exclusions_screen(
         result["flow_id"],
         {
             CONF_IGNORED_INTEGRATIONS: ["mobile_app", "tile"],
-            CONF_EXCLUDED_INTEGRATIONS: [],
-            CONF_EXCLUDED_LABELS: [],
-            CONF_EXCLUDED_DEVICES: [],
+            "exclusions": {
+                CONF_EXCLUDED_INTEGRATIONS: [],
+                CONF_EXCLUDED_LABELS: [],
+                CONF_EXCLUDED_DEVICES: [],
+            },
         },
     )
     assert result["type"] is FlowResultType.MENU

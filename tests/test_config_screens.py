@@ -154,9 +154,11 @@ async def test_a_section_saves_and_returns_to_the_menu(
         result["flow_id"],
         {
             CONF_LOW_THRESHOLD: 33,
-            CONF_BATTERY_EXCLUDED_INTEGRATIONS: [],
-            CONF_BATTERY_EXCLUDED_LABELS: [],
-            CONF_BATTERY_EXCLUDED_DEVICES: [],
+            "battery_exclusions": {
+                CONF_BATTERY_EXCLUDED_INTEGRATIONS: [],
+                CONF_BATTERY_EXCLUDED_LABELS: [],
+                CONF_BATTERY_EXCLUDED_DEVICES: [],
+            },
         },
     )
     await hass.async_block_till_done()
@@ -182,9 +184,11 @@ async def test_two_sections_in_one_visit_both_stick(hass: HomeAssistant):
         result["flow_id"],
         {
             CONF_LOW_THRESHOLD: 22,
-            CONF_BATTERY_EXCLUDED_INTEGRATIONS: [],
-            CONF_BATTERY_EXCLUDED_LABELS: [],
-            CONF_BATTERY_EXCLUDED_DEVICES: [],
+            "battery_exclusions": {
+                CONF_BATTERY_EXCLUDED_INTEGRATIONS: [],
+                CONF_BATTERY_EXCLUDED_LABELS: [],
+                CONF_BATTERY_EXCLUDED_DEVICES: [],
+            },
         },
     )
     await hass.async_block_till_done()
@@ -197,9 +201,11 @@ async def test_two_sections_in_one_visit_both_stick(hass: HomeAssistant):
         result["flow_id"],
         {
             CONF_IGNORED_INTEGRATIONS: ["ping"],
-            CONF_EXCLUDED_INTEGRATIONS: [],
-            CONF_EXCLUDED_LABELS: [],
-            CONF_EXCLUDED_DEVICES: [],
+            "exclusions": {
+                CONF_EXCLUDED_INTEGRATIONS: [],
+                CONF_EXCLUDED_LABELS: [],
+                CONF_EXCLUDED_DEVICES: [],
+            },
         },
     )
     await hass.async_block_till_done()
@@ -232,3 +238,106 @@ async def test_the_menu_says_a_section_saves_on_submit(
         ]
         assert "saves when you submit it" in described
         assert "keeps everything you have already submitted" in described
+
+
+async def test_the_excludes_live_in_a_section_and_store_flat(
+    hass: HomeAssistant,
+):
+    """Ruling #314. The section draws the screen; the keys stay flat.
+
+    Tim Plas asked for the heading and its explanation to sit above
+    the pickers rather than below them, and a Home Assistant section
+    renders its name, then its description, then its fields. So each
+    screen keeps its plain settings loose at the top and moves its
+    exclude ladder into a section, the pattern Advanced already used
+    for Data Trim.
+
+    What must not change is storage. Every reader of these options,
+    and every entry already written to disk, knows them by their flat
+    names, so a save unwraps the section before storing.
+    """
+    entry = await setup_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "battery"}
+    )
+
+    top = result["data_schema"].schema
+    assert any(str(key) == "battery_exclusions" for key in top)
+    assert not any("excluded" in str(key) for key in top)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_LOW_THRESHOLD: 25,
+            "battery_exclusions": {
+                CONF_BATTERY_EXCLUDED_INTEGRATIONS: ["mqtt"],
+                CONF_BATTERY_EXCLUDED_LABELS: [],
+                CONF_BATTERY_EXCLUDED_DEVICES: [],
+            },
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.MENU
+    assert entry.options[CONF_BATTERY_EXCLUDED_INTEGRATIONS] == ["mqtt"]
+    assert "battery_exclusions" not in entry.options
+
+
+async def test_every_sectioned_screen_keeps_its_settings_loose(
+    hass: HomeAssistant,
+):
+    """One section per screen, holding only the excludes.
+
+    The pattern is Advanced's: what a person came for stays at the
+    top, and the one group that is different in kind sits below it
+    under its own heading. A screen that swept its settings into the
+    section too would bury them.
+    """
+    entry = await setup_entry(hass)
+    expected = {
+        "battery": ("battery_exclusions", 2),
+        "signal": ("signal_exclusions", 4),
+        "freeze": ("freeze_exclusions", 2),
+        "exclusions": ("exclusions", 1),
+    }
+    for step, (section_key, loose_count) in expected.items():
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": step}
+        )
+        keys = [str(key) for key in result["data_schema"].schema]
+        assert section_key in keys, step
+        assert len(keys) == loose_count + 1, (step, keys)
+
+
+async def test_each_section_carries_a_heading_and_an_explanation(
+    hass: HomeAssistant,
+):
+    """The whole point of the change (ruling #314).
+
+    A section with no name and no description would move the fields
+    without moving the words, which is the complaint rather than the
+    fix.
+    """
+    package = pathlib.Path(
+        __import__(
+            "custom_components.device_sentinel.const", fromlist=["const"]
+        ).__file__
+    ).parent
+    for source in (
+        package / "strings.json",
+        package / "translations" / "en.json",
+    ):
+        steps = json.loads(source.read_text())["options"]["step"]
+        for step, key in (
+            ("battery", "battery_exclusions"),
+            ("signal", "signal_exclusions"),
+            ("freeze", "freeze_exclusions"),
+            ("exclusions", "exclusions"),
+        ):
+            block = steps[step]["sections"][key]
+            assert block["name"], (step, "name")
+            assert len(block["description"]) > 40, (step, "description")
+            assert len(block["data"]) == 3, (step, "fields")
+            assert len(block["data_description"]) == 3, (step, "help")

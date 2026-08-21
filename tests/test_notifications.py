@@ -274,7 +274,8 @@ async def test_thresholds_still_work_through_menu(hass: HomeAssistant):
     )
     assert result["step_id"] == "battery"
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"low_threshold": 30}
+        result["flow_id"],
+        {"low_threshold": 30, "battery_exclusions": {}},
     )
     assert result["type"] is FlowResultType.MENU
     assert entry.runtime_data.low_threshold == 30.0

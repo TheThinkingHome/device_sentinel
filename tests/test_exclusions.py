@@ -66,7 +66,7 @@ from custom_components.device_sentinel.const import (
 )
 from custom_components.device_sentinel.coordinator import _new_device_record
 
-from tests.helpers import setup_coordinator, setup_entry
+from tests.helpers import flat_schema, setup_coordinator, setup_entry
 
 DOMAIN = "device_sentinel"
 
@@ -434,7 +434,7 @@ async def test_exclude_option_labels_disambiguate_by_integration(
         result["flow_id"], {"next_step_id": "exclusions"}
     )
     assert result["step_id"] == "exclusions"
-    schema = result["data_schema"].schema
+    schema = flat_schema(result["data_schema"].schema)
     labels = []
     for key in schema:
         selector_obj = schema[key]
@@ -974,9 +974,11 @@ async def test_options_flow_prunes_on_save(hass: HomeAssistant):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            CONF_EXCLUDED_INTEGRATIONS: ["test"],
-            CONF_EXCLUDED_LABELS: [],
-            CONF_EXCLUDED_DEVICES: [device.id],
+            "exclusions": {
+                CONF_EXCLUDED_INTEGRATIONS: ["test"],
+                CONF_EXCLUDED_LABELS: [],
+                CONF_EXCLUDED_DEVICES: [device.id],
+            },
         },
     )
     await hass.async_block_till_done()
@@ -1007,9 +1009,11 @@ async def test_options_flow_freeze_save_prunes_on_save(hass: HomeAssistant):
         {
             CONF_FREEZE_DELTA_LOW: 3.0,
             CONF_FREEZE_DELTA_HIGH: 8.0,
-            CONF_FREEZE_EXCLUDED_INTEGRATIONS: ["test"],
-            CONF_FREEZE_EXCLUDED_LABELS: [],
-            CONF_FREEZE_EXCLUDED_DEVICES: [device.id],
+            "freeze_exclusions": {
+                CONF_FREEZE_EXCLUDED_INTEGRATIONS: ["test"],
+                CONF_FREEZE_EXCLUDED_LABELS: [],
+                CONF_FREEZE_EXCLUDED_DEVICES: [device.id],
+            },
         },
     )
     await hass.async_block_till_done()
@@ -1048,9 +1052,11 @@ async def test_options_flow_signal_save_prunes_on_save(hass: HomeAssistant):
             CONF_BADDAY_DROP_RSSI: 6.0,
             CONF_BADDAY_SENSITIVITY: 4,
             CONF_BADDAY_BASELINE_DAYS: 7.0,
-            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: ["test"],
-            CONF_SIGNAL_EXCLUDED_LABELS: [],
-            CONF_SIGNAL_EXCLUDED_DEVICES: [],
+            "signal_exclusions": {
+                CONF_SIGNAL_EXCLUDED_INTEGRATIONS: ["test"],
+                CONF_SIGNAL_EXCLUDED_LABELS: [],
+                CONF_SIGNAL_EXCLUDED_DEVICES: [],
+            },
         },
     )
     await hass.async_block_till_done()
@@ -1086,7 +1092,7 @@ async def test_options_flow_hides_covered_devices(hass: HomeAssistant):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"next_step_id": "exclusions"}
     )
-    schema = result["data_schema"].schema
+    schema = flat_schema(result["data_schema"].schema)
     device_key = next(
         key for key in schema if str(key) == CONF_EXCLUDED_DEVICES
     )

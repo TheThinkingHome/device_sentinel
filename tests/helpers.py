@@ -154,3 +154,50 @@ async def setup_coordinator_flat_line(
     coordinator = await setup_coordinator(hass, options)
     coordinator._signal_margin = lambda: 0.0
     return coordinator
+
+
+def flat_schema(schema) -> dict:
+    """Return a form's fields with section nesting removed.
+
+    Ruling #314 moved every exclude picker into a section, so a test
+    reading `result["data_schema"].schema` now meets a `section`
+    object where it used to meet a selector. The nesting is a way of
+    drawing the screen and not a change to what is stored, so a test
+    asking what a picker offers should not have to know which section
+    holds it.
+    """
+    from homeassistant.data_entry_flow import section as _section
+
+    flat = {}
+    for key, value in schema.items():
+        if isinstance(value, _section):
+            flat.update(flat_schema(value.schema.schema))
+        else:
+            flat[key] = value
+    return flat
+
+
+def nest_for(step: str, payload: dict) -> dict:
+    """Return a submit payload with the excludes under their section.
+
+    The four sectioned steps take their exclude picks nested (ruling
+    #314) and store them flat. A test that knows the flat keys can
+    hand them here rather than restating the section layout.
+    """
+    sections = {
+        "battery": ("battery_exclusions", "battery_excluded_"),
+        "signal": ("signal_exclusions", "signal_excluded_"),
+        "freeze": ("freeze_exclusions", "freeze_excluded_"),
+        "exclusions": ("exclusions", "excluded_"),
+    }
+    if step not in sections:
+        return dict(payload)
+    name, prefix = sections[step]
+    loose, nested = {}, {}
+    for key, value in payload.items():
+        if key.startswith(prefix):
+            nested[key] = value
+        else:
+            loose[key] = value
+    loose[name] = nested
+    return loose
