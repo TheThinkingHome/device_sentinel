@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Device Sentinel",
-        "description": "Device Sentinel installs with working defaults and starts watching immediately. Tuning lives in the options after setup."
+        "description": "Device Sentinel installs with working defaults and starts watching immediately. Configuration lives in the options after setup."
       }
     },
     "abort": {
@@ -14,7 +14,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Device Sentinel Tuning",
+        "title": "Device Sentinel Configuration",
         "description": "Device Sentinel's default settings are good to get you started. When you begin tailoring the integration to your system, work from top to bottom. If you want alerts to reach your phone, begin in Notifications.\n\n**Notifications**: where alerts go, quiet hours, and the daily reminder.\n\n**Global Exclusions**: hardware you never want judged or reported, by anything. To silence just one kind of report for a device, use that section's own exclude list instead.\n\n**Low Battery**: the low threshold, and battery-only excludes.\n\n**Signal Strength**: how weakening radio links are judged against each device's own floor.\n\n**Freeze Detection**: how long a device may go quiet before it is called frozen, set by two grace sliders. Now running.\n\n[All documentation on the Device Sentinel wiki]({wiki_link})",
         "menu_options": {
           "notifications": "Notifications and Daily Brief",

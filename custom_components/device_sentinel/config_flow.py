@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.16.12 (2026-08-21)
+# File: config_flow.py, Version: 0.16.13 (2026-08-21)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -218,6 +218,14 @@ def _device_options(
     longer holds is not offered here at all: it is pruned on save,
     which is the one case where absence is proof rather than
     inference (ruling #45).
+
+    Sorted by label before it is returned (ruling #312). Row order is
+    whatever the coordinator built it in, which on a fleet of three
+    hundred devices is unscannable, and a large fleet is exactly who
+    runs this tool. The sort is case-insensitive so a lowercase name
+    does not fall to the end of the list, and it is done here rather
+    than left to the selector alone, so the order holds whatever a
+    future frontend does with the flag.
     """
     options = [
         selector.SelectOptionDict(
@@ -239,6 +247,7 @@ def _device_options(
                 value=device_id, label=f"{name} (not currently listed)"
             )
         )
+    options.sort(key=lambda option: option["label"].casefold())
     return options
 
 
@@ -457,6 +466,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             options=integration_options,
                             multiple=True,
                             custom_value=True,
+                            sort=True,
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
@@ -479,6 +489,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         selector.SelectSelectorConfig(
                             options=device_options,
                             multiple=True,
+                            sort=True,
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
@@ -634,6 +645,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             options=integration_options,
                             multiple=True,
                             custom_value=True,
+                            sort=True,
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
@@ -656,6 +668,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         selector.SelectSelectorConfig(
                             options=device_options,
                             multiple=True,
+                            sort=True,
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
@@ -802,6 +815,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             options=integration_options,
                             multiple=True,
                             custom_value=True,
+                            sort=True,
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
@@ -824,6 +838,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         selector.SelectSelectorConfig(
                             options=device_options,
                             multiple=True,
+                            sort=True,
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
@@ -963,6 +978,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             options=ignorable_domains,
                             multiple=True,
                             custom_value=True,
+                            sort=True,
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
@@ -974,6 +990,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             options=integration_domains,
                             multiple=True,
                             custom_value=True,
+                            sort=True,
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
@@ -989,6 +1006,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         selector.SelectSelectorConfig(
                             options=device_options,
                             multiple=True,
+                            sort=True,
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
@@ -1196,13 +1214,21 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         # empty, so a value seeded here would delete again at the
         # next save of any setting on this screen.
         trim_rows = self.config_entry.runtime_data.trimmable_device_rows
-        trim_device_options = [
-            selector.SelectOptionDict(
-                value=row["device_id"],
-                label=f"{row['name']} ({row['integration']})",
-            )
-            for row in trim_rows
-        ]
+        # Sorted for the same reason every other device picker is
+        # (ruling #312): this list holds every device on the system,
+        # watched, excluded, ignored and set aside alike, so it is
+        # the longest picker in the integration and the hardest to
+        # scan unsorted.
+        trim_device_options = sorted(
+            (
+                selector.SelectOptionDict(
+                    value=row["device_id"],
+                    label=f"{row['name']} ({row['integration']})",
+                )
+                for row in trim_rows
+            ),
+            key=lambda option: option["label"].casefold(),
+        )
         trim_integration_options = sorted(
             {row["integration"] for row in trim_rows}
         )
