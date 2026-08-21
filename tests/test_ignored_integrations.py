@@ -426,7 +426,7 @@ async def test_the_ignore_list_lives_on_the_exclusions_screen(
             CONF_EXCLUDED_DEVICES: [],
         },
     )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["type"] is FlowResultType.MENU
     assert entry.options[CONF_IGNORED_INTEGRATIONS] == [
         "mobile_app",
         "tile",

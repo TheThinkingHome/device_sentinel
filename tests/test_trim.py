@@ -323,7 +323,7 @@ async def test_the_section_arrives_nested_and_stores_flat(
             "data_trim": {CONF_TRIM_DEVICES: [target.id]},
         },
     )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["type"] is FlowResultType.MENU
     await hass.async_block_till_done()
 
     # Flat in storage, emptied after the trim, and the history gone.

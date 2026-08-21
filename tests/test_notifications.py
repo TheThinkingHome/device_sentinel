@@ -86,7 +86,12 @@ MANIFEST_VERSION = json.loads(
 # ==================================================================
 
 async def test_flow_creates_entry_with_zero_questions(hass: HomeAssistant):
-    """Opening the flow creates the entry immediately, no form."""
+    """Opening the flow creates the entry immediately, no form.
+
+    This is the install flow, not the options menu. Ruling #313 moved
+    the six option sections off create-entry and onto the menu; this
+    one call is what creating the entry is for and it stays.
+    """
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
@@ -219,7 +224,7 @@ async def test_two_lists_and_both_means_high(hass: HomeAssistant):
             },
         },
     )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["type"] is FlowResultType.MENU
     # The shared target normalized out of the normal list (both = high).
     assert entry.options[CONF_HIGH_PRIORITY_TARGETS] == [
         "notify.mobile_app_mine",
@@ -256,7 +261,7 @@ async def test_empty_lists_allowed(hass: HomeAssistant):
             },
         },
     )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["type"] is FlowResultType.MENU
     assert entry.options[CONF_HIGH_PRIORITY_TARGETS] == []
     assert entry.options[CONF_NORMAL_PRIORITY_TARGETS] == []
 
@@ -271,7 +276,7 @@ async def test_thresholds_still_work_through_menu(hass: HomeAssistant):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"low_threshold": 30}
     )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["type"] is FlowResultType.MENU
     assert entry.runtime_data.low_threshold == 30.0
 
 

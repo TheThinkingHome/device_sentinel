@@ -531,7 +531,7 @@ async def test_the_slider_reaches_the_advanced_screen(
             CONF_RETENTION_DAYS: 180,
         },
     )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["type"] is FlowResultType.MENU
     assert entry.options[CONF_RETENTION_DAYS] == 180
     assert entry.runtime_data.retention_days == 180
     assert RETENTION_DAYS_STEP == 30

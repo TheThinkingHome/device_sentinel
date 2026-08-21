@@ -122,7 +122,7 @@ async def test_sections_flatten_to_the_same_stored_keys(
             },
         },
     )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["type"] is FlowResultType.MENU
     assert entry.options[CONF_QUIET_ENABLED] is True
     assert entry.options[CONF_REMINDER_TIME] == "07:00:00"
     assert entry.options[CONF_BRIEF_TARGETS] == ["notify.smtp_home"]
@@ -146,7 +146,7 @@ async def test_advanced_stores_and_coordinator_reads_live(
             CONF_COALESCE_MINUTES: 5,
         },
     )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["type"] is FlowResultType.MENU
     coord = entry.runtime_data
     assert coord.episode_share == 0.30
     assert coord.coalesce_seconds == 300

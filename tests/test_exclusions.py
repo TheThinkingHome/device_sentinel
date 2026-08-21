@@ -980,7 +980,7 @@ async def test_options_flow_prunes_on_save(hass: HomeAssistant):
         },
     )
     await hass.async_block_till_done()
-    assert result["type"] == "create_entry"
+    assert result["type"] == "menu"
     assert entry.options[CONF_EXCLUDED_DEVICES] == []
     assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == ["test"]
 
@@ -1013,7 +1013,7 @@ async def test_options_flow_freeze_save_prunes_on_save(hass: HomeAssistant):
         },
     )
     await hass.async_block_till_done()
-    assert result["type"] == "create_entry"
+    assert result["type"] == "menu"
     assert entry.options[CONF_FREEZE_EXCLUDED_DEVICES] == []
     assert entry.options[CONF_FREEZE_EXCLUDED_INTEGRATIONS] == ["test"]
     assert entry.options[CONF_FREEZE_DELTA_LOW] == 3
@@ -1054,7 +1054,7 @@ async def test_options_flow_signal_save_prunes_on_save(hass: HomeAssistant):
         },
     )
     await hass.async_block_till_done()
-    assert result["type"] == "create_entry"
+    assert result["type"] == "menu"
     assert entry.options[CONF_SIGNAL_EXCLUDED_INTEGRATIONS] == ["test"]
     for key, want in (
         (CONF_BADDAY_DROP_LQI, 25),

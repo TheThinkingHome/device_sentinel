@@ -24,9 +24,20 @@ import json
 import pathlib
 
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr
 
 from custom_components.device_sentinel.config_flow import _device_options
+from custom_components.device_sentinel.const import (
+    CONF_BATTERY_EXCLUDED_DEVICES,
+    CONF_BATTERY_EXCLUDED_INTEGRATIONS,
+    CONF_BATTERY_EXCLUDED_LABELS,
+    CONF_EXCLUDED_DEVICES,
+    CONF_EXCLUDED_INTEGRATIONS,
+    CONF_EXCLUDED_LABELS,
+    CONF_IGNORED_INTEGRATIONS,
+    CONF_LOW_THRESHOLD,
+)
 
 from .helpers import register_device, setup_entry
 
@@ -116,3 +127,108 @@ async def test_the_menu_is_called_configuration(hass: HomeAssistant):
             == "Device Sentinel Configuration"
         )
         assert "Tuning" not in source.read_text()
+
+
+async def test_a_section_saves_and_returns_to_the_menu(
+    hass: HomeAssistant,
+):
+    """Ruling #313, the whole change in one test.
+
+    A section used to end by creating the entry, which writes the
+    options and ends the flow in one call, so the dialog closed and
+    the person landed back in Home Assistant. Tim Plas, working
+    through six screens on a fleet of 332 devices, called that
+    annoying. Submitting now writes the section and shows the menu
+    again.
+    """
+    entry = await setup_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.MENU
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "battery"}
+    )
+    assert result["type"] is FlowResultType.FORM
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_LOW_THRESHOLD: 33,
+            CONF_BATTERY_EXCLUDED_INTEGRATIONS: [],
+            CONF_BATTERY_EXCLUDED_LABELS: [],
+            CONF_BATTERY_EXCLUDED_DEVICES: [],
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.MENU
+    assert entry.options[CONF_LOW_THRESHOLD] == 33
+
+
+async def test_two_sections_in_one_visit_both_stick(hass: HomeAssistant):
+    """The point of returning to the menu.
+
+    A person crossing three screens in one sitting keeps all three,
+    and each is written at the moment it is submitted rather than
+    held until some later confirmation.
+    """
+    entry = await setup_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "battery"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_LOW_THRESHOLD: 22,
+            CONF_BATTERY_EXCLUDED_INTEGRATIONS: [],
+            CONF_BATTERY_EXCLUDED_LABELS: [],
+            CONF_BATTERY_EXCLUDED_DEVICES: [],
+        },
+    )
+    await hass.async_block_till_done()
+    assert entry.options[CONF_LOW_THRESHOLD] == 22
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exclusions"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_IGNORED_INTEGRATIONS: ["ping"],
+            CONF_EXCLUDED_INTEGRATIONS: [],
+            CONF_EXCLUDED_LABELS: [],
+            CONF_EXCLUDED_DEVICES: [],
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.MENU
+    assert entry.options[CONF_IGNORED_INTEGRATIONS] == ["ping"]
+    assert entry.options[CONF_LOW_THRESHOLD] == 22
+
+
+async def test_the_menu_says_a_section_saves_on_submit(
+    hass: HomeAssistant,
+):
+    """A person who submits and then closes the dialog has to be
+    able to know their work was kept.
+
+    Home Assistant labels the button Submit and gives us no say in
+    it, so the menu's own description carries the promise instead.
+    """
+    package = pathlib.Path(
+        __import__(
+            "custom_components.device_sentinel.const", fromlist=["const"]
+        ).__file__
+    ).parent
+    for source in (
+        package / "strings.json",
+        package / "translations" / "en.json",
+    ):
+        described = json.loads(source.read_text())["options"]["step"]["init"][
+            "description"
+        ]
+        assert "saves when you submit it" in described
+        assert "keeps everything you have already submitted" in described
