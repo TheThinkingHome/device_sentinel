@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.16.14 (2026-08-21)
+# File: config_flow.py, Version: 0.16.15 (2026-08-21)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -408,9 +408,21 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """
         battery_rows = self.config_entry.runtime_data.detected_batteries
         if user_input is not None:
+            # The exclude pickers arrive nested under their section
+            # and the stored keys stay flat (ruling #314): every
+            # reader of these options, and every saved entry already
+            # on disk, knows them by their flat names, so the section
+            # is a way of drawing the screen rather than a change to
+            # what is kept.
+            flat: dict[str, Any] = {}
+            for key, value in user_input.items():
+                if isinstance(value, dict):
+                    flat.update(value)
+                else:
+                    flat[key] = value
             return await self._save_and_return(
                 self._pruned_battery_input(
-                    user_input, battery_rows, dr.async_get(self.hass)
+                    flat, battery_rows, dr.async_get(self.hass)
                 )
             )
         options = self.config_entry.options
@@ -482,42 +494,70 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
-                    vol.Optional(
-                        CONF_BATTERY_EXCLUDED_INTEGRATIONS,
-                        default=options.get(
-                            CONF_BATTERY_EXCLUDED_INTEGRATIONS, []
+                    # The three excludes move into a section of their
+                    # own (ruling #314), so the heading and the
+                    # ladder's explanation sit above the pickers
+                    # rather than the ladder being explained at the
+                    # top of a screen whose first two fields are not
+                    # about it. Collapsed, because a person opening
+                    # Low Battery came for the threshold.
+                    vol.Required("battery_exclusions"): section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    CONF_BATTERY_EXCLUDED_INTEGRATIONS,
+                                    default=options.get(
+                                        CONF_BATTERY_EXCLUDED_INTEGRATIONS,
+                                        [],
+                                    ),
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=integration_options,
+                                        multiple=True,
+                                        custom_value=True,
+                                        sort=True,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                                vol.Optional(
+                                    CONF_BATTERY_EXCLUDED_LABELS,
+                                    default=options.get(
+                                        CONF_BATTERY_EXCLUDED_LABELS, []
+                                    ),
+                                ): selector.LabelSelector(
+                                    selector.LabelSelectorConfig(
+                                        multiple=True
+                                    )
+                                ),
+                                vol.Optional(
+                                    CONF_BATTERY_EXCLUDED_DEVICES,
+                                    default=_surviving_picks(
+                                        options.get(
+                                            CONF_BATTERY_EXCLUDED_DEVICES,
+                                            [],
+                                        ),
+                                        covered,
+                                        dev_reg,
+                                    ),
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=device_options,
+                                        multiple=True,
+                                        sort=True,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                            }
                         ),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=integration_options,
-                            multiple=True,
-                            custom_value=True,
-                            sort=True,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                    vol.Optional(
-                        CONF_BATTERY_EXCLUDED_LABELS,
-                        default=options.get(
-                            CONF_BATTERY_EXCLUDED_LABELS, []
-                        ),
-                    ): selector.LabelSelector(
-                        selector.LabelSelectorConfig(multiple=True)
-                    ),
-                    vol.Optional(
-                        CONF_BATTERY_EXCLUDED_DEVICES,
-                        default=_surviving_picks(
-                            options.get(CONF_BATTERY_EXCLUDED_DEVICES, []),
-                            covered,
-                            dev_reg,
-                        ),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=device_options,
-                            multiple=True,
-                            sort=True,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
+                        {"collapsed": True},
                     ),
                 }
             ),
@@ -569,9 +609,21 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """
         signal_rows = self.config_entry.runtime_data.detected_signals
         if user_input is not None:
+            # The exclude pickers arrive nested under their section
+            # and the stored keys stay flat (ruling #314): every
+            # reader of these options, and every saved entry already
+            # on disk, knows them by their flat names, so the section
+            # is a way of drawing the screen rather than a change to
+            # what is kept.
+            flat: dict[str, Any] = {}
+            for key, value in user_input.items():
+                if isinstance(value, dict):
+                    flat.update(value)
+                else:
+                    flat[key] = value
             return await self._save_and_return(
                 self._pruned_signal_input(
-                    user_input, signal_rows, dr.async_get(self.hass)
+                    flat, signal_rows, dr.async_get(self.hass)
                 )
             )
         options = self.config_entry.options
@@ -658,42 +710,67 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
-                    vol.Optional(
-                        CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
-                        default=options.get(
-                            CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []
+                    # The three excludes move into a section of their
+                    # own (ruling #314). Collapsed, because a person
+                    # opening Signal Strength came for the bad-day
+                    # settings above.
+                    vol.Required("signal_exclusions"): section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
+                                    default=options.get(
+                                        CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
+                                        [],
+                                    ),
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=integration_options,
+                                        multiple=True,
+                                        custom_value=True,
+                                        sort=True,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                                vol.Optional(
+                                    CONF_SIGNAL_EXCLUDED_LABELS,
+                                    default=options.get(
+                                        CONF_SIGNAL_EXCLUDED_LABELS, []
+                                    ),
+                                ): selector.LabelSelector(
+                                    selector.LabelSelectorConfig(
+                                        multiple=True
+                                    )
+                                ),
+                                vol.Optional(
+                                    CONF_SIGNAL_EXCLUDED_DEVICES,
+                                    default=_surviving_picks(
+                                        options.get(
+                                            CONF_SIGNAL_EXCLUDED_DEVICES,
+                                            [],
+                                        ),
+                                        covered,
+                                        dev_reg,
+                                    ),
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=device_options,
+                                        multiple=True,
+                                        sort=True,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                            }
                         ),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=integration_options,
-                            multiple=True,
-                            custom_value=True,
-                            sort=True,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                    vol.Optional(
-                        CONF_SIGNAL_EXCLUDED_LABELS,
-                        default=options.get(
-                            CONF_SIGNAL_EXCLUDED_LABELS, []
-                        ),
-                    ): selector.LabelSelector(
-                        selector.LabelSelectorConfig(multiple=True)
-                    ),
-                    vol.Optional(
-                        CONF_SIGNAL_EXCLUDED_DEVICES,
-                        default=_surviving_picks(
-                            options.get(CONF_SIGNAL_EXCLUDED_DEVICES, []),
-                            covered,
-                            dev_reg,
-                        ),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=device_options,
-                            multiple=True,
-                            sort=True,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
+                        {"collapsed": True},
                     ),
                 }
             ),
@@ -762,9 +839,21 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """
         device_rows = self.config_entry.runtime_data.watched_device_rows
         if user_input is not None:
+            # The exclude pickers arrive nested under their section
+            # and the stored keys stay flat (ruling #314): every
+            # reader of these options, and every saved entry already
+            # on disk, knows them by their flat names, so the section
+            # is a way of drawing the screen rather than a change to
+            # what is kept.
+            flat: dict[str, Any] = {}
+            for key, value in user_input.items():
+                if isinstance(value, dict):
+                    flat.update(value)
+                else:
+                    flat[key] = value
             return await self._save_and_return(
                 self._pruned_freeze_input(
-                    user_input, device_rows, dr.async_get(self.hass)
+                    flat, device_rows, dr.async_get(self.hass)
                 )
             )
         options = self.config_entry.options
@@ -825,42 +914,67 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
-                    vol.Optional(
-                        CONF_FREEZE_EXCLUDED_INTEGRATIONS,
-                        default=options.get(
-                            CONF_FREEZE_EXCLUDED_INTEGRATIONS, []
+                    # The three excludes move into a section of their
+                    # own (ruling #314). Collapsed, because a person
+                    # opening Freeze Detection came for the two
+                    # graces above.
+                    vol.Required("freeze_exclusions"): section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    CONF_FREEZE_EXCLUDED_INTEGRATIONS,
+                                    default=options.get(
+                                        CONF_FREEZE_EXCLUDED_INTEGRATIONS,
+                                        [],
+                                    ),
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=integration_options,
+                                        multiple=True,
+                                        custom_value=True,
+                                        sort=True,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                                vol.Optional(
+                                    CONF_FREEZE_EXCLUDED_LABELS,
+                                    default=options.get(
+                                        CONF_FREEZE_EXCLUDED_LABELS, []
+                                    ),
+                                ): selector.LabelSelector(
+                                    selector.LabelSelectorConfig(
+                                        multiple=True
+                                    )
+                                ),
+                                vol.Optional(
+                                    CONF_FREEZE_EXCLUDED_DEVICES,
+                                    default=_surviving_picks(
+                                        options.get(
+                                            CONF_FREEZE_EXCLUDED_DEVICES,
+                                            [],
+                                        ),
+                                        covered,
+                                        dev_reg,
+                                    ),
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=device_options,
+                                        multiple=True,
+                                        sort=True,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                            }
                         ),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=integration_options,
-                            multiple=True,
-                            custom_value=True,
-                            sort=True,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                    vol.Optional(
-                        CONF_FREEZE_EXCLUDED_LABELS,
-                        default=options.get(
-                            CONF_FREEZE_EXCLUDED_LABELS, []
-                        ),
-                    ): selector.LabelSelector(
-                        selector.LabelSelectorConfig(multiple=True)
-                    ),
-                    vol.Optional(
-                        CONF_FREEZE_EXCLUDED_DEVICES,
-                        default=_surviving_picks(
-                            options.get(CONF_FREEZE_EXCLUDED_DEVICES, []),
-                            covered,
-                            dev_reg,
-                        ),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=device_options,
-                            multiple=True,
-                            sort=True,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
+                        {"collapsed": True},
                     ),
                 }
             ),
@@ -925,9 +1039,21 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         coordinator = self.config_entry.runtime_data
         device_rows = coordinator.watched_device_rows
         if user_input is not None:
+            # The exclude pickers arrive nested under their section
+            # and the stored keys stay flat (ruling #314): every
+            # reader of these options, and every saved entry already
+            # on disk, knows them by their flat names, so the section
+            # is a way of drawing the screen rather than a change to
+            # what is kept.
+            flat: dict[str, Any] = {}
+            for key, value in user_input.items():
+                if isinstance(value, dict):
+                    flat.update(value)
+                else:
+                    flat[key] = value
             return await self._save_and_return(
                 self._pruned_exclusion_input(
-                    user_input, device_rows, dr.async_get(self.hass)
+                    flat, device_rows, dr.async_get(self.hass)
                 )
             )
         options = self.config_entry.options
@@ -999,33 +1125,58 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
-                    vol.Optional(
-                        CONF_EXCLUDED_INTEGRATIONS,
-                        default=excluded_integrations,
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=integration_domains,
-                            multiple=True,
-                            custom_value=True,
-                            sort=True,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
-                    vol.Optional(
-                        CONF_EXCLUDED_LABELS, default=excluded_labels
-                    ): selector.LabelSelector(
-                        selector.LabelSelectorConfig(multiple=True)
-                    ),
-                    vol.Optional(
-                        CONF_EXCLUDED_DEVICES,
-                        default=surviving_device_picks,
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=device_options,
-                            multiple=True,
-                            sort=True,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
+                    # The screen splits by verb (ruling #314). Ignore
+                    # stays loose at the top because it is the
+                    # different one: it discards rather than
+                    # silences. The three-tier ladder moves into its
+                    # own section, open rather than collapsed, since
+                    # the lists are what a person opening this screen
+                    # came for.
+                    vol.Required("exclusions"): section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    CONF_EXCLUDED_INTEGRATIONS,
+                                    default=excluded_integrations,
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=integration_domains,
+                                        multiple=True,
+                                        custom_value=True,
+                                        sort=True,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                                vol.Optional(
+                                    CONF_EXCLUDED_LABELS,
+                                    default=excluded_labels,
+                                ): selector.LabelSelector(
+                                    selector.LabelSelectorConfig(
+                                        multiple=True
+                                    )
+                                ),
+                                vol.Optional(
+                                    CONF_EXCLUDED_DEVICES,
+                                    default=surviving_device_picks,
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=device_options,
+                                        multiple=True,
+                                        sort=True,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                            }
+                        ),
+                        {"collapsed": False},
                     ),
                 }
             ),

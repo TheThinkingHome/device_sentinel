@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.16.11 (2026-08-21)
+# File: report_brief.py, Version: 0.16.15 (2026-08-21)
 
 """The daily brief: the one report written for a person.
 
@@ -514,6 +514,16 @@ class BriefMixin:
             for body in steps.values():
                 for key, label in (body.get("data") or {}).items():
                     labels[key] = label
+                # A field inside a section is still a field, and the
+                # brief names a changed setting by what the person
+                # read on the screen. Ruling #314 moved every exclude
+                # picker into a section, and reading only the loose
+                # fields printed raw option keys in the morning
+                # brief; the gate caught it, and it is the sort of
+                # fault that would have reached a person's inbox.
+                for block in (body.get("sections") or {}).values():
+                    for key, label in (block.get("data") or {}).items():
+                        labels[key] = label
         except (OSError, ValueError, KeyError):
             labels = {}
         self._option_label_cache = labels
