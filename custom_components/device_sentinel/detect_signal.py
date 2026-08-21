@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.16.11 (2026-08-21)
+# File: detect_signal.py, Version: 0.16.12 (2026-08-21)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -27,12 +27,9 @@ from typing import Any
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
-    CONF_SIGNAL_ANOMALY_TRIM,
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
-    CONF_SIGNAL_LIFT,
-    CONF_SIGNAL_MARGIN,
     BADDAY_MIN_BASELINE,
     BADDAY_MIN_SPREAD,
     BADDAY_BASELINE_DAYS_MAX,
@@ -48,9 +45,6 @@ from .const import (
     CONF_BADDAY_DROP_RSSI,
     CONF_BADDAY_SENSITIVITY,
     DATA_DEVICES,
-    DEFAULT_SIGNAL_ANOMALY_TRIM,
-    DEFAULT_SIGNAL_LIFT,
-    DEFAULT_SIGNAL_MARGIN,
     DEFAULT_BADDAY_BASELINE_DAYS,
     DEFAULT_BADDAY_DROP_LQI,
     DEFAULT_BADDAY_DROP_RSSI,
@@ -83,22 +77,19 @@ from .const import (
     GOOD_STATE_CEILING_SD,
     LOGGER,
     RAIL_CONFIRM_DAYS,
-    SIGNAL_ANOMALY_TRIM_MAX,
-    SIGNAL_ANOMALY_TRIM_MIN,
     SIGNAL_CEILING_CLEARANCE_LQI,
     SIGNAL_CEILING_CLEARANCE_RSSI,
     SIGNAL_DAYS_KEEP,
-    SIGNAL_LIFT_MAX,
-    SIGNAL_LIFT_MIN,
     SIGNAL_LQI_DEAD,
     SIGNAL_LQI_PERFECT,
-    SIGNAL_MARGIN_MAX,
-    SIGNAL_MARGIN_MIN,
     SIGNAL_ALT_FIELDS,
     SIGNAL_NAME_TERMS,
     SIGNAL_REFUSED_UNITS,
     SIGNAL_SCALE_LQI,
     TODO_KIND_RAILED_SIGNAL,
+    SIGNAL_ANOMALY_TRIM,
+    SIGNAL_LIFT,
+    SIGNAL_MARGIN,
     SIGNAL_SCALE_RSSI,
     DEV_SIGNAL_ALT,
     DEV_SIGNAL_SCALE,
@@ -774,50 +765,46 @@ class SignalMixin:
         ]
 
     def _signal_trim(self) -> int:
-        """Return the anomaly trim, clamped to its band. This is the k
-        behind the SIGNAL header's trim word: it is global, the same
-        for every device, unlike the per-device effective k which also
-        carries each device's ladder rung.
+        """Return the anomaly trim. This is the k behind the SIGNAL
+        header's trim word: it is global, the same for every device,
+        unlike the per-device effective k which also carries each
+        device's ladder rung.
+
+        A constant since ruling #311, not a setting. It shapes the
+        floor, the floor shapes the danger line, and the line now
+        feeds only recorded history: dwell, which no longer reports,
+        the daily line series, the episode snapshot, and the
+        maintainer telemetry. A control over a number nobody is shown
+        is furniture, and it sat on the Signal screen among four
+        sliders that do judge.
         """
-        slider = int(
-            self.entry.options.get(
-                CONF_SIGNAL_ANOMALY_TRIM, DEFAULT_SIGNAL_ANOMALY_TRIM
-            )
-        )
-        return max(
-            SIGNAL_ANOMALY_TRIM_MIN, min(slider, SIGNAL_ANOMALY_TRIM_MAX)
-        )
+        return SIGNAL_ANOMALY_TRIM
 
     def _signal_margin(self) -> float:
         """Return the sensitivity as a fraction of the working band.
 
-        Zero puts the line on the floor plus only the lift. Clamped
-        rather than trusted, because an options value can arrive from
-        a hand-edited entry as well as from the slider.
+        A constant since ruling #311, held at the value that was its
+        default, so a fleet on the defaults records exactly what it
+        recorded before. One that had moved it steps once, which is
+        accepted: the comparison this history exists for was made and
+        written into ruling #310 before the change.
         """
-        margin = float(
-            self.entry.options.get(CONF_SIGNAL_MARGIN, DEFAULT_SIGNAL_MARGIN)
-        )
-        return max(
-            SIGNAL_MARGIN_MIN, min(margin, SIGNAL_MARGIN_MAX)
-        ) / 100.0
+        return SIGNAL_MARGIN / 100.0
 
     def _signal_lift(self) -> float:
         """Return the flat lift added to every line, in scale units.
 
         The second sensitivity control (ruling #252): where the
-        percentage sets the wedge's slope, the lift raises the whole
-        line by the same amount at every floor, a minimum vigilance
-        that survives even where the margin has died to nothing at
-        perfect. One value serves both scales because a quarter unit
-        is deliberately small on each. Capped at 2.0 because the
-        fleet replay showed 5.0 re-flagging the strongest links the
-        anchored formula had just freed.
+        percentage sets the line's slope, the lift raises the whole
+        line by the same amount at every floor, so it survives even
+        where the margin has died to nothing at perfect. One value
+        serves both scales because a quarter unit is deliberately
+        small on each.
+
+        A constant since ruling #311, held at its former default of
+        zero, for the reason given on the margin above it.
         """
-        lift = float(
-            self.entry.options.get(CONF_SIGNAL_LIFT, DEFAULT_SIGNAL_LIFT)
-        )
-        return max(SIGNAL_LIFT_MIN, min(lift, SIGNAL_LIFT_MAX))
+        return SIGNAL_LIFT
 
     def _anchored_margin(self, floor: float) -> float:
         """Return the margin above this floor, in scale units.
@@ -933,16 +920,14 @@ class SignalMixin:
         ]
         if len(base) < BADDAY_MIN_BASELINE:
             return None
-        # A promotion happens mid-day: when a device's RSSI entity
-        # first reports, RSSI takes the primary block and the sitting
-        # scale is demoted to signal_alt (rulings #285, #286). So
-        # today's reading can arrive on the other side of zero from
-        # the days behind it, and the two are not comparable.
-        #
-        # Only that pair is tested here. A stored series holding both
-        # signs is storage's to deal with and it does, discarding
-        # such a history once at load (ruling #282), so by the time
-        # any fold runs there is none left to meet.
+        # A baseline holding both signs is two scales in one series,
+        # which a ZHA reset can produce mid-life. Its median is a
+        # number with no meaning and its spread is the distance
+        # between two measuring systems, so the day is left unjudged
+        # rather than judged from nonsense. Storage clears such a
+        # series at the next fold; until then this is the guard.
+        if min(base) < 0 <= max(base):
+            return None
         if (today < 0) is not (base[0] < 0):
             return None
         middle = statistics.median(base)

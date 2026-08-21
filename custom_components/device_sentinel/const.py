@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.16.11 (2026-08-21)
+# File: const.py, Version: 0.16.12 (2026-08-21)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1229,10 +1229,6 @@ SIGNAL_DAYS_KEEP = 30
 # stays counted, so a full clean day is needed to see its true
 # effect, which is why this lives on the config screen rather than as
 # a live entity.
-CONF_SIGNAL_ANOMALY_TRIM = "signal_sensitivity"
-DEFAULT_SIGNAL_ANOMALY_TRIM = 0
-SIGNAL_ANOMALY_TRIM_MIN = -2
-SIGNAL_ANOMALY_TRIM_MAX = 2
 
 # The margin above the floor, as a percentage of the floor itself.
 #
@@ -1270,8 +1266,6 @@ SIGNAL_ANOMALY_TRIM_MAX = 2
 # Zero reproduces the older behaviour exactly, where the floor was
 # the line, so the setting can be turned off and an existing install
 # is unaffected until somebody moves it.
-CONF_SIGNAL_MARGIN = "signal_margin"
-DEFAULT_SIGNAL_MARGIN = 5
 # The lift (ruling #252): a flat amount added to the line after the
 # margin, one value for both scales. Zero, the default, is the
 # formula as designed, with the line dying to nothing at perfect.
@@ -1280,14 +1274,7 @@ DEFAULT_SIGNAL_MARGIN = 5
 # detents of the proposed 0-to-5 range re-flagged the exact devices
 # the formula change was built to free: on the reference fleet a
 # lift of 5 put Door Entryway back from 7 reporting days to 11.
-CONF_SIGNAL_LIFT = "signal_lift"
-DEFAULT_SIGNAL_LIFT = 0.0
-SIGNAL_LIFT_MIN = 0.0
-SIGNAL_LIFT_MAX = 2.0
-SIGNAL_LIFT_STEP = 0.25
 
-SIGNAL_MARGIN_MIN = 0
-SIGNAL_MARGIN_MAX = 10
 
 # Where yellow turns red on the dwell report. The dwell
 # chart bands every nonzero device: 0 to 5 percent is green always,
@@ -1338,6 +1325,25 @@ BADDAY_BASELINE_DAYS_MAX = 14
 # dividing by, and a spread near zero makes any ratio explode.
 BADDAY_MIN_BASELINE = 4
 BADDAY_MIN_SPREAD = 1.0
+
+# The three that shape the danger line are constants, not settings
+# (ruling #311). Each was a slider until 0.16.12. The line they build
+# no longer judges anything: dwell stopped reporting at ruling #310,
+# and what the line still feeds is recorded history alone, the daily
+# line series, the snapshot stamped into each episode, and the
+# maintainer telemetry. A control over a number nobody is shown is
+# furniture, and these three sat on the Signal screen among four
+# sliders that do judge, which is worse than furniture.
+#
+# Each is held at the value that was its default, so a fleet on the
+# defaults records exactly what it recorded before. A fleet that had
+# moved one steps once. That is accepted: the comparison this history
+# exists for was made and written into ruling #310 before the change,
+# and the whole family retires together once the bad-day detector has
+# earned it.
+SIGNAL_ANOMALY_TRIM = 0
+SIGNAL_MARGIN = 5
+SIGNAL_LIFT = 0.0
 
 SIGNAL_GREEN_CEILING = 5.0
 
@@ -1875,7 +1881,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 310
+HIGHEST_RULING = 311
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

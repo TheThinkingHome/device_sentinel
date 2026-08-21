@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.16.11 (2026-08-21)
+# File: config_flow.py, Version: 0.16.12 (2026-08-21)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -98,12 +98,9 @@ from .const import (
     CONF_REMINDER_TIME,
     CONF_RETENTION_DAYS,
     CONF_SETTLE_SHARE,
-    CONF_SIGNAL_ANOMALY_TRIM,
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
-    CONF_SIGNAL_LIFT,
-    CONF_SIGNAL_MARGIN,
     CONF_BADDAY_BASELINE_DAYS,
     CONF_BADDAY_DROP_LQI,
     CONF_BADDAY_DROP_RSSI,
@@ -129,9 +126,6 @@ from .const import (
     DEFAULT_REMINDER_TIME,
     DEFAULT_RETENTION_DAYS,
     DEFAULT_SETTLE_SHARE_PCT,
-    DEFAULT_SIGNAL_ANOMALY_TRIM,
-    DEFAULT_SIGNAL_LIFT,
-    DEFAULT_SIGNAL_MARGIN,
     DEFAULT_BADDAY_BASELINE_DAYS,
     DEFAULT_BADDAY_DROP_LQI,
     DEFAULT_BADDAY_DROP_RSSI,
@@ -159,13 +153,6 @@ from .const import (
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
     SHARE_PCT_STEP,
-    SIGNAL_ANOMALY_TRIM_MAX,
-    SIGNAL_ANOMALY_TRIM_MIN,
-    SIGNAL_LIFT_MAX,
-    SIGNAL_LIFT_MIN,
-    SIGNAL_LIFT_STEP,
-    SIGNAL_MARGIN_MAX,
-    SIGNAL_MARGIN_MIN,
     BADDAY_BASELINE_DAYS_MAX,
     BADDAY_BASELINE_DAYS_MIN,
     BADDAY_DROP_LQI_MAX,
@@ -582,33 +569,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_SIGNAL_MARGIN,
-                        default=options.get(
-                            CONF_SIGNAL_MARGIN, DEFAULT_SIGNAL_MARGIN
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=SIGNAL_MARGIN_MIN,
-                            max=SIGNAL_MARGIN_MAX,
-                            step=1,
-                            unit_of_measurement="%",
-                            mode=selector.NumberSelectorMode.SLIDER,
-                        )
-                    ),
-                    vol.Required(
-                        CONF_SIGNAL_LIFT,
-                        default=options.get(
-                            CONF_SIGNAL_LIFT, DEFAULT_SIGNAL_LIFT
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=SIGNAL_LIFT_MIN,
-                            max=SIGNAL_LIFT_MAX,
-                            step=SIGNAL_LIFT_STEP,
-                            mode=selector.NumberSelectorMode.SLIDER,
-                        )
-                    ),
-                    vol.Required(
                         CONF_BADDAY_DROP_LQI,
                         default=options.get(
                             CONF_BADDAY_DROP_LQI, DEFAULT_BADDAY_DROP_LQI
@@ -664,20 +624,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
-                    vol.Required(
-                        CONF_SIGNAL_ANOMALY_TRIM,
-                        default=options.get(
-                            CONF_SIGNAL_ANOMALY_TRIM,
-                            DEFAULT_SIGNAL_ANOMALY_TRIM,
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=SIGNAL_ANOMALY_TRIM_MIN,
-                            max=SIGNAL_ANOMALY_TRIM_MAX,
-                            step=1,
-                            mode=selector.NumberSelectorMode.SLIDER,
-                        )
-                    ),
                     vol.Optional(
                         CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
                         default=options.get(
@@ -724,16 +670,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         dev_reg: dr.DeviceRegistry,
     ) -> dict[str, Any]:
         """Drop device picks the same save's broader excludes cover,
-        and round the slider to the integer it is. Same determinism
-        rule as battery: a superseded pick is gone because this code
-        removed it."""
+        and store each slider as the type its option declares. Same
+        determinism rule as battery: a superseded pick is gone
+        because this code removed it."""
         pruned = dict(user_input)
-        if CONF_SIGNAL_ANOMALY_TRIM in pruned:
-            pruned[CONF_SIGNAL_ANOMALY_TRIM] = int(
-                pruned[CONF_SIGNAL_ANOMALY_TRIM]
-            )
-        if CONF_SIGNAL_MARGIN in pruned:
-            pruned[CONF_SIGNAL_MARGIN] = int(pruned[CONF_SIGNAL_MARGIN])
         for key in (
             CONF_BADDAY_DROP_LQI,
             CONF_BADDAY_DROP_RSSI,
@@ -745,8 +685,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             pruned[CONF_BADDAY_SENSITIVITY] = float(
                 pruned[CONF_BADDAY_SENSITIVITY]
             )
-        if CONF_SIGNAL_LIFT in pruned:
-            pruned[CONF_SIGNAL_LIFT] = float(pruned[CONF_SIGNAL_LIFT])
         covered = _devices_covered_by(
             signal_rows,
             pruned.get(CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []),
