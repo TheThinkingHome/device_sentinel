@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.16.6 (2026-08-20)
+# File: report_brief.py, Version: 0.16.9 (2026-08-20)
 
 """The daily brief: the one report written for a person.
 
@@ -47,6 +47,10 @@ from .const import (
     DATA_SYSTEM_EVENTS,
     DEFAULT_REMINDER_TIME,
     DEV_BATTERY_VALUE,
+    DEV_FROZEN_SINCE,
+    DEV_LAST_ACTIVITY,
+    FREEZE_KINDS_FOR_CAUSE,
+    RECOVERY_CAUSES_INTERVENTION,
     INCIDENT_ACKNOWLEDGED,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
@@ -825,6 +829,20 @@ class BriefMixin:
             by_device.setdefault(opened[INC_DEVICE_ID], []).append(
                 (opened, resolved)
             )
+        # A silence the restarts only interrupted is not flapping and
+        # is not recoveries: it is one outage the bookkeeping
+        # segmented (ruling #308). Decided from the protocol clock
+        # rather than the rows, because the rows are the thing that
+        # lies here: the device's last true speech predates every
+        # interruption in the window, so nothing in these pairs was a
+        # recovery. A device that spoke anywhere in the window fails
+        # the test and keeps the flapping sentence, which is what
+        # keeps Presence Guest's real reconnects told as such.
+        stitched = {
+            device_id: members
+            for device_id, members in by_device.items()
+            if self._silence_never_broken(device_id, members)
+        }
         # A device that has never reported is one standing condition,
         # not a device going and returning, so it keeps the sentence
         # that says so. Pairing sees two rows and would otherwise
@@ -832,7 +850,8 @@ class BriefMixin:
         flapping = {
             device_id: members
             for device_id, members in by_device.items()
-            if len(members) > 1
+            if device_id not in stitched
+            and len(members) > 1
             and not any(
                 opened.get(INC_KIND) == TODO_KIND_NEVER_REPORTED
                 for opened, _resolved in members
@@ -843,18 +862,119 @@ class BriefMixin:
         # carries is not named again below unless its pattern spans
         # more than this one brief, because the same device in two
         # sentences of one paragraph is the duplication #276 and
-        # #304 both exist to prevent.
-        self._flapping_told = set(flapping)
-        if not flapping:
+        # #304 both exist to prevent. A stitched device counts the
+        # same way: its one sentence is its mention.
+        self._flapping_told = set(flapping) | set(stitched)
+        # Remembered for the Last 24 Hours table (ruling #308): the
+        # rows behind a stitched sentence are bookkeeping, and a
+        # table that keeps them beside the sentence that corrects
+        # them says the wrong thing twice as often as the right one.
+        self._stitched_told = set(stitched)
+        if not flapping and not stitched:
             return [line for line, _who in told]
+        gone = set(flapping) | set(stitched)
         kept = [
             line
             for line, who in told
-            if not (who and who <= set(flapping))
+            if not (who and who <= gone)
         ]
         for members in flapping.values():
             kept.append(self._compose_flapping(members))
+        for device_id, members in stitched.items():
+            kept.append(self._compose_stitched(device_id, members))
         return kept
+
+    def _silence_never_broken(
+        self,
+        device_id: str,
+        members: list[tuple[dict[str, Any], dict[str, Any] | None]],
+    ) -> bool:
+        """Return whether this window's interruptions were bookkeeping.
+
+        Two conditions, both required. At least one resolution blames
+        an intervention, which is the claim being tested. And the
+        device's last recorded speech predates the earliest
+        interruption in the window, which the protocol clock answers
+        directly: every "recovered" among these rows closed without
+        the device saying a word, so each was the restart truncating
+        the count (ruling #163) rather than the device returning. The
+        reference case is an unplugged SLZB-06 told as eighteen
+        recoveries across seven restarts while its clock stood at the
+        moment of the unplug (ruling #308).
+
+        A never-reported device is excluded because it has no speech
+        to predate and already keeps its own standing sentence. A
+        device with no record or no clock answers False, because a
+        claim of unbroken silence needs the clock as its witness.
+        """
+        if any(
+            opened.get(INC_KIND) == TODO_KIND_NEVER_REPORTED
+            for opened, _resolved in members
+        ):
+            return False
+        # At least one of the claimed recoveries must name a lever:
+        # a resolution blaming a reboot or a reconnect while the
+        # clock never moved is the fingerprint of bookkeeping. A
+        # resolution with no cause is left alone, because on a live
+        # system a self-recovery is the device speaking and this
+        # test cannot fire on it, while firing here on a cause the
+        # record does not carry would reach past the evidence.
+        if not any(
+            resolved is not None
+            and resolved.get(INC_CAUSE) in RECOVERY_CAUSES_INTERVENTION
+            for _opened, resolved in members
+        ):
+            return False
+        record = (self.data.get(DATA_DEVICES) or {}).get(device_id)
+        if not isinstance(record, dict):
+            return False
+        last = record.get(DEV_LAST_ACTIVITY)
+        if last is None:
+            return False
+        earliest = min(opened[INC_WHEN] for opened, _resolved in members)
+        return float(last) < float(earliest)
+
+    def _compose_stitched(
+        self,
+        device_id: str,
+        members: list[tuple[dict[str, Any], dict[str, Any] | None]],
+    ) -> str:
+        """Return one sentence for a silence the restarts segmented.
+
+        The anchor is the standing verdict's own start where one is
+        held, because the outage usually predates the window the
+        fragments sit in; the earliest fragment stands in where the
+        verdict has none. The restart count is the interruptions the
+        record blames on an intervention, deduplicated by moment so
+        one restart resolving two kinds counts once (ruling #308).
+        """
+        name = members[0][0][INC_NAME]
+        record = (self.data.get(DATA_DEVICES) or {}).get(device_id) or {}
+        anchor = record.get(DEV_FROZEN_SINCE)
+        if anchor is None:
+            anchor = min(
+                opened[INC_WHEN] for opened, _resolved in members
+            )
+        span = self._human_span(
+            dt_util.utcnow().timestamp() - float(anchor)
+        )
+        restarts = len(
+            {
+                int(resolved[INC_WHEN] // 300)
+                for _opened, resolved in members
+                if resolved is not None
+                and resolved.get(INC_CAUSE)
+                in RECOVERY_CAUSES_INTERVENTION
+            }
+        )
+        base = (
+            f"{name} has been silent since "
+            f"{self._brief_moment(float(anchor))}, {span} so far"
+        )
+        if restarts:
+            plural = "s" if restarts != 1 else ""
+            return f"{base}, across {restarts} restart{plural}."
+        return f"{base}."
 
     def _compose_flapping(
         self, members: list[tuple[dict[str, Any], dict[str, Any] | None]]
@@ -1156,12 +1276,6 @@ class BriefMixin:
             if window_start <= row[SYS_WHEN] <= window_end
         ]
         sys_events.sort(key=lambda row: row[SYS_WHEN], reverse=True)
-        opened = sum(
-            1 for row in incidents if row[INC_EVENT] == INCIDENT_OPENED
-        )
-        resolved = sum(
-            1 for row in incidents if row[INC_EVENT] == INCIDENT_RESOLVED
-        )
         # The span is counted rather than asserted. The window is
         # anchored to the wall clock so a person's seven o'clock brief
         # covers seven to seven, which across a daylight saving change
@@ -1286,12 +1400,37 @@ class BriefMixin:
                 "",
             ]
         lines += ["## Last 24 Hours", ""]
-        if not incidents and not sys_events:
+        # The rows behind a stitched sentence are dropped here
+        # (ruling #308): each says a dead device recovered or broke
+        # again when the restart only interrupted the counting, and
+        # the In Short sentence above already tells the one outage
+        # they fragment. What a person did (acknowledgments) and
+        # everything the sentence does not cover stays. The counts
+        # below count what the table shows, so the header cannot
+        # claim rows the reader is not given.
+        stitched_ids = getattr(self, "_stitched_told", set())
+        shown = [
+            row
+            for row in incidents
+            if not (
+                row[INC_DEVICE_ID] in stitched_ids
+                and row[INC_KIND] in FREEZE_KINDS_FOR_CAUSE
+                and row[INC_EVENT]
+                in (INCIDENT_OPENED, INCIDENT_RESOLVED)
+            )
+        ]
+        opened = sum(
+            1 for row in shown if row[INC_EVENT] == INCIDENT_OPENED
+        )
+        resolved = sum(
+            1 for row in shown if row[INC_EVENT] == INCIDENT_RESOLVED
+        )
+        if not shown and not sys_events:
             lines += ["Nothing happened.", ""]
         else:
             lines += [
-                f"{len(incidents) + len(sys_events)} event"
-                f"{'s' if len(incidents) + len(sys_events) != 1 else ''}. "
+                f"{len(shown) + len(sys_events)} event"
+                f"{'s' if len(shown) + len(sys_events) != 1 else ''}. "
                 f"{opened} problem{'s' if opened != 1 else ''} "
                 f"started, {resolved} ended.",
                 "",
@@ -1301,7 +1440,7 @@ class BriefMixin:
             merged = [
                 (row[INC_WHEN], self._report_cell(row[INC_NAME]),
                  self._brief_phrase(row))
-                for row in incidents
+                for row in shown
             ] + [
                 (row[SYS_WHEN], "The system",
                  self._system_event_phrase(row))
