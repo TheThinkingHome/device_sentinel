@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.16.9 (2026-08-20)
+# File: const.py, Version: 0.16.10 (2026-08-21)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1839,7 +1839,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 308
+HIGHEST_RULING = 309
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1927,13 +1927,17 @@ REPAIRS_ALL = (
     REPAIR_NO_DELIVERY,
 )
 
-# The two moments a Repair is evaluated (ruling #300): when the
-# startup grace closes, and after the midnight fold. Not the render
-# tick, because an issue that reappears while a person is reading it
-# is worse than one raised a few hours late, and none of these four
-# conditions changes on a timescale a tick would catch.
+# The two moments a Repair is evaluated (ruling #300, amended by
+# #309): when the startup grace closes, and when the daily brief is
+# sent. Not the render tick, because an issue that reappears while a
+# person is reading it is worse than one raised a few hours late,
+# and none of these four conditions changes on a timescale a tick
+# would catch. Not the fold either, since a nightly reboot scheduled
+# after midnight closes grace and clears a card raised hours earlier,
+# before anybody was awake to read it. The brief hour is the hour a
+# person looks.
 REPAIR_MOMENT_GRACE = "grace"
-REPAIR_MOMENT_FOLD = "fold"
+REPAIR_MOMENT_BRIEF = "brief"
 
 # How many things a Repair card names before it starts counting.
 # A card is read in a dialog rather than scrolled, and the full list

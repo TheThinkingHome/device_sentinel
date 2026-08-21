@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.16.1 (2026-08-19)
+# File: repairs.py, Version: 0.16.10 (2026-08-21)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -72,7 +72,7 @@ from .const import (
     REPAIRS_ALL,
     REPAIR_DETAIL_MAX,
     REPAIR_ENTITIES_DISABLED,
-    REPAIR_MOMENT_FOLD,
+    REPAIR_MOMENT_BRIEF,
     REPAIR_MOMENT_GRACE,
     REPAIR_NO_DELIVERY,
     REPAIR_NOTIFY_TARGET_MISSING,
@@ -422,21 +422,29 @@ def async_evaluate(
     the measurements where they are taken.
 
     Two of the four are narrower than the two moments (ruling #303).
-    Disabled entities are judged at the fold, and additionally on the
-    first start after Device Sentinel's own version changed, because
-    that is when an integration update re-ships its diagnostics turned
-    off and it is the only way the state arrives. Judging it at every
-    grace close meant a person who restarted seven times in a day met
-    the same badge seven times over a condition that had not moved.
-    Nothing configured is the fold alone (ruling #301).
+    Disabled entities are judged when the brief is sent, and
+    additionally on the first start after Device Sentinel's own
+    version changed, because that is when an integration update
+    re-ships its diagnostics turned off and it is the only way the
+    state arrives. Judging it at every grace close meant a person who
+    restarted seven times in a day met the same badge seven times
+    over a condition that had not moved. Nothing configured is the
+    brief moment alone (ruling #301).
+
+    Both were the fold's until ruling #309 moved them. A card raised
+    at midnight is read by nobody, and an install that reboots
+    nightly after midnight closes its grace and clears the card
+    before morning, so the condition was judged at the hour least
+    likely to reach a person. The brief hour is the hour a person
+    looks, and the two arrive together.
     """
     _evaluate_storage_shape(hass, shape_faults, namer)
     _evaluate_notify_targets(
         hass, missing_targets(hass, entry), entry.entry_id
     )
-    if moment == REPAIR_MOMENT_FOLD or version_changed:
+    if moment == REPAIR_MOMENT_BRIEF or version_changed:
         _evaluate_entities_disabled(hass, awaiting, entry.entry_id)
-    if moment == REPAIR_MOMENT_FOLD:
+    if moment == REPAIR_MOMENT_BRIEF:
         _evaluate_no_delivery(
             hass, delivery_is_configured(entry), days_installed
         )
@@ -592,7 +600,7 @@ async def async_create_fix_flow(
 
 
 __all__ = [
-    "REPAIR_MOMENT_FOLD",
+    "REPAIR_MOMENT_BRIEF",
     "REPAIR_MOMENT_GRACE",
     "async_clear_all",
     "async_create_fix_flow",

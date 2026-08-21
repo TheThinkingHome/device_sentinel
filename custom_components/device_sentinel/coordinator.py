@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.16.8 (2026-08-20)
+# File: coordinator.py, Version: 0.16.10 (2026-08-21)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -69,7 +69,7 @@ from .normalise import check_records
 from .repairs import async_evaluate
 from .backup import async_refresh_last_good, async_take_backup
 from .const import (
-    REPAIR_MOMENT_FOLD,
+    REPAIR_MOMENT_BRIEF,
     SYS_STORAGE_SHAPE,
     AREA_BATTERY,
     AREA_FREEZE,
@@ -1606,6 +1606,11 @@ class DeviceSentinelCoordinator(
         text = await self._write_reports_guarded(BRIEF_TRIGGER)
         if text is not None:
             await self.async_send_brief(text)
+        # After the send, not before it, so a Repair raised here
+        # cannot delay or fail the delivery it travels beside
+        # (ruling #309). The fold keeps the storage shape check,
+        # the copy, and the heal; only the judging moved.
+        self._evaluate_repairs(REPAIR_MOMENT_BRIEF)
 
     @property
     def _ignored_device_ids(self) -> set[str]:
@@ -1900,7 +1905,6 @@ class DeviceSentinelCoordinator(
         if pushed or self._dirty or self._critical:
             await self._save_now()
         await self._check_storage_shape("fold")
-        self._evaluate_repairs(REPAIR_MOMENT_FOLD)
         LOGGER.debug(
             "Day rollover: pushed daily maxima for %d of %d watched devices",
             pushed,

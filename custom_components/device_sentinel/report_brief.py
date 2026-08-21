@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.16.9 (2026-08-20)
+# File: report_brief.py, Version: 0.16.10 (2026-08-21)
 
 """The daily brief: the one report written for a person.
 
@@ -48,9 +48,7 @@ from .const import (
     DEFAULT_REMINDER_TIME,
     DEV_BATTERY_VALUE,
     DEV_FROZEN_SINCE,
-    DEV_LAST_ACTIVITY,
     FREEZE_KINDS_FOR_CAUSE,
-    RECOVERY_CAUSES_INTERVENTION,
     INCIDENT_ACKNOWLEDGED,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
@@ -791,12 +789,13 @@ class BriefMixin:
         kept = [
             (line, who) for line, who in zip(told, owners) if line
         ]
-        return self._collapse_flapping(kept, pairs)
+        return self._collapse_flapping(kept, pairs, sys_events or [])
 
     def _collapse_flapping(
         self,
         told: list[tuple[str, set[str]]],
         pairs: list[tuple[dict[str, Any], dict[str, Any] | None]],
+        sys_events: list[dict[str, Any]],
     ) -> list[str]:
         """Return the told episodes with a flapping device said once.
 
@@ -881,7 +880,9 @@ class BriefMixin:
         for members in flapping.values():
             kept.append(self._compose_flapping(members))
         for device_id, members in stitched.items():
-            kept.append(self._compose_stitched(device_id, members))
+            kept.append(
+                self._compose_stitched(device_id, members, sys_events or [])
+            )
         return kept
 
     def _silence_never_broken(
@@ -891,85 +892,73 @@ class BriefMixin:
     ) -> bool:
         """Return whether this window's interruptions were bookkeeping.
 
-        Two conditions, both required. At least one resolution blames
-        an intervention, which is the claim being tested. And the
-        device's last recorded speech predates the earliest
-        interruption in the window, which the protocol clock answers
-        directly: every "recovered" among these rows closed without
-        the device saying a word, so each was the restart truncating
-        the count (ruling #163) rather than the device returning. The
-        reference case is an unplugged SLZB-06 told as eighteen
-        recoveries across seven restarts while its clock stood at the
-        moment of the unplug (ruling #308).
+        The witness is the standing verdict, not the incident rows,
+        because the rows are the thing that lies here. When a device
+        genuinely recovers, its verdict clears and the next failure
+        starts a new one; when a restart only truncates the counting,
+        the verdict never clears. So a verdict still standing today
+        whose start predates every opening in the window is a
+        condition that never once lifted, however many recoveries the
+        rows claim (ruling #308).
 
-        A never-reported device is excluded because it has no speech
-        to predate and already keeps its own standing sentence. A
-        device with no record or no clock answers False, because a
-        claim of unbroken silence needs the clock as its witness.
+        Three conditions, all required. Something in the window
+        claimed a recovery, or there is nothing to correct. The
+        device holds a standing verdict now. And that verdict began
+        before the earliest opening here, which is what separates an
+        unbroken outage from a device that really came back and
+        failed again, since the second case carries a verdict younger
+        than its own fragments.
+
+        A never-reported device is excluded, having its own standing
+        sentence already. The reference case is an unplugged SLZB-06
+        told as twenty-one recoveries across seven restarts while its
+        verdict stood untouched from the moment of the unplug.
         """
         if any(
             opened.get(INC_KIND) == TODO_KIND_NEVER_REPORTED
             for opened, _resolved in members
         ):
             return False
-        # At least one of the claimed recoveries must name a lever:
-        # a resolution blaming a reboot or a reconnect while the
-        # clock never moved is the fingerprint of bookkeeping. A
-        # resolution with no cause is left alone, because on a live
-        # system a self-recovery is the device speaking and this
-        # test cannot fire on it, while firing here on a cause the
-        # record does not carry would reach past the evidence.
-        if not any(
-            resolved is not None
-            and resolved.get(INC_CAUSE) in RECOVERY_CAUSES_INTERVENTION
-            for _opened, resolved in members
-        ):
+        if not any(resolved is not None for _opened, resolved in members):
             return False
         record = (self.data.get(DATA_DEVICES) or {}).get(device_id)
         if not isinstance(record, dict):
             return False
-        last = record.get(DEV_LAST_ACTIVITY)
-        if last is None:
+        since = record.get(DEV_FROZEN_SINCE)
+        if since is None:
             return False
         earliest = min(opened[INC_WHEN] for opened, _resolved in members)
-        return float(last) < float(earliest)
+        return float(since) < float(earliest)
 
     def _compose_stitched(
         self,
         device_id: str,
         members: list[tuple[dict[str, Any], dict[str, Any] | None]],
+        sys_events: list[dict[str, Any]],
     ) -> str:
         """Return one sentence for a silence the restarts segmented.
 
-        The anchor is the standing verdict's own start where one is
-        held, because the outage usually predates the window the
-        fragments sit in; the earliest fragment stands in where the
-        verdict has none. The restart count is the interruptions the
-        record blames on an intervention, deduplicated by moment so
-        one restart resolving two kinds counts once (ruling #308).
+        The anchor is the standing verdict's own start, because the
+        outage predates the window the fragments sit in. The restart
+        count comes from the recorded restarts themselves, counted
+        between the anchor and now: the resolution rows cannot supply
+        it, since on a live system they carry no cause at all
+        (ruling #308).
         """
         name = members[0][0][INC_NAME]
         record = (self.data.get(DATA_DEVICES) or {}).get(device_id) or {}
-        anchor = record.get(DEV_FROZEN_SINCE)
-        if anchor is None:
-            anchor = min(
-                opened[INC_WHEN] for opened, _resolved in members
-            )
-        span = self._human_span(
-            dt_util.utcnow().timestamp() - float(anchor)
-        )
-        restarts = len(
-            {
-                int(resolved[INC_WHEN] // 300)
-                for _opened, resolved in members
-                if resolved is not None
-                and resolved.get(INC_CAUSE)
-                in RECOVERY_CAUSES_INTERVENTION
-            }
+        anchor = float(record[DEV_FROZEN_SINCE])
+        now = dt_util.utcnow().timestamp()
+        span = self._human_span(now - anchor)
+        restarts = sum(
+            1
+            for row in sys_events
+            if row.get(SYS_KIND) == SYS_RESTART
+            and anchor <= float(row.get(SYS_WHEN, 0.0)) <= now
         )
         base = (
             f"{name} has been silent since "
-            f"{self._brief_moment(float(anchor))}, {span} so far"
+            f"{self._brief_moment(anchor)}, {span} so far"
         )
         if restarts:
             plural = "s" if restarts != 1 else ""
