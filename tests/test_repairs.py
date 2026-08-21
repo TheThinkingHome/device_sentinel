@@ -44,7 +44,7 @@ from custom_components.device_sentinel.const import (
     NO_DELIVERY_MIN_DAYS,
     REPAIRS_ALL,
     REPAIR_ENTITIES_DISABLED,
-    REPAIR_MOMENT_FOLD,
+    REPAIR_MOMENT_BRIEF,
     REPAIR_MOMENT_GRACE,
     REPAIR_NO_DELIVERY,
     REPAIR_NOTIFY_TARGET_MISSING,
@@ -321,13 +321,13 @@ async def test_disabled_entities_are_not_raised_at_every_restart(
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
 
-    # The fold is where it does reach a person.
-    coordinator._evaluate_repairs(REPAIR_MOMENT_FOLD)
+    # The brief send is where it does reach a person (ruling #309).
+    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_ENTITIES_DISABLED) is not None
 
 
-async def test_an_upgrade_raises_it_without_waiting_for_midnight(
+async def test_an_upgrade_raises_it_without_waiting_for_the_brief(
     hass: HomeAssistant,
 ) -> None:
     """The first start on a new version checks straight away
@@ -376,7 +376,7 @@ async def test_a_set_aside_device_never_raises_it(
     assert device.id in coordinator._set_aside
     assert coordinator.awaiting_enable_counts()["battery"] == 0
 
-    coordinator._evaluate_repairs(REPAIR_MOMENT_FOLD)
+    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
 
@@ -409,7 +409,7 @@ async def test_an_excluded_device_still_raises_it(
     assert device.id in coordinator._watched
     assert coordinator.awaiting_enable_counts()["battery"] == 1
 
-    coordinator._evaluate_repairs(REPAIR_MOMENT_FOLD)
+    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_ENTITIES_DISABLED) is not None
 
@@ -477,7 +477,7 @@ async def test_no_delivery_waits_for_the_seventh_day(
 
     young = dt_util.utcnow() - dt_util.dt.timedelta(days=1)
     coordinator.data[DATA_FIRST_INSTALLED] = young.isoformat()
-    coordinator._evaluate_repairs(REPAIR_MOMENT_FOLD)
+    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_NO_DELIVERY) is None
 
@@ -485,7 +485,7 @@ async def test_no_delivery_waits_for_the_seventh_day(
         days=NO_DELIVERY_MIN_DAYS + 1
     )
     coordinator.data[DATA_FIRST_INSTALLED] = old.isoformat()
-    coordinator._evaluate_repairs(REPAIR_MOMENT_FOLD)
+    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
     await hass.async_block_till_done()
 
     issue = _issue(hass, REPAIR_NO_DELIVERY)
@@ -494,7 +494,7 @@ async def test_no_delivery_waits_for_the_seventh_day(
     assert issue.severity == ir.IssueSeverity.WARNING
 
 
-async def test_no_delivery_is_a_fold_question_only(
+async def test_no_delivery_is_a_brief_question_only(
     hass: HomeAssistant,
 ) -> None:
     """Grace close never raises it, however old the install
@@ -507,7 +507,7 @@ async def test_no_delivery_is_a_fold_question_only(
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_NO_DELIVERY) is None
 
-    coordinator._evaluate_repairs(REPAIR_MOMENT_FOLD)
+    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_NO_DELIVERY) is not None
 
@@ -522,7 +522,7 @@ async def test_one_configured_target_is_enough(
     coordinator = entry.runtime_data
     old = dt_util.utcnow() - dt_util.dt.timedelta(days=90)
     coordinator.data[DATA_FIRST_INSTALLED] = old.isoformat()
-    coordinator._evaluate_repairs(REPAIR_MOMENT_FOLD)
+    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_NO_DELIVERY) is None
 
@@ -614,3 +614,41 @@ async def test_unknown_issue_gets_a_harmless_flow(
         hass, "not_a_real_issue", {}
     )
     assert flow is not None
+
+
+async def test_the_brief_send_is_what_evaluates_repairs(
+    hass: HomeAssistant, hass_storage
+) -> None:
+    """The scheduled send judges; the fold no longer does.
+
+    Ruling #309. A card raised at midnight is read by nobody, and an
+    install rebooting nightly after midnight closes its grace and
+    clears the card before morning. Driving the two real scheduled
+    callbacks rather than calling the evaluator by hand is the
+    point: it proves the wiring, which is exactly where 0.16.9's
+    stitch went wrong.
+    """
+    from custom_components.device_sentinel.const import (
+        DATA_LAST_VERSION,
+        DATA_DEVICES as _DEVICES,
+    )
+
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": {_DEVICES: {}, DATA_LAST_VERSION: "0.16.1"},
+    }
+    entry = await setup_entry(hass)
+    coordinator = entry.runtime_data
+    coordinator.version = "0.16.1"
+    coordinator._version_changed = False
+    _disabled_battery_entity(hass, "dev_brief")
+    coordinator._rebuild_registry_view()
+
+    await coordinator._on_midnight(dt_util.utcnow())
+    await hass.async_block_till_done()
+    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
+
+    await coordinator._on_brief_time(dt_util.utcnow())
+    await hass.async_block_till_done()
+    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is not None
