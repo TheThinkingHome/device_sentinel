@@ -33,11 +33,9 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_SCALE,
     SIGNAL_SCALE_LQI,
     SIGNAL_SCALE_RSSI,
-    CONF_SIGNAL_ANOMALY_TRIM,
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
-    CONF_SIGNAL_MARGIN,
     DEV_SIGNAL_BELOW_SINCE,
     DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_DAILY_MIN,
@@ -59,7 +57,7 @@ from custom_components.device_sentinel.coordinator import (
     _new_device_record,
 )
 
-from tests.helpers import setup_coordinator, setup_entry
+from tests.helpers import setup_coordinator, setup_coordinator_flat_line, setup_entry
 
 DOMAIN = "device_sentinel"
 
@@ -114,14 +112,26 @@ async def _rail_coordinator(hass):
         suggested_object_id="rail48_linkquality",
         device_id=device.id, config_entry=source,
     )
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     return coord, device.id
 
 
 # ------------------------------------------- the line is the floor (#66)
 
+
+def _trimmed(coordinator, depth):
+    """Return the coordinator with a chosen trim depth.
+
+    The trim is a constant since ruling #311, so a test
+    that needs a different depth patches the accessor
+    rather than saving an option nothing reads.
+    """
+    coordinator._signal_trim = lambda: depth
+    return coordinator
+
+
 async def test_lqi_line_is_the_trimmed_floor(hass: HomeAssistant):
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _armed_lqi_record()
     # Seven days is the week rung, k=1: the single lowest 80 is
     # dropped, and 80 repeats, so the floor and the line are 80.
@@ -132,7 +142,7 @@ async def test_lqi_line_is_the_trimmed_floor(hass: HomeAssistant):
 async def test_rssi_line_is_the_trimmed_floor(hass: HomeAssistant):
     """Same rule as LQI, no offset: below the floor is below the
     floor whichever sign the scale carries."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _armed_rssi_record()
     line = coord._danger_line(record)
     assert line == -70
@@ -142,7 +152,7 @@ async def test_line_lives_from_the_first_day(hass: HomeAssistant):
     """Under a week the ladder's k is 0, so the line is the plain
     lowest reading and dwell measures from the very first day; there
     is no arming wait to sit out."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _new_device_record("2026-07-11T00:00:00+00:00", None)
     record[DEV_SIGNAL_DAILY_MIN] = [80, 96, 88]
     assert coord._danger_line(record) == 80
@@ -170,7 +180,7 @@ async def test_line_in_report(hass: HomeAssistant):
         suggested_object_id="sig31_linkquality",
         device_id=device.id, config_entry=source,
     )
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
 
     # Six signal days, k=0: the line is the plain lowest, live from
     # the first day rather than waiting out an arming period.
@@ -215,7 +225,7 @@ async def test_rail_history_does_not_poison_the_floor(hass: HomeAssistant):
     Before the fix the floor was 255 and the line was garbage; now
     the rail days are filtered out and the floor is the one real
     reading, 172."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _record([SIGNAL_RAIL_LQI] * 7 + [172.0])
     assert coord._danger_line(record) == 172.0
 
@@ -223,7 +233,7 @@ async def test_rail_history_does_not_poison_the_floor(hass: HomeAssistant):
 async def test_all_rail_history_has_no_floor(hass: HomeAssistant):
     """A device whose entire history is rail has no floor at all,
     rather than a false one at the rail value."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _record([SIGNAL_RAIL_LQI] * 5)
     assert coord._danger_line(record) is None
 
@@ -237,7 +247,7 @@ async def test_sitting_exactly_at_the_floor_does_not_count(
     dwell, which is what kept a healthy plateaued link permanently
     dwelling. At margin 0 the line is the floor, and sitting on it is
     now ordinary life; one step under it still counts."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _record([80.0, 96.0, 88.0])  # k=0, floor 80
     assert coord._danger_line(record) == 80.0
     coord._feed_signal(record, 80.0, 1000.0)
@@ -253,9 +263,9 @@ async def test_slider_right_raises_the_floor(hass: HomeAssistant):
     right (+1) trims one more low, so the floor sits higher and is
     brushed more often."""
     days = [80.0, 84.0, 88.0, 92.0, 96.0, 100.0, 104.0]
-    base = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    base = await setup_coordinator_flat_line(hass)
     assert base._danger_line(_record(days)) == 84.0  # k=1, drop 80
-    right = await setup_coordinator(hass, {CONF_SIGNAL_ANOMALY_TRIM: 1, CONF_SIGNAL_MARGIN: 0})
+    right = _trimmed(await setup_coordinator_flat_line(hass), 1)
     assert right._danger_line(_record(days)) == 88.0  # k=2, drop 80,84
 
 
@@ -263,26 +273,42 @@ async def test_slider_left_lowers_the_floor(hass: HomeAssistant):
     """Left (-1) trims one fewer low, so the floor sits at the rawest
     reading and is rarely crossed. At a week, -1 takes k to 0."""
     days = [80.0, 84.0, 88.0, 92.0, 96.0, 100.0, 104.0]
-    left = await setup_coordinator(hass, {CONF_SIGNAL_ANOMALY_TRIM: -1, CONF_SIGNAL_MARGIN: 0})
+    left = _trimmed(await setup_coordinator_flat_line(hass), -1)
     assert left._danger_line(_record(days)) == 80.0  # k=0, plain lowest
 
 
-async def test_slider_clamps_at_both_ends(hass: HomeAssistant):
-    """Out-of-range slider values are clamped to the -2..+2 band, and
-    the effective k can never eat the last reading: one value always
-    survives to be the floor."""
+async def test_the_effective_k_never_eats_the_last_reading(
+    hass: HomeAssistant,
+):
+    """One value always survives to be the floor.
+
+    Until ruling #311 this file also tested the trim slider clamping
+    to its -2..+2 band, which mattered because a hand-edited option
+    could arrive out of range. The trim is a constant now and cannot,
+    so what is left is the bound that still runs: however deep the
+    trim, the effective k stops one short of the series length, and
+    a floor computed from nothing at all is the fault this prevents.
+    """
     days = [80.0, 84.0, 88.0, 92.0, 96.0, 100.0, 104.0]
-    # Far left, beyond -2: clamped, k floored at 0, floor is lowest.
-    far_left = await setup_coordinator(hass, {CONF_SIGNAL_ANOMALY_TRIM: -9, CONF_SIGNAL_MARGIN: 0})
-    assert far_left._danger_line(_record(days)) == 80.0
-    # Far right, beyond +2: base 1 + 2 = k 3, drops the three lowest,
-    # floor is the fourth, 92.
-    far_right = await setup_coordinator(hass, {CONF_SIGNAL_ANOMALY_TRIM: 9, CONF_SIGNAL_MARGIN: 0})
-    assert far_right._danger_line(_record(days)) == 92.0
-    # A two-value history with a big right push cannot go below one
-    # survivor: k clamps to len-1 = 1, floor is the higher value.
-    far_right_short = await setup_coordinator(hass, {CONF_SIGNAL_ANOMALY_TRIM: 9, CONF_SIGNAL_MARGIN: 0})
-    assert far_right_short._danger_line(_record([40.0, 90.0])) == 90.0
+    coord = await setup_coordinator_flat_line(hass)
+
+    # At the shipped depth the ladder trims one reading at a week, so
+    # the floor is the second lowest.
+    assert coord._danger_line(_record(days)) == 84.0
+
+    # A push far past the band cannot leave a series empty: k stops
+    # at one short of its length and the floor is the highest value.
+    pushed = _trimmed(await setup_coordinator_flat_line(hass), 99)
+    assert pushed._danger_line(_record(days)) == 104.0
+    assert pushed._danger_line(_record([40.0, 90.0])) == 90.0
+    assert pushed._signal_effective_k(7) == 6
+    assert pushed._signal_effective_k(2) == 1
+
+    # And a push the other way floors k at zero rather than going
+    # negative, which would index from the wrong end.
+    pulled = _trimmed(await setup_coordinator_flat_line(hass), -99)
+    assert pulled._signal_effective_k(7) == 0
+    assert pulled._danger_line(_record(days)) == 80.0
 
 
 # ------------------------------------------------- the dwell timer (#59)
@@ -290,7 +316,7 @@ async def test_slider_clamps_at_both_ends(hass: HomeAssistant):
 async def test_dip_and_recovery_accumulates_only_the_dip(
     hass: HomeAssistant,
 ):
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _armed_lqi_record()  # line = 56
     coord._feed_signal(record, 40.0, 1000.0)  # below: stamp
     assert record[DEV_SIGNAL_BELOW_SINCE] == 1000.0
@@ -306,7 +332,7 @@ async def test_dip_and_recovery_accumulates_only_the_dip(
 async def test_staying_below_does_not_double_count(hass: HomeAssistant):
     """Repeated below-line readings keep one open timer; they do not
     re-stamp or accumulate until recovery closes it."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _armed_lqi_record()
     coord._feed_signal(record, 40.0, 1000.0)
     coord._feed_signal(record, 35.0, 1500.0)
@@ -318,7 +344,7 @@ async def test_staying_below_does_not_double_count(hass: HomeAssistant):
 
 
 async def test_rollover_writes_the_daily_percentage(hass: HomeAssistant):
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _armed_lqi_record()
     record[DEV_SIGNAL_BELOW_TODAY] = 8640.0  # 10% of a day
     coord._roll_dwell(record, now=1_000_000.0)
@@ -331,7 +357,7 @@ async def test_silent_below_reads_the_whole_silence(hass: HomeAssistant):
     that dies below the line was below for the whole silence, so an
     open timer closes at now and the device is re-stamped so the new
     day continues without a seam."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _armed_lqi_record()
     coord._feed_signal(record, 40.0, 1000.0)  # goes below, then silence
     coord._roll_dwell(record, now=1000.0 + 86400.0)
@@ -344,7 +370,7 @@ async def test_young_device_rolls_a_percentage(hass: HomeAssistant):
     """With the line live from day one, even a two-day history rolls
     a dwell percentage; a device with no signal history at all is
     the only one that rolls nothing."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _new_device_record("2026-07-11T00:00:00+00:00", None)
     record[DEV_SIGNAL_DAILY_MIN] = [80, 96]
     coord._roll_dwell(record, now=1_000_000.0)
@@ -360,7 +386,7 @@ async def test_rail_feeds_neither_floor_nor_dwell(hass: HomeAssistant):
     """A rail value is not a measurement: it never touches the floor
     or the dwell timer. But it is still a reading, so it stamps the
     signal value and starts the frozen clock like any other."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _armed_lqi_record()
     coord._feed_signal(record, SIGNAL_RAIL_LQI, 1000.0)
     assert record[DEV_SIGNAL_TODAY_MIN] is None
@@ -372,7 +398,7 @@ async def test_rail_feeds_neither_floor_nor_dwell(hass: HomeAssistant):
 async def test_rssi_rail_does_not_poison_the_floor(hass: HomeAssistant):
     """James S24+ hit -128 once inside real readings; that spike must
     not feed the floor. It is still a reading for the frozen clock."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _armed_rssi_record()
     coord._feed_signal(record, SIGNAL_RAIL_RSSI, 1000.0)
     assert record[DEV_SIGNAL_TODAY_MIN] is None
@@ -384,7 +410,7 @@ async def test_a_changed_reading_moves_the_frozen_clock(
 ):
     """The recovered-by-hand case: the moment a revived sensor sends a
     different value, last_change advances and it is no longer flat."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass)
     record = _armed_lqi_record()
     coord._feed_signal(record, SIGNAL_RAIL_LQI, 1000.0)
     coord._feed_signal(record, 116.0, 2000.0)
@@ -453,7 +479,7 @@ async def test_short_history_is_not_a_rail(hass: HomeAssistant):
 # ------------------------------------ exclusion: recorded, not reported
 
 async def test_excluded_device_by_device_id(hass: HomeAssistant):
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_EXCLUDED_DEVICES: ["dev-plug"], CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass, {CONF_SIGNAL_EXCLUDED_DEVICES: ["dev-plug"]})
     assert coord._signal_excluded("dev-plug") is True
     assert coord._signal_excluded("dev-other") is False
 
@@ -492,7 +518,7 @@ async def test_excluded_device_still_records_but_is_not_reported(
         suggested_object_id="plug_linkquality",
         device_id=device.id, config_entry=source,
     )
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_EXCLUDED_DEVICES: [device.id], CONF_SIGNAL_MARGIN: 0})
+    coord = await setup_coordinator_flat_line(hass, {CONF_SIGNAL_EXCLUDED_DEVICES: [device.id]})
     record = coord.data["devices"][device.id]
     record[DEV_SIGNAL_DAILY_MIN] = [80.0, 96.0, 88.0]
     record[DEV_SIGNAL_VALUE] = 80.0
@@ -528,7 +554,7 @@ async def test_dwell_fields_survive_storage_round_trip(
     """below_since and the day's accumulator are storage fields, so a
     restart mid-dip loses nothing: the timer reopens where it stood."""
     device = _register_device(hass, "roundtrip")
-    entry = await setup_entry(hass, {CONF_SIGNAL_MARGIN: 0})
+    entry = await setup_entry(hass)
     coord = entry.runtime_data
     record = coord.data["devices"][device.id]
     record[DEV_SIGNAL_DAILY_MIN] = [80, 96, 88, 80, 104, 92, 80]
@@ -549,7 +575,7 @@ async def test_pre_040_storage_gains_the_new_fields(hass: HomeAssistant):
     """A 0.3.x record has none of the dwell fields; setup must default
     them rather than crash or wipe."""
     device = _register_device(hass, "pre040")
-    entry = await setup_entry(hass, {CONF_SIGNAL_MARGIN: 0})
+    entry = await setup_entry(hass)
     coord = entry.runtime_data
     old = coord.data["devices"][device.id]
     for key in (
@@ -587,7 +613,7 @@ async def _enable_tracked_signals(hass, entry):
 
 
 async def test_tracked_signals_sensor_exists(hass: HomeAssistant):
-    entry = await setup_entry(hass, {CONF_SIGNAL_MARGIN: 0})
+    entry = await setup_entry(hass)
     await _enable_tracked_signals(hass, entry)
     state = hass.states.get("sensor.device_sentinel_signal_tracked")
     assert state is not None
@@ -598,7 +624,7 @@ async def test_tracked_counts_armed_devices_and_splits_by_scale(
     hass: HomeAssistant,
 ):
     device = _register_device(hass, "tracked")
-    entry = await setup_entry(hass, {CONF_SIGNAL_MARGIN: 0})
+    entry = await setup_entry(hass)
     await _enable_tracked_signals(hass, entry)
     coord = entry.runtime_data
     record = coord.data["devices"][device.id]
@@ -616,7 +642,7 @@ async def test_tracked_counts_armed_devices_and_splits_by_scale(
 async def _slider_coord(hass, sensitivity):
     """A coordinator at a given signal-sensitivity slider value, for
     reading the word the report header shows for that setting."""
-    return await setup_coordinator(hass, {CONF_SIGNAL_ANOMALY_TRIM: sensitivity, CONF_SIGNAL_MARGIN: 0})
+    return _trimmed(await setup_coordinator_flat_line(hass), sensitivity)
 
 
 @pytest.mark.parametrize(
@@ -637,11 +663,18 @@ async def test_slider_renders_as_a_word(
     assert coord._signal_trim_label() == word
 
 
-async def test_out_of_band_slider_falls_back_to_normal(hass: HomeAssistant):
-    """A slider value outside the band clamps, so its word is a real
-    one, never blank."""
+async def test_an_unknown_trim_depth_still_renders_a_word(
+    hass: HomeAssistant,
+):
+    """The header names a depth or says Normal, never nothing.
+
+    The trim is a constant since ruling #311, so only Normal can be
+    reached in service. The fallback is kept because the header is
+    read by a person and a blank cell in a pipe-delimited row reads
+    as a bug rather than as a default.
+    """
     coord = await _slider_coord(hass, 99)
-    assert coord._signal_trim_label() == "Deepest"
+    assert coord._signal_trim_label() == "Normal"
 
 
 def _sig_entry(entity_id, device_class=None, unit=None, name=None):

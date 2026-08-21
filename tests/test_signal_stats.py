@@ -37,9 +37,7 @@ from homeassistant.util import dt as dt_util
 from custom_components.device_sentinel.const import (
     BRIEF_TRIGGER,
     CLOCK_FIELDS,
-    CONF_SIGNAL_ANOMALY_TRIM,
     CONF_SIGNAL_EXCLUDED_DEVICES,
-    CONF_SIGNAL_MARGIN,
     DATA_DEVICES,
     DATA_SIGNAL_STRESS,
     DEV_SIGNAL_COUNT,
@@ -104,6 +102,18 @@ def _report_path(hass: HomeAssistant) -> str:
 def _read(hass: HomeAssistant) -> str:
     with open(_report_path(hass), encoding="utf-8") as handle:
         return handle.read()
+
+
+
+def _trimmed(coordinator, depth):
+    """Return the coordinator with a chosen trim depth.
+
+    The trim is a constant since ruling #311, so a test
+    that needs a different depth patches the accessor
+    rather than saving an option nothing reads.
+    """
+    coordinator._signal_trim = lambda: depth
+    return coordinator
 
 
 async def test_the_accumulators_live_in_the_clock_fields():
@@ -815,10 +825,7 @@ async def test_the_margin_becomes_a_maximum_on_a_bounded_device(
 
     lines = []
     for pct in (0, 2, 5, 10):
-        hass.config_entries.async_update_entry(
-            coord.entry,
-            options={**coord.entry.options, CONF_SIGNAL_MARGIN: pct},
-        )
+        coord._signal_margin = lambda pct=pct: pct / 100.0
         lines.append(coord._danger_line(record))
     # This device's floor (240) sits within the LQI clearance of its
     # mean (246.21), so the ceiling (238.21, ruling #244) is below the
@@ -885,14 +892,17 @@ async def test_the_trim_is_one_reading_per_full_week(
 async def test_the_slider_still_shifts_the_rung(
     hass: HomeAssistant,
 ):
-    """Anomaly Trim keeps working on top of the ladder, and the
-    clamp still leaves one reading to be the floor."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_ANOMALY_TRIM: 1})
+    """The trim shifts the ladder's rung, and the bound still leaves
+    one reading to be the floor.
+
+    The trim is a constant since ruling #311, so a depth other than
+    the shipped one is reached by patching the accessor rather than
+    by saving an option nothing reads.
+    """
+    coord = _trimmed(await setup_coordinator(hass), 1)
     assert coord._signal_effective_k(28) == 5
-    hass.config_entries.async_update_entry(
-        coord.entry,
-        options={**coord.entry.options, CONF_SIGNAL_ANOMALY_TRIM: -2},
-    )
+
+    coord._signal_trim = lambda: -2
     assert coord._signal_effective_k(28) == 2
     assert coord._signal_effective_k(1) == 0
 

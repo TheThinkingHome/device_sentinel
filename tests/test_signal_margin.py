@@ -42,13 +42,10 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
-    CONF_SIGNAL_ANOMALY_TRIM,
-    CONF_SIGNAL_LIFT,
-    CONF_SIGNAL_MARGIN,
-    DEFAULT_SIGNAL_MARGIN,
+    SIGNAL_ANOMALY_TRIM,
+    SIGNAL_LIFT,
+    SIGNAL_MARGIN,
     DEV_SIGNAL_DAILY_MIN,
-    SIGNAL_LIFT_MAX,
-    SIGNAL_MARGIN_MAX,
 )
 
 from .helpers import setup_coordinator
@@ -64,16 +61,21 @@ def _record(days):
     return {DEV_SIGNAL_DAILY_MIN: list(days)}
 
 
-async def test_zero_margin_is_the_floor_itself(hass: HomeAssistant):
-    """The setting can be turned off, and off is what shipped before.
+async def test_a_zero_margin_would_be_the_floor_itself(
+    hass: HomeAssistant, monkeypatch
+):
+    """At zero the line is the floor, which is 0.10.12's behaviour.
 
-    This is what makes the change safe to deploy: an install that
-    slides it to zero behaves exactly as 0.10.12 did.
+    Held here as arithmetic rather than as a setting: ruling #311
+    made the margin a constant, so the only way to ask this question
+    is to ask the method. It still matters, because a future change
+    to the anchored formula must not quietly acquire a margin the
+    band does not justify.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 0})
-    line = coord._danger_line(_record(LQI_DAYS))
+    coord = await setup_coordinator(hass)
+    monkeypatch.setattr(coord, "_signal_margin", lambda: 0.0)
 
-    assert line == 104.0  # floor + 0% of the span + lift 0
+    assert coord._danger_line(_record(LQI_DAYS)) == 104.0
 
 
 async def test_the_margin_lifts_the_line_above_the_floor(
@@ -84,7 +86,7 @@ async def test_the_margin_lifts_the_line_above_the_floor(
     A device sitting at 108, comfortably above its floor and invisible
     before, now counts as weak.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
+    coord = await setup_coordinator(hass)
     line = coord._danger_line(_record(LQI_DAYS))
 
     assert line == pytest.approx(104.0 + 0.05 * (255.0 - 104.0))
@@ -100,7 +102,7 @@ async def test_rssi_moves_the_same_way_as_lqi(hass: HomeAssistant):
     signals are RSSI. Adding a percentage of the absolute value moves
     the line up toward zero, which is the same direction as LQI.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
+    coord = await setup_coordinator(hass)
     line = coord._danger_line(_record(RSSI_DAYS))
     floor = -70.0
 
@@ -118,7 +120,7 @@ async def test_the_margin_points_at_the_weak_end(hass: HomeAssistant):
     the width holds at its dropout-point maximum rather than growing
     on toward the scale end.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
+    coord = await setup_coordinator(hass)
     strong = coord._danger_line(_record([200.0] * 14))
     weak = coord._danger_line(_record([40.0] * 14))
 
@@ -132,7 +134,7 @@ async def test_the_line_dies_at_perfect(hass: HomeAssistant):
     can never dwell. Before the anchoring, floor 242.86 and above put
     the five percent line at or past the top of the scale, so the
     whole remaining scale was inside the band."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
+    coord = await setup_coordinator(hass)
 
     assert coord._danger_line(_record([255.0 - 6.0] * 14)) == pytest.approx(
         249.0 + 0.05 * 6.0
@@ -143,16 +145,14 @@ async def test_the_lift_raises_every_line_flat(hass: HomeAssistant):
     every floor, surviving even where the margin has died, and capped
     at 2.0 because the fleet replay showed 5.0 re-flagging the
     strongest links the anchored formula had just freed."""
-    lifted = await setup_coordinator(
-        hass, {CONF_SIGNAL_MARGIN: 5, CONF_SIGNAL_LIFT: 1.0}
-    )
-    flat = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
+    flat = await setup_coordinator(hass)
+    lifted = await setup_coordinator(hass)
+    lifted._signal_lift = lambda: 1.0
     for days in ([40.0] * 14, [200.0] * 14, RSSI_DAYS):
         low = flat._danger_line(_record(days))
         high = lifted._danger_line(_record(days))
         assert high == pytest.approx(low + 1.0)
-    over = await setup_coordinator(hass, {CONF_SIGNAL_LIFT: 9.0})
-    assert over._signal_lift() == SIGNAL_LIFT_MAX
+    assert flat._signal_lift() == SIGNAL_LIFT
 
 
 async def test_the_default_is_five_percent(hass: HomeAssistant):
@@ -165,22 +165,43 @@ async def test_the_default_is_five_percent(hass: HomeAssistant):
     """
     coord = await setup_coordinator(hass)
 
-    assert coord._signal_margin() == DEFAULT_SIGNAL_MARGIN / 100.0
+    assert coord._signal_margin() == SIGNAL_MARGIN / 100.0
     assert coord._danger_line(_record(LQI_DAYS)) == pytest.approx(
         104.0 + 0.05 * (255.0 - 104.0)
     )
 
 
-@pytest.mark.parametrize("value,expected", [(-5, 0.0), (99, 0.10)])
-async def test_an_out_of_band_margin_is_clamped(
-    hass: HomeAssistant, value, expected
+async def test_the_three_line_shapers_ignore_saved_options(
+    hass: HomeAssistant,
 ):
-    """A hand-edited entry cannot widen the band past its maximum."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: value})
+    """They are constants, not settings (ruling #311).
 
-    assert coord._signal_margin() == pytest.approx(expected)
-    assert SIGNAL_MARGIN_MAX == 10
+    Each was a slider until 0.16.12, and the sliders are gone from
+    the Signal screen because the line they build no longer judges
+    anything: dwell stopped reporting at ruling #310. A saved option
+    left behind by an older install, or hand-edited into the entry,
+    must not reach the arithmetic, and the values held are the ones
+    that were the defaults, so a fleet on the defaults records what
+    it recorded before.
+    """
+    stale = await setup_coordinator(
+        hass,
+        {
+            "signal_margin": 9,
+            "signal_lift": 2.0,
+            "signal_sensitivity": 2,
+        },
+    )
 
+    assert stale._signal_margin() == SIGNAL_MARGIN / 100.0
+    assert stale._signal_lift() == SIGNAL_LIFT
+    assert stale._signal_trim() == SIGNAL_ANOMALY_TRIM
+    assert (SIGNAL_MARGIN, SIGNAL_LIFT, SIGNAL_ANOMALY_TRIM) == (5, 0.0, 0)
+    # And the line those three build is the line the defaults built.
+    fresh = await setup_coordinator(hass)
+    assert stale._danger_line(_record(LQI_DAYS)) == fresh._danger_line(
+        _record(LQI_DAYS)
+    )
 
 async def test_the_two_settings_are_independent(hass: HomeAssistant):
     """Trim moves the floor, margin moves the line above it.
@@ -190,10 +211,9 @@ async def test_the_two_settings_are_independent(hass: HomeAssistant):
     than from where the floor used to be.
     """
     days = [float(100 + 4 * i) for i in range(14)]
-    normal = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
-    deeper = await setup_coordinator(
-        hass, {CONF_SIGNAL_ANOMALY_TRIM: 1, CONF_SIGNAL_MARGIN: 5}
-    )
+    normal = await setup_coordinator(hass)
+    deeper = await setup_coordinator(hass)
+    deeper._signal_trim = lambda: 1
 
     # Third lowest is 108, fourth is 112: the trim alone moves the
     # floor, and the margin rides on whichever floor it lands on.
@@ -212,27 +232,29 @@ async def test_no_history_still_has_no_line(hass: HomeAssistant):
     than a false one, and multiplying nothing by a percentage must not
     change that.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
+    coord = await setup_coordinator(hass)
 
     assert coord._danger_line(_record([])) is None
 
 
-@pytest.mark.parametrize(
-    "value,word",
-    [(-2, "None"), (-1, "Light"), (0, "Normal"), (1, "Deep"), (2, "Deepest")],
-)
-async def test_the_trim_renders_as_a_word(
-    hass: HomeAssistant, value, word
-):
+async def test_the_trim_renders_as_a_word(hass: HomeAssistant):
     """The report header names the trim depth.
 
-    The earlier words ran Calm to Sensitive, and the last of them
-    collided with the Sensitivity setting added beside it in 0.10.13,
-    which is a different control entirely.
+    Only one word is reachable now that the trim is a constant
+    (ruling #311), and the header must still carry it rather than a
+    number: the report calls the per-device trim depth k, and the
+    header showing a second k meant two different things wore one
+    letter.
     """
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_ANOMALY_TRIM: value})
+    coord = await setup_coordinator(hass)
 
-    assert coord._signal_trim_label() == word
+    assert coord._signal_trim_label() == "Normal"
+    for depth, word in (
+        (-2, "None"), (-1, "Light"), (1, "Deep"), (2, "Deepest")
+    ):
+        coord._signal_trim = lambda depth=depth: depth
+        assert coord._signal_trim_label() == word
+
 
 async def test_fleet_fixture_the_design_day_numbers(hass: HomeAssistant):
     """The 11 August simulation, pinned. Door Entryway (floor 220):
@@ -241,7 +263,7 @@ async def test_fleet_fixture_the_design_day_numbers(hass: HomeAssistant):
     objectively superb link. The anchored line is 221.75. The
     dropout-zone clamp: a floor-36 night-light plug holds the full
     10.25-unit dropout-point margin rather than 10.95 and growing."""
-    coord = await setup_coordinator(hass, {CONF_SIGNAL_MARGIN: 5})
+    coord = await setup_coordinator(hass)
 
     entryway = coord._danger_line(_record([220.0] * 14))
     assert entryway == pytest.approx(220.0 + 0.05 * 35.0)

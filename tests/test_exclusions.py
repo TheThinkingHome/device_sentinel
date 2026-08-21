@@ -51,12 +51,9 @@ from custom_components.device_sentinel.const import (
     CONF_FREEZE_EXCLUDED_DEVICES,
     CONF_FREEZE_EXCLUDED_INTEGRATIONS,
     CONF_FREEZE_EXCLUDED_LABELS,
-    CONF_SIGNAL_ANOMALY_TRIM,
     CONF_SIGNAL_EXCLUDED_DEVICES,
     CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
     CONF_SIGNAL_EXCLUDED_LABELS,
-    CONF_SIGNAL_LIFT,
-    CONF_SIGNAL_MARGIN,
     CONF_BADDAY_BASELINE_DAYS,
     CONF_BADDAY_DROP_LQI,
     CONF_BADDAY_DROP_RSSI,
@@ -728,13 +725,10 @@ def test_signal_prune_rounds_the_sliders_to_their_types():
     option declares (ruling #310 for the four bad-day sliders)."""
     pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
         {
-            CONF_SIGNAL_ANOMALY_TRIM: 1.0,
-            CONF_SIGNAL_MARGIN: 5.0,
             CONF_BADDAY_DROP_LQI: 25.0,
             CONF_BADDAY_DROP_RSSI: 6.0,
             CONF_BADDAY_BASELINE_DAYS: 7.0,
             CONF_BADDAY_SENSITIVITY: 4,
-            CONF_SIGNAL_LIFT: 2,
             CONF_SIGNAL_EXCLUDED_INTEGRATIONS: [],
             CONF_SIGNAL_EXCLUDED_LABELS: [],
             CONF_SIGNAL_EXCLUDED_DEVICES: [],
@@ -743,16 +737,12 @@ def test_signal_prune_rounds_the_sliders_to_their_types():
         _FakeRegistry({"a", "b", "c"}),
     )
     for key, want in (
-        (CONF_SIGNAL_ANOMALY_TRIM, 1),
-        (CONF_SIGNAL_MARGIN, 5),
         (CONF_BADDAY_DROP_LQI, 25),
         (CONF_BADDAY_DROP_RSSI, 6),
         (CONF_BADDAY_BASELINE_DAYS, 7),
     ):
         assert pruned[key] == want
         assert isinstance(pruned[key], int), key
-    assert pruned[CONF_SIGNAL_LIFT] == 2.0
-    assert isinstance(pruned[CONF_SIGNAL_LIFT], float)
     assert pruned[CONF_BADDAY_SENSITIVITY] == 4.0
     assert isinstance(pruned[CONF_BADDAY_SENSITIVITY], float)
 
@@ -771,13 +761,10 @@ def test_signal_prune_leaves_absent_sliders_absent():
         _FakeRegistry({"a", "b", "c"}),
     )
     for key in (
-        CONF_SIGNAL_ANOMALY_TRIM,
-        CONF_SIGNAL_MARGIN,
         CONF_BADDAY_BASELINE_DAYS,
         CONF_BADDAY_DROP_LQI,
         CONF_BADDAY_DROP_RSSI,
         CONF_BADDAY_SENSITIVITY,
-        CONF_SIGNAL_LIFT,
     ):
         assert key not in pruned, key
     assert pruned[CONF_SIGNAL_EXCLUDED_DEVICES] == ["c"]
@@ -1057,10 +1044,10 @@ async def test_options_flow_signal_save_prunes_on_save(hass: HomeAssistant):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            CONF_SIGNAL_ANOMALY_TRIM: 1.0,
-            CONF_SIGNAL_MARGIN: 5.0,
             CONF_BADDAY_DROP_LQI: 25.0,
-            CONF_SIGNAL_LIFT: 2,
+            CONF_BADDAY_DROP_RSSI: 6.0,
+            CONF_BADDAY_SENSITIVITY: 4,
+            CONF_BADDAY_BASELINE_DAYS: 7.0,
             CONF_SIGNAL_EXCLUDED_INTEGRATIONS: ["test"],
             CONF_SIGNAL_EXCLUDED_LABELS: [],
             CONF_SIGNAL_EXCLUDED_DEVICES: [],
@@ -1070,14 +1057,18 @@ async def test_options_flow_signal_save_prunes_on_save(hass: HomeAssistant):
     assert result["type"] == "create_entry"
     assert entry.options[CONF_SIGNAL_EXCLUDED_INTEGRATIONS] == ["test"]
     for key, want in (
-        (CONF_SIGNAL_ANOMALY_TRIM, 1),
-        (CONF_SIGNAL_MARGIN, 5),
         (CONF_BADDAY_DROP_LQI, 25),
+        (CONF_BADDAY_DROP_RSSI, 6),
+        (CONF_BADDAY_BASELINE_DAYS, 7),
     ):
         assert entry.options[key] == want
         assert isinstance(entry.options[key], int), key
-    assert entry.options[CONF_SIGNAL_LIFT] == 2.0
-    assert isinstance(entry.options[CONF_SIGNAL_LIFT], float)
+    assert entry.options[CONF_BADDAY_SENSITIVITY] == 4.0
+    assert isinstance(entry.options[CONF_BADDAY_SENSITIVITY], float)
+    # The three line shapers are constants now (ruling #311), so the
+    # form cannot carry them and the entry must not gain them.
+    for gone in ("signal_margin", "signal_lift", "signal_sensitivity"):
+        assert gone not in entry.options, gone
 
 
 async def test_options_flow_hides_covered_devices(hass: HomeAssistant):
