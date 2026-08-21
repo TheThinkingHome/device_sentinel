@@ -69,58 +69,88 @@
       },
       "exclusions": {
         "title": "Global Exclusions",
-        "description": "The integration offers two ways to tune which devices it watches and how it reports.\n\nIntegrations to Ignore: Devices from an ignored integration are completely set aside. Nothing is learned, no data is kept, and they never appear in reports or notifications.\n\nGlobally Excluded Integrations, Labels, and Devices: An excluded item is still watched and its data is stored, but it is kept off the Problem List and out of reports and alerts. So if you remove the exclusion later, the device can resume reporting immediately, because its history is already at hand.\n\nThe three exclusion lists run broad to narrow: integration, label, device. When you exclude at a higher level and save, the system automatically removes anything covered by that choice from the lists below it. One choice is stored exactly one way.\n\n[Global Exclusions on the wiki]({wiki_link})",
+        "description": "The integration offers two ways to tune which devices it watches and how it reports.\n\n**Integrations to Ignore**: Devices from an ignored integration are completely set aside. Nothing is learned, no data is kept, and they never appear in reports or notifications.\n\n**Exclusions**: An excluded item is still watched and its data is stored, but it is kept off the Problem List and out of reports and alerts. Remove the exclusion later and the device can resume reporting immediately, because its history is already at hand.\n\n[Global Exclusions on the wiki]({wiki_link})",
         "data": {
-          "ignored_integrations": "Integrations to Ignore",
-          "excluded_devices": "Globally Excluded Devices",
-          "excluded_labels": "Globally Excluded Labels",
-          "excluded_integrations": "Globally Excluded Integrations"
+          "ignored_integrations": "Integrations to Ignore"
         },
         "data_description": {
-          "ignored_integrations": "The system completely ignores devices from these integrations. It learns no rhythms, records no data, and generates no reports. If you add a new integration to this list, anything already recorded for its devices is discarded at the next nightly rollover. This is the right tool for phone apps, cloud services, and virtual helpers that do not represent physical hardware. If you want to silence alerts for a device while keeping its history, use the exclusion lists below instead.",
-          "excluded_devices": "This applies the exact same exclusion rules as the lists above, but targets individual pieces of hardware. Add a specific device here to take it off the Problem List and mute its reports and notifications.",
-          "excluded_labels": "The system excludes any device or entity carrying these labels. You can manage this exclusion without ever opening this dialog. Simply apply the label on the hardware's own device page, and Device Sentinel stops reporting on it.",
-          "excluded_integrations": "Excludes every device the integration owns. Its devices will be learned and recorded, but will not appear on the Problem List or in any reports or notifications."
+          "ignored_integrations": "The system completely ignores devices from these integrations. It learns no rhythms, records no data, and generates no reports. If you add a new integration to this list, anything already recorded for its devices is discarded at the next nightly rollover. This is the right tool for phone apps, cloud services, and virtual helpers that do not represent physical hardware. If you want to silence alerts for a device while keeping its history, use the exclusion lists below instead."
+        },
+        "sections": {
+          "exclusions": {
+            "name": "Exclusions",
+            "description": "Excluding watches but silences: the device still learns, still counts, and is never reported, so undoing it is instant and the rhythm history carries no holes. The three lists run broad to narrow: integration, label, device. Exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
+            "data": {
+              "excluded_integrations": "Globally Excluded Integrations",
+              "excluded_labels": "Globally Excluded Labels",
+              "excluded_devices": "Globally Excluded Devices"
+            },
+            "data_description": {
+              "excluded_integrations": "Excludes every device the integration owns. Its devices will be learned and recorded, but will not appear on the Problem List or in any reports or notifications.",
+              "excluded_labels": "The system excludes any device or entity carrying these labels. You can manage this exclusion without ever opening this dialog. Simply apply the label on the hardware's own device page, and Device Sentinel stops reporting on it.",
+              "excluded_devices": "This applies the exact same exclusion rules as the lists above, but targets individual pieces of hardware. Add a specific device here to take it off the Problem List and mute its reports and notifications."
+            }
+          }
         }
       },
       "battery": {
         "title": "Low Battery",
         "data": {
           "low_threshold": "Low Battery Threshold",
-          "battery_days_till_empty": "Days Till Empty Warning",
-          "battery_excluded_integrations": "Integrations Excluded from Battery Reporting",
-          "battery_excluded_labels": "Labels Excluded from Battery Reporting",
-          "battery_excluded_devices": "Devices Excluded from Battery Reporting"
+          "battery_days_till_empty": "Days Till Empty Warning"
         },
         "data_description": {
           "low_threshold": "A battery at or below this level is flagged low.",
-          "battery_days_till_empty": "A dying battery triggers an alert this many days before it hits empty. The system projects that date using the last seven daily readings. A battery holding its charge will not trigger a warning, and a cell that is already below your main threshold is not flagged twice.",
-          "battery_excluded_integrations": "One tick covers every battery that integration owns (phones under mobile_app, for example).",
-          "battery_excluded_labels": "Any device carrying one of these labels stops being reported for a low battery. Set the label on the device's own page and it applies here without opening this dialog.",
-          "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery reporting."
+          "battery_days_till_empty": "A dying battery triggers an alert this many days before it hits empty. The system projects that date using the last seven daily readings. A battery holding its charge will not trigger a warning, and a cell that is already below your main threshold is not flagged twice."
         },
-        "description": "Every battery Device Sentinel finds is watched by default. The threshold answers which cells are low; the warning days answer which are about to be. A cell at 80 percent falling steadily can have less life left than one sitting at 30 percent that has not moved in a month. A battery is flagged when it is at or below the threshold. Excluding a battery here stops battery reports for that device only; everything else about it stays watched.\n\nThe three lists run broad to narrow: integration, label, device. They work like the Global Exclusions lists: exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.\n\n[Low Battery on the wiki]({wiki_link})"
+        "description": "Every battery Device Sentinel finds is watched by default. The threshold answers which cells are low; the warning days answer which are about to be. A cell at 80 percent falling steadily can have less life left than one sitting at 30 percent that has not moved in a month. A battery is flagged when it is at or below the threshold.\n\n[Low Battery on the wiki]({wiki_link})",
+        "sections": {
+          "battery_exclusions": {
+            "name": "Battery Exclusions",
+            "description": "Excluding a battery here stops battery reports for that device only; everything else about it stays watched. The three lists run broad to narrow: integration, label, device. Exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
+            "data": {
+              "battery_excluded_integrations": "Integrations Excluded from Battery Reporting",
+              "battery_excluded_labels": "Labels Excluded from Battery Reporting",
+              "battery_excluded_devices": "Devices Excluded from Battery Reporting"
+            },
+            "data_description": {
+              "battery_excluded_integrations": "One tick covers every battery that integration owns (phones under mobile_app, for example).",
+              "battery_excluded_labels": "Any device carrying one of these labels stops being reported for a low battery. Set the label on the device's own page and it applies here without opening this dialog.",
+              "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery reporting."
+            }
+          }
+        }
       },
       "signal": {
         "title": "Signal Strength",
-        "description": "How sharply weakening radio links are flagged, and which devices are left out of signal reporting. Each device's floor is its trimmed minimum: the lowest daily reading over the past thirty days, with the worst few days set aside as anomalies. The goal: some of your devices should show small readings in the 0-5 percent range, so a real problem stands out as big and obvious. Changes apply to readings going forward; a full day shows their true effect. [Signal Strength on the wiki]({wiki_link}).",
+        "description": "Controls how the integration catches failing radio links. The system defines a bad signal day by measuring a drop against the hardware's own recent baseline, ensuring steady and jittery sensors are evaluated fairly. [Signal Strength on the Wiki]({wiki_link})",
         "data": {
           "badday_drop_lqi": "Bad Day Drop, LQI",
           "badday_drop_rssi": "Bad Day Drop, RSSI",
           "badday_sensitivity": "Bad Day Sensitivity",
-          "badday_baseline_days": "Days of Signal History",
-          "signal_excluded_integrations": "Integrations Excluded from Signal Reporting",
-          "signal_excluded_labels": "Labels Excluded from Signal Reporting",
-          "signal_excluded_devices": "Devices Excluded from Signal Reporting"
+          "badday_baseline_days": "Days of Signal History"
         },
         "data_description": {
           "badday_drop_lqi": "Sets the fall in LQI points required to flag a bad signal day. A day counts as bad only when it breaches both this threshold and the sensitivity setting below. Raise it to flag fewer days.",
           "badday_drop_rssi": "Sets the same fall in decibels for devices that report in dBm. It works exactly like the LQI slider above.",
           "badday_sensitivity": "Scales the required drop against the device's own historical jitter, which keeps erratic sensors from being flagged daily. A steady sensor is governed by the drop sliders above. At a setting of 4, a jittery sensor that routinely swings 10 points needs a 40-point plunge to trigger. Lower it to flag more days.",
-          "badday_baseline_days": "This setting defines how many past days are used to calculate what is typical for a device. Today's signal is compared against that typical level, and a fall below it, as set above, is flagged.",
-          "signal_excluded_integrations": "Every device from a ticked integration stops being reported for signal.",
-          "signal_excluded_labels": "Devices carrying a ticked label stop being reported for signal.",
-          "signal_excluded_devices": "A ticked device stops being reported for signal. It keeps recording, so re-including it brings its history back instantly."
+          "badday_baseline_days": "This setting defines how many past days are used to calculate what is typical for a device. Today's signal is compared against that typical level, and a fall below it, as set above, is flagged."
+        },
+        "sections": {
+          "signal_exclusions": {
+            "name": "Signal Exclusions",
+            "description": "Which devices are left out of signal reporting. Signal keeps being recorded for anything named here, so re-including a device brings its history back at once. The three lists run broad to narrow: integration, label, device. Exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
+            "data": {
+              "signal_excluded_integrations": "Integrations Excluded from Signal Reporting",
+              "signal_excluded_labels": "Labels Excluded from Signal Reporting",
+              "signal_excluded_devices": "Devices Excluded from Signal Reporting"
+            },
+            "data_description": {
+              "signal_excluded_integrations": "Every device from a ticked integration stops being reported for signal.",
+              "signal_excluded_labels": "Devices carrying a ticked label stop being reported for signal.",
+              "signal_excluded_devices": "A ticked device stops being reported for signal. It keeps recording, so re-including it brings its history back instantly."
+            }
+          }
         }
       },
       "freeze": {
@@ -128,17 +158,27 @@
         "description": "How long a device may go silent before it is called frozen. Each device is judged against its own learned rhythm, so you are not setting a single timeout; you are setting the grace on top of each device's normal. Delta low is the grace a fast device gets, delta high the grace a slow one gets, and the curve between them is shaped by the two. Raise delta low if a chatty device is flagged too soon; lower delta high if a slow device should be caught faster. [Freeze Detection on the wiki]({wiki_link}).",
         "data": {
           "freeze_delta_low": "Delta Low (Fast-Device Grace, Minutes)",
-          "freeze_delta_high": "Delta High (Slow-Device Grace, Hours)",
-          "freeze_excluded_integrations": "Integrations Excluded from Freeze Reporting",
-          "freeze_excluded_labels": "Labels Excluded from Freeze Reporting",
-          "freeze_excluded_devices": "Devices Excluded from Freeze Reporting"
+          "freeze_delta_high": "Delta High (Slow-Device Grace, Hours)"
         },
         "data_description": {
           "freeze_delta_low": "The grace a fast device gets, in minutes: how long past its normal it may go quiet before it counts as frozen.",
-          "freeze_delta_high": "The grace a slow device gets, in hours. The two deltas shape the whole curve between them, so a mid-fleet device sits between these.",
-          "freeze_excluded_integrations": "Every device from a ticked integration stops being called frozen, unavailable, or not reported.",
-          "freeze_excluded_labels": "Devices carrying a ticked label stop being called down. Set the label on the device's own page and it applies here.",
-          "freeze_excluded_devices": "A ticked device is never called down. It keeps its clock and rhythm, so re-including it is instant."
+          "freeze_delta_high": "The grace a slow device gets, in hours. The two deltas shape the whole curve between them, so a mid-fleet device sits between these."
+        },
+        "sections": {
+          "freeze_exclusions": {
+            "name": "Freeze Exclusions",
+            "description": "Which devices are never called frozen, unavailable, or not reported. Each keeps its clock and its learned rhythm, so re-including one is instant. The three lists run broad to narrow: integration, label, device. Exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
+            "data": {
+              "freeze_excluded_integrations": "Integrations Excluded from Freeze Reporting",
+              "freeze_excluded_labels": "Labels Excluded from Freeze Reporting",
+              "freeze_excluded_devices": "Devices Excluded from Freeze Reporting"
+            },
+            "data_description": {
+              "freeze_excluded_integrations": "Every device from a ticked integration stops being called frozen, unavailable, or not reported.",
+              "freeze_excluded_labels": "Devices carrying a ticked label stop being called down. Set the label on the device's own page and it applies here.",
+              "freeze_excluded_devices": "A ticked device is never called down. It keeps its clock and rhythm, so re-including it is instant."
+            }
+          }
         }
       },
       "advanced": {
