@@ -137,3 +137,20 @@ def register_fleet(
         )
         fleet.append((device, entry.entity_id))
     return fleet
+
+
+async def setup_coordinator_flat_line(
+    hass: HomeAssistant, options: dict | None = None
+):
+    """Return a coordinator whose danger line sits on the floor.
+
+    Many signal tests want the line to equal the floor so the floor's
+    own arithmetic can be asserted without the margin's share of the
+    band in the way. Until ruling #311 they got that by saving a
+    margin of zero; the margin is a constant now, so they patch the
+    accessor instead. The patch is the smallest thing that keeps
+    those tests asking what they were written to ask.
+    """
+    coordinator = await setup_coordinator(hass, options)
+    coordinator._signal_margin = lambda: 0.0
+    return coordinator
