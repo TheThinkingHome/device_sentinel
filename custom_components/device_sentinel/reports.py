@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.12.10 (2026-08-07)
+# File: reports.py, Version: 0.16.11 (2026-08-21)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -58,14 +58,14 @@ from .const import (
 
 from .report_battery import BatteryReportMixin
 from .report_brief import BriefMixin
-from .report_dwell import DwellChartMixin
+from .report_signal import SignalReportMixin
 from .report_maintainer import MaintainerReportMixin
 
 
 class ReportWritingMixin(
     BriefMixin,
     BatteryReportMixin,
-    DwellChartMixin,
+    SignalReportMixin,
     MaintainerReportMixin,
 ):
     """Text production for the coordinator.
@@ -317,12 +317,12 @@ class ReportWritingMixin(
         self._write_telemetry(report_directory, trigger)
         self._write_classification(report_directory, trigger)
         self._write_episodes(report_directory, trigger)
-        # The dwell chart is HTML rather than Markdown because the
+        # The signal report is HTML rather than Markdown because the
         # bands are its whole point and Markdown cannot carry color.
         # It lives under www so a dashboard Webpage card can render it
-        # at /local/device_sentinel/signal_dwell.html; the reports
+        # at /local/device_sentinel/signal_report.html; the reports
         # folder is not web-served and cannot do that job.
-        self._write_signal_dwell_html()
+        self._write_signal_report_html()
         self._write_battery_html()
         # The brief's window runs from the last brief time to now, so
         # a regenerate mid-day writes the in-progress one. The

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.13.5 (2026-08-13)
+# File: sensor.py, Version: 0.16.11 (2026-08-21)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -50,6 +50,8 @@ from homeassistant.util import dt as dt_util
 
 from . import DeviceSentinelConfigEntry
 from .const import (
+    SIGNAL_SCALE_LQI,
+    SIGNAL_SCALE_RSSI,
     AREA_BATTERY,
     AREA_FREEZE,
     AREA_SIGNAL,
@@ -592,11 +594,18 @@ class DeviceSentinelSignalWeakSensor(DeviceSentinelBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the weak devices and the threshold in force."""
+        """Return the weak devices and the gates in force.
+
+        Until ruling #310 this carried the red threshold; the gates
+        that replaced it are named so a dashboard reading the count
+        can also say what earned it.
+        """
         return {
             **self._identity(),
             "devices": self._coordinator.signal_weak_list,
-            "red_threshold": self._coordinator._signal_red(),
+            "drop_lqi": self._coordinator._badday_drop(SIGNAL_SCALE_LQI),
+            "drop_rssi": self._coordinator._badday_drop(SIGNAL_SCALE_RSSI),
+            "sensitivity": self._coordinator._badday_sensitivity(),
         }
 
 

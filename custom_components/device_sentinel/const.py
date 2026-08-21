@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.16.10 (2026-08-21)
+# File: const.py, Version: 0.16.11 (2026-08-21)
 
 """Constants for the Device Sentinel integration."""
 
@@ -851,9 +851,9 @@ REPORT_DIR = "device_sentinel"
 # name is kept only so the old folder can be emptied of those three
 # files once and removed if nothing else is in it.
 REPORT_DIAGNOSTIC_DIR = "diagnostics"
-# The dwell chart. Under www rather than the reports folder,
+# The signal report. Under www rather than the reports folder,
 # because www is what Home Assistant serves at /local, and a dashboard
-# Webpage card pointed at /local/device_sentinel/signal_dwell.html is
+# Webpage card pointed at /local/device_sentinel/signal_report.html is
 # the whole reason the file is HTML.
 REPORT_WWW_DIR = "www/device_sentinel"
 # The parent Home Assistant looks for, and the address our folder is
@@ -864,15 +864,15 @@ REPORT_WWW_DIR = "www/device_sentinel"
 # integration registers this one folder for itself (ruling #186).
 REPORT_WWW_PARENT = "www"
 REPORT_WWW_URL = "/local/device_sentinel"
-REPORT_SIGNAL_DWELL = "signal_dwell.html"
-REPORT_SIGNAL_DWELL_PREFIX = "signal_dwell_"
+REPORT_SIGNAL = "signal_report.html"
+REPORT_SIGNAL_PREFIX = "signal_report_"
 # The HTML brief. What a person reads lives under www, where a
 # browser and a dashboard card can render it, and what a developer
 # reads stays under config (ruling #178). One rendering serves the
 # dated record, the undated current file, and the emailed body, so
 # the three cannot drift (ruling #179).
 REPORT_BRIEF_HTML = "daily_brief.html"
-REPORT_SIGNAL_DWELL_URL = "/local/device_sentinel/signal_dwell.html"
+REPORT_SIGNAL_URL = "/local/device_sentinel/signal_report.html"
 # The battery report. A third page for a person, beside the brief and
 # the dwell chart, answering what a threshold alone cannot: not which
 # cells are low, but which are going to be (ruling #194). Its dated
@@ -1299,10 +1299,46 @@ SIGNAL_MARGIN_MAX = 10
 # nothing alerts from these bands, nothing joins
 # the problem list, and moving the slider repaints the next report
 # rather than changing any judgment.
-CONF_SIGNAL_RED = "signal_red_threshold"
-DEFAULT_SIGNAL_RED = 10
-SIGNAL_RED_MIN = 5
-SIGNAL_RED_MAX = 20
+# The bad signal day (ruling #310). A device has a bad day when its
+# own P5 falls well below its own recent normal, judged in that
+# device's units and in its own spread, both gates together. The
+# absolute gate is scale-native rather than a percentage, because a
+# percentage of an RSSI number is meaningless: seven RSSI devices on
+# the reference fleet sit near -60 dBm, where a real 6 dB loss reads
+# as ten percent. That is ruling #250's lesson applying a second
+# time. Defaults come from the one ground-truth event on record, a
+# router unplugged on 18 August 2026, and are settings rather than
+# constants precisely because one event cannot settle them.
+CONF_BADDAY_DROP_LQI = "badday_drop_lqi"
+DEFAULT_BADDAY_DROP_LQI = 25
+BADDAY_DROP_LQI_MIN = 10
+BADDAY_DROP_LQI_MAX = 60
+
+CONF_BADDAY_DROP_RSSI = "badday_drop_rssi"
+DEFAULT_BADDAY_DROP_RSSI = 6
+BADDAY_DROP_RSSI_MIN = 3
+BADDAY_DROP_RSSI_MAX = 15
+
+CONF_BADDAY_SENSITIVITY = "badday_sensitivity"
+DEFAULT_BADDAY_SENSITIVITY = 4.0
+BADDAY_SENSITIVITY_MIN = 2.0
+BADDAY_SENSITIVITY_MAX = 8.0
+
+# How many folded days form the normal a day is judged against. Seven
+# is a starting position rather than a measured one: the analysis
+# that produced this rule had nine days in hand and used every prior
+# day, so the shape of the baseline is the least settled thing here.
+CONF_BADDAY_BASELINE_DAYS = "badday_baseline_days"
+DEFAULT_BADDAY_BASELINE_DAYS = 7
+BADDAY_BASELINE_DAYS_MIN = 4
+BADDAY_BASELINE_DAYS_MAX = 14
+
+# A baseline needs this many readings before it can be judged
+# against. Fewer than four days of P5 cannot supply a spread worth
+# dividing by, and a spread near zero makes any ratio explode.
+BADDAY_MIN_BASELINE = 4
+BADDAY_MIN_SPREAD = 1.0
+
 SIGNAL_GREEN_CEILING = 5.0
 
 # Signal-only excludes, the same broad-to-narrow ladder as battery:
@@ -1839,7 +1875,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 309
+HIGHEST_RULING = 310
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.16.3 (2026-08-20)
+# File: detect_signal.py, Version: 0.16.11 (2026-08-21)
 
 """Signal: the learned floor, the line, dwell, and the rails.
 
@@ -20,6 +20,8 @@ coordinator throughout and nothing here stands alone.
 
 from __future__ import annotations
 
+import statistics
+
 from typing import Any
 
 from homeassistant.helpers import entity_registry as er
@@ -31,12 +33,28 @@ from .const import (
     CONF_SIGNAL_EXCLUDED_LABELS,
     CONF_SIGNAL_LIFT,
     CONF_SIGNAL_MARGIN,
-    CONF_SIGNAL_RED,
+    BADDAY_MIN_BASELINE,
+    BADDAY_MIN_SPREAD,
+    BADDAY_BASELINE_DAYS_MAX,
+    BADDAY_BASELINE_DAYS_MIN,
+    BADDAY_DROP_LQI_MAX,
+    BADDAY_DROP_LQI_MIN,
+    BADDAY_DROP_RSSI_MAX,
+    BADDAY_DROP_RSSI_MIN,
+    BADDAY_SENSITIVITY_MAX,
+    BADDAY_SENSITIVITY_MIN,
+    CONF_BADDAY_BASELINE_DAYS,
+    CONF_BADDAY_DROP_LQI,
+    CONF_BADDAY_DROP_RSSI,
+    CONF_BADDAY_SENSITIVITY,
     DATA_DEVICES,
     DEFAULT_SIGNAL_ANOMALY_TRIM,
     DEFAULT_SIGNAL_LIFT,
     DEFAULT_SIGNAL_MARGIN,
-    DEFAULT_SIGNAL_RED,
+    DEFAULT_BADDAY_BASELINE_DAYS,
+    DEFAULT_BADDAY_DROP_LQI,
+    DEFAULT_BADDAY_DROP_RSSI,
+    DEFAULT_BADDAY_SENSITIVITY,
     DEV_SIGNAL_BELOW_SINCE,
     DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_COUNT,
@@ -86,8 +104,6 @@ from .const import (
     DEV_SIGNAL_SCALE,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
-    SIGNAL_RED_MAX,
-    SIGNAL_RED_MIN,
     SIGNAL_RSSI_DEAD,
     SIGNAL_RSSI_PERFECT,
     SIGNAL_TRIM_LADDER_MAX,
@@ -101,6 +117,31 @@ from .psquare import (
     psquare_read,
 )
 from .records import _reset_signal_day
+
+
+def _usable(entry: Any) -> float | None:
+    """Return a stored reading as a finite float, or None.
+
+    Storage is a JSON file on a person's disk and the Data Trim tool
+    exists because records do go wrong. A NaN in a baseline raises
+    inside statistics.median, an infinity flags every day forever,
+    and a string raises on comparison, so each would take down the
+    fold or the report write rather than the one device. Nothing here
+    assumes those values are unreachable; the outages of 20 August
+    came from exactly that assumption.
+
+    Booleans are refused although Python counts them as integers,
+    because a True in a signal series is corruption rather than a
+    reading of one.
+    """
+    if entry is None or isinstance(entry, bool):
+        return None
+    if not isinstance(entry, (int, float)):
+        return None
+    value = float(entry)
+    if value != value or value in (float("inf"), float("-inf")):
+        return None
+    return value
 
 
 def scale_of(value: float) -> str:
@@ -799,12 +840,141 @@ class SignalMixin:
         span = max(0.0, perfect - max(floor, dead))
         return self._signal_margin() * span + self._signal_lift()
 
-    def _signal_red(self) -> float:
-        """Return the red threshold for the dwell report, clamped."""
-        red = float(
-            self.entry.options.get(CONF_SIGNAL_RED, DEFAULT_SIGNAL_RED)
+    def _badday_setting(
+        self, key: str, default: float, low: float, high: float
+    ) -> float:
+        """Return one bad-day setting, clamped to its own bounds."""
+        return max(low, min(float(self.entry.options.get(key, default)), high))
+
+    def _badday_baseline_days(self) -> int:
+        """Return how many folded days form a device's normal."""
+        return int(
+            self._badday_setting(
+                CONF_BADDAY_BASELINE_DAYS,
+                DEFAULT_BADDAY_BASELINE_DAYS,
+                BADDAY_BASELINE_DAYS_MIN,
+                BADDAY_BASELINE_DAYS_MAX,
+            )
         )
-        return max(SIGNAL_RED_MIN, min(red, SIGNAL_RED_MAX))
+
+    def _badday_drop(self, scale: str | None) -> float:
+        """Return the absolute fall a bad day needs, in the device's own
+        units.
+
+        Scale-native rather than a share, because a share of an RSSI
+        number is meaningless: a link at -60 dBm losing a real 6 dB
+        reads as ten percent (ruling #310, following #250).
+        """
+        if scale == SIGNAL_SCALE_RSSI:
+            return self._badday_setting(
+                CONF_BADDAY_DROP_RSSI,
+                DEFAULT_BADDAY_DROP_RSSI,
+                BADDAY_DROP_RSSI_MIN,
+                BADDAY_DROP_RSSI_MAX,
+            )
+        return self._badday_setting(
+            CONF_BADDAY_DROP_LQI,
+            DEFAULT_BADDAY_DROP_LQI,
+            BADDAY_DROP_LQI_MIN,
+            BADDAY_DROP_LQI_MAX,
+        )
+
+    def _badday_sensitivity(self) -> float:
+        """Return how many of a device's own spreads a bad day needs."""
+        return self._badday_setting(
+            CONF_BADDAY_SENSITIVITY,
+            DEFAULT_BADDAY_SENSITIVITY,
+            BADDAY_SENSITIVITY_MIN,
+            BADDAY_SENSITIVITY_MAX,
+        )
+
+    def signal_badday(
+        self, record: dict[str, Any], index: int = -1
+    ) -> dict[str, float] | None:
+        """Return the reading behind one device-day, or None.
+
+        The question is not whether the device is near its floor,
+        which is what dwell asked and answered badly, but whether it
+        just got worse than it has been (ruling #310). The judge is
+        P5, because the daily minimum is a one-packet statistic: on
+        the reference fleet it sits a median 1.17 of the device's own
+        deviations below P5, and on 56 percent of device-days more
+        than a full one.
+
+        Both gates must hold. The absolute fall stops a trivial move
+        on a very steady device from reading as a catastrophe, which
+        a ratio alone does: a device whose P5 varies by 1.5 counts a
+        routine wobble as many deviations. The spread gate stops a
+        large move on a jittery device from reading as news. Returned
+        rather than a bare boolean so the report can say what it saw
+        without recomputing it.
+
+        None means the day cannot be judged: no reading, too little
+        history, or a baseline so flat that dividing by its spread
+        would say more about arithmetic than about radio.
+        """
+        series = record.get(DEV_SIGNAL_DAILY_P5) or []
+        if not series:
+            return None
+        position = index if index >= 0 else len(series) + index
+        if position < 0 or position >= len(series):
+            return None
+        today = _usable(series[position])
+        if today is None:
+            return None
+        window = self._badday_baseline_days()
+        base = [
+            value
+            for value in (
+                _usable(entry)
+                for entry in series[max(0, position - window):position]
+            )
+            if value is not None
+        ]
+        if len(base) < BADDAY_MIN_BASELINE:
+            return None
+        # A promotion happens mid-day: when a device's RSSI entity
+        # first reports, RSSI takes the primary block and the sitting
+        # scale is demoted to signal_alt (rulings #285, #286). So
+        # today's reading can arrive on the other side of zero from
+        # the days behind it, and the two are not comparable.
+        #
+        # Only that pair is tested here. A stored series holding both
+        # signs is storage's to deal with and it does, discarding
+        # such a history once at load (ruling #282), so by the time
+        # any fold runs there is none left to meet.
+        if (today < 0) is not (base[0] < 0):
+            return None
+        middle = statistics.median(base)
+        spread = statistics.pstdev(base)
+        if spread < BADDAY_MIN_SPREAD:
+            spread = BADDAY_MIN_SPREAD
+        fall = middle - float(today)
+        # The record's scale field is the first source and the
+        # readings are the fallback, because the field can be absent
+        # while the series is full: a 16 August snapshot of the
+        # reference fleet carries a P5 series on 79 devices and a
+        # scale on none of them, seven of those devices negative. A
+        # missing field there would put the LQI gate on an RSSI
+        # device and demand a 25 dB fall, which is deafness rather
+        # than caution. The sign decides, the same rule the recorder
+        # uses (ruling #284).
+        scale = record.get(DEV_SIGNAL_SCALE)
+        if scale is None:
+            scale = scale_of(middle)
+        drop = self._badday_drop(scale)
+        deviations = fall / spread
+        return {
+            "today": float(today),
+            "baseline": float(middle),
+            "spread": float(spread),
+            "fall": float(fall),
+            "deviations": float(deviations),
+            "drop_gate": float(drop),
+            "bad": bool(
+                fall >= drop and deviations >= self._badday_sensitivity()
+            ),
+        }
 
     def _signal_trim_label(self) -> str:
         """Return the anomaly trim as a word, not a number.
@@ -1009,39 +1179,47 @@ class SignalMixin:
     def signal_weak_list(self) -> list[dict[str, Any]]:
         """Return devices whose link is weak right now.
 
-        The Signal: Weak sensor. A device qualifies while its dwell
-        on the last closed day is over the red threshold, which is
-        the rule the brief's anomaly line and the chart's colouring
-        already use, so one definition serves all three and a device
-        cannot be named in one and absent from another (ruling #211).
+        The Signal: Weak sensor. A device qualifies when its most
+        recent folded day was a bad signal day: its own P5 fell far
+        enough below its own recent normal, in its own units and its
+        own spread (ruling #310). Until that ruling this read the
+        dwell against a Red Threshold slider, and both are gone, so
+        this is the same sensor answering a better question with the
+        same one definition serving every surface (ruling #211).
 
         Separate from the rails for the same reason Battery: Low and
-        Battery: Falling are separate. A rail is a broken measurement,
-        confirmed over three days and persistent; a weak link is a
-        live reading that moves. On the reference fleet only three of
-        twelve device-days above twenty percent were still above it
-        the next morning, so counting the two together produced one
-        number that meant two things and read zero on a fleet with no
-        rails.
+        Battery: Falling are separate. A rail is a broken
+        measurement, confirmed over three days and persistent; a bad
+        day is a reading about one day that may or may not repeat.
 
-        Nothing notifies from this. A device drops off the moment its
-        dwell falls back under the threshold, with no acknowledgment
-        and no record, because it is a reading rather than an
-        incident: what a dashboard shows is the fleet as it stands
+        Nothing notifies from this. A device drops off the next
+        morning its signal holds, with no acknowledgment and no
+        record, because it is a reading rather than an incident
         (ruling #59).
         """
         railed = {row["device_id"] for row in self.signal_problem_list}
-        return [
-            {
-                "name": anomaly["name"],
-                "device_id": anomaly["device_id"],
-                "dwell": anomaly.get("dwell"),
-                "floor": anomaly.get("floor"),
-                "area": anomaly.get("area"),
-            }
-            for anomaly in self._dwell_anomalies(self._signal_red())
-            if anomaly["device_id"] not in railed
-        ]
+        weak = []
+        for device_id, record in (self.data.get(DATA_DEVICES) or {}).items():
+            if device_id in railed:
+                continue
+            if (
+                self._signal_excluded(device_id)
+                or device_id in self._excluded_devices
+            ):
+                continue
+            reading = self.signal_badday(record)
+            if reading is None or not reading["bad"]:
+                continue
+            weak.append(
+                {
+                    "name": self._device_name(device_id),
+                    "device_id": device_id,
+                    "fall": reading["fall"],
+                    "baseline": reading["baseline"],
+                    "today": reading["today"],
+                }
+            )
+        return weak
 
     @property
     def signal_weak_count(self) -> int:

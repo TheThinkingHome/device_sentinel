@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.16.6 (2026-08-20)
+# File: config_flow.py, Version: 0.16.11 (2026-08-21)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -104,7 +104,10 @@ from .const import (
     CONF_SIGNAL_EXCLUDED_LABELS,
     CONF_SIGNAL_LIFT,
     CONF_SIGNAL_MARGIN,
-    CONF_SIGNAL_RED,
+    CONF_BADDAY_BASELINE_DAYS,
+    CONF_BADDAY_DROP_LQI,
+    CONF_BADDAY_DROP_RSSI,
+    CONF_BADDAY_SENSITIVITY,
     CONF_TAINT_FLOOR,
     CONF_TAINT_SHARE,
     DEFAULT_BATTERY_DAYS,
@@ -129,7 +132,10 @@ from .const import (
     DEFAULT_SIGNAL_ANOMALY_TRIM,
     DEFAULT_SIGNAL_LIFT,
     DEFAULT_SIGNAL_MARGIN,
-    DEFAULT_SIGNAL_RED,
+    DEFAULT_BADDAY_BASELINE_DAYS,
+    DEFAULT_BADDAY_DROP_LQI,
+    DEFAULT_BADDAY_DROP_RSSI,
+    DEFAULT_BADDAY_SENSITIVITY,
     DEFAULT_TAINT_FLOOR_MINUTES,
     DEFAULT_TAINT_SHARE_PCT,
     DOMAIN,
@@ -160,8 +166,14 @@ from .const import (
     SIGNAL_LIFT_STEP,
     SIGNAL_MARGIN_MAX,
     SIGNAL_MARGIN_MIN,
-    SIGNAL_RED_MAX,
-    SIGNAL_RED_MIN,
+    BADDAY_BASELINE_DAYS_MAX,
+    BADDAY_BASELINE_DAYS_MIN,
+    BADDAY_DROP_LQI_MAX,
+    BADDAY_DROP_LQI_MIN,
+    BADDAY_DROP_RSSI_MAX,
+    BADDAY_DROP_RSSI_MIN,
+    BADDAY_SENSITIVITY_MAX,
+    BADDAY_SENSITIVITY_MIN,
     TAINT_FLOOR_MINUTES_MAX,
     TAINT_FLOOR_MINUTES_MIN,
     WIKI_LINK_ADVANCED,
@@ -597,16 +609,58 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         )
                     ),
                     vol.Required(
-                        CONF_SIGNAL_RED,
+                        CONF_BADDAY_DROP_LQI,
                         default=options.get(
-                            CONF_SIGNAL_RED, DEFAULT_SIGNAL_RED
+                            CONF_BADDAY_DROP_LQI, DEFAULT_BADDAY_DROP_LQI
                         ),
                     ): selector.NumberSelector(
                         selector.NumberSelectorConfig(
-                            min=SIGNAL_RED_MIN,
-                            max=SIGNAL_RED_MAX,
+                            min=BADDAY_DROP_LQI_MIN,
+                            max=BADDAY_DROP_LQI_MAX,
                             step=1,
-                            unit_of_measurement="%",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_BADDAY_DROP_RSSI,
+                        default=options.get(
+                            CONF_BADDAY_DROP_RSSI, DEFAULT_BADDAY_DROP_RSSI
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=BADDAY_DROP_RSSI_MIN,
+                            max=BADDAY_DROP_RSSI_MAX,
+                            step=1,
+                            unit_of_measurement="dB",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_BADDAY_SENSITIVITY,
+                        default=options.get(
+                            CONF_BADDAY_SENSITIVITY,
+                            DEFAULT_BADDAY_SENSITIVITY,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=BADDAY_SENSITIVITY_MIN,
+                            max=BADDAY_SENSITIVITY_MAX,
+                            step=0.5,
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_BADDAY_BASELINE_DAYS,
+                        default=options.get(
+                            CONF_BADDAY_BASELINE_DAYS,
+                            DEFAULT_BADDAY_BASELINE_DAYS,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=BADDAY_BASELINE_DAYS_MIN,
+                            max=BADDAY_BASELINE_DAYS_MAX,
+                            step=1,
+                            unit_of_measurement="days",
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
@@ -680,8 +734,17 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             )
         if CONF_SIGNAL_MARGIN in pruned:
             pruned[CONF_SIGNAL_MARGIN] = int(pruned[CONF_SIGNAL_MARGIN])
-        if CONF_SIGNAL_RED in pruned:
-            pruned[CONF_SIGNAL_RED] = int(pruned[CONF_SIGNAL_RED])
+        for key in (
+            CONF_BADDAY_DROP_LQI,
+            CONF_BADDAY_DROP_RSSI,
+            CONF_BADDAY_BASELINE_DAYS,
+        ):
+            if key in pruned:
+                pruned[key] = int(pruned[key])
+        if CONF_BADDAY_SENSITIVITY in pruned:
+            pruned[CONF_BADDAY_SENSITIVITY] = float(
+                pruned[CONF_BADDAY_SENSITIVITY]
+            )
         if CONF_SIGNAL_LIFT in pruned:
             pruned[CONF_SIGNAL_LIFT] = float(pruned[CONF_SIGNAL_LIFT])
         covered = _devices_covered_by(

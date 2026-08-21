@@ -108,19 +108,25 @@
           "signal_margin": "Sensitivity",
           "signal_lift": "Line Lift",
           "signal_sensitivity": "Anomaly Trim",
-          "signal_red_threshold": "Red Threshold",
           "signal_excluded_integrations": "Integrations Excluded from Signal Reporting",
           "signal_excluded_labels": "Labels Excluded from Signal Reporting",
-          "signal_excluded_devices": "Devices Excluded from Signal Reporting"
+          "signal_excluded_devices": "Devices Excluded from Signal Reporting",
+          "badday_drop_lqi": "Bad Day Drop, LQI",
+          "badday_drop_rssi": "Bad Day Drop, RSSI",
+          "badday_sensitivity": "Bad Day Sensitivity",
+          "badday_baseline_days": "Days of Signal History"
         },
         "data_description": {
           "signal_margin": "How far above its own floor a device's reading may sit and still count as weak. The margin is this percentage of the distance between the device's floor and a perfect link, so it is widest for devices living near dropout and shrinks to nothing as a floor approaches perfect. At 0, only the lift below applies.",
           "signal_lift": "A flat amount added on top of the margin for every device, in signal units. It survives even where the margin has shrunk to nothing, so a small value keeps a minimum watch on even the strongest links. Leave at 0 unless you want that vigilance.",
           "signal_sensitivity": "Where the floor sits. Shifting left trims fewer bad days, pulling the floor down toward the device's absolute worst performance. Shifting right trims more outliers, raising the floor to reflect normal operation.",
-          "signal_red_threshold": "Where yellow turns red on the signal dwell chart. The chart colors every device by its share of yesterday spent below its line: 0 to 5 percent is always green, 5 percent up to this value is yellow, and above it is red. Every red device is also pulled out as an anomaly and described in full. Coloring only; nothing alerts from it.",
           "signal_excluded_integrations": "Every device from a ticked integration stops being reported for signal.",
           "signal_excluded_labels": "Devices carrying a ticked label stop being reported for signal.",
-          "signal_excluded_devices": "A ticked device stops being reported for signal. It keeps recording, so re-including it brings its history back instantly."
+          "signal_excluded_devices": "A ticked device stops being reported for signal. It keeps recording, so re-including it brings its history back instantly.",
+          "badday_drop_lqi": "Sets the fall in LQI points required to flag a bad signal day. A day counts as bad only when it breaches both this threshold and the sensitivity setting below. Raise it to flag fewer days.",
+          "badday_drop_rssi": "Sets the same fall in decibels for devices that report in dBm. It works exactly like the LQI slider above.",
+          "badday_sensitivity": "Scales the required drop against the device's own historical jitter, which keeps erratic sensors from being flagged daily. A steady sensor is governed by the drop sliders above. At a setting of 4, a jittery sensor that routinely swings 10 points needs a 40-point plunge to trigger. Lower it to flag more days.",
+          "badday_baseline_days": "This setting defines how many past days are used to calculate what is typical for a device. Today's signal is compared against that typical level, and a fall below it, as set above, is flagged."
         }
       },
       "freeze": {

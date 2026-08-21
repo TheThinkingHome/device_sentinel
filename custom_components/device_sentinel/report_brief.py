@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.16.10 (2026-08-21)
+# File: report_brief.py, Version: 0.16.11 (2026-08-21)
 
 """The daily brief: the one report written for a person.
 
@@ -63,7 +63,7 @@ from .const import (
     REPORT_BATTERY_URL,
     REPORT_BRIEF_HTML,
     REPORT_BRIEF_PREFIX,
-    REPORT_SIGNAL_DWELL_URL,
+    REPORT_SIGNAL_URL,
     REPORT_WWW_DIR,
     SYS_BRIDGE_DOWN,
     SYS_BRIDGE_UP,
@@ -1348,22 +1348,13 @@ class BriefMixin:
                     ),
                     "",
                 ]
-        # The dwell anomalies get one pointer line, only on mornings
-        # there are any (ruling #173). The chart itself is HTML
-        # at a fixed URL, so the brief names it rather than embedding
-        # it, and a quiet fleet adds nothing here. It sits in Now
-        # because yesterday's dwell is the current picture of the
-        # link, even though the day it measures has closed.
-        anomalies = self._dwell_anomalies(self._signal_red())
-        if anomalies:
-            named = ", ".join(
-                f"{a['name']} ({a['dwell']:.0f}%)" for a in anomalies[:5]
-            )
-            lines += [
-                f"Signal dwell anomalies: {named}. Details and the "
-                f"full chart: {REPORT_SIGNAL_DWELL_URL}",
-                "",
-            ]
+        # Dwell no longer reports (ruling #310). It measured distance
+        # from a line derived from the floor, which descends to meet
+        # a degraded device, so a permanently broken link reads its
+        # way back to healthy over a week. Nothing is said here about
+        # bad signal days yet either: the detector that replaces
+        # dwell is on its own page first, and joins this brief only
+        # once its thresholds have earned it.
         # The battery report answers what the threshold cannot: which
         # cells are going to be low rather than which are (ruling
         # #194). It shipped with nothing pointing at it, so a person
@@ -1574,7 +1565,7 @@ class BriefMixin:
             elif line.strip():
                 text_line = escape(line)
                 for url, words in (
-                    (REPORT_SIGNAL_DWELL_URL, "the signal dwell chart"),
+                    (REPORT_SIGNAL_URL, "the signal report"),
                     (REPORT_BATTERY_URL, "the battery report"),
                 ):
                     if url in text_line:
