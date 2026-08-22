@@ -15,7 +15,7 @@
     "step": {
       "init": {
         "title": "Device Sentinel Configuration",
-        "description": "Device Sentinel's default settings are good to get you started. When you begin tailoring the integration to your system, work from top to bottom. If you want alerts to reach your phone, begin in Notifications.\n\n**Notifications**: where alerts go, quiet hours, and the daily reminder.\n\n**Global Exclusions**: hardware you never want judged or reported, by anything. To silence just one kind of report for a device, use that section's own exclude list instead.\n\n**Low Battery**: the low threshold, and battery-only excludes.\n\n**Signal Strength**: how weakening radio links are judged against each device's own floor.\n\n**Freeze Detection**: how long a device may go quiet before it is called frozen, set by two grace sliders. Now running.\n\n[All documentation on the Device Sentinel wiki]({wiki_link})\n\nEach section saves when you submit it and brings you back here. Closing this dialog keeps everything you have already submitted.",
+        "description": "Device Sentinel's default settings are good to get you started. When you begin tailoring the integration to your system, work from top to bottom. If you want alerts to reach your phone, begin in Notifications.\n\n**Notifications**: where alerts go, quiet hours, and the daily reminder.\n\n**Global Exclusions**: hardware you never want judged or reported, by anything. To silence just one kind of report for a device, use that section's own mute list instead.\n\n**Low Battery**: the low threshold, and battery-only muting.\n\n**Signal Strength**: how weakening radio links are judged against each device's own floor.\n\n**Freeze Detection**: how long a device may go quiet before it is called frozen, set by two grace sliders. Now running.\n\n[All documentation on the Device Sentinel wiki]({wiki_link})\n\nEach section saves when you submit it and brings you back here. Closing this dialog keeps everything you have already submitted.",
         "menu_options": {
           "notifications": "Notifications and Daily Brief",
           "exclusions": "Global Exclusions",
@@ -69,7 +69,7 @@
       },
       "exclusions": {
         "title": "Global Exclusions",
-        "description": "The integration offers two ways to tune which devices it watches and how it reports. Ignoring discards; excluding only silences.\n\n[Global Exclusions on the wiki]({wiki_link})",
+        "description": "The integration offers two ways to tune which devices it watches and how it reports. Ignoring discards; muting only silences.\n\n[Global Exclusions on the wiki]({wiki_link})",
         "data": {},
         "data_description": {},
         "sections": {
@@ -83,18 +83,18 @@
               "ignored_integrations": "Every device from a ticked integration is set aside."
             }
           },
-          "exclusions": {
-            "name": "Global Exclusions",
-            "description": "An excluded item is still watched and its data is stored, but it is kept off the Problem List and out of reports and alerts. Remove the exclusion later and the device resumes reporting at once, because its history is already at hand. The three lists run broad to narrow: integration, label, device. Exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
+          "muting": {
+            "name": "Global Muting",
+            "description": "A muted item is still watched and its data is stored, but it is kept off the Problem List and out of reports and alerts. Remove the mute later and the device resumes reporting at once, because its history is already at hand. The three lists run broad to narrow: integration, label, device. Mute at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
             "data": {
-              "excluded_integrations": "Globally Excluded Integrations",
-              "excluded_labels": "Globally Excluded Labels",
-              "excluded_devices": "Globally Excluded Devices"
+              "muted_integrations": "Globally Muted Integrations",
+              "muted_labels": "Globally Muted Labels",
+              "muted_devices": "Globally Muted Devices"
             },
             "data_description": {
-              "excluded_integrations": "Excludes every device the integration owns. Its devices will be learned and recorded, but will not appear on the Problem List or in any reports or notifications.",
-              "excluded_labels": "The system excludes any device or entity carrying these labels. You can manage this exclusion without ever opening this dialog. Simply apply the label on the hardware's own device page, and Device Sentinel stops reporting on it.",
-              "excluded_devices": "This applies the exact same exclusion rules as the lists above, but targets individual pieces of hardware. Add a specific device here to take it off the Problem List and mute its reports and notifications."
+              "muted_integrations": "Mutes every device the integration owns. Its devices will be learned and recorded, but will not appear on the Problem List or in any reports or notifications.",
+              "muted_labels": "The system mutes any device or entity carrying these labels. You can manage this mute without ever opening this dialog. Simply apply the label on the hardware's own device page, and Device Sentinel stops reporting on it.",
+              "muted_devices": "This applies the exact same muting rules as the lists above, but targets individual pieces of hardware. Add a specific device here to take it off the Problem List and mute its reports and notifications."
             }
           }
         }
@@ -111,18 +111,18 @@
         },
         "description": "Every battery Device Sentinel finds is watched by default. The threshold answers which cells are low; the warning days answer which are about to be. A cell at 80 percent falling steadily can have less life left than one sitting at 30 percent that has not moved in a month. A battery is flagged when it is at or below the threshold.\n\n[Low Battery on the wiki]({wiki_link})",
         "sections": {
-          "battery_exclusions": {
-            "name": "Battery Exclusions",
-            "description": "Excluding a battery here stops battery reports for that device only; everything else about it stays watched. The three lists run broad to narrow: integration, label, device. Exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
+          "battery_muting": {
+            "name": "Battery Muting",
+            "description": "Muting a battery here stops battery reports for that device only; everything else about it stays watched. The three lists run broad to narrow: integration, label, device. Mute at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
             "data": {
-              "battery_excluded_integrations": "Integrations Excluded from Battery Reporting",
-              "battery_excluded_labels": "Labels Excluded from Battery Reporting",
-              "battery_excluded_devices": "Devices Excluded from Battery Reporting"
+              "battery_muted_integrations": "Integrations Muted for Battery Reporting",
+              "battery_muted_labels": "Labels Muted for Battery Reporting",
+              "battery_muted_devices": "Devices Muted for Battery Reporting"
             },
             "data_description": {
-              "battery_excluded_integrations": "One tick covers every battery that integration owns (phones under mobile_app, for example).",
-              "battery_excluded_labels": "Any device carrying one of these labels stops being reported for a low battery. Set the label on the device's own page and it applies here without opening this dialog.",
-              "battery_excluded_devices": "Every listed device has a tracked battery. Checked devices are excluded from battery reporting."
+              "battery_muted_integrations": "One tick covers every battery that integration owns (phones under mobile_app, for example).",
+              "battery_muted_labels": "Any device carrying one of these labels stops being reported for a low battery. Set the label on the device's own page and it applies here without opening this dialog.",
+              "battery_muted_devices": "Every listed device has a tracked battery. Checked devices are muted for battery reporting."
             }
           }
         }
@@ -143,18 +143,18 @@
           "badday_baseline_days": "This setting defines how many past days are used to calculate what is typical for a device. Today's signal is compared against that typical level, and a fall below it, as set above, is flagged."
         },
         "sections": {
-          "signal_exclusions": {
-            "name": "Signal Exclusions",
-            "description": "Which devices are left out of signal reporting. Signal keeps being recorded for anything named here, so re-including a device brings its history back at once. The three lists run broad to narrow: integration, label, device. Exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
+          "signal_muting": {
+            "name": "Signal Muting",
+            "description": "Which devices are left out of signal reporting. Signal keeps being recorded for anything named here, so re-including a device brings its history back at once. The three lists run broad to narrow: integration, label, device. Mute at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
             "data": {
-              "signal_excluded_integrations": "Integrations Excluded from Signal Reporting",
-              "signal_excluded_labels": "Labels Excluded from Signal Reporting",
-              "signal_excluded_devices": "Devices Excluded from Signal Reporting"
+              "signal_muted_integrations": "Integrations Muted for Signal Reporting",
+              "signal_muted_labels": "Labels Muted for Signal Reporting",
+              "signal_muted_devices": "Devices Muted for Signal Reporting"
             },
             "data_description": {
-              "signal_excluded_integrations": "Every device from a ticked integration stops being reported for signal.",
-              "signal_excluded_labels": "Devices carrying a ticked label stop being reported for signal.",
-              "signal_excluded_devices": "A ticked device stops being reported for signal. It keeps recording, so re-including it brings its history back instantly."
+              "signal_muted_integrations": "Every device from a ticked integration stops being reported for signal.",
+              "signal_muted_labels": "Devices carrying a ticked label stop being reported for signal.",
+              "signal_muted_devices": "A ticked device stops being reported for signal. It keeps recording, so re-including it brings its history back instantly."
             }
           }
         }
@@ -171,18 +171,18 @@
           "freeze_delta_high": "The grace a slow device gets, in hours. The two deltas shape the whole curve between them, so a mid-fleet device sits between these."
         },
         "sections": {
-          "freeze_exclusions": {
-            "name": "Freeze Exclusions",
-            "description": "Which devices are never called frozen, unavailable, or not reported. Each keeps its clock and its learned rhythm, so re-including one is instant. The three lists run broad to narrow: integration, label, device. Exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
+          "freeze_muting": {
+            "name": "Freeze Muting",
+            "description": "Which devices are never called frozen, unavailable, or not reported. Each keeps its clock and its learned rhythm, so re-including one is instant. The three lists run broad to narrow: integration, label, device. Mute at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
             "data": {
-              "freeze_excluded_integrations": "Integrations Excluded from Freeze Reporting",
-              "freeze_excluded_labels": "Labels Excluded from Freeze Reporting",
-              "freeze_excluded_devices": "Devices Excluded from Freeze Reporting"
+              "freeze_muted_integrations": "Integrations Muted for Freeze Reporting",
+              "freeze_muted_labels": "Labels Muted for Freeze Reporting",
+              "freeze_muted_devices": "Devices Muted for Freeze Reporting"
             },
             "data_description": {
-              "freeze_excluded_integrations": "Every device from a ticked integration stops being called frozen, unavailable, or not reported.",
-              "freeze_excluded_labels": "Devices carrying a ticked label stop being called down. Set the label on the device's own page and it applies here.",
-              "freeze_excluded_devices": "A ticked device is never called down. It keeps its clock and rhythm, so re-including it is instant."
+              "freeze_muted_integrations": "Every device from a ticked integration stops being called frozen, unavailable, or not reported.",
+              "freeze_muted_labels": "Devices carrying a ticked label stop being called down. Set the label on the device's own page and it applies here.",
+              "freeze_muted_devices": "A ticked device is never called down. It keeps its clock and rhythm, so re-including it is instant."
             }
           }
         }
@@ -213,7 +213,7 @@
         "sections": {
           "data_trim": {
             "name": "Data Trim",
-            "description": "Use this tool when support requests it, or when corrupted data demands a clean start. Saving this screen clears the statistics, silence episodes, incidents, and Problem List entries of whatever you select below. As a safeguard, the system writes a backup to config/device_sentinel/trim_backups before erasing anything, and those backups are kept until you delete them yourself. The devices themselves remain untouched. They reappear within seconds to begin learning a new baseline, keeping all existing ignores and exclusions intact. Both selection boxes empty themselves after execution to prevent accidental double-wipes.",
+            "description": "Use this tool when support requests it, or when corrupted data demands a clean start. Saving this screen clears the statistics, silence episodes, incidents, and Problem List entries of whatever you select below. As a safeguard, the system writes a backup to config/device_sentinel/trim_backups before erasing anything, and those backups are kept until you delete them yourself. The devices themselves remain untouched. They reappear within seconds to begin learning a new baseline, keeping all existing ignores and mutes intact. Both selection boxes empty themselves after execution to prevent accidental double-wipes.",
             "data": {
               "trim_integrations": "Trim Integration History",
               "trim_devices": "Trim Device History"
