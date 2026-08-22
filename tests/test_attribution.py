@@ -525,6 +525,7 @@ async def test_a_hostile_device_name_cannot_reach_the_signal_page(
     evil = "<img src=x onerror=alert(1)>"
     row = {
         "name": evil,
+        "area": "",
         "readings": [None, None, None, None],
         "bad_days": 0,
         "series": [100.0] * 4,

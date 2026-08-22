@@ -25,6 +25,8 @@ import json
 import pathlib
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
 
 from custom_components.device_sentinel.const import (
     CONF_BADDAY_BASELINE_DAYS,
@@ -225,3 +227,81 @@ async def test_the_approved_slider_words_are_pinned(hass: HomeAssistant):
             "above, is flagged."
         )
         assert "signal_red_threshold" not in signal["data"]
+
+
+async def test_the_strip_shows_only_devices_worth_a_look(
+    hass: HomeAssistant,
+):
+    """Ruling #315, and Tim Plas's whole complaint about the page.
+
+    He read the first version and said there was no chance he would
+    read it daily: 79 rows, 74 of them entirely green, with the
+    answer buried under a chart nobody asked a question of. A device
+    now earns a row by having fallen three of its own spreads below
+    its normal at some point in the window; the rest are named in a
+    line and the full fleet stays behind a toggle.
+    """
+    coord = await setup_coordinator(hass)
+    for index in range(9):
+        device, _ = register_device(hass, f"q{index}", f"Quiet {index}")
+        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
+            160.0, 161.0, 159.0, 160.0, 161.0, 160.0, 159.5,
+        ]
+    loud, _ = register_device(hass, "loud", "Fallen Device")
+    coord.data[DATA_DEVICES][loud.id][DEV_SIGNAL_DAILY_P5] = (
+        STEADY_WEEK + [100.0]
+    )
+
+    rows = coord._signal_report_rows()
+    worth, quiet = coord._signal_strip_rows(rows)
+
+    assert len(rows) == 10
+    assert worth[0]["name"] == "Fallen Device"
+    # The floor holds: a fleet with one fallen device still shows
+    # enough rows to read a band against.
+    assert len(worth) == 5
+    assert quiet == 5
+
+
+async def test_a_fleet_wide_event_cannot_put_every_row_back(
+    hass: HomeAssistant,
+):
+    """The ceiling. A broker outage drops everything at once, and a
+    page of eighty rows is the page this ruling removed."""
+    coord = await setup_coordinator(hass)
+    for index in range(30):
+        device, _ = register_device(hass, f"d{index}", f"Device {index}")
+        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = (
+            STEADY_WEEK + [90.0]
+        )
+
+    rows = coord._signal_report_rows()
+    worth, quiet = coord._signal_strip_rows(rows)
+
+    assert len(rows) == 30
+    assert len(worth) == 20
+    assert quiet == 10
+
+
+async def test_each_row_carries_its_area(hass: HomeAssistant):
+    """Shown even though it can mislead (ruling #315).
+
+    The router unplugged on 18 August took devices in five different
+    rooms, because a router serves by radio topology rather than by
+    the room it sits in. The area is still a fact, and withholding a
+    fact because it is not yet interpretable is how dwell came to
+    measure against a line that moved.
+    """
+    device, _ = register_device(hass, "ar1", "Placed Device")
+    areas = ar.async_get(hass)
+    area = areas.async_get_or_create("Master Bedroom")
+    dr.async_get(hass).async_update_device(device.id, area_id=area.id)
+    coord = await setup_coordinator(hass)
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = (
+        STEADY_WEEK + [100.0]
+    )
+
+    rows = coord._signal_report_rows()
+
+    assert rows[0]["area"] == "Master Bedroom"
+    assert "Master Bedroom" in coord._signal_strip_svg(rows)

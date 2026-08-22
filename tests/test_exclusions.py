@@ -974,6 +974,7 @@ async def test_options_flow_prunes_on_save(hass: HomeAssistant):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
+            "ignore": {CONF_IGNORED_INTEGRATIONS: []},
             "exclusions": {
                 CONF_EXCLUDED_INTEGRATIONS: ["test"],
                 CONF_EXCLUDED_LABELS: [],

@@ -50,7 +50,7 @@ from custom_components.device_sentinel.const import (
     SET_ASIDE_IGNORED,
 )
 
-from .helpers import register_device, setup_entry
+from .helpers import flat_schema, register_device, setup_entry
 
 
 async def _coordinator(hass: HomeAssistant, options: dict | None = None):
@@ -399,6 +399,11 @@ async def test_the_ignore_list_lives_on_the_exclusions_screen(
     needs. The picker sits above the exclude selectors so the two
     verbs are read together, and a save from that screen stores the
     ignore list beside the exclusions.
+
+    Ruling #315 gave the ignore list its own section, so it can carry
+    a heading and an explanation above its picker the way the exclude
+    ladder does. It is still first on the screen, and it still stores
+    flat.
     """
     from homeassistant.data_entry_flow import FlowResultType
 
@@ -414,13 +419,18 @@ async def test_the_ignore_list_lives_on_the_exclusions_screen(
         result["flow_id"], {"next_step_id": "exclusions"}
     )
     assert result["step_id"] == "exclusions"
-    fields = list(result["data_schema"].schema)
-    assert str(fields[0]) == CONF_IGNORED_INTEGRATIONS
+    fields = [str(key) for key in result["data_schema"].schema]
+    assert fields == ["ignore", "exclusions"]
+    assert CONF_IGNORED_INTEGRATIONS in flat_schema(
+        result["data_schema"].schema
+    )
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            CONF_IGNORED_INTEGRATIONS: ["mobile_app", "tile"],
+            "ignore": {
+                CONF_IGNORED_INTEGRATIONS: ["mobile_app", "tile"],
+            },
             "exclusions": {
                 CONF_EXCLUDED_INTEGRATIONS: [],
                 CONF_EXCLUDED_LABELS: [],

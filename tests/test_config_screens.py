@@ -200,7 +200,9 @@ async def test_two_sections_in_one_visit_both_stick(hass: HomeAssistant):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            CONF_IGNORED_INTEGRATIONS: ["ping"],
+            "ignore": {
+                CONF_IGNORED_INTEGRATIONS: ["ping"],
+            },
             "exclusions": {
                 CONF_EXCLUDED_INTEGRATIONS: [],
                 CONF_EXCLUDED_LABELS: [],
@@ -341,3 +343,63 @@ async def test_each_section_carries_a_heading_and_an_explanation(
             assert len(block["description"]) > 40, (step, "description")
             assert len(block["data"]) == 3, (step, "fields")
             assert len(block["data_description"]) == 3, (step, "help")
+
+
+async def test_the_ignore_list_has_its_own_section(hass: HomeAssistant):
+    """Ruling #315. Both halves of Global Exclusions carry a heading.
+
+    A loose field renders its label above the input and its help
+    below it, which left the ignore list explained underneath its
+    chooser while the exclude ladder beside it had its explanation
+    above. Two sections and nothing loose departs from the Advanced
+    pattern on purpose: this screen has no plain settings, only two
+    groups of lists that need different explanations.
+    """
+    entry = await setup_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exclusions"}
+    )
+
+    assert [str(key) for key in result["data_schema"].schema] == [
+        "ignore",
+        "exclusions",
+    ]
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "ignore": {CONF_IGNORED_INTEGRATIONS: ["ping"]},
+            "exclusions": {
+                CONF_EXCLUDED_INTEGRATIONS: [],
+                CONF_EXCLUDED_LABELS: [],
+                CONF_EXCLUDED_DEVICES: [],
+            },
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.MENU
+    assert entry.options[CONF_IGNORED_INTEGRATIONS] == ["ping"]
+    assert "ignore" not in entry.options
+
+
+async def test_both_halves_carry_a_heading_and_an_explanation(
+    hass: HomeAssistant,
+):
+    """The whole point of giving ignore a section of its own."""
+    package = pathlib.Path(
+        __import__(
+            "custom_components.device_sentinel.const", fromlist=["const"]
+        ).__file__
+    ).parent
+    for source in (
+        package / "strings.json",
+        package / "translations" / "en.json",
+    ):
+        step = json.loads(source.read_text())["options"]["step"]["exclusions"]
+        assert not step["data"], "nothing loose on this screen"
+        assert step["sections"]["ignore"]["name"] == "Integrations to Ignore"
+        assert step["sections"]["exclusions"]["name"] == "Exclusions"
+        for key in ("ignore", "exclusions"):
+            assert len(step["sections"][key]["description"]) > 60, key
