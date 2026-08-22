@@ -84,7 +84,7 @@
             }
           },
           "exclusions": {
-            "name": "Exclusions",
+            "name": "Global Exclusions",
             "description": "An excluded item is still watched and its data is stored, but it is kept off the Problem List and out of reports and alerts. Remove the exclusion later and the device resumes reporting at once, because its history is already at hand. The three lists run broad to narrow: integration, label, device. Exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
             "data": {
               "excluded_integrations": "Globally Excluded Integrations",

@@ -628,6 +628,13 @@ class BriefMixin:
         settings are named by their screen labels, deduplicated and
         in the order first touched, since a person who changed the
         same one five times changed one setting.
+
+        The separator is a semicolon because the labels themselves
+        carry commas: Bad Day Drop, LQI and Bad Day Drop, RSSI are
+        two settings, and a comma-separated list turned three
+        changed settings into what read as five. One separator in
+        every case rather than one shape for lists with commas and
+        another for lists without.
         """
         changes = [row for row in rows if row[SYS_KIND] == SYS_OPTIONS_CHANGED]
         if not changes:
@@ -638,7 +645,7 @@ class BriefMixin:
                 label = self._option_label(key)
                 if label and label not in names:
                     names.append(label)
-        listed = ", ".join(names)
+        listed = "; ".join(names)
         if len(changes) == 1:
             when = self._brief_moment(changes[0][SYS_WHEN])
             return [f"Settings changed at {when}: {listed}."]
@@ -1217,7 +1224,13 @@ class BriefMixin:
                 "Keeps failing on its own: " + " ".join(repeats),
                 "",
             ]
-        else:
+        # The all-clear answers both sentences above it, so it is
+        # printed only when neither was. Written as the else of the
+        # repeats alone, which is where the repeat-offender lines
+        # were inserted, it told a person nothing needed attention
+        # directly beneath a device that did: every brief with a
+        # standing problem and no repeat offender said both.
+        if not standing and not repeats:
             lines += ["Nothing needs attention right now.", ""]
         return lines
 
