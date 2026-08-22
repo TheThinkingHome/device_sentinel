@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_signal.py, Version: 0.16.11 (2026-08-21)
+# File: report_signal.py, Version: 0.16.16 (2026-08-22)
 
 """The signal report and the signal cells of the telemetry.
 
@@ -28,6 +28,7 @@ from datetime import timedelta
 from html import escape
 from typing import Any
 
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
@@ -50,10 +51,31 @@ from .const import (
     WIKI_BASE_URL,
 )
 
-# How many folded days the fleet strip shows. Fourteen fits a phone
-# screen at a readable cell width and is long enough that a normal
-# fortnight sits behind any single bad day.
+# How many folded days the strip shows. Fourteen fits a phone screen
+# at a readable cell width and is long enough that two normal weeks
+# sit behind any single bad day.
 STRIP_DAYS = 14
+
+# Which devices earn a row (ruling #315). Tim Plas read the first
+# version of this page and said there was no chance he would read it
+# daily: 79 rows, 74 of them entirely green, with the answer buried
+# under a chart nobody asked a question of. He wants to be pointed at
+# issues rather than to interpret a picture, and he is right.
+#
+# So the strip shows the devices worth a look and names the rest in a
+# line. A device earns its row when its worst day in the window fell
+# this many of its own spreads below its normal. Three is where the
+# reference fleet goes quiet: 22 devices qualify at two, 15 at three,
+# 8 at four, and the colour runs out just past three.
+#
+# A constant rather than a setting. It shapes a page rather than a
+# judgment, and the Signal screen carries four sliders already.
+STRIP_WORTH_A_LOOK = 3.0
+# Never fewer, so a quiet fleet still shows something to read a band
+# against, and never more, so a broker outage that drops everything
+# does not put the whole fleet back on the page.
+STRIP_MIN_ROWS = 5
+STRIP_MAX_ROWS = 20
 # How many devices get a full biography. A bad day is rare by design,
 # so this is a guard against a fleet-wide event producing a page
 # nobody scrolls, not a routine limit.
@@ -85,6 +107,7 @@ class SignalReportMixin:
         stops after four rows has seen the four that count.
         """
         registry = dr.async_get(self.hass)
+        areas = ar.async_get(self.hass)
         rows: list[dict[str, Any]] = []
         for device_id, record in (self.data.get(DATA_DEVICES) or {}).items():
             series = record.get(DEV_SIGNAL_DAILY_P5) or []
@@ -113,6 +136,7 @@ class SignalReportMixin:
                 {
                     "device_id": device_id,
                     "name": entry.name_by_user or entry.name or device_id,
+                    "area": self._area_name(entry, areas),
                     "scale": record.get(DEV_SIGNAL_SCALE),
                     "series": series[-span:],
                     "reads": (record.get(DEV_SIGNAL_DAILY_COUNT) or [])[-span:],
@@ -123,6 +147,43 @@ class SignalReportMixin:
             )
         rows.sort(key=lambda row: -row["worst"])
         return rows
+
+    @staticmethod
+    def _area_name(entry: Any, areas: Any) -> str:
+        """Return the device's area, or an empty string.
+
+        Shown beside every name (ruling #315). It can mislead, and
+        that is not a reason to withhold it: the router unplugged on
+        18 August took devices in five different rooms, because a
+        router serves by radio topology rather than by the room it
+        sits in. A person seeing that scatter repeatedly will work
+        out what it means, and hiding a fact because it is not yet
+        interpretable is how dwell came to measure against a line
+        that moved.
+        """
+        if entry.area_id is None:
+            return ""
+        area = areas.async_get_area(entry.area_id)
+        return area.name if area is not None else ""
+
+    def _signal_strip_rows(
+        self, rows: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Return the devices worth a look, and how many are not.
+
+        Ruling #315. The full fleet is still available behind a
+        toggle, for the once-in-a-while troubleshooting a person
+        actually opens this page for.
+        """
+        worth = [
+            row for row in rows
+            if row["worst"] >= STRIP_WORTH_A_LOOK
+        ]
+        if len(worth) < STRIP_MIN_ROWS:
+            worth = rows[:STRIP_MIN_ROWS]
+        if len(worth) > STRIP_MAX_ROWS:
+            worth = worth[:STRIP_MAX_ROWS]
+        return worth, len(rows) - len(worth)
 
     def _signal_baddays_today(
         self, rows: list[dict[str, Any]]
@@ -195,9 +256,9 @@ class SignalReportMixin:
         if not rows:
             return ""
         span = max(len(row["readings"]) for row in rows)
-        cell_w, cell_h, gap, left = 44, 9, 2, 176
+        cell_w, cell_h, gap, left = 44, 13, 12, 214
         width = left + span * (cell_w + gap) + 10
-        height = 26 + len(rows) * (cell_h + gap) + 6
+        height = 26 + len(rows) * (cell_h + gap) + 8
         covered = dt_util.now().date() - timedelta(days=1)
         parts = [
             f"<svg viewBox='0 0 {width} {height}' width='100%' role='img' "
@@ -217,10 +278,16 @@ class SignalReportMixin:
             shown = name if len(name) < 26 else f"{name[:24]}.."
             weight = " font-weight='700'" if row["bad_days"] else ""
             parts.append(
-                f"<text x='{left - 6}' y='{y + cell_h - 1}' class='lbl' "
-                f"font-size='9' text-anchor='end'{weight}>"
+                f"<text x='{left - 6}' y='{y + cell_h - 3}' class='lbl' "
+                f"font-size='10' text-anchor='end'{weight}>"
                 f"{escape(shown)}</text>"
             )
+            if row["area"]:
+                parts.append(
+                    f"<text x='{left - 6}' y='{y + cell_h + 7}' "
+                    f"class='lbl area' font-size='8' text-anchor='end'>"
+                    f"{escape(row['area'])}</text>"
+                )
             pad = span - len(row["readings"])
             for index in range(span):
                 reading = (
@@ -340,6 +407,13 @@ class SignalReportMixin:
     def _write_signal_report_html(self) -> None:
         """Write the signal report to www for browsers and dashboards."""
         rows = self._signal_report_rows()
+        worth, quiet = self._signal_strip_rows(rows)
+        quiet_line = (
+            f"<p class='empty'>{quiet} other device(s) stayed within "
+            "their own normal and are not shown.</p>"
+            if quiet
+            else ""
+        )
         hits = self._signal_baddays_today(rows)
         headline = self._signal_headline(hits)
         written = dt_util.now().strftime("%B %d, %Y at %-I:%M %p")
@@ -355,7 +429,8 @@ class SignalReportMixin:
         else:
             lede = (
                 "<p class='empty'>No device had a bad signal day on "
-                f"{day_label}.</p>"
+                f"{day_label}. {len(rows)} device(s) judged; nothing "
+                "here needs you.</p>"
             )
 
         biographies = []
@@ -422,6 +497,8 @@ td, th {{ border: 1px solid #D3D1C7; padding: 4px 8px;
   text-align: left; }}
 .legend span {{ display: inline-block; margin-right: 14px;
   font-size: 12px; }}
+.area {{ opacity: 0.6; }}
+summary {{ font-size: 14px; cursor: pointer; margin-top: 8px; }}
 .swatch {{ display: inline-block; width: 11px; height: 11px;
   border-radius: 2px; margin-right: 4px; vertical-align: -1px; }}
 footer {{ margin-top: 28px; font-size: 12px; color: #5F5E5A; }}
@@ -437,14 +514,15 @@ footer {{ margin-top: 28px; font-size: 12px; color: #5F5E5A; }}
 has closed. {len(rows)} device(s) have enough history to judge.</p>
 <h2>{day_label}</h2>
 {lede}
-<h2>The Fleet, Day by Day</h2>
+<h2>Devices Worth a Look</h2>
 <p>One row per device, worst first, one cell per folded day. A cell is
 shaded by how far that day's signal sat below the device's own normal,
 measured in that device's own spread, so a steady link and a jittery
 one are read on the same scale. A ringed cell is a bad signal day. The
 shape to look for is a vertical band: devices falling on the same day
-share a cause, and that cause is usually a router rather than the
-devices themselves.</p>
+share a cause, which can mean one router rather than several devices.
+The area beside each name is where the device sits, which is not
+always where its router sits.</p>
 <p class='legend'>
 <span><span class='swatch' style='background:#7FA86B'></span>normal</span>
 <span><span class='swatch' style='background:#E3C463'></span>2 to 3
@@ -455,7 +533,14 @@ below</span>
 below</span>
 <span><span class='swatch' style='background:#E8E6DF'></span>not
 judged</span></p>
+{self._signal_strip_svg(worth)}
+{quiet_line}
+<details>
+<summary>Show All {len(rows)} Devices</summary>
+<p>The full fleet, worst first, for when you are chasing something
+specific.</p>
 {self._signal_strip_svg(rows)}
+</details>
 <h2>Devices That Had a Bad Day</h2>
 {biography_html}
 <footer>A bad signal day is a fall in a device's own time-weighted
@@ -547,7 +632,7 @@ the Device Sentinel wiki.</footer>
         pick.
         """
         # The column shows exactly the window the floor is computed
-        # over, which is thirty days rather than the fortnight it was
+        # over, which is thirty days rather than the two weeks it was
         # (ruling #196). Showing fourteen while judging on thirty
         # would leave the marked value outside the cell on any device
         # whose worst days sit further back, so a reader would see

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.16.15 (2026-08-21)
+# File: config_flow.py, Version: 0.16.16 (2026-08-22)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -1114,16 +1114,39 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             description_placeholders={"wiki_link": WIKI_LINK_EXCLUSIONS},
             data_schema=vol.Schema(
                 {
-                    vol.Optional(
-                        CONF_IGNORED_INTEGRATIONS, default=ignored
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=ignorable_domains,
-                            multiple=True,
-                            custom_value=True,
-                            sort=True,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
+                    # The screen splits by verb (ruling #315), and
+                    # both halves are sections so both carry a
+                    # heading and an explanation above their picker.
+                    # A loose field gets its label above the input
+                    # and its help below it, which put the ignore
+                    # list's explanation underneath the chooser while
+                    # the ladder beside it had its own above. Two
+                    # sections and nothing loose departs from the
+                    # Advanced pattern deliberately: this screen has
+                    # no plain settings, only two groups of lists
+                    # that need different explanations.
+                    vol.Required("ignore"): section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    CONF_IGNORED_INTEGRATIONS,
+                                    default=ignored,
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=ignorable_domains,
+                                        multiple=True,
+                                        custom_value=True,
+                                        sort=True,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                            }
+                        ),
+                        {"collapsed": False},
                     ),
                     # The screen splits by verb (ruling #314). Ignore
                     # stays loose at the top because it is the
