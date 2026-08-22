@@ -33,9 +33,9 @@ from .stacks import reader_for_domain
 from .const import (
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
-    CONF_FREEZE_EXCLUDED_DEVICES,
-    CONF_FREEZE_EXCLUDED_INTEGRATIONS,
-    CONF_FREEZE_EXCLUDED_LABELS,
+    CONF_FREEZE_MUTED_DEVICES,
+    CONF_FREEZE_MUTED_INTEGRATIONS,
+    CONF_FREEZE_MUTED_LABELS,
     CONF_TAINT_FLOOR,
     CONF_TAINT_SHARE,
     DAILY_MAX_KEEP,
@@ -297,15 +297,15 @@ class FreezeMixin:
         dead device whose remaining entities have simply not flipped
         yet.
         """
-        # A globally-excluded or freeze-excluded device keeps its
+        # A globally-muted or freeze-muted device keeps its
         # clock and rhythm but is never given a verdict of any kind.
-        # Global exclusion suppresses all judgment, so it is checked
+        # Global muting suppresses all judgment, so it is checked
         # here rather than only filtered from the report: no verdict
         # is computed or stored for a device the person has told the
         # integration to ignore.
         if (
-            device_id in self._excluded_devices
-            or self._freeze_excluded(device_id)
+            device_id in self._muted_devices
+            or self._freeze_muted(device_id)
         ):
             return None
 
@@ -543,14 +543,14 @@ class FreezeMixin:
 
         A device with a learned rhythm (an established reporting
         cadence) is freeze-judgeable, minus the global device
-        excludes. This counts the set freeze detection judges; the
-        per-section freeze exclude narrows it further.
+        muting. This counts the set freeze detection judges; the
+        per-section freeze mute narrows it further.
         """
         return sum(
             1
             for device_id, record in self.watched_records()
             if len(record.get(DEV_DAILY_MAX) or []) >= LEARNING_MIN_DAYS
-            and device_id not in self._excluded_devices
+            and device_id not in self._muted_devices
         )
 
     @property
@@ -563,7 +563,7 @@ class FreezeMixin:
                     DATA_DEVICES, {}
                 ).items()
                 if len(record.get(DEV_DAILY_MAX) or []) >= LEARNING_MIN_DAYS
-                and device_id not in self._excluded_devices
+                and device_id not in self._muted_devices
             ),
             key=lambda row: row["name"] or "",
         )
@@ -576,12 +576,12 @@ class FreezeMixin:
         carrying its category (the
         worst of what its entities show) and the UTC time the verdict
         began, so a person sees what is down, how, and for how long.
-        Excluded devices are suppressed from the report but keep their
-        verdict, so undoing an exclude shows them again at once.
+        Muted devices are suppressed from the report but keep their
+        verdict, so undoing a mute shows them again at once.
         """
         rows: list[dict[str, Any]] = []
         for device_id, record in self.watched_records():
-            if device_id in self._excluded_devices:
+            if device_id in self._muted_devices:
                 continue
             category = record.get(DEV_FROZEN_CATEGORY)
             if category is None:
@@ -649,8 +649,8 @@ class FreezeMixin:
         unknown) right now."""
         return len(self.frozen_devices_list)
 
-    def _freeze_excluded(self, device_id: str) -> bool:
-        """Return whether a device is excluded from freeze judgment
+    def _freeze_muted(self, device_id: str) -> bool:
+        """Return whether a device is muted from freeze judgment
         only. The same broad-to-narrow ladder as battery and signal,
         and the same principle: the device keeps its clock and its
         learned rhythm, so re-including it is instant and arrives with
@@ -661,14 +661,14 @@ class FreezeMixin:
         """
         options = self.entry.options
         if self._watched.get(device_id) in options.get(
-            CONF_FREEZE_EXCLUDED_INTEGRATIONS, []
+            CONF_FREEZE_MUTED_INTEGRATIONS, []
         ):
             return True
         if self._device_labels.get(device_id, frozenset()) & set(
-            options.get(CONF_FREEZE_EXCLUDED_LABELS, [])
+            options.get(CONF_FREEZE_MUTED_LABELS, [])
         ):
             return True
-        return device_id in options.get(CONF_FREEZE_EXCLUDED_DEVICES, [])
+        return device_id in options.get(CONF_FREEZE_MUTED_DEVICES, [])
 
     @staticmethod
     def _coerce_taint_reasons(devices: dict[str, dict[str, Any]]) -> int:

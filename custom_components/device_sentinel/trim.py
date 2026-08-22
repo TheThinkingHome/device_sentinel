@@ -29,7 +29,7 @@ own stamped file, so a sequence of trims cannot bury the state the
 first one started from, and the pair the fold maintains stays exactly
 what the fold left.
 
-It erases history and nothing else. Exclusions and ignore entries
+It erases history and nothing else. Muting and ignore entries
 survive, because a trimmed device is rediscovered within seconds and
 trimming data is not a statement about wanting the device gone
 (ruling #307). Bridge, broker, pairing and storm state survive,

@@ -97,7 +97,7 @@ class DeviceSentinelActionButton(ButtonEntity):
 
     The enable buttons each walk the entity registry for disabled
     entities of their kind and turn them on, whoever disabled them,
-    on watched devices only (ruling #302). An excluded device is
+    on watched devices only (ruling #302). A muted device is
     watched and is reached; a set-aside device is not, because its
     entities cannot be usefully turned on.
     The regenerate button judges every device and rewrites every

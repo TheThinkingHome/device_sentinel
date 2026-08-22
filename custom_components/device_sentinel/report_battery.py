@@ -97,12 +97,12 @@ class BatteryReportMixin:
         against the threshold, flat, unreadable, and devices with no
         battery at all.
 
-        Excluded devices are absent entirely. Every rechargeable on
-        the reference fleet is excluded by integration already, which
+        Muted devices are absent entirely. Every rechargeable on
+        the reference fleet is muted by integration already, which
         is why nothing here tries to detect one: a rule watching for
         a jump back up was tried against the fleet and flagged a coin
         cell that reported one high reading, while catching nothing
-        the exclusions had not caught first (ruling #194).
+        the muting had not caught first (ruling #194).
         """
         falling: list[dict[str, Any]] = []
         low: list[dict[str, Any]] = []
@@ -110,9 +110,9 @@ class BatteryReportMixin:
         unreadable: list[dict[str, Any]] = []
         absent: list[dict[str, Any]] = []
         for device_id, record in self.watched_records():
-            if device_id in self._excluded_devices:
+            if device_id in self._muted_devices:
                 continue
-            if self._battery_excluded(device_id):
+            if self._battery_muted(device_id):
                 continue
             level = record.get(DEV_BATTERY_VALUE)
             name = self._device_name(device_id)

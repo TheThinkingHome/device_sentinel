@@ -30,10 +30,10 @@ Core rules implemented here, all ruled in the project document:
   statistics, no storage), with a startup audit log naming them.
 - The completed-gap principle: learning ingests only finished gaps.
 - The startup grace and the storm detector count the bursts a
-  restart or a reconnect produces. Neither excludes anything from
+  restart or a reconnect produces. Neither mutes anything from
   learning: an echo carries no evidence that the device spoke,
   because the protocol clock behind it has not moved, and for a
-  device without one the exclusions were discarding the only
+  device without one the muting rules were discarding the only
   evidence there was (rulings #124 and #125).
 - The taint rule: a gap that spans an unavailable stretch is an
   outage, not normal silence, and never feeds statistics.
@@ -78,14 +78,14 @@ from .const import (
     BACKUP_TAKEN_KEY,
     BATTERY_SLOPE_DAYS,
     BRIEF_TRIGGER,
-    CONF_BATTERY_EXCLUDED_DEVICES,
+    CONF_BATTERY_MUTED_DEVICES,
     CONF_EPISODE_SHARE,
-    CONF_EXCLUDED_DEVICES,
-    CONF_EXCLUDED_INTEGRATIONS,
-    CONF_EXCLUDED_LABELS,
-    CONF_FREEZE_EXCLUDED_DEVICES,
+    CONF_MUTED_DEVICES,
+    CONF_MUTED_INTEGRATIONS,
+    CONF_MUTED_LABELS,
+    CONF_FREEZE_MUTED_DEVICES,
     CONF_MAINTENANCE_MINUTES,
-    CONF_SIGNAL_EXCLUDED_DEVICES,
+    CONF_SIGNAL_MUTED_DEVICES,
     DAILY_MAX_KEEP,
     DATA_BRIDGE_SEEN,
     DATA_BROKER_SEEN,
@@ -277,12 +277,12 @@ class DeviceSentinelCoordinator(
         # the integration where the plain name is not unique.
         self._display_names: dict[str, str] = {}
         self._device_labels: dict[str, frozenset[str]] = {}
-        # Exclusion suppresses judgment, not observation: these sets
+        # Muting suppresses judgment, not observation: these sets
         # gate reporting only. Clocks, statistics, and vouching keep
         # running for everything in them, so undo is instant and the
         # rhythm history carries no holes.
-        self._excluded_devices: dict[str, str] = {}  # device_id -> reason
-        self._excluded_entities: dict[str, str] = {}  # entity_id -> reason
+        self._muted_devices: dict[str, str] = {}  # device_id -> reason
+        self._muted_entities: dict[str, str] = {}  # entity_id -> reason
         # id -> (name, domain, reason). The reason is one of the
         # SET_ASIDE_* constants and has been the third element since
         # 0.13.3, when a device disabled by Home Assistant joined
@@ -442,6 +442,10 @@ class DeviceSentinelCoordinator(
         # And the same treatment for the four kinds renamed at 0.15.8,
         # for the same reason one release later (ruling #299).
         self._rename_stored_kinds(loaded)
+        # And the option keys those four kinds' neighbour carries:
+        # a settings-changed row names keys, and the brief resolves
+        # each to its screen label (ruling #316).
+        self._rename_stored_option_keys(loaded)
         # The list is engine-owned. Anything stored without a
         # device_id is a hand-typed item from the pre-sync backbone
         # (the create feature is gone with this release) and is
@@ -934,12 +938,12 @@ class DeviceSentinelCoordinator(
         dev_reg = dr.async_get(self.hass)
 
         options = self.entry.options
-        excluded_device_ids = set(
-            options.get(CONF_EXCLUDED_DEVICES, [])
+        muted_device_ids = set(
+            options.get(CONF_MUTED_DEVICES, [])
         )
-        excluded_labels = set(options.get(CONF_EXCLUDED_LABELS, []))
-        excluded_integrations = set(
-            options.get(CONF_EXCLUDED_INTEGRATIONS, [])
+        muted_labels = set(options.get(CONF_MUTED_LABELS, []))
+        muted_integrations = set(
+            options.get(CONF_MUTED_INTEGRATIONS, [])
         )
         ignored_integrations = self.ignored_integrations
 
@@ -947,8 +951,8 @@ class DeviceSentinelCoordinator(
         device_names: dict[str, str] = {}
         device_labels: dict[str, frozenset[str]] = {}
         set_aside: dict[str, tuple[str, str]] = {}
-        excluded_devices: dict[str, str] = {}
-        excluded_entities: dict[str, str] = {}
+        muted_devices: dict[str, str] = {}
+        muted_entities: dict[str, str] = {}
         stacks: set[str] = set()
         stack_keys: dict[str, tuple[str, str]] = {}
         for device in dev_reg.devices.values():
@@ -990,17 +994,17 @@ class DeviceSentinelCoordinator(
                 stack_keys[device.id] = owner
             device_names[device.id] = name
             device_labels[device.id] = frozenset(device.labels or ())
-            # Device-level exclusion reasons, named broadest first
+            # Device-level muting reasons, named broadest first
             # so the reason recorded is the one that would survive a
             # prune. The integration test uses the primary domain, so
-            # an integration exclude catches only devices it owns,
+            # an integration mute catches only devices it owns,
             # never multi-homed hardware it merely sees.
-            if domain in excluded_integrations:
-                excluded_devices[device.id] = "integration"
-            elif excluded_labels & set(device.labels or ()):
-                excluded_devices[device.id] = "label"
-            elif device.id in excluded_device_ids:
-                excluded_devices[device.id] = "device"
+            if domain in muted_integrations:
+                muted_devices[device.id] = "integration"
+            elif muted_labels & set(device.labels or ()):
+                muted_devices[device.id] = "label"
+            elif device.id in muted_device_ids:
+                muted_devices[device.id] = "device"
 
         entity_map: dict[str, tuple[str, str | None]] = {}
         last_seen_entity: dict[str, str] = {}
@@ -1025,13 +1029,13 @@ class DeviceSentinelCoordinator(
                 device_entries.setdefault(ent.device_id, set()).add(
                     ent.config_entry_id
                 )
-            if excluded_labels & set(ent.labels or ()):
-                # An entity carrying an excluded label does not feed
+            if muted_labels & set(ent.labels or ()):
+                # An entity carrying a muted label does not feed
                 # its device's judgment. This is the label axis, not a
-                # per-entity exclude: the explicit entity exclude was
+                # per-entity mute: the explicit entity mute was
                 # removed as residue from
                 # the entity-level Entity Sentinel blueprint.
-                excluded_entities[ent.entity_id] = "label"
+                muted_entities[ent.entity_id] = "label"
             if self._is_last_seen(ent):
                 last_seen_entity[ent.device_id] = ent.entity_id
             if self._is_signal(ent):
@@ -1075,7 +1079,7 @@ class DeviceSentinelCoordinator(
             # entities are all disabled is a different case and stays
             # watched: those entities exist, the never-reported row
             # is the prompt, and the person can enable them or
-            # exclude the device.
+            # mute the device.
             set_aside[device_id] = (
                 device_names.get(device_id, device_id),
                 watched.pop(device_id),
@@ -1108,8 +1112,8 @@ class DeviceSentinelCoordinator(
         self._device_names = device_names
         self._device_labels = device_labels
         self._set_aside = set_aside
-        self._excluded_devices = excluded_devices
-        self._excluded_entities = excluded_entities
+        self._muted_devices = muted_devices
+        self._muted_entities = muted_entities
         self._entity_map = entity_map
         self._last_seen_entity = last_seen_entity
         self._device_entries = device_entries
@@ -1192,7 +1196,7 @@ class DeviceSentinelCoordinator(
         value is the coordinator's own record of contact, and a
         republish carries it unchanged, so a replayed payload cannot
         advance the clock and the gap keeps accumulating with no
-        exclusion rule involved. That is the whole point: the data is
+        muting rule involved. That is the whole point: the data is
         honest without being filtered into honesty.
 
         None means we have such a clock and it has not moved, or the
@@ -1245,13 +1249,13 @@ class DeviceSentinelCoordinator(
     def _on_registry_updated(self, event: Event) -> None:
         """Rebuild the registry view when devices or entities change."""
         if event.data.get("action") == "remove":
-            self._log_removed_exclusion(event.data.get("device_id"))
+            self._log_removed_muting(event.data.get("device_id"))
         self._rebuild_registry_view()
         self._notify()
 
     @callback
-    def _log_removed_exclusion(self, device_id: str | None) -> None:
-        """Name a departing device that carries an exclusion pick.
+    def _log_removed_muting(self, device_id: str | None) -> None:
+        """Name a departing device that carries a muting pick.
 
         The pick is pruned the next time its screen is saved, and by
         then the device is gone from the registry and only its id
@@ -1261,17 +1265,17 @@ class DeviceSentinelCoordinator(
         if device_id is None or device_id not in self._device_names:
             return
         keys = (
-            CONF_EXCLUDED_DEVICES,
-            CONF_BATTERY_EXCLUDED_DEVICES,
-            CONF_FREEZE_EXCLUDED_DEVICES,
-            CONF_SIGNAL_EXCLUDED_DEVICES,
+            CONF_MUTED_DEVICES,
+            CONF_BATTERY_MUTED_DEVICES,
+            CONF_FREEZE_MUTED_DEVICES,
+            CONF_SIGNAL_MUTED_DEVICES,
         )
         options = self.entry.options
         if not any(device_id in options.get(key, []) for key in keys):
             return
         LOGGER.info(
             "%s (%s) has been removed from Home Assistant and carried a "
-            "Device Sentinel exclusion; the setting is dropped the next "
+            "Device Sentinel muting; the setting is dropped the next "
             "time its screen is saved",
             self._device_names.get(device_id, device_id),
             device_id,
@@ -1303,7 +1307,7 @@ class DeviceSentinelCoordinator(
 
         The taint carries the reason rather than a flag (ruling
         #164): the state is in hand here and was previously spent on
-        the log line alone, which is why every excluded gap once read
+        the log line alone, which is why every muted gap once read
         unavailable whatever the device had actually done. A taint
         raised inside the startup grace window is held in the grace
         set instead of logged, so the grace release can tell the two
@@ -1433,13 +1437,13 @@ class DeviceSentinelCoordinator(
             # restored state, or an entity of ours reacting to
             # something else. Count it as seen and change nothing
             # about liveness. The silence keeps running, which is
-            # what makes the exclusion rules unnecessary here.
+            # what makes the muting rules unnecessary here.
             record[DEV_EVENT_COUNT] = int(record[DEV_EVENT_COUNT]) + 1
             self._dirty = True
             return
 
         # A taint is consumed by a stamp the protocol vouches for:
-        # the outage ended here, and the spanning gap is excluded
+        # the outage ended here, and the spanning gap is muted
         # because it covers time we could not observe.
         tainted = record[DEV_TAINTED]
         taint_seconds = None
@@ -1449,7 +1453,7 @@ class DeviceSentinelCoordinator(
             self._taint_consumed_at[device_id] = now
             if last is not None:
                 LOGGER.debug(
-                    "Completed gap of %.0f s on a tainted device excluded "
+                    "Completed gap of %.0f s on a tainted device muted "
                     "from learning (spanned an unavailable stretch)",
                     stamp - last,
                 )
@@ -1485,7 +1489,7 @@ class DeviceSentinelCoordinator(
             ):
                 record[DEV_TODAY_MAX] = learned_gap
 
-        # Taint is the only surviving exclusion (rulings #124 and #125). Grace
+        # Taint is the only surviving muting (rulings #124 and #125). Grace
         # and storm are gone: for a device with a protocol clock they
         # were never needed, since a replayed payload cannot advance
         # it, and for a device without one they were discarding the
@@ -1620,7 +1624,7 @@ class DeviceSentinelCoordinator(
         Read by the record discard and the episode cleanup. The
         enable buttons no longer need it: they reach watched devices
         only (ruling #302), and every ignored device is set aside, so
-        the narrower filter already covers what this used to exclude
+        the narrower filter already covers what this used to mute
         from them.
         """
         return {
@@ -2344,16 +2348,16 @@ class DeviceSentinelCoordinator(
             )
         LOGGER.debug(
             "Options updated: low threshold now %s, %d devices and %d "
-            "entities excluded; re-evaluating",
+            "entities muted; re-evaluating",
             self.low_threshold,
-            len(self._excluded_devices),
-            len(self._excluded_entities),
+            len(self._muted_devices),
+            len(self._muted_entities),
         )
         self._schedule_brief()
         self._evaluate_all_batteries()
-        # Exclusions changed here remove verdicts at the source, so
+        # Muting changed here remove verdicts at the source, so
         # the sync sees the shrunken lists and deletes the items of
-        # anything the person just excluded, immediately.
+        # anything the person just muted, immediately.
         self._sync_problem_list()
         if self._dirty or self._critical:
             await self._save_now()
@@ -2366,11 +2370,11 @@ class DeviceSentinelCoordinator(
         pickers.
 
         Wider than watched_device_rows on purpose (ruling #307).
-        Nothing is filtered: watched, excluded, ignored and
+        Nothing is filtered: watched, muted, ignored and
         set-aside devices are all offered, and so is a device that
-        currently holds no record at all. The exclusions pickers can
-        narrow to what an exclusion would change, because offering a
-        pointless exclusion is only clutter. A trim picker cannot,
+        currently holds no record at all. The muting pickers can
+        narrow to what a muting would change, because offering a
+        pointless muting is only clutter. A trim picker cannot,
         because a faulty record can read as empty and the
         empty-looking device is exactly the one a person will be
         told to choose; a filter keyed on holding a record would
@@ -2412,13 +2416,13 @@ class DeviceSentinelCoordinator(
 
     @property
     def watched_device_rows(self) -> list[dict[str, Any]]:
-        """Return every watched device, for the exclusions picker.
+        """Return every watched device, for the muting picker.
 
         Service-type devices are absent because they were never
-        watched, so the list cannot offer an exclusion that would do
-        nothing. Excluded devices are present: the list is what is
-        being judged, and an excluded device is still a device you
-        may want to un-exclude.
+        watched, so the list cannot offer a muting that would do
+        nothing. Muted devices are present: the list is what is
+        being judged, and a muted device is still a device you
+        may want to un-mute.
         """
         rows = [
             {
@@ -2446,9 +2450,9 @@ class DeviceSentinelCoordinator(
         battery entities to come on: declining part of the job
         because they turned one off themselves reads as the tool
         second-guessing them, and they would then have to go and do
-        by hand exactly what they just asked for. An excluded device
+        by hand exactly what they just asked for. A muted device
         is watched and still learns, so it is reached like any other;
-        exclusion suppresses judgment and reporting, never learning.
+        muting suppresses judgment and reporting, never learning.
 
         A set-aside device is not reached, which corrects the third
         consequence of #257. Its entities cannot be usefully turned

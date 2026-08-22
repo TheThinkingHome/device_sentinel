@@ -161,12 +161,12 @@ class JournalMixin:
         both a clear distance short of judgment.
 
         Devices whose freeze judgment is suppressed are skipped
-        (ruling #106). Exclusion suppresses judgment and reporting
+        (ruling #106). Muting suppresses judgment and reporting
         while
         observation continues, and this file exists to explain
         verdicts: a device that can never be judged frozen has no
         verdict to explain, so its silences are noise here. A device
-        excluded only for battery or signal is still judged for
+        muted only for battery or signal is still judged for
         freeze and still belongs.
         """
         if now < self._grace_until:
@@ -179,7 +179,7 @@ class JournalMixin:
             # and new ones open once grace closes.
             return
         for device_id in self._watched:
-            if device_id in self._excluded_devices or self._freeze_excluded(
+            if device_id in self._muted_devices or self._freeze_muted(
                 device_id
             ):
                 continue

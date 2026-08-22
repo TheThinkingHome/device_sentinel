@@ -27,6 +27,11 @@ from .records import _new_device_record, _reset_signal_day, _span
 
 from .const import (
     DATA_INCIDENTS,
+    DATA_SYSTEM_EVENTS,
+    MUTING_KEY_RENAMES,
+    SYS_DETAIL,
+    SYS_KIND,
+    SYS_OPTIONS_CHANGED,
     DATA_TODO_JOURNAL,
     INC_KIND,
     LEGACY_KIND_RENAMES,
@@ -252,6 +257,49 @@ class StorageMixin:
                     f"{was} to {now}"
                     for was, now in LEGACY_KIND_RENAMES.items()
                 ),
+            )
+        return renamed
+
+    def _rename_stored_option_keys(self, loaded: dict[str, Any]) -> int:
+        """Bring stored settings-changed rows onto the muting names.
+
+        A settings-changed row records which option keys moved, as a
+        comma-joined string, and the brief turns each key into the
+        label a person read on the screen by looking it up in
+        strings.json (ruling #314). Rename the keys and every row
+        written before the upgrade points at a label that no longer
+        exists, so the brief falls back to the raw key and prints
+        `excluded_devices` at a person for as long as the row is
+        kept. The same reasoning as #299: stored history speaks one
+        vocabulary or the surface reading it speaks two.
+
+        One named list, not a sweep. The detail field carries option
+        keys only on this one kind; on others it carries counts and
+        device names, and rewriting those would be nonsense.
+
+        Idempotent: a key already renamed is not in the map. An
+        unrecognized key passes through untouched, so a row written
+        by a later version survives a downgrade.
+        """
+        renamed = 0
+        for entry in loaded.get(DATA_SYSTEM_EVENTS) or []:
+            if entry.get(SYS_KIND) != SYS_OPTIONS_CHANGED:
+                continue
+            detail = entry.get(SYS_DETAIL)
+            if not isinstance(detail, str) or not detail:
+                continue
+            keys = [part.strip() for part in detail.split(",")]
+            rebuilt = [MUTING_KEY_RENAMES.get(key, key) for key in keys]
+            if rebuilt != keys:
+                renamed += sum(
+                    1 for key in keys if key in MUTING_KEY_RENAMES
+                )
+                entry[SYS_DETAIL] = ", ".join(rebuilt)
+        if renamed:
+            LOGGER.info(
+                "Renamed %d stored option key(s) in the system events "
+                "log onto the muting vocabulary (ruling #316)",
+                renamed,
             )
         return renamed
 
@@ -506,7 +554,7 @@ class StorageMixin:
         So the rule is one line and lives in one place: a surface
         that reads the record store filters to the watched set first.
         The record survives, unjudged and unreported, exactly as the
-        exclusion ladders promise; what stops is the reporting of it.
+        muting ladders promise; what stops is the reporting of it.
         """
         devices = self.data.get(DATA_DEVICES) or {}
         return [
@@ -636,7 +684,7 @@ class StorageMixin:
             record[DEV_LAST_ACTIVITY] = now
             # A clock that no longer describes a real report cannot
             # go on carrying a taint earned before it, because the
-            # gap that taint was waiting to exclude no longer exists.
+            # gap that taint was waiting to mute no longer exists.
             record[DEV_TAINTED] = False
             reset += 1
 

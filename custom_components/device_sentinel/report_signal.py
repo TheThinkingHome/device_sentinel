@@ -113,12 +113,12 @@ class SignalReportMixin:
             series = record.get(DEV_SIGNAL_DAILY_P5) or []
             if not series:
                 continue
-            # Exclusion suppresses reporting, and this page is
-            # reporting: a device excluded globally or from signal
+            # Muting suppresses reporting, and this page is
+            # reporting: a device muted globally or from signal
             # keeps recording and never renders here.
             if (
-                self._signal_excluded(device_id)
-                or device_id in self._excluded_devices
+                self._signal_muted(device_id)
+                or device_id in self._muted_devices
             ):
                 continue
             entry = registry.async_get(device_id)

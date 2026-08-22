@@ -15,10 +15,10 @@ The options flow is a menu that branches to each configuration
 surface, so it grows without becoming one long form. The menu runs
 in the order a new installation is best worked through:
 
-- Exclusions: what is never judged or reported. It leads because
+- Muting: what is never judged or reported. It leads because
   narrowing the field costs nothing to undo and every later family
   inherits the result.
-- Battery: the low threshold and the battery-only excludes. The
+- Battery: the low threshold and the battery-only muting. The
   threshold is a UI knob rather than a constant because batteries
   drift slowly, and proving detection live means sliding the
   threshold above a real cell's level and watching it flag.
@@ -29,12 +29,12 @@ in the order a new installation is best worked through:
   pierce quiet hours. These settings are stored and inert until the
   engine reads them.
 
-Both exclude screens run one priority ladder, broadest first:
+Both muting screens run one priority ladder, broadest first:
 integration, label, device, entity (Battery stops at device). Each
 picker lists only what the kinds above it have not already caught,
 and a pick a broader kind covers is pruned from stored options on
 save. Pruning is silent and permanent by ruling: the screens warn
-about it up front, and undoing a broad exclusion does not restore
+about it up front, and undoing a broad muting does not restore
 the narrower picks it erased.
 
 Each step's description carries a wiki_link placeholder rather than
@@ -63,29 +63,30 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import selector
 
 from .const import (
+    OPTIONS_MINOR_VERSION,
     BATTERY_DAYS_MAX,
     BATTERY_DAYS_MIN,
     COALESCE_MINUTES_MAX,
     COALESCE_MINUTES_MIN,
     CONF_BATTERY_DAYS,
-    CONF_BATTERY_EXCLUDED_DEVICES,
-    CONF_BATTERY_EXCLUDED_INTEGRATIONS,
-    CONF_BATTERY_EXCLUDED_LABELS,
+    CONF_BATTERY_MUTED_DEVICES,
+    CONF_BATTERY_MUTED_INTEGRATIONS,
+    CONF_BATTERY_MUTED_LABELS,
     CONF_BRIEF_TARGETS,
     CONF_COALESCE_MINUTES,
     CONF_EPISODE_SHARE,
     CONF_REPEAT_FLOOR,
     CONF_TRIM_DEVICES,
     CONF_TRIM_INTEGRATIONS,
-    CONF_EXCLUDED_DEVICES,
-    CONF_EXCLUDED_INTEGRATIONS,
+    CONF_MUTED_DEVICES,
+    CONF_MUTED_INTEGRATIONS,
     CONF_IGNORED_INTEGRATIONS,
-    CONF_EXCLUDED_LABELS,
+    CONF_MUTED_LABELS,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
-    CONF_FREEZE_EXCLUDED_DEVICES,
-    CONF_FREEZE_EXCLUDED_INTEGRATIONS,
-    CONF_FREEZE_EXCLUDED_LABELS,
+    CONF_FREEZE_MUTED_DEVICES,
+    CONF_FREEZE_MUTED_INTEGRATIONS,
+    CONF_FREEZE_MUTED_LABELS,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_LOW_THRESHOLD,
     CONF_MAINTENANCE_MINUTES,
@@ -98,9 +99,9 @@ from .const import (
     CONF_REMINDER_TIME,
     CONF_RETENTION_DAYS,
     CONF_SETTLE_SHARE,
-    CONF_SIGNAL_EXCLUDED_DEVICES,
-    CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
-    CONF_SIGNAL_EXCLUDED_LABELS,
+    CONF_SIGNAL_MUTED_DEVICES,
+    CONF_SIGNAL_MUTED_INTEGRATIONS,
+    CONF_SIGNAL_MUTED_LABELS,
     CONF_BADDAY_BASELINE_DAYS,
     CONF_BADDAY_DROP_LQI,
     CONF_BADDAY_DROP_RSSI,
@@ -208,13 +209,13 @@ def _device_options(
     that report a signal, and both drop a device the moment that
     entity is disabled. A pick left holding such a device seeded the
     form with a value its own selector rejected, and the save failed
-    for the whole screen rather than the one pick, so no exclusion of
+    for the whole screen rather than the one pick, so no muting of
     any kind could be changed while one such id sat in the options.
 
     So a pick whose device is still in the registry is offered back,
     named, and the person decides. Disabling an entity for an
     afternoon is a normal thing to do and must not quietly cost the
-    exclusion that goes with it. A pick whose device the registry no
+    muting that goes with it. A pick whose device the registry no
     longer holds is not offered here at all: it is pruned on save,
     which is the one case where absence is proof rather than
     inference (ruling #45).
@@ -273,20 +274,20 @@ def _surviving_picks(
 
 def _devices_covered_by(
     rows: list[dict[str, Any]],
-    excluded_integrations: list[str],
-    excluded_labels: list[str],
+    muted_integrations: list[str],
+    muted_labels: list[str],
 ) -> set[str]:
-    """Return the device ids an integration or label exclusion already
+    """Return the device ids an integration or label muting already
     catches.
 
     Coverage is positive only: a device is named here because a broader
-    exclusion demonstrably reaches it. An id we cannot account for, a
+    muting demonstrably reaches it. An id we cannot account for, a
     device deleted or belonging to an integration that has not loaded
     yet, is never named, so a pick can only be pruned on proof rather
     than on absence.
     """
-    labels = set(excluded_labels)
-    integrations = set(excluded_integrations)
+    labels = set(muted_labels)
+    integrations = set(muted_integrations)
     return {
         row["device_id"]
         for row in rows
@@ -294,22 +295,22 @@ def _devices_covered_by(
     }
 
 
-def _globally_excluded(
+def _globally_muted(
     rows: list[dict[str, Any]], options: dict[str, Any]
 ) -> set[str]:
-    """Return the device ids the global exclude already reaches.
+    """Return the device ids the global mute already reaches.
 
-    The section pickers subtract these: a globally excluded device is
-    judged by nothing, so offering to also exclude it from a section
+    The section pickers subtract these: a globally muted device is
+    judged by nothing, so offering to also mute it from a section
     would be redundant. Covers the global integration and label
     ladder plus the explicit global device list.
     """
     covered = _devices_covered_by(
         rows,
-        options.get(CONF_EXCLUDED_INTEGRATIONS, []),
-        options.get(CONF_EXCLUDED_LABELS, []),
+        options.get(CONF_MUTED_INTEGRATIONS, []),
+        options.get(CONF_MUTED_LABELS, []),
     )
-    return covered | set(options.get(CONF_EXCLUDED_DEVICES, []))
+    return covered | set(options.get(CONF_MUTED_DEVICES, []))
 
 
 
@@ -317,6 +318,10 @@ class DeviceSentinelConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the Device Sentinel config flow."""
 
     VERSION = 1
+    # Bumped with every options migration step, so Home Assistant
+    # runs async_migrate_entry once per entry and knows how far each
+    # one has come (ruling #316).
+    MINOR_VERSION = OPTIONS_MINOR_VERSION
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -392,10 +397,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """The battery section: the threshold and the battery-only
-        excludes, together, the family pattern (a family's knobs and
-        its excludes share one screen).
+        muting, together, the family pattern (a family's knobs and
+        its muting shares one screen).
 
-        The excludes run the same priority ladder as the global
+        The muting lists run the same priority ladder as the global
         surface, broadest first: integration, label, device. There is
         no entity kind here by ruling, because battery judgment is
         device-level and an entity pick could be dodged by a battery
@@ -408,7 +413,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """
         battery_rows = self.config_entry.runtime_data.detected_batteries
         if user_input is not None:
-            # The exclude pickers arrive nested under their section
+            # The mute pickers arrive nested under their section
             # and the stored keys stay flat (ruling #314): every
             # reader of these options, and every saved entry already
             # on disk, knows them by their flat names, so the section
@@ -428,22 +433,22 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         options = self.config_entry.options
         covered = _devices_covered_by(
             battery_rows,
-            options.get(CONF_BATTERY_EXCLUDED_INTEGRATIONS, []),
-            options.get(CONF_BATTERY_EXCLUDED_LABELS, []),
+            options.get(CONF_BATTERY_MUTED_INTEGRATIONS, []),
+            options.get(CONF_BATTERY_MUTED_LABELS, []),
         )
-        # Also drop devices the global exclude already reaches: a
-        # globally excluded device is judged by nothing, so offering
-        # to battery-exclude it is redundant.
-        globally = _globally_excluded(battery_rows, options)
+        # Also drop devices the global mute already reaches: a
+        # globally muted device is judged by nothing, so offering
+        # to battery-mute it is redundant.
+        globally = _globally_muted(battery_rows, options)
         covered = covered | globally
         # The list only ever shows what still needs a decision: a
-        # device an integration or label exclude already reaches is
+        # device an integration or label mute already reaches is
         # gone from it. Options forms are static once rendered, so
         # the filter applies at each open, one save behind the tick.
         dev_reg = dr.async_get(self.hass)
         device_options = _device_options(
             battery_rows,
-            options.get(CONF_BATTERY_EXCLUDED_DEVICES, []),
+            options.get(CONF_BATTERY_MUTED_DEVICES, []),
             covered,
             lambda row: f"{row['name']} ({row['entity_id']})",
             dev_reg,
@@ -494,20 +499,20 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
-                    # The three excludes move into a section of their
+                    # The three muting lists move into a section of their
                     # own (ruling #314), so the heading and the
                     # ladder's explanation sit above the pickers
                     # rather than the ladder being explained at the
                     # top of a screen whose first two fields are not
                     # about it. Collapsed, because a person opening
                     # Low Battery came for the threshold.
-                    vol.Required("battery_exclusions"): section(
+                    vol.Required("battery_muting"): section(
                         vol.Schema(
                             {
                                 vol.Optional(
-                                    CONF_BATTERY_EXCLUDED_INTEGRATIONS,
+                                    CONF_BATTERY_MUTED_INTEGRATIONS,
                                     default=options.get(
-                                        CONF_BATTERY_EXCLUDED_INTEGRATIONS,
+                                        CONF_BATTERY_MUTED_INTEGRATIONS,
                                         [],
                                     ),
                                 ): selector.SelectSelector(
@@ -524,9 +529,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                                     )
                                 ),
                                 vol.Optional(
-                                    CONF_BATTERY_EXCLUDED_LABELS,
+                                    CONF_BATTERY_MUTED_LABELS,
                                     default=options.get(
-                                        CONF_BATTERY_EXCLUDED_LABELS, []
+                                        CONF_BATTERY_MUTED_LABELS, []
                                     ),
                                 ): selector.LabelSelector(
                                     selector.LabelSelectorConfig(
@@ -534,10 +539,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                                     )
                                 ),
                                 vol.Optional(
-                                    CONF_BATTERY_EXCLUDED_DEVICES,
+                                    CONF_BATTERY_MUTED_DEVICES,
                                     default=_surviving_picks(
                                         options.get(
-                                            CONF_BATTERY_EXCLUDED_DEVICES,
+                                            CONF_BATTERY_MUTED_DEVICES,
                                             [],
                                         ),
                                         covered,
@@ -569,7 +574,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         battery_rows: list[dict[str, Any]],
         dev_reg: dr.DeviceRegistry,
     ) -> dict[str, Any]:
-        """Drop device picks the same save's broader excludes cover.
+        """Drop device picks the same save's broader muting cover.
 
         Pruning happens here rather than being left to the frontend so
         that the result is deterministic: a superseded pick is gone
@@ -579,11 +584,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         pruned = dict(user_input)
         covered = _devices_covered_by(
             battery_rows,
-            pruned.get(CONF_BATTERY_EXCLUDED_INTEGRATIONS, []),
-            pruned.get(CONF_BATTERY_EXCLUDED_LABELS, []),
+            pruned.get(CONF_BATTERY_MUTED_INTEGRATIONS, []),
+            pruned.get(CONF_BATTERY_MUTED_LABELS, []),
         )
-        pruned[CONF_BATTERY_EXCLUDED_DEVICES] = _surviving_picks(
-            pruned.get(CONF_BATTERY_EXCLUDED_DEVICES, []), covered, dev_reg
+        pruned[CONF_BATTERY_MUTED_DEVICES] = _surviving_picks(
+            pruned.get(CONF_BATTERY_MUTED_DEVICES, []), covered, dev_reg
         )
         return pruned
 
@@ -591,7 +596,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """The signal section: sensitivity and the signal-only
-        excludes, together, the family pattern.
+        muting, together, the family pattern.
 
         The sensitivity is a whole-fleet setting, one slider for LQI
         and RSSI alike, and it applies to readings going forward
@@ -601,15 +606,15 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         a live entity, which would promise an immediacy the setting
         cannot deliver.
 
-        The excludes run the same priority ladder as battery,
-        broadest first: integration, label, device. Exclusion
-        suppresses judgment, not observation: an excluded device
+        The muting lists run the same priority ladder as battery,
+        broadest first: integration, label, device. Muting
+        suppresses judgment, not observation: a muted device
         keeps recording, so re-including it is instant and arrives
         with history.
         """
         signal_rows = self.config_entry.runtime_data.detected_signals
         if user_input is not None:
-            # The exclude pickers arrive nested under their section
+            # The mute pickers arrive nested under their section
             # and the stored keys stay flat (ruling #314): every
             # reader of these options, and every saved entry already
             # on disk, knows them by their flat names, so the section
@@ -629,15 +634,15 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         options = self.config_entry.options
         covered = _devices_covered_by(
             signal_rows,
-            options.get(CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []),
-            options.get(CONF_SIGNAL_EXCLUDED_LABELS, []),
+            options.get(CONF_SIGNAL_MUTED_INTEGRATIONS, []),
+            options.get(CONF_SIGNAL_MUTED_LABELS, []),
         )
-        globally = _globally_excluded(signal_rows, options)
+        globally = _globally_muted(signal_rows, options)
         covered = covered | globally
         dev_reg = dr.async_get(self.hass)
         device_options = _device_options(
             signal_rows,
-            options.get(CONF_SIGNAL_EXCLUDED_DEVICES, []),
+            options.get(CONF_SIGNAL_MUTED_DEVICES, []),
             covered,
             lambda row: f"{row['name']} ({row['integration']})",
             dev_reg,
@@ -710,17 +715,17 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
-                    # The three excludes move into a section of their
+                    # The three muting lists move into a section of their
                     # own (ruling #314). Collapsed, because a person
                     # opening Signal Strength came for the bad-day
                     # settings above.
-                    vol.Required("signal_exclusions"): section(
+                    vol.Required("signal_muting"): section(
                         vol.Schema(
                             {
                                 vol.Optional(
-                                    CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
+                                    CONF_SIGNAL_MUTED_INTEGRATIONS,
                                     default=options.get(
-                                        CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
+                                        CONF_SIGNAL_MUTED_INTEGRATIONS,
                                         [],
                                     ),
                                 ): selector.SelectSelector(
@@ -737,9 +742,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                                     )
                                 ),
                                 vol.Optional(
-                                    CONF_SIGNAL_EXCLUDED_LABELS,
+                                    CONF_SIGNAL_MUTED_LABELS,
                                     default=options.get(
-                                        CONF_SIGNAL_EXCLUDED_LABELS, []
+                                        CONF_SIGNAL_MUTED_LABELS, []
                                     ),
                                 ): selector.LabelSelector(
                                     selector.LabelSelectorConfig(
@@ -747,10 +752,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                                     )
                                 ),
                                 vol.Optional(
-                                    CONF_SIGNAL_EXCLUDED_DEVICES,
+                                    CONF_SIGNAL_MUTED_DEVICES,
                                     default=_surviving_picks(
                                         options.get(
-                                            CONF_SIGNAL_EXCLUDED_DEVICES,
+                                            CONF_SIGNAL_MUTED_DEVICES,
                                             [],
                                         ),
                                         covered,
@@ -782,7 +787,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         signal_rows: list[dict[str, Any]],
         dev_reg: dr.DeviceRegistry,
     ) -> dict[str, Any]:
-        """Drop device picks the same save's broader excludes cover,
+        """Drop device picks the same save's broader muting cover,
         and store each slider as the type its option declares. Same
         determinism rule as battery: a superseded pick is gone
         because this code removed it."""
@@ -800,11 +805,11 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             )
         covered = _devices_covered_by(
             signal_rows,
-            pruned.get(CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []),
-            pruned.get(CONF_SIGNAL_EXCLUDED_LABELS, []),
+            pruned.get(CONF_SIGNAL_MUTED_INTEGRATIONS, []),
+            pruned.get(CONF_SIGNAL_MUTED_LABELS, []),
         )
-        pruned[CONF_SIGNAL_EXCLUDED_DEVICES] = _surviving_picks(
-            pruned.get(CONF_SIGNAL_EXCLUDED_DEVICES, []), covered, dev_reg
+        pruned[CONF_SIGNAL_MUTED_DEVICES] = _surviving_picks(
+            pruned.get(CONF_SIGNAL_MUTED_DEVICES, []), covered, dev_reg
         )
         return pruned
 
@@ -831,15 +836,15 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         it lives on its own screen. The learned rhythm underneath is
         never touched here; the deltas tune only the patience.
 
-        The excludes run the same broad-to-narrow ladder as battery
-        and signal: integration, label, device. A freeze-excluded
+        The muting lists run the same broad-to-narrow ladder as battery
+        and signal: integration, label, device. A freeze-muted
         device keeps its clock and rhythm and is simply never given a
         freeze verdict, so a device intermittent by nature can be
         silenced here without being hidden everywhere.
         """
         device_rows = self.config_entry.runtime_data.watched_device_rows
         if user_input is not None:
-            # The exclude pickers arrive nested under their section
+            # The mute pickers arrive nested under their section
             # and the stored keys stay flat (ruling #314): every
             # reader of these options, and every saved entry already
             # on disk, knows them by their flat names, so the section
@@ -859,15 +864,15 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         options = self.config_entry.options
         covered = _devices_covered_by(
             device_rows,
-            options.get(CONF_FREEZE_EXCLUDED_INTEGRATIONS, []),
-            options.get(CONF_FREEZE_EXCLUDED_LABELS, []),
+            options.get(CONF_FREEZE_MUTED_INTEGRATIONS, []),
+            options.get(CONF_FREEZE_MUTED_LABELS, []),
         )
-        globally = _globally_excluded(device_rows, options)
+        globally = _globally_muted(device_rows, options)
         covered = covered | globally
         dev_reg = dr.async_get(self.hass)
         device_options = _device_options(
             device_rows,
-            options.get(CONF_FREEZE_EXCLUDED_DEVICES, []),
+            options.get(CONF_FREEZE_MUTED_DEVICES, []),
             covered,
             lambda row: f"{row['name']} ({row['integration']})",
             dev_reg,
@@ -914,17 +919,17 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
-                    # The three excludes move into a section of their
+                    # The three muting lists move into a section of their
                     # own (ruling #314). Collapsed, because a person
                     # opening Freeze Detection came for the two
                     # graces above.
-                    vol.Required("freeze_exclusions"): section(
+                    vol.Required("freeze_muting"): section(
                         vol.Schema(
                             {
                                 vol.Optional(
-                                    CONF_FREEZE_EXCLUDED_INTEGRATIONS,
+                                    CONF_FREEZE_MUTED_INTEGRATIONS,
                                     default=options.get(
-                                        CONF_FREEZE_EXCLUDED_INTEGRATIONS,
+                                        CONF_FREEZE_MUTED_INTEGRATIONS,
                                         [],
                                     ),
                                 ): selector.SelectSelector(
@@ -941,9 +946,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                                     )
                                 ),
                                 vol.Optional(
-                                    CONF_FREEZE_EXCLUDED_LABELS,
+                                    CONF_FREEZE_MUTED_LABELS,
                                     default=options.get(
-                                        CONF_FREEZE_EXCLUDED_LABELS, []
+                                        CONF_FREEZE_MUTED_LABELS, []
                                     ),
                                 ): selector.LabelSelector(
                                     selector.LabelSelectorConfig(
@@ -951,10 +956,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                                     )
                                 ),
                                 vol.Optional(
-                                    CONF_FREEZE_EXCLUDED_DEVICES,
+                                    CONF_FREEZE_MUTED_DEVICES,
                                     default=_surviving_picks(
                                         options.get(
-                                            CONF_FREEZE_EXCLUDED_DEVICES,
+                                            CONF_FREEZE_MUTED_DEVICES,
                                             [],
                                         ),
                                         covered,
@@ -987,32 +992,32 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         dev_reg: dr.DeviceRegistry,
     ) -> dict[str, Any]:
         """Round the two deltas and drop device picks a broader freeze
-        exclude already covers, the same determinism rule as signal
+        mute already covers, the same determinism rule as signal
         and battery."""
         pruned = dict(user_input)
         pruned[CONF_FREEZE_DELTA_LOW] = int(pruned[CONF_FREEZE_DELTA_LOW])
         pruned[CONF_FREEZE_DELTA_HIGH] = int(pruned[CONF_FREEZE_DELTA_HIGH])
         covered = _devices_covered_by(
             device_rows,
-            pruned.get(CONF_FREEZE_EXCLUDED_INTEGRATIONS, []),
-            pruned.get(CONF_FREEZE_EXCLUDED_LABELS, []),
+            pruned.get(CONF_FREEZE_MUTED_INTEGRATIONS, []),
+            pruned.get(CONF_FREEZE_MUTED_LABELS, []),
         )
-        pruned[CONF_FREEZE_EXCLUDED_DEVICES] = _surviving_picks(
-            pruned.get(CONF_FREEZE_EXCLUDED_DEVICES, []), covered, dev_reg
+        pruned[CONF_FREEZE_MUTED_DEVICES] = _surviving_picks(
+            pruned.get(CONF_FREEZE_MUTED_DEVICES, []), covered, dev_reg
         )
         return pruned
 
     async def async_step_exclusions(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """The exclude surface: the ignore list and four exclude
+        """The mute surface: the ignore list and four mute
         selectors, every way of narrowing attention in one place.
 
         Two different verbs live on this screen and the distinction is
         the screen's whole job (moved here from Advanced in 0.16.4,
         where it read as an expert setting and turned out to be the
-        first thing a diverse fleet needs). Exclude watches but
-        silences: an excluded device still learns, still counts, and
+        first thing a diverse fleet needs). Mute watches but
+        silences: a muted device still learns, still counts, and
         is never reported, so undo is instant and the rhythm history
         carries no holes. Ignore discards: an ignored integration's
         devices are set aside, nothing is learned and nothing is
@@ -1027,7 +1032,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         invisibly under a parent.
 
         The integration picker is populated live from the config
-        entries present on this system; an integration exclude
+        entries present on this system; an integration mute
         catches only devices that integration owns, never multi-homed
         hardware it merely sees.
 
@@ -1039,7 +1044,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         coordinator = self.config_entry.runtime_data
         device_rows = coordinator.watched_device_rows
         if user_input is not None:
-            # The exclude pickers arrive nested under their section
+            # The mute pickers arrive nested under their section
             # and the stored keys stay flat (ruling #314): every
             # reader of these options, and every saved entry already
             # on disk, knows them by their flat names, so the section
@@ -1052,7 +1057,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 else:
                     flat[key] = value
             return await self._save_and_return(
-                self._pruned_exclusion_input(
+                self._pruned_muting_input(
                     flat, device_rows, dr.async_get(self.hass)
                 )
             )
@@ -1084,27 +1089,27 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         )
         # Offer only integrations that own a watched device. An
         # integration whose devices are all service-type was never
-        # watched, so excluding it would do nothing; listing every
+        # watched, so muting it would do nothing; listing every
         # integration in Home Assistant buried the real ones under
         # service entries. This matches the battery and signal steps,
         # which already build their picker from their watched rows.
         integration_domains = sorted(
             {row["integration"] for row in device_rows}
         )
-        excluded_integrations = options.get(CONF_EXCLUDED_INTEGRATIONS, [])
-        excluded_labels = options.get(CONF_EXCLUDED_LABELS, [])
+        muted_integrations = options.get(CONF_MUTED_INTEGRATIONS, [])
+        muted_labels = options.get(CONF_MUTED_LABELS, [])
         covered_devices = _devices_covered_by(
-            device_rows, excluded_integrations, excluded_labels
+            device_rows, muted_integrations, muted_labels
         )
         dev_reg = dr.async_get(self.hass)
         surviving_device_picks = _surviving_picks(
-            options.get(CONF_EXCLUDED_DEVICES, []),
+            options.get(CONF_MUTED_DEVICES, []),
             covered_devices,
             dev_reg,
         )
         device_options = _device_options(
             device_rows,
-            options.get(CONF_EXCLUDED_DEVICES, []),
+            options.get(CONF_MUTED_DEVICES, []),
             covered_devices,
             lambda row: f"{row['name']} ({row['integration']})",
             dev_reg,
@@ -1155,12 +1160,12 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     # own section, open rather than collapsed, since
                     # the lists are what a person opening this screen
                     # came for.
-                    vol.Required("exclusions"): section(
+                    vol.Required("muting"): section(
                         vol.Schema(
                             {
                                 vol.Optional(
-                                    CONF_EXCLUDED_INTEGRATIONS,
-                                    default=excluded_integrations,
+                                    CONF_MUTED_INTEGRATIONS,
+                                    default=muted_integrations,
                                 ): selector.SelectSelector(
                                     selector.SelectSelectorConfig(
                                         options=integration_domains,
@@ -1175,15 +1180,15 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                                     )
                                 ),
                                 vol.Optional(
-                                    CONF_EXCLUDED_LABELS,
-                                    default=excluded_labels,
+                                    CONF_MUTED_LABELS,
+                                    default=muted_labels,
                                 ): selector.LabelSelector(
                                     selector.LabelSelectorConfig(
                                         multiple=True
                                     )
                                 ),
                                 vol.Optional(
-                                    CONF_EXCLUDED_DEVICES,
+                                    CONF_MUTED_DEVICES,
                                     default=surviving_device_picks,
                                 ): selector.SelectSelector(
                                     selector.SelectSelectorConfig(
@@ -1206,25 +1211,25 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         )
 
     @staticmethod
-    def _pruned_exclusion_input(
+    def _pruned_muting_input(
         user_input: dict[str, Any],
         device_rows: list[dict[str, Any]],
         dev_reg: dr.DeviceRegistry,
     ) -> dict[str, Any]:
-        """Drop device picks the same save's broader excludes cover.
+        """Drop device picks the same save's broader muting cover.
 
-        A device an integration or label exclude already reaches is
+        A device an integration or label mute already reaches is
         removed from the device list, so one save settles the ladder
         and no pick survives under a parent that hides it.
         """
         pruned = dict(user_input)
-        excluded_integrations = pruned.get(CONF_EXCLUDED_INTEGRATIONS, [])
-        excluded_labels = pruned.get(CONF_EXCLUDED_LABELS, [])
+        muted_integrations = pruned.get(CONF_MUTED_INTEGRATIONS, [])
+        muted_labels = pruned.get(CONF_MUTED_LABELS, [])
         covered_devices = _devices_covered_by(
-            device_rows, excluded_integrations, excluded_labels
+            device_rows, muted_integrations, muted_labels
         )
-        pruned[CONF_EXCLUDED_DEVICES] = _surviving_picks(
-            pruned.get(CONF_EXCLUDED_DEVICES, []), covered_devices, dev_reg
+        pruned[CONF_MUTED_DEVICES] = _surviving_picks(
+            pruned.get(CONF_MUTED_DEVICES, []), covered_devices, dev_reg
         )
         return pruned
 
@@ -1403,7 +1408,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         trim_rows = self.config_entry.runtime_data.trimmable_device_rows
         # Sorted for the same reason every other device picker is
         # (ruling #312): this list holds every device on the system,
-        # watched, excluded, ignored and set aside alike, so it is
+        # watched, muted, ignored and set aside alike, so it is
         # the longest picker in the integration and the hardest to
         # scan unsorted.
         trim_device_options = sorted(

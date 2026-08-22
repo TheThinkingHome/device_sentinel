@@ -257,7 +257,7 @@ class BriefMixin:
         """Return the standing state: what is wrong right now.
 
         Read from the problem list rather than recomputed, so the
-        brief and the list can never disagree. Excluded devices are
+        brief and the list can never disagree. Muted devices are
         absent because this is a report, and so are acknowledged ones
         (ruling #123): acknowledgment silences every human-facing
         channel, and the brief is a notification that happens to be a
@@ -271,7 +271,7 @@ class BriefMixin:
         rows: list[tuple[str, str, float, str]] = []
         for record in self.todo_items:
             device_id = record.get(TODO_DEVICE_ID)
-            if not device_id or device_id in self._excluded_devices:
+            if not device_id or device_id in self._muted_devices:
                 continue
             if record.get(TODO_STATUS) == "completed":
                 continue
@@ -516,7 +516,7 @@ class BriefMixin:
                     labels[key] = label
                 # A field inside a section is still a field, and the
                 # brief names a changed setting by what the person
-                # read on the screen. Ruling #314 moved every exclude
+                # read on the screen. Ruling #314 moved every mute
                 # picker into a section, and reading only the loose
                 # fields printed raw option keys in the morning
                 # brief; the gate caught it, and it is the sort of
@@ -926,7 +926,7 @@ class BriefMixin:
         failed again, since the second case carries a verdict younger
         than its own fragments.
 
-        A never-reported device is excluded, having its own standing
+        A never-reported device is muted, having its own standing
         sentence already. The reference case is an unplugged SLZB-06
         told as twenty-one recoveries across seven restarts while its
         verdict stood untouched from the moment of the unplug.
@@ -1058,7 +1058,7 @@ class BriefMixin:
         from a real fault at the moment it judges, so instead of a
         verdict it shows the pattern and the person decides, which is
         how the reference LG TV and the first external fleet's
-        propane sensor both end: ignored or excluded by their owner,
+        propane sensor both end: ignored or muted by their owner,
         on evidence.
 
         Only unexplained interruptions count. An opening that a
@@ -1263,7 +1263,7 @@ class BriefMixin:
         The one report written for a person rather than a maintainer
         (ruling #116): what is wrong now, what happened in the last 24
         hours, plain language, human units, no basis or window or
-        lag or exclusion reasoning. Regenerating mid-day writes the
+        lag or muting reasoning. Regenerating mid-day writes the
         in-progress brief with its scope stated and marked
         incomplete, replacing itself until the real brief publishes
         and starts a new day.
@@ -1274,12 +1274,12 @@ class BriefMixin:
             row
             for row in (self.data.get(DATA_INCIDENTS) or [])
             if window_start <= row[INC_WHEN] <= window_end
-            and row[INC_DEVICE_ID] not in self._excluded_devices
+            and row[INC_DEVICE_ID] not in self._muted_devices
             and row[INC_DEVICE_ID] not in silenced
         ]
         incidents.sort(key=lambda row: row[INC_WHEN], reverse=True)
         # The house's own events, over the same window. Never
-        # filtered by exclusion or acknowledgment: a person silencing
+        # filtered by muting or acknowledgment: a person silencing
         # one device has not asked to stop hearing that the power
         # failed.
         sys_events = [

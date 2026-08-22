@@ -176,7 +176,7 @@ class MaintainerReportMixin:
     def _format_maxima_cell(self, daily_maximum_gaps: list[float]) -> str:
         """Render the maxima list newest-first with the trim visible.
 
-        Set-aside outliers are struck through (excluded from the
+        Set-aside outliers are struck through (muted from the
         window basis); the operative rhythm is bold. They can never
         be the same value styled twice, because the operative rhythm
         is by definition chosen after the outliers are removed.
@@ -377,14 +377,14 @@ class MaintainerReportMixin:
             f"sustained dwell is the anomaly, and outliers clustered "
             f"in one room mean that room needs a router. BAT LEVEL is "
             f"the daily battery level, with any reading at or below "
-            f"the low threshold **bold**. excl means signal-excluded: "
+            f"the low threshold **bold**. excl means signal-muted: "
             f"still recorded, not judged.",
             "",
-            "STATUS is Reported (judged for everything) or Excluded "
+            "STATUS is Reported (judged for everything) or Muted "
             "with the reason in parentheses: GLB global (all judgment "
             "off), BAT battery, SIG signal, FRZ freeze. GLB shows "
-            "alone; the section reasons combine, Excluded (BAT, FRZ). "
-            "An excluded device keeps recording; exclusion suppresses "
+            "alone; the section reasons combine, Muted (BAT, FRZ). "
+            "A muted device keeps recording; muting suppresses "
             "judgment, not observation.",
             "",
             f"Rule: the window basis is the **trimmed maximum** of "
@@ -446,7 +446,7 @@ class MaintainerReportMixin:
                     self._format_signal_mean_cell(record),
                     self._format_battery_cell(record),
                     self.signal_railed(record),
-                    self._signal_excluded(device_id),
+                    self._signal_muted(device_id),
                 )
             )
         # Alphabetical by the device label, case-insensitive: the table
@@ -467,7 +467,7 @@ class MaintainerReportMixin:
             mean_cell,
             battery_cell,
             railed,
-            sig_excluded,
+            sig_muted,
         ) in rows:
             dwell_text = (
                 " ".join(f"{pct:g}" for pct in reversed(dwell_daily))
@@ -478,8 +478,8 @@ class MaintainerReportMixin:
             # days) is marked in the signal cell itself, not a column:
             # a warning sign ahead of the lows so it reads at a glance.
             signal_cell = f"\u26a0\ufe0f {lows_cell}" if railed else lows_cell
-            if sig_excluded:
-                # Excluded devices keep recording (their lows still
+            if sig_muted:
+                # Muted devices keep recording (their lows still
                 # show) but are not judged: no dwell, no rail mark.
                 dwell_text = "excl"
                 signal_cell = lows_cell
@@ -504,14 +504,14 @@ class MaintainerReportMixin:
         One row per device, so a device's whole standing reads across
         a single line: whether it is Watched (has hardware, recording)
         or Set aside (a service device with nothing to watch), and, for
-        a watched device, whether the global exclude has it and why.
-        Every device is watched and recorded; exclusion only suppresses
-        judgment and reporting, so an excluded device still carries a
+        a watched device, whether the global mute has it and why.
+        Every device is watched and recorded; muting only suppresses
+        judgment and reporting, so a muted device still carries a
         Watched check, with the reason alongside it. COPIES flags a
-        name shared by more than one registry device. Section excludes
+        name shared by more than one registry device. Section muting
         (battery, signal, freeze) are not shown here; they live in the
-        telemetry STATUS column, because a section-excluded device is
-        still judged for everything else and is not excluded wholesale.
+        telemetry STATUS column, because a section-muted device is
+        still judged for everything else and is not muted wholesale.
         """
         dev_reg = dr.async_get(self.hass)
 
@@ -535,15 +535,15 @@ class MaintainerReportMixin:
                 if device
                 else device_id
             )
-            reason = self._excluded_devices.get(device_id)
-            excluded_cell = f"Global ({reason})" if reason else ""
+            reason = self._muted_devices.get(device_id)
+            muted_cell = f"Global ({reason})" if reason else ""
             copies = name_copy_counts.get(name, 1)
             rows.append(
                 (
                     name,
                     integration_domain,
                     "yes",  # watched
-                    excluded_cell,
+                    muted_cell,
                     "",  # set aside
                     str(copies) if copies > 1 else "",
                 )
@@ -572,39 +572,39 @@ class MaintainerReportMixin:
             f"and integrations you asked to ignore); "
             f"{self.deviceless_count} "
             f"deviceless entities visible only at entity level. Every "
-            f"device is watched and recorded; EXCLUDED only suppresses "
+            f"device is watched and recorded; MUTED only suppresses "
             f"judgment and reporting, and names why. COPIES above 1 is a "
             f"name shared by more than one registry device (a "
             f"network-tracker ghost or a multi-homed double).",
             "",
-            "| DEVICE | INTEGRATION | WATCHED | EXCLUDED | SET ASIDE | "
+            "| DEVICE | INTEGRATION | WATCHED | MUTED | SET ASIDE | "
             "COPIES |",
             "|---|---|---|---|---|---|",
         ]
-        for name, integration, watched, excluded, set_aside, copies in rows:
+        for name, integration, watched, muted, set_aside, copies in rows:
             watched_mark = "\u2713" if watched else ""
             set_aside_mark = set_aside or ""
             lines.append(
                 f"| {self._report_cell(name)} | {integration} | "
                 f"{watched_mark} | "
-                f"{excluded} | {set_aside_mark} | {copies} |"
+                f"{muted} | {set_aside_mark} | {copies} |"
             )
 
-        if self._excluded_entities:
+        if self._muted_entities:
             lines.append("")
             lines.append(
-                f"## Excluded Entities ({len(self._excluded_entities)})"
+                f"## Muted Entities ({len(self._muted_entities)})"
             )
             lines.append("")
             lines.append(
-                "Individual entities excluded from judgment. An "
-                "excluded entity still vouches for its device."
+                "Individual entities muted from judgment. An "
+                "muted entity still vouches for its device."
             )
             lines.append("")
             lines.append("| ENTITY | REASON |")
             lines.append("|---|---|")
             for entity_id, reason in sorted(
-                self._excluded_entities.items()
+                self._muted_entities.items()
             ):
                 lines.append(f"| {entity_id} | {reason} |")
 

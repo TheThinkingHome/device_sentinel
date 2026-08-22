@@ -428,10 +428,10 @@ class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):
 
 
 class DeviceSentinelTrackedSignalsSensor(DeviceSentinelBaseSensor):
-    """How many devices we watch for signal, after signal excludes.
+    """How many devices we watch for signal, after signal muting.
 
     A device is tracked once it has a learned floor and so a live
-    danger line, minus the signal-excluded. The signal member of the
+    danger line, minus the signal-muted. The signal member of the
     Tracked family. The scale split and the still-learning count ride
     in attributes.
     """
@@ -462,10 +462,10 @@ class DeviceSentinelTrackedSignalsSensor(DeviceSentinelBaseSensor):
 
 
 class DeviceSentinelTrackedBatteriesSensor(DeviceSentinelBaseSensor):
-    """How many devices we watch for battery, after battery excludes.
+    """How many devices we watch for battery, after battery muting.
 
     A device is battery-tracked when a battery entity was elected for
-    it and it is not battery-excluded. The battery member of the
+    it and it is not battery-muted. The battery member of the
     Tracked family. The devices ride in attributes.
     """
 
@@ -494,7 +494,7 @@ class DeviceSentinelTrackedBatteriesSensor(DeviceSentinelBaseSensor):
 class DeviceSentinelTrackedDevicesSensor(DeviceSentinelBaseSensor):
     """How many devices are eligible for freeze detection.
 
-    A device with a learned rhythm, minus the global device excludes.
+    A device with a learned rhythm, minus the global device muting.
     The freeze member of the Tracked family: the set freeze detection
     judges. The devices ride in attributes.
     """

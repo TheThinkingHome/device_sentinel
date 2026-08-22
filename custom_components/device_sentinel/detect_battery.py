@@ -29,9 +29,9 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     BATTERY_CLEAR_MARGIN,
-    CONF_BATTERY_EXCLUDED_DEVICES,
-    CONF_BATTERY_EXCLUDED_INTEGRATIONS,
-    CONF_BATTERY_EXCLUDED_LABELS,
+    CONF_BATTERY_MUTED_DEVICES,
+    CONF_BATTERY_MUTED_INTEGRATIONS,
+    CONF_BATTERY_MUTED_LABELS,
     CONF_LOW_THRESHOLD,
     DATA_DEVICES,
     DEFAULT_LOW_THRESHOLD,
@@ -198,11 +198,11 @@ class BatteryMixin:
         ):
             # Judgment suppression: the verdict is still computed and
             # stored (observation), it is just never reported here.
-            # Battery-only excludes stack on top of the global list.
+            # Battery-only muting stack on top of the global list.
             if (
-                device_id in self._excluded_devices
-                or entity_id in self._excluded_entities
-                or self._battery_excluded(device_id)
+                device_id in self._muted_devices
+                or entity_id in self._muted_entities
+                or self._battery_muted(device_id)
             ):
                 continue
             record = self.data[DATA_DEVICES].get(device_id)
@@ -288,44 +288,44 @@ class BatteryMixin:
         return sum(
             1
             for device_id, (entity_id, _) in self._battery_entity.items()
-            if device_id not in self._excluded_devices
-            and entity_id not in self._excluded_entities
-            and not self._battery_excluded(device_id)
+            if device_id not in self._muted_devices
+            and entity_id not in self._muted_entities
+            and not self._battery_muted(device_id)
             and (self.data[DATA_DEVICES].get(device_id) or {}).get(
                 DEV_BATTERY_LOW
             )
         )
 
-    def _battery_excluded(self, device_id: str) -> bool:
-        """Return whether a device is excluded from battery judgment
+    def _battery_muted(self, device_id: str) -> bool:
+        """Return whether a device is muted from battery judgment
         only. Device-level by ruling, so a battery-entity re-election
         cannot dodge it; the integration test uses the owning domain,
         so one tick covers a whole family of phones. The label test
         reads the device's own labels, which is how a device can be
-        excluded from battery judgment without opening this dialog."""
+        muted from battery judgment without opening this dialog."""
         options = self.entry.options
         if self._watched.get(device_id) in options.get(
-            CONF_BATTERY_EXCLUDED_INTEGRATIONS, []
+            CONF_BATTERY_MUTED_INTEGRATIONS, []
         ):
             return True
         if self._device_labels.get(device_id, frozenset()) & set(
-            options.get(CONF_BATTERY_EXCLUDED_LABELS, [])
+            options.get(CONF_BATTERY_MUTED_LABELS, [])
         ):
             return True
-        return device_id in options.get(CONF_BATTERY_EXCLUDED_DEVICES, [])
+        return device_id in options.get(CONF_BATTERY_MUTED_DEVICES, [])
 
     @property
     def battery_tracked_count(self) -> int:
-        """Return how many devices we watch for battery, after excludes.
+        """Return how many devices we watch for battery, after muting.
 
         A device is battery-tracked when a battery entity was elected
-        for it and it is not battery-excluded. The battery analogue of
+        for it and it is not battery-muted. The battery analogue of
         Tracked Signals.
         """
         return sum(
             1
             for device_id in self._battery_entity
-            if not self._battery_excluded(device_id)
+            if not self._battery_muted(device_id)
         )
 
     @property
@@ -335,7 +335,7 @@ class BatteryMixin:
             (
                 {"name": self._display_names.get(device_id)}
                 for device_id in self._battery_entity
-                if not self._battery_excluded(device_id)
+                if not self._battery_muted(device_id)
             ),
             key=lambda row: row["name"] or "",
         )
@@ -361,7 +361,7 @@ class BatteryMixin:
 
     @staticmethod
     def _is_battery_percentage(ent: er.RegistryEntry) -> bool:
-        """Recognize a battery-percentage sensor, excluding the binary
+        """Recognize a battery-percentage sensor, muting the binary
         low flag. The percentage is what feeds the discharge series."""
         if str(ent.original_device_class or ent.device_class) != "battery":
             return False

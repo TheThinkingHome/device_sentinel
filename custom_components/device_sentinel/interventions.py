@@ -546,8 +546,8 @@ class InterventionMixin:
         # anything the router was doing. Being exempt cannot be
         # allowed to suppress the evidence for being exempt
         # (ruling #232). This is the rule the project already holds
-        # for exclusion: every device is watched and recorded, and
-        # exclusion suppresses judgment and reporting alone.
+        # for muting: every device is watched and recorded, and
+        # muting suppresses judgment and reporting alone.
         polling = self._is_polling_integration(entry_id, now)
         if polling:
             self._announce_polling(entry_id)
@@ -682,7 +682,7 @@ class InterventionMixin:
         LOGGER.debug(
             "Integration %s reclassified as synchronized "
             "polling (%d storms inside an hour); storm "
-            "exclusion disabled for it, its devices learn "
+            "muting disabled for it, its devices learn "
             "their poll cadence as rhythm",
             self._entry_domain(entry_id),
             STORM_EXEMPT_PER_HOUR,
@@ -714,7 +714,7 @@ class InterventionMixin:
 
         Some integrations poll every device on a timer, so all of them
         report inside the same second, again and again. That is
-        indistinguishable from a hub reconnecting, and excluding it
+        indistinguishable from a hub reconnecting, and muting it
         from learning would throw away the very rhythm the device has.
         Enough storms inside an hour and the integration is read as a
         poller instead.
@@ -807,9 +807,9 @@ class InterventionMixin:
         # hundred times an hour in a log a person reads. An
         # integration whose bursts are its own polling cadence is
         # behaving normally, and normal behaviour is not information.
-        # The wording is corrected with it: nothing is excluded from
+        # The wording is corrected with it: nothing is muted from
         # learning by a storm and nothing has been since taint became
-        # the only surviving exclusion (rulings #124 and #125), so the
+        # the only surviving muting (rulings #124 and #125), so the
         # count is named for what it is, the reports seen inside the
         # burst.
         if announce and storm["stamps"]:
@@ -850,8 +850,8 @@ class InterventionMixin:
         self._evaluate_repairs(REPAIR_MOMENT_GRACE)
         LOGGER.debug(
             # Same correction as the storm line: the grace window
-            # excludes nothing from learning and has not since taint
-            # became the only surviving exclusion (rulings #124 and
+            # mutes nothing from learning and has not since taint
+            # became the only surviving muting (rulings #124 and
             # #125). The count is the reports that arrived inside the
             # window, which is worth one line at every start.
             "Startup grace closed after %d s: %d report(s) across %d "

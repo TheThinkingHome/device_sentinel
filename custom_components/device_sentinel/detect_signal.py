@@ -27,9 +27,9 @@ from typing import Any
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
-    CONF_SIGNAL_EXCLUDED_DEVICES,
-    CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
-    CONF_SIGNAL_EXCLUDED_LABELS,
+    CONF_SIGNAL_MUTED_DEVICES,
+    CONF_SIGNAL_MUTED_INTEGRATIONS,
+    CONF_SIGNAL_MUTED_LABELS,
     BADDAY_MIN_BASELINE,
     BADDAY_MIN_SPREAD,
     BADDAY_BASELINE_DAYS_MAX,
@@ -1064,8 +1064,8 @@ class SignalMixin:
         devices that report signal but have no floor yet, which since
         the floor exists from the first recorded day means a device
         whose history is entirely rail values (a floor of nothing
-        rather than a false one). Excluded devices still count here:
-        exclusion suppresses judgment, not observation.
+        rather than a false one). Muted devices still count here:
+        muting suppresses judgment, not observation.
         """
         counts = {"lqi": 0, "rssi": 0, "learning": 0}
         for _device_id, record in self.watched_records():
@@ -1082,21 +1082,21 @@ class SignalMixin:
 
     @property
     def signal_tracked_count(self) -> int:
-        """Return how many devices have a signal line, after excludes.
+        """Return how many devices have a signal line, after muting.
 
         The state for Tracked Signals: devices with a floor that are
-        not signal-excluded. Exclusion suppresses judgment, so an
-        excluded device is not something we are watching for signal.
+        not signal-muted. Muting suppresses judgment, so an
+        muted device is not something we are watching for signal.
         """
         counts = self.signal_tracked
         watched = counts["lqi"] + counts["rssi"]
-        excluded = sum(
+        muted = sum(
             1
             for device_id, record in self.watched_records()
             if self._danger_line(record) is not None
-            and self._signal_excluded(device_id)
+            and self._signal_muted(device_id)
         )
-        return watched - excluded
+        return watched - muted
 
     def _todo_signal_since(self, device_id: str) -> float | None:
         """Return when a device's signal fault was added to the list.
@@ -1129,12 +1129,12 @@ class SignalMixin:
         day to day and live on signal_weak_list, which notifies
         nothing (rulings #59 and #211).
 
-        Signal-excluded devices are observed but never judged, so
+        Signal-muted devices are observed but never judged, so
         they stay off this list until re-included by hand.
         """
         problems: list[dict[str, Any]] = []
         for device_id, record in self.watched_records():
-            if self._signal_excluded(device_id):
+            if self._signal_muted(device_id):
                 continue
             if self.signal_railed(record):
                 problems.append(
@@ -1188,8 +1188,8 @@ class SignalMixin:
             if device_id in railed:
                 continue
             if (
-                self._signal_excluded(device_id)
-                or device_id in self._excluded_devices
+                self._signal_muted(device_id)
+                or device_id in self._muted_devices
             ):
                 continue
             reading = self.signal_badday(record)
@@ -1216,9 +1216,9 @@ class SignalMixin:
         """Return how many devices have a signal problem."""
         return len(self.signal_problem_list)
 
-    def _signal_excluded(self, device_id: str) -> bool:
-        """Return whether a device is excluded from signal judgment
-        only. The same broad-to-narrow ladder as battery. Exclusion
+    def _signal_muted(self, device_id: str) -> bool:
+        """Return whether a device is muted from signal judgment
+        only. The same broad-to-narrow ladder as battery. Muting
         suppresses judgment, not observation: the device keeps
         recording its floor and dwell in storage, so re-inclusion is
         instant and arrives with history; it simply stops being
@@ -1227,21 +1227,21 @@ class SignalMixin:
         every recovery."""
         options = self.entry.options
         if self._watched.get(device_id) in options.get(
-            CONF_SIGNAL_EXCLUDED_INTEGRATIONS, []
+            CONF_SIGNAL_MUTED_INTEGRATIONS, []
         ):
             return True
         if self._device_labels.get(device_id, frozenset()) & set(
-            options.get(CONF_SIGNAL_EXCLUDED_LABELS, [])
+            options.get(CONF_SIGNAL_MUTED_LABELS, [])
         ):
             return True
-        return device_id in options.get(CONF_SIGNAL_EXCLUDED_DEVICES, [])
+        return device_id in options.get(CONF_SIGNAL_MUTED_DEVICES, [])
 
     @property
     def detected_signals(self) -> list[dict[str, Any]]:
         """Return every device with a signal reading, for the signal
         options picker: pick-from-detected, what you see is what is
-        being judged. Excluded devices are present, because an
-        excluded device is exactly the thing this picker exists to
+        being judged. Muted devices are present, because an
+        muted device is exactly the thing this picker exists to
         un-tick."""
         rows = [
             {

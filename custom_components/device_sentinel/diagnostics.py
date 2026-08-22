@@ -10,7 +10,7 @@
 The Download Diagnostics button on the integration page produces one
 JSON file carrying the integration's whole learned state: every
 device's rhythm history and clock, its signal baseline, its battery
-verdict, the classification, the exclusions, and the tunables in
+verdict, the classification, the muting, and the tunables in
 effect. It exists so a bug report is one click rather than an SSH
 session, and so a doubted detection can be judged from evidence
 rather than description.
@@ -161,7 +161,7 @@ async def async_get_config_entry_diagnostics(
                 if device_id in coordinator._last_seen_entity
                 else "recorded"
             ),
-            "excluded": coordinator._excluded_devices.get(device_id),
+            "muted": coordinator._muted_devices.get(device_id),
             # Every diagnostic entity this device offers, enabled or
             # not, with its live state. This is what separates a
             # device that is switched off from one whose entities are
@@ -201,7 +201,7 @@ async def async_get_config_entry_diagnostics(
             "signal_below_today_seconds": record.get(
                 "signal_below_today_seconds"
             ),
-            "signal_excluded": coordinator._signal_excluded(device_id),
+            "signal_muted": coordinator._signal_muted(device_id),
             # A rail is a reading stuck at the protocol's fill value
             # (LQI 255, RSSI -128), which is a dead reading rather
             # than a perfect link. It is confirmed only when the daily
@@ -290,8 +290,8 @@ async def async_get_config_entry_diagnostics(
                 stack: coordinator.bridge_state(stack)
                 for stack in coordinator.bridge_stacks
             },
-            "excluded_devices": coordinator._excluded_devices,
-            "excluded_entities": coordinator._excluded_entities,
+            "muted_devices": coordinator._muted_devices,
+            "muted_entities": coordinator._muted_entities,
             "storm_exempt_entries": sorted(
                 {
                     row.get("entry_id")
@@ -312,7 +312,7 @@ async def async_get_config_entry_diagnostics(
             "low_count": coordinator.battery_low_count,
             "low_list": coordinator.battery_low_list,
         },
-        # What the house's excluded gaps are actually made of. A
+        # What the house's muted gaps are actually made of. A
         # taint carries the reason it was set rather than a bare flag,
         # so a rhythm that skipped a gap can be traced to the cause
         # (ruling #164).

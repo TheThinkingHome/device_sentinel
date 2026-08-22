@@ -155,13 +155,13 @@ class ReportWritingMixin(
 
 
     def _device_status(self, device_id: str) -> str:
-        """Return a device's exclusion status for the report column.
+        """Return a device's muting status for the report column.
 
-        Two states, one grammar: "Reported" when nothing excludes it,
-        or "Excluded (...)" naming why. GLB is the global exclude,
+        Two states, one grammar: "Reported" when nothing mutes it,
+        or "Muted (...)" naming why. GLB is the global mute,
         shown alone because it covers everything and a globally
-        excluded device is never offered to the section lists. BAT,
-        SIG, and FRZ are the section excludes, listed in column order
+        muted device is never offered to the section lists. BAT,
+        SIG, and FRZ are the section muting, listed in column order
         when more than one applies.
 
         A todo icon lived here for one release and moved to the
@@ -169,17 +169,17 @@ class ReportWritingMixin(
         redundant and confusing, and that section is where a fault's
         whole story reads, list state included.
         """
-        if device_id in self._excluded_devices:
-            return "Excluded (GLB)"
+        if device_id in self._muted_devices:
+            return "Muted (GLB)"
         tags = []
-        if self._battery_excluded(device_id):
+        if self._battery_muted(device_id):
             tags.append("BAT")
-        if self._signal_excluded(device_id):
+        if self._signal_muted(device_id):
             tags.append("SIG")
-        if self._freeze_excluded(device_id):
+        if self._freeze_muted(device_id):
             tags.append("FRZ")
         if tags:
-            return f"Excluded ({', '.join(tags)})"
+            return f"Muted ({', '.join(tags)})"
         return "Reported"
 
 
