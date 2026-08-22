@@ -17,7 +17,7 @@
 | ---------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Freeze detection | Stable                         | Per-device rhythms are fully modeled. Verdicts accurately distinguish between frozen, unavailable, unknown, and never reported states. The core logic is settled and unchanged in this release.          |
 | Battery          | Stable                         | Dual-evaluation is live: cells are judged against a fixed threshold and a predictive time-to-empty trend. Works on any device that reports a battery level.                                              |
-| Signal           | Experimental                   | Baseline floors, danger lines, dwell times, and fleet charts are actively recorded and visualized. Where a device exposes both, RSSI and LQI are now recorded side by side. Only railed links trigger phone alerts. The core alerting formula is still being tuned, and recorded metrics will shift as it is finalized. |
+| Signal           | Experimental                   | Each day's readings are folded into a time-weighted fifth percentile and median, and a day is called bad when it falls far below that device's own recent normal, in its own units and in its own spread. Where a device exposes both, RSSI and LQI are recorded side by side. Only railed links trigger phone alerts. The gates are still being tuned, and recorded metrics will shift as that settles. |
 | Storage          | Hardening (Verify and Backup live) | The **Verify, Backup, Heal, Restore** framework guards the learned data against corruption. Verify and Backup are live and under test in this release. Heal and Restore follow once the checks have proven quiet on good data. |
 | Zigbee2MQTT      | Working                        | Supports pairing window recognition, bridge and broker outage detection, and bridge/broker sensor integration. Provides a second-opinion availability check alongside freeze verdicts.                   |
 | ZHA              | In progress                    | Coordinator support has begun. Thank you to Tim for working with me to start building it out. See the [ZHA](https://github.com/TheThinkingHome/device_sentinel/wiki/ZHA) documentation to follow along or contribute. |
@@ -77,7 +77,7 @@ It cannot watch what your integrations ship switched off, and most of them ship 
 
 ![The Device Sentinel device page in Home Assistant, with its three enable buttons and diagnostic sensors](https://xeazy.com/wp-content/uploads/integration_page.webp)
 
-You curate by exception. Exclude a whole integration, a label, or a single device. Excluding stops the judging and the reporting; it does not stop the learning, so a device you un-exclude next year already knows its own rhythm and needs no relearning period.
+You curate by exception, with two verbs that mean different things. Muting a whole integration, a label, or a single device stops the judging and the reporting; it does not stop the learning, so a device you un-mute next year already knows its own rhythm and needs no relearning period. Excluding an integration is the harder act: its devices are never watched, never learned from, and what they had recorded is discarded at the next midnight.
 
 ### Warnings Before The Failure
 
@@ -85,11 +85,11 @@ A low battery is caught on the percentage rather than the binary flag, against a
 
 The time left is said in words rather than days, "empty in about 2 weeks" rather than "13 days", and that is deliberate. The projection assumes the last week continues, which a dying cell often does not. Read it as a ranking of which cell to replace first, because that part it gets right.
 
-![Device Sentinel battery decay against signal dwell](https://xeazy.com/wp-content/uploads/Battery-Decay-Signal-Dwell.png)
+![Device Sentinel battery decay beside a device's radio link](https://xeazy.com/wp-content/uploads/Battery-Decay-Signal-Dwell.png)
 
-A radio link is watched against the floor that device has actually held over the past thirty days, and what gets reported is dwell: how much of the day it spent below the danger line that sits just above that floor. A link stuck at its rail, the 255 or the minus 128 that means the field was filled in rather than measured, is called out for what it is rather than read as a strong signal.
+A radio link is judged against its own recent history rather than a fixed number. Each night the day's readings become a time-weighted fifth percentile, and that is compared against the median of the days before it. The day counts as bad only when the fall is large in the device's own units and also large measured in the device's own spread, which is what lets a steady link and a jittery one be read on the same page. A link stuck at its rail, the 255 or the minus 128 that means the field was filled in rather than measured, is called out for what it is rather than read as a strong signal.
 
-![The Device Sentinel signal dwell chart, one colored bar per device showing how much of the day its radio link spent below its own learned floor](https://xeazy.com/wp-content/uploads/signal_report.webp)
+![The Device Sentinel signal report, one row per device worth a look, each day shaded by how far it fell below that device's own normal](https://xeazy.com/wp-content/uploads/signal_report.webp)
 
 ### It Does Not Learn Your Repairs As Normal
 
@@ -138,7 +138,7 @@ It learns your house rather than asking you to describe it, so some of it works 
 | **Immediately** | Flat batteries, devices that are unavailable or unknown, and devices in your registry that have never reported at all. |
 | **After a week** | Freeze detection arms, device by device, as each one establishes a rhythm. |
 | **After two weeks** | Rhythms have settled, so freeze windows stop shifting as new evidence arrives. |
-| **After a month** | Signal floors are stable and the dwell chart is worth reading across days rather than within one. |
+| **After a month** | A device has enough signal history that a bad day is measured against a settled normal rather than a short one. |
 
 Batteries are their own clock. A cell holds its level for most of its life and then falls, so the projection means little until a particular cell leaves its plateau. The one that proved this held 32 percent for ten days before it broke.
 
@@ -153,20 +153,20 @@ Every screen explains itself and links to its own wiki page. Most people change 
 | Screen | What it is for |
 |---|---|
 | **Notifications** | Where alerts go, quiet hours, and when the daily brief is written. The brief's time is also the boundary of its window: a 7 AM brief covers 7 AM to 7 AM. |
-| **Global Exclusions** | Hardware you never want judged, by integration, label, or device. |
+| **Exclusions and Muting** | Integrations to exclude, whose devices are never watched or recorded, and hardware to mute by integration, label, or device, which is still watched but never reported. |
 | **Low Battery** | The threshold, default twenty percent; how far ahead a falling cell is flagged, default thirty days; and devices to leave out of battery reporting. |
-| **Signal Strength** | How sensitive the fleet-wide judgment is, and devices to leave out of signal reporting. |
+| **Signal Strength** | What counts as a bad signal day: how far a link must fall in its own units, how far in its own spread, and how many past days form the normal it is measured against. Also devices to leave out of signal reporting. |
 | **Freeze Detection** | Two sliders shaping how much grace a device gets on top of its learned rhythm. Fast devices are governed by the first (1 to 8 minutes, default 3), slow ones by the second (4 to 12 hours, default 8). |
 | **Advanced** | Settings most people never need: how long a fault must persist before your phone hears about it, how long a device may be unreachable before that counts as real downtime, how long the Maintenance Mode window lasts, how often work is written to disk, and how much history to keep. |
 
 ## Reports And Diagnostics
 
-Two more pages are written for a person, beside the daily brief: **the battery report**, which ranks every falling cell by how long it has left, and **the signal dwell chart**, which puts the whole fleet's radio health on one page. Both live under `www` so a dashboard card can point at them.
+Two more pages are written for a person, beside the daily brief: **the battery report**, which ranks every falling cell by how long it has left, and **the signal report**, which names the devices whose radio link is worse than it usually is and leaves the rest off the page. Both live under `www` so a dashboard card can point at them.
 
 Three further files are written for whoever maintains the system:
 
 - **Device telemetry**, one row per device with its learned rhythm, its signal history, and its battery trend.
-- **Classification**, showing which devices are watched, which are set aside, and why anything is excluded.
+- **Classification**, showing which devices are watched, which are set aside, and why anything is muted.
 - **Silence episodes**, recording every time a device went quiet past its own learned rhythm, whether it came back on its own or something intervened, and whether the gap was learned. This answers a question nothing else does: did the device recover, or did your restart make it look like it recovered?
 
 ## Documentation
