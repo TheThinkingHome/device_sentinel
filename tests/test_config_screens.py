@@ -400,6 +400,8 @@ async def test_both_halves_carry_a_heading_and_an_explanation(
         step = json.loads(source.read_text())["options"]["step"]["exclusions"]
         assert not step["data"], "nothing loose on this screen"
         assert step["sections"]["ignore"]["name"] == "Integrations to Ignore"
-        assert step["sections"]["exclusions"]["name"] == "Exclusions"
+        assert (
+            step["sections"]["exclusions"]["name"] == "Global Exclusions"
+        )
         for key in ("ignore", "exclusions"):
             assert len(step["sections"][key]["description"]) > 60, key

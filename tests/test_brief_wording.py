@@ -327,6 +327,50 @@ async def test_quiet_day_says_so_plainly(hass: HomeAssistant):
     assert "Nothing needs attention right now." in text
 
 
+async def test_a_standing_problem_is_never_called_nothing(
+    hass: HomeAssistant,
+):
+    """The all-clear answers the sentence above it, so a brief that
+    names a device standing right now cannot also say nothing needs
+    attention. Every brief carrying a standing problem and no repeat
+    offender said both, from 0.16.2 until this was written."""
+    device, entity_id, _ = _register(hass, "n1", "Standing Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "on")
+    record = coord.data["devices"][device.id]
+    record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
+    record[DEV_FROZEN_SINCE] = dt_util.utcnow().timestamp() - 3600
+    coord._sync_problem_list()
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = _brief_text(hass)
+    assert "Right now: Standing Sensor" in text
+    assert "Nothing needs attention right now." not in text
+
+
+async def test_settings_with_commas_in_their_names_stay_countable(
+    hass: HomeAssistant, read_brief
+):
+    """Two of the signal labels carry commas of their own, so a
+    comma-separated list read as five settings where three were
+    changed."""
+    coord = await setup_coordinator(hass)
+    now = dt_util.utcnow().timestamp()
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        {
+            SYS_WHEN: now - 1800.0,
+            SYS_KIND: SYS_OPTIONS_CHANGED,
+            SYS_SCOPE: "system",
+            SYS_DURATION: None,
+            SYS_DETAIL: "badday_drop_lqi, badday_drop_rssi",
+            SYS_DEVICES: None,
+        }
+    ]
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    short = read_brief(hass)
+    assert "Bad Day Drop, LQI; Bad Day Drop, RSSI" in short
+
+
 async def test_history_reads_oldest_first(hass: HomeAssistant):
     """The prose is a narrative, so it runs forward in time even
     though the table below stays newest first for scanning."""
