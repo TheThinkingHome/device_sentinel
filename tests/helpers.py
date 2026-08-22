@@ -24,6 +24,7 @@ conftest.py; these are the building blocks a test calls directly.
 
 from __future__ import annotations
 
+from custom_components.device_sentinel.const import OPTIONS_MINOR_VERSION
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -47,6 +48,13 @@ async def setup_entry(
         title="Device Sentinel",
         data={},
         options=options or {},
+        # A fresh install is created at the current version and runs
+        # no migration, which is what a test writing today's option
+        # names is describing. Left at the default, every entry here
+        # would arrive looking like a 0.16.3 upgrade and the chain
+        # would rename the names the test just wrote.
+        version=1,
+        minor_version=OPTIONS_MINOR_VERSION,
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
