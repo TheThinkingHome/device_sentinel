@@ -1033,7 +1033,7 @@ class SignalMixin:
         them: the test caught an ESPHome node's own RSSI, whose
         sensor is called WiFi Signal, and missed the phone's cellular
         radio, whose sensor is not called cellular. A phone arrives on
-        an integration the ignore list refuses whole, so nothing that
+        an integration the exclude list refuses whole, so nothing that
         reaches here is another device's radio.
         """
         if str(ent.original_device_class) == "signal_strength" or str(

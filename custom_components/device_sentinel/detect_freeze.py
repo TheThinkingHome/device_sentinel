@@ -302,7 +302,7 @@ class FreezeMixin:
         # Global muting suppresses all judgment, so it is checked
         # here rather than only filtered from the report: no verdict
         # is computed or stored for a device the person has told the
-        # integration to ignore.
+        # integration to exclude.
         if (
             device_id in self._muted_devices
             or self._freeze_muted(device_id)

@@ -39,6 +39,7 @@ from .const import (
     DEAD_ENTITY_SENTINEL_TYPES,
     DEAD_OPTION_KEYS,
     DOMAIN,
+    IGNORE_KEY_RENAMES,
     MUTING_KEY_RENAMES,
     LOGGER,
     OPTIONS_MINOR_VERSION,
@@ -92,6 +93,8 @@ async def async_migrate_entry(
     options = dict(entry.options)
     if entry.minor_version < 2:
         options = _migrate_muting_names(options)
+    if entry.minor_version < 3:
+        options = _migrate_ignore_name(options)
     hass.config_entries.async_update_entry(
         entry, options=options, minor_version=OPTIONS_MINOR_VERSION
     )
@@ -121,6 +124,33 @@ def _migrate_muting_names(options: dict[str, Any]) -> dict[str, Any]:
     else:
         LOGGER.info(
             "Options migration step 2, muting names: nothing stored to move"
+        )
+    return options
+
+
+def _migrate_ignore_name(options: dict[str, Any]) -> dict[str, Any]:
+    """Step 3: the ignore list takes the word muting vacated.
+
+    Same shape as step 2 and deliberately not folded into it: a
+    person on this fleet ran step 2 a day before this one, while a
+    person on the public release runs both in a single load, and one
+    numbered chain makes those the same code rather than two.
+    """
+    moved: list[str] = []
+    for old, new in IGNORE_KEY_RENAMES.items():
+        if old not in options:
+            continue
+        value = options.pop(old)
+        if new not in options:
+            options[new] = value
+        moved.append(f"{old} -> {new} ({len(value)})")
+    if moved:
+        LOGGER.info(
+            "Options migration step 3, the exclude list: %s", "; ".join(moved)
+        )
+    else:
+        LOGGER.info(
+            "Options migration step 3, the exclude list: nothing stored to move"
         )
     return options
 

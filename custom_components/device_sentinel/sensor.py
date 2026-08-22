@@ -400,7 +400,7 @@ class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):
 
     # Named for what it counts rather than for one of its reasons.
     # It began as service devices alone and now holds four: service,
-    # disabled, no entities, and an integration the person ignores.
+    # disabled, no entities, and an integration the person excludes.
     _attr_name = "Devices: Set Aside"
     _attr_native_unit_of_measurement = UNIT_DEVICES
     _attr_state_class = SensorStateClass.MEASUREMENT

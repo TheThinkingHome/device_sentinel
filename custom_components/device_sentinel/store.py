@@ -28,7 +28,8 @@ from .records import _new_device_record, _reset_signal_day, _span
 from .const import (
     DATA_INCIDENTS,
     DATA_SYSTEM_EVENTS,
-    MUTING_KEY_RENAMES,
+    DATA_LAST_VERSION,
+    OPTION_KEY_RENAME_STEPS,
     SYS_DETAIL,
     SYS_KIND,
     SYS_OPTIONS_CHANGED,
@@ -53,7 +54,7 @@ from .const import (
     COALESCE_MINUTES_MAX,
     COALESCE_MINUTES_MIN,
     CONF_COALESCE_MINUTES,
-    CONF_IGNORED_INTEGRATIONS,
+    CONF_EXCLUDED_INTEGRATIONS,
     CONF_RETENTION_DAYS,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
@@ -63,7 +64,7 @@ from .const import (
     DATA_SETUP_COUNT,
     DATA_TODO_ITEMS,
     DEFAULT_COALESCE_MINUTES,
-    DEFAULT_IGNORED_INTEGRATIONS,
+    DEFAULT_EXCLUDED_INTEGRATIONS,
     DEFAULT_RETENTION_DAYS,
     DEV_LAST_ACTIVITY,
     DEV_TAINTED,
@@ -82,6 +83,25 @@ from .const import (
     STORAGE_CLOCKS_KEY,
     TODO_DEVICE_ID,
 )
+
+
+
+def _version_tuple(text: Any) -> tuple[int, ...]:
+    """Return a version string as comparable numbers.
+
+    An absent or unreadable stamp reads as the oldest possible
+    version, so a file that cannot say when it was written is given
+    every rename rather than none.
+    """
+    if not isinstance(text, str):
+        return (0,)
+    parts: list[int] = []
+    for piece in text.split("."):
+        digits = "".join(ch for ch in piece if ch.isdigit())
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts) or (0,)
 
 
 class StorageMixin:
@@ -261,7 +281,7 @@ class StorageMixin:
         return renamed
 
     def _rename_stored_option_keys(self, loaded: dict[str, Any]) -> int:
-        """Bring stored settings-changed rows onto the muting names.
+        """Bring stored settings-changed rows onto the current names.
 
         A settings-changed row records which option keys moved, as a
         comma-joined string, and the brief turns each key into the
@@ -273,14 +293,25 @@ class StorageMixin:
         kept. The same reasoning as #299: stored history speaks one
         vocabulary or the surface reading it speaks two.
 
+        Each rename is applied only to a file last written before the
+        release that made it. That is what keeps `excluded_integrations`
+        straight: it was the muting key before 0.16.18 and is the
+        ignore key after 0.16.19, so read without a date it is two
+        settings at once, and a row written today would be rewritten
+        tomorrow into something its author never touched.
+
         One named list, not a sweep. The detail field carries option
         keys only on this one kind; on others it carries counts and
         device names, and rewriting those would be nonsense.
-
-        Idempotent: a key already renamed is not in the map. An
-        unrecognized key passes through untouched, so a row written
-        by a later version survives a downgrade.
         """
+        written = _version_tuple(loaded.get(DATA_LAST_VERSION))
+        renames: dict[str, str] = {}
+        for made_in, step in OPTION_KEY_RENAME_STEPS:
+            if written < made_in:
+                renames.update(step)
+        if not renames:
+            return 0
+
         renamed = 0
         for entry in loaded.get(DATA_SYSTEM_EVENTS) or []:
             if entry.get(SYS_KIND) != SYS_OPTIONS_CHANGED:
@@ -289,16 +320,14 @@ class StorageMixin:
             if not isinstance(detail, str) or not detail:
                 continue
             keys = [part.strip() for part in detail.split(",")]
-            rebuilt = [MUTING_KEY_RENAMES.get(key, key) for key in keys]
+            rebuilt = [renames.get(key, key) for key in keys]
             if rebuilt != keys:
-                renamed += sum(
-                    1 for key in keys if key in MUTING_KEY_RENAMES
-                )
+                renamed += sum(1 for key in keys if key in renames)
                 entry[SYS_DETAIL] = ", ".join(rebuilt)
         if renamed:
             LOGGER.info(
                 "Renamed %d stored option key(s) in the system events "
-                "log onto the muting vocabulary (ruling #316)",
+                "log onto the current vocabulary (rulings #316 and #317)",
                 renamed,
             )
         return renamed
@@ -544,10 +573,10 @@ class StorageMixin:
         A record used to imply a watched device, so every surface
         walked the record store directly. That stopped being true
         when a set-aside device began keeping what it had learned
-        (ruling #257), and the ignore list made twenty-two of them at
+        (ruling #257), and the exclude list made twenty-two of them at
         once: the battery report went on calling phones watched cells
         while the classification file three columns over called them
-        ignored, and one of them reached the problem list asking a
+        excluded, and one of them reached the problem list asking a
         person to act on a device this integration had been told to
         stop looking at.
 
@@ -564,7 +593,7 @@ class StorageMixin:
         ]
 
     @property
-    def ignored_integrations(self) -> frozenset[str]:
+    def excluded_integrations(self) -> frozenset[str]:
         """Return the integrations never to watch.
 
         A person's list, defaulting to the four that publish
@@ -574,9 +603,9 @@ class StorageMixin:
         included, because a default that reasserted itself would make
         the setting impossible to switch off.
         """
-        stored = self.entry.options.get(CONF_IGNORED_INTEGRATIONS)
+        stored = self.entry.options.get(CONF_EXCLUDED_INTEGRATIONS)
         if stored is None:
-            return frozenset(DEFAULT_IGNORED_INTEGRATIONS)
+            return frozenset(DEFAULT_EXCLUDED_INTEGRATIONS)
         return frozenset(stored)
 
     @property

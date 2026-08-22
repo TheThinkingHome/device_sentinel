@@ -15,10 +15,10 @@
     "step": {
       "init": {
         "title": "Device Sentinel Configuration",
-        "description": "Device Sentinel's default settings are good to get you started. When you begin tailoring the integration to your system, work from top to bottom. If you want alerts to reach your phone, begin in Notifications.\n\n**Notifications**: where alerts go, quiet hours, and the daily reminder.\n\n**Global Exclusions**: hardware you never want judged or reported, by anything. To silence just one kind of report for a device, use that section's own mute list instead.\n\n**Low Battery**: the low threshold, and battery-only muting.\n\n**Signal Strength**: how weakening radio links are judged against each device's own floor.\n\n**Freeze Detection**: how long a device may go quiet before it is called frozen, set by two grace sliders. Now running.\n\n[All documentation on the Device Sentinel wiki]({wiki_link})\n\nEach section saves when you submit it and brings you back here. Closing this dialog keeps everything you have already submitted.",
+        "description": "Device Sentinel's default settings are good to get you started. When you begin tailoring the integration to your system, work from top to bottom. If you want alerts to reach your phone, begin in Notifications.\n\n**Notifications**: where alerts go, quiet hours, and the daily reminder.\n\n**Exclusions and Muting**: hardware you never want judged or reported, by anything. To silence just one kind of report for a device, use that section's own mute list instead.\n\n**Low Battery**: the low threshold, and battery-only muting.\n\n**Signal Strength**: how weakening radio links are judged against each device's own floor.\n\n**Freeze Detection**: how long a device may go quiet before it is called frozen, set by two grace sliders. Now running.\n\n[All documentation on the Device Sentinel wiki]({wiki_link})\n\nEach section saves when you submit it and brings you back here. Closing this dialog keeps everything you have already submitted.",
         "menu_options": {
           "notifications": "Notifications and Daily Brief",
-          "exclusions": "Global Exclusions",
+          "exclusions": "Exclusions and Muting",
           "battery": "Low Battery",
           "signal": "Signal Strength",
           "freeze": "Freeze Detection",
@@ -68,19 +68,19 @@
         }
       },
       "exclusions": {
-        "title": "Global Exclusions",
-        "description": "The integration offers two ways to tune which devices it watches and how it reports. Ignoring discards; muting only silences.\n\n[Global Exclusions on the wiki]({wiki_link})",
+        "title": "Exclusions and Muting",
+        "description": "The integration offers two ways to tune which devices it watches and how it reports. Excluding discards; muting only silences.\n\n[Exclusions and Muting on the wiki]({wiki_link})",
         "data": {},
         "data_description": {},
         "sections": {
-          "ignore": {
-            "name": "Integrations to Ignore",
-            "description": "Devices from an ignored integration are completely set aside. Nothing is learned, no data is kept, and they never appear in reports or notifications. What they had already recorded is discarded at the next local midnight, so taking an integration back off this list before then restores it untouched. Use it where what an integration publishes is not a measurement of your house: phones that leave it, wall tablets on permanent power, probes that answer on every poll.",
+          "exclude": {
+            "name": "Integrations to Exclude",
+            "description": "Devices from an excluded integration are completely set aside. Nothing is learned, no data is kept, and they never appear in reports or notifications. What they had already recorded is discarded at the next local midnight, so taking an integration back off this list before then restores it untouched. Use it where what an integration publishes is not a measurement of your house: phones that leave it, wall tablets on permanent power, probes that answer on every poll.",
             "data": {
-              "ignored_integrations": "Integrations to Ignore"
+              "excluded_integrations": "Integrations to Exclude"
             },
             "data_description": {
-              "ignored_integrations": "Every device from a ticked integration is set aside."
+              "excluded_integrations": "Every device from a ticked integration is set aside."
             }
           },
           "muting": {
@@ -213,7 +213,7 @@
         "sections": {
           "data_trim": {
             "name": "Data Trim",
-            "description": "Use this tool when support requests it, or when corrupted data demands a clean start. Saving this screen clears the statistics, silence episodes, incidents, and Problem List entries of whatever you select below. As a safeguard, the system writes a backup to config/device_sentinel/trim_backups before erasing anything, and those backups are kept until you delete them yourself. The devices themselves remain untouched. They reappear within seconds to begin learning a new baseline, keeping all existing ignores and mutes intact. Both selection boxes empty themselves after execution to prevent accidental double-wipes.",
+            "description": "Use this tool when support requests it, or when corrupted data demands a clean start. Saving this screen clears the statistics, silence episodes, incidents, and Problem List entries of whatever you select below. As a safeguard, the system writes a backup to config/device_sentinel/trim_backups before erasing anything, and those backups are kept until you delete them yourself. The devices themselves remain untouched. They reappear within seconds to begin learning a new baseline, keeping all existing exclusions and mutes intact. Both selection boxes empty themselves after execution to prevent accidental double-wipes.",
             "data": {
               "trim_integrations": "Trim Integration History",
               "trim_devices": "Trim Device History"

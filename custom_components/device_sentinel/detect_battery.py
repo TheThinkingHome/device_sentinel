@@ -74,7 +74,7 @@ class BatteryMixin:
         Chargers, battery_charging flags, and the like carry other
         device classes and are correctly ignored. The foreign
         batteries ruling #248 filtered by name, a phone's car and its
-        paired watch, arrive on an integration the ignore list now
+        paired watch, arrive on an integration the exclude list now
         refuses whole, so no name test is left here.
         """
         if str(ent.original_device_class or ent.device_class) != "battery":

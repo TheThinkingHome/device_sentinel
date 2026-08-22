@@ -417,7 +417,7 @@ SIGNAL_WEIGHTING_MARK = "minutes-2"
 SET_ASIDE_SERVICE = "service"
 SET_ASIDE_DISABLED = "disabled"
 SET_ASIDE_NO_ENTITIES = "no entities"
-SET_ASIDE_IGNORED = "ignored"
+SET_ASIDE_EXCLUDED = "excluded"
 
 # The integrations a person has asked never to watch. Muting in
 # every other place suppresses judgment and reporting and keeps the
@@ -429,8 +429,8 @@ SET_ASIDE_IGNORED = "ignored"
 # every poll so it can never fall silent. The default is a starting
 # point rather than a rule: it is the person's list, and the first
 # save makes it theirs.
-CONF_IGNORED_INTEGRATIONS = "ignored_integrations"
-DEFAULT_IGNORED_INTEGRATIONS = (
+CONF_EXCLUDED_INTEGRATIONS = "excluded_integrations"
+DEFAULT_EXCLUDED_INTEGRATIONS = (
     "mobile_app",
     "fully_kiosk",
     "spook",
@@ -676,7 +676,7 @@ SIGNAL_REFUSED_UNITS = ("%", "percent", "percentage")
 # ESPHome node's own RSSI because the sensor is called WiFi Signal and
 # missed a phone's cellular radio because the sensor is not called
 # cellular. Every entity they existed to refuse arrives on an
-# integration the ignore list now refuses whole, so nothing reaches
+# integration the exclude list now refuses whole, so nothing reaches
 # either recognizer to be filtered by name.
 
 # Rolling statistics: daily maxima kept per device. 14 days records
@@ -1881,7 +1881,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 316
+HIGHEST_RULING = 317
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -2184,11 +2184,20 @@ DEAD_OPTION_KEYS = (
 # The words were backward: excluding sounded like the harsher act and
 # only silences, while ignoring sounds like the softer one and
 # discards the record.
-OPTIONS_MINOR_VERSION = 2
+# Step 3 renames the ignore list to the word it vacated. Excluding
+# now means what it looks like, the record discarded, and muting
+# carries the gentler act (ruling #317).
+OPTIONS_MINOR_VERSION = 3
 
 # The muting keys, old spelling to new, in the order a person meets
 # them on the screens. Read by the migration and by the guard that
 # rewrites stored history, so there is one list rather than two.
+IGNORE_KEY_RENAMES = {
+    "ignored_integrations": "excluded_integrations",
+}
+
+
+
 MUTING_KEY_RENAMES = {
     "excluded_integrations": "muted_integrations",
     "excluded_labels": "muted_labels",
@@ -2203,6 +2212,33 @@ MUTING_KEY_RENAMES = {
     "freeze_excluded_labels": "freeze_muted_labels",
     "freeze_excluded_devices": "freeze_muted_devices",
 }
+
+# Every retired option name, both steps together, read by the pass
+# that rewrites stored history and by the guard that keeps the old
+# spellings out of the source. One list, so a later step cannot be
+# added to the migration and forgotten by the two things that have to
+# follow it.
+OPTION_KEY_RENAMES = {**MUTING_KEY_RENAMES, **IGNORE_KEY_RENAMES}
+
+# The same renames, each stamped with the release that made it, for
+# the pass that rewrites stored history.
+#
+# A flat map cannot do this job any more. `excluded_integrations` was
+# the muting key until 0.16.18 moved it and is the ignore key since
+# 0.16.19 moved into the word it vacated, so the same string means
+# two different settings depending on when the row was written. Read
+# flat, a row written today would be rewritten tomorrow into a
+# setting the person never touched.
+#
+# What tells them apart is the version stamp the storage file already
+# carries: a rename is applied only to a file last written before the
+# release that made it, and never to one written by that release or
+# later. Nothing new is stored to make this work.
+OPTION_KEY_RENAME_STEPS = (
+    ((0, 16, 18), MUTING_KEY_RENAMES),
+    ((0, 16, 19), IGNORE_KEY_RENAMES),
+)
+
 
 SENTINEL_TYPE_PROBLEM_LIST = "problem_list"
 
@@ -2260,7 +2296,7 @@ def _wiki_link(page: str | None = None) -> str:
 WIKI_LINK_HOME = _wiki_link()
 WIKI_LINK_NOTIFICATIONS = _wiki_link("Notifications-and-Daily-Brief")
 WIKI_LINK_ADVANCED = _wiki_link("Advanced")
-WIKI_LINK_EXCLUSIONS = _wiki_link("Global-Exclusions")
+WIKI_LINK_EXCLUSIONS = _wiki_link("Exclusions-and-Muting")
 WIKI_LINK_BATTERY = _wiki_link("Low-Battery")
 WIKI_LINK_SIGNAL = _wiki_link("Signal-Strength")
 WIKI_LINK_FREEZE = _wiki_link("Freeze-Detection")
@@ -2270,7 +2306,6 @@ WIKI_LINK_LEARNING = _wiki_link("How-Device-Sentinel-Learns")
 WIKI_LINK_DEVICE_PAGE = _wiki_link("The-Device-Page")
 WIKI_LINK_PROBLEM_LIST = _wiki_link("The-Problem-List")
 WIKI_LINK_REPORTS = _wiki_link("The-Diagnostic-Reports")
-WIKI_LINK_DWELL_CHART = _wiki_link("The-Signal-Dwell-Chart")
 WIKI_LINK_BATTERY_REPORT = _wiki_link("The-Battery-Report")
 WIKI_LINK_FAQ = _wiki_link("FAQ-and-Troubleshooting")
 WIKI_LINK_EVENTS = _wiki_link("Automation-Events")

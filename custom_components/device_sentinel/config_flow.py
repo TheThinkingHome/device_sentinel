@@ -80,7 +80,7 @@ from .const import (
     CONF_TRIM_INTEGRATIONS,
     CONF_MUTED_DEVICES,
     CONF_MUTED_INTEGRATIONS,
-    CONF_IGNORED_INTEGRATIONS,
+    CONF_EXCLUDED_INTEGRATIONS,
     CONF_MUTED_LABELS,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
@@ -114,7 +114,7 @@ from .const import (
     DEFAULT_REPEAT_FLOOR,
     REPEAT_FLOOR_MAX,
     REPEAT_FLOOR_MIN,
-    DEFAULT_IGNORED_INTEGRATIONS,
+    DEFAULT_EXCLUDED_INTEGRATIONS,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
     DEFAULT_FREEZE_DELTA_LOW_MIN,
     DEFAULT_LOW_THRESHOLD,
@@ -1010,7 +1010,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     async def async_step_exclusions(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """The mute surface: the ignore list and four mute
+        """The mute surface: the exclude list and four mute
         selectors, every way of narrowing attention in one place.
 
         Two different verbs live on this screen and the distinction is
@@ -1019,7 +1019,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         first thing a diverse fleet needs). Mute watches but
         silences: a muted device still learns, still counts, and
         is never reported, so undo is instant and the rhythm history
-        carries no holes. Ignore discards: an ignored integration's
+        carries no holes. Excluding discards: an excluded integration's
         devices are set aside, nothing is learned and nothing is
         kept, which is for integrations with nothing worth watching
         at all. Changes apply live on save through the options update
@@ -1062,30 +1062,30 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 )
             )
         options = self.config_entry.options
-        ignored = list(
+        excluded = list(
             options.get(
-                CONF_IGNORED_INTEGRATIONS, DEFAULT_IGNORED_INTEGRATIONS
+                CONF_EXCLUDED_INTEGRATIONS, DEFAULT_EXCLUDED_INTEGRATIONS
             )
         )
-        # The ignore picker offers integrations with something left to
-        # ignore, plus the ones already ignored. An integration whose
+        # The exclude picker offers integrations with something left to
+        # exclude, plus the ones already excluded. An integration whose
         # devices are every one of them set aside already is not
         # offered: Device Sentinel has classified them out, and
-        # ignoring them would change nothing while burying the real
+        # excluding them would change nothing while burying the real
         # choices under three dozen add-ons and dashboard cards. The
-        # already-ignored are kept because ignoring took them out of
+        # already-excluded are kept because excluding took them out of
         # the watched set, and a picker that forgot them would strand
         # a choice it had just made. An integration since uninstalled
         # survives as a custom value rather than failing the form
         # (the 0.13.2 fault).
         breakdown = self.config_entry.runtime_data.classification_breakdown
-        ignorable_domains = sorted(
+        excludable_domains = sorted(
             {
                 domain
                 for domain, counts in breakdown.items()
                 if counts.get("watched")
             }
-            | set(ignored)
+            | set(excluded)
         )
         # Offer only integrations that own a watched device. An
         # integration whose devices are all service-type was never
@@ -1123,22 +1123,22 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     # both halves are sections so both carry a
                     # heading and an explanation above their picker.
                     # A loose field gets its label above the input
-                    # and its help below it, which put the ignore
+                    # and its help below it, which put the exclude
                     # list's explanation underneath the chooser while
                     # the ladder beside it had its own above. Two
                     # sections and nothing loose departs from the
                     # Advanced pattern deliberately: this screen has
                     # no plain settings, only two groups of lists
                     # that need different explanations.
-                    vol.Required("ignore"): section(
+                    vol.Required("exclude"): section(
                         vol.Schema(
                             {
                                 vol.Optional(
-                                    CONF_IGNORED_INTEGRATIONS,
-                                    default=ignored,
+                                    CONF_EXCLUDED_INTEGRATIONS,
+                                    default=excluded,
                                 ): selector.SelectSelector(
                                     selector.SelectSelectorConfig(
-                                        options=ignorable_domains,
+                                        options=excludable_domains,
                                         multiple=True,
                                         custom_value=True,
                                         sort=True,
@@ -1153,7 +1153,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         ),
                         {"collapsed": False},
                     ),
-                    # The screen splits by verb (ruling #314). Ignore
+                    # The screen splits by verb (ruling #314). Exclusion
                     # stays loose at the top because it is the
                     # different one: it discards rather than
                     # silences. The three-tier ladder moves into its
@@ -1408,7 +1408,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         trim_rows = self.config_entry.runtime_data.trimmable_device_rows
         # Sorted for the same reason every other device picker is
         # (ruling #312): this list holds every device on the system,
-        # watched, muted, ignored and set aside alike, so it is
+        # watched, muted, excluded and set aside alike, so it is
         # the longest picker in the integration and the hardest to
         # scan unsorted.
         trim_device_options = sorted(

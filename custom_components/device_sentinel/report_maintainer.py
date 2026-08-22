@@ -569,7 +569,7 @@ class MaintainerReportMixin:
             f"One row per device. Watching {len(self._watched)} of "
             f"{total}; {len(self._set_aside)} set aside (service "
             f"devices, disabled devices, devices with no entities, "
-            f"and integrations you asked to ignore); "
+            f"and integrations you asked to exclude); "
             f"{self.deviceless_count} "
             f"deviceless entities visible only at entity level. Every "
             f"device is watched and recorded; MUTED only suppresses "

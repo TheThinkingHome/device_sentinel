@@ -147,7 +147,7 @@ from .const import (
     SERIES_FREEZE,
     SERIES_SIGNAL,
     SET_ASIDE_DISABLED,
-    SET_ASIDE_IGNORED,
+    SET_ASIDE_EXCLUDED,
     SET_ASIDE_NO_ENTITIES,
     SET_ASIDE_SERVICE,
     SHARE_PCT_MAX,
@@ -945,7 +945,7 @@ class DeviceSentinelCoordinator(
         muted_integrations = set(
             options.get(CONF_MUTED_INTEGRATIONS, [])
         )
-        ignored_integrations = self.ignored_integrations
+        excluded_integrations = self.excluded_integrations
 
         watched: dict[str, str] = {}
         device_names: dict[str, str] = {}
@@ -965,14 +965,14 @@ class DeviceSentinelCoordinator(
             stack = detect_stack(domain, device)
             if stack is not None:
                 stacks.add(stack)
-            if domain in ignored_integrations:
+            if domain in excluded_integrations:
                 # The person asked for this integration never to be
                 # watched, so their reason is the one recorded even
                 # where another would also fit. Everything else on
                 # this ladder is a fact about the device; this is a
                 # decision about it, and a decision outranks a fact
                 # when the question is why you cannot see something.
-                set_aside[device.id] = (name, domain, SET_ASIDE_IGNORED)
+                set_aside[device.id] = (name, domain, SET_ASIDE_EXCLUDED)
                 continue
             if device.entry_type is dr.DeviceEntryType.SERVICE:
                 set_aside[device.id] = (name, domain, SET_ASIDE_SERVICE)
@@ -1617,20 +1617,20 @@ class DeviceSentinelCoordinator(
         self._evaluate_repairs(REPAIR_MOMENT_BRIEF)
 
     @property
-    def _ignored_device_ids(self) -> set[str]:
+    def _excluded_device_ids(self) -> set[str]:
         """Return the devices set aside because their integration is
-        ignored.
+        excluded.
 
         Read by the record discard and the episode cleanup. The
         enable buttons no longer need it: they reach watched devices
-        only (ruling #302), and every ignored device is set aside, so
+        only (ruling #302), and every excluded device is set aside, so
         the narrower filter already covers what this used to mute
         from them.
         """
         return {
             device_id
             for device_id, (_name, _domain, reason) in self._set_aside.items()
-            if reason == SET_ASIDE_IGNORED
+            if reason == SET_ASIDE_EXCLUDED
         }
 
     def _trim_fabricated_signal_days(
@@ -1812,14 +1812,14 @@ class DeviceSentinelCoordinator(
             namer=self._device_name,
         )
 
-    def _discard_ignored_records(self) -> None:
-        """Drop what an ignored integration recorded before it was.
+    def _discard_excluded_records(self) -> None:
+        """Drop what an excluded integration recorded before it was.
 
-        Here rather than on the save that ignored it, because this is
+        Here rather than on the save that excluded it, because this is
         the fold, and the fold is already the one place the record
         changes size: lowering how much history to keep does not
         delete anything when the slider moves either, it shortens the
-        series at the next rollover. So a person who ignores an
+        series at the next rollover. So a person who excludes an
         integration by mistake has until midnight to take it back with
         nothing lost, and record-shrinking stays in one place instead
         of two.
@@ -1829,35 +1829,35 @@ class DeviceSentinelCoordinator(
         last an afternoon, while this is a person saying the data is
         not worth keeping.
         """
-        ignored = self._ignored_device_ids
-        if not ignored:
+        excluded = self._excluded_device_ids
+        if not excluded:
             return
         devices = self.data.get(DATA_DEVICES) or {}
-        dropped = [device_id for device_id in ignored if device_id in devices]
+        dropped = [device_id for device_id in excluded if device_id in devices]
         for device_id in dropped:
             del devices[device_id]
 
         # The episodes and incidents go with the record, and an open
         # episode is the reason this cannot be left to the age prune.
         # An episode is completed by its device speaking again, and an
-        # ignored device is no longer walked, so one still open when
-        # the integration was ignored can never be closed by anything.
+        # excluded device is no longer walked, so one still open when
+        # the integration was excluded can never be closed by anything.
         # It would then be counted as an orphan at every boot, which
         # is the one diagnostic that exists to catch a closing that
         # never reached disk (ruling #167), and a permanent false
         # positive there costs more than the rows are worth. They are
         # dropped rather than stamped because the promise is that an
-        # ignored integration is never recorded, and an episode is a
+        # excluded integration is never recorded, and an episode is a
         # record.
         episodes = self.data.get(DATA_EPISODES) or []
         kept_episodes = [
             episode
             for episode in episodes
-            if episode.get(EP_DEVICE_ID) not in ignored
+            if episode.get(EP_DEVICE_ID) not in excluded
         ]
         incidents = self.data.get(DATA_INCIDENTS) or []
         kept_incidents = [
-            row for row in incidents if row.get(INC_DEVICE_ID) not in ignored
+            row for row in incidents if row.get(INC_DEVICE_ID) not in excluded
         ]
         shed_episodes = len(episodes) - len(kept_episodes)
         shed_incidents = len(incidents) - len(kept_incidents)
@@ -1869,7 +1869,7 @@ class DeviceSentinelCoordinator(
         if dropped or shed_episodes or shed_incidents:
             self._mark_cold_dirty()
             LOGGER.info(
-                "Ignored integrations: discarded %d device record(s), "
+                "Excluded integrations: discarded %d device record(s), "
                 "%d episode(s) and %d incident(s) at the fold",
                 len(dropped),
                 shed_episodes,
@@ -1879,7 +1879,7 @@ class DeviceSentinelCoordinator(
     async def _on_midnight(self, _now: Any) -> None:
         """Roll today's maxima into the bounded daily set."""
         now = dt_util.utcnow().timestamp()
-        self._discard_ignored_records()
+        self._discard_excluded_records()
         pushed = 0
         for record in self.data[DATA_DEVICES].values():
             if record[DEV_TODAY_MAX] is not None:
@@ -2199,7 +2199,7 @@ class DeviceSentinelCoordinator(
         answers for a device that is in neither, which is how a
         picked id that has since gone still reads as something.
 
-        Found on the first live trim: an ignored television was
+        Found on the first live trim: an excluded television was
         erased and the brief recorded a thirty-two character hex id,
         because the lookup read the watched map alone (ruling #307
         widened the picker to every detected device and this reader
@@ -2370,7 +2370,7 @@ class DeviceSentinelCoordinator(
         pickers.
 
         Wider than watched_device_rows on purpose (ruling #307).
-        Nothing is filtered: watched, muted, ignored and
+        Nothing is filtered: watched, muted, excluded and
         set-aside devices are all offered, and so is a device that
         currently holds no record at all. The muting pickers can
         narrow to what a muting would change, because offering a
@@ -2459,7 +2459,7 @@ class DeviceSentinelCoordinator(
         on: Home Assistant re-disables the entities of a disabled
         device at the next registry write, so the sweep enabled them,
         the registry put them back, and the count never reached zero.
-        An ignored integration is set aside too, and a person who
+        An excluded integration is set aside too, and a person who
         asked for a phone never to be watched is not waiting for its
         battery sensor to be switched on. Home Assistant reloads the
         owning config entries a short delay after.

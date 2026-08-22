@@ -1058,7 +1058,7 @@ class BriefMixin:
         from a real fault at the moment it judges, so instead of a
         verdict it shows the pattern and the person decides, which is
         how the reference LG TV and the first external fleet's
-        propane sensor both end: ignored or muted by their owner,
+        propane sensor both end: excluded or muted by their owner,
         on evidence.
 
         Only unexplained interruptions count. An opening that a
