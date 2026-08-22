@@ -69,17 +69,23 @@
       },
       "exclusions": {
         "title": "Global Exclusions",
-        "description": "The integration offers two ways to tune which devices it watches and how it reports.\n\n**Integrations to Ignore**: Devices from an ignored integration are completely set aside. Nothing is learned, no data is kept, and they never appear in reports or notifications.\n\n**Exclusions**: An excluded item is still watched and its data is stored, but it is kept off the Problem List and out of reports and alerts. Remove the exclusion later and the device can resume reporting immediately, because its history is already at hand.\n\n[Global Exclusions on the wiki]({wiki_link})",
-        "data": {
-          "ignored_integrations": "Integrations to Ignore"
-        },
-        "data_description": {
-          "ignored_integrations": "The system completely ignores devices from these integrations. It learns no rhythms, records no data, and generates no reports. If you add a new integration to this list, anything already recorded for its devices is discarded at the next nightly rollover. This is the right tool for phone apps, cloud services, and virtual helpers that do not represent physical hardware. If you want to silence alerts for a device while keeping its history, use the exclusion lists below instead."
-        },
+        "description": "The integration offers two ways to tune which devices it watches and how it reports. Ignoring discards; excluding only silences.\n\n[Global Exclusions on the wiki]({wiki_link})",
+        "data": {},
+        "data_description": {},
         "sections": {
+          "ignore": {
+            "name": "Integrations to Ignore",
+            "description": "Devices from an ignored integration are completely set aside. Nothing is learned, no data is kept, and they never appear in reports or notifications. What they had already recorded is discarded at the next local midnight, so taking an integration back off this list before then restores it untouched. Use it where what an integration publishes is not a measurement of your house: phones that leave it, wall tablets on permanent power, probes that answer on every poll.",
+            "data": {
+              "ignored_integrations": "Integrations to Ignore"
+            },
+            "data_description": {
+              "ignored_integrations": "Every device from a ticked integration is set aside."
+            }
+          },
           "exclusions": {
             "name": "Exclusions",
-            "description": "Excluding watches but silences: the device still learns, still counts, and is never reported, so undoing it is instant and the rhythm history carries no holes. The three lists run broad to narrow: integration, label, device. Exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
+            "description": "An excluded item is still watched and its data is stored, but it is kept off the Problem List and out of reports and alerts. Remove the exclusion later and the device resumes reporting at once, because its history is already at hand. The three lists run broad to narrow: integration, label, device. Exclude at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
             "data": {
               "excluded_integrations": "Globally Excluded Integrations",
               "excluded_labels": "Globally Excluded Labels",
