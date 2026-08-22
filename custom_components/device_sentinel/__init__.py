@@ -24,6 +24,7 @@ from __future__ import annotations
 import os
 import shutil
 from functools import partial
+from typing import Any
 from pathlib import Path
 
 from homeassistant.components.http import StaticPathConfig
@@ -38,7 +39,9 @@ from .const import (
     DEAD_ENTITY_SENTINEL_TYPES,
     DEAD_OPTION_KEYS,
     DOMAIN,
+    MUTING_KEY_RENAMES,
     LOGGER,
+    OPTIONS_MINOR_VERSION,
     REPORT_DIR,
     REPORT_WWW_DIR,
     REPORT_WWW_PARENT,
@@ -63,6 +66,63 @@ PLATFORMS: list[Platform] = [
 ]
 
 type DeviceSentinelConfigEntry = ConfigEntry[DeviceSentinelCoordinator]
+
+
+async def async_migrate_entry(
+    hass: HomeAssistant, entry: DeviceSentinelConfigEntry
+) -> bool:
+    """Bring an entry's options up to the current minor version.
+
+    Home Assistant runs this before setup and, if it returns False or
+    raises, marks the entry as needing attention and does not start
+    the integration. That is the behaviour this migration wants. An
+    entry whose muting lists could not be carried across is better
+    dark and saying so than started with twelve empty lists, which
+    would put a person's whole muted fleet into tomorrow's brief with
+    nothing to explain it.
+
+    The steps are numbered rather than applied as a set, because the
+    two audiences arrive differently (ruling #316): this fleet and
+    the beta fleet take one step at a time, while a person on the
+    public release jumps several at once. Numbering makes those the
+    same code path, applied in order from wherever the entry sits.
+    """
+    if entry.minor_version >= OPTIONS_MINOR_VERSION:
+        return True
+    options = dict(entry.options)
+    if entry.minor_version < 2:
+        options = _migrate_muting_names(options)
+    hass.config_entries.async_update_entry(
+        entry, options=options, minor_version=OPTIONS_MINOR_VERSION
+    )
+    return True
+
+
+def _migrate_muting_names(options: dict[str, Any]) -> dict[str, Any]:
+    """Step 2: the exclude lists take their muting names.
+
+    A key that is not present produces nothing rather than an empty
+    list, so an entry that never had a picker touched does not gain
+    twelve keys it did not have. A key already renamed is left alone,
+    so a second run changes nothing.
+    """
+    moved: list[str] = []
+    for old, new in MUTING_KEY_RENAMES.items():
+        if old not in options:
+            continue
+        value = options.pop(old)
+        if new not in options:
+            options[new] = value
+        moved.append(f"{old} -> {new} ({len(value)})")
+    if moved:
+        LOGGER.info(
+            "Options migration step 2, muting names: %s", "; ".join(moved)
+        )
+    else:
+        LOGGER.info(
+            "Options migration step 2, muting names: nothing stored to move"
+        )
+    return options
 
 
 def _drop_dead_options(

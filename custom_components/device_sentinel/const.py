@@ -355,7 +355,7 @@ STORM_RELEASE_SECONDS = 5.0
 # Storm duty-cycle exemption: an integration storming chronically is a
 # synchronized poller (all its devices update in the same instant every
 # scan), not a republisher. Its devices' honest rhythm is the poll
-# cadence, so storm exclusion stops applying to it. Provisional per the
+# cadence, so storm muting stops applying to it. Provisional per the
 # soak, learned from the tplink_router finding (920 storms overnight).
 STORM_EXEMPT_PER_HOUR = 10
 STORM_HISTORY_SECONDS = 3600
@@ -419,7 +419,7 @@ SET_ASIDE_DISABLED = "disabled"
 SET_ASIDE_NO_ENTITIES = "no entities"
 SET_ASIDE_IGNORED = "ignored"
 
-# The integrations a person has asked never to watch. Exclusion in
+# The integrations a person has asked never to watch. Muting in
 # every other place suppresses judgment and reporting and keeps the
 # record; this suppresses the watching itself, because some
 # integrations publish measurements of nothing this house can be
@@ -1347,28 +1347,28 @@ SIGNAL_LIFT = 0.0
 
 SIGNAL_GREEN_CEILING = 5.0
 
-# Signal-only excludes, the same broad-to-narrow ladder as battery:
-# integration, label, device. Exclusion suppresses judgment, not
-# observation: an excluded device keeps recording its floor and dwell
+# Signal-only muting, the same broad-to-narrow ladder as battery:
+# integration, label, device. Muting suppresses judgment, not
+# observation: a muted device keeps recording its floor and dwell
 # in storage, so re-including it is instant and arrives with history;
 # it simply stops being reported. This is the manual removal from
 # tracking the frozen-signal ruling requires, given a surface: a
 # device that resists every recovery (the development system's living
 # room router plug) can be silenced without blinding the watcher.
-CONF_SIGNAL_EXCLUDED_DEVICES = "signal_excluded_devices"
-CONF_SIGNAL_EXCLUDED_INTEGRATIONS = "signal_excluded_integrations"
-CONF_SIGNAL_EXCLUDED_LABELS = "signal_excluded_labels"
+CONF_SIGNAL_MUTED_DEVICES = "signal_muted_devices"
+CONF_SIGNAL_MUTED_INTEGRATIONS = "signal_muted_integrations"
+CONF_SIGNAL_MUTED_LABELS = "signal_muted_labels"
 
-# Freeze-only excludes, the same three-tier ladder as battery and
+# Freeze-only muting, the same three-tier ladder as battery and
 # signal. A device on this list is still watched and clocked, so its
 # rhythm keeps learning and re-including it is instant, but it is
 # never given a freeze, unavailable, unknown, or not-reported verdict.
 # For a device that is intermittent by nature (a car sensor that
 # travels, a seasonal device) this silences the freeze report without
 # hiding the device from everything.
-CONF_FREEZE_EXCLUDED_DEVICES = "freeze_excluded_devices"
-CONF_FREEZE_EXCLUDED_INTEGRATIONS = "freeze_excluded_integrations"
-CONF_FREEZE_EXCLUDED_LABELS = "freeze_excluded_labels"
+CONF_FREEZE_MUTED_DEVICES = "freeze_muted_devices"
+CONF_FREEZE_MUTED_INTEGRATIONS = "freeze_muted_integrations"
+CONF_FREEZE_MUTED_LABELS = "freeze_muted_labels"
 
 # The rails. A rail is a value that is flat and at
 # the type's extreme: healthy LQI across the fleet tops out at 224,
@@ -1881,7 +1881,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 315
+HIGHEST_RULING = 316
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -2118,16 +2118,16 @@ TAINT_PROMOTIONS = {
 TODO_JOURNAL_KEEP = 100
 SIGNAL_PROBLEM_ADDITION = f"{DOMAIN}_problem_addition"
 
-# The exclude surface. One list, four selectors, governing
-# every detection family present and future. Exclusion suppresses
-# judgment, not observation: excluded devices and entities keep
+# The mute surface. One list, four selectors, governing
+# every detection family present and future. Muting suppresses
+# judgment, not observation: muted devices and entities keep
 # their clocks, statistics, and vouching, so an undo is instant and
-# free and the rhythm history carries no holes. An excluded entity
+# free and the rhythm history carries no holes. A muted entity
 # still vouches for its device's freeze clock; only its own
 # reporting is suppressed.
 #
 # The four kinds form a priority ladder, broadest first: integration,
-# label, device, entity. A broader exclusion supersedes a narrower
+# label, device, entity. A broader muting supersedes a narrower
 # one and prunes it on save, so a pick can never be shadowed by an
 # invisible parent.
 #
@@ -2136,15 +2136,15 @@ SIGNAL_PROBLEM_ADDITION = f"{DOMAIN}_problem_addition"
 # letting it also switch off monitoring means a room reorganization
 # silently changes what is watched. A label carries one meaning and
 # is set for one reason, which is what this surface needs.
-CONF_EXCLUDED_DEVICES = "excluded_devices"
-CONF_EXCLUDED_LABELS = "excluded_labels"
-CONF_EXCLUDED_INTEGRATIONS = "excluded_integrations"
+CONF_MUTED_DEVICES = "muted_devices"
+CONF_MUTED_LABELS = "muted_labels"
+CONF_MUTED_INTEGRATIONS = "muted_integrations"
 
 # Option keys no longer read by any code path. Cleared once at setup
 # so a retired surface cannot linger in diagnostics and read as a
 # live setting.
 #
-# excluded_areas is the area exclusion kind, retired because area
+# excluded_areas is the area muting kind, retired because area
 # membership is set for dashboards and automations, so repurposing it
 # to switch off monitoring would make reorganizing a room a silent
 # failure (ruling #46). The rest are the first notification shapes,
@@ -2157,6 +2157,11 @@ CONF_EXCLUDED_INTEGRATIONS = "excluded_integrations"
 # left to decide). They survived in stored options for nine releases,
 # reading as live settings in every diagnostics download, which is the
 # exact rot ruling 49 was made to stop.
+# The four signal keys became constants at #311 when the sliders they
+# fed were retired, and were never added here, so they sat in every
+# stored entry reading as live settings, which is the same rot the
+# six above were removed for. Swept at #316, the release that was
+# already opening the options.
 DEAD_OPTION_KEYS = (
     "excluded_areas",
     "notify_targets",
@@ -2164,21 +2169,54 @@ DEAD_OPTION_KEYS = (
     "quiet_end",
     "reminder_time",
     "high_priority_pierces_quiet",
+    "signal_lift",
+    "signal_margin",
+    "signal_red_threshold",
+    "signal_sensitivity",
 )
+
+# The options migration, numbered so that a person who upgrades one
+# release at a time and a person who jumps several run the same code
+# in the same order (ruling #316). The entry's minor version records
+# how far it has come; each step below moves it one further.
+#
+# Step 2 renames the twelve muting keys from their exclude spellings.
+# The words were backward: excluding sounded like the harsher act and
+# only silences, while ignoring sounds like the softer one and
+# discards the record.
+OPTIONS_MINOR_VERSION = 2
+
+# The muting keys, old spelling to new, in the order a person meets
+# them on the screens. Read by the migration and by the guard that
+# rewrites stored history, so there is one list rather than two.
+MUTING_KEY_RENAMES = {
+    "excluded_integrations": "muted_integrations",
+    "excluded_labels": "muted_labels",
+    "excluded_devices": "muted_devices",
+    "battery_excluded_integrations": "battery_muted_integrations",
+    "battery_excluded_labels": "battery_muted_labels",
+    "battery_excluded_devices": "battery_muted_devices",
+    "signal_excluded_integrations": "signal_muted_integrations",
+    "signal_excluded_labels": "signal_muted_labels",
+    "signal_excluded_devices": "signal_muted_devices",
+    "freeze_excluded_integrations": "freeze_muted_integrations",
+    "freeze_excluded_labels": "freeze_muted_labels",
+    "freeze_excluded_devices": "freeze_muted_devices",
+}
 
 SENTINEL_TYPE_PROBLEM_LIST = "problem_list"
 
-# Battery-only exclusions. Scoped on top of the global
-# exclude list: a device here is excluded from battery judgment
+# Battery-only muting. Scoped on top of the global
+# mute list: a device here is muted from battery judgment
 # only, keeping its freeze, unavailability, and signal watching for
 # the later steps. Keyed at the device level so a re-election
 # (percentage entity vanishing, binary elected instead) cannot dodge
 # it. The integration list makes "everything mobile_app" one tick,
 # covering phones present and future. No entity kind here for the
 # same re-election reason.
-CONF_BATTERY_EXCLUDED_DEVICES = "battery_excluded_devices"
-CONF_BATTERY_EXCLUDED_INTEGRATIONS = "battery_excluded_integrations"
-CONF_BATTERY_EXCLUDED_LABELS = "battery_excluded_labels"
+CONF_BATTERY_MUTED_DEVICES = "battery_muted_devices"
+CONF_BATTERY_MUTED_INTEGRATIONS = "battery_muted_integrations"
+CONF_BATTERY_MUTED_LABELS = "battery_muted_labels"
 
 
 # The documentation links the options screens append to their step
