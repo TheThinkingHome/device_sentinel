@@ -103,7 +103,7 @@ async def test_the_header_names_every_cause(hass: HomeAssistant):
     text = _classification(hass)
 
     assert "service devices, disabled devices, devices with no" in text
-    assert "integrations you asked to ignore" in text
+    assert "integrations you asked to exclude" in text
     assert "no hardware to watch" not in text
 
 

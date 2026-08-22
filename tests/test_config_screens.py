@@ -35,7 +35,7 @@ from custom_components.device_sentinel.const import (
     CONF_MUTED_DEVICES,
     CONF_MUTED_INTEGRATIONS,
     CONF_MUTED_LABELS,
-    CONF_IGNORED_INTEGRATIONS,
+    CONF_EXCLUDED_INTEGRATIONS,
     CONF_LOW_THRESHOLD,
 )
 
@@ -200,8 +200,8 @@ async def test_two_sections_in_one_visit_both_stick(hass: HomeAssistant):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            "ignore": {
-                CONF_IGNORED_INTEGRATIONS: ["ping"],
+            "exclude": {
+                CONF_EXCLUDED_INTEGRATIONS: ["ping"],
             },
             "muting": {
                 CONF_MUTED_INTEGRATIONS: [],
@@ -213,7 +213,7 @@ async def test_two_sections_in_one_visit_both_stick(hass: HomeAssistant):
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.MENU
-    assert entry.options[CONF_IGNORED_INTEGRATIONS] == ["ping"]
+    assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == ["ping"]
     assert entry.options[CONF_LOW_THRESHOLD] == 22
 
 
@@ -362,14 +362,14 @@ async def test_the_ignore_list_has_its_own_section(hass: HomeAssistant):
     )
 
     assert [str(key) for key in result["data_schema"].schema] == [
-        "ignore",
+        "exclude",
         "muting",
     ]
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            "ignore": {CONF_IGNORED_INTEGRATIONS: ["ping"]},
+            "exclude": {CONF_EXCLUDED_INTEGRATIONS: ["ping"]},
             "muting": {
                 CONF_MUTED_INTEGRATIONS: [],
                 CONF_MUTED_LABELS: [],
@@ -380,7 +380,7 @@ async def test_the_ignore_list_has_its_own_section(hass: HomeAssistant):
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.MENU
-    assert entry.options[CONF_IGNORED_INTEGRATIONS] == ["ping"]
+    assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == ["ping"]
     assert "ignore" not in entry.options
 
 
@@ -399,9 +399,9 @@ async def test_both_halves_carry_a_heading_and_an_explanation(
     ):
         step = json.loads(source.read_text())["options"]["step"]["exclusions"]
         assert not step["data"], "nothing loose on this screen"
-        assert step["sections"]["ignore"]["name"] == "Integrations to Ignore"
+        assert step["sections"]["exclude"]["name"] == "Integrations to Exclude"
         assert (
             step["sections"]["muting"]["name"] == "Global Muting"
         )
-        for key in ("ignore", "muting"):
+        for key in ("exclude", "muting"):
             assert len(step["sections"][key]["description"]) > 60, key

@@ -337,7 +337,7 @@ PUBLISHED_PAGES = {
     "Home",
     "Notifications-and-Daily-Brief",
     "Advanced",
-    "Global-Exclusions",
+    "Exclusions-and-Muting",
     "Low-Battery",
     "Signal-Strength",
     "Freeze-Detection",
@@ -422,7 +422,7 @@ async def test_each_screen_supplies_its_own_page(hass: HomeAssistant):
     expected = {
         "notifications": "Notifications-and-Daily-Brief",
         "advanced": "Advanced",
-        "exclusions": "Global-Exclusions",
+        "exclusions": "Exclusions-and-Muting",
         "battery": "Low-Battery",
     }
     for step, page in expected.items():

@@ -37,17 +37,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
 from custom_components.device_sentinel.const import (
-    CONF_IGNORED_INTEGRATIONS,
+    CONF_EXCLUDED_INTEGRATIONS,
     DATA_DEVICES,
     DATA_EPISODES,
     DATA_INCIDENTS,
-    DEFAULT_IGNORED_INTEGRATIONS,
+    DEFAULT_EXCLUDED_INTEGRATIONS,
     DEV_DAILY_MAX,
     DEV_TODAY_MAX,
     EP_DEVICE_ID,
     EP_ENDED,
     INC_DEVICE_ID,
-    SET_ASIDE_IGNORED,
+    SET_ASIDE_EXCLUDED,
 )
 
 from .helpers import flat_schema, register_device, setup_entry
@@ -69,11 +69,11 @@ async def test_the_default_list_applies_before_the_screen_is_saved(
     the same way.
     """
     coordinator, _entry = await _coordinator(hass)
-    assert coordinator.ignored_integrations == frozenset(
-        DEFAULT_IGNORED_INTEGRATIONS
+    assert coordinator.excluded_integrations == frozenset(
+        DEFAULT_EXCLUDED_INTEGRATIONS
     )
-    assert "mobile_app" in coordinator.ignored_integrations
-    assert "ping" in coordinator.ignored_integrations
+    assert "mobile_app" in coordinator.excluded_integrations
+    assert "ping" in coordinator.excluded_integrations
 
 
 async def test_a_saved_empty_list_stays_empty(hass: HomeAssistant):
@@ -84,9 +84,9 @@ async def test_a_saved_empty_list_stays_empty(hass: HomeAssistant):
     find it refilled by morning with no explanation.
     """
     coordinator, _entry = await _coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: []}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: []}
     )
-    assert coordinator.ignored_integrations == frozenset()
+    assert coordinator.excluded_integrations == frozenset()
 
 
 async def test_a_device_on_an_ignored_integration_is_set_aside(
@@ -100,13 +100,13 @@ async def test_a_device_on_an_ignored_integration_is_set_aside(
     """
     device, _eids = register_device(hass, "phone", name="James S24+")
     coordinator, _entry = await _coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: ["test"]}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: ["test"]}
     )
     coordinator._rebuild_registry_view()
     assert device.id not in coordinator._watched
     assert device.id in coordinator._set_aside
     _name, _domain, reason = coordinator._set_aside[device.id]
-    assert reason == SET_ASIDE_IGNORED
+    assert reason == SET_ASIDE_EXCLUDED
 
 
 async def test_ignoring_keeps_the_record_until_the_fold(
@@ -123,7 +123,7 @@ async def test_ignoring_keeps_the_record_until_the_fold(
     assert device.id in coordinator.data[DATA_DEVICES]
 
     hass.config_entries.async_update_entry(
-        _entry, options={CONF_IGNORED_INTEGRATIONS: ["test"]}
+        _entry, options={CONF_EXCLUDED_INTEGRATIONS: ["test"]}
     )
     await hass.async_block_till_done()
     coordinator._rebuild_registry_view()
@@ -139,13 +139,13 @@ async def test_the_fold_discards_what_an_ignored_integration_recorded(
     retention. One deletion path, not two."""
     device, _eids = register_device(hass, "probe", name="SLZB_06M")
     coordinator, _entry = await _coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: ["test"]}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: ["test"]}
     )
     coordinator._rebuild_registry_view()
     coordinator.data[DATA_DEVICES][device.id] = {"anything": 1}
     assert device.id in coordinator.data[DATA_DEVICES]
 
-    coordinator._discard_ignored_records()
+    coordinator._discard_excluded_records()
     assert device.id not in coordinator.data[DATA_DEVICES]
 
 
@@ -158,12 +158,12 @@ async def test_a_watched_device_survives_the_discard(hass: HomeAssistant):
     """
     device, _eids = register_device(hass, "door", name="Door Master")
     coordinator, _entry = await _coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: []}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: []}
     )
     coordinator._rebuild_registry_view()
     assert device.id in coordinator.data[DATA_DEVICES]
 
-    coordinator._discard_ignored_records()
+    coordinator._discard_excluded_records()
     assert device.id in coordinator.data[DATA_DEVICES]
 
 
@@ -178,7 +178,7 @@ async def test_an_ignored_integration_is_still_offered_by_the_picker(
     """
     register_device(hass, "phone", name="James S24+")
     coordinator, _entry = await _coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: ["test"]}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: ["test"]}
     )
     coordinator._rebuild_registry_view()
     assert "test" in coordinator.classification_breakdown
@@ -193,7 +193,7 @@ async def test_the_registry_still_holds_the_device(hass: HomeAssistant):
     """
     device, eids = register_device(hass, "phone", name="James S24+")
     coordinator, _entry = await _coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: ["test"]}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: ["test"]}
     )
     coordinator._rebuild_registry_view()
     assert dr.async_get(hass).async_get(device.id) is not None
@@ -210,13 +210,13 @@ async def test_a_set_aside_device_reaches_no_surface(hass: HomeAssistant):
     """
     device, _eids = register_device(hass, "phone", name="Oneplus Pad")
     coordinator, _entry = await _coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: []}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: []}
     )
     coordinator._rebuild_registry_view()
     assert device.id in dict(coordinator.watched_records())
 
     hass.config_entries.async_update_entry(
-        _entry, options={CONF_IGNORED_INTEGRATIONS: ["test"]}
+        _entry, options={CONF_EXCLUDED_INTEGRATIONS: ["test"]}
     )
     await hass.async_block_till_done()
     coordinator._rebuild_registry_view()
@@ -233,7 +233,7 @@ async def test_the_picker_hides_an_integration_already_set_aside(
     choices under add-ons and dashboard cards. On the reference fleet
     this took the list from thirty-two entries to fifteen."""
     coordinator, _entry = await _coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: []}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: []}
     )
     coordinator._rebuild_registry_view()
     breakdown = coordinator.classification_breakdown
@@ -257,7 +257,7 @@ async def test_an_open_episode_does_not_outlive_its_record(
     """
     device, _eids = register_device(hass, "probe", name="SLZB_06M")
     coordinator, _entry = await _coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: []}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: []}
     )
     coordinator._rebuild_registry_view()
     coordinator.data.setdefault(DATA_EPISODES, []).append(
@@ -268,11 +268,11 @@ async def test_an_open_episode_does_not_outlive_its_record(
     )
 
     hass.config_entries.async_update_entry(
-        _entry, options={CONF_IGNORED_INTEGRATIONS: ["test"]}
+        _entry, options={CONF_EXCLUDED_INTEGRATIONS: ["test"]}
     )
     await hass.async_block_till_done()
     coordinator._rebuild_registry_view()
-    coordinator._discard_ignored_records()
+    coordinator._discard_excluded_records()
 
     assert device.id not in coordinator.data[DATA_DEVICES]
     assert not [
@@ -291,14 +291,14 @@ async def test_another_devices_episode_is_left_alone(hass: HomeAssistant):
     """The discard reaches exactly the ignored ones."""
     keeper, _ = register_device(hass, "door", name="Door Master")
     coordinator, _entry = await _coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: ["absent_integration"]}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: ["absent_integration"]}
     )
     coordinator._rebuild_registry_view()
     coordinator.data.setdefault(DATA_EPISODES, []).append(
         {EP_DEVICE_ID: keeper.id, EP_ENDED: None, "name": "Door Master"}
     )
 
-    coordinator._discard_ignored_records()
+    coordinator._discard_excluded_records()
 
     assert keeper.id in coordinator.data[DATA_DEVICES]
     assert len(coordinator.data.get(DATA_EPISODES) or []) == 1
@@ -313,11 +313,11 @@ async def test_the_enable_buttons_leave_an_ignored_device_alone(
     is not waiting for its battery sensors to be enabled."""
     register_device(hass, "phone", name="James S24+", entity_domain="sensor")
     coordinator, _entry = await _coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: ["test"]}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: ["test"]}
     )
     coordinator._rebuild_registry_view()
 
-    ignored = coordinator._ignored_device_ids
+    ignored = coordinator._excluded_device_ids
     assert ignored, "expected the phone to be set aside as ignored"
     counts = coordinator.awaiting_enable_counts()
     assert counts == {"signal": 0, "last_seen": 0, "battery": 0}
@@ -341,7 +341,7 @@ async def test_the_fold_discards_and_then_folds_the_survivors(
     keeper, _ = register_device(hass, "door", name="Door Master")
     goner, _ = register_device(hass, "phone", name="James S24+")
     coordinator, _entry = await _coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: []}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: []}
     )
     coordinator._rebuild_registry_view()
 
@@ -359,13 +359,13 @@ async def test_the_fold_discards_and_then_folds_the_survivors(
 
     # The phone's integration is ignored from here on.
     hass.config_entries.async_update_entry(
-        _entry, options={CONF_IGNORED_INTEGRATIONS: ["test_phone"]}
+        _entry, options={CONF_EXCLUDED_INTEGRATIONS: ["test_phone"]}
     )
     await hass.async_block_till_done()
     coordinator._set_aside[goner.id] = (
         "James S24+",
         "test_phone",
-        SET_ASIDE_IGNORED,
+        SET_ASIDE_EXCLUDED,
     )
     coordinator._watched.pop(goner.id, None)
 
@@ -420,16 +420,16 @@ async def test_the_ignore_list_lives_on_the_exclusions_screen(
     )
     assert result["step_id"] == "exclusions"
     fields = [str(key) for key in result["data_schema"].schema]
-    assert fields == ["ignore", "muting"]
-    assert CONF_IGNORED_INTEGRATIONS in flat_schema(
+    assert fields == ["exclude", "muting"]
+    assert CONF_EXCLUDED_INTEGRATIONS in flat_schema(
         result["data_schema"].schema
     )
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            "ignore": {
-                CONF_IGNORED_INTEGRATIONS: ["mobile_app", "tile"],
+            "exclude": {
+                CONF_EXCLUDED_INTEGRATIONS: ["mobile_app", "tile"],
             },
             "muting": {
                 CONF_MUTED_INTEGRATIONS: [],
@@ -439,7 +439,7 @@ async def test_the_ignore_list_lives_on_the_exclusions_screen(
         },
     )
     assert result["type"] is FlowResultType.MENU
-    assert entry.options[CONF_IGNORED_INTEGRATIONS] == [
+    assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == [
         "mobile_app",
         "tile",
     ]
@@ -450,4 +450,4 @@ async def test_the_ignore_list_lives_on_the_exclusions_screen(
         result["flow_id"], {"next_step_id": "advanced"}
     )
     advanced_fields = [str(key) for key in result["data_schema"].schema]
-    assert CONF_IGNORED_INTEGRATIONS not in advanced_fields
+    assert CONF_EXCLUDED_INTEGRATIONS not in advanced_fields

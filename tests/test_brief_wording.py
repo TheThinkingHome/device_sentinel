@@ -767,9 +767,9 @@ async def test_a_noisy_day_reads_as_two_sentences(
     for offset, detail in enumerate((
         "muted_integrations",
         "ignored_integrations, maintenance_minutes",
-        "ignored_integrations",
+        "excluded_integrations",
         "muted_integrations",
-        "ignored_integrations",
+        "excluded_integrations",
     )):
         base.append({
             SYS_WHEN: now - 1800.0 + offset * 60.0,
@@ -801,10 +801,10 @@ async def test_a_noisy_day_reads_as_two_sentences(
     # Named by their screen labels, deduplicated, said once.
     assert "Settings changed 5 times:" in short
     assert "Globally Muted Integrations" in short
-    assert "Integrations to Ignore" in short
+    assert "Integrations to Exclude" in short
     assert "Maintenance Window in Minutes" in short
     assert short.count("Settings changed") == 1
-    assert "ignored_integrations" not in short
+    assert "excluded_integrations" not in short
 
 
 async def test_one_long_outage_is_the_only_thing_said(

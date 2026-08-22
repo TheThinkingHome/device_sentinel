@@ -44,7 +44,7 @@ from custom_components.device_sentinel.const import (
     CONF_BATTERY_MUTED_LABELS,
     CONF_MUTED_DEVICES,
     CONF_MUTED_INTEGRATIONS,
-    CONF_IGNORED_INTEGRATIONS,
+    CONF_EXCLUDED_INTEGRATIONS,
     CONF_MUTED_LABELS,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
@@ -381,7 +381,7 @@ async def test_watched_rows_carry_integration_for_collided_names(
     # about the name collision rather than the ignoring, so the
     # list is emptied to keep both panels watched.
     coord = await setup_coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: []}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: []}
     )
 
     rows = [
@@ -405,7 +405,7 @@ async def test_the_two_panels_are_distinct_device_ids(hass: HomeAssistant):
     # about the name collision rather than the ignoring, so the
     # list is emptied to keep both panels watched.
     coord = await setup_coordinator(
-        hass, {CONF_IGNORED_INTEGRATIONS: []}
+        hass, {CONF_EXCLUDED_INTEGRATIONS: []}
     )
     ids = {
         r["device_id"]
@@ -427,7 +427,7 @@ async def test_exclude_option_labels_disambiguate_by_integration(
     # mobile_app is on the default ignore list, and this test is
     # about the name collision rather than the ignoring, so the
     # list is emptied to keep both panels watched.
-    entry = await setup_entry(hass, {CONF_IGNORED_INTEGRATIONS: []})
+    entry = await setup_entry(hass, {CONF_EXCLUDED_INTEGRATIONS: []})
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
@@ -974,7 +974,7 @@ async def test_options_flow_prunes_on_save(hass: HomeAssistant):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            "ignore": {CONF_IGNORED_INTEGRATIONS: []},
+            "exclude": {CONF_EXCLUDED_INTEGRATIONS: []},
             "muting": {
                 CONF_MUTED_INTEGRATIONS: ["test"],
                 CONF_MUTED_LABELS: [],

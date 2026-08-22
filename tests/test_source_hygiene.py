@@ -43,7 +43,7 @@ import pathlib
 import re
 import tokenize
 
-from custom_components.device_sentinel.const import MUTING_KEY_RENAMES
+from custom_components.device_sentinel.const import OPTION_KEY_RENAMES
 
 PACKAGE = pathlib.Path(
     __import__("custom_components.device_sentinel.const", fromlist=["const"])
@@ -178,6 +178,18 @@ def test_no_line_inside_a_bracket_sinks_to_its_opener():
     assert not found, "\n".join(found)
 
 
+def _retired_names() -> set[str]:
+    """Return the names no longer in use anywhere.
+
+    A name can be retired by one step and taken up by the next:
+    `excluded_integrations` was the muting key until #316 moved it and
+    is the ignore key since #317 moved into the word it vacated. Such
+    a name is live, not retired, so the targets are subtracted from
+    the sources rather than the two being read as one list.
+    """
+    return set(OPTION_KEY_RENAMES) - set(OPTION_KEY_RENAMES.values())
+
+
 def test_no_retired_exclude_option_name_survives_in_source():
     """The twelve muting keys keep one spelling (ruling #316).
 
@@ -197,7 +209,7 @@ def test_no_retired_exclude_option_name_survives_in_source():
     is exempt everywhere, being a dead key kept for the sweep to find.
     """
     allowed = {"excluded_areas"}
-    retired = set(MUTING_KEY_RENAMES) - allowed
+    retired = _retired_names() - allowed
     found: list[str] = []
     for path in _sources():
         # const.py holds the rename map, this file reads it, and the
@@ -220,7 +232,7 @@ def test_no_retired_exclude_option_name_survives_in_source():
 
 def test_no_retired_exclude_option_name_survives_in_the_strings():
     """The screens name what is stored, so the two move together."""
-    retired = set(MUTING_KEY_RENAMES) - {"excluded_areas"}
+    retired = _retired_names() - {"excluded_areas"}
     found: list[str] = []
     for source in (
         PACKAGE / "strings.json",

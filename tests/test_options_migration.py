@@ -33,9 +33,11 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
+    DATA_LAST_VERSION,
     DATA_SYSTEM_EVENTS,
     DEAD_OPTION_KEYS,
     DOMAIN,
+    IGNORE_KEY_RENAMES,
     MUTING_KEY_RENAMES,
     OPTIONS_MINOR_VERSION,
     STORAGE_KEY,
@@ -100,8 +102,12 @@ async def test_the_twelve_lists_arrive_under_their_muting_names(
     entry = await _migrated(hass, dict(PUBLIC_RELEASE_OPTIONS))
 
     for old, new in MUTING_KEY_RENAMES.items():
-        assert old not in entry.options, old
         assert entry.options[new] == PUBLIC_RELEASE_OPTIONS[old], new
+        if old in IGNORE_KEY_RENAMES.values():
+            # The one name the next step takes up again, so its
+            # absence would be wrong rather than right.
+            continue
+        assert old not in entry.options, old
     assert entry.minor_version == OPTIONS_MINOR_VERSION
 
 
@@ -110,12 +116,15 @@ async def test_settings_that_are_not_muting_are_untouched(
 ):
     """The migration moves twelve keys and reads none of the rest.
 
-    The ignore list is the one to watch: it is the neighbour on the
-    same screen, and the release after this one renames it.
+    The ignore list is the one to watch: step 3 takes the word step 2
+    vacated, so the two must run in order and the chain is what makes
+    that true for the person who arrives at both in one load.
     """
     entry = await _migrated(hass, dict(PUBLIC_RELEASE_OPTIONS))
 
-    assert entry.options["ignored_integrations"] == ["mobile_app"]
+    assert entry.options["excluded_integrations"] == ["mobile_app"]
+    assert "ignored_integrations" not in entry.options
+    assert entry.options["muted_integrations"] == ["tplink_router", "ping"]
     assert entry.options["low_threshold"] == 20
 
 
@@ -212,7 +221,12 @@ async def test_the_public_jump_from_the_current_release(
     assert entry.minor_version == OPTIONS_MINOR_VERSION
     assert entry.options["muted_devices"] == ["dev_global_1", "dev_global_2"]
     assert entry.options["signal_muted_labels"] == ["mains"]
-    assert not [key for key in entry.options if "excluded" in key]
+    assert entry.options["excluded_integrations"] == ["mobile_app"]
+    assert not [
+        key
+        for key in entry.options
+        if "excluded" in key and key != "excluded_integrations"
+    ]
 
 
 async def test_the_reference_fleet_s_own_entry_survives(
@@ -262,12 +276,16 @@ async def test_a_brief_covering_the_upgrade_still_names_its_settings(
         "key": STORAGE_KEY,
         "data": {
             DATA_DEVICES: {},
+            DATA_LAST_VERSION: "0.16.17",
             DATA_SYSTEM_EVENTS: [
                 {
                     SYS_WHEN: now - 3600.0,
                     SYS_KIND: SYS_OPTIONS_CHANGED,
                     SYS_SCOPE: "system",
                     SYS_DURATION: None,
+                    # The row as 0.16.17 would have written it: the
+                    # muting keys in their exclude spellings and the
+                    # ignore list under its own name.
                     SYS_DETAIL: (
                         "excluded_devices, battery_excluded_labels, "
                         "ignored_integrations"
@@ -304,7 +322,7 @@ async def test_a_brief_covering_the_upgrade_still_names_its_settings(
 
     events = coordinator.data[DATA_SYSTEM_EVENTS]
     assert events[0][SYS_DETAIL] == (
-        "muted_devices, battery_muted_labels, ignored_integrations"
+        "muted_devices, battery_muted_labels, excluded_integrations"
     )
     # The neighbouring kinds carry counts and names under the same
     # field, so a sweep rather than a named pass would ruin them.
@@ -321,6 +339,7 @@ async def test_a_key_it_does_not_know_passes_through(
         "key": STORAGE_KEY,
         "data": {
             DATA_DEVICES: {},
+            DATA_LAST_VERSION: "0.16.17",
             DATA_SYSTEM_EVENTS: [
                 {
                     SYS_WHEN: dt_util.utcnow().timestamp() - 60.0,
@@ -337,3 +356,39 @@ async def test_a_key_it_does_not_know_passes_through(
 
     events = coordinator.data[DATA_SYSTEM_EVENTS]
     assert events[0][SYS_DETAIL] == "something_from_the_future"
+
+
+async def test_a_row_written_after_the_rename_is_left_alone(
+    hass: HomeAssistant, hass_storage
+):
+    """`excluded_integrations` means two different settings.
+
+    It was the muting key until 0.16.18 moved it and is the ignore key
+    since 0.16.19 moved into the word it vacated. Read without a date,
+    a row written by today's release would be rewritten by tomorrow's
+    load into a setting its author never touched, and the brief would
+    name the wrong screen field at a person. The storage file's own
+    version stamp is what tells the two apart.
+    """
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            DATA_DEVICES: {},
+            DATA_LAST_VERSION: "0.16.19",
+            DATA_SYSTEM_EVENTS: [
+                {
+                    SYS_WHEN: dt_util.utcnow().timestamp() - 60.0,
+                    SYS_KIND: SYS_OPTIONS_CHANGED,
+                    SYS_SCOPE: "system",
+                    SYS_DURATION: None,
+                    SYS_DETAIL: "excluded_integrations",
+                    SYS_DEVICES: None,
+                }
+            ],
+        },
+    }
+    coordinator = await setup_coordinator(hass)
+
+    events = coordinator.data[DATA_SYSTEM_EVENTS]
+    assert events[0][SYS_DETAIL] == "excluded_integrations"

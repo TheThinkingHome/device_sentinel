@@ -348,7 +348,7 @@ async def test_an_ignored_device_is_named_not_numbered(
     from homeassistant.helpers import device_registry as dr
 
     from custom_components.device_sentinel.const import (
-        CONF_IGNORED_INTEGRATIONS,
+        CONF_EXCLUDED_INTEGRATIONS,
     )
 
     entry = await setup_entry(hass)
@@ -360,7 +360,7 @@ async def test_an_ignored_device_is_named_not_numbered(
     # Ignore its integration, which sets the device aside and takes
     # it out of the watched name map.
     await _save_options(
-        hass, entry, **{CONF_IGNORED_INTEGRATIONS: [domain]}
+        hass, entry, **{CONF_EXCLUDED_INTEGRATIONS: [domain]}
     )
     assert target.id in coord._set_aside
 
