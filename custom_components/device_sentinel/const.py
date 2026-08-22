@@ -360,6 +360,24 @@ STORM_RELEASE_SECONDS = 5.0
 STORM_EXEMPT_PER_HOUR = 10
 STORM_HISTORY_SECONDS = 3600
 
+# How long a resolved problem stays reopenable, in seconds. A device
+# whose reading crosses a threshold back and forth writes a pair of
+# incident rows every crossing, and the recorder had nothing to stop
+# it until ruling #318: the first external fleet produced 3,637 rows
+# for one propane sensor in five days, 94 percent of its whole
+# incident history.
+#
+# Sixty seconds by measurement rather than by taste. Replayed over
+# both fleets' stored incidents, sixty leaves the reference fleet's
+# 509 rows untouched and turns the external fleet's 3,866 into 614.
+# Past two minutes it begins collapsing real recoveries on a healthy
+# fleet, which is the failure this must never have. Zero switches it
+# off.
+CONF_INCIDENT_SETTLE = "incident_settle_seconds"
+DEFAULT_INCIDENT_SETTLE_SECONDS = 60
+INCIDENT_SETTLE_SECONDS_MIN = 0
+INCIDENT_SETTLE_SECONDS_MAX = 120
+
 CONF_TAINT_FLOOR = "taint_floor_minutes"
 CONF_TAINT_SHARE = "taint_share_pct"
 DEFAULT_TAINT_FLOOR_MINUTES = 10
@@ -1625,6 +1643,27 @@ TODO_KINDS_ALL = (
     TODO_KIND_RAILED_SIGNAL,
 )
 
+# Which kinds are the same problem said differently. A device that is
+# not reporting can be called frozen, unavailable, unknown or never
+# reported, and which of the four it earns depends on what its
+# entities read at the moment of judgment, so a restart that hides a
+# device's states for a minute moves it from one to another and back.
+# That is a re-description, not a new problem: the item never left the
+# list and nothing about the device changed (ruling #318).
+#
+# A battery and a signal are their own families, because a cell dying
+# on a device that is already silent is genuinely new and a person
+# wants to hear it.
+TODO_KIND_FAMILIES = {
+    TODO_KIND_FROZEN: "down",
+    TODO_KIND_UNAVAILABLE: "down",
+    TODO_KIND_UNKNOWN: "down",
+    TODO_KIND_NEVER_REPORTED: "down",
+    TODO_KIND_LOW_BATTERY: "battery",
+    TODO_KIND_FALLING_BATTERY: "battery",
+    TODO_KIND_RAILED_SIGNAL: "signal",
+}
+
 # What Device Sentinel says on the bus. Three names rather than one
 # type with an action field, because an automation triggers on
 # event_type and a distinct name is what a person types into the
@@ -1881,7 +1920,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 317
+HIGHEST_RULING = 318
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

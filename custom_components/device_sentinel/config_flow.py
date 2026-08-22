@@ -106,6 +106,7 @@ from .const import (
     CONF_BADDAY_DROP_LQI,
     CONF_BADDAY_DROP_RSSI,
     CONF_BADDAY_SENSITIVITY,
+    CONF_INCIDENT_SETTLE,
     CONF_TAINT_FLOOR,
     CONF_TAINT_SHARE,
     DEFAULT_BATTERY_DAYS,
@@ -131,6 +132,7 @@ from .const import (
     DEFAULT_BADDAY_DROP_LQI,
     DEFAULT_BADDAY_DROP_RSSI,
     DEFAULT_BADDAY_SENSITIVITY,
+    DEFAULT_INCIDENT_SETTLE_SECONDS,
     DEFAULT_TAINT_FLOOR_MINUTES,
     DEFAULT_TAINT_SHARE_PCT,
     DOMAIN,
@@ -162,6 +164,8 @@ from .const import (
     BADDAY_DROP_RSSI_MIN,
     BADDAY_SENSITIVITY_MAX,
     BADDAY_SENSITIVITY_MIN,
+    INCIDENT_SETTLE_SECONDS_MAX,
+    INCIDENT_SETTLE_SECONDS_MIN,
     TAINT_FLOOR_MINUTES_MAX,
     TAINT_FLOOR_MINUTES_MIN,
     WIKI_LINK_ADVANCED,
@@ -1464,6 +1468,21 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             min=REPEAT_FLOOR_MIN,
                             max=REPEAT_FLOOR_MAX,
                             step=1,
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_INCIDENT_SETTLE,
+                        default=options.get(
+                            CONF_INCIDENT_SETTLE,
+                            DEFAULT_INCIDENT_SETTLE_SECONDS,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=INCIDENT_SETTLE_SECONDS_MIN,
+                            max=INCIDENT_SETTLE_SECONDS_MAX,
+                            step=10,
+                            unit_of_measurement="s",
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),

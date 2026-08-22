@@ -339,8 +339,26 @@ class FreezeMixin:
 
         states = self._live_entity_states(device_id)
         if not states:
-            # No live entities to read. A silent armed device with no
-            # readable state is still a freeze by its clock.
+            # Nothing readable. Two different situations arrive here
+            # and only one of them is judgeable.
+            #
+            # A device whose entities are in the registry but have no
+            # state objects has not finished loading. Every restart
+            # passes through that state for as long as the owning
+            # integration takes to set up, and during it the clock is
+            # the only evidence left, which on a device that is down
+            # reads as frozen. The verdict is then corrected on the
+            # next tick when the states appear, and the correction
+            # writes a kind onto an item that never should have
+            # moved. The reference fleet produced 62 such rows on one
+            # device across 31 restarts, and a push each time
+            # (ruling #318).
+            #
+            # A device with no registry entities at all is the case
+            # this branch was written for: there is nothing to read
+            # and nothing coming, so the clock is the whole story.
+            if self._has_registered_entities(device_id):
+                return record.get(DEV_FROZEN_CATEGORY)
             return FREEZE_CATEGORY_FROZEN if frozen else None
 
         any_unavailable = STATE_UNAVAILABLE in states

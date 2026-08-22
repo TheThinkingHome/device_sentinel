@@ -62,12 +62,16 @@ from .const import (
     INC_CAUSE,
     INC_DEVICE_ID,
     INC_DURATION,
+    CONF_INCIDENT_SETTLE,
+    DEFAULT_INCIDENT_SETTLE_SECONDS,
     INC_EVENT,
     INC_KIND,
     INC_NAME,
     INC_WHEN,
     INCIDENT_KEEP_DAYS,
     INCIDENT_OPENED,
+    INCIDENT_SETTLE_SECONDS_MAX,
+    INCIDENT_SETTLE_SECONDS_MIN,
     INCIDENT_RESOLVED,
     LOGGER,
     RECOVERY_CAUSE_UNOBSERVED,
@@ -381,6 +385,24 @@ class JournalMixin:
             self.data[DATA_EPISODES] = kept
             self._mark_cold_dirty()
 
+    @property
+    def incident_settle_seconds(self) -> float:
+        """Return how long a resolved problem stays reopenable.
+
+        Live from options, clamped to the band the screen offers, so
+        a hand-edited entry cannot switch the recorder off by
+        accident or hold an episode open for a day (ruling #318).
+        """
+        raw = float(
+            self.entry.options.get(
+                CONF_INCIDENT_SETTLE, DEFAULT_INCIDENT_SETTLE_SECONDS
+            )
+        )
+        return min(
+            float(INCIDENT_SETTLE_SECONDS_MAX),
+            max(float(INCIDENT_SETTLE_SECONDS_MIN), raw),
+        )
+
     def _record_incident(
         self,
         device_id: str,
@@ -409,6 +431,8 @@ class JournalMixin:
             INC_DURATION: duration,
         }
         incidents = self.data.setdefault(DATA_INCIDENTS, [])
+        if self._reopens_a_closing_episode(incidents, entry):
+            return
         incidents.append(entry)
         cutoff = (
             dt_util.utcnow().timestamp() - INCIDENT_KEEP_DAYS * 86400.0
@@ -417,6 +441,58 @@ class JournalMixin:
             row for row in incidents if row[INC_WHEN] >= cutoff
         ]
         self._mark_cold_dirty()
+
+    def _reopens_a_closing_episode(
+        self, incidents: list[dict[str, Any]], entry: dict[str, Any]
+    ) -> bool:
+        """Return whether this opening belongs to the episode that
+        just closed, rather than starting a new one.
+
+        A device whose reading crosses a threshold back and forth
+        writes a pair of rows every crossing, and the recorder had
+        nothing to stop it. The first external fleet produced 3,637
+        rows for one device in five days, 94 percent of its whole
+        incident history, from a propane sensor whose battery level
+        swings: the level crossed the low threshold and its clear
+        margin all day, and the days-till-empty projection, which
+        divides that same live level by a daily slope, crossed the
+        horizon on its own schedule. Two kinds, two thresholds, one
+        unstable input.
+
+        So when a kind opens again on the same device within the
+        cooling-off window, the close is undone and the original
+        opening stands. The episode ends up spanning the whole
+        unstable stretch, which is what a person means by "that
+        device has been low since Tuesday" anyway.
+
+        Measured rather than chosen: at sixty seconds the external
+        fleet's 3,866 rows become 614 and the reference fleet's 509
+        are untouched, so the rule bites pathological chatter and
+        nothing else. Past two minutes it starts collapsing real
+        recoveries on a healthy fleet.
+        """
+        window = self.incident_settle_seconds
+        if window <= 0 or entry[INC_EVENT] != INCIDENT_OPENED:
+            return False
+        for index in range(len(incidents) - 1, -1, -1):
+            row = incidents[index]
+            if entry[INC_WHEN] - row[INC_WHEN] > window:
+                return False
+            if (
+                row[INC_DEVICE_ID] != entry[INC_DEVICE_ID]
+                or row[INC_KIND] != entry[INC_KIND]
+            ):
+                continue
+            # The nearest row for this device and kind decides. A
+            # resolution inside the window is undone; an opening
+            # means the episode is already standing and this is a
+            # duplicate the caller should not have sent.
+            if row[INC_EVENT] == INCIDENT_RESOLVED:
+                del incidents[index]
+                self._mark_cold_dirty()
+                return True
+            return False
+        return False
 
     def _record_system_event(
         self,

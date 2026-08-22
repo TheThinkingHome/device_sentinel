@@ -55,6 +55,7 @@ from .const import (
     TODO_KINDS,
     TODO_KIND_FALLING_BATTERY,
     TODO_KIND_FROZEN,
+    TODO_KIND_FAMILIES,
     TODO_KIND_LOW_BATTERY,
     TODO_KIND_NEVER_REPORTED,
     TODO_KIND_RAILED_SIGNAL,
@@ -887,6 +888,33 @@ class ProblemListMixin:
             TODO_KINDS: kinds,
         }
 
+    def _worth_announcing(
+        self, arriving: set[str], standing: dict[str, float | None]
+    ) -> bool:
+        """Return whether an arriving kind is worth a person's phone.
+
+        A device already on the list has been announced. What can
+        still be new is a different family of problem: a cell dying on
+        a device that is already silent is a second thing to know
+        about, and the person hears it.
+
+        What is not new is the same problem said differently. A
+        device that is not reporting is called frozen, unavailable,
+        unknown or never reported depending on what its entities read
+        at the moment of judgment, and a restart that hides those
+        states for a minute walks it from one to another and back. The
+        reference fleet pushed a coordinator that had been unplugged
+        for four days at every restart, thirty-one times, because the
+        correction registered as an arrival (ruling #318).
+        """
+        families = {
+            TODO_KIND_FAMILIES.get(kind, kind) for kind in standing
+        }
+        return any(
+            TODO_KIND_FAMILIES.get(kind, kind) not in families
+            for kind in arriving
+        )
+
     def _fire_fault_for(
         self,
         device_id: str,
@@ -958,7 +986,8 @@ class ProblemListMixin:
             new_kinds = self._diff_kinds(
                 device_id, problem, stored_kinds, now
             )
-            if set(new_kinds) - set(stored_kinds):
+            arriving = set(new_kinds) - set(stored_kinds)
+            if arriving and self._worth_announcing(arriving, stored_kinds):
                 self._fire_fault_for(device_id, problem, new_kinds, now)
             summary, description = self._problem_item_text(
                 problem["name"],

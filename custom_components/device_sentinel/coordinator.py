@@ -1919,6 +1919,18 @@ class DeviceSentinelCoordinator(
 
     # ------------------------------------------------ device-down judgment
 
+    def _has_registered_entities(self, device_id: str) -> bool:
+        """Return whether the registry holds any entity for a device.
+
+        The companion to _live_entity_states: that one answers what
+        can be read now, this one answers whether anything is meant
+        to be readable at all. Together they separate a device that
+        has not loaded yet from a device with nothing to load.
+        """
+        return any(
+            owner == device_id for owner, _ in self._entity_map.values()
+        )
+
     def _live_entity_states(self, device_id: str) -> list[str]:
         """Return the current states of a device's live (enabled)
         entities. A missing state object means the entity is not live
