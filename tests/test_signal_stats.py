@@ -37,7 +37,7 @@ from homeassistant.util import dt as dt_util
 from custom_components.device_sentinel.const import (
     BRIEF_TRIGGER,
     CLOCK_FIELDS,
-    CONF_SIGNAL_EXCLUDED_DEVICES,
+    CONF_SIGNAL_MUTED_DEVICES,
     DATA_DEVICES,
     DATA_SIGNAL_STRESS,
     DEV_SIGNAL_COUNT,
@@ -986,12 +986,12 @@ async def test_weak_links_are_counted_apart_from_rails(
     )
 
 
-async def test_a_signal_excluded_device_is_not_counted_low(
+async def test_a_signal_muted_device_is_not_counted_low(
     hass: HomeAssistant,
 ):
     """Exclusion suppresses judgment, so it suppresses this too."""
     coord = await setup_coordinator(
-        hass, {CONF_SIGNAL_EXCLUDED_DEVICES: []}
+        hass, {CONF_SIGNAL_MUTED_DEVICES: []}
     )
     weak, _ = register_device(hass, "sp3", "Excluded Link")
     coord.data[DATA_DEVICES][weak.id][DEV_SIGNAL_DAILY_P5] = [
@@ -1003,7 +1003,7 @@ async def test_a_signal_excluded_device_is_not_counted_low(
         coord.entry,
         options={
             **coord.entry.options,
-            CONF_SIGNAL_EXCLUDED_DEVICES: [weak.id],
+            CONF_SIGNAL_MUTED_DEVICES: [weak.id],
         },
     )
     assert coord.signal_weak_count == 0

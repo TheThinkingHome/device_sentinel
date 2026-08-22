@@ -43,7 +43,7 @@ from custom_components.device_sentinel.const import (
     FREEZE_UNAVAILABLE_DEBOUNCE,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
-    CONF_FREEZE_EXCLUDED_DEVICES,
+    CONF_FREEZE_MUTED_DEVICES,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
@@ -461,7 +461,7 @@ async def test_freeze_exclude_suppresses_every_verdict(hass: HomeAssistant):
     """A freeze-excluded device is watched but never given a verdict,
     even one it would otherwise earn."""
     device, _ = register_device(hass, "fx1")
-    coord = await setup_coordinator(hass, {CONF_FREEZE_EXCLUDED_DEVICES: []})
+    coord = await setup_coordinator(hass, {CONF_FREEZE_MUTED_DEVICES: []})
     record = _never_reported_record("2026-07-08T00:00:00+00:00")
     coord.data["devices"][device.id] = record
     now = 1_784_600_000.0
@@ -473,7 +473,7 @@ async def test_freeze_exclude_suppresses_every_verdict(hass: HomeAssistant):
     # Add the device to the freeze exclude and it goes quiet.
     hass.config_entries.async_update_entry(
         coord.entry,
-        options={CONF_FREEZE_EXCLUDED_DEVICES: [device.id]},
+        options={CONF_FREEZE_MUTED_DEVICES: [device.id]},
     )
     assert coord._device_down_category(device.id, record, now) is None
 

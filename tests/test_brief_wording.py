@@ -35,7 +35,7 @@ from custom_components.device_sentinel.const import (
     SYS_RESTART,
     SYS_OPTIONS_CHANGED,
     SYS_BRIDGE_UP,
-    CONF_EXCLUDED_DEVICES,
+    CONF_MUTED_DEVICES,
     DATA_INCIDENTS,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
@@ -284,13 +284,13 @@ async def test_regenerated_brief_says_it_is_incomplete(
     assert "Nothing needs attention." in text
 
 
-async def test_excluded_devices_never_reach_the_brief(
+async def test_muted_devices_never_reach_the_brief(
     hass: HomeAssistant,
 ):
     """It is a report, so exclusion suppresses it here."""
     device, entity_id, _ = _register(hass, "x1", "Hidden Sensor")
     coord = await setup_coordinator(
-        hass, {CONF_EXCLUDED_DEVICES: [device.id]}
+        hass, {CONF_MUTED_DEVICES: [device.id]}
     )
     hass.states.async_set(entity_id, "21.5")
     coord._record_incident(
@@ -765,10 +765,10 @@ async def test_a_noisy_day_reads_as_two_sentences(
             SYS_DEVICES: None,
         })
     for offset, detail in enumerate((
-        "excluded_integrations",
+        "muted_integrations",
         "ignored_integrations, maintenance_minutes",
         "ignored_integrations",
-        "excluded_integrations",
+        "muted_integrations",
         "ignored_integrations",
     )):
         base.append({
@@ -800,7 +800,7 @@ async def test_a_noisy_day_reads_as_two_sentences(
     assert "bridge" not in short
     # Named by their screen labels, deduplicated, said once.
     assert "Settings changed 5 times:" in short
-    assert "Globally Excluded Integrations" in short
+    assert "Globally Muted Integrations" in short
     assert "Integrations to Ignore" in short
     assert "Maintenance Window in Minutes" in short
     assert short.count("Settings changed") == 1

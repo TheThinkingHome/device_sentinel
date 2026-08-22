@@ -39,21 +39,21 @@ from custom_components.device_sentinel.config_flow import (
     _devices_covered_by,
 )
 from custom_components.device_sentinel.const import (
-    CONF_BATTERY_EXCLUDED_DEVICES,
-    CONF_BATTERY_EXCLUDED_INTEGRATIONS,
-    CONF_BATTERY_EXCLUDED_LABELS,
-    CONF_EXCLUDED_DEVICES,
-    CONF_EXCLUDED_INTEGRATIONS,
+    CONF_BATTERY_MUTED_DEVICES,
+    CONF_BATTERY_MUTED_INTEGRATIONS,
+    CONF_BATTERY_MUTED_LABELS,
+    CONF_MUTED_DEVICES,
+    CONF_MUTED_INTEGRATIONS,
     CONF_IGNORED_INTEGRATIONS,
-    CONF_EXCLUDED_LABELS,
+    CONF_MUTED_LABELS,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
-    CONF_FREEZE_EXCLUDED_DEVICES,
-    CONF_FREEZE_EXCLUDED_INTEGRATIONS,
-    CONF_FREEZE_EXCLUDED_LABELS,
-    CONF_SIGNAL_EXCLUDED_DEVICES,
-    CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
-    CONF_SIGNAL_EXCLUDED_LABELS,
+    CONF_FREEZE_MUTED_DEVICES,
+    CONF_FREEZE_MUTED_INTEGRATIONS,
+    CONF_FREEZE_MUTED_LABELS,
+    CONF_SIGNAL_MUTED_DEVICES,
+    CONF_SIGNAL_MUTED_INTEGRATIONS,
+    CONF_SIGNAL_MUTED_LABELS,
     CONF_BADDAY_BASELINE_DAYS,
     CONF_BADDAY_DROP_LQI,
     CONF_BADDAY_DROP_RSSI,
@@ -137,7 +137,7 @@ async def test_excluded_device_keeps_learning_never_reported(
     source.add_to_hass(hass)
     device, battery_eid = _battery_device(hass, source, 1)
     coord = await setup_coordinator(
-        hass, {CONF_EXCLUDED_DEVICES: [device.id]}
+        hass, {CONF_MUTED_DEVICES: [device.id]}
     )
     freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 5))
     async_fire_time_changed(hass)
@@ -152,7 +152,7 @@ async def test_excluded_device_keeps_learning_never_reported(
     # Judgment suppressed: never reported.
     assert coord.battery_low_count == 0
     assert coord.battery_low_list == []
-    assert coord._excluded_devices[device.id] == "device"
+    assert coord._muted_devices[device.id] == "device"
 
 
 async def test_integration_exclude_respects_primary_owner(
@@ -179,18 +179,18 @@ async def test_integration_exclude_respects_primary_owner(
 
     # Excluding the tracker does not catch the camera.
     entry = await setup_entry(
-        hass, {CONF_EXCLUDED_INTEGRATIONS: ["router_tracker"]}
+        hass, {CONF_MUTED_INTEGRATIONS: ["router_tracker"]}
     )
     coord = entry.runtime_data
-    assert device.id not in coord._excluded_devices
+    assert device.id not in coord._muted_devices
 
     # Excluding the owner does, applied live through options.
     hass.config_entries.async_update_entry(
         entry,
-        options={CONF_EXCLUDED_INTEGRATIONS: ["camera_brand"]},
+        options={CONF_MUTED_INTEGRATIONS: ["camera_brand"]},
     )
     await hass.async_block_till_done()
-    assert coord._excluded_devices[device.id] == "integration"
+    assert coord._muted_devices[device.id] == "integration"
 
 
 async def test_classification_shows_excluded(hass: HomeAssistant):
@@ -198,7 +198,7 @@ async def test_classification_shows_excluded(hass: HomeAssistant):
     source.add_to_hass(hass)
     device, _ = _battery_device(hass, source, 4)
     coord = await setup_coordinator(
-        hass, {CONF_EXCLUDED_DEVICES: [device.id]}
+        hass, {CONF_MUTED_DEVICES: [device.id]}
     )
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
@@ -229,7 +229,7 @@ async def test_device_level_battery_exclude(hass: HomeAssistant):
     kept, kept_eid = _battery_device(hass, source, 1, "bx", "BatX Device")
     dropped, dropped_eid = _battery_device(hass, source, 2, "bx", "BatX Device")
     coord = await setup_coordinator(
-        hass, {CONF_BATTERY_EXCLUDED_DEVICES: [dropped.id]}
+        hass, {CONF_BATTERY_MUTED_DEVICES: [dropped.id]}
     )
 
     hass.states.async_set(kept_eid, "5")
@@ -249,7 +249,7 @@ async def test_integration_level_battery_exclude(hass: HomeAssistant):
     phone, phone_eid = _battery_device(hass, phone_src, 3, "bx", "BatX Device")
     sensor, sensor_eid = _battery_device(hass, zig_src, 4, "bx", "BatX Device")
     coord = await setup_coordinator(
-        hass, {CONF_BATTERY_EXCLUDED_INTEGRATIONS: ["mobile_app"]}
+        hass, {CONF_BATTERY_MUTED_INTEGRATIONS: ["mobile_app"]}
     )
 
     hass.states.async_set(phone_eid, "5")
@@ -272,7 +272,7 @@ async def test_battery_exclude_applies_live(hass: HomeAssistant):
     assert coord.battery_low_count == 1
 
     hass.config_entries.async_update_entry(
-        entry, options={CONF_BATTERY_EXCLUDED_DEVICES: [device.id]}
+        entry, options={CONF_BATTERY_MUTED_DEVICES: [device.id]}
     )
     await hass.async_block_till_done()
     assert coord.battery_low_count == 0  # excluded, no restart
@@ -298,16 +298,16 @@ async def test_detected_batteries_picker_source(hass: HomeAssistant):
 
 # ----------------------------------- exclusion relationship + STATUS
 
-async def test_globally_excluded_device_is_not_judged(hass: HomeAssistant):
+async def test_globally_muted_device_is_not_judged(hass: HomeAssistant):
     """A globally excluded device gets no verdict: the sweep skips it,
     rather than computing a verdict that the report then hides."""
     device = _register(hass, "gx", "Excluded Ghost")
     coord = await setup_coordinator(hass)
     # Exclude it globally.
     hass.config_entries.async_update_entry(
-        coord.entry, options={CONF_EXCLUDED_DEVICES: [device.id]}
+        coord.entry, options={CONF_MUTED_DEVICES: [device.id]}
     )
-    coord._excluded_devices[device.id] = "device"
+    coord._muted_devices[device.id] = "device"
     record = _ghost_record()
     coord.data["devices"][device.id] = record
     now = 1_784_600_000.0
@@ -326,24 +326,24 @@ async def test_status_reads_the_exclusion_state(hass: HomeAssistant):
     hass.config_entries.async_update_entry(
         coord.entry,
         options={
-            CONF_BATTERY_EXCLUDED_DEVICES: [device.id],
-            CONF_FREEZE_EXCLUDED_DEVICES: [device.id],
+            CONF_BATTERY_MUTED_DEVICES: [device.id],
+            CONF_FREEZE_MUTED_DEVICES: [device.id],
         },
     )
     status = coord._device_status(device.id)
-    assert status == "Excluded (BAT, FRZ)"
+    assert status == "Muted (BAT, FRZ)"
     assert "GLB" not in status
 
     # Global exclude wins and shows alone.
     hass.config_entries.async_update_entry(
         coord.entry,
         options={
-            CONF_EXCLUDED_DEVICES: [device.id],
-            CONF_BATTERY_EXCLUDED_DEVICES: [device.id],
+            CONF_MUTED_DEVICES: [device.id],
+            CONF_BATTERY_MUTED_DEVICES: [device.id],
         },
     )
-    coord._excluded_devices[device.id] = "device"
-    assert coord._device_status(device.id) == "Excluded (GLB)"
+    coord._muted_devices[device.id] = "device"
+    assert coord._device_status(device.id) == "Muted (GLB)"
 
 
 async def test_report_has_status_column(hass: HomeAssistant):
@@ -518,16 +518,16 @@ def test_prune_drops_superseded_device_pick():
     rows = [
         {"device_id": "a", "integration": "spook", "labels": frozenset()},
     ]
-    pruned = DeviceSentinelOptionsFlow._pruned_exclusion_input(
+    pruned = DeviceSentinelOptionsFlow._pruned_muting_input(
         {
-            CONF_EXCLUDED_INTEGRATIONS: ["spook"],
-            CONF_EXCLUDED_LABELS: [],
-            CONF_EXCLUDED_DEVICES: ["a"],
+            CONF_MUTED_INTEGRATIONS: ["spook"],
+            CONF_MUTED_LABELS: [],
+            CONF_MUTED_DEVICES: ["a"],
         },
         rows,
         _FakeRegistry({row['device_id'] for row in rows}),
     )
-    assert pruned[CONF_EXCLUDED_DEVICES] == []
+    assert pruned[CONF_MUTED_DEVICES] == []
 
 
 def test_prune_settles_the_whole_ladder_in_one_save():
@@ -536,16 +536,16 @@ def test_prune_settles_the_whole_ladder_in_one_save():
     device_rows = [
         {"device_id": "a", "integration": "spook", "labels": frozenset()},
     ]
-    pruned = DeviceSentinelOptionsFlow._pruned_exclusion_input(
+    pruned = DeviceSentinelOptionsFlow._pruned_muting_input(
         {
-            CONF_EXCLUDED_INTEGRATIONS: ["spook"],
-            CONF_EXCLUDED_LABELS: [],
-            CONF_EXCLUDED_DEVICES: ["a"],
+            CONF_MUTED_INTEGRATIONS: ["spook"],
+            CONF_MUTED_LABELS: [],
+            CONF_MUTED_DEVICES: ["a"],
         },
         device_rows,
         _FakeRegistry({row['device_id'] for row in device_rows}),
     )
-    assert pruned[CONF_EXCLUDED_DEVICES] == []
+    assert pruned[CONF_MUTED_DEVICES] == []
 
 
 def test_prune_keeps_picks_no_broader_kind_covers():
@@ -556,16 +556,16 @@ def test_prune_keeps_picks_no_broader_kind_covers():
         {"device_id": "a", "integration": "zha", "labels": frozenset()},
         {"device_id": "b", "integration": "zha", "labels": frozenset()},
     ]
-    pruned = DeviceSentinelOptionsFlow._pruned_exclusion_input(
+    pruned = DeviceSentinelOptionsFlow._pruned_muting_input(
         {
-            CONF_EXCLUDED_INTEGRATIONS: ["spook"],
-            CONF_EXCLUDED_LABELS: [],
-            CONF_EXCLUDED_DEVICES: ["a"],
+            CONF_MUTED_INTEGRATIONS: ["spook"],
+            CONF_MUTED_LABELS: [],
+            CONF_MUTED_DEVICES: ["a"],
         },
         device_rows,
         _FakeRegistry({row['device_id'] for row in device_rows}),
     )
-    assert pruned[CONF_EXCLUDED_DEVICES] == ["a"]
+    assert pruned[CONF_MUTED_DEVICES] == ["a"]
 
 
 def test_battery_prune_drops_superseded_device_pick():
@@ -580,14 +580,14 @@ def test_battery_prune_drops_superseded_device_pick():
     ]
     pruned = DeviceSentinelOptionsFlow._pruned_battery_input(
         {
-            CONF_BATTERY_EXCLUDED_INTEGRATIONS: ["mobile_app"],
-            CONF_BATTERY_EXCLUDED_LABELS: [],
-            CONF_BATTERY_EXCLUDED_DEVICES: ["a"],
+            CONF_BATTERY_MUTED_INTEGRATIONS: ["mobile_app"],
+            CONF_BATTERY_MUTED_LABELS: [],
+            CONF_BATTERY_MUTED_DEVICES: ["a"],
         },
         rows,
         _FakeRegistry({row['device_id'] for row in rows}),
     )
-    assert pruned[CONF_BATTERY_EXCLUDED_DEVICES] == []
+    assert pruned[CONF_BATTERY_MUTED_DEVICES] == []
 
 
 # The freeze and signal pruners are siblings of the battery one and
@@ -627,9 +627,9 @@ def test_freeze_prune_rounds_the_deltas_to_integers():
         {
             CONF_FREEZE_DELTA_LOW: 3.0,
             CONF_FREEZE_DELTA_HIGH: 8.0,
-            CONF_FREEZE_EXCLUDED_INTEGRATIONS: [],
-            CONF_FREEZE_EXCLUDED_LABELS: [],
-            CONF_FREEZE_EXCLUDED_DEVICES: [],
+            CONF_FREEZE_MUTED_INTEGRATIONS: [],
+            CONF_FREEZE_MUTED_LABELS: [],
+            CONF_FREEZE_MUTED_DEVICES: [],
         },
         _FREEZE_ROWS,
         _FakeRegistry({"a", "b", "c"}),
@@ -647,14 +647,14 @@ def test_freeze_prune_drops_superseded_device_pick():
         {
             CONF_FREEZE_DELTA_LOW: 3,
             CONF_FREEZE_DELTA_HIGH: 8,
-            CONF_FREEZE_EXCLUDED_INTEGRATIONS: ["mobile_app"],
-            CONF_FREEZE_EXCLUDED_LABELS: [],
-            CONF_FREEZE_EXCLUDED_DEVICES: ["a"],
+            CONF_FREEZE_MUTED_INTEGRATIONS: ["mobile_app"],
+            CONF_FREEZE_MUTED_LABELS: [],
+            CONF_FREEZE_MUTED_DEVICES: ["a"],
         },
         _FREEZE_ROWS,
         _FakeRegistry({"a", "b", "c"}),
     )
-    assert pruned[CONF_FREEZE_EXCLUDED_DEVICES] == []
+    assert pruned[CONF_FREEZE_MUTED_DEVICES] == []
 
 
 def test_freeze_prune_settles_label_and_keeps_the_uncovered_pick():
@@ -665,15 +665,15 @@ def test_freeze_prune_settles_label_and_keeps_the_uncovered_pick():
         {
             CONF_FREEZE_DELTA_LOW: 3,
             CONF_FREEZE_DELTA_HIGH: 8,
-            CONF_FREEZE_EXCLUDED_INTEGRATIONS: [],
-            CONF_FREEZE_EXCLUDED_LABELS: ["noisy"],
-            CONF_FREEZE_EXCLUDED_DEVICES: ["b", "c"],
+            CONF_FREEZE_MUTED_INTEGRATIONS: [],
+            CONF_FREEZE_MUTED_LABELS: ["noisy"],
+            CONF_FREEZE_MUTED_DEVICES: ["b", "c"],
         },
         _FREEZE_ROWS,
         _FakeRegistry({"a", "b", "c"}),
     )
     # b is reached by the label and goes; c is covered by nothing and stays.
-    assert pruned[CONF_FREEZE_EXCLUDED_DEVICES] == ["c"]
+    assert pruned[CONF_FREEZE_MUTED_DEVICES] == ["c"]
 
 
 def test_freeze_prune_drops_a_deleted_device_pick():
@@ -683,14 +683,14 @@ def test_freeze_prune_drops_a_deleted_device_pick():
         {
             CONF_FREEZE_DELTA_LOW: 3,
             CONF_FREEZE_DELTA_HIGH: 8,
-            CONF_FREEZE_EXCLUDED_INTEGRATIONS: [],
-            CONF_FREEZE_EXCLUDED_LABELS: [],
-            CONF_FREEZE_EXCLUDED_DEVICES: ["c", "gone"],
+            CONF_FREEZE_MUTED_INTEGRATIONS: [],
+            CONF_FREEZE_MUTED_LABELS: [],
+            CONF_FREEZE_MUTED_DEVICES: ["c", "gone"],
         },
         _FREEZE_ROWS,
         _FakeRegistry({"a", "b", "c"}),  # "gone" was deleted
     )
-    assert pruned[CONF_FREEZE_EXCLUDED_DEVICES] == ["c"]
+    assert pruned[CONF_FREEZE_MUTED_DEVICES] == ["c"]
 
 
 _SIGNAL_ROWS = [
@@ -729,9 +729,9 @@ def test_signal_prune_rounds_the_sliders_to_their_types():
             CONF_BADDAY_DROP_RSSI: 6.0,
             CONF_BADDAY_BASELINE_DAYS: 7.0,
             CONF_BADDAY_SENSITIVITY: 4,
-            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: [],
-            CONF_SIGNAL_EXCLUDED_LABELS: [],
-            CONF_SIGNAL_EXCLUDED_DEVICES: [],
+            CONF_SIGNAL_MUTED_INTEGRATIONS: [],
+            CONF_SIGNAL_MUTED_LABELS: [],
+            CONF_SIGNAL_MUTED_DEVICES: [],
         },
         _SIGNAL_ROWS,
         _FakeRegistry({"a", "b", "c"}),
@@ -753,9 +753,9 @@ def test_signal_prune_leaves_absent_sliders_absent():
     input passes through with the keys it came with."""
     pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
         {
-            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: [],
-            CONF_SIGNAL_EXCLUDED_LABELS: [],
-            CONF_SIGNAL_EXCLUDED_DEVICES: ["c"],
+            CONF_SIGNAL_MUTED_INTEGRATIONS: [],
+            CONF_SIGNAL_MUTED_LABELS: [],
+            CONF_SIGNAL_MUTED_DEVICES: ["c"],
         },
         _SIGNAL_ROWS,
         _FakeRegistry({"a", "b", "c"}),
@@ -767,7 +767,7 @@ def test_signal_prune_leaves_absent_sliders_absent():
         CONF_BADDAY_SENSITIVITY,
     ):
         assert key not in pruned, key
-    assert pruned[CONF_SIGNAL_EXCLUDED_DEVICES] == ["c"]
+    assert pruned[CONF_SIGNAL_MUTED_DEVICES] == ["c"]
 
 
 def test_signal_prune_drops_superseded_device_pick():
@@ -775,14 +775,14 @@ def test_signal_prune_drops_superseded_device_pick():
     dropped, the same determinism rule as battery."""
     pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
         {
-            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: ["mobile_app"],
-            CONF_SIGNAL_EXCLUDED_LABELS: [],
-            CONF_SIGNAL_EXCLUDED_DEVICES: ["a"],
+            CONF_SIGNAL_MUTED_INTEGRATIONS: ["mobile_app"],
+            CONF_SIGNAL_MUTED_LABELS: [],
+            CONF_SIGNAL_MUTED_DEVICES: ["a"],
         },
         _SIGNAL_ROWS,
         _FakeRegistry({"a", "b", "c"}),
     )
-    assert pruned[CONF_SIGNAL_EXCLUDED_DEVICES] == []
+    assert pruned[CONF_SIGNAL_MUTED_DEVICES] == []
 
 
 def test_signal_prune_settles_label_and_keeps_the_uncovered_pick():
@@ -790,14 +790,14 @@ def test_signal_prune_settles_label_and_keeps_the_uncovered_pick():
     broader covers stands. The ladder settles in one save."""
     pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
         {
-            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: [],
-            CONF_SIGNAL_EXCLUDED_LABELS: ["far"],
-            CONF_SIGNAL_EXCLUDED_DEVICES: ["b", "c"],
+            CONF_SIGNAL_MUTED_INTEGRATIONS: [],
+            CONF_SIGNAL_MUTED_LABELS: ["far"],
+            CONF_SIGNAL_MUTED_DEVICES: ["b", "c"],
         },
         _SIGNAL_ROWS,
         _FakeRegistry({"a", "b", "c"}),
     )
-    assert pruned[CONF_SIGNAL_EXCLUDED_DEVICES] == ["c"]
+    assert pruned[CONF_SIGNAL_MUTED_DEVICES] == ["c"]
 
 
 def test_signal_prune_drops_a_deleted_device_pick():
@@ -805,14 +805,14 @@ def test_signal_prune_drops_a_deleted_device_pick():
     proof of absence, never on a guess (ruling #45)."""
     pruned = DeviceSentinelOptionsFlow._pruned_signal_input(
         {
-            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: [],
-            CONF_SIGNAL_EXCLUDED_LABELS: [],
-            CONF_SIGNAL_EXCLUDED_DEVICES: ["c", "gone"],
+            CONF_SIGNAL_MUTED_INTEGRATIONS: [],
+            CONF_SIGNAL_MUTED_LABELS: [],
+            CONF_SIGNAL_MUTED_DEVICES: ["c", "gone"],
         },
         _SIGNAL_ROWS,
         _FakeRegistry({"a", "b", "c"}),
     )
-    assert pruned[CONF_SIGNAL_EXCLUDED_DEVICES] == ["c"]
+    assert pruned[CONF_SIGNAL_MUTED_DEVICES] == ["c"]
 
 
 # The live coordinator, where the ruling has to hold.
@@ -829,12 +829,12 @@ async def test_battery_label_excludes_the_device(hass: HomeAssistant):
         device.id, labels={label.label_id}
     )
     entry = await setup_entry(
-        hass, {CONF_BATTERY_EXCLUDED_LABELS: [label.label_id]}
+        hass, {CONF_BATTERY_MUTED_LABELS: [label.label_id]}
     )
     coord = entry.runtime_data
-    assert coord._battery_excluded(device.id)
+    assert coord._battery_muted(device.id)
     # Battery only: the device keeps every other kind of watching.
-    assert device.id not in coord._excluded_devices
+    assert device.id not in coord._muted_devices
 
 
 async def test_watched_device_rows_carry_cascade_facts(
@@ -867,11 +867,11 @@ async def test_integration_reason_wins_over_device_reason(
     entry = await setup_entry(
         hass,
         {
-            CONF_EXCLUDED_INTEGRATIONS: ["test"],
-            CONF_EXCLUDED_DEVICES: [device.id],
+            CONF_MUTED_INTEGRATIONS: ["test"],
+            CONF_MUTED_DEVICES: [device.id],
         },
     )
-    assert entry.runtime_data._excluded_devices[device.id] == "integration"
+    assert entry.runtime_data._muted_devices[device.id] == "integration"
 
 
 # The area retirement.
@@ -891,7 +891,7 @@ async def test_area_is_no_longer_an_exclusion_kind(hass: HomeAssistant):
 
     entry = await setup_entry(hass, {"excluded_areas": [area.id]})
     await hass.async_block_till_done()
-    assert device.id not in entry.runtime_data._excluded_devices
+    assert device.id not in entry.runtime_data._muted_devices
 
 
 async def test_dead_option_keys_are_cleared_at_setup(hass: HomeAssistant):
@@ -902,14 +902,14 @@ async def test_dead_option_keys_are_cleared_at_setup(hass: HomeAssistant):
         {
             "excluded_areas": ["area_1"],
             "excluded_entities": ["image.some_screenshot"],
-            CONF_EXCLUDED_LABELS: ["ice"],
+            CONF_MUTED_LABELS: ["ice"],
         },
     )
     await hass.async_block_till_done()
     for key in DEAD_OPTION_KEYS:
         assert key not in entry.options
     # Only the retired keys go; live settings are untouched.
-    assert entry.options[CONF_EXCLUDED_LABELS] == ["ice"]
+    assert entry.options[CONF_MUTED_LABELS] == ["ice"]
 
 
 async def test_retired_notification_keys_are_cleared(hass: HomeAssistant):
@@ -926,7 +926,7 @@ async def test_retired_notification_keys_are_cleared(hass: HomeAssistant):
             "reminder_time": "08:00:00",
             "high_priority_pierces_quiet": True,
             "quiet_hours_start": "23:00:00",
-            CONF_EXCLUDED_LABELS: ["ice"],
+            CONF_MUTED_LABELS: ["ice"],
         },
     )
     await hass.async_block_till_done()
@@ -940,12 +940,12 @@ async def test_retired_notification_keys_are_cleared(hass: HomeAssistant):
         assert key not in entry.options, key
     # The shapes that replaced them are live settings and stay.
     assert entry.options["quiet_hours_start"] == "23:00:00"
-    assert entry.options[CONF_EXCLUDED_LABELS] == ["ice"]
+    assert entry.options[CONF_MUTED_LABELS] == ["ice"]
 
 
 async def test_setup_survives_when_nothing_is_dead(hass: HomeAssistant):
-    entry = await setup_entry(hass, {CONF_EXCLUDED_LABELS: ["ice"]})
-    assert entry.options[CONF_EXCLUDED_LABELS] == ["ice"]
+    entry = await setup_entry(hass, {CONF_MUTED_LABELS: ["ice"]})
+    assert entry.options[CONF_MUTED_LABELS] == ["ice"]
 
 
 # The real options flow, end to end.
@@ -963,7 +963,7 @@ async def test_options_flow_prunes_on_save(hass: HomeAssistant):
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device, _ = _ladder_device(hass, source, 6)
-    entry = await setup_entry(hass, {CONF_EXCLUDED_DEVICES: [device.id]})
+    entry = await setup_entry(hass, {CONF_MUTED_DEVICES: [device.id]})
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
@@ -975,17 +975,17 @@ async def test_options_flow_prunes_on_save(hass: HomeAssistant):
         result["flow_id"],
         {
             "ignore": {CONF_IGNORED_INTEGRATIONS: []},
-            "exclusions": {
-                CONF_EXCLUDED_INTEGRATIONS: ["test"],
-                CONF_EXCLUDED_LABELS: [],
-                CONF_EXCLUDED_DEVICES: [device.id],
+            "muting": {
+                CONF_MUTED_INTEGRATIONS: ["test"],
+                CONF_MUTED_LABELS: [],
+                CONF_MUTED_DEVICES: [device.id],
             },
         },
     )
     await hass.async_block_till_done()
     assert result["type"] == "menu"
-    assert entry.options[CONF_EXCLUDED_DEVICES] == []
-    assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == ["test"]
+    assert entry.options[CONF_MUTED_DEVICES] == []
+    assert entry.options[CONF_MUTED_INTEGRATIONS] == ["test"]
 
 
 async def test_options_flow_freeze_save_prunes_on_save(hass: HomeAssistant):
@@ -1010,17 +1010,17 @@ async def test_options_flow_freeze_save_prunes_on_save(hass: HomeAssistant):
         {
             CONF_FREEZE_DELTA_LOW: 3.0,
             CONF_FREEZE_DELTA_HIGH: 8.0,
-            "freeze_exclusions": {
-                CONF_FREEZE_EXCLUDED_INTEGRATIONS: ["test"],
-                CONF_FREEZE_EXCLUDED_LABELS: [],
-                CONF_FREEZE_EXCLUDED_DEVICES: [device.id],
+            "freeze_muting": {
+                CONF_FREEZE_MUTED_INTEGRATIONS: ["test"],
+                CONF_FREEZE_MUTED_LABELS: [],
+                CONF_FREEZE_MUTED_DEVICES: [device.id],
             },
         },
     )
     await hass.async_block_till_done()
     assert result["type"] == "menu"
-    assert entry.options[CONF_FREEZE_EXCLUDED_DEVICES] == []
-    assert entry.options[CONF_FREEZE_EXCLUDED_INTEGRATIONS] == ["test"]
+    assert entry.options[CONF_FREEZE_MUTED_DEVICES] == []
+    assert entry.options[CONF_FREEZE_MUTED_INTEGRATIONS] == ["test"]
     assert entry.options[CONF_FREEZE_DELTA_LOW] == 3
     assert isinstance(entry.options[CONF_FREEZE_DELTA_LOW], int)
     assert entry.options[CONF_FREEZE_DELTA_HIGH] == 8
@@ -1053,16 +1053,16 @@ async def test_options_flow_signal_save_prunes_on_save(hass: HomeAssistant):
             CONF_BADDAY_DROP_RSSI: 6.0,
             CONF_BADDAY_SENSITIVITY: 4,
             CONF_BADDAY_BASELINE_DAYS: 7.0,
-            "signal_exclusions": {
-                CONF_SIGNAL_EXCLUDED_INTEGRATIONS: ["test"],
-                CONF_SIGNAL_EXCLUDED_LABELS: [],
-                CONF_SIGNAL_EXCLUDED_DEVICES: [],
+            "signal_muting": {
+                CONF_SIGNAL_MUTED_INTEGRATIONS: ["test"],
+                CONF_SIGNAL_MUTED_LABELS: [],
+                CONF_SIGNAL_MUTED_DEVICES: [],
             },
         },
     )
     await hass.async_block_till_done()
     assert result["type"] == "menu"
-    assert entry.options[CONF_SIGNAL_EXCLUDED_INTEGRATIONS] == ["test"]
+    assert entry.options[CONF_SIGNAL_MUTED_INTEGRATIONS] == ["test"]
     for key, want in (
         (CONF_BADDAY_DROP_LQI, 25),
         (CONF_BADDAY_DROP_RSSI, 6),
@@ -1086,7 +1086,7 @@ async def test_options_flow_hides_covered_devices(hass: HomeAssistant):
     source.add_to_hass(hass)
     device, _ = _ladder_device(hass, source, 7)
     entry = await setup_entry(
-        hass, {CONF_EXCLUDED_INTEGRATIONS: ["test"]}
+        hass, {CONF_MUTED_INTEGRATIONS: ["test"]}
     )
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
@@ -1095,7 +1095,7 @@ async def test_options_flow_hides_covered_devices(hass: HomeAssistant):
     )
     schema = flat_schema(result["data_schema"].schema)
     device_key = next(
-        key for key in schema if str(key) == CONF_EXCLUDED_DEVICES
+        key for key in schema if str(key) == CONF_MUTED_DEVICES
     )
     offered = {
         option["value"]

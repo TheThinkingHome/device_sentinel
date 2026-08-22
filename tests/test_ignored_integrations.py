@@ -408,9 +408,9 @@ async def test_the_ignore_list_lives_on_the_exclusions_screen(
     from homeassistant.data_entry_flow import FlowResultType
 
     from custom_components.device_sentinel.const import (
-        CONF_EXCLUDED_DEVICES,
-        CONF_EXCLUDED_INTEGRATIONS,
-        CONF_EXCLUDED_LABELS,
+        CONF_MUTED_DEVICES,
+        CONF_MUTED_INTEGRATIONS,
+        CONF_MUTED_LABELS,
     )
 
     entry = await setup_entry(hass)
@@ -420,7 +420,7 @@ async def test_the_ignore_list_lives_on_the_exclusions_screen(
     )
     assert result["step_id"] == "exclusions"
     fields = [str(key) for key in result["data_schema"].schema]
-    assert fields == ["ignore", "exclusions"]
+    assert fields == ["ignore", "muting"]
     assert CONF_IGNORED_INTEGRATIONS in flat_schema(
         result["data_schema"].schema
     )
@@ -431,10 +431,10 @@ async def test_the_ignore_list_lives_on_the_exclusions_screen(
             "ignore": {
                 CONF_IGNORED_INTEGRATIONS: ["mobile_app", "tile"],
             },
-            "exclusions": {
-                CONF_EXCLUDED_INTEGRATIONS: [],
-                CONF_EXCLUDED_LABELS: [],
-                CONF_EXCLUDED_DEVICES: [],
+            "muting": {
+                CONF_MUTED_INTEGRATIONS: [],
+                CONF_MUTED_LABELS: [],
+                CONF_MUTED_DEVICES: [],
             },
         },
     )

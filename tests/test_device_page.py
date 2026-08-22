@@ -240,10 +240,10 @@ async def test_retired_clock_source_is_removed_from_the_registry(
 async def test_excluded_device_keeps_its_grammar(hass: HomeAssistant):
     """An excluded device shows its exclude reason, verdictless."""
     device, entity_id = _register(hass, "e1", "Excluded Sensor")
-    entry = await setup_entry(hass, {"excluded_devices": [device.id]})
+    entry = await setup_entry(hass, {"muted_devices": [device.id]})
     coord = entry.runtime_data
     hass.states.async_set(entity_id, "21.5")
-    assert coord._device_status(device.id) == "Excluded (GLB)"
+    assert coord._device_status(device.id) == "Muted (GLB)"
 
 
 async def test_journal_is_in_diagnostics(hass: HomeAssistant):

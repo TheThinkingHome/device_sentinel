@@ -29,12 +29,12 @@ from homeassistant.helpers import device_registry as dr
 
 from custom_components.device_sentinel.config_flow import _device_options
 from custom_components.device_sentinel.const import (
-    CONF_BATTERY_EXCLUDED_DEVICES,
-    CONF_BATTERY_EXCLUDED_INTEGRATIONS,
-    CONF_BATTERY_EXCLUDED_LABELS,
-    CONF_EXCLUDED_DEVICES,
-    CONF_EXCLUDED_INTEGRATIONS,
-    CONF_EXCLUDED_LABELS,
+    CONF_BATTERY_MUTED_DEVICES,
+    CONF_BATTERY_MUTED_INTEGRATIONS,
+    CONF_BATTERY_MUTED_LABELS,
+    CONF_MUTED_DEVICES,
+    CONF_MUTED_INTEGRATIONS,
+    CONF_MUTED_LABELS,
     CONF_IGNORED_INTEGRATIONS,
     CONF_LOW_THRESHOLD,
 )
@@ -154,10 +154,10 @@ async def test_a_section_saves_and_returns_to_the_menu(
         result["flow_id"],
         {
             CONF_LOW_THRESHOLD: 33,
-            "battery_exclusions": {
-                CONF_BATTERY_EXCLUDED_INTEGRATIONS: [],
-                CONF_BATTERY_EXCLUDED_LABELS: [],
-                CONF_BATTERY_EXCLUDED_DEVICES: [],
+            "battery_muting": {
+                CONF_BATTERY_MUTED_INTEGRATIONS: [],
+                CONF_BATTERY_MUTED_LABELS: [],
+                CONF_BATTERY_MUTED_DEVICES: [],
             },
         },
     )
@@ -184,10 +184,10 @@ async def test_two_sections_in_one_visit_both_stick(hass: HomeAssistant):
         result["flow_id"],
         {
             CONF_LOW_THRESHOLD: 22,
-            "battery_exclusions": {
-                CONF_BATTERY_EXCLUDED_INTEGRATIONS: [],
-                CONF_BATTERY_EXCLUDED_LABELS: [],
-                CONF_BATTERY_EXCLUDED_DEVICES: [],
+            "battery_muting": {
+                CONF_BATTERY_MUTED_INTEGRATIONS: [],
+                CONF_BATTERY_MUTED_LABELS: [],
+                CONF_BATTERY_MUTED_DEVICES: [],
             },
         },
     )
@@ -203,10 +203,10 @@ async def test_two_sections_in_one_visit_both_stick(hass: HomeAssistant):
             "ignore": {
                 CONF_IGNORED_INTEGRATIONS: ["ping"],
             },
-            "exclusions": {
-                CONF_EXCLUDED_INTEGRATIONS: [],
-                CONF_EXCLUDED_LABELS: [],
-                CONF_EXCLUDED_DEVICES: [],
+            "muting": {
+                CONF_MUTED_INTEGRATIONS: [],
+                CONF_MUTED_LABELS: [],
+                CONF_MUTED_DEVICES: [],
             },
         },
     )
@@ -265,25 +265,25 @@ async def test_the_excludes_live_in_a_section_and_store_flat(
     )
 
     top = result["data_schema"].schema
-    assert any(str(key) == "battery_exclusions" for key in top)
+    assert any(str(key) == "battery_muting" for key in top)
     assert not any("excluded" in str(key) for key in top)
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
             CONF_LOW_THRESHOLD: 25,
-            "battery_exclusions": {
-                CONF_BATTERY_EXCLUDED_INTEGRATIONS: ["mqtt"],
-                CONF_BATTERY_EXCLUDED_LABELS: [],
-                CONF_BATTERY_EXCLUDED_DEVICES: [],
+            "battery_muting": {
+                CONF_BATTERY_MUTED_INTEGRATIONS: ["mqtt"],
+                CONF_BATTERY_MUTED_LABELS: [],
+                CONF_BATTERY_MUTED_DEVICES: [],
             },
         },
     )
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.MENU
-    assert entry.options[CONF_BATTERY_EXCLUDED_INTEGRATIONS] == ["mqtt"]
-    assert "battery_exclusions" not in entry.options
+    assert entry.options[CONF_BATTERY_MUTED_INTEGRATIONS] == ["mqtt"]
+    assert "battery_muting" not in entry.options
 
 
 async def test_every_sectioned_screen_keeps_its_settings_loose(
@@ -298,10 +298,10 @@ async def test_every_sectioned_screen_keeps_its_settings_loose(
     """
     entry = await setup_entry(hass)
     expected = {
-        "battery": ("battery_exclusions", 2),
-        "signal": ("signal_exclusions", 4),
-        "freeze": ("freeze_exclusions", 2),
-        "exclusions": ("exclusions", 1),
+        "battery": ("battery_muting", 2),
+        "signal": ("signal_muting", 4),
+        "freeze": ("freeze_muting", 2),
+        "exclusions": ("muting", 1),
     }
     for step, (section_key, loose_count) in expected.items():
         result = await hass.config_entries.options.async_init(entry.entry_id)
@@ -333,10 +333,10 @@ async def test_each_section_carries_a_heading_and_an_explanation(
     ):
         steps = json.loads(source.read_text())["options"]["step"]
         for step, key in (
-            ("battery", "battery_exclusions"),
-            ("signal", "signal_exclusions"),
-            ("freeze", "freeze_exclusions"),
-            ("exclusions", "exclusions"),
+            ("battery", "battery_muting"),
+            ("signal", "signal_muting"),
+            ("freeze", "freeze_muting"),
+            ("exclusions", "muting"),
         ):
             block = steps[step]["sections"][key]
             assert block["name"], (step, "name")
@@ -363,17 +363,17 @@ async def test_the_ignore_list_has_its_own_section(hass: HomeAssistant):
 
     assert [str(key) for key in result["data_schema"].schema] == [
         "ignore",
-        "exclusions",
+        "muting",
     ]
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
             "ignore": {CONF_IGNORED_INTEGRATIONS: ["ping"]},
-            "exclusions": {
-                CONF_EXCLUDED_INTEGRATIONS: [],
-                CONF_EXCLUDED_LABELS: [],
-                CONF_EXCLUDED_DEVICES: [],
+            "muting": {
+                CONF_MUTED_INTEGRATIONS: [],
+                CONF_MUTED_LABELS: [],
+                CONF_MUTED_DEVICES: [],
             },
         },
     )
@@ -401,7 +401,7 @@ async def test_both_halves_carry_a_heading_and_an_explanation(
         assert not step["data"], "nothing loose on this screen"
         assert step["sections"]["ignore"]["name"] == "Integrations to Ignore"
         assert (
-            step["sections"]["exclusions"]["name"] == "Global Exclusions"
+            step["sections"]["muting"]["name"] == "Global Muting"
         )
-        for key in ("ignore", "exclusions"):
+        for key in ("ignore", "muting"):
             assert len(step["sections"][key]["description"]) > 60, key

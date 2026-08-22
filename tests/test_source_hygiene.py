@@ -43,6 +43,8 @@ import pathlib
 import re
 import tokenize
 
+from custom_components.device_sentinel.const import MUTING_KEY_RENAMES
+
 PACKAGE = pathlib.Path(
     __import__("custom_components.device_sentinel.const", fromlist=["const"])
     .__file__
@@ -173,4 +175,61 @@ def test_no_line_inside_a_bracket_sinks_to_its_opener():
     found = [
         line for path in _sources() for line in _sunken_continuations(path)
     ]
+    assert not found, "\n".join(found)
+
+
+def test_no_retired_exclude_option_name_survives_in_source():
+    """The twelve muting keys keep one spelling (ruling #316).
+
+    The rename could fail two ways that nothing else here would
+    catch. A reader left on an old key name reads an option that no
+    longer exists, finds nothing, and silently judges a device its
+    owner muted; renaming the constants makes that an import error,
+    but a bare string in a dictionary or a test payload has no
+    constant to break. And the migration itself has to keep the old
+    names, so the guard reads them from the map rather than from a
+    second copy of the list.
+
+    Three files are exempt and named rather than pattern-matched:
+    const.py, which holds the map; this file, which reads it; and
+    the migration's own test, whose fixtures are written in the old
+    spellings because those are what it exists to take. `excluded_areas`
+    is exempt everywhere, being a dead key kept for the sweep to find.
+    """
+    allowed = {"excluded_areas"}
+    retired = set(MUTING_KEY_RENAMES) - allowed
+    found: list[str] = []
+    for path in _sources():
+        # const.py holds the rename map, this file reads it, and the
+        # migration's own test is written in the old spellings on
+        # purpose: they are the input the migration exists to take.
+        if path.name in (
+            "const.py",
+            "test_source_hygiene.py",
+            "test_options_migration.py",
+        ):
+            continue
+        for number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), 1
+        ):
+            for name in retired:
+                if f'"{name}"' in line or f"'{name}'" in line:
+                    found.append(f"{path.name}:{number}: {line.strip()}")
+    assert not found, "\n".join(found)
+
+
+def test_no_retired_exclude_option_name_survives_in_the_strings():
+    """The screens name what is stored, so the two move together."""
+    retired = set(MUTING_KEY_RENAMES) - {"excluded_areas"}
+    found: list[str] = []
+    for source in (
+        PACKAGE / "strings.json",
+        PACKAGE / "translations" / "en.json",
+    ):
+        text = source.read_text(encoding="utf-8")
+        found += [
+            f"{source.name}: {name}"
+            for name in retired
+            if f'"{name}"' in text
+        ]
     assert not found, "\n".join(found)

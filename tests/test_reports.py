@@ -44,11 +44,11 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.device_sentinel.const import (
-    CONF_BATTERY_EXCLUDED_DEVICES,
-    CONF_EXCLUDED_DEVICES,
-    CONF_FREEZE_EXCLUDED_DEVICES,
+    CONF_BATTERY_MUTED_DEVICES,
+    CONF_MUTED_DEVICES,
+    CONF_FREEZE_MUTED_DEVICES,
     CONF_HIGH_PRIORITY_TARGETS,
-    CONF_SIGNAL_EXCLUDED_DEVICES,
+    CONF_SIGNAL_MUTED_DEVICES,
     DATA_EPISODES,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
     DEV_BATTERY_DAILY,
@@ -236,7 +236,7 @@ async def test_diagnostics_carry_the_learned_state(hass: HomeAssistant):
     assert entry_device["name"] == "Diag Device"
     assert entry_device["integration"] == "test"
     assert entry_device["clock_source"] == "recorded"
-    assert entry_device["excluded"] is None
+    assert entry_device["muted"] is None
     assert entry_device["window_basis"] == 600.0  # spike set aside
     assert entry_device["set_aside_indices"] == [4]
 
@@ -257,11 +257,11 @@ async def test_diagnostics_report_exclusions(hass: HomeAssistant):
     er.async_get(hass).async_get_or_create(
         "sensor", "test", "diagx", device_id=device.id, config_entry=source
     )
-    entry = await setup_entry(hass, {CONF_EXCLUDED_DEVICES: [device.id]})
+    entry = await setup_entry(hass, {CONF_MUTED_DEVICES: [device.id]})
 
     result = await async_get_config_entry_diagnostics(hass, entry)
-    assert result["devices"][device.id]["excluded"] == "device"
-    assert result["classification"]["excluded_devices"] == {
+    assert result["devices"][device.id]["muted"] == "device"
+    assert result["classification"]["muted_devices"] == {
         device.id: "device"
     }
 
@@ -453,18 +453,18 @@ async def test_status_grammar(hass: HomeAssistant):
     hass.config_entries.async_update_entry(
         coord.entry,
         options={
-            CONF_BATTERY_EXCLUDED_DEVICES: [d.id],
-            CONF_SIGNAL_EXCLUDED_DEVICES: [d.id],
-            CONF_FREEZE_EXCLUDED_DEVICES: [d.id],
+            CONF_BATTERY_MUTED_DEVICES: [d.id],
+            CONF_SIGNAL_MUTED_DEVICES: [d.id],
+            CONF_FREEZE_MUTED_DEVICES: [d.id],
         },
     )
-    assert coord._device_status(d.id) == "Excluded (BAT, SIG, FRZ)"
+    assert coord._device_status(d.id) == "Muted (BAT, SIG, FRZ)"
 
     hass.config_entries.async_update_entry(
-        coord.entry, options={CONF_EXCLUDED_DEVICES: [d.id]}
+        coord.entry, options={CONF_MUTED_DEVICES: [d.id]}
     )
-    coord._excluded_devices[d.id] = "device"
-    assert coord._device_status(d.id) == "Excluded (GLB)"
+    coord._muted_devices[d.id] = "device"
+    assert coord._device_status(d.id) == "Muted (GLB)"
 
 
 def test_readable_timestamp_format():
@@ -866,12 +866,12 @@ async def test_fast_device_opens_once_it_spends_its_patience(
     assert len(coord.data[DATA_EPISODES]) == 1
 
 
-async def test_globally_excluded_device_is_skipped(
+async def test_globally_muted_device_is_skipped(
     hass: HomeAssistant,
 ):
     """#106: no verdict is possible, so no episode explains one."""
     device, entity_id = _register(hass, "ge1", "Global Excluded")
-    coord = await setup_coordinator_flat_line(hass, {CONF_EXCLUDED_DEVICES: [device.id]})
+    coord = await setup_coordinator_flat_line(hass, {CONF_MUTED_DEVICES: [device.id]})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     _rhythm(coord, device.id, 3600.0, 8 * 3600.0)
@@ -879,9 +879,9 @@ async def test_globally_excluded_device_is_skipped(
     assert coord.data[DATA_EPISODES] == []
 
 
-async def test_freeze_excluded_device_is_skipped(hass: HomeAssistant):
+async def test_freeze_muted_device_is_skipped(hass: HomeAssistant):
     device, entity_id = _register(hass, "ze1", "Freeze Excluded")
-    coord = await setup_coordinator_flat_line(hass, {CONF_FREEZE_EXCLUDED_DEVICES: [device.id]})
+    coord = await setup_coordinator_flat_line(hass, {CONF_FREEZE_MUTED_DEVICES: [device.id]})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     _rhythm(coord, device.id, 3600.0, 8 * 3600.0)
@@ -889,13 +889,13 @@ async def test_freeze_excluded_device_is_skipped(hass: HomeAssistant):
     assert coord.data[DATA_EPISODES] == []
 
 
-async def test_battery_excluded_device_still_counts(
+async def test_battery_muted_device_still_counts(
     hass: HomeAssistant,
 ):
     """Excluded for battery only: still judged for freeze, so its
     silences still belong in the file."""
     device, entity_id = _register(hass, "be1", "Battery Excluded")
-    coord = await setup_coordinator_flat_line(hass, {CONF_BATTERY_EXCLUDED_DEVICES: [device.id]})
+    coord = await setup_coordinator_flat_line(hass, {CONF_BATTERY_MUTED_DEVICES: [device.id]})
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
     _rhythm(coord, device.id, 3600.0, 8 * 3600.0)

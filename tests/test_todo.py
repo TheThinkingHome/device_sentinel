@@ -566,7 +566,7 @@ async def test_option_exclusion_clears_the_item(hass: HomeAssistant):
     assert _item_for(coord, device.id) is not None
 
     hass.config_entries.async_update_entry(
-        entry, options={**entry.options, "excluded_devices": [device.id]}
+        entry, options={**entry.options, "muted_devices": [device.id]}
     )
     await hass.async_block_till_done(wait_background_tasks=True)
 

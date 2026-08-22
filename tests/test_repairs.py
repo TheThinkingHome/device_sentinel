@@ -391,7 +391,7 @@ async def test_an_excluded_device_still_raises_it(
     would do.
     """
     from custom_components.device_sentinel.const import (
-        CONF_EXCLUDED_DEVICES,
+        CONF_MUTED_DEVICES,
     )
 
     device, (entity_id,) = register_device(hass, "dev_excluded")
@@ -402,7 +402,7 @@ async def test_an_excluded_device_still_raises_it(
         unit_of_measurement="%",
         disabled_by=er.RegistryEntryDisabler.INTEGRATION,
     )
-    entry = await setup_entry(hass, {CONF_EXCLUDED_DEVICES: [device.id]})
+    entry = await setup_entry(hass, {CONF_MUTED_DEVICES: [device.id]})
     coordinator = entry.runtime_data
     coordinator._rebuild_registry_view()
 

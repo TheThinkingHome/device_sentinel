@@ -14,7 +14,7 @@ import os
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
-    CONF_EXCLUDED_DEVICES,
+    CONF_MUTED_DEVICES,
     CONF_TRIM_DEVICES,
     CONF_TRIM_INTEGRATIONS,
     DATA_DEVICES,
@@ -159,12 +159,12 @@ async def test_trimming_keeps_the_exclusion(hass: HomeAssistant):
         hass,
         entry,
         **{
-            CONF_EXCLUDED_DEVICES: [target.id],
+            CONF_MUTED_DEVICES: [target.id],
             CONF_TRIM_DEVICES: [target.id],
         },
     )
 
-    assert entry.options[CONF_EXCLUDED_DEVICES] == [target.id]
+    assert entry.options[CONF_MUTED_DEVICES] == [target.id]
     assert coord.data[DATA_DEVICES][target.id][DEV_SIGNAL_DAILY_MIN] == []
 
 

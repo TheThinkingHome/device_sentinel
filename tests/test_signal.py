@@ -33,9 +33,9 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_SCALE,
     SIGNAL_SCALE_LQI,
     SIGNAL_SCALE_RSSI,
-    CONF_SIGNAL_EXCLUDED_DEVICES,
-    CONF_SIGNAL_EXCLUDED_INTEGRATIONS,
-    CONF_SIGNAL_EXCLUDED_LABELS,
+    CONF_SIGNAL_MUTED_DEVICES,
+    CONF_SIGNAL_MUTED_INTEGRATIONS,
+    CONF_SIGNAL_MUTED_LABELS,
     DEV_SIGNAL_BELOW_SINCE,
     DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_DAILY_MIN,
@@ -479,9 +479,9 @@ async def test_short_history_is_not_a_rail(hass: HomeAssistant):
 # ------------------------------------ exclusion: recorded, not reported
 
 async def test_excluded_device_by_device_id(hass: HomeAssistant):
-    coord = await setup_coordinator_flat_line(hass, {CONF_SIGNAL_EXCLUDED_DEVICES: ["dev-plug"]})
-    assert coord._signal_excluded("dev-plug") is True
-    assert coord._signal_excluded("dev-other") is False
+    coord = await setup_coordinator_flat_line(hass, {CONF_SIGNAL_MUTED_DEVICES: ["dev-plug"]})
+    assert coord._signal_muted("dev-plug") is True
+    assert coord._signal_muted("dev-other") is False
 
 
 async def test_excluded_device_by_integration_and_label(
@@ -490,14 +490,14 @@ async def test_excluded_device_by_integration_and_label(
     coord = await setup_coordinator(
         hass,
         {
-            CONF_SIGNAL_EXCLUDED_INTEGRATIONS: ["mqtt"],
-            CONF_SIGNAL_EXCLUDED_LABELS: ["noisy"],
+            CONF_SIGNAL_MUTED_INTEGRATIONS: ["mqtt"],
+            CONF_SIGNAL_MUTED_LABELS: ["noisy"],
         },
     )
     coord._watched["dev-mqtt"] = "mqtt"
     coord._device_labels["dev-labelled"] = frozenset({"noisy"})
-    assert coord._signal_excluded("dev-mqtt") is True
-    assert coord._signal_excluded("dev-labelled") is True
+    assert coord._signal_muted("dev-mqtt") is True
+    assert coord._signal_muted("dev-labelled") is True
 
 
 async def test_excluded_device_still_records_but_is_not_reported(
@@ -518,7 +518,7 @@ async def test_excluded_device_still_records_but_is_not_reported(
         suggested_object_id="plug_linkquality",
         device_id=device.id, config_entry=source,
     )
-    coord = await setup_coordinator_flat_line(hass, {CONF_SIGNAL_EXCLUDED_DEVICES: [device.id]})
+    coord = await setup_coordinator_flat_line(hass, {CONF_SIGNAL_MUTED_DEVICES: [device.id]})
     record = coord.data["devices"][device.id]
     record[DEV_SIGNAL_DAILY_MIN] = [80.0, 96.0, 88.0]
     record[DEV_SIGNAL_VALUE] = 80.0

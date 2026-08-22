@@ -20,7 +20,7 @@ from custom_components.device_sentinel.config_flow import (
     _surviving_picks,
 )
 from custom_components.device_sentinel.const import (
-    CONF_EXCLUDED_DEVICES,
+    CONF_MUTED_DEVICES,
     DATA_DEVICES,
 )
 
@@ -163,12 +163,12 @@ async def test_a_departing_device_with_a_pick_is_named_in_the_log(
     exists."""
     device, _ = register_device(hass, "amb6", "Leaving Device")
     coord = await setup_coordinator(
-        hass, {CONF_EXCLUDED_DEVICES: [device.id]}
+        hass, {CONF_MUTED_DEVICES: [device.id]}
     )
     assert device.id in coord.data[DATA_DEVICES]
 
     caplog.clear()
-    coord._log_removed_exclusion(device.id)
+    coord._log_removed_muting(device.id)
 
     assert "Leaving Device" in caplog.text
 
@@ -182,6 +182,6 @@ async def test_a_departing_device_without_a_pick_is_silent(
     coord = await setup_coordinator(hass)
 
     caplog.clear()
-    coord._log_removed_exclusion(device.id)
+    coord._log_removed_muting(device.id)
 
     assert "Ordinary Device" not in caplog.text

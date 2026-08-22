@@ -185,9 +185,9 @@ def nest_for(step: str, payload: dict) -> dict:
     hand them here rather than restating the section layout.
     """
     sections = {
-        "battery": ("battery_exclusions", "battery_excluded_"),
-        "signal": ("signal_exclusions", "signal_excluded_"),
-        "freeze": ("freeze_exclusions", "freeze_excluded_"),
+        "battery": ("battery_muting", "battery_excluded_"),
+        "signal": ("signal_muting", "signal_excluded_"),
+        "freeze": ("freeze_muting", "freeze_excluded_"),
         "exclusions": ("exclusions", "excluded_"),
     }
     if step not in sections:

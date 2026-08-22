@@ -27,7 +27,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     SET_ASIDE_SERVICE,
-    CONF_EXCLUDED_DEVICES,
+    CONF_MUTED_DEVICES,
     DATA_DEVICES,
 )
 
@@ -106,9 +106,9 @@ async def test_one_table_three_states(hass: HomeAssistant):
     _class_device(hass, "w", "Bravo Watched")
     excluded = _class_device(hass, "e", "Alpha Excluded")
     coord = await setup_coordinator(
-        hass, {CONF_EXCLUDED_DEVICES: [excluded.id]}
+        hass, {CONF_MUTED_DEVICES: [excluded.id]}
     )
-    coord._excluded_devices[excluded.id] = "integration"
+    coord._muted_devices[excluded.id] = "integration"
     await hass.async_add_executor_job(coord._write_reports, "manual")
     rows = _class_rows(hass)
     text = "\n".join(rows)
@@ -137,7 +137,7 @@ async def test_global_reason_wording(hass: HomeAssistant):
     """The EXCLUDED cell names the tier: Global (label), (device)."""
     d = _class_device(hass, "x", "Label Excluded")
     coord = await setup_coordinator(hass)
-    coord._excluded_devices[d.id] = "label"
+    coord._muted_devices[d.id] = "label"
     await hass.async_add_executor_job(coord._write_reports, "manual")
     row = next(r for r in _class_rows(hass) if "Label Excluded" in r)
     assert "Global (label)" in row
