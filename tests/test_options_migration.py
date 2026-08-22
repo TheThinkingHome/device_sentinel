@@ -39,6 +39,7 @@ from custom_components.device_sentinel.const import (
     DOMAIN,
     IGNORE_KEY_RENAMES,
     MUTING_KEY_RENAMES,
+    OPTION_KEY_RENAMES,
     OPTIONS_MINOR_VERSION,
     STORAGE_KEY,
     SYS_DETAIL,
@@ -245,10 +246,14 @@ async def test_the_reference_fleet_s_own_entry_survives(
     stored = json.loads(files[0].read_text(encoding="utf-8"))
     options = dict(stored["data"]["entry_options"])
     # The muting lists as the live system holds them, before the move.
+    # Only names that are retired outright. `excluded_integrations`
+    # is a source in step 2 and the target of step 3, so on a file
+    # already migrated it is the live ignore list rather than an old
+    # muting key, and reading it as one would assert the opposite of
+    # the truth. Same rule the source guard uses.
+    retired = set(OPTION_KEY_RENAMES) - set(OPTION_KEY_RENAMES.values())
     before = {
-        old: list(options[old])
-        for old in MUTING_KEY_RENAMES
-        if old in options
+        old: list(options[old]) for old in retired if old in options
     }
     if not before:
         return
@@ -256,7 +261,7 @@ async def test_the_reference_fleet_s_own_entry_survives(
     entry = await _migrated(hass, options)
 
     for old, kept in before.items():
-        assert entry.options[MUTING_KEY_RENAMES[old]] == kept, old
+        assert entry.options[OPTION_KEY_RENAMES[old]] == kept, old
         assert old not in entry.options
 
 
