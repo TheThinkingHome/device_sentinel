@@ -66,7 +66,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from . import trim
-from .normalise import check_records
+from .normalise import check_clocks, check_records, check_storage
 from .repairs import async_evaluate
 from .backup import async_refresh_last_good, async_take_backup
 from .const import (
@@ -322,6 +322,9 @@ class DeviceSentinelCoordinator(
         # The day's closed storms per domain, memory only, folded
         # into DATA_STORM_DAYS at midnight (ruling #320).
         self._storm_day: dict[str, list[tuple[float, int, float]]] = {}
+        # The clocks file as loaded, for the shape check (ruling
+        # #332). Set at load, read once, cleared.
+        self._clocks_seen: dict[str, Any] | None = None
         # Which integrations have been announced as pollers this
         # session. Log-only, so losing it at a restart costs one
         # repeated debug line (ruling #230).
@@ -541,6 +544,10 @@ class DeviceSentinelCoordinator(
                 err,
             )
             hot_payload = None
+        # Held for the shape check, which runs a few lines later and
+        # must see the file as it came off disk rather than the merge
+        # of it (ruling #332). Cleared there.
+        self._clocks_seen = (hot_payload or {}).get("clocks")
         merged = self._merge_clocks(loaded, hot_payload)
         self._note_downtime(loaded, hot_payload)
         if merged:
@@ -1715,6 +1722,23 @@ class DeviceSentinelCoordinator(
         this refreshes is what it will repair from.
         """
         faults = check_records(self.data.get(DATA_DEVICES))
+        # The records are half the file. The tables beneath them and
+        # the clocks file beside it are the other half, and neither
+        # was checked until #332: a damaged incident log or a damaged
+        # clocks file passed, reported clean, and let the last-good
+        # copy refresh over the fault that Heal and Restore exist to
+        # read. Same tuples, same log, same event; only the scope
+        # column widens.
+        faults += check_storage(self.data)
+        # At load the subject is the file as it arrived. At the fold
+        # it is what this process is about to write, which is the
+        # same distinction the record check draws between a fault
+        # storage holds and one the fold produced.
+        if moment == "fold":
+            faults += check_clocks(self._clocks_to_save().get("clocks"))
+        else:
+            faults += check_clocks(self._clocks_seen)
+            self._clocks_seen = None
         # Kept for the Repairs pass, which runs at grace close rather
         # than here. The load check fires inside the startup grace,
         # where nothing is announced (ruling #291), so the result has

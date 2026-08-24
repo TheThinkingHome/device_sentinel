@@ -97,6 +97,22 @@ from .const import (
     DEV_SIGNAL_ALT,
     DEV_SIGNAL_SCALE,
     SIGNAL_ALT_FIELDS,
+    CLOCK_FIELDS,
+    DATA_BRIDGE_SEEN,
+    DATA_BROKER_SEEN,
+    DATA_EPISODES,
+    DATA_FIRST_INSTALLED,
+    DATA_INCIDENTS,
+    DATA_LAST_VERSION,
+    DATA_SAVED_AT,
+    DATA_SETUP_COUNT,
+    DATA_SIGNAL_STRESS,
+    DATA_STATS_EPOCH,
+    DATA_STORM_DAYS,
+    DATA_STORMS,
+    DATA_SYSTEM_EVENTS,
+    DATA_TODO_ITEMS,
+    DATA_TODO_JOURNAL,
 )
 
 # The kinds a field may hold. Each is a plain predicate over one value.
@@ -118,6 +134,13 @@ INT_SERIES = "list of integers"
 STATE = "None or list of numbers"
 TAINT = "False or a taint reason"
 ALT = "None or a second-scale block"
+# The tables under the device records need three shapes the records
+# never use: a string that must be present, a plain mapping whose
+# inside is nobody's business here, and a field that may be absent
+# altogether rather than present and null (ruling #332).
+TEXT = "string"
+MAPPING = "mapping"
+NULLABLE_MAPPING = "None or a mapping"
 
 # Every field a record is expected to hold, and what shape it takes.
 # A key absent from this table is reported as unknown; a key in this
@@ -250,6 +273,14 @@ def _fault(kind: str, value: Any) -> str | None:
         if value is False or value in TAINT_REASONS:
             return None
         return _describe(value)
+    if kind == TEXT:
+        return None if isinstance(value, str) else _describe(value)
+    if kind == MAPPING:
+        return None if isinstance(value, dict) else _describe(value)
+    if kind == NULLABLE_MAPPING:
+        if value is None or isinstance(value, dict):
+            return None
+        return _describe(value)
     if kind == STATE:
         if value is None:
             return None
@@ -285,4 +316,235 @@ def check_records(devices: Any) -> list[tuple[str, str, str]]:
         for field in record:
             if field not in EXPECTED:
                 faults.append((device_id, field, "unknown field"))
+    return faults
+
+
+# ------------------------------------------------- beyond the records
+
+# Everything in the storage file that is not a device record, which is
+# half the file by size and was never checked (ruling #332). The
+# device records are 171 KB of the reference fleet's 355 KB; the
+# tables below are the other 184 KB, and a fault in any of them used
+# to pass the check, report clean, and let the last-good copy refresh
+# over the damage.
+#
+# Optional keys are named rather than assumed. A row may omit a key
+# only where it appears here, because the record check's strictness
+# is what makes it worth running and the tables should not be softer
+# than they must be.
+#
+# Unknown keys are not reported, which is the one place this check is
+# deliberately looser than the record check. Every reader of these
+# rows reaches for a key by name, so a key nobody reads is inert, and
+# a fleet upgrading from an older version carries retired keys here
+# for exactly one save. Reporting them would turn the first load
+# after an upgrade into hundreds of faults and withhold the backup on
+# the night it is most wanted.
+
+INCIDENT_SHAPE: dict[str, str] = {
+    "device_id": TEXT,
+    "name": TEXT,
+    "kind": TEXT,
+    "event": TEXT,
+    "when": NUMBER,
+    "cause": STRING,
+    "duration": NUMBER,
+}
+
+EPISODE_SHAPE: dict[str, str] = {
+    "device_id": TEXT,
+    "name": TEXT,
+    "since": NUMBER,
+    "basis": NUMBER,
+    "window": NUMBER,
+    "at": NUMBER,
+    "ended": TEXT,
+    "lag": NUMBER,
+    "learned": STRING,
+    "taint_seconds": NUMBER,
+    "signal": NULLABLE_MAPPING,
+}
+
+STRESS_SHAPE: dict[str, str] = {
+    "device_id": TEXT,
+    "name": TEXT,
+    "since": NUMBER,
+    "at": NUMBER,
+    "ended": TEXT,
+    "signal": NULLABLE_MAPPING,
+}
+
+SYSTEM_EVENT_SHAPE: dict[str, str] = {
+    "kind": TEXT,
+    "when": NUMBER,
+    "scope": STRING,
+    "detail": STRING,
+    "duration": NUMBER,
+    "devices": INTEGER,
+}
+
+TODO_ITEM_SHAPE: dict[str, str] = {
+    "uid": TEXT,
+    "device_id": TEXT,
+    "summary": TEXT,
+    "description": STRING,
+    "status": TEXT,
+    "acked_at": STRING,
+    "sort_name": TEXT,
+    "kinds": MAPPING,
+}
+
+JOURNAL_SHAPE: dict[str, str] = {
+    "device_id": TEXT,
+    "name": TEXT,
+    "kind": TEXT,
+    "when": TEXT,
+}
+
+STORM_SHAPE: dict[str, str] = {
+    "at": NUMBER,
+    "entry_id": TEXT,
+    "domain": TEXT,
+    "devices": INTEGER,
+    "duration": NUMBER,
+}
+
+STORM_DAY_SHAPE: dict[str, str] = {
+    "day": TEXT,
+    "domain": TEXT,
+    "count": INTEGER,
+    "median_interval": NUMBER,
+    "median_devices": NUMBER,
+    "median_duration": NUMBER,
+}
+
+# table key -> (row shape, keys a row may leave out)
+TABLES: dict[str, tuple[dict[str, str], frozenset[str]]] = {
+    DATA_INCIDENTS: (INCIDENT_SHAPE, frozenset()),
+    DATA_EPISODES: (EPISODE_SHAPE, frozenset()),
+    DATA_SIGNAL_STRESS: (STRESS_SHAPE, frozenset()),
+    # A row carries a device count only where the event has one to
+    # carry, so this key is absent far more often than present.
+    DATA_SYSTEM_EVENTS: (SYSTEM_EVENT_SHAPE, frozenset({"devices"})),
+    DATA_TODO_ITEMS: (TODO_ITEM_SHAPE, frozenset()),
+    DATA_TODO_JOURNAL: (JOURNAL_SHAPE, frozenset()),
+    DATA_STORMS: (STORM_SHAPE, frozenset()),
+    DATA_STORM_DAYS: (STORM_DAY_SHAPE, frozenset()),
+}
+
+# The keys that are one value rather than a table.
+SCALARS: dict[str, str] = {
+    DATA_FIRST_INSTALLED: TEXT,
+    DATA_LAST_VERSION: TEXT,
+    DATA_STATS_EPOCH: TEXT,
+    DATA_SAVED_AT: NUMBER,
+    DATA_SETUP_COUNT: INTEGER,
+    DATA_BRIDGE_SEEN: MAPPING,
+    DATA_BROKER_SEEN: MAPPING,
+}
+
+# How many rows of one table are reported before the rest are counted.
+# A table that has gone wrong has usually gone wrong throughout, and a
+# thousand lines about one list buries every other fault in the file.
+TABLE_FAULT_CAP = 5
+
+
+def check_storage(data: Any) -> list[tuple[str, str, str]]:
+    """Return every shape fault outside the device records.
+
+    Same three-part tuples as the record check, with the table name
+    and row number where a device id would be, because a bad incident
+    row has no device to name (ruling #332). Reports and changes
+    nothing.
+
+    A key this table does not know is skipped rather than reported.
+    The file gains keys between releases, and one that no reader
+    knows about is inert; this check exists to protect the readers
+    that do exist.
+    """
+    faults: list[tuple[str, str, str]] = []
+    if not isinstance(data, dict):
+        return [("*", "storage", f"expected dict, found {_describe(data)}")]
+
+    for key, kind in SCALARS.items():
+        if key not in data:
+            continue
+        why = _fault(kind, data[key])
+        if why is not None:
+            faults.append((key, key, f"expected {kind}, found {why}"))
+
+    for key, (shape, optional) in TABLES.items():
+        rows = data.get(key)
+        if rows is None:
+            continue
+        if not isinstance(rows, list):
+            faults.append((key, key, f"expected list, found {_describe(rows)}"))
+            continue
+        seen = 0
+        for index, row in enumerate(rows):
+            if seen >= TABLE_FAULT_CAP:
+                faults.append(
+                    (key, key, f"{len(rows) - index} further row(s) not checked")
+                )
+                break
+            if not isinstance(row, dict):
+                faults.append(
+                    (f"{key}[{index}]", "*", f"expected dict, found {_describe(row)}")
+                )
+                seen += 1
+                continue
+            before = len(faults)
+            for field, kind in shape.items():
+                if field not in row:
+                    if field not in optional:
+                        faults.append((f"{key}[{index}]", field, "missing"))
+                    continue
+                why = _fault(kind, row[field])
+                if why is not None:
+                    faults.append(
+                        (
+                            f"{key}[{index}]",
+                            field,
+                            f"expected {kind}, found {why}",
+                        )
+                    )
+            if len(faults) > before:
+                seen += 1
+    return faults
+
+
+def check_clocks(clocks: Any) -> list[tuple[str, str, str]]:
+    """Return every shape fault in the activity clocks file.
+
+    The companion file was never checked (ruling #332), and the merge
+    takes it whatever its age, so a damaged one reached every record
+    on the load path with nothing to stop it.
+
+    A field the current schema does not know is skipped. A fleet
+    upgrading across a release that retired a clock field carries it
+    here until the next save rewrites the file, and reporting it
+    would mean a fault for every device on the one load where the
+    person can do least about it.
+    """
+    faults: list[tuple[str, str, str]] = []
+    if clocks is None:
+        return faults
+    if not isinstance(clocks, dict):
+        return [("*", "clocks", f"expected dict, found {_describe(clocks)}")]
+    for device_id, record in clocks.items():
+        if not isinstance(record, dict):
+            faults.append(
+                (device_id, "*", f"expected dict, found {_describe(record)}")
+            )
+            continue
+        for field in CLOCK_FIELDS:
+            kind = EXPECTED.get(field)
+            if kind is None:
+                continue
+            if field not in record:
+                faults.append((device_id, field, "missing"))
+                continue
+            why = _fault(kind, record[field])
+            if why is not None:
+                faults.append((device_id, field, f"expected {kind}, found {why}"))
     return faults
