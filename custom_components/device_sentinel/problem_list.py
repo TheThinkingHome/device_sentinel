@@ -588,9 +588,9 @@ class ProblemListMixin:
             if written is not None:
                 return f"At {when}, {written.format(name=name)}."
             return f"At {when}, {name} recovered."
-        written = _FAULT_LINE.get(kind)
-        if written is not None:
-            with_left, without = written
+        pair = _FAULT_LINE.get(kind)
+        if pair is not None:
+            with_left, without = pair
             if left:
                 return f"At {when}, {with_left.format(name=name, left=left)}."
             return f"At {when}, {without.format(name=name)}."
@@ -933,10 +933,12 @@ class ProblemListMixin:
         announced = [k for k in kinds if k != UPSTREAM_KIND]
         if not announced:
             return
-        since = min(
-            (kinds[k] for k in announced if kinds[k] is not None),
-            default=now,
-        )
+        stamps = [
+            stamp
+            for k in announced
+            if (stamp := kinds[k]) is not None
+        ]
+        since = min(stamps, default=now)
         self.fire_fault(
             device_id,
             problem["name"],

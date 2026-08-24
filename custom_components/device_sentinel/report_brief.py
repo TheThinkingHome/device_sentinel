@@ -273,7 +273,9 @@ class BriefMixin:
         belongs.
         """
         now = dt_util.utcnow().timestamp()
-        rows: list[tuple[str, str, float, str]] = []
+        # Name, problem, since, kind and device id: the id joined
+        # the tuple and the annotation did not follow (ruling #331).
+        rows: list[tuple[str, str, float, str, str]] = []
         for record in self.todo_items:
             device_id = record.get(TODO_DEVICE_ID)
             if not device_id or device_id in self._muted_devices:
@@ -653,7 +655,11 @@ class BriefMixin:
         scopes: list[str] = []
         for row in rows:
             scope = row.get(SYS_SCOPE)
-            if row[SYS_KIND] == SYS_BRIDGE_UP and scope not in scopes:
+            if (
+                row[SYS_KIND] == SYS_BRIDGE_UP
+                and scope is not None
+                and scope not in scopes
+            ):
                 scopes.append(scope)
         for scope in scopes:
             worst = self._longest(rows, SYS_BRIDGE_UP, scope)
@@ -1190,7 +1196,7 @@ class BriefMixin:
             ).strftime("%Y-%m-%d")
             entry["days"][day] = entry["days"].get(day, 0) + 1
         lines: list[str] = []
-        already_told = getattr(self, "_flapping_told", set())
+        already_told: set[Any] = getattr(self, "_flapping_told", set())
         for (device_id, kind), entry in sorted(
             found.items(), key=lambda item: -item[1]["n"]
         ):
@@ -1468,7 +1474,7 @@ class BriefMixin:
         # everything the sentence does not cover stays. The counts
         # below count what the table shows, so the header cannot
         # claim rows the reader is not given.
-        stitched_ids = getattr(self, "_stitched_told", set())
+        stitched_ids: set[Any] = getattr(self, "_stitched_told", set())
         shown = [
             row
             for row in incidents
@@ -1497,7 +1503,7 @@ class BriefMixin:
                 "| TIME | DEVICE | WHAT HAPPENED |",
                 "|---|---|---|",
             ]
-            merged = [
+            merged: list[tuple[float, str, str]] = [
                 (row[INC_WHEN], self._report_cell(row[INC_NAME]),
                  self._brief_phrase(row))
                 for row in shown
@@ -1507,9 +1513,9 @@ class BriefMixin:
                 for row in sys_events
             ]
             merged.sort(key=lambda item: item[0], reverse=True)
-            for when, who, what in merged:
+            for moment, who, what in merged:
                 lines.append(
-                    f"| {self._brief_moment(when)} | {who} | {what} |"
+                    f"| {self._brief_moment(moment)} | {who} | {what} |"
                 )
             lines.append("")
         # Named for the day the window opened, not the moment of

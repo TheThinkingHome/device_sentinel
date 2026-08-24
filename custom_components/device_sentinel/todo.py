@@ -41,6 +41,8 @@ the list shows age natively.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from homeassistant.components.todo import (
     TodoItem,
     TodoItemStatus,
@@ -123,7 +125,7 @@ class DeviceSentinelTodoList(TodoListEntity):
         self.async_write_ha_state()
 
     @staticmethod
-    def _earliest_since(record: dict) -> object:
+    def _earliest_since(record: dict) -> datetime | None:
         """Return the item's due date: when its earliest problem
         began, local, so the card shows age natively. None when no
         kind carries a stamp, which cannot happen for a sync-built

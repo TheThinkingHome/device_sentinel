@@ -227,11 +227,11 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
             for opening, closing in _PAIRS.items():
                 if closing != kind:
                     continue
-                window = pending.pop((opening, scope), None)
-                if window is not None:
-                    window.end = when
-                    if window.devices is None:
-                        window.devices = row.get(SYS_DEVICES)
+                closed = pending.pop((opening, scope), None)
+                if closed is not None:
+                    closed.end = when
+                    if closed.devices is None:
+                        closed.devices = row.get(SYS_DEVICES)
     return found
 
 

@@ -346,11 +346,11 @@ class DeviceSentinelCoordinator(
         # from there to this start is time no device can be blamed
         # for: it went on reporting to its bridge with nobody there
         # to hear it.
-        self._last_alive: float | None = None
-        self._downtime: float = 0.0
+        self._last_alive = None
+        self._downtime = 0.0
         # The moment this run began listening, which is
         # what the restart event is stamped with.
-        self._started_at: float | None = None
+        self._started_at = None
         # The broker underneath every MQTT stack. One reader for the
         # whole house rather than one per stack, because there is one
         # broker and a bridge reader cannot see it fail (ruling #224).
@@ -385,7 +385,7 @@ class DeviceSentinelCoordinator(
         # succeeds so the system event is written beside the
         # restart it explains. The rest is what the integrity count
         # found, kept for the diagnostics rather than acted on.
-        self._pending_unclean: int | None = None
+        self._pending_unclean = None
         self._orphan_episodes: dict[str, Any] = {}
         self._options_seen: dict[str, Any] = dict(entry.options)
         # What the last shape check found, held for the Repairs pass
@@ -848,7 +848,8 @@ class DeviceSentinelCoordinator(
         # stop is when the declaration actually ended. Duration is
         # left unknown: the wall time between the press and the stop
         # is not how long the window stood if the machine was off.
-        self._close_dangling_maintenance(self._started_at)
+        if self._started_at is not None:
+            self._close_dangling_maintenance(self._started_at)
 
         # The house's own record of what happened to it. Written here
         # rather than at load, so a start that failed halfway leaves
@@ -1008,7 +1009,10 @@ class DeviceSentinelCoordinator(
         watched: dict[str, str] = {}
         device_names: dict[str, str] = {}
         device_labels: dict[str, frozenset[str]] = {}
-        set_aside: dict[str, tuple[str, str]] = {}
+        # Name, domain and reason: the reason joined the tuple when
+        # #257 split disabled from service, and the annotation did
+        # not follow it (ruling #331).
+        set_aside: dict[str, tuple[str, str, str]] = {}
         muted_devices: dict[str, str] = {}
         muted_entities: dict[str, str] = {}
         stacks: set[str] = set()
@@ -1304,7 +1308,7 @@ class DeviceSentinelCoordinator(
         return parsed.timestamp()
 
     @callback
-    def _on_registry_updated(self, event: Event) -> None:
+    def _on_registry_updated(self, event: Event[Any]) -> None:
         """Rebuild the registry view when devices or entities change."""
         if event.data.get("action") == "remove":
             self._log_removed_muting(event.data.get("device_id"))
@@ -1440,7 +1444,7 @@ class DeviceSentinelCoordinator(
             )
 
     @callback
-    def _on_state_reported(self, event: Event) -> None:
+    def _on_state_reported(self, event: Event[Any]) -> None:
         """Handle a same-value report for a watched device's entity."""
         new_state = event.data.get("new_state")
         if new_state is None or new_state.state in BAD_STATES:
@@ -1925,8 +1929,10 @@ class DeviceSentinelCoordinator(
         """Return a device's display name for logging and the report."""
         registry = dr.async_get(self.hass)
         device = registry.async_get(device_id)
-        if device is not None and (device.name_by_user or device.name):
-            return device.name_by_user or device.name
+        if device is not None:
+            named = device.name_by_user or device.name
+            if named:
+                return named
         return device_id
 
     @property

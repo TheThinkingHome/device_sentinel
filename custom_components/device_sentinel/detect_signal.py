@@ -966,7 +966,7 @@ class SignalMixin:
         """
         counts = self.signal_tracked
         watched = counts["lqi"] + counts["rssi"]
-        muted = sum(
+        muted: int = sum(
             1
             for device_id, record in self.watched_records()
             if self._danger_line(record) is not None

@@ -48,6 +48,7 @@ front door for them to navigate from.
 from __future__ import annotations
 
 from collections.abc import Callable
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -300,7 +301,7 @@ def _devices_covered_by(
 
 
 def _globally_muted(
-    rows: list[dict[str, Any]], options: dict[str, Any]
+    rows: list[dict[str, Any]], options: Mapping[str, Any]
 ) -> set[str]:
     """Return the device ids the global mute already reaches.
 

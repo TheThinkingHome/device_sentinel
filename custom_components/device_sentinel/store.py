@@ -104,7 +104,19 @@ def _version_tuple(text: Any) -> tuple[int, ...]:
 
 
 class StorageMixin:
-    """Storage: the two files, the merge, and the unclean restart."""
+    """Storage: the two files, the merge, and the unclean restart.
+
+    The four clocks below are declared here rather than inferred from
+    whichever assignment a type checker meets first (ruling #331).
+    They are owned by the coordinator that composes this mixin and
+    written by both, which is exactly the case where an inferred type
+    and a written one drift apart without anyone noticing.
+    """
+
+    _last_alive: float | None
+    _downtime: float
+    _started_at: float | None
+    _pending_unclean: int | None
 
     @staticmethod
     def _reconcile_records(

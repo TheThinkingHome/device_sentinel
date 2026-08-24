@@ -1891,7 +1891,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 330
+HIGHEST_RULING = 331
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

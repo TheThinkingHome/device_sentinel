@@ -560,13 +560,20 @@ class MaintainerReportMixin:
             "COPIES |",
             "|---|---|---|---|---|---|",
         ]
-        for name, integration, watched, muted, set_aside, copies in rows:
+        for (
+            name,
+            integration,
+            watched,
+            muted,
+            aside_reason,
+            copies_cell,
+        ) in rows:
             watched_mark = "\u2713" if watched else ""
-            set_aside_mark = set_aside or ""
+            set_aside_mark = aside_reason or ""
             lines.append(
                 f"| {self._report_cell(name)} | {integration} | "
                 f"{watched_mark} | "
-                f"{muted} | {set_aside_mark} | {copies} |"
+                f"{muted} | {set_aside_mark} | {copies_cell} |"
             )
 
         if self._muted_entities:

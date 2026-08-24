@@ -546,6 +546,9 @@ class InterventionMixin:
                         ),
                     )
 
+    _broker_reader: Any | None
+    _broker_down_at: float | None
+
     def _storm_feed(
         self, entry_id: str | None, device_id: str, now: float
     ) -> dict[str, Any] | None:
