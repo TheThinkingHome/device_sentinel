@@ -105,7 +105,11 @@ from .const import (
     DATA_INCIDENTS,
     DATA_LAST_VERSION,
     DATA_SAVED_AT,
+    DATA_CLEAN_STOP,
     DATA_SETUP_COUNT,
+    DATA_SIGNAL_DAY_REPAIR,
+    DATA_SIGNAL_WEIGHTING,
+    BACKUP_TAKEN_KEY,
     DATA_SIGNAL_STRESS,
     DATA_STATS_EPOCH,
     DATA_STORM_DAYS,
@@ -145,6 +149,7 @@ TEXT = "string"
 # nowhere, formats as nothing, and reads as a row that never
 # occurred (ruling #333).
 REAL_NUMBER = "number, not None"
+TEXT_LIST = "list of strings"
 MAPPING = "mapping"
 NULLABLE_MAPPING = "None or a mapping"
 
@@ -283,6 +288,13 @@ def _fault(kind: str, value: Any) -> str | None:
         return None if isinstance(value, str) else _describe(value)
     if kind == REAL_NUMBER:
         return None if _is_number(value) else _describe(value)
+    if kind == TEXT_LIST:
+        if not isinstance(value, list):
+            return _describe(value)
+        bad = [x for x in value if not isinstance(x, str)]
+        if bad:
+            return f"{len(bad)} bad element(s), first {_describe(bad[0])}"
+        return None
     if kind == MAPPING:
         return None if isinstance(value, dict) else _describe(value)
     if kind == NULLABLE_MAPPING:
@@ -449,6 +461,21 @@ SCALARS: dict[str, str] = {
     DATA_SETUP_COUNT: INTEGER,
     DATA_BRIDGE_SEEN: MAPPING,
     DATA_BROKER_SEEN: MAPPING,
+    # The migration markers (ruling #334). Both hold a version-like
+    # string that the load compares against an expected mark, and a
+    # marker that does not match runs a one-time conversion over data
+    # that has already been converted. A marker corrupted to a number
+    # or a list fails that comparison, so the conversion re-runs and
+    # the check that exists to catch this said the file was clean.
+    DATA_SIGNAL_DAY_REPAIR: TEXT,
+    DATA_SIGNAL_WEIGHTING: TEXT,
+    # Written at every clean stop and read once at the next load, and
+    # the value decides whether the restart was clean. A non-boolean
+    # here reads as false and every device's clock resets.
+    DATA_CLEAN_STOP: BOOLEAN,
+    # The suffixes of the one-time backups already taken (#204). A
+    # damaged list means a backup is taken twice or not at all.
+    BACKUP_TAKEN_KEY: TEXT_LIST,
 }
 
 # How many rows of one table are reported before the rest are counted.
