@@ -244,7 +244,7 @@ async def test_a_restart_before_the_outage_is_not_counted(
 
 
 async def test_the_table_drops_the_bookkeeping_rows(
-    hass: HomeAssistant,
+    hass: HomeAssistant, freezer
 ):
     """The stitched sentence is not contradicted two sections down.
 
@@ -252,7 +252,14 @@ async def test_the_table_drops_the_bookkeeping_rows(
     keeping them beside the sentence that corrects them would say
     the wrong thing more often than the right one. The counts count
     what the table shows (ruling #308).
+
+    The clock is pinned (ruling #330). This test plants its rows at
+    fixed offsets after the window start, so run inside the first
+    half hour after the brief hour it planted them in the future and
+    failed on the wall clock alone. Found by the 0.17.3 gate at
+    08:06 local, having passed every earlier run that day.
     """
+    freezer.move_to("2026-08-24T20:00:00+00:00")
     device, _ = register_device(hass, "tb1", "SLZB-06")
     coord = await setup_coordinator(hass)
     now = dt_util.utcnow().timestamp()
