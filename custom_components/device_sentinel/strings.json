@@ -247,9 +247,17 @@
       "title": "Device Sentinel Cannot See Everything It Watches",
       "fix_flow": {
         "step": {
+          "init": {
+            "title": "Turn On the Entities Device Sentinel Watches",
+            "description": "Device Sentinel found {count} disabled {entities} that it reads: {detail}.\n\nThe integration relies on this data to protect your fleet. It needs each device to report its battery level to detect when a battery is low, a last seen entity to drive freeze detection, and a signal strength entity to report wireless anomalies before they cause a failure.\n\nOnly devices enabled in their own integrations and devices that are not excluded in the Device Sentinel settings will be changed.\n\nEnable turns on all {count} at once. To enable each kind individually, go to the Device Sentinel device page, where Enable Signals, Enable Last Seen, and Enable Battery each do one kind. Ignore hides this card until you choose to show ignored issues again.",
+            "menu_options": {
+              "confirm": "Enable",
+              "ignore": "Ignore"
+            }
+          },
           "confirm": {
             "title": "Turn On the Entities Device Sentinel Watches",
-            "description": "{count} {entities} that Device Sentinel reads are turned off in Home Assistant: {detail}.\n\nWhile they are off, those devices are watched with less to go on: a battery that cannot be read is not tracked, and a signal that cannot be read has no floor to fall from.\n\nSubmit to turn them on. Nothing else about those devices changes, and you can turn any of them off again in Home Assistant at any time."
+            "description": "Device Sentinel found {count} disabled {entities} that it reads: {detail}.\n\nThe integration relies on this data to protect your fleet. It needs each device to report its battery level to detect when a battery is low, a last seen entity to drive freeze detection, and a signal strength entity to report wireless anomalies before they cause a failure.\n\nOnly devices enabled in their own integrations and devices that are not excluded in the Device Sentinel settings will be changed.\n\nEnable turns on all {count} at once. To enable each kind individually, go to the Device Sentinel device page, where Enable Signals, Enable Last Seen, and Enable Battery each do one kind. Ignore hides this card until you choose to show ignored issues again."
           }
         }
       }
@@ -258,9 +266,17 @@
       "title": "A Device Sentinel Notification Target No Longer Exists",
       "fix_flow": {
         "step": {
+          "init": {
+            "title": "Remove Notification Targets That No Longer Exist",
+            "description": "{count} notification {targets} in Device Sentinel's settings point at a service Home Assistant no longer has: {detail}.\n\nNotifications sent to those targets fail and are written to the log, and Device Sentinel is oblivious to the failures. This usually means a companion app was removed or renamed.\n\nRemove Them takes them out of Device Sentinel's settings and leaves the existing targets alone. If this leaves you with none, set a new one in Notifications and Daily Brief. Ignore hides this card until you choose to show ignored issues again.",
+            "menu_options": {
+              "confirm": "Remove Them",
+              "ignore": "Ignore"
+            }
+          },
           "confirm": {
             "title": "Remove Notification Targets That No Longer Exist",
-            "description": "{count} notification {targets} in Device Sentinel's settings point at a service Home Assistant no longer has: {detail}.\n\nEvery message sent to those targets fails and is written to the log, so Device Sentinel goes on watching and tells nobody. This usually means a companion app was removed or renamed.\n\nSubmit to remove them from Device Sentinel's settings. Your other targets are left alone. If this leaves you with none, set a new one in Notifications and Daily Brief."
+            "description": "{count} notification {targets} in Device Sentinel's settings point at a service Home Assistant no longer has: {detail}.\n\nNotifications sent to those targets fail and are written to the log, and Device Sentinel is oblivious to the failures. This usually means a companion app was removed or renamed.\n\nRemove Them takes them out of Device Sentinel's settings and leaves the existing targets alone. If this leaves you with none, set a new one in Notifications and Daily Brief. Ignore hides this card until you choose to show ignored issues again."
           }
         }
       }

@@ -482,6 +482,24 @@ class _SentinelRepairFlow(RepairsFlow):
         issue = registry.async_get_issue(self.handler, self.issue_id)
         return issue.translation_placeholders if issue else None
 
+    async def async_step_ignore(
+        self, user_input: dict[str, str] | None = None
+    ) -> Any:
+        """Hide the issue without changing anything (ruling #325).
+
+        Home Assistant offers its own Ignore on an issue that is not
+        fixable, and takes it away as soon as one is: a fixable issue
+        opens its flow instead of the dialog that carries the button.
+        A person who does not want the fix then has no way out of the
+        card, which is the fault reported against 0.16.3. The way
+        back is to offer the ignore inside the flow, on the same
+        registry call Home Assistant would have made, so the issue
+        hides and stays hidden until the person shows ignored issues
+        again.
+        """
+        ir.async_ignore_issue(self.hass, DOMAIN, self.issue_id, True)
+        return self.async_create_entry(data={})
+
 
 class EnableEntitiesFlow(_SentinelRepairFlow):
     """Turn on the entities the three enable buttons would turn on."""
@@ -489,8 +507,12 @@ class EnableEntitiesFlow(_SentinelRepairFlow):
     async def async_step_init(
         self, user_input: dict[str, str] | None = None
     ) -> Any:
-        """Send the person straight to the confirmation."""
-        return await self.async_step_confirm()
+        """Offer the fix and the ignore side by side (ruling #325)."""
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["confirm", "ignore"],
+            description_placeholders=self._placeholders(),
+        )
 
     async def async_step_confirm(
         self, user_input: dict[str, str] | None = None
@@ -527,8 +549,12 @@ class RemoveDeadTargetsFlow(_SentinelRepairFlow):
     async def async_step_init(
         self, user_input: dict[str, str] | None = None
     ) -> Any:
-        """Send the person straight to the confirmation."""
-        return await self.async_step_confirm()
+        """Offer the fix and the ignore side by side (ruling #325)."""
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["confirm", "ignore"],
+            description_placeholders=self._placeholders(),
+        )
 
     async def async_step_confirm(
         self, user_input: dict[str, str] | None = None
