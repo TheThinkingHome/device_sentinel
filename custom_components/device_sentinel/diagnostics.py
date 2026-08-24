@@ -210,6 +210,7 @@ async def async_get_config_entry_diagnostics(
                 for a, b in zip(
                     ((record.get("battery_daily_value") or [])[-DIAGNOSTIC_SERIES_CAP:])[:-1],
                     ((record.get("battery_daily_value") or [])[-DIAGNOSTIC_SERIES_CAP:])[1:],
+                    strict=False,
                 )
             ],
         }

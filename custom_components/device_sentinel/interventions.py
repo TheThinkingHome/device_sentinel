@@ -809,9 +809,11 @@ class InterventionMixin:
             if not storms:
                 continue
             times = sorted(at for at, _devices, _duration in storms)
+            # Offset by one on purpose (ruling #328): the pairing is
+            # each time with the next, so the shorter tail ends it.
             gaps = [
                 later - earlier
-                for earlier, later in zip(times, times[1:])
+                for earlier, later in zip(times, times[1:], strict=False)
             ]
             rows.append(
                 {

@@ -889,8 +889,14 @@ class SignalMixin:
         rails = record.get(DEV_SIGNAL_DAILY_RAIL) or []
         if len(counts) < RAIL_CONFIRM_DAYS or len(rails) < RAIL_CONFIRM_DAYS:
             return False
+        # Non-strict on purpose (ruling #328): both tails are sliced
+        # to the same length above, and a stored file whose two
+        # series differ by a day must read as no rail rather than
+        # raise inside a verdict.
         tail = zip(
-            counts[-RAIL_CONFIRM_DAYS:], rails[-RAIL_CONFIRM_DAYS:]
+            counts[-RAIL_CONFIRM_DAYS:],
+            rails[-RAIL_CONFIRM_DAYS:],
+            strict=False,
         )
         return all(count == 0 and (rail or 0) > 0 for count, rail in tail)
 

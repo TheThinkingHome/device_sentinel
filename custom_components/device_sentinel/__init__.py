@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import os
 import shutil
-from functools import partial
 from typing import Any
 from pathlib import Path
 
@@ -231,20 +230,34 @@ async def _async_serve_www_folder(hass: HomeAssistant) -> None:
     reached over HTTP is a worse brief, not a broken integration,
     and the files are still on disk (ruling #186).
     """
-    if os.path.isdir(hass.config.path(REPORT_WWW_PARENT)):
-        return
+    parent = hass.config.path(REPORT_WWW_PARENT)
     folder = hass.config.path(REPORT_WWW_DIR)
+
+    def _look_then_make() -> bool:
+        """Answer both filesystem questions in one executor trip.
+
+        The look and the make are one job rather than two (ruling
+        #326): a stat is microseconds, but it is a filesystem call on
+        the event loop during setup, and the guide's rule is that the
+        boundary is crossed once where it can be crossed once rather
+        than chained.
+        """
+        if os.path.isdir(parent):
+            return False
+        os.makedirs(folder, exist_ok=True)
+        return True
+
     try:
-        await hass.async_add_executor_job(
-            partial(os.makedirs, folder, exist_ok=True)
-        )
+        needed = await hass.async_add_executor_job(_look_then_make)
+        if not needed:
+            return
         await hass.http.async_register_static_paths(
             [StaticPathConfig(REPORT_WWW_URL, folder, False)]
         )
     except Exception as err:  # noqa: BLE001 - a link is not the integration
         LOGGER.warning(
             "Device Sentinel could not serve %s at %s, so the daily "
-            "brief and the dwell chart will not open until Home "
+            "brief and the signal report will not open until Home "
             "Assistant restarts once (%s)",
             REPORT_WWW_DIR,
             REPORT_WWW_URL,

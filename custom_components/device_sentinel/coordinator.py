@@ -54,6 +54,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryError, HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import (
@@ -399,8 +400,33 @@ class DeviceSentinelCoordinator(
 
 
     async def async_setup(self) -> None:
-        """Load storage, build the registry view, and start listening."""
-        loaded = await self._store.async_load()
+        """Load storage, build the registry view, and start listening.
+
+        A file Home Assistant cannot parse used to leave a traceback
+        in the log and a config entry in an error state that named no
+        cause (ruling #327). It is now stated: setup stops with a
+        sentence a person can act on, and stops permanently rather
+        than retrying, because a corrupt file does not repair itself
+        between attempts. The last-good copy beside it is untouched
+        and is what the Restore flow will read when it ships.
+        """
+        try:
+            loaded = await self._store.async_load()
+        except (HomeAssistantError, ValueError) as err:
+            LOGGER.error(
+                "Device Sentinel cannot read %s and will not start: %s. "
+                "Nothing has been changed or deleted. Move that file "
+                "aside to begin recording again, or restore it from a "
+                "Home Assistant backup to keep what was learned",
+                STORAGE_KEY,
+                err,
+            )
+            raise ConfigEntryError(
+                f"Device Sentinel cannot read {STORAGE_KEY}. Nothing "
+                f"has been changed. Move that file aside to start "
+                f"fresh, or restore it from a backup to keep what was "
+                f"learned."
+            ) from err
         if loaded is None:
             LOGGER.info(
                 "Device Sentinel v%s: no existing storage, creating %s",
@@ -498,7 +524,23 @@ class DeviceSentinelCoordinator(
                 "storage"
             )
 
-        hot_payload = await self._clock_store.async_load()
+        # The clocks file is the small companion, and losing it costs
+        # one interval of live counters rather than the record
+        # (ruling #327). An unreadable one is a warning and a fresh
+        # start for those fields, not a refusal to run: the main file
+        # is intact and the merge already handles a missing companion.
+        try:
+            hot_payload = await self._clock_store.async_load()
+        except (HomeAssistantError, ValueError) as err:
+            LOGGER.warning(
+                "Device Sentinel cannot read %s, so this start uses "
+                "the clocks held in %s instead. Nothing learned is "
+                "lost; live counters resume from here (%s)",
+                STORAGE_CLOCKS_KEY,
+                STORAGE_KEY,
+                err,
+            )
+            hot_payload = None
         merged = self._merge_clocks(loaded, hot_payload)
         self._note_downtime(loaded, hot_payload)
         if merged:

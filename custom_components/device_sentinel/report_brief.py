@@ -855,8 +855,13 @@ class BriefMixin:
             groups.setdefault(key, []).append((opened, resolved))
         for key, members in groups.items():
             told[placed[key]] = self._compose_flood(key, members, spans)
+        # Strict (ruling #328): told and owners are built together
+        # one entry per device, so a length mismatch is a bug in this
+        # method rather than a shape a stored file can produce.
         kept = [
-            (line, who) for line, who in zip(told, owners) if line
+            (line, who)
+            for line, who in zip(told, owners, strict=True)
+            if line
         ]
         return self._collapse_flapping(kept, pairs, sys_events or [])
 

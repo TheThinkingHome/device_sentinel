@@ -206,13 +206,26 @@ def log_result(
     """Say what happened at info, where a person can find it.
 
     The one destructive act the integration performs, so it says so
-    plainly and names the file that holds the way back.
+    plainly, says what actually went, and names the file that holds
+    the way back. The counts were accepted and dropped on the floor
+    until ruling #329: a person reading this line after a trim that
+    matched a device with no record needs to see the zero rather
+    than infer it from a name with nothing beside it.
     """
+    went = (
+        ", ".join(
+            f"{kind} {count}"
+            for kind, count in sorted(removed.items())
+            if count
+        )
+        or "nothing recorded"
+    )
     LOGGER.info(
-        "Trimmed %d device(s): %s. Storage copied first to "
-        "%s/device_sentinel_%s.storage.json",
+        "Trimmed %d device(s): %s. Erased: %s. Storage copied first "
+        "to %s/device_sentinel_%s.storage.json",
         len(names),
         ", ".join(sorted(names)) or "none",
+        went,
         TRIM_BACKUP_DIR,
         stamp,
     )
