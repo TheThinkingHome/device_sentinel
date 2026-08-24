@@ -279,3 +279,48 @@ def test_a_falsy_clocks_payload_never_raises(value):
     """Called with whatever the file held, including the shapes a
     truthiness test would swallow."""
     check_clocks(value)
+
+
+# ------------------------------------ a stamp is not optional (#333)
+
+
+def test_a_null_stamp_is_a_fault():
+    """A duration may be null while a thing is still happening. The
+    stamp that says when it happened may not: a null there sorts
+    nowhere, formats as nothing, and reads as a row that never
+    occurred. Found by adversarial simulation on 24 August."""
+    faults = check_storage({DATA_INCIDENTS: [_incident(when=None)]})
+    assert faults and faults[0][:2] == ("incidents[0]", "when")
+
+
+def test_a_null_duration_is_still_fine():
+    """The distinction the last test rests on."""
+    assert check_storage({DATA_INCIDENTS: [_incident(duration=None)]}) == []
+
+
+def test_every_row_defining_stamp_is_required():
+    """The same rule across every table that carries one."""
+    from custom_components.device_sentinel.normalise import (
+        EPISODE_SHAPE,
+        REAL_NUMBER,
+        STORM_SHAPE,
+        STRESS_SHAPE,
+        SYSTEM_EVENT_SHAPE,
+    )
+
+    assert SYSTEM_EVENT_SHAPE["when"] == REAL_NUMBER
+    assert STORM_SHAPE["at"] == REAL_NUMBER
+    assert STRESS_SHAPE["at"] == REAL_NUMBER
+    for field in ("since", "basis", "window", "at"):
+        assert EPISODE_SHAPE[field] == REAL_NUMBER
+    # And the ones that legitimately stay nullable.
+    assert EPISODE_SHAPE["lag"] != REAL_NUMBER
+    assert STORM_SHAPE["duration"] != REAL_NUMBER
+
+
+def test_a_not_a_number_stamp_is_a_fault():
+    """Infinity and NaN survive a JSON round trip through Python and
+    are not moments in time."""
+    for value in (float("inf"), float("nan")):
+        faults = check_storage({DATA_INCIDENTS: [_incident(when=value)]})
+        assert faults, value
