@@ -139,6 +139,12 @@ ALT = "None or a second-scale block"
 # inside is nobody's business here, and a field that may be absent
 # altogether rather than present and null (ruling #332).
 TEXT = "string"
+# A number the row cannot mean anything without. NUMBER admits None,
+# which is right for a duration that has not finished and wrong for
+# the stamp that says when a row happened: a null there sorts
+# nowhere, formats as nothing, and reads as a row that never
+# occurred (ruling #333).
+REAL_NUMBER = "number, not None"
 MAPPING = "mapping"
 NULLABLE_MAPPING = "None or a mapping"
 
@@ -275,6 +281,8 @@ def _fault(kind: str, value: Any) -> str | None:
         return _describe(value)
     if kind == TEXT:
         return None if isinstance(value, str) else _describe(value)
+    if kind == REAL_NUMBER:
+        return None if _is_number(value) else _describe(value)
     if kind == MAPPING:
         return None if isinstance(value, dict) else _describe(value)
     if kind == NULLABLE_MAPPING:
@@ -346,7 +354,7 @@ INCIDENT_SHAPE: dict[str, str] = {
     "name": TEXT,
     "kind": TEXT,
     "event": TEXT,
-    "when": NUMBER,
+    "when": REAL_NUMBER,
     "cause": STRING,
     "duration": NUMBER,
 }
@@ -354,10 +362,10 @@ INCIDENT_SHAPE: dict[str, str] = {
 EPISODE_SHAPE: dict[str, str] = {
     "device_id": TEXT,
     "name": TEXT,
-    "since": NUMBER,
-    "basis": NUMBER,
-    "window": NUMBER,
-    "at": NUMBER,
+    "since": REAL_NUMBER,
+    "basis": REAL_NUMBER,
+    "window": REAL_NUMBER,
+    "at": REAL_NUMBER,
     "ended": TEXT,
     "lag": NUMBER,
     "learned": STRING,
@@ -368,15 +376,15 @@ EPISODE_SHAPE: dict[str, str] = {
 STRESS_SHAPE: dict[str, str] = {
     "device_id": TEXT,
     "name": TEXT,
-    "since": NUMBER,
-    "at": NUMBER,
+    "since": REAL_NUMBER,
+    "at": REAL_NUMBER,
     "ended": TEXT,
     "signal": NULLABLE_MAPPING,
 }
 
 SYSTEM_EVENT_SHAPE: dict[str, str] = {
     "kind": TEXT,
-    "when": NUMBER,
+    "when": REAL_NUMBER,
     "scope": STRING,
     "detail": STRING,
     "duration": NUMBER,
@@ -402,7 +410,7 @@ JOURNAL_SHAPE: dict[str, str] = {
 }
 
 STORM_SHAPE: dict[str, str] = {
-    "at": NUMBER,
+    "at": REAL_NUMBER,
     "entry_id": TEXT,
     "domain": TEXT,
     "devices": INTEGER,
@@ -414,8 +422,8 @@ STORM_DAY_SHAPE: dict[str, str] = {
     "domain": TEXT,
     "count": INTEGER,
     "median_interval": NUMBER,
-    "median_devices": NUMBER,
-    "median_duration": NUMBER,
+    "median_devices": REAL_NUMBER,
+    "median_duration": REAL_NUMBER,
 }
 
 # table key -> (row shape, keys a row may leave out)
