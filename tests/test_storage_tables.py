@@ -324,3 +324,61 @@ def test_a_not_a_number_stamp_is_a_fault():
     for value in (float("inf"), float("nan")):
         faults = check_storage({DATA_INCIDENTS: [_incident(when=value)]})
         assert faults, value
+
+
+# --------------------------- the keys nothing verified (#334)
+
+
+def test_a_migration_marker_of_the_wrong_type_is_a_fault():
+    """The second adversarial pass found these unshaped.
+
+    Both markers hold a version-like string that the load compares
+    against an expected mark. A marker that does not match runs a
+    one-time conversion over data already converted, so a marker
+    corrupted to a number fails the comparison, the conversion
+    re-runs, and the check said the file was clean.
+    """
+    for key in ("signal_day_repair", "signal_weighting"):
+        faults = check_storage({key: 12})
+        assert faults and faults[0][:2] == (key, key), key
+        assert check_storage({key: "0.12.21"}) == []
+
+
+def test_a_clean_stop_that_is_not_a_boolean_is_a_fault():
+    """Read once at the next load to decide whether the restart was
+    clean. Anything that is not a boolean reads as false, and every
+    device's clock resets."""
+    assert check_storage({"clean_stop": True}) == []
+    for wrong in (1, 0, "true", None, []):
+        assert check_storage({"clean_stop": wrong}), wrong
+
+
+def test_the_backup_list_must_hold_strings():
+    """The suffixes of the one-time backups already taken. A damaged
+    list means a backup is taken twice or not at all."""
+    assert check_storage({"backup_taken": ["prephase-c", "0.2.3"]}) == []
+    assert check_storage({"backup_taken": []}) == []
+    for wrong in ("prephase-c", {"a": 1}, [1, 2], [None]):
+        assert check_storage({"backup_taken": wrong}), wrong
+
+
+def test_every_key_both_fleets_hold_has_a_shape():
+    """The test that found #334, kept so the next key added to
+    storage cannot arrive unverified.
+
+    A key with no shape is skipped in silence, which is right for a
+    field inside a row and wrong for a whole key: nothing else looks
+    at it.
+    """
+    from custom_components.device_sentinel.normalise import SCALARS, TABLES
+
+    known = set(TABLES) | set(SCALARS) | {"devices"}
+    # Every top-level key both real fleets carried on 24 August 2026.
+    seen = {
+        "devices", "first_installed", "setup_count", "stats_epoch",
+        "saved_at", "last_version", "bridge_seen", "broker_seen",
+        "incidents", "silence_episodes", "signal_stress",
+        "system_events", "todo_items", "todo_journal", "storms",
+        "storm_days", "signal_day_repair", "signal_weighting",
+    }
+    assert seen <= known, sorted(seen - known)
