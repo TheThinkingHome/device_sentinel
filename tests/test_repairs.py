@@ -269,8 +269,9 @@ async def test_entities_disabled_raised_and_fixed(
     flow.hass = hass
     flow.handler = DOMAIN
     flow.issue_id = REPAIR_ENTITIES_DISABLED
-    form = await flow.async_step_init()
-    assert form["step_id"] == "confirm"
+    menu = await flow.async_step_init()
+    assert menu["type"] == "menu"
+    assert menu["menu_options"] == ["confirm", "ignore"]
     await flow.async_step_confirm({})
     await hass.async_block_till_done()
 
