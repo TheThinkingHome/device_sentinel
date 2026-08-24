@@ -42,7 +42,7 @@ from custom_components.device_sentinel.const import (
     DATA_SYSTEM_EVENTS,
     DEFAULT_RETENTION_DAYS,
     DEV_DAILY_MAX,
-    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_TODAY_MIN,
     DEV_TODAY_MAX,
     EPISODE_ENDED_RESUMED,
@@ -287,15 +287,11 @@ async def test_the_kind_list_is_the_whole_list(hass: HomeAssistant):
 async def test_the_floor_ignores_history_beyond_its_window(
     hass: HomeAssistant,
 ):
-    """The guard that matters. The floor is a trimmed minimum, so the
-    fourth lowest of ninety days is lower than the fourth lowest of
-    thirty, and reading the whole series would quietly slacken every
-    floor on the fleet.
-
-    The window is thirty days rather than the fourteen the rhythm
-    uses (ruling #196): a fortnight forgets a device's genuinely bad
-    days and sits too high, and a floor that jumps as one ages out is
-    what made dwell spike and collapse rather than trend.
+    """The guard that matters. The floor is the minimum of the P5
+    window (rulings #322, #323), so reading the whole series would
+    quietly slacken every floor on the fleet; only the most recent
+    SIGNAL_DAYS_KEEP days are judged, however many are stored
+    (ruling #126).
     """
     device, _ = _register(hass, "fl1", "Floor Sensor")
     entry = await setup_entry(hass)
@@ -303,11 +299,11 @@ async def test_the_floor_ignores_history_beyond_its_window(
     record = coord.data["devices"][device.id]
 
     month = [100.0 - n for n in range(SIGNAL_DAYS_KEEP)]
-    record[DEV_SIGNAL_DAILY_MIN] = list(month)
+    record[DEV_SIGNAL_DAILY_P5] = list(month)
     with_a_month = coord._danger_line(record)
 
     # The same month, preceded by far worse older days.
-    record[DEV_SIGNAL_DAILY_MIN] = [10.0] * 40 + list(month)
+    record[DEV_SIGNAL_DAILY_P5] = [10.0] * 40 + list(month)
     with_a_season = coord._danger_line(record)
 
     assert with_a_season == with_a_month
@@ -329,7 +325,7 @@ async def test_a_bad_day_three_weeks_back_still_counts(
     record = coord.data["devices"][device.id]
 
     # Twenty steady days, with three bad ones twenty-one days back.
-    record[DEV_SIGNAL_DAILY_MIN] = (
+    record[DEV_SIGNAL_DAILY_P5] = (
         [40.0, 40.0, 40.0] + [100.0] * 20
     )
     assert 40.0 in coord._signal_history(record)
@@ -342,12 +338,13 @@ async def test_the_signal_series_keeps_ninety_days(
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     record = coord.data["devices"][device.id]
-    record[DEV_SIGNAL_DAILY_MIN] = [float(n) for n in range(200)]
-    # The trim happens when a day is appended, so roll one.
-    record[DEV_SIGNAL_TODAY_MIN] = 42.0
+    record[DEV_SIGNAL_DAILY_P5] = [float(n) for n in range(200)]
+    # The trim happens when a day is appended, so roll one with a
+    # live reading behind it.
+    coord._feed_signal(record, 42.0, 600.0)
     await coord._on_midnight(None)
-    assert len(record[DEV_SIGNAL_DAILY_MIN]) == DEFAULT_RETENTION_DAYS
-    assert record[DEV_SIGNAL_DAILY_MIN][-1] == 42.0
+    assert len(record[DEV_SIGNAL_DAILY_P5]) <= DEFAULT_RETENTION_DAYS
+    assert record[DEV_SIGNAL_TODAY_MIN] is None
 
 
 async def test_the_columns_show_the_window_and_not_the_season(
@@ -365,7 +362,7 @@ async def test_the_columns_show_the_window_and_not_the_season(
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     record = coord.data["devices"][device.id]
-    record[DEV_SIGNAL_DAILY_MIN] = [50.0 + n for n in range(DEFAULT_RETENTION_DAYS)]
+    record[DEV_SIGNAL_DAILY_P5] = [50.0 + n for n in range(DEFAULT_RETENTION_DAYS)]
     cell = coord._format_signal_lows_cell(record)
     assert len(cell.split()) == SIGNAL_DAYS_KEEP
     # The rhythm column is unchanged; the two windows differ on

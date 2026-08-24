@@ -42,17 +42,14 @@ from custom_components.device_sentinel.const import (
     DATA_SIGNAL_STRESS,
     DEV_SIGNAL_COUNT,
     DEV_SIGNAL_DAILY_COUNT,
-    DEV_SIGNAL_DAILY_LINE,
     DEV_SIGNAL_DAILY_MAX,
     DEV_BATTERY_VALUE,
     DEV_SIGNAL_DAILY_MEAN,
-    DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_SCALE,
     DEV_SIGNAL_DAILY_SD,
-    DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_M2,
     DEV_SIGNAL_MEAN_RUN,
     DEV_SIGNAL_P5_STATE,
@@ -275,14 +272,16 @@ async def test_a_rail_only_day_writes_the_rail_and_nulls(
     assert signal_faults == []
 
 
-async def test_the_trim_removes_only_fabricated_rows(
+async def test_the_load_leaves_zero_count_rows_alone(
     hass: HomeAssistant, hass_storage
 ):
-    """The load trim drops the unguarded fold's rows and nothing else.
+    """The #305 load repair left with the rows it repaired (#322).
 
-    Keyed on a zero reading count with a zero rail count, the
-    combination the guarded fold can no longer write. A rail-only
-    row shares the zero count and must survive (ruling #305).
+    The guarded fold cannot write a fabricated row, and the rail
+    verdict requires rail above zero, so a legacy zero-count
+    zero-rail row is inert: it is neither repaired nor read as
+    evidence. The erased series are swept by the reconciler on the
+    same load.
     """
     from custom_components.device_sentinel.const import (
         DATA_LAST_VERSION,
@@ -307,7 +306,7 @@ async def test_the_trim_removes_only_fabricated_rows(
             DEV_SIGNAL_DAILY_P5: [-66.0, -66.0, None, -65.0],
             DEV_SIGNAL_DAILY_P50: [-65.0, -65.0, None, -64.0],
             DEV_SIGNAL_DAILY_MAX: [-64.0, None, None, -63.0],
-            DEV_SIGNAL_DAILY_LINE: [-70.0, -70.0, None, -70.0],
+            "signal_daily_line": [-70.0, -70.0, None, -70.0],
             DEV_SIGNAL_DAILY_COUNT: [12, 0, 0, 9],
             DEV_SIGNAL_DAILY_RAIL: [0, 0, 3, 0],
         }
@@ -320,9 +319,6 @@ async def test_the_trim_removes_only_fabricated_rows(
             DATA_DEVICES: {device.id: record},
             DATA_LAST_VERSION: "0.16.2",
             DATA_STATS_EPOCH: STATS_EPOCH,
-            # The one-shot migration markers, all satisfied, so the
-            # only load-path change acting on this fixture is the
-            # trim under test.
             DATA_SIGNAL_WEIGHTING: SIGNAL_WEIGHTING_MARK,
             DATA_SIGNAL_DAY_REPAIR: SIGNAL_DAY_REPAIR_MARK,
         },
@@ -331,13 +327,14 @@ async def test_the_trim_removes_only_fabricated_rows(
     coord = entry.runtime_data
     stored = coord.data[DATA_DEVICES][device.id]
 
-    # Index 1 was fabricated (count 0, rail 0) and goes. Index 2 is
-    # a rail-only day (count 0, rail 3) and stays. Real days stay.
-    assert stored[DEV_SIGNAL_DAILY_COUNT] == [12, 0, 9]
-    assert stored[DEV_SIGNAL_DAILY_RAIL] == [0, 3, 0]
-    assert stored[DEV_SIGNAL_DAILY_MEAN] == [-65.0, None, -64.0]
-    assert stored[DEV_SIGNAL_DAILY_MAX] == [-64.0, None, -63.0]
-    assert stored[DEV_SIGNAL_DAILY_LINE] == [-70.0, None, -70.0]
+    # Every row survives, fabricated or not; the erased line series
+    # is swept.
+    assert stored[DEV_SIGNAL_DAILY_COUNT] == [12, 0, 0, 9]
+    assert stored[DEV_SIGNAL_DAILY_RAIL] == [0, 0, 3, 0]
+    assert stored[DEV_SIGNAL_DAILY_MEAN] == [-65.0, -65.0, None, -64.0]
+    assert "signal_daily_line" not in stored
+    # And the inert row is not rail evidence: rail needs rail > 0.
+    assert coord.signal_railed(stored) is False
 
 
 async def test_a_bad_day_gets_a_biography_and_a_calm_device_does_not(
@@ -421,7 +418,6 @@ async def test_the_brief_carries_no_signal_anomaly_line(
     coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "b1", "Anomalous Device")
     record = coord.data[DATA_DEVICES][device.id]
-    record[DEV_SIGNAL_DWELL_DAILY] = [20.0]
     record[DEV_SIGNAL_DAILY_P5] = [
         160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
     ]
@@ -721,7 +717,7 @@ async def test_the_dated_chart_is_named_for_the_day_it_covers(
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "dt2", "Dated Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DWELL_DAILY] = [4.0]
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [160.0]
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
 
@@ -742,10 +738,10 @@ async def test_the_dated_chart_is_named_for_the_day_it_covers(
 
 # ------------------------------------ the good-state ceiling (#193)
 
-def _seed_signal(coord, device_id, mins, mean, sd):
-    """Give a device a signal history and yesterday's statistics."""
+def _seed_signal(coord, device_id, p5_days, mean, sd):
+    """Give a device a P5 history and yesterday's statistics."""
     record = coord.data[DATA_DEVICES][device_id]
-    record[DEV_SIGNAL_DAILY_MIN] = list(mins)
+    record[DEV_SIGNAL_DAILY_P5] = list(p5_days)
     record[DEV_SIGNAL_DAILY_MEAN] = [mean]
     record[DEV_SIGNAL_DAILY_SD] = [sd]
     return record
@@ -777,14 +773,15 @@ async def test_the_line_can_never_cross_into_the_normal_readings(
 
     line = coord._danger_line(record)
     assert line is not None
-    # 240 + 5% = 252.0 unbounded. The ceiling is the mean less the
-    # larger of half a deviation (2.205) and the LQI clearance of 8
-    # (ruling #244): 246.21 - 8 = 238.21. Before the clearance the
-    # ceiling sat 2.2 points under the mean, inside the readings a
-    # low-variance device makes every hour.
-    assert line == pytest.approx(238.21, abs=0.01)
+    # The plain-minimum floor (ruling #323) is 224, the margin is
+    # 5 percent of the distance from perfect, and the unbounded
+    # line sits at 225.55, under the ceiling of 238.21 (the mean
+    # less the LQI clearance, ruling #244). The ceiling no longer
+    # binds this device; it stays as the cap for one whose floor
+    # climbs toward its mean.
+    assert line == pytest.approx(225.55, abs=0.01)
     assert line < 246.21
-    assert coord._line_is_bounded(record) is True
+    assert coord._line_is_bounded(record) is False
 
 
 async def test_a_device_with_room_is_left_alone(
@@ -846,7 +843,7 @@ async def test_no_statistics_means_no_ceiling(
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "gs4", "New Link")
     record = coord.data[DATA_DEVICES][device.id]
-    record[DEV_SIGNAL_DAILY_MIN] = [240.0] * 14
+    record[DEV_SIGNAL_DAILY_P5] = [240.0] * 14
     record[DEV_SIGNAL_DAILY_MEAN] = []
     record[DEV_SIGNAL_DAILY_SD] = []
 
@@ -869,44 +866,6 @@ async def test_the_diagnostics_say_whether_the_line_was_bounded(
 
 # ------------------------------- the window and the ladder (#196)
 
-async def test_the_trim_is_one_reading_per_full_week(
-    hass: HomeAssistant,
-):
-    """Ruling #196. A count that does not grow with the window
-    thins as the window does: two rungs discarded fourteen percent
-    of a fortnight and would discard nine percent of a month,
-    lowering every floor on the fleet as a side effect of a change
-    meant to be about stability.
-    """
-    coord = await setup_coordinator(hass)
-    assert coord._signal_effective_k(6) == 0
-    assert coord._signal_effective_k(7) == 1
-    assert coord._signal_effective_k(13) == 1
-    assert coord._signal_effective_k(14) == 2
-    assert coord._signal_effective_k(21) == 3
-    assert coord._signal_effective_k(28) == 4
-    # The window caps at thirty, so the ladder caps with it.
-    assert coord._signal_effective_k(30) == 4
-
-
-async def test_the_slider_still_shifts_the_rung(
-    hass: HomeAssistant,
-):
-    """The trim shifts the ladder's rung, and the bound still leaves
-    one reading to be the floor.
-
-    The trim is a constant since ruling #311, so a depth other than
-    the shipped one is reached by patching the accessor rather than
-    by saving an option nothing reads.
-    """
-    coord = _trimmed(await setup_coordinator(hass), 1)
-    assert coord._signal_effective_k(28) == 5
-
-    coord._signal_trim = lambda: -2
-    assert coord._signal_effective_k(28) == 2
-    assert coord._signal_effective_k(1) == 0
-
-
 async def test_the_telemetry_report_shows_the_floor_moving(
     hass: HomeAssistant,
 ):
@@ -919,10 +878,10 @@ async def test_the_telemetry_report_shows_the_floor_moving(
     sinking, _ = register_device(hass, "fd1", "Sinking Floor")
     steady, _ = register_device(hass, "fd2", "Steady Floor")
     # A floor walking down two points a day.
-    coord.data[DATA_DEVICES][sinking.id][DEV_SIGNAL_DAILY_MIN] = [
+    coord.data[DATA_DEVICES][sinking.id][DEV_SIGNAL_DAILY_P5] = [
         float(120 - n * 2) for n in range(20)
     ]
-    coord.data[DATA_DEVICES][steady.id][DEV_SIGNAL_DAILY_MIN] = [
+    coord.data[DATA_DEVICES][steady.id][DEV_SIGNAL_DAILY_P5] = [
         100.0
     ] * 20
 
@@ -943,7 +902,7 @@ async def test_the_telemetry_report_shows_the_floor_moving(
     assert "/wk" in sinking_row
     # The series falls two points a day, so its floor walks down
     # fourteen a week, and the cell carries the current floor with it.
-    assert "86 -14/wk" in sinking_row
+    assert "82 -14/wk" in sinking_row
     assert "flat" in steady_row
     assert "/wk" not in steady_row
 
@@ -1043,8 +1002,8 @@ async def test_a_railed_device_is_not_counted_twice(
     coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "sp5", "Railed Link")
     record = coord.data[DATA_DEVICES][device.id]
-    record[DEV_SIGNAL_DAILY_MIN] = [255.0] * 4
-    record[DEV_SIGNAL_DWELL_DAILY] = [4.0, 35.0]
+    record[DEV_SIGNAL_DAILY_COUNT] = [0] * 4
+    record[DEV_SIGNAL_DAILY_RAIL] = [7] * 4
 
     assert coord.signal_problem_count == 1
     assert coord.signal_weak_count == 0
@@ -1116,20 +1075,18 @@ async def test_a_zero_deviation_day_cannot_put_the_line_on_the_mean(
 async def test_the_fold_records_count_line_and_rail(
     hass: HomeAssistant,
 ):
-    """Ruling #245: the day folds three more series beside the mean.
+    """Rulings #245, #322: the day folds the count and the rail.
 
-    The count says how much weight the day's statistics deserve, the
-    line says what the day's dwell was measured against (read before
-    the fold moves the ceiling), and the rail count says why a day's
-    real statistics are thin. All three trim on the same retention
-    as the series beside them.
+    The count says how much weight the day's statistics deserve,
+    and the rail count says why a day's real statistics are thin.
+    Both trim on the same retention as the series beside them. The
+    line series left with the dwell record (ruling #322).
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "gs7", "Recorded Link")
     record = _seed_signal(
         coord, device.id, [100.0] * 14, 140.0, 20.0
     )
-    line_before = coord._danger_line(record)
     for value in (140.0, 144.0, 255.0, 136.0, 255.0):
         coord._feed_signal(record, value, 1000.0)
 
@@ -1137,9 +1094,7 @@ async def test_the_fold_records_count_line_and_rail(
 
     assert record[DEV_SIGNAL_DAILY_COUNT][-1] == 3
     assert record[DEV_SIGNAL_DAILY_RAIL][-1] == 2
-    assert record[DEV_SIGNAL_DAILY_LINE][-1] == pytest.approx(
-        line_before, abs=0.01
-    )
+    assert "signal_daily_line" not in record
     assert record[DEV_SIGNAL_RAIL_COUNT] == 0
     assert record[DEV_SIGNAL_COUNT] == 0
 
@@ -1326,71 +1281,6 @@ async def test_the_fold_records_p5_and_p50_and_resets(
     assert record[DEV_SIGNAL_DAILY_P5][-1] == pytest.approx(120.0, abs=1.0)
     assert record[DEV_SIGNAL_DAILY_P50][-1] == pytest.approx(120.0, abs=1.0)
     assert record[DEV_SIGNAL_P5_STATE] is None
-
-
-async def test_the_trim_aligns_series_from_the_tail(
-    hass: HomeAssistant, hass_storage
-):
-    """Unequal series lengths delete the same day, not the same index.
-
-    On a fleet that predates a series' introduction the heads differ
-    while the tails describe the same days (the reference fleet's
-    maximum runs to 17 where its count runs to 11), so a trim that
-    deleted head index N from every series would remove different
-    days from different series. Found adversarially before any fleet
-    could (ruling #305).
-    """
-    from custom_components.device_sentinel.const import (
-        DATA_LAST_VERSION,
-        DATA_SIGNAL_DAY_REPAIR,
-        DATA_SIGNAL_WEIGHTING,
-        DATA_STATS_EPOCH,
-        SIGNAL_DAY_REPAIR_MARK,
-        SIGNAL_WEIGHTING_MARK,
-        STATS_EPOCH,
-        STORAGE_KEY,
-    )
-    from custom_components.device_sentinel.records import (
-        _new_device_record,
-    )
-
-    record = _new_device_record("2026-08-01T00:00:00+00:00", None)
-    record.update(
-        {
-            # The maximum predates the count by two days: its head
-            # carries -90 and -80 from before the count existed.
-            # The count's index 1 (a fabricated day) is the
-            # maximum's index 3.
-            DEV_SIGNAL_DAILY_MAX: [-90.0, -80.0, -64.0, None, -63.0],
-            DEV_SIGNAL_DAILY_MEAN: [-65.0, -65.0, -64.0],
-            DEV_SIGNAL_DAILY_SD: [0.5, 0.0, 0.4],
-            DEV_SIGNAL_DAILY_P5: [-66.0, -66.0, -65.0],
-            DEV_SIGNAL_DAILY_P50: [-65.0, -65.0, -64.0],
-            DEV_SIGNAL_DAILY_LINE: [-70.0, -70.0, -70.0],
-            DEV_SIGNAL_DAILY_COUNT: [12, 0, 9],
-            DEV_SIGNAL_DAILY_RAIL: [0, 0, 0],
-        }
-    )
-    device, _ = register_device(hass, "st7", "Tail Target")
-    hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "key": STORAGE_KEY,
-        "data": {
-            DATA_DEVICES: {device.id: record},
-            DATA_LAST_VERSION: "0.16.2",
-            DATA_STATS_EPOCH: STATS_EPOCH,
-            DATA_SIGNAL_WEIGHTING: SIGNAL_WEIGHTING_MARK,
-            DATA_SIGNAL_DAY_REPAIR: SIGNAL_DAY_REPAIR_MARK,
-        },
-    }
-    entry = await setup_entry(hass)
-    stored = entry.runtime_data.data[DATA_DEVICES][device.id]
-
-    assert stored[DEV_SIGNAL_DAILY_COUNT] == [12, 9]
-    # The head survives untouched; the fabricated day went from the
-    # tail-aligned position, not from head index 1.
-    assert stored[DEV_SIGNAL_DAILY_MAX] == [-90.0, -80.0, -64.0, -63.0]
-    assert stored[DEV_SIGNAL_DAILY_MEAN] == [-65.0, -64.0]
 
 
 async def test_a_rail_day_does_not_crash_the_readers(

@@ -27,7 +27,6 @@ from custom_components.device_sentinel.const import (
     DATA_STATE_TRACKING,
     DEV_BATTERY_DAILY,
     DEV_DAILY_MAX,
-    DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_P50,
     SERIES_BATTERY,
@@ -78,7 +77,7 @@ async def test_the_three_phases_of_a_signal_sensor(hass: HomeAssistant):
 
     Signal arms at seven days and its floor window fills at thirty
     (SIGNAL_DAYS_KEEP, widened by ruling #196), so the middle phase
-    is real and long: lines and dwell are live while the floor is
+    is real and long: judgment is live while the floor is
     still maturing, and the state says so rather than implying the
     system is either blind or finished.
     """
@@ -186,7 +185,7 @@ async def test_device_days_sums_the_fleet(hass: HomeAssistant):
     records[one.id][DEV_DAILY_MAX] = [1.0] * 14
     records[two.id][DEV_DAILY_MAX] = [1.0] * 9
     records[one.id][DEV_BATTERY_DAILY] = [90.0] * 30
-    records[one.id][DEV_SIGNAL_DAILY_MIN] = [100.0] * 12
+    records[one.id][DEV_SIGNAL_DAILY_P50] = [100.0] * 12
     records[one.id][DEV_SIGNAL_DAILY_P5] = [110.0] * 12
 
     freeze = DeviceSentinelDataFreezeSensor(coord).extra_state_attributes
@@ -218,7 +217,7 @@ async def test_the_attributes_publish_the_set(hass: HomeAssistant):
     attrs = DeviceSentinelDataSignalSensor(coord).extra_state_attributes
 
     assert DEV_SIGNAL_DAILY_P5 in attrs["series"]
-    assert DEV_SIGNAL_DAILY_MIN in attrs["series"]
+    assert DEV_SIGNAL_DAILY_P50 in attrs["series"]
     assert attrs["retention_days"] == coord.retention_days
 
 

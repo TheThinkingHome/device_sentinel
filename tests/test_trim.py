@@ -22,7 +22,7 @@ from custom_components.device_sentinel.const import (
     DATA_INCIDENTS,
     DATA_SYSTEM_EVENTS,
     DATA_TODO_ITEMS,
-    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_P5,
     INC_DEVICE_ID,
     SYS_KIND,
     SYS_TRIMMED,
@@ -36,7 +36,7 @@ from tests.helpers import register_device, setup_entry
 def _furnish(coord, device_id: str, name: str) -> None:
     """Give a device every kind of history a trim must remove."""
     record = coord.data[DATA_DEVICES][device_id]
-    record[DEV_SIGNAL_DAILY_MIN] = [120.0, 118.0]
+    record[DEV_SIGNAL_DAILY_P5] = [120.0, 118.0]
     coord.data.setdefault(DATA_EPISODES, []).append(
         {INC_DEVICE_ID: device_id, "name": name, "since": 1.0}
     )
@@ -73,9 +73,9 @@ async def test_a_device_trim_removes_its_history_and_nothing_else(
     # The record is not absent: the registry rebuild recreates it at
     # once, which is the designed outcome and is why the help text
     # says the device reappears. What must be gone is its history.
-    assert coord.data[DATA_DEVICES][target.id][DEV_SIGNAL_DAILY_MIN] == []
+    assert coord.data[DATA_DEVICES][target.id][DEV_SIGNAL_DAILY_P5] == []
     assert coord.data[DATA_DEVICES][keeper.id][
-        DEV_SIGNAL_DAILY_MIN
+        DEV_SIGNAL_DAILY_P5
     ] == [120.0, 118.0]
     for key, field in (
         (DATA_EPISODES, INC_DEVICE_ID),
@@ -139,11 +139,11 @@ async def test_the_copy_is_written_before_anything_is_deleted(
     )
     # The copy predates the deletion, so it still holds the history
     # that live storage no longer has.
-    assert copy[DATA_DEVICES][target.id][DEV_SIGNAL_DAILY_MIN] == [
+    assert copy[DATA_DEVICES][target.id][DEV_SIGNAL_DAILY_P5] == [
         120.0,
         118.0,
     ]
-    assert coord.data[DATA_DEVICES][target.id][DEV_SIGNAL_DAILY_MIN] == []
+    assert coord.data[DATA_DEVICES][target.id][DEV_SIGNAL_DAILY_P5] == []
 
 
 async def test_trimming_keeps_the_exclusion(hass: HomeAssistant):
@@ -165,7 +165,7 @@ async def test_trimming_keeps_the_exclusion(hass: HomeAssistant):
     )
 
     assert entry.options[CONF_MUTED_DEVICES] == [target.id]
-    assert coord.data[DATA_DEVICES][target.id][DEV_SIGNAL_DAILY_MIN] == []
+    assert coord.data[DATA_DEVICES][target.id][DEV_SIGNAL_DAILY_P5] == []
 
 
 async def test_trimming_an_empty_device_is_allowed(
@@ -203,8 +203,8 @@ async def test_an_integration_trim_takes_every_device_on_it(
         hass, entry, **{CONF_TRIM_INTEGRATIONS: [domain]}
     )
 
-    assert coord.data[DATA_DEVICES][one.id][DEV_SIGNAL_DAILY_MIN] == []
-    assert coord.data[DATA_DEVICES][two.id][DEV_SIGNAL_DAILY_MIN] == []
+    assert coord.data[DATA_DEVICES][one.id][DEV_SIGNAL_DAILY_P5] == []
+    assert coord.data[DATA_DEVICES][two.id][DEV_SIGNAL_DAILY_P5] == []
 
 
 async def test_the_trim_writes_a_system_event(hass: HomeAssistant):
@@ -330,7 +330,7 @@ async def test_the_section_arrives_nested_and_stores_flat(
     assert entry.options[CONF_TRIM_DEVICES] == []
     assert "data_trim" not in entry.options
     assert coord.data[DATA_DEVICES][target.id][
-        DEV_SIGNAL_DAILY_MIN
+        DEV_SIGNAL_DAILY_P5
     ] == []
 
 

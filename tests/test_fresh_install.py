@@ -19,7 +19,6 @@ from homeassistant.core import HomeAssistant
 from custom_components.device_sentinel.const import (
     ATTR_AWAITING_BATTERY,
     DATA_DEVICES,
-    DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_P5,
     REPORT_DIR,
     REPORT_WWW_DIR,
@@ -99,13 +98,10 @@ async def test_the_first_midnight_records_a_day(hass: HomeAssistant):
     coord._feed_signal(record, 140.0, 0.0)
     coord._feed_signal(record, 132.0, 600.0)
 
-    # The whole midnight job, not one of its parts: the daily
-    # minimum is folded by the rollover and the statistics by the
-    # signal roll, and a fresh install has to come out of both with
-    # exactly one day.
+    # The whole midnight job, not one of its parts: a fresh
+    # install has to come out of the fold with exactly one day.
     await coord._on_midnight(None)
 
-    assert len(record[DEV_SIGNAL_DAILY_MIN]) == 1
     assert len(record[DEV_SIGNAL_DAILY_P5]) == 1
     assert coord.recording_depth["signal"]["complete_days"] == 1
 

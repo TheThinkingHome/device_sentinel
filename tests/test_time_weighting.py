@@ -25,10 +25,9 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_COUNT,
     DEV_SIGNAL_DAILY_COUNT,
     DEV_SIGNAL_DAILY_MEAN,
-    DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_P50,
+    DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_SD,
-    DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_M2,
     DEV_SIGNAL_MEAN_RUN,
     DEV_SIGNAL_READS,
@@ -123,8 +122,7 @@ async def test_the_upgrade_clears_the_two_series_it_changed(
     """The recorded mean and deviation are not comparable across the
     change, and a series holding both weightings could not be
     separated later, so the old days go once. Everything else stays:
-    the minima, the percentiles, and the dwell are the same figures
-    they were yesterday.
+    the percentiles are the same figures they were yesterday.
     """
     device, _ = register_device(hass, "tw5", "Upgraded Device")
     coord = await setup_coordinator(hass)
@@ -133,8 +131,7 @@ async def test_the_upgrade_clears_the_two_series_it_changed(
             device.id: {
                 DEV_SIGNAL_DAILY_MEAN: [110.0, 112.0],
                 DEV_SIGNAL_DAILY_SD: [8.0, 9.0],
-                DEV_SIGNAL_DAILY_MIN: [80.0, 84.0],
-                DEV_SIGNAL_DWELL_DAILY: [3.0, 4.0],
+                DEV_SIGNAL_DAILY_P5: [80.0, 84.0],
             }
         }
     }
@@ -144,8 +141,7 @@ async def test_the_upgrade_clears_the_two_series_it_changed(
     record = loaded[DATA_DEVICES][device.id]
     assert record[DEV_SIGNAL_DAILY_MEAN] == []
     assert record[DEV_SIGNAL_DAILY_SD] == []
-    assert record[DEV_SIGNAL_DAILY_MIN] == [80.0, 84.0]
-    assert record[DEV_SIGNAL_DWELL_DAILY] == [3.0, 4.0]
+    assert record[DEV_SIGNAL_DAILY_P5] == [80.0, 84.0]
     assert loaded[DATA_SIGNAL_WEIGHTING] == SIGNAL_WEIGHTING_MARK
 
 

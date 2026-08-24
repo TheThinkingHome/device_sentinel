@@ -60,7 +60,7 @@ from custom_components.device_sentinel.const import (
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
-    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_P5,
     EPISODE_ENDED_REBOOT,
     EPISODE_ENDED_RESUMED,
     EPISODE_OPEN_SHARE,
@@ -270,7 +270,7 @@ async def test_diagnostics_report_exclusions(hass: HomeAssistant):
 # The marked report columns and the three buttons.
 # ==================================================================
 
-async def _marks_coordinator(hass, options=None, trim=None):
+async def _marks_coordinator(hass, options=None):
     # These tests read the floor marks in the report, which were
     # written when the floor was the line, so the margin is pinned off
     # and they go on testing the floor. The margin has its own file.
@@ -292,23 +292,22 @@ async def _marks_coordinator(hass, options=None, trim=None):
     )
     coord = await setup_coordinator(hass, options)
     coord._signal_margin = lambda: 0.0
-    if trim is not None:
-        coord._signal_trim = lambda: trim
     return coord, device.id
 
 
-async def test_signal_lows_shows_all_three_marks(hass: HomeAssistant):
-    """One cell, all three states: the floor bold, the trimmed low
-    struck, the rail value italic. Eight readings, one a rail (255)
-    and one an anomaly (40); at a week the ladder trims the single
-    lowest non-rail value, so 40 is struck and 87 is the floor."""
+async def test_signal_cell_shows_the_floor_and_the_null_days(hass: HomeAssistant):
+    """One cell, the P5 window (ruling #322): the floor bold at its
+    earliest occurrence, a rail-only day's null as a dash, nothing
+    struck because the plain-minimum floor (ruling #323) has
+    nothing below it."""
     coord, device_id = await _marks_coordinator(hass)
-    coord.data["devices"][device_id][DEV_SIGNAL_DAILY_MIN] = [
-        88.0, 90.0, 255.0, 40.0, 92.0, 89.0, 91.0, 87.0,
+    coord.data["devices"][device_id][DEV_SIGNAL_DAILY_P5] = [
+        88.0, 90.0, None, 40.0, 92.0, 89.0, 91.0, 87.0,
     ]
     await hass.async_add_executor_job(coord._write_reports)
     row = _telemetry_row(hass, "Marks Device")
-    assert "**87** 91 89 92 ~~40~~ *255* 90 88" in row
+    assert "87 91 89 92 **40** - 90 88" in row
+    assert "~~" not in row
 
 
 async def test_battery_column_summarises_rather_than_listing(
@@ -365,14 +364,14 @@ async def test_a_reading_outside_the_scale_says_so(
 async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     """The column headers carry the tunables: GAPS its fixed trim k,
     SIGNAL the sensitivity as a word, BAT LEVEL the live threshold."""
-    coord, _ = await _marks_coordinator(hass, trim=1)
+    coord, _ = await _marks_coordinator(hass)
     await hass.async_add_executor_job(coord._write_reports)
     text = open(
         hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     header = next(line for line in text.splitlines() if "DEVICE (INTEGRATION) | STATUS" in line)
-    # Slider at +1 renders as the word Deep, not a number.
-    assert "SIGNAL (Deep)" in header
+    # The trim word left with the ladder (ruling #322).
+    assert "SIGNAL |" in header
     assert "GAPS (K=" in header
     assert "BAT LEVEL (floor 20%)" in header
     # The retired columns are gone.
@@ -386,13 +385,13 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     assert "FLOOR/WK" in header
 
     # Every data row must have exactly as many cells as the header,
-    # ten since 0.11.3 added FLOOR/WK, so a dropped column can never
+    # nine since 0.17.1 dropped DWELL% (ruling #322), so a dropped column can never
     # leave the rows misaligned.
     def _cells(line: str) -> int:
         return len([c for c in line.strip().strip("|").split("|")])
 
     header_cells = _cells(header)
-    assert header_cells == 10, header_cells
+    assert header_cells == 9, header_cells
     data_rows = [
         line
         for line in text.splitlines()
@@ -915,9 +914,9 @@ async def test_repeated_floor_bolds_the_earliest_and_strikes_none_equal(
     is the flat-button case that read as one bold, one struck, two
     plain before the fix."""
     coord, device_id = await _marks_coordinator(hass)
-    # Stored oldest-to-newest; displayed newest-first. Four 48s, k=0
-    # under a week so floor is 48. Earliest 48 (index 1) bolds.
-    coord.data["devices"][device_id][DEV_SIGNAL_DAILY_MIN] = [
+    # Stored oldest-to-newest; displayed newest-first. Four 48s;
+    # the floor is 48 and its earliest occurrence (index 1) bolds.
+    coord.data["devices"][device_id][DEV_SIGNAL_DAILY_P5] = [
         68.0, 48.0, 48.0, 48.0, 52.0, 48.0, 56.0,
     ]
     await hass.async_add_executor_job(coord._write_reports)
@@ -929,21 +928,17 @@ async def test_repeated_floor_bolds_the_earliest_and_strikes_none_equal(
     assert "~~" not in row
 
 
-async def test_below_floor_is_struck_but_equal_is_not(hass: HomeAssistant):
-    """A value strictly below the floor is struck; an equal one is
-    not. Floor is 112 here (k=1 at a week trims the 84)."""
+async def test_nothing_sits_below_the_floor(hass: HomeAssistant):
+    """The floor is the plain minimum (ruling #323), so no value in
+    the window can sit below it and nothing is ever struck."""
     coord, device_id = await _marks_coordinator(hass)
-    coord.data["devices"][device_id][DEV_SIGNAL_DAILY_MIN] = [
+    coord.data["devices"][device_id][DEV_SIGNAL_DAILY_P5] = [
         116.0, 116.0, 116.0, 120.0, 112.0, 112.0, 116.0, 84.0,
     ]
     await hass.async_add_executor_job(coord._write_reports)
     row = _telemetry_row(hass, "Marks Device")
-    assert "~~84~~" in row      # strictly below floor 112: struck
-    assert "**112**" in row     # earliest 112: bold
-    # The other 112 is plain, not struck (equal to the floor).
-    assert "~~112~~" not in row
-
-
+    assert "**84**" in row
+    assert "~~" not in row
 async def test_the_episodes_header_says_when_the_newest_one_was(
     hass: HomeAssistant,
 ):

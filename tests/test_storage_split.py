@@ -52,9 +52,8 @@ from custom_components.device_sentinel.const import (
     DEV_FROZEN_CATEGORY,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_MEAN,
-    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_SD,
-    DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
     EPOCH_KEPT,
@@ -672,11 +671,10 @@ async def test_an_epoch_wipe_keeps_what_cannot_be_rebuilt(
     device, _eid = _register(hass, "ep2", "Soaking Device")
     stale = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
     stale[DEV_DAILY_MAX] = [600.0, 700.0]
-    stale[DEV_SIGNAL_DAILY_MIN] = [120.0, 116.0]
+    stale[DEV_SIGNAL_DAILY_P5] = [120.0, 116.0]
     stale[DEV_SIGNAL_DAILY_MEAN] = [147.7]
     stale[DEV_SIGNAL_DAILY_SD] = [7.5]
     stale[DEV_BATTERY_DAILY] = [32.0, 31.5]
-    stale[DEV_SIGNAL_DWELL_DAILY] = [4.0, 96.7]
     stale[DEV_FROZEN_CATEGORY] = "frozen"
     hass_storage[STORAGE_KEY] = {
         "version": 1,
@@ -694,14 +692,11 @@ async def test_an_epoch_wipe_keeps_what_cannot_be_rebuilt(
     entry = await setup_entry(hass)
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
 
-    # The rhythm, and the verdicts drawn from it, are gone. Dwell
-    # counts as a verdict: it was accrued against a line the rule
-    # change moved, and nothing survives to recompute it from.
+    # The rhythm, and the verdicts drawn from it, are gone.
     assert record[DEV_DAILY_MAX] == []
     assert record[DEV_FROZEN_CATEGORY] is None
-    assert record[DEV_SIGNAL_DWELL_DAILY] == []
     # Both soaks survive.
-    assert record[DEV_SIGNAL_DAILY_MIN] == [120.0, 116.0]
+    assert record[DEV_SIGNAL_DAILY_P5] == [120.0, 116.0]
     assert record[DEV_SIGNAL_DAILY_MEAN] == [147.7]
     assert record[DEV_SIGNAL_DAILY_SD] == [7.5]
     assert record[DEV_BATTERY_DAILY] == [32.0, 31.5]
@@ -719,7 +714,7 @@ def test_the_kept_set_and_the_wipe_partition_the_schema():
     kept = set(EPOCH_KEPT)
     assert kept <= schema, sorted(kept - schema)
     wiped = schema - kept
-    assert len(wiped) == 7, sorted(wiped)
+    assert len(wiped) == 6, sorted(wiped)
     assert wiped == {
         "daily_max",
         "today_max",
@@ -727,10 +722,6 @@ def test_the_kept_set_and_the_wipe_partition_the_schema():
         "tainted",
         "frozen_category",
         "frozen_since",
-        # A verdict rather than a measurement: accrued against a line
-        # that a rule change moves, and not recomputable afterwards
-        # because the readings behind it are gone.
-        "signal_dwell_daily_pct",
     }
 
 
@@ -866,7 +857,7 @@ async def test_a_mixed_signal_history_is_cleared_at_load(
     clean, _eid2 = _register(hass, "cln1", "Zigbee2MQTT Door")
 
     bad = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
-    bad[const.DEV_SIGNAL_DAILY_MIN] = [-66.0, 215.0, -70.0, 247.0]
+    bad[const.DEV_SIGNAL_DAILY_P5] = [-66.0, 215.0, -70.0, 247.0]
     bad[const.DEV_SIGNAL_DAILY_MEAN] = [90.5, -68.0]
     bad[const.DEV_SIGNAL_VALUE] = 247.0
     # Everything that is not signal, which must survive untouched.
@@ -875,7 +866,7 @@ async def test_a_mixed_signal_history_is_cleared_at_load(
     bad[DEV_FIRST_OBSERVED] = "2026-07-11T00:00:00+00:00"
 
     good = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
-    good[const.DEV_SIGNAL_DAILY_MIN] = [200.0, 0.0, 255.0]
+    good[const.DEV_SIGNAL_DAILY_P5] = [200.0, 0.0, 255.0]
     good[const.DEV_SIGNAL_VALUE] = 214.0
     good[DEV_EVENT_COUNT] = 88
 
@@ -892,7 +883,7 @@ async def test_a_mixed_signal_history_is_cleared_at_load(
     after_good = coord.data[DATA_DEVICES][clean.id]
 
     # The mixed one lost its signal history and nothing else.
-    assert after_bad[const.DEV_SIGNAL_DAILY_MIN] == []
+    assert after_bad[const.DEV_SIGNAL_DAILY_P5] == []
     assert after_bad[const.DEV_SIGNAL_DAILY_MEAN] == []
     assert after_bad[const.DEV_SIGNAL_VALUE] is None
     assert after_bad[DEV_EVENT_COUNT] == 4211
@@ -906,7 +897,7 @@ async def test_a_mixed_signal_history_is_cleared_at_load(
     # The durable series is what the clear is about. The day's own
     # counters are not asserted here: a fold at load clears those for
     # every device, cleared or not, and that is not this rule's doing.
-    assert after_good[const.DEV_SIGNAL_DAILY_MIN] == [200.0, 0.0, 255.0]
+    assert after_good[const.DEV_SIGNAL_DAILY_P5] == [200.0, 0.0, 255.0]
     assert after_good[const.DEV_SIGNAL_VALUE] == 214.0
 
     # Both records carry the new fields, whether they were cleared or
@@ -930,7 +921,7 @@ async def test_the_clear_does_not_run_twice(
     re-cleared every restart once it has been dealt with."""
     device, _eid = _register(hass, "mix2", "Cleared Once")
     bad = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
-    bad[const.DEV_SIGNAL_DAILY_MIN] = [-70.0, 215.0]
+    bad[const.DEV_SIGNAL_DAILY_P5] = [-70.0, 215.0]
     hass_storage[STORAGE_KEY] = {
         "version": 1,
         "data": {
@@ -940,11 +931,11 @@ async def test_the_clear_does_not_run_twice(
     }
     coord = await setup_coordinator(hass)
     record = coord.data[DATA_DEVICES][device.id]
-    assert record[const.DEV_SIGNAL_DAILY_MIN] == []
+    assert record[const.DEV_SIGNAL_DAILY_P5] == []
     # Feed it a clean single-scale history and start again.
-    record[const.DEV_SIGNAL_DAILY_MIN] = [-70.0, -68.0, -71.0]
+    record[const.DEV_SIGNAL_DAILY_P5] = [-70.0, -68.0, -71.0]
     assert coord._clear_mixed_signal(coord.data[DATA_DEVICES]) == []
-    assert record[const.DEV_SIGNAL_DAILY_MIN] == [-70.0, -68.0, -71.0]
+    assert record[const.DEV_SIGNAL_DAILY_P5] == [-70.0, -68.0, -71.0]
 
 
 async def test_stored_kinds_are_renamed_at_load(

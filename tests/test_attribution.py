@@ -769,8 +769,10 @@ async def test_a_real_storm_still_says_so_and_no_longer_claims_an_exclusion(
     assert "excluded from learning" not in caplog.text
 
 
-async def test_storm_rows_are_trimmed_at_two_days(hass: HomeAssistant):
-    """Nothing reads them past an hour, so nothing keeps them past two days."""
+async def test_storm_rows_are_trimmed_at_one_hour(hass: HomeAssistant):
+    """Nothing reads them past an hour, so nothing keeps them past
+    one (ruling #320, amending #232). The daily record moved to the
+    storm tally."""
     from custom_components.device_sentinel.const import (
         DATA_STORMS,
         STORM_KEEP_SECONDS,
@@ -779,11 +781,11 @@ async def test_storm_rows_are_trimmed_at_two_days(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     coord.data[DATA_STORMS] = [
         {"at": T0 - STORM_KEEP_SECONDS - 60, "entry_id": "e", "duration": 5.0},
-        {"at": T0 - 3600, "entry_id": "e", "duration": 5.0},
+        {"at": T0 - 600, "entry_id": "e", "duration": 5.0},
     ]
     coord._trim_storms(T0)
     assert len(coord.data[DATA_STORMS]) == 1
-    assert STORM_KEEP_SECONDS == 172800.0
+    assert STORM_KEEP_SECONDS == 3600.0
 
 
 def test_an_unclosed_window_does_not_stay_open_forever():

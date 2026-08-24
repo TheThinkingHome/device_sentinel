@@ -44,7 +44,6 @@ from custom_components.device_sentinel.const import (
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
-    DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     DEV_TAINTED,
@@ -395,7 +394,8 @@ async def test_signal_recording_and_rollover(hass: HomeAssistant, freezer):
     freezer.move_to(nxt + timedelta(seconds=1))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert rec[DEV_SIGNAL_DAILY_MIN] == [87.0]
+    # The daily-minimum series is erased (ruling #322); the fold
+    # still resets today's minimum for the new day.
     assert rec[DEV_SIGNAL_TODAY_MIN] is None
 
 

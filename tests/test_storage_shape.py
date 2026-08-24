@@ -55,7 +55,7 @@ from custom_components.device_sentinel.const import (
     SYS_STORAGE_SHAPE,
     TAINT_REASONS,
     DEV_SIGNAL_ALT,
-    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_READS,
     DEV_SIGNAL_VALUE,
     SIGNAL_SCALE_LQI,
@@ -124,7 +124,6 @@ def test_a_learned_record_has_no_faults():
     rec["signal_p50_state"] = [1.0, 2.0, 3.0, 4.0, 5.0]
     rec["signal_daily_count"] = [400, 512, 380]
     rec["signal_daily_rail"] = [0, 0, 1]
-    rec["signal_daily_min"] = [120.0, 118.0, 124.0]
     rec["battery_since"] = "2026-08-01T00:00:00+00:00"
     rec["frozen_category"] = "frozen"
     assert check_records({"d1": rec}) == []
@@ -138,7 +137,7 @@ def test_every_planted_corruption_is_named():
         "series_string": (DEV_DAILY_MAX, "sixty"),
         "series_with_nan": (DEV_DAILY_MAX, [1.0, math.nan]),
         "series_with_inf": (DEV_DAILY_MAX, [1.0, math.inf]),
-        "series_with_string": (DEV_SIGNAL_DAILY_MIN, [1.0, "x"]),
+        "series_with_string": (DEV_SIGNAL_DAILY_P50, [1.0, "x"]),
         "series_with_bool": (DEV_DAILY_MAX, [1.0, True]),
         "scalar_nan": (DEV_TODAY_MAX, math.nan),
         "scalar_string": (DEV_TODAY_MAX, "5"),
@@ -242,6 +241,11 @@ async def test_the_reference_fleet_is_clean():
     assert len(devices) >= 100
     template = _new_device_record("2026-08-16T00:00:00+00:00", None)
     for record in devices.values():
+        for field in [k for k in record if k not in template]:
+            # The reconciler removes schema-dropped keys before the
+            # check runs in production (ruling #256); the erased
+            # signal fields (ruling #322) are in this snapshot.
+            del record[field]
         for field, blank in template.items():
             record.setdefault(field, blank)
     assert check_records(devices) == []
@@ -263,7 +267,7 @@ async def test_a_second_scale_block_is_checked_inside():
     # A wrong type inside the block is named with its field.
     for field, wrong in (
         (DEV_SIGNAL_VALUE, "loud"),
-        (DEV_SIGNAL_DAILY_MIN, "not a series"),
+        (DEV_SIGNAL_DAILY_P50, "not a series"),
         (DEV_SIGNAL_READS, 3.5),
     ):
         bad = dict(good)

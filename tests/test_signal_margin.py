@@ -42,23 +42,22 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
-    SIGNAL_ANOMALY_TRIM,
     SIGNAL_LIFT,
     SIGNAL_MARGIN,
-    DEV_SIGNAL_DAILY_MIN,
+    DEV_SIGNAL_DAILY_P5,
 )
 
 from .helpers import setup_coordinator
 
-# Fourteen days, so the trim ladder is at its fortnight rung and the
-# floor is the third lowest. LQI values from the development fleet's
+# Fourteen days; the floor is the plain minimum of the window
+# (ruling #323). LQI values from the development fleet's
 # mid-strength devices.
 LQI_DAYS = [100.0, 104.0, 108.0, 112.0, 116.0, 120.0, 124.0] * 2
 RSSI_DAYS = [-60.0, -62.0, -64.0, -66.0, -68.0, -70.0, -72.0] * 2
 
 
 def _record(days):
-    return {DEV_SIGNAL_DAILY_MIN: list(days)}
+    return {DEV_SIGNAL_DAILY_P5: list(days)}
 
 
 async def test_a_zero_margin_would_be_the_floor_itself(
@@ -75,22 +74,22 @@ async def test_a_zero_margin_would_be_the_floor_itself(
     coord = await setup_coordinator(hass)
     monkeypatch.setattr(coord, "_signal_margin", lambda: 0.0)
 
-    assert coord._danger_line(_record(LQI_DAYS)) == 104.0
+    assert coord._danger_line(_record(LQI_DAYS)) == 100.0
 
 
 async def test_the_margin_lifts_the_line_above_the_floor(
     hass: HomeAssistant
 ):
-    """Five percent of the headroom above a floor of 104 is 7.55.
+    """Five percent of the headroom above a floor of 100 is 7.75.
 
-    A device sitting at 108, comfortably above its floor and invisible
-    before, now counts as weak.
+    A device sitting at 104, comfortably above its floor and
+    invisible before, now counts as weak.
     """
     coord = await setup_coordinator(hass)
     line = coord._danger_line(_record(LQI_DAYS))
 
-    assert line == pytest.approx(104.0 + 0.05 * (255.0 - 104.0))
-    assert 108.0 < line
+    assert line == pytest.approx(100.0 + 0.05 * (255.0 - 100.0))
+    assert 104.0 < line
 
 
 async def test_rssi_moves_the_same_way_as_lqi(hass: HomeAssistant):
@@ -104,7 +103,7 @@ async def test_rssi_moves_the_same_way_as_lqi(hass: HomeAssistant):
     """
     coord = await setup_coordinator(hass)
     line = coord._danger_line(_record(RSSI_DAYS))
-    floor = -70.0
+    floor = -72.0
 
     assert line > floor
     assert line == pytest.approx(floor + 0.05 * (-20.0 - floor))
@@ -167,7 +166,7 @@ async def test_the_default_is_five_percent(hass: HomeAssistant):
 
     assert coord._signal_margin() == SIGNAL_MARGIN / 100.0
     assert coord._danger_line(_record(LQI_DAYS)) == pytest.approx(
-        104.0 + 0.05 * (255.0 - 104.0)
+        100.0 + 0.05 * (255.0 - 100.0)
     )
 
 
@@ -195,35 +194,12 @@ async def test_the_three_line_shapers_ignore_saved_options(
 
     assert stale._signal_margin() == SIGNAL_MARGIN / 100.0
     assert stale._signal_lift() == SIGNAL_LIFT
-    assert stale._signal_trim() == SIGNAL_ANOMALY_TRIM
-    assert (SIGNAL_MARGIN, SIGNAL_LIFT, SIGNAL_ANOMALY_TRIM) == (5, 0.0, 0)
+    assert (SIGNAL_MARGIN, SIGNAL_LIFT) == (5, 0.0)
     # And the line those three build is the line the defaults built.
     fresh = await setup_coordinator(hass)
     assert stale._danger_line(_record(LQI_DAYS)) == fresh._danger_line(
         _record(LQI_DAYS)
     )
-
-async def test_the_two_settings_are_independent(hass: HomeAssistant):
-    """Trim moves the floor, margin moves the line above it.
-
-    With the trim one rung deeper the floor moves up a place in the
-    series, and the margin is then taken from the new floor rather
-    than from where the floor used to be.
-    """
-    days = [float(100 + 4 * i) for i in range(14)]
-    normal = await setup_coordinator(hass)
-    deeper = await setup_coordinator(hass)
-    deeper._signal_trim = lambda: 1
-
-    # Third lowest is 108, fourth is 112: the trim alone moves the
-    # floor, and the margin rides on whichever floor it lands on.
-    assert normal._danger_line(_record(days)) == pytest.approx(
-        108.0 + 0.05 * (255.0 - 108.0)
-    )
-    assert deeper._danger_line(_record(days)) == pytest.approx(
-        112.0 + 0.05 * (255.0 - 112.0)
-    )
-
 
 async def test_no_history_still_has_no_line(hass: HomeAssistant):
     """The margin does not invent a line where there is no floor.
@@ -235,25 +211,6 @@ async def test_no_history_still_has_no_line(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
 
     assert coord._danger_line(_record([])) is None
-
-
-async def test_the_trim_renders_as_a_word(hass: HomeAssistant):
-    """The report header names the trim depth.
-
-    Only one word is reachable now that the trim is a constant
-    (ruling #311), and the header must still carry it rather than a
-    number: the report calls the per-device trim depth k, and the
-    header showing a second k meant two different things wore one
-    letter.
-    """
-    coord = await setup_coordinator(hass)
-
-    assert coord._signal_trim_label() == "Normal"
-    for depth, word in (
-        (-2, "None"), (-1, "Light"), (1, "Deep"), (2, "Deepest")
-    ):
-        coord._signal_trim = lambda depth=depth: depth
-        assert coord._signal_trim_label() == word
 
 
 async def test_fleet_fixture_the_design_day_numbers(hass: HomeAssistant):
