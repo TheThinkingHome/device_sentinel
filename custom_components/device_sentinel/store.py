@@ -40,7 +40,6 @@ from .const import (
     DEV_SIGNAL_COUNT,
     DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_MEAN,
-    DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_M2,
@@ -358,7 +357,6 @@ class StorageMixin:
             for field in (
                 DEV_SIGNAL_DAILY_MAX,
                 DEV_SIGNAL_DAILY_MEAN,
-                DEV_SIGNAL_DAILY_MIN,
                 DEV_SIGNAL_DAILY_P5,
                 DEV_SIGNAL_DAILY_P50,
             ):

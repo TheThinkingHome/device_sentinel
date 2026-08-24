@@ -61,7 +61,14 @@ from .const import (
     LOGGER,
     STARTUP_GRACE_SECONDS,
     STORM_DEVICE_THRESHOLD,
+    DATA_STORM_DAYS,
     DATA_STORMS,
+    STORM_DAY_COUNT,
+    STORM_DAY_DATE,
+    STORM_DAY_DEVICES,
+    STORM_DAY_DOMAIN,
+    STORM_DAY_DURATION,
+    STORM_DAY_INTERVAL,
     STORM_AT,
     STORM_DEVICES,
     STORM_DOMAIN,
@@ -98,6 +105,15 @@ def _spell_minutes(minutes: int) -> str:
     shown = int(days) if float(days).is_integer() else round(days, 1)
     return f"{shown} days"
 
+
+
+def _median(values: list[float]) -> float:
+    """Return the median. Values are never empty at the call sites."""
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return float(ordered[middle])
+    return (ordered[middle - 1] + ordered[middle]) / 2.0
 
 class InterventionMixin:
     """Interventions: bridge state, pairing windows, and storms."""
@@ -780,6 +796,50 @@ class InterventionMixin:
         if len(kept) != len(storms):
             self.data[DATA_STORMS] = kept
 
+    def _fold_storm_days(self, day: str) -> None:
+        """Write the day's storm tally, one row per domain (#320).
+
+        Count, median seconds between storms, median device count,
+        median duration, kept on the retention setting. This is the
+        record the raw one-hour rows cannot be, and the brief's
+        flood sentence (ruling #321) is its reader.
+        """
+        rows = self.data.setdefault(DATA_STORM_DAYS, [])
+        for domain, storms in sorted(self._storm_day.items()):
+            if not storms:
+                continue
+            times = sorted(at for at, _devices, _duration in storms)
+            gaps = [
+                later - earlier
+                for earlier, later in zip(times, times[1:])
+            ]
+            rows.append(
+                {
+                    STORM_DAY_DATE: day,
+                    STORM_DAY_DOMAIN: domain,
+                    STORM_DAY_COUNT: len(storms),
+                    STORM_DAY_INTERVAL: round(_median(gaps), 1)
+                    if gaps
+                    else None,
+                    STORM_DAY_DEVICES: round(
+                        _median(
+                            [devices for _at, devices, _d in storms]
+                        ),
+                        1,
+                    ),
+                    STORM_DAY_DURATION: round(
+                        _median(
+                            [duration for _at, _dev, duration in storms]
+                        ),
+                        1,
+                    ),
+                }
+            )
+            self._dirty = True
+        self._storm_day.clear()
+        keep = self.retention_days * 12
+        del rows[:-keep]
+
     def _end_storm(
         self, entry_id: str, storm: dict[str, Any], now: float
     ) -> None:
@@ -793,6 +853,15 @@ class InterventionMixin:
             self._close_storm_row(
                 entry_id, now, duration, len(storm["devices"])
             )
+            # The day's tally (ruling #320): raw rows keep one hour
+            # for the polling verdict, so the daily record is
+            # accumulated here and folded at midnight. Memory only:
+            # a restart loses the pre-restart part of one day's
+            # tally, and the reference fleet's nightly restart runs
+            # after the fold, so an ordinary day is complete.
+            self._storm_day.setdefault(
+                self._entry_domain(entry_id), []
+            ).append((now, len(storm["devices"]), duration))
         if announce:
             self._record_system_event(
                 SYS_STORM_CLOSED,

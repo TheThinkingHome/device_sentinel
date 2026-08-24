@@ -78,6 +78,11 @@ from .const import (
     SYS_KIND,
     SYS_OPTIONS_CHANGED,
     SYS_TRIMMED,
+    DATA_STORM_DAYS,
+    STORM_DAY_COUNT,
+    STORM_DAY_DATE,
+    STORM_DAY_DOMAIN,
+    STORM_DAY_INTERVAL,
     SYS_STORAGE_SHAPE,
     SYS_MAINTENANCE_CLOSED,
     SYS_MAINTENANCE_OPEN,
@@ -560,8 +565,55 @@ class BriefMixin:
         said: list[str] = []
         said += self._quiet_run_sentences(rows)
         said += self._storm_sentences(rows)
+        said += self._flood_sentences()
         said += self._options_sentence(rows)
         said += self._other_house_sentences(rows)
+        return said
+
+    def _flood_sentences(self) -> list[str]:
+        """Return one sentence per flooding domain (ruling #321).
+
+        Read from the newest day of the storm tally (ruling #320),
+        present while the domain keeps storming and gone when it
+        quiets or is excluded. The sentence teaches the one thing a
+        person at a flood needs: muting does not reduce what is
+        recorded, excluding removes the noise at the source. It
+        recommends considering, never instructs, because on another
+        fleet the flooding integration may be the only thing
+        watching those devices.
+        """
+        rows = self.data.get(DATA_STORM_DAYS) or []
+        if not rows:
+            return []
+        newest = max(
+            (row.get(STORM_DAY_DATE) or "" for row in rows), default=""
+        )
+        if not newest:
+            return []
+        excluded = self.excluded_integrations
+        said: list[str] = []
+        for row in rows:
+            if row.get(STORM_DAY_DATE) != newest:
+                continue
+            domain = row.get(STORM_DAY_DOMAIN)
+            count = int(row.get(STORM_DAY_COUNT) or 0)
+            if not domain or domain in excluded or count < 2:
+                continue
+            interval = row.get(STORM_DAY_INTERVAL)
+            cadence = (
+                f", about every {self._human_span(float(interval))}"
+                if interval
+                else ""
+            )
+            said.append(
+                f"{domain} republished its whole fleet {count} "
+                f"time(s) on {newest}{cadence}. Its devices are "
+                f"watched and learn the polling rhythm, and muting "
+                f"does not reduce what is recorded; if these devices "
+                f"are covered elsewhere, excluding the integration "
+                f"on the Exclusions and Muting screen removes the "
+                f"noise at the source."
+            )
         return said
 
     def _longest(

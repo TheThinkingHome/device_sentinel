@@ -5,7 +5,7 @@
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
 # File: detect_signal.py, Version: 0.16.12 (2026-08-21)
 
-"""Signal: the learned floor, the line, dwell, and the rails.
+"""Signal: the learned floor, the line, and the rails.
 
 One of six subject modules split out of coordinator.py, which
 had reached four thousand lines. The seam is the subject, chosen
@@ -49,19 +49,14 @@ from .const import (
     DEFAULT_BADDAY_DROP_LQI,
     DEFAULT_BADDAY_DROP_RSSI,
     DEFAULT_BADDAY_SENSITIVITY,
-    DEV_SIGNAL_BELOW_SINCE,
-    DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_COUNT,
     DEV_SIGNAL_DAILY_COUNT,
-    DEV_SIGNAL_DAILY_LINE,
     DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_MEAN,
-    DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_DAILY_SD,
-    DEV_SIGNAL_DWELL_DAILY,
     DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_M2,
     DEV_SIGNAL_MEAN_RUN,
@@ -87,7 +82,6 @@ from .const import (
     SIGNAL_REFUSED_UNITS,
     SIGNAL_SCALE_LQI,
     TODO_KIND_RAILED_SIGNAL,
-    SIGNAL_ANOMALY_TRIM,
     SIGNAL_LIFT,
     SIGNAL_MARGIN,
     SIGNAL_SCALE_RSSI,
@@ -97,8 +91,6 @@ from .const import (
     SIGNAL_RAIL_RSSI,
     SIGNAL_RSSI_DEAD,
     SIGNAL_RSSI_PERFECT,
-    SIGNAL_TRIM_LADDER_MAX,
-    SIGNAL_TRIM_PER_WEEK,
     TODO_DEVICE_ID,
     TODO_KINDS,
 )
@@ -229,37 +221,16 @@ def _is_percentage(ent: er.RegistryEntry) -> bool:
 
 
 class SignalMixin:
-    """Signal: the learned floor, the line, dwell, and the rails."""
+    """Signal: the learned floor, the line, and the rails."""
 
     def _roll_dwell(self, record: dict[str, Any], now: float) -> None:
-        """Close the day's dwell into the rolling daily percentages.
+        """Fold the day's signal statistics.
 
-        An open below-timer closes at now rather than freezing at its
-        last reading: a link that dies below the line was below the
-        line the whole silence, so its day reads 100 percent, which is
-        the truth (the completed-gap principle turned inside out,
-        the completed-gap principle turned inside out). A device
-        still below at midnight is
-        re-stamped so the new day keeps accumulating without a seam.
-
-        The percentage is against the full day. Recording starts from
-        day one while the floor is still settling; the early numbers
-        are provisional the same way rhythm floors were before day 7,
-        and are recorded anyway rather than gated.
+        The name survives its subject: the dwell record is erased
+        (ruling #322) and the fold now writes only the statistics the
+        detector reads. Kept as the coordinator's one entry point so
+        the midnight roll calls what it always called.
         """
-        below_since = record.get(DEV_SIGNAL_BELOW_SINCE)
-        accumulated = float(record.get(DEV_SIGNAL_BELOW_TODAY) or 0.0)
-        if below_since is not None:
-            accumulated += max(0.0, now - below_since)
-            record[DEV_SIGNAL_BELOW_SINCE] = now
-        had_line = self._danger_line(record) is not None
-        if had_line:
-            pct = min(100.0, 100.0 * accumulated / 86400.0)
-            record.setdefault(DEV_SIGNAL_DWELL_DAILY, []).append(
-                round(pct, 2)
-            )
-            del record[DEV_SIGNAL_DWELL_DAILY][:-self.retention_days]
-        record[DEV_SIGNAL_BELOW_TODAY] = 0.0
         self._roll_signal_stats(record, now)
 
     def _roll_signal_stats(
@@ -301,10 +272,9 @@ class SignalMixin:
         of nothing but rail readings writes the row too, rail count
         real and every statistic null, because three consecutive
         rail days are the confirmation the rail verdict needs
-        (ruling #78) and dropping the day would break the count. A
+        (rulings #78, #322) and dropping the day would break the count. A
         day with neither writes nothing, so these series stay
-        aligned with each other but may be shorter than the dwell
-        series, which records whenever a line existed.
+        aligned with each other.
         """
         # The day's tail: the held value has been accruing minutes
         # since its last feed, and they belong to the day being
@@ -321,11 +291,6 @@ class SignalMixin:
         reads = int(record.get(DEV_SIGNAL_READS) or 0)
         rails = int(record.get(DEV_SIGNAL_RAIL_COUNT) or 0)
         if count > 0 and reads > 0:
-            # The line first, while the mean and deviation series
-            # still end on yesterday: this is the line that judged
-            # the day being folded, and appending today's mean first
-            # would move the ceiling under it (ruling #245).
-            line = self._danger_line(record) if judged else None
             variance = max(0.0, m2 / count)
             record.setdefault(DEV_SIGNAL_DAILY_MEAN, []).append(
                 round(mean, 2)
@@ -374,10 +339,6 @@ class SignalMixin:
                 record.get(DEV_SIGNAL_TODAY_MAX)
             )
             record.setdefault(DEV_SIGNAL_DAILY_COUNT, []).append(reads)
-            if judged:
-                record.setdefault(DEV_SIGNAL_DAILY_LINE, []).append(
-                    round(line, 2) if line is not None else None
-                )
             record.setdefault(DEV_SIGNAL_DAILY_RAIL, []).append(
                 int(record.get(DEV_SIGNAL_RAIL_COUNT) or 0)
             )
@@ -390,8 +351,6 @@ class SignalMixin:
                 DEV_SIGNAL_DAILY_COUNT,
                 DEV_SIGNAL_DAILY_RAIL,
             ]
-            if judged:
-                trimmed.append(DEV_SIGNAL_DAILY_LINE)
             for field in trimmed:
                 del record[field][:-self.retention_days]
         elif rails > 0:
@@ -412,8 +371,6 @@ class SignalMixin:
             ):
                 record.setdefault(key, []).append(None)
             record.setdefault(DEV_SIGNAL_DAILY_COUNT, []).append(0)
-            if judged:
-                record.setdefault(DEV_SIGNAL_DAILY_LINE, []).append(None)
             record.setdefault(DEV_SIGNAL_DAILY_RAIL, []).append(rails)
             trimmed = [
                 DEV_SIGNAL_DAILY_MEAN,
@@ -424,8 +381,6 @@ class SignalMixin:
                 DEV_SIGNAL_DAILY_COUNT,
                 DEV_SIGNAL_DAILY_RAIL,
             ]
-            if judged:
-                trimmed.append(DEV_SIGNAL_DAILY_LINE)
             for field in trimmed:
                 del record[field][:-self.retention_days]
         # The naive accumulators are legacy after #254: the fold
@@ -453,7 +408,6 @@ class SignalMixin:
         # primary is the record itself; a second scale is its own
         # block, recorded and never judged (rulings #284, #285).
         bucket = signal_bucket(record, scale_of(value))
-        judged = bucket is record
 
         previous = bucket.get(DEV_SIGNAL_VALUE)
         if previous is None or value != previous:
@@ -481,11 +435,6 @@ class SignalMixin:
         # on this fleet reporting rates differ by two orders of
         # magnitude.
         self._feed_percentiles(bucket, now=now, new_value=value)
-        if judged:
-            # The dwell timer runs against the danger line, and the
-            # line belongs to the primary alone until the data says
-            # which scale deserves to be judged (ruling #285).
-            self._feed_dwell(record, value, now)
 
     def _welford_state(
         self, record: dict[str, Any]
@@ -567,39 +516,6 @@ class SignalMixin:
                 record[DEV_SIGNAL_PSQ_TS] = now
             record[DEV_SIGNAL_PSQ_VALUE] = float(new_value)
 
-    def _feed_dwell(
-        self, record: dict[str, Any], value: float, now: float
-    ) -> None:
-        """Run the below-the-line timer for one real reading.
-
-        Signal is reported as dwell, not crossings (ruling #59):
-        a battery moves one direction, but signal is noisy and always
-        recovering, so the unit is time spent below the danger line,
-        accumulated by a timer and rolled into a daily percentage. A
-        momentary dip that recovers never counts for more than the
-        moment it lasted.
-
-        At the floor counts as below it: a device sitting exactly on
-        its trimmed floor is living at its lows, which is the thing
-        being measured. The line exists from the first recorded day
-        (k=0, floor = lowest real reading) and simply settles as the
-        trim ladder matures.
-        """
-        line = self._danger_line(record)
-        below_since = record.get(DEV_SIGNAL_BELOW_SINCE)
-        if line is None:
-            record[DEV_SIGNAL_BELOW_SINCE] = None
-            return
-        if value < line:
-            if below_since is None:
-                record[DEV_SIGNAL_BELOW_SINCE] = now
-        elif below_since is not None:
-            record[DEV_SIGNAL_BELOW_TODAY] = (
-                float(record.get(DEV_SIGNAL_BELOW_TODAY) or 0.0)
-                + max(0.0, now - below_since)
-            )
-            record[DEV_SIGNAL_BELOW_SINCE] = None
-
     def _danger_line(self, record: dict[str, Any]) -> float | None:
         """Return this device's line: its trimmed floor plus the
         sensitivity margin, or None with no history.
@@ -658,8 +574,7 @@ class SignalMixin:
         history = self._signal_history(record)
         if not history:
             return None
-        effective_k = self._signal_effective_k(len(history))
-        floor = sorted(history)[effective_k]
+        floor = min(history)
         line = floor + self._anchored_margin(floor)
         ceiling = self._good_state_ceiling(record)
         if ceiling is not None:
@@ -736,49 +651,31 @@ class SignalMixin:
         ceiling = self._good_state_ceiling(record)
         if ceiling is None:
             return False
-        floor = sorted(history)[self._signal_effective_k(len(history))]
+        floor = min(history)
         return floor + self._anchored_margin(floor) > ceiling
 
     @staticmethod
     def _signal_history(record: dict[str, Any]) -> list[float]:
-        """Return the device's daily signal lows with rail values
-        removed. Rails are fill values, not readings, so they never
-        feed the floor and never count toward the trim.
+        """Return the device's daily P5 window, nulls skipped.
 
+        The floor reads the time-weighted 5th percentile rather than
+        the retired one-packet daily minimum (rulings #322, #323):
+        P5 already discards the worst five percent of every day by
+        time, so no cross-day trim is applied and the floor is the
+        plain minimum of this window. Rail-only days recorded null
+        statistics (ruling #305) and are skipped, so a device whose
+        whole history is rail has no floor rather than a false one.
         Only the most recent SIGNAL_DAYS_KEEP days are read, however
-        many are stored. Thirty rather than the fourteen the rhythm
-        uses, because a floor is a trimmed minimum and a short window
-        forgets a device's genuinely bad days: on the reference fleet
-        fifty-one of seventy-eight had a worse day just outside the
-        fortnight, and the floor jumping as one aged out is what made
-        dwell spike to a hundred percent and back within days
-        (ruling #196). The series is still kept for as long as the
-        person asks, and reading all of it would slacken every floor,
-        so storage and judgment stay separate (ruling #126).
+        many are stored; storage and judgment stay separate
+        (ruling #126).
         """
         return [
             value
-            for value in (record.get(DEV_SIGNAL_DAILY_MIN) or [])[
+            for value in (record.get(DEV_SIGNAL_DAILY_P5) or [])[
                 -SIGNAL_DAYS_KEEP:
             ]
-            if value not in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
+            if value is not None
         ]
-
-    def _signal_trim(self) -> int:
-        """Return the anomaly trim. This is the k behind the SIGNAL
-        header's trim word: it is global, the same for every device,
-        unlike the per-device effective k which also carries each
-        device's ladder rung.
-
-        A constant since ruling #311, not a setting. It shapes the
-        floor, the floor shapes the danger line, and the line now
-        feeds only recorded history: dwell, which no longer reports,
-        the daily line series, the episode snapshot, and the
-        maintainer telemetry. A control over a number nobody is shown
-        is furniture, and it sat on the Signal screen among four
-        sliders that do judge.
-        """
-        return SIGNAL_ANOMALY_TRIM
 
     def _signal_margin(self) -> float:
         """Return the sensitivity as a fraction of the working band.
@@ -961,54 +858,25 @@ class SignalMixin:
             ),
         }
 
-    def _signal_trim_label(self) -> str:
-        """Return the anomaly trim as a word, not a number.
-
-        The report used to show the slider as K, which collided with
-        the trim depth the same report calls k. A word states what the
-        setting does: shallow settings trim fewer lows so the floor
-        sits lower and flags less, deep settings the reverse. The
-        earlier mood words (Calm through Sensitive) were replaced in
-        0.10.13, because the last of them collided with the new
-        Sensitivity setting beside it, which is a different control
-        entirely.
-        """
-        return {
-            -2: "None",
-            -1: "Light",
-            0: "Normal",
-            1: "Deep",
-            2: "Deepest",
-        }.get(self._signal_trim(), "Normal")
-
-    def _signal_effective_k(self, days: int) -> int:
-        """Return how many of the lowest readings the floor trims.
-
-        One per full week held, shifted by the slider and clamped so
-        at least one reading survives (ruling #196). A count rather
-        than a share, so it stays a whole number of days, but chosen
-        per week so the share stays near a seventh at every rung
-        instead of thinning as the window grows: two rungs discarded
-        fourteen percent of a fortnight and would discard nine
-        percent of a month, lowering every floor on the fleet as a
-        side effect of a change meant to be about stability.
-        """
-        base_k = min(days // SIGNAL_TRIM_PER_WEEK, SIGNAL_TRIM_LADDER_MAX)
-        return max(0, min(base_k + self._signal_trim(), days - 1))
-
     def signal_railed(self, record: dict[str, Any]) -> bool:
         """Return whether this device's signal is stuck at the rail.
 
         A rail is the type's fill value, 255 for LQI or -128 for RSSI:
         the empty value of a field the device stopped populating,
         which reads as perfect signal and is the opposite. It is
-        confirmed over time, not on a single reading: the daily low
-        has sat at a rail for RAIL_CONFIRM_DAYS consecutive days
-        (ruling #78, which replaced the live repeat counter
-        the frozen rework proved unreliable). Reading the daily-low
-        series the report already keeps means no live counter and no
-        per-reading state: a rail that comes and goes within a day
-        never confirms, while one that holds across days does.
+        confirmed over time, not on a single reading: for
+        RAIL_CONFIRM_DAYS consecutive days the device spoke and
+        everything it said was the stuck value, read as a zero
+        reading count beside a rail count above zero (rulings #78,
+        #322). The retired daily-minimum test could not fire on data
+        recorded after 0.12.15, because rails stopped reaching the
+        minimum and rail-only days appended nothing to it, so its
+        tail was the last three speaking days rather than the last
+        three days (ruling #324). A silent day and a railed day both
+        carry a zero count and differ only in the rail entry, which
+        is why the rail column is the evidence. A rail that comes
+        and goes within a day never confirms, while one that holds
+        across days does.
 
         The plausible-value freeze, a real reading that stops moving,
         is not judged here: a device with a strong steady link reports
@@ -1017,12 +885,14 @@ class SignalMixin:
         flat-stretch approach that could restore it if it is ever
         worth building.
         """
-        lows = record.get(DEV_SIGNAL_DAILY_MIN) or []
-        if len(lows) < RAIL_CONFIRM_DAYS:
+        counts = record.get(DEV_SIGNAL_DAILY_COUNT) or []
+        rails = record.get(DEV_SIGNAL_DAILY_RAIL) or []
+        if len(counts) < RAIL_CONFIRM_DAYS or len(rails) < RAIL_CONFIRM_DAYS:
             return False
-        rails = (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
-        recent = lows[-RAIL_CONFIRM_DAYS:]
-        return all(value in rails for value in recent)
+        tail = zip(
+            counts[-RAIL_CONFIRM_DAYS:], rails[-RAIL_CONFIRM_DAYS:]
+        )
+        return all(count == 0 and (rail or 0) > 0 for count, rail in tail)
 
     @staticmethod
     def _is_signal(ent: er.RegistryEntry) -> bool:
@@ -1256,7 +1126,7 @@ class SignalMixin:
                 DATA_DEVICES, {}
             ).items()
             if record.get(DEV_SIGNAL_VALUE) is not None
-            or record.get(DEV_SIGNAL_DAILY_MIN)
+            or record.get(DEV_SIGNAL_DAILY_P5)
         ]
         rows.sort(key=lambda row: row["name"].lower())
         return rows

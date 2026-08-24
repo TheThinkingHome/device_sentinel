@@ -144,10 +144,10 @@ async def async_get_config_entry_diagnostics(
         window_basis, set_aside_indices = coordinator._trimmed_maximum(
             daily_maximum_gaps
         )
-        # The floor and the line were separate computations once and
-        # were merged into one: rails filtered out, the trim ladder
-        # applied. signal_floor is kept as a key so an older reader
-        # does not break, and it equals the line (merged in 0.4.3).
+        # The line: the P5 floor (rulings #322, #323) plus the
+        # sensitivity margin. The signal_floor duplicate that was
+        # kept for older readers is dropped (ruling #322): 0.17.0
+        # reset who the readers are.
         signal_line = coordinator._danger_line(record)
         devices[device_id] = {
             "name": (
@@ -175,15 +175,6 @@ async def async_get_config_entry_diagnostics(
             "statistics": record,
             "window_basis": window_basis,
             "set_aside_indices": sorted(set_aside_indices),
-            "signal_floor": signal_line,
-            # The dwell soak: the danger line the below-timer runs
-            # against, yesterday's percent-below history, and the
-            # stuck flag. Dwell is the share of a day a device spent
-            # under its own line, recorded since 0.4.0 so the level at
-            # which a weak link becomes a problem can be settled from
-            # real numbers rather than guessed. RSSI rows (negative
-            # floors) are provisional: eleven devices and barely-seen
-            # floors do not yet justify trusting the offset.
             "signal_danger_line": signal_line,
             # Whether the good-state ceiling is what set that
             # line, rather than the margin (ruling #193).
@@ -195,18 +186,13 @@ async def async_get_config_entry_diagnostics(
             "signal_line_bounded": coordinator._line_is_bounded(
                 record
             ),
-            "signal_dwell_daily_pct": list(
-                (record.get("signal_dwell_daily_pct") or [])[-DIAGNOSTIC_SERIES_CAP:]
-            ),
-            "signal_below_today_seconds": record.get(
-                "signal_below_today_seconds"
-            ),
             "signal_muted": coordinator._signal_muted(device_id),
             # A rail is a reading stuck at the protocol's fill value
             # (LQI 255, RSSI -128), which is a dead reading rather
-            # than a perfect link. It is confirmed only when the daily
-            # low sits there for three consecutive days, because a
-            # live repeat counter proved unreliable (ruling #78).
+            # than a perfect link. It is confirmed only when the
+            # device spoke for three consecutive days and said
+            # nothing but the fill value: a zero reading count
+            # beside a rail count above zero (rulings #78, #322).
             "signal_railed": coordinator.signal_railed(record),
             # The discharge soak: the daily battery level series and
             # the deltas derived from it (a positive delta is a drop).

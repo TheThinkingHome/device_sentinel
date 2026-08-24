@@ -23,6 +23,7 @@ alone.
 
 from __future__ import annotations
 
+import math
 import os
 from datetime import timedelta
 from html import escape
@@ -35,7 +36,6 @@ from homeassistant.util import dt as dt_util
 from .const import (
     DATA_DEVICES,
     DEV_SIGNAL_DAILY_MEAN,
-    DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_DAILY_COUNT,
@@ -45,8 +45,6 @@ from .const import (
     REPORT_SIGNAL_URL,
     REPORT_WWW_DIR,
     SIGNAL_DAYS_KEEP,
-    SIGNAL_RAIL_LQI,
-    SIGNAL_RAIL_RSSI,
     SIGNAL_TRIM_PER_WEEK,
     WIKI_BASE_URL,
 )
@@ -576,33 +574,30 @@ the Device Sentinel wiki.</footer>
     def _floor_drift_cell(self, record: dict[str, Any]) -> str:
         """Return how fast this device's floor is moving, per week.
 
-        The floor is what dwell is measured against, so a floor that
-        moves makes dwell unreadable across days: a reading of ten
-        percent last week and ten this week mean different things if
-        the line moved between them. On the reference fleet forty-three
-        of seventy-nine floors were moving a point a week or more and
-        one was moving thirty-four, which is the whole reason dwell
-        spiked and collapsed rather than trending (ruling #196).
-
-        Per week rather than per day, because the floor is a trimmed
-        minimum over thirty days and a daily figure would be mostly
-        rounding. Points rather than percent, because neither LQI nor
-        dBm is a percentage.
+        The floor is the lowest daily P5 in the thirty-day window
+        (rulings #322, #323), so the drift is the slope of that
+        minimum recomputed as the window walks forward a day at a
+        time over the last week. Per week rather than per day,
+        because a daily figure would be mostly rounding. Points
+        rather than percent, because neither LQI nor dBm is a
+        percentage.
         """
-        lows = [
+        history = [
             value
-            for value in (record.get(DEV_SIGNAL_DAILY_MIN) or [])
-            if value not in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
+            for value in (record.get(DEV_SIGNAL_DAILY_P5) or [])
+            if isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
         ]
-        if len(lows) < SIGNAL_TRIM_PER_WEEK + 2:
+        if len(history) < SIGNAL_TRIM_PER_WEEK + 2:
             return "-"
         floors: list[float] = []
-        for end in range(len(lows) - SIGNAL_TRIM_PER_WEEK, len(lows) + 1):
-            window = lows[:end][-SIGNAL_DAYS_KEEP:]
-            if not window:
-                continue
-            trim = self._signal_effective_k(len(window))
-            floors.append(sorted(window)[min(trim, len(window) - 1)])
+        for end in range(
+            len(history) - SIGNAL_TRIM_PER_WEEK, len(history) + 1
+        ):
+            window = history[:end][-SIGNAL_DAYS_KEEP:]
+            if window:
+                floors.append(min(window))
         if len(floors) < 3:
             return "-"
         weekly = self._battery_slope(floors) * SIGNAL_TRIM_PER_WEEK
@@ -611,41 +606,31 @@ the Device Sentinel wiki.</footer>
         return f"{floors[-1]:g} {weekly:+.0f}/wk"
 
     def _format_signal_lows_cell(self, record: dict[str, Any]) -> str:
-        """Render the daily signal lows newest-first with the marks.
+        """Render the daily P5 series newest-first with the floor
+        marked.
 
-        Three states, and a value is only ever one of them: the floor
-        is bold, values strictly below the floor are struck through
-        (the trimmed lows, set aside so a spurious bad reading does
-        not define the line), and rail fill values are italic (seen
-        and shown, but never fed to the floor).
-
-        Two rules make repeated values read cleanly, settled after a
-        flat button series showed one 48 bold, one struck, and two
-        plain. The floor mark lands on the EARLIEST recorded
-        occurrence of the floor value, so a reader sees when the
-        device first reached its low. And a value equal to the floor
-        is never struck: only values strictly below the floor are
-        trimmed, so the same number is never both the line and an
-        outlier. This can leave more than k values struck when the
-        trimmed lows repeat, or fewer, which is correct: the marks now
-        describe the values, not the positions the trim happened to
-        pick.
+        The column shows exactly the window the floor is computed
+        over (rulings #126, #322): each value is the day's
+        time-weighted 5th percentile, a rail-only day's null shows
+        as a dash, and the floor, the lowest value in the window, is
+        bold at its earliest occurrence so a reader sees when the
+        device first reached its low. Nothing is struck: the floor
+        is the plain minimum (ruling #323), so no value sits below
+        it.
         """
-        # The column shows exactly the window the floor is computed
-        # over, which is thirty days rather than the two weeks it was
-        # (ruling #196). Showing fourteen while judging on thirty
-        # would leave the marked value outside the cell on any device
-        # whose worst days sit further back, so a reader would see
-        # every reading struck and none marked.
-        stored = list(record.get(DEV_SIGNAL_DAILY_MIN) or [])[
+        stored = list(record.get(DEV_SIGNAL_DAILY_P5) or [])[
             -SIGNAL_DAYS_KEEP:
         ]
         if not stored:
             return "-"
-        rails = (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI)
-        floor = self._danger_line(record)
-        # The earliest (lowest stored index) occurrence of the floor
-        # value is the one to bold, so its first appearance is marked.
+        real = [
+            value
+            for value in stored
+            if isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+        ]
+        floor = min(real) if real else None
         floor_index = None
         if floor is not None:
             for index, value in enumerate(stored):
@@ -655,17 +640,15 @@ the Device Sentinel wiki.</footer>
         parts = []
         for index in reversed(range(len(stored))):
             value = stored[index]
-            text = f"{value:g}"
-            if value in rails:
-                parts.append(f"*{text}*")
+            if value not in real:
+                # A null from a rail-only day (ruling #305), or a
+                # poisoned entry the hostile suite plants: the page
+                # is written whatever a series holds.
+                parts.append("-")
             elif index == floor_index:
-                parts.append(f"**{text}**")
-            elif floor is not None and value < floor:
-                # Strictly below the floor: a trimmed low. A value
-                # equal to the floor is never struck.
-                parts.append(f"~~{text}~~")
+                parts.append(f"**{value:g}**")
             else:
-                parts.append(text)
+                parts.append(f"{value:g}")
         return " ".join(parts)
 
     @staticmethod

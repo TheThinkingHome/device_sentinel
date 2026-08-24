@@ -476,20 +476,19 @@ SENTINEL_TYPE_DATA_SIGNAL = "data_signal"
 # Per-device signal fields (linkquality/RSSI, gather-first).
 DEV_SIGNAL_VALUE = "signal_value"
 DEV_SIGNAL_TODAY_MIN = "signal_today_min"
-DEV_SIGNAL_DAILY_MIN = "signal_daily_min"
-# The dwell recorder. Signal is reported as the share of a day spent
-# below the line rather than as threshold crossings, because a radio
-# link is noisy and always recovering, so crossings would be spam
-# (ruling #59). Two clocks per device: below_since is
-# the open timer stamped when a reading crosses under the danger
-# line, and below_today_seconds is the day's accumulated time under
-# it. The rolling daily history keeps the percentage of each day
-# spent below, beside the daily minimum that feeds the floor: the
-# minimum says how bad the worst moment was, the dwell says how long
-# the bad lasted, and neither can stand in for the other.
-DEV_SIGNAL_BELOW_SINCE = "signal_below_since"
-DEV_SIGNAL_BELOW_TODAY = "signal_below_today_seconds"
-DEV_SIGNAL_DWELL_DAILY = "signal_dwell_daily_pct"
+# The dwell record is erased (ruling #322): the daily minimum, the
+# daily line, the dwell percentage, and the two live below-line
+# clocks. The floor reads P5 (ruling #323) and the rail alert reads
+# the rail column beside the reading count (ruling #322). The key
+# strings survive only so the load sweep can remove them from
+# stored files, including inside signal_alt blocks.
+RETIRED_SIGNAL_KEYS = (
+    "signal_daily_min",
+    "signal_daily_line",
+    "signal_dwell_daily_pct",
+    "signal_below_since",
+    "signal_below_today_seconds",
+)
 
 # How far under the mean the dwell line may sit at the very highest,
 # in the device's own standard deviations. A margin taken as a
@@ -590,7 +589,6 @@ DEV_SIGNAL_DAILY_MAX = "signal_daily_max"
 # line it was measured against), and how many rail readings arrived
 # (a day of thin real statistics should say why).
 DEV_SIGNAL_DAILY_COUNT = "signal_daily_count"
-DEV_SIGNAL_DAILY_LINE = "signal_daily_line"
 DEV_SIGNAL_DAILY_RAIL = "signal_daily_rail"
 DEV_SIGNAL_RAIL_COUNT = "signal_rail_count"
 # last_change is when the signal value last actually moved. Kept for
@@ -651,7 +649,6 @@ SIGNAL_ALT_FIELDS = (
     DEV_SIGNAL_PSQ_TS,
     DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_RAIL_COUNT,
-    DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_SD,
@@ -1012,16 +1009,13 @@ DEV_BATTERY_DAILY = "battery_daily_value"
 SERIES_FREEZE = (DEV_DAILY_MAX,)
 SERIES_BATTERY = (DEV_BATTERY_DAILY,)
 SERIES_SIGNAL = (
-    DEV_SIGNAL_DAILY_MIN,
     DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_COUNT,
-    DEV_SIGNAL_DAILY_LINE,
     DEV_SIGNAL_DAILY_RAIL,
-    DEV_SIGNAL_DWELL_DAILY,
 )
 
 # Step 6 freeze verdict, stored so it survives a reboot and so the
@@ -1085,9 +1079,6 @@ EPOCH_KEPT = (
     DEV_FIRST_OBSERVED,
     DEV_SIGNAL_VALUE,
     DEV_SIGNAL_TODAY_MIN,
-    DEV_SIGNAL_DAILY_MIN,
-    DEV_SIGNAL_BELOW_SINCE,
-    DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_COUNT,
     DEV_SIGNAL_MEAN_RUN,
@@ -1103,7 +1094,6 @@ EPOCH_KEPT = (
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_COUNT,
-    DEV_SIGNAL_DAILY_LINE,
     DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_RAIL_COUNT,
     DEV_BATTERY_LOW,
@@ -1134,8 +1124,6 @@ CLOCK_FIELDS = (
     DEV_TODAY_MAX,
     DEV_SIGNAL_VALUE,
     DEV_SIGNAL_TODAY_MIN,
-    DEV_SIGNAL_BELOW_SINCE,
-    DEV_SIGNAL_BELOW_TODAY,
     DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_SUM,
     DEV_SIGNAL_SUM_SQ,
@@ -1218,7 +1206,6 @@ SIGNAL_ARMING_DAYS = 7
 # the devices whose floor swings twenty points in a week from fifteen
 # to five.
 SIGNAL_TRIM_PER_WEEK = 7
-SIGNAL_TRIM_LADDER_MAX = 4
 
 # The window every signal verdict is computed over. Thirty days
 # rather than the fourteen the rhythm uses, because the two measure
@@ -1344,22 +1331,6 @@ BADDAY_BASELINE_DAYS_MAX = 14
 BADDAY_MIN_BASELINE = 4
 BADDAY_MIN_SPREAD = 1.0
 
-# The three that shape the danger line are constants, not settings
-# (ruling #311). Each was a slider until 0.16.12. The line they build
-# no longer judges anything: dwell stopped reporting at ruling #310,
-# and what the line still feeds is recorded history alone, the daily
-# line series, the snapshot stamped into each episode, and the
-# maintainer telemetry. A control over a number nobody is shown is
-# furniture, and these three sat on the Signal screen among four
-# sliders that do judge, which is worse than furniture.
-#
-# Each is held at the value that was its default, so a fleet on the
-# defaults records exactly what it recorded before. A fleet that had
-# moved one steps once. That is accepted: the comparison this history
-# exists for was made and written into ruling #310 before the change,
-# and the whole family retires together once the bad-day detector has
-# earned it.
-SIGNAL_ANOMALY_TRIM = 0
 SIGNAL_MARGIN = 5
 SIGNAL_LIFT = 0.0
 
@@ -1920,7 +1891,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 318
+HIGHEST_RULING = 324
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1928,7 +1899,25 @@ DATA_STORMS = "storms"
 # is already kept for the full retention in the system events log, so
 # a longer window here would store 2.66 MB of a constant against a
 # storage file of about 880 KB (ruling #232).
-STORM_KEEP_SECONDS = 172800.0
+# One hour, not two days (ruling #320, amending #232). The only
+# reader of the raw rows is the polling verdict, which looks back
+# STORM_HISTORY_SECONDS; two days held 47 unread hours and reached
+# 64 percent of the reference fleet's storage file. The daily
+# record lives in DATA_STORM_DAYS instead.
+STORM_KEEP_SECONDS = 3600.0
+
+# The daily storm tally (ruling #320): one row per domain per day,
+# written at the fold from the day's storms, kept on the retention
+# setting. Count, median seconds between storms, median device
+# count, median duration. The brief's flood sentence (ruling #321)
+# is its reader.
+DATA_STORM_DAYS = "storm_days"
+STORM_DAY_DATE = "day"
+STORM_DAY_DOMAIN = "domain"
+STORM_DAY_COUNT = "count"
+STORM_DAY_INTERVAL = "median_interval"
+STORM_DAY_DEVICES = "median_devices"
+STORM_DAY_DURATION = "median_duration"
 STORM_AT = "at"
 STORM_ENTRY = "entry_id"
 STORM_DOMAIN = "domain"

@@ -35,7 +35,6 @@ from .const import (
     DEFAULT_TAINT_SHARE_PCT,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
-    DEV_SIGNAL_DWELL_DAILY,
     EP_AT,
     EP_BASIS,
     EP_DEVICE_ID,
@@ -53,7 +52,6 @@ from .const import (
     REPORT_EPISODES,
     REPORT_TELEMETRY,
     SIGNAL_DAYS_KEEP,
-    SIGNAL_TRIM_LADDER_MAX,
     STARTUP_GRACE_SECONDS,
     STORM_DEVICE_THRESHOLD,
     STORM_EXEMPT_PER_HOUR,
@@ -355,27 +353,17 @@ class MaintainerReportMixin:
             f"({WIKI_LINK_REPORTS}) on the Device Sentinel wiki.",
             "",
             f"All series read newest first. SIGNAL is each device's "
-            f"daily signal minima; the line dwell is measured "
-            f"against is **bold**, readings below that line are "
-            f"~~struck~~, and rail fill values 255/-128 "
-            f"are *italic* (shown but never fed to the floor). A "
+            f"daily time-weighted 5th percentile (rulings #253, "
+            f"#322), read over the last {SIGNAL_DAYS_KEEP} days; the "
+            f"floor is the lowest of them and the line sits a "
+            f"sensitivity margin above it. Readings below the line "
+            f"are ~~struck~~ and null entries from rail-only days "
+            f"show as a dash. A "
             f"warning sign at the front of the cell marks a device "
-            f"whose daily low has sat at a rail for three days: a "
-            f"stuck reading that shows as perfect signal and is the "
-            f"opposite, a near-certain fault worth a power cycle or a "
-            f"re-bind. The trim grows with the soak, one lowest "
-            f"reading dropped per full week held up to "
-            f"{SIGNAL_TRIM_LADDER_MAX}, over the last "
-            f"{SIGNAL_DAYS_KEEP} days, "
-            f"shifted by the anomaly trim word in the header (None "
-            f"trims no lows so the floor sits lower and flags less, "
-            f"Deepest the reverse), applied to readings going "
-            f"forward only. DWELL% is the share of each day spent "
-            f"below the line, which sits a sensitivity margin above "
-            f"the floor: healthy devices dipping under their line "
-            f"read 0-5 percent, which proves the line has teeth; "
-            f"sustained dwell is the anomaly, and outliers clustered "
-            f"in one room mean that room needs a router. BAT LEVEL is "
+            f"that spoke for three days and said nothing but the "
+            f"rail fill value: a stuck reading that shows as perfect "
+            f"signal and is the opposite, a near-certain fault worth "
+            f"a power cycle or a re-bind. BAT LEVEL is "
             f"the daily battery level, with any reading at or below "
             f"the low threshold **bold**. excl means signal-muted: "
             f"still recorded, not judged.",
@@ -408,8 +396,8 @@ class MaintainerReportMixin:
             "## Learned Statistics",
             "",
             f"| DEVICE (INTEGRATION) | STATUS | GAPS (K={TRIM_TOP_K}) | "
-            f"CLOCK | EVENTS | SIGNAL ({self._signal_trim_label()}) | "
-            f"FLOOR/WK | DWELL% | MEAN\u00b1SD | "
+            f"CLOCK | EVENTS | SIGNAL | "
+            f"FLOOR/WK | MEAN\u00b1SD | "
             f"BAT LEVEL (floor {self.low_threshold:g}%) |",
             "|---|---|---|---|---|---|---|---|---|---|",
         ]
@@ -440,9 +428,6 @@ class MaintainerReportMixin:
                     # whatever record the first loop left behind and
                     # prints one device's figure on every row.
                     self._floor_drift_cell(record),
-                    list(record.get(DEV_SIGNAL_DWELL_DAILY) or [])[
-                        -DAILY_MAX_KEEP:
-                    ],
                     self._format_signal_mean_cell(record),
                     self._format_battery_cell(record),
                     self.signal_railed(record),
@@ -463,32 +448,26 @@ class MaintainerReportMixin:
             event_count,
             lows_cell,
             floor_drift,
-            dwell_daily,
             mean_cell,
             battery_cell,
             railed,
             sig_muted,
         ) in rows:
-            dwell_text = (
-                " ".join(f"{pct:g}" for pct in reversed(dwell_daily))
-                if dwell_daily
-                else "-"
-            )
-            # A confirmed rail (daily low at the fill value for three
-            # days) is marked in the signal cell itself, not a column:
-            # a warning sign ahead of the lows so it reads at a glance.
+            # A confirmed rail (the device spoke for three days and
+            # said nothing but the fill value) is marked in the
+            # signal cell itself, not a column: a warning sign ahead
+            # of the readings so it reads at a glance.
             signal_cell = f"\u26a0\ufe0f {lows_cell}" if railed else lows_cell
             if sig_muted:
-                # Muted devices keep recording (their lows still
-                # show) but are not judged: no dwell, no rail mark.
-                dwell_text = "excl"
-                signal_cell = lows_cell
+                # Muted devices keep recording (their readings still
+                # show) but are not judged: no rail mark.
+                signal_cell = f"excl {lows_cell}"
             lines.append(
                 f"| {device_label} | {status} | "
                 f"{maxima_cell} | "
                 f"{clock_source} | {event_count} | {signal_cell} | "
                 f"{floor_drift} | "
-                f"{dwell_text} | {mean_cell} | {battery_cell} |"
+                f"{mean_cell} | {battery_cell} |"
             )
         lines.append("")
         lines.append(f"{len(rows)} watched devices.")

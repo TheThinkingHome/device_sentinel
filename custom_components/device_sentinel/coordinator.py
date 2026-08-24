@@ -104,6 +104,7 @@ from .const import (
     CONF_TRIM_DEVICES,
     CONF_TRIM_INTEGRATIONS,
     DATA_STATS_EPOCH,
+    DATA_STORM_DAYS,
     DATA_STORMS,
     DATA_SYSTEM_EVENTS,
     DATA_TODO_ITEMS,
@@ -116,15 +117,9 @@ from .const import (
     DEV_FROZEN_CATEGORY,
     DEV_LAST_ACTIVITY,
     DEV_SET_ASIDE_SINCE,
-    DEV_SIGNAL_DAILY_COUNT,
-    DEV_SIGNAL_DAILY_LINE,
-    DEV_SIGNAL_DAILY_MAX,
     DEV_SIGNAL_DAILY_MEAN,
-    DEV_SIGNAL_DAILY_P5,
-    DEV_SIGNAL_DAILY_P50,
-    DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_ALT,
-    DEV_SIGNAL_DAILY_MIN,
+    RETIRED_SIGNAL_KEYS,
     DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_TODAY_MIN,
     DEV_TAINTED,
@@ -323,6 +318,9 @@ class DeviceSentinelCoordinator(
         self._maintenance_opened_at: float | None = None
         self._storm_feed_q: dict[str, deque[tuple[float, str]]] = {}
         self._storm_active: dict[str, dict[str, Any]] = {}
+        # The day's closed storms per domain, memory only, folded
+        # into DATA_STORM_DAYS at midnight (ruling #320).
+        self._storm_day: dict[str, list[tuple[float, int, float]]] = {}
         # Which integrations have been announced as pollers this
         # session. Log-only, so losing it at a restart costs one
         # repeated debug line (ruling #230).
@@ -425,6 +423,7 @@ class DeviceSentinelCoordinator(
         loaded.setdefault(DATA_BRIDGE_SEEN, {})
         loaded.setdefault(DATA_BROKER_SEEN, {})
         loaded.setdefault(DATA_STORMS, [])
+        loaded.setdefault(DATA_STORM_DAYS, [])
         # The dry-run outbox was retired once the
         # notifications it previewed had been sending for
         # several releases. Drop what an older install stored,
@@ -624,6 +623,24 @@ class DeviceSentinelCoordinator(
         removed, filled = self._reconcile_records(
             loaded[DATA_DEVICES], dt_util.utcnow().isoformat()
         )
+        # The reconciler reads top-level keys only, so the erased
+        # signal fields (ruling #322) are swept from second-scale
+        # blocks here: a dual-scale device carries its own copies
+        # inside signal_alt, which the schema sees as one key.
+        alt_swept = 0
+        for record in loaded[DATA_DEVICES].values():
+            alt = record.get(DEV_SIGNAL_ALT)
+            if isinstance(alt, dict):
+                for key in RETIRED_SIGNAL_KEYS:
+                    if key in alt:
+                        del alt[key]
+                        alt_swept += 1
+        if alt_swept:
+            LOGGER.info(
+                "Signal erasure (ruling #322): removed %d retired "
+                "field(s) from second-scale blocks",
+                alt_swept,
+            )
         if removed:
             LOGGER.info(
                 "Storage prune: removed %d legacy field(s) no longer "
@@ -657,7 +674,6 @@ class DeviceSentinelCoordinator(
             )
 
         self.data = loaded
-        self._trim_fabricated_signal_days(loaded)
         # Is this start an upgrade? Read before the marker is moved
         # on, because the answer is the difference between what the
         # file says and what is running. An integration that has just
@@ -1633,93 +1649,6 @@ class DeviceSentinelCoordinator(
             if reason == SET_ASIDE_EXCLUDED
         }
 
-    def _trim_fabricated_signal_days(
-        self, loaded: dict[str, Any]
-    ) -> None:
-        """Remove the rows the unguarded fold wrote, once, at load.
-
-        Before ruling #305 the signal fold appended a full day even
-        when the device had produced no reading, because the
-        time-weighted count stays above zero through silence. Such a
-        row is identifiable forever: its entry in the reading-count
-        series is 0 and its rail entry is 0, a combination the
-        guarded fold can no longer write, since a genuinely rail-only
-        day carries its rail count and a spoken day carries its
-        reads. The whole row is dropped from every series at that
-        index rather than the None being plucked from the maximum,
-        because the fabrication landed in seven series and removing
-        it from one would leave the other six misaligned; dropping
-        the row also puts them back in step with signal_daily_min,
-        which always had the guard.
-
-        On a fleet the fault never touched, no row matches and this
-        walks the records and does nothing, which is why it can run
-        at every load rather than needing a version gate. Repair
-        work ahead of the Heal release, ruled narrowly (ruling
-        #305): the faulty rows were withholding the last-good backup
-        (#278 refreshes only on a clean check), and waiting sixty
-        days for retention to age them out is sixty days without a
-        backup.
-        """
-        devices = loaded.get(DATA_DEVICES) or {}
-        series = (
-            DEV_SIGNAL_DAILY_MEAN,
-            DEV_SIGNAL_DAILY_SD,
-            DEV_SIGNAL_DAILY_P5,
-            DEV_SIGNAL_DAILY_P50,
-            DEV_SIGNAL_DAILY_MAX,
-            DEV_SIGNAL_DAILY_LINE,
-            DEV_SIGNAL_DAILY_RAIL,
-        )
-        for device_id, record in devices.items():
-            for block in (record, record.get(DEV_SIGNAL_ALT)):
-                if not isinstance(block, dict):
-                    continue
-                counts = block.get(DEV_SIGNAL_DAILY_COUNT)
-                if not isinstance(counts, list):
-                    continue
-                rails = block.get(DEV_SIGNAL_DAILY_RAIL)
-                rails = rails if isinstance(rails, list) else []
-                fabricated = [
-                    index
-                    for index, count in enumerate(counts)
-                    if count == 0
-                    and not (
-                        index < len(rails) and (rails[index] or 0) > 0
-                    )
-                ]
-                if not fabricated:
-                    continue
-                # Tail-aligned deletion, not head-aligned. The seven
-                # series were appended together by the fold, so their
-                # tails describe the same days, but their heads may
-                # not: a fleet that predates a series' introduction
-                # carries different lengths (the reference fleet's
-                # maximum runs to 17 where its count runs to 11), and
-                # deleting head index 3 from both would remove two
-                # different days. Index i in the count series is the
-                # day at offset len(counts) - i from the tail, and
-                # that offset finds the same day in every series
-                # whatever its length.
-                total = len(counts)
-                for index in reversed(fabricated):
-                    offset = total - index
-                    del counts[index]
-                    for key in series:
-                        value = block.get(key)
-                        if not isinstance(value, list):
-                            continue
-                        aligned = len(value) - offset
-                        if 0 <= aligned < len(value):
-                            del value[aligned]
-                LOGGER.info(
-                    "Removed %d fabricated signal day(s) from %s: "
-                    "rows written for days the device never reported "
-                    "(ruling #305)",
-                    len(fabricated),
-                    (record.get("name") or device_id),
-                )
-
     async def _check_storage_shape(self, moment: str) -> None:
         """Check every record's shape, report what does not fit, and
         refresh the last-good copy only when nothing does.
@@ -1892,19 +1821,19 @@ class DeviceSentinelCoordinator(
             for bucket in (record, record.get(DEV_SIGNAL_ALT)):
                 if bucket is None:
                     continue
-                if bucket.get(DEV_SIGNAL_TODAY_MIN) is not None:
-                    bucket[DEV_SIGNAL_DAILY_MIN].append(
-                        bucket[DEV_SIGNAL_TODAY_MIN]
-                    )
-                    del bucket[DEV_SIGNAL_DAILY_MIN][
-                        :-self.retention_days
-                    ]
-                    bucket[DEV_SIGNAL_TODAY_MIN] = None
+                # The daily-minimum series is erased (ruling #322);
+                # today's minimum stays live for the telemetry
+                # report and resets with the day.
+                bucket[DEV_SIGNAL_TODAY_MIN] = None
             self._roll_dwell(record, now)
             self._roll_battery(record)
-        # The roll is what confirms a rail (three daily lows at the
-        # fill value), so the sync runs here and the item appears
-        # with the rollover rather than a minute behind it.
+        # The day's storm tally, one row per domain (ruling #320),
+        # written before the save that carries it.
+        self._fold_storm_days(dt_util.now().date().isoformat())
+        # The roll is what confirms a rail (three consecutive days
+        # of nothing but the fill value), so the sync runs here and
+        # the item appears with the rollover rather than a minute
+        # behind it.
         self._sync_problem_list()
         if pushed or self._dirty or self._critical:
             await self._save_now()
