@@ -13,6 +13,8 @@ import os
 
 from homeassistant.core import HomeAssistant
 
+from custom_components.device_sentinel import trim
+
 from custom_components.device_sentinel.const import (
     CONF_MUTED_DEVICES,
     CONF_TRIM_DEVICES,
@@ -444,3 +446,30 @@ async def test_the_trim_pickers_are_not_a_settings_change(
         )
         == 1
     )
+
+
+# ------------------------------------------- what the log says (#329)
+
+def test_the_trim_log_says_what_was_erased(caplog) -> None:
+    """The counts were accepted and dropped on the floor.
+
+    A person reading this line after a trim that matched a device
+    with no record needs to see the zero rather than infer it.
+    """
+    import logging
+
+    caplog.set_level(logging.INFO)
+    trim.log_result(
+        "2026-08-24-1200", {"devices": 2, "episodes": 7}, ["A", "B"]
+    )
+    assert "Erased: devices 2, episodes 7" in caplog.text
+
+
+def test_the_trim_log_says_so_when_nothing_was_recorded(caplog) -> None:
+    """An excluded device's record went at the fold, so the trim
+    finds nothing to erase and the line has to say that."""
+    import logging
+
+    caplog.set_level(logging.INFO)
+    trim.log_result("2026-08-24-1200", {"devices": 0}, ["Ghost"])
+    assert "Erased: nothing recorded" in caplog.text

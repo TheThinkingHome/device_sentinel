@@ -18,6 +18,7 @@ most recent silence episode, whenever that was (ruling #228).
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 
@@ -58,6 +59,14 @@ def _event(kind, scope, when, duration=None, devices=None):
         row[SYS_DEVICES] = devices
     return row
 
+
+
+def _row(kind: str, scope: str, when: float, devices: int | None = None):
+    """Return one system event row, for the closing-window tests."""
+    row: dict[str, Any] = {SYS_KIND: kind, SYS_SCOPE: scope, SYS_WHEN: when}
+    if devices is not None:
+        row[SYS_DEVICES] = devices
+    return row
 
 def _incident(device_id, name, when, event=INCIDENT_OPENED, cause=None):
     """Return one incident row."""
@@ -876,3 +885,70 @@ def test_a_device_silenced_at_the_moment_it_opened_keeps_its_cause():
         attribution.windows(events), "mqtt", "z2m", T0 + 5, T0 + 60
     )
     assert win is not None and win.kind == SYS_BRIDGE_DOWN
+
+
+# ------------------------- a closing lands on the window it closes
+
+def test_a_closing_count_lands_on_the_window_it_closes() -> None:
+    """The fault this release nearly shipped.
+
+    A bridge goes down with no count, comes back carrying one, and a
+    second bridge goes down afterwards. The count belongs to the
+    window that closed, not to whichever window happens to be the
+    most recently opened one when the closing arrives.
+    """
+    # The second window opens before the closing arrives, which is
+    # what separates the popped window from the most recently opened
+    # one. With them in the other order the fault is invisible, and
+    # that ordering is how the first draft of this test passed
+    # against the fault it exists for.
+    found = attribution.windows(
+        [
+            _row(SYS_BRIDGE_DOWN, "z2m", T0),
+            _row(SYS_BRIDGE_DOWN, "zha", T0 + 300.0),
+            _row(SYS_BRIDGE_UP, "z2m", T0 + 600.0, devices=74),
+        ]
+    )
+    by_scope = {(w.kind, w.scope): w for w in found}
+    closed = by_scope[(SYS_BRIDGE_DOWN, "z2m")]
+    still_open = by_scope[(SYS_BRIDGE_DOWN, "zha")]
+
+    assert closed.end == T0 + 600.0
+    assert closed.devices == 74
+    # The window still open when the closing arrived must not have
+    # taken the count that belonged to the one that closed.
+    assert still_open.devices is None
+    assert still_open.end is None
+
+
+def test_a_closing_count_does_not_overwrite_an_opening_count() -> None:
+    """An opening that carried its own count keeps it.
+
+    The closing count fills a gap; it does not correct a figure the
+    opening already recorded.
+    """
+    found = attribution.windows(
+        [
+            _row(SYS_BRIDGE_DOWN, "z2m", T0, devices=12),
+            _row(SYS_BRIDGE_UP, "z2m", T0 + 600.0, devices=74),
+        ]
+    )
+    opening = next(w for w in found if w.kind == SYS_BRIDGE_DOWN)
+    assert opening.devices == 12
+
+
+def test_a_closing_with_no_open_window_changes_nothing() -> None:
+    """A bridge that comes back without ever being seen to go down.
+
+    Nothing is popped, so nothing is written, and the walk does not
+    reach for the last window it happens to hold.
+    """
+    found = attribution.windows(
+        [
+            _row(SYS_BRIDGE_DOWN, "zha", T0),
+            _row(SYS_BRIDGE_UP, "z2m", T0 + 600.0, devices=74),
+        ]
+    )
+    orphan = next(w for w in found if w.scope == "zha")
+    assert orphan.devices is None
+    assert orphan.end is None

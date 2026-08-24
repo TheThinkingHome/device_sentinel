@@ -20,6 +20,7 @@ device. This file holds all of that: install, surface, and engine.
 """
 
 import json
+from typing import Any
 import pathlib
 from datetime import timedelta
 
@@ -59,17 +60,19 @@ from custom_components.device_sentinel.const import (
     DEV_LAST_ACTIVITY,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
-    NOTIFY_CARD_ID,
     FREEZE_CATEGORY_NEVER_REPORTED,
+    FREEZE_CATEGORY_UNAVAILABLE,
+    NOTIFY_CARD_ID,
     NOTIFY_FAMILY_IDS,
     TODO_KIND_RAILED_SIGNAL,
+    TODO_KIND_UNAVAILABLE,
 )
 from custom_components.device_sentinel.notifier import (
     NotifierMixin,
     _in_quiet_hours,
 )
 
-from tests.helpers import setup_entry
+from tests.helpers import register_device, setup_coordinator, setup_entry
 
 DOMAIN = "device_sentinel"
 STORAGE_KEY = f"{DOMAIN}.storage"
@@ -923,3 +926,64 @@ async def test_a_device_with_nothing_learned_is_announced_at_once(
 
     assert len(calls) == 1
     assert coord._held_events == {}
+
+
+# The moment the moved tests measure from.
+T0 = 1786000000.0
+
+
+# ------------------------ the two line tables stay apart (#331)
+
+async def test_a_fault_line_and_a_recovery_line_stay_apart(
+    hass: HomeAssistant,
+) -> None:
+    """Two tables, one variable name, until this release.
+
+    The recovery table holds a sentence and the fault table holds a
+    pair of them, and both were read into the same name. Renaming
+    one is only safe if the two paths are pinned.
+    """
+    coord = await setup_coordinator(hass)
+    fault = coord._event_line(
+        TODO_KIND_UNAVAILABLE, "Door Laundry", "9:04 AM", False, None
+    )
+    recovery = coord._event_line(
+        TODO_KIND_UNAVAILABLE, "Door Laundry", "9:41 AM", True, None
+    )
+    assert "Door Laundry" in fault
+    assert "Door Laundry" in recovery
+    assert fault != recovery
+    # Neither may leak a raw key at a person (ruling #215).
+    assert "_" not in fault.replace("Door Laundry", "")
+    assert "_" not in recovery.replace("Door Laundry", "")
+
+
+async def test_the_earliest_stamp_survives_a_missing_one(
+    hass: HomeAssistant,
+) -> None:
+    """The fault announcement takes the earliest stamp it has.
+
+    The guard used to sit inside a comprehension where nothing could
+    see it. It now binds the value it tested, which is the same
+    behavior and is the point: a kind carrying no stamp is skipped
+    rather than crashing the announcement.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "r4a", "Half Stamped")
+    record = coord.data["devices"][device.id]
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_UNAVAILABLE
+    record[DEV_FROZEN_SINCE] = T0
+
+    fired: list[dict[str, Any]] = []
+
+    def _capture(*args: Any, **kwargs: Any) -> None:
+        fired.append(kwargs)
+
+    coord.fire_fault = _capture  # type: ignore[method-assign]
+    coord._fire_fault_for(
+        device.id,
+        {"name": "Half Stamped", "level": None},
+        {TODO_KIND_UNAVAILABLE: None, "low_battery": T0 + 60.0},
+        T0 + 900.0,
+    )
+    assert fired, "a kind with a stamp must still announce"

@@ -47,28 +47,30 @@ from custom_components.device_sentinel.const import (
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
+    DEV_SIGNAL_DAILY_COUNT,
+    DEV_SIGNAL_DAILY_RAIL,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     LOW_THRESHOLD_MAX,
     LOW_THRESHOLD_MIN,
     WIKI_BASE_URL,
     WIKI_LINK_BATTERY,
+    WIKI_LINK_BATTERY_REPORT,
     WIKI_LINK_DEVICE_PAGE,
     WIKI_LINK_EXCLUSIONS,
     WIKI_LINK_FAQ,
     WIKI_LINK_FREEZE,
     WIKI_LINK_HOME,
-    WIKI_LINK_BATTERY_REPORT,
     WIKI_LINK_INSTALLATION,
     WIKI_LINK_LEARNING,
+    WIKI_LINK_MAINTENANCE,
     WIKI_LINK_NOTIFICATIONS,
     WIKI_LINK_PROBLEM_LIST,
-    WIKI_LINK_MAINTENANCE,
     WIKI_LINK_REPORTS,
     WIKI_LINK_SIGNAL,
 )
 
-from tests.helpers import setup_coordinator, setup_entry
+from tests.helpers import register_device, setup_coordinator, setup_entry
 
 DOMAIN = "device_sentinel"
 
@@ -594,3 +596,99 @@ async def test_the_number_platform_is_gone(hass: HomeAssistant):
         )
         is None
     )
+
+
+# ------------------------------ no filesystem call on the loop (#326)
+
+async def test_the_www_check_never_touches_the_loop(
+    hass: HomeAssistant, monkeypatch
+) -> None:
+    """The look and the make are one executor job.
+
+    The stat was the only filesystem call the integration made on the
+    event loop, which is the one rule the review guide puts above
+    every other.
+    """
+    import importlib
+
+    module = importlib.import_module("custom_components.device_sentinel")
+
+    seen: list[str] = []
+    real_isdir = module.os.path.isdir
+
+    def _watched(path):
+        seen.append("isdir")
+        return real_isdir(path)
+
+    monkeypatch.setattr(module.os.path, "isdir", _watched)
+
+    jobs: list[str] = []
+    real_executor = hass.async_add_executor_job
+
+    def _counted(target, *args):
+        jobs.append(getattr(target, "__name__", str(target)))
+        return real_executor(target, *args)
+
+    monkeypatch.setattr(hass, "async_add_executor_job", _counted)
+    await module._async_serve_www_folder(hass)
+
+    # One trip, and the stat happened inside it rather than beside it.
+    assert jobs.count("_look_then_make") == 1
+    assert seen == ["isdir"]
+
+
+# --------------------------------------------- explicit pairing (#328)
+
+async def test_the_rail_verdict_survives_uneven_series(
+    hass: HomeAssistant
+) -> None:
+    """Non-strict on purpose: a stored file whose count and rail
+    series differ by a day reads as no rail rather than raising
+    inside a verdict."""
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    device, _ = register_device(hass, "z328", "Uneven Series")
+    coord._rebuild_registry_view()
+    record = coord.data["devices"][device.id]
+    record[DEV_SIGNAL_DAILY_COUNT] = [0, 0, 0, 0, 0]
+    record[DEV_SIGNAL_DAILY_RAIL] = [9, 7]
+
+    # Two rail days against five silent ones is not three railed days.
+    assert coord.signal_railed(record) is False
+
+
+def test_the_brief_pairing_is_strict() -> None:
+    """The brief's flood pairing is built in this method, one entry
+    per device, so a length mismatch is a bug here rather than a
+    shape a stored file can produce. Strict says so."""
+    import inspect
+
+    from custom_components.device_sentinel import report_brief
+
+    source = inspect.getsource(report_brief)
+    assert "zip(told, owners, strict=True)" in source
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    ["detect_signal", "interventions", "diagnostics", "report_brief"],
+)
+def test_every_pairing_states_its_intent(module_name: str) -> None:
+    """No bare zip anywhere in the component (ruling #328).
+
+    Ruff's B905 enforces this on the build; the test states why it
+    matters, which a lint rule cannot.
+    """
+    import importlib
+    import inspect
+
+    module = importlib.import_module(
+        f"custom_components.device_sentinel.{module_name}"
+    )
+    source = inspect.getsource(module)
+    for index, line in enumerate(source.splitlines()):
+        if "zip(" not in line:
+            continue
+        window = "\n".join(source.splitlines()[index : index + 6])
+        assert "strict=" in window, f"{module_name}:{index + 1}"

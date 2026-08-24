@@ -224,3 +224,49 @@ async def test_coverage_sensors(hass: HomeAssistant):
     learning = hass.states.get("sensor.device_sentinel_devices_learned")
     assert learning is not None
     assert learning.state == "0"
+
+
+# --------------------------- the row's columns stay in order (#331)
+
+async def test_the_classification_row_keeps_its_columns(
+    hass: HomeAssistant,
+) -> None:
+    """The set-aside reason and the copies count are two columns.
+
+    Both were bound to names that collided with something else in
+    the same method. If a rename crossed them, the reason would
+    print in the copies column and a person would read a device
+    count as a word.
+    """
+    from homeassistant.helpers import device_registry as dr
+    from pytest_homeassistant_custom_component.common import (
+        MockConfigEntry,
+    )
+
+    coord = await setup_coordinator(hass)
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    # A set-aside device, so the reason column carries a word. Two
+    # empty cells cannot tell a swap from a correct row, which is how
+    # the first draft of this test passed against the swap.
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("test", "r4svc")},
+        name="Service Device",
+        entry_type=dr.DeviceEntryType.SERVICE,
+    )
+    coord._rebuild_registry_view()
+    await hass.async_add_executor_job(coord._write_reports)
+    text = open(
+        hass.config.path("device_sentinel/classification.md")
+    ).read()
+    row = next(
+        line
+        for line in text.splitlines()
+        if "Service Device" in line
+    )
+    cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
+    # DEVICE, INTEGRATION, WATCHED, MUTED, SET ASIDE, COPIES.
+    assert len(cells) == 6
+    assert cells[4] == "service"
+    assert cells[5] == ""
