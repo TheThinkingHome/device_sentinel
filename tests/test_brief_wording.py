@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.16.2 (2026-08-19)
+# File: test_brief_wording.py, Version: 0.17.8 (2026-08-25)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -47,6 +47,8 @@ from custom_components.device_sentinel.const import (
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     FREEZE_CATEGORY_UNAVAILABLE,
+    ACTION_ACKNOWLEDGED,
+    INCIDENT_ACTION,
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
     INC_CAUSE,
@@ -58,6 +60,7 @@ from custom_components.device_sentinel.const import (
     INC_WHEN,
     RECOVERY_CAUSE_UNOBSERVED,
     TODO_KIND_FROZEN,
+    TODO_KIND_RAILED_SIGNAL,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_NEVER_REPORTED,
 )
@@ -1195,3 +1198,146 @@ async def test_a_multi_day_pattern_earns_both_sentences(
     )
     assert "went unavailable twice" in prose
     assert "unexplained interruptions over" in prose
+
+
+def _incident_row(device, kind, event, when, cause=None, duration=None):
+    """One incident row shaped as the coordinator stores them."""
+    return {
+        INC_DEVICE_ID: device.id,
+        INC_NAME: device.name,
+        INC_KIND: kind,
+        INC_EVENT: event,
+        INC_WHEN: when,
+        INC_CAUSE: cause,
+        INC_DURATION: duration,
+    }
+
+
+async def test_an_acknowledgment_never_joins_a_flapping_count(
+    hass: HomeAssistant,
+):
+    """An action row is not a going, and resolved is not still down.
+
+    Reproduced from the 25 August brief. Three devices railed at
+    7:28, were acknowledged at 7:29, and the rail resolved at the
+    midnight fold; one also went unavailable for 22 seconds. The
+    flapping collapse counted the acknowledgment as an unresolved
+    opening, so a fully recovered device read "went silent 3 times
+    and is still silent". The pairing already states the rule this
+    asserts: an acknowledgment is not an opening at all.
+    """
+    coord = await setup_coordinator(hass)
+    plug, _ = register_device(hass, "ack_plug", name="Plug Living Room Router")
+    left, _ = register_device(hass, "ack_wdl", name="Window Dining Room Left")
+    coord._rebuild_registry_view()
+
+    open_at = 1_787_142_482.0
+    fold_at = 1_787_202_000.0
+    rows = []
+    for device in (plug, left):
+        rows.append(_incident_row(
+            device, TODO_KIND_RAILED_SIGNAL, INCIDENT_OPENED, open_at))
+        rows.append(_incident_row(
+            device, TODO_KIND_RAILED_SIGNAL, INCIDENT_ACTION,
+            open_at + 68.0, cause=ACTION_ACKNOWLEDGED))
+        rows.append(_incident_row(
+            device, TODO_KIND_RAILED_SIGNAL, INCIDENT_RESOLVED,
+            fold_at, duration=fold_at - open_at))
+    rows.append(_incident_row(
+        plug, TODO_KIND_UNAVAILABLE, INCIDENT_OPENED, open_at + 1140.0))
+    rows.append(_incident_row(
+        plug, TODO_KIND_UNAVAILABLE, INCIDENT_RESOLVED,
+        open_at + 1162.0, duration=22.0))
+
+    told = coord._tell_episodes(coord._pair_incidents(rows), [])
+    joined = " ".join(told)
+
+    assert "still silent" not in joined
+    assert "still railed" not in joined
+    assert "went silent" not in joined
+    # Each episode reads as what happened, on its own.
+    assert any(
+        line.startswith("Plug Living Room Router signal railed")
+        and "recovered" in line
+        for line in told
+    )
+    assert any(
+        line.startswith("Window Dining Room Left signal railed")
+        and "recovered" in line
+        for line in told
+    )
+    assert any(
+        "went unavailable" in line and "recovered 22s later" in line
+        for line in told
+    )
+    # The acknowledgments keep their own sentences rather than
+    # riding into a count.
+    assert sum("acknowledged" in line for line in told) == 2
+
+
+async def test_a_railed_device_flaps_in_rail_words(hass: HomeAssistant):
+    """Two rail episodes read as railed, never as silent.
+
+    A railed device reports the whole time, so the freeze verbs say
+    the opposite of what happened.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "rail_flap", name="Window Office")
+    coord._rebuild_registry_view()
+
+    base = 1_787_000_000.0
+    rows = []
+    for index in range(2):
+        at = base + index * 7200.0
+        rows.append(_incident_row(
+            device, TODO_KIND_RAILED_SIGNAL, INCIDENT_OPENED, at))
+        rows.append(_incident_row(
+            device, TODO_KIND_RAILED_SIGNAL, INCIDENT_RESOLVED,
+            at + 3600.0, duration=3600.0))
+
+    told = coord._tell_episodes(coord._pair_incidents(rows), [])
+
+    assert told == [
+        "Window Office signal railed twice and recovered each time, "
+        "railed for 2.0h in total."
+    ]
+
+
+async def test_kinds_flap_separately_on_one_device(hass: HomeAssistant):
+    """A device flapping in two kinds gets one sentence per kind.
+
+    Buckets carry the kind beside the device, so a rail and an
+    unavailability no longer share one sentence and one verb.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "two_kinds", name="Plug Office")
+    coord._rebuild_registry_view()
+
+    base = 1_787_000_000.0
+    rows = []
+    for index in range(2):
+        at = base + index * 7200.0
+        rows.append(_incident_row(
+            device, TODO_KIND_UNAVAILABLE, INCIDENT_OPENED, at))
+        rows.append(_incident_row(
+            device, TODO_KIND_UNAVAILABLE, INCIDENT_RESOLVED,
+            at + 60.0, duration=60.0))
+        rows.append(_incident_row(
+            device, TODO_KIND_RAILED_SIGNAL, INCIDENT_OPENED, at + 300.0))
+        rows.append(_incident_row(
+            device, TODO_KIND_RAILED_SIGNAL, INCIDENT_RESOLVED,
+            at + 3900.0, duration=3600.0))
+
+    told = coord._tell_episodes(coord._pair_incidents(rows), [])
+
+    assert len(told) == 2
+    assert any(
+        line.startswith("Plug Office went unavailable twice")
+        and "unavailable for 2m in total" in line
+        for line in told
+    )
+    assert any(
+        line.startswith("Plug Office signal railed twice")
+        and "railed for 2.0h in total" in line
+        for line in told
+    )
