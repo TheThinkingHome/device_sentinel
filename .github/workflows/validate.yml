@@ -24,7 +24,7 @@ jobs:
     name: Hassfest (Home Assistant's own manifest checks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Pinned to a commit rather than a branch. A branch reference
       # runs whatever that branch holds at the moment the job starts,
       # so whoever controls it controls what runs here. Dependabot
@@ -37,7 +37,7 @@ jobs:
     name: HACS validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # hacs/action main, 2026-06-08. Tags on this action stopped at
       # 22.5.0, so the maintained line is the branch and a commit is
       # the only fixed point available.
