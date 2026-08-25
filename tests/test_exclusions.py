@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_exclusions.py, Version: 0.15.7 (2026-08-18)
+# File: test_exclusions.py, Version: 0.17.9 (2026-08-25)
 
 """Exclusion: watched and recorded, but not judged or reported.
 
@@ -1117,3 +1117,250 @@ async def test_options_flow_menu_is_work_ordered(hass: HomeAssistant):
         "freeze",
         "advanced",
     ]
+
+
+# The rungs settled against each other (ruling #336). Every save
+# passes through one method, so a decision made on one screen reaches
+# the picks stored by another.
+
+
+async def test_excluding_clears_the_global_mute(hass: HomeAssistant):
+    """The reported case, driven through the real dialog.
+
+    An integration is muted, then excluded on the same save, and the
+    mute is gone from stored options rather than sitting underneath
+    the exclusion where the screen would show it back.
+    """
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, _ = _ladder_device(hass, source, 20)
+    entry = await setup_entry(
+        hass,
+        {
+            CONF_MUTED_INTEGRATIONS: ["test"],
+            CONF_MUTED_DEVICES: [device.id],
+        },
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exclusions"}
+    )
+    # The device pick is not resubmitted: the standing integration
+    # mute already covers it, so the picker does not offer it. It is
+    # in stored options, which is exactly what settling must clear.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "exclude": {CONF_EXCLUDED_INTEGRATIONS: ["test"]},
+            "muting": {
+                CONF_MUTED_INTEGRATIONS: ["test"],
+                CONF_MUTED_LABELS: [],
+                CONF_MUTED_DEVICES: [],
+            },
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == ["test"]
+    assert entry.options[CONF_MUTED_INTEGRATIONS] == []
+    assert entry.options[CONF_MUTED_DEVICES] == []
+
+
+async def test_excluding_clears_every_section_mute(hass: HomeAssistant):
+    """Exclusion reaches the three section screens, not only the one
+    that was submitted."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, _ = _ladder_device(hass, source, 21)
+    entry = await setup_entry(
+        hass,
+        {
+            CONF_BATTERY_MUTED_INTEGRATIONS: ["test"],
+            CONF_BATTERY_MUTED_DEVICES: [device.id],
+            CONF_SIGNAL_MUTED_INTEGRATIONS: ["test"],
+            CONF_FREEZE_MUTED_DEVICES: [device.id],
+        },
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exclusions"}
+    )
+    await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "exclude": {CONF_EXCLUDED_INTEGRATIONS: ["test"]},
+            "muting": {
+                CONF_MUTED_INTEGRATIONS: [],
+                CONF_MUTED_LABELS: [],
+                CONF_MUTED_DEVICES: [],
+            },
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert entry.options[CONF_BATTERY_MUTED_INTEGRATIONS] == []
+    assert entry.options[CONF_BATTERY_MUTED_DEVICES] == []
+    assert entry.options[CONF_SIGNAL_MUTED_INTEGRATIONS] == []
+    assert entry.options[CONF_FREEZE_MUTED_DEVICES] == []
+
+
+async def test_global_mute_clears_the_section_mutes(hass: HomeAssistant):
+    """A globally muted integration is judged by nothing, so a
+    section mute of the same integration decides nothing."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, _ = _ladder_device(hass, source, 22)
+    entry = await setup_entry(
+        hass,
+        {
+            CONF_SIGNAL_MUTED_INTEGRATIONS: ["test"],
+            CONF_BATTERY_MUTED_DEVICES: [device.id],
+        },
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exclusions"}
+    )
+    await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "exclude": {CONF_EXCLUDED_INTEGRATIONS: []},
+            "muting": {
+                CONF_MUTED_INTEGRATIONS: ["test"],
+                CONF_MUTED_LABELS: [],
+                CONF_MUTED_DEVICES: [],
+            },
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert entry.options[CONF_MUTED_INTEGRATIONS] == ["test"]
+    assert entry.options[CONF_SIGNAL_MUTED_INTEGRATIONS] == []
+    assert entry.options[CONF_BATTERY_MUTED_DEVICES] == []
+
+
+async def test_a_pick_a_higher_rung_does_not_reach_survives(
+    hass: HomeAssistant,
+):
+    """Settling removes what is covered and nothing else.
+
+    A second integration's device, muted in a section, is untouched
+    by excluding the first. Coverage is proved rather than assumed
+    (ruling #45), so a pick nothing covers stays.
+    """
+    first = MockConfigEntry(domain="test")
+    first.add_to_hass(hass)
+    covered, _ = _ladder_device(hass, first, 23)
+    # A device's integration is its config entry's domain, not its
+    # identifiers, so a genuinely separate integration needs its own
+    # entry. The first draft of this test used identifiers alone and
+    # built a second device of the same integration.
+    second = MockConfigEntry(domain="keeper")
+    second.add_to_hass(hass)
+    other = dr.async_get(hass).async_get_or_create(
+        config_entry_id=second.entry_id,
+        identifiers={("keeper", "keeper1")},
+        name="Keeper",
+    )
+    er.async_get(hass).async_get_or_create(
+        "sensor", "keeper", "keeper_pct",
+        device_id=other.id, config_entry=second,
+        original_device_class="battery",
+    )
+    entry = await setup_entry(
+        hass,
+        {
+            CONF_BATTERY_MUTED_DEVICES: [covered.id, other.id],
+        },
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exclusions"}
+    )
+    await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "exclude": {CONF_EXCLUDED_INTEGRATIONS: ["test"]},
+            "muting": {
+                CONF_MUTED_INTEGRATIONS: [],
+                CONF_MUTED_LABELS: [],
+                CONF_MUTED_DEVICES: [],
+            },
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert covered.id not in entry.options[CONF_BATTERY_MUTED_DEVICES]
+    assert other.id in entry.options[CONF_BATTERY_MUTED_DEVICES]
+
+
+async def test_settling_is_idempotent(hass: HomeAssistant):
+    """Saving twice changes nothing the first save did not."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, _ = _ladder_device(hass, source, 24)
+    entry = await setup_entry(
+        hass,
+        {
+            CONF_MUTED_INTEGRATIONS: ["test"],
+            CONF_BATTERY_MUTED_DEVICES: [device.id],
+        },
+    )
+    submission = {
+        "exclude": {CONF_EXCLUDED_INTEGRATIONS: ["test"]},
+        "muting": {
+            CONF_MUTED_INTEGRATIONS: ["test"],
+            CONF_MUTED_LABELS: [],
+            CONF_MUTED_DEVICES: [],
+        },
+    }
+    for _ in range(2):
+        result = await hass.config_entries.options.async_init(
+            entry.entry_id
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"next_step_id": "exclusions"}
+        )
+        await hass.config_entries.options.async_configure(
+            result["flow_id"], submission
+        )
+        await hass.async_block_till_done()
+        assert entry.options[CONF_MUTED_INTEGRATIONS] == []
+        assert entry.options[CONF_BATTERY_MUTED_DEVICES] == []
+
+
+async def test_an_excluded_integration_clears_no_label(
+    hass: HomeAssistant,
+):
+    """A label spans integrations, so excluding one says nothing
+    about the others wearing it."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    _ladder_device(hass, source, 25)
+    label = lr.async_get(hass).async_create("Ladder Label")
+    entry = await setup_entry(
+        hass, {CONF_SIGNAL_MUTED_LABELS: [label.label_id]}
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exclusions"}
+    )
+    await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "exclude": {CONF_EXCLUDED_INTEGRATIONS: ["test"]},
+            "muting": {
+                CONF_MUTED_INTEGRATIONS: [],
+                CONF_MUTED_LABELS: [],
+                CONF_MUTED_DEVICES: [],
+            },
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert entry.options[CONF_SIGNAL_MUTED_LABELS] == [label.label_id]
