@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.16.15 (2026-08-21)
+# File: report_brief.py, Version: 0.17.8 (2026-08-25)
 
 """The daily brief: the one report written for a person.
 
@@ -833,6 +833,19 @@ class BriefMixin:
         placed: dict[Any, int] = {}
         for opened, resolved in pairs:
             device_id = opened[INC_DEVICE_ID]
+            # An action row is a person's act, told on its own. It is
+            # never a member of a flood: three acknowledgments inside
+            # a restart's window are not "3 devices signal railed",
+            # which is what grouping them produced the moment the
+            # flapping collapse stopped hiding it.
+            if opened.get(INC_EVENT) != INCIDENT_OPENED:
+                told.append(
+                    self._compose_episode(opened, resolved)
+                    if resolved is not None
+                    else self._compose_event(opened)
+                )
+                owners.append({device_id})
+                continue
             window = (
                 attribution.attribute(
                     spans,
@@ -903,11 +916,25 @@ class BriefMixin:
         to include one keeps its line, because the outage is news the
         flapping sentence does not carry.
         """
-        by_device: dict[str, list[tuple[dict, dict | None]]] = {}
+        # An acknowledgment is not an opening at all. The pairing
+        # states that rule and this consumer now honours it: an
+        # action row rode into these buckets as an unresolved going,
+        # so a device that was acknowledged and fully recovered read
+        # as "still silent" with an inflated count on the 25 August
+        # brief. Only openings are goings.
+        #
+        # Buckets carry the kind beside the device, so a rail and a
+        # 22 second unavailability on the same device no longer share
+        # one sentence and one verb.
+        by_bucket: dict[
+            tuple[str, str], list[tuple[dict, dict | None]]
+        ] = {}
         for opened, resolved in pairs:
-            by_device.setdefault(opened[INC_DEVICE_ID], []).append(
-                (opened, resolved)
-            )
+            if opened.get(INC_EVENT) != INCIDENT_OPENED:
+                continue
+            by_bucket.setdefault(
+                (opened[INC_DEVICE_ID], opened.get(INC_KIND)), []
+            ).append((opened, resolved))
         # A silence the restarts only interrupted is not flapping and
         # is not recoveries: it is one outage the bookkeeping
         # segmented (ruling #308). Decided from the protocol clock
@@ -917,24 +944,26 @@ class BriefMixin:
         # recovery. A device that spoke anywhere in the window fails
         # the test and keeps the flapping sentence, which is what
         # keeps Presence Guest's real reconnects told as such.
+        # Stitching's witness is the standing freeze verdict, so only
+        # a freeze-family bucket can be claimed by it: a railed or a
+        # battery bucket beside a standing freeze is its own news,
+        # not a fragment of the silence.
         stitched = {
-            device_id: members
-            for device_id, members in by_device.items()
-            if self._silence_never_broken(device_id, members)
+            key: members
+            for key, members in by_bucket.items()
+            if key[1] in FREEZE_KINDS_FOR_CAUSE
+            and self._silence_never_broken(key[0], members)
         }
         # A device that has never reported is one standing condition,
         # not a device going and returning, so it keeps the sentence
         # that says so. Pairing sees two rows and would otherwise
         # read them as two silences.
         flapping = {
-            device_id: members
-            for device_id, members in by_device.items()
-            if device_id not in stitched
+            key: members
+            for key, members in by_bucket.items()
+            if key not in stitched
             and len(members) > 1
-            and not any(
-                opened.get(INC_KIND) == TODO_KIND_NEVER_REPORTED
-                for opened, _resolved in members
-            )
+            and key[1] != TODO_KIND_NEVER_REPORTED
         }
         # Remembered for the repeat-offender section (ruling #305,
         # amended): a device the day's flapping sentence already
@@ -943,15 +972,17 @@ class BriefMixin:
         # sentences of one paragraph is the duplication #276 and
         # #304 both exist to prevent. A stitched device counts the
         # same way: its one sentence is its mention.
-        self._flapping_told = set(flapping) | set(stitched)
+        self._flapping_told = {key[0] for key in flapping} | {
+            key[0] for key in stitched
+        }
         # Remembered for the Last 24 Hours table (ruling #308): the
         # rows behind a stitched sentence are bookkeeping, and a
         # table that keeps them beside the sentence that corrects
         # them says the wrong thing twice as often as the right one.
-        self._stitched_told = set(stitched)
+        self._stitched_told = {key[0] for key in stitched}
         if not flapping and not stitched:
             return [line for line, _who in told]
-        gone = set(flapping) | set(stitched)
+        gone = self._flapping_told
         kept = [
             line
             for line, who in told
@@ -959,7 +990,14 @@ class BriefMixin:
         ]
         for members in flapping.values():
             kept.append(self._compose_flapping(members))
-        for device_id, members in stitched.items():
+        # One stitched sentence per device however many of its kinds
+        # were claimed: unavailable and frozen fragments of one
+        # unbroken outage are the same outage, and two identical
+        # sentences say it worse than one.
+        stitched_by_device: dict[str, list] = {}
+        for (device_id, _kind), members in stitched.items():
+            stitched_by_device.setdefault(device_id, []).extend(members)
+        for device_id, members in stitched_by_device.items():
             kept.append(
                 self._compose_stitched(device_id, members, sys_events or [])
             )
@@ -1071,9 +1109,16 @@ class BriefMixin:
         A repeated interruption needs both: what the device did, and
         what it was while it did it. One word cannot carry "went
         unavailable" and "unavailable for 8m in total" at once.
+
+        A rail is not a silence: a railed device reports the whole
+        time, and the freeze verbs said the opposite of what
+        happened on the 25 August brief.
         """
-        if opened.get(INC_KIND) == TODO_KIND_UNAVAILABLE:
+        kind = opened.get(INC_KIND)
+        if kind == TODO_KIND_UNAVAILABLE:
             return "went unavailable", "unavailable"
+        if kind == TODO_KIND_RAILED_SIGNAL:
+            return "signal railed", "railed"
         return "went silent", "silent"
 
     def _compose_flood(
