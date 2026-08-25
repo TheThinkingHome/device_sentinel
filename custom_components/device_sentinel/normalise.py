@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.16.2 (2026-08-19)
+# File: normalise.py, Version: 0.18.0 (2026-08-25)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -583,3 +583,23 @@ def check_clocks(clocks: Any) -> list[tuple[str, str, str]]:
             if why is not None:
                 faults.append((device_id, field, f"expected {kind}, found {why}"))
     return faults
+
+
+def fault_id(fault: tuple[str, str, str]) -> str:
+    """Return the stable identity of one fault (ruling #338).
+
+    `file:holder:field`, where the holder is a device id for a record
+    fault, a table position like `incidents[3]` for a table fault,
+    or the key itself for a scalar. The identity is what lets a later
+    release act on one fault rather than on a list, and what lets a
+    fix flow check that the fault it was opened for still exists by
+    the time a person clicks.
+
+    The file column is derived rather than stored: a clocks-record
+    field belongs to the clocks file, everything else to the main
+    file. That stays true because the main save strips every clock
+    field (#101), so no field name lives in both.
+    """
+    holder, field, _why = fault
+    file = "clocks" if field in CLOCK_FIELDS else "main"
+    return f"{file}:{holder}:{field}"

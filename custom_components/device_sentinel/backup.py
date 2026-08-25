@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.10.20 (2026-08-03)
+# File: backup.py, Version: 0.18.0 (2026-08-25)
 
 """A one-shot copy of both storage files, taken before a release removes
 something it cannot put back.
@@ -33,12 +33,14 @@ exactly that is the file itself.
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import STORAGE_DIR
+from homeassistant.util import dt as dt_util
 
 from .const import (
     BACKUP_LAST_GOOD_SUFFIX,
@@ -46,6 +48,7 @@ from .const import (
     LOGGER,
     STORAGE_CLOCKS_KEY,
     STORAGE_KEY,
+    TRIM_BACKUP_DIR,
 )
 
 
@@ -181,3 +184,143 @@ async def async_refresh_last_good(hass: HomeAssistant) -> bool:
         return False
     LOGGER.debug("Storage last-good copy refreshed")
     return True
+
+
+async def async_copy_evidence(hass: HomeAssistant) -> str | None:
+    """Copy both storage files and both last-good files aside, raw.
+
+    Called when a load has verified faulty, before the first save
+    (ruling #340). The live pair is the evidence: the coordinator's
+    own first save re-serializes the file after migrations have
+    touched it, so without this copy the original of what actually
+    went wrong is destroyed by the process that found it. The
+    last-good pair rides along because it is what every later repair
+    reads, and a session that is about to act on either should
+    preserve both first.
+
+    Raw bytes, not a re-serialization: `shutil.copy2` of whichever of
+    the four files exist. Nothing in the integration ever reads these
+    copies back; the directory is the person's way back, pruned at
+    the fold by the same retention setting as everything else
+    (ruling #343).
+
+    Returns the stamp that names the copies, or None when nothing
+    could be copied. A failure is a log line, not a stop: refusing to
+    load because an evidence copy failed would turn a full disk into
+    a dead integration.
+    """
+    directory = hass.config.path(TRIM_BACKUP_DIR)
+    now = dt_util.now()
+
+    def _copy_all() -> str | None:
+        os.makedirs(directory, exist_ok=True)
+        base = now.strftime("%Y-%m-%d_%H%M%S")
+        stamp = base
+        suffix = 2
+        while os.path.exists(
+            os.path.join(
+                directory, f"device_sentinel_{stamp}.storage.evidence"
+            )
+        ):
+            stamp = f"{base}_{suffix}"
+            suffix += 1
+        sources = [
+            (_storage_path(hass, STORAGE_KEY), f"{stamp}.storage.evidence"),
+            (
+                _storage_path(hass, STORAGE_CLOCKS_KEY),
+                f"{stamp}.clocks.evidence",
+            ),
+            (
+                _storage_path(
+                    hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}"
+                ),
+                f"{stamp}.storage.last-good",
+            ),
+            (
+                _storage_path(
+                    hass, f"{STORAGE_CLOCKS_KEY}.{BACKUP_LAST_GOOD_SUFFIX}"
+                ),
+                f"{stamp}.clocks.last-good",
+            ),
+        ]
+        copied = 0
+        for source, name in sources:
+            if not os.path.exists(source):
+                continue
+            shutil.copy2(
+                source, os.path.join(directory, f"device_sentinel_{name}")
+            )
+            copied += 1
+        return stamp if copied else None
+
+    try:
+        return await hass.async_add_executor_job(_copy_all)
+    except OSError as err:
+        LOGGER.warning("Storage evidence copy failed: %s", err)
+        return None
+
+
+async def async_last_good_taken(hass: HomeAssistant) -> float | None:
+    """Return when the last-good pair was last refreshed.
+
+    The pair is written together, so the older of the two stamps is
+    the honest answer: a pair with one fresh file and one stale one
+    is only as current as the stale one. Read from the files rather
+    than from memory so the answer survives a restart (ruling #341).
+    """
+    paths = [
+        _storage_path(hass, f"{key}.{BACKUP_LAST_GOOD_SUFFIX}")
+        for key in (STORAGE_KEY, STORAGE_CLOCKS_KEY)
+    ]
+
+    def _oldest() -> float | None:
+        stamps = []
+        for path in paths:
+            if not os.path.exists(path):
+                return None
+            stamps.append(os.path.getmtime(path))
+        return min(stamps) if stamps else None
+
+    try:
+        return await hass.async_add_executor_job(_oldest)
+    except OSError:
+        return None
+
+
+async def async_prune_backups(
+    hass: HomeAssistant, retention_days: int
+) -> int:
+    """Delete trim-backup files older than the retention window.
+
+    The same `history_days` setting that bounds every daily series
+    bounds this directory, one retention idea rather than two
+    (ruling #343). No file is special: a copy older than the window
+    describes a fleet state older than anything else the integration
+    still remembers.
+
+    Returns how many files were removed.
+    """
+    directory = hass.config.path(TRIM_BACKUP_DIR)
+    horizon = dt_util.utcnow().timestamp() - retention_days * 86400.0
+
+    def _prune() -> int:
+        if not os.path.isdir(directory):
+            return 0
+        removed = 0
+        for name in os.listdir(directory):
+            if not name.startswith("device_sentinel_"):
+                continue
+            path = os.path.join(directory, name)
+            try:
+                if os.path.getmtime(path) < horizon:
+                    os.remove(path)
+                    removed += 1
+            except OSError:
+                continue
+        return removed
+
+    try:
+        return await hass.async_add_executor_job(_prune)
+    except OSError as err:
+        LOGGER.warning("Trim-backup pruning failed: %s", err)
+        return 0

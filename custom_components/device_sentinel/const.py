@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.16.16 (2026-08-22)
+# File: const.py, Version: 0.18.0 (2026-08-25)
 
 """Constants for the Device Sentinel integration."""
 
@@ -831,6 +831,11 @@ ATTR_SENTINEL_TYPE = "sentinel_type"
 ATTR_SENTINEL_VERSION = "sentinel_version"
 ATTR_FIRST_INSTALLED = "first_installed"
 ATTR_STORAGE_HEALTHY = "storage_healthy"
+# The backup's story on the Status sensor (ruling #341).
+ATTR_LAST_GOOD_TAKEN = "last_good_taken"
+ATTR_LAST_GOOD_AGE_DAYS = "last_good_age_days"
+ATTR_REPAIRS_AT_LOAD = "repairs_at_load"
+ATTR_SHAPE_FAULTS = "shape_faults"
 
 SENTINEL_TYPE_STATUS = "status"
 SENTINEL_TYPE_COVERAGE = "coverage"
@@ -1891,7 +1896,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 336
+HIGHEST_RULING = 343
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1967,6 +1972,10 @@ CONF_TRIM_DEVICES = "trim_devices"
 # release only reports; nothing is repaired until a week of loads and
 # folds has shown the checks fire on nothing good.
 SYS_STORAGE_SHAPE = "storage_shape"
+# A repair or a restore the integration performed on its own storage,
+# recorded so a silent action cannot exist (ruling #342): the detail
+# names what was done and what it was done from.
+SYS_STORAGE_REPAIR = "storage_repair"
 
 # The Repairs surface (rulings #292 to #297, #300 and #301). Four
 # identifiers, each naming a problem class rather than an occurrence,

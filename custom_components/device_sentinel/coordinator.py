@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.16.10 (2026-08-21)
+# File: coordinator.py, Version: 0.18.0 (2026-08-25)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -66,12 +66,26 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from . import trim
-from .normalise import check_clocks, check_records, check_storage
+from .normalise import (
+    check_clocks,
+    check_records,
+    check_storage,
+    fault_id,
+)
 from .repairs import async_evaluate
-from .backup import async_refresh_last_good, async_take_backup
+from .backup import (
+    async_copy_evidence,
+    async_last_good_taken,
+    async_prune_backups,
+    async_refresh_last_good,
+    async_take_backup,
+)
 from .const import (
+    DEFAULT_RETENTION_DAYS,
+    CONF_RETENTION_DAYS,
     REPAIR_MOMENT_BRIEF,
     SYS_STORAGE_SHAPE,
+    SYS_STORAGE_REPAIR,
     AREA_BATTERY,
     AREA_FREEZE,
     AREA_SIGNAL,
@@ -395,6 +409,12 @@ class DeviceSentinelCoordinator(
         # because the load check runs inside the grace and the issue
         # is raised when the grace closes (ruling #300).
         self._shape_faults: list[tuple[str, str, str]] = []
+        # The latch (ruling #341): set when a load verifies faulty or
+        # a fold produces a fault, cleared only by a restart that
+        # loads clean, which is a new coordinator.
+        self._load_faulty: bool = False
+        self._repairs_at_load: int = 0
+        self._last_good_taken: float | None = None
         # Whether this start is running a different version from the
         # one that last wrote storage (ruling #303). Set at load.
         self._version_changed = False
@@ -762,6 +782,10 @@ class DeviceSentinelCoordinator(
         # window would never produce one at all.
         await self._clock_store.async_save(self._clocks_to_save())
         self.storage_healthy = True
+        # The stamp survives restarts by living on the file rather
+        # than in memory (ruling #341): the age a person sees is the
+        # pair's real age, not this process's.
+        self._last_good_taken = await async_last_good_taken(self.hass)
 
         self._grace_until = (
             dt_util.utcnow().timestamp() + STARTUP_GRACE_SECONDS
@@ -1703,60 +1727,83 @@ class DeviceSentinelCoordinator(
         }
 
     async def _check_storage_shape(self, moment: str) -> None:
-        """Check every record's shape, report what does not fit, and
-        refresh the last-good copy only when nothing does.
+        """Check the whole file, protect the evidence, and refresh
+        the last-good copy only when nothing needed doing.
 
         Two moments call this (ruling #278): after load, and after
-        the midnight fold once its records are folded and saved. The
-        second is the guarantee that a system which never restarts
-        still gets a fresh copy every night, and it distinguishes a
-        fault the fold itself produced from one that came off disk,
-        because a record the fold has just written and got wrong is
-        the integration's own doing and reads so in the log.
+        the midnight fold once its records are folded and saved.
 
-        This release reports and touches nothing. Every fault goes to
-        the log, and one system event per moment carries the count so
-        it reaches the brief and the diagnostics. Only when a week of
-        loads and folds has shown the checks quiet on good data does
-        the next release give them the power to repair, and the copy
-        this refreshes is what it will repair from.
+        The refresh rule changed in 0.18.0 (ruling #339): the copy
+        refreshes only in a session whose load was clean the first
+        time, and never after any repair, automatic or human. A
+        repaired file checks clean by construction, because the check
+        judges shapes and a field just written is in the right shape
+        whatever value it holds. Refreshing after a repair would turn
+        the last-good pair from the last file that was born clean
+        into the last file patched until it looked clean, and the
+        whole ladder rests on the first guarantee. Verify has
+        produced one false positive already, the tainted field in
+        0.15.3, so none of this is hypothetical.
+
+        A load that verifies faulty latches (ruling #341): Status
+        reads `problem` for the whole session and only a restart that
+        loads clean clears it. A repair does not clear it, because a
+        repaired file is not a good read.
         """
-        faults = check_records(self.data.get(DATA_DEVICES))
-        # The records are half the file. The tables beneath them and
-        # the clocks file beside it are the other half, and neither
-        # was checked until #332: a damaged incident log or a damaged
-        # clocks file passed, reported clean, and let the last-good
-        # copy refresh over the fault that Heal and Restore exist to
-        # read. Same tuples, same log, same event; only the scope
-        # column widens.
-        faults += check_storage(self.data)
-        # At load the subject is the file as it arrived. At the fold
-        # it is what this process is about to write, which is the
-        # same distinction the record check draws between a fault
-        # storage holds and one the fold produced.
-        if moment == "fold":
-            faults += check_clocks(self._clocks_to_save().get("clocks"))
-        else:
-            faults += check_clocks(self._clocks_seen)
-            self._clocks_seen = None
+        faults = self._gather_shape_faults(moment)
+        if faults and moment == "load":
+            # The evidence copy comes before anything else touches
+            # disk (ruling #340): the first save re-serializes the
+            # file after migrations have handled it, so without this
+            # copy the original of what went wrong is destroyed by
+            # the process that found it.
+            stamp = await async_copy_evidence(self.hass)
+            if stamp:
+                LOGGER.warning(
+                    "Storage evidence copied to trim_backups as %s "
+                    "before anything writes",
+                    stamp,
+                )
+            repaired = self._bank_damaged_clocks(faults)
+            if repaired:
+                # Verify again (the load path's step 4): the repair
+                # list is what remains, and the session stays dirty
+                # however clean it now checks.
+                faults = self._gather_shape_faults(moment)
+            self._load_faulty = True
+        if moment == "fold" and faults:
+            self._load_faulty = True
         # Kept for the Repairs pass, which runs at grace close rather
         # than here. The load check fires inside the startup grace,
         # where nothing is announced (ruling #291), so the result has
         # to survive the wait rather than the issue being raised from
-        # inside the window.
+        # inside the window. Each fault carries a stable identity
+        # (ruling #338) naming file, holder and field, so a later
+        # release can act on one fault rather than on a list.
         self._shape_faults = faults
+        if not faults and not self._load_faulty:
+            if await async_refresh_last_good(self.hass):
+                self._last_good_taken = dt_util.utcnow().timestamp()
+            return
         if not faults:
-            await async_refresh_last_good(self.hass)
+            # Clean now, but the session is latched: the load needed
+            # repair, so the copy is withheld and the latch stands
+            # until a restart loads clean (ruling #341).
+            LOGGER.warning(
+                "Storage checks clean at %s, but this session's load "
+                "was not: the last-good copy is withheld and Status "
+                "stays a problem until a restart loads clean",
+                moment,
+            )
             return
         source = "the fold produced" if moment == "fold" else "storage holds"
-        for device_id, field, why in faults[:50]:
+        for fault in faults[:50]:
             LOGGER.warning(
-                "Storage shape: %s a record that does not fit: device %s, "
-                "field %s: %s. Nothing was changed.",
+                "Storage shape: %s a record that does not fit: %s: %s. "
+                "Nothing was changed.",
                 source,
-                device_id,
-                field,
-                why,
+                fault_id(fault),
+                fault[2],
             )
         if len(faults) > 50:
             LOGGER.warning(
@@ -1771,6 +1818,86 @@ class DeviceSentinelCoordinator(
             + (", ..." if len(fields) > 8 else ""),
             devices=len({d for d, _f, _w in faults}),
         )
+
+    def _gather_shape_faults(
+        self, moment: str
+    ) -> list[tuple[str, str, str]]:
+        """Run all three checks for one moment and return the union.
+
+        At load the clocks subject is the file as it arrived; at the
+        fold it is what this process is about to write, the same
+        distinction the record check draws between a fault storage
+        holds and one the fold produced (ruling #332).
+        """
+        faults = check_records(self.data.get(DATA_DEVICES))
+        faults += check_storage(self.data)
+        if moment == "fold":
+            faults += check_clocks(self._clocks_to_save().get("clocks"))
+        else:
+            faults += check_clocks(self._clocks_seen)
+            self._clocks_seen = None
+        return faults
+
+    def _bank_damaged_clocks(
+        self, faults: list[tuple[str, str, str]]
+    ) -> int:
+        """Repair damaged activity clocks by banking, not by reading.
+
+        A damaged `last_activity` cannot be reconstructed: the entity
+        registry's idea of last-changed is the restart moment for
+        anything that has not spoken since, so reading it would write
+        "reported just now" over a dead device's clock and make the
+        one fault this integration exists to catch invisible
+        (ruling #338, retiring the reconstruct rung).
+
+        Instead the clock restarts honestly, the path an unclean
+        restart already takes: set to now, taint cleared because the
+        gap that taint was waiting to mute no longer exists. No
+        silence is banked into today's maximum, because a value that
+        carries no information gives nothing to measure the silence
+        from; the difference from the unclean-restart path is that
+        there the old stamp was true and here it is noise.
+
+        Each repair is recorded as a system event (ruling #342): a
+        repair nobody can see afterwards is a repair that did not
+        happen as far as the person is concerned.
+        """
+        devices = self.data.get(DATA_DEVICES) or {}
+        now = dt_util.utcnow().timestamp()
+        repaired = 0
+        seen: set[str] = set()
+        for holder, field, _why in faults:
+            if field != DEV_LAST_ACTIVITY:
+                continue
+            # The same damaged clock is reported by the record check
+            # and by the clocks check, one holder in two files. One
+            # repair, one event: found by the first test written
+            # against this, which counted two.
+            if holder in seen:
+                continue
+            seen.add(holder)
+            record = devices.get(holder)
+            if not isinstance(record, dict):
+                continue
+            record[DEV_LAST_ACTIVITY] = now
+            record[DEV_TAINTED] = False
+            repaired += 1
+            self._record_system_event(
+                SYS_STORAGE_REPAIR,
+                detail=(
+                    f"banked a damaged activity clock on {holder}: "
+                    "set to now, taint cleared, nothing banked from "
+                    "a value carrying no information"
+                ),
+            )
+        if repaired:
+            self._repairs_at_load += repaired
+            LOGGER.warning(
+                "Storage repair: %d damaged activity clock(s) "
+                "restarted by banking",
+                repaired,
+            )
+        return repaired
 
     @callback
     def _evaluate_repairs(self, moment: str) -> None:
@@ -1908,6 +2035,25 @@ class DeviceSentinelCoordinator(
         if pushed or self._dirty or self._critical:
             await self._save_now()
         await self._check_storage_shape("fold")
+        # The evidence directory is bounded by the same retention
+        # setting as every daily series, one retention idea rather
+        # than two (ruling #343). No file is special: a copy older
+        # than the window describes a fleet state older than anything
+        # the integration still remembers.
+        pruned = await async_prune_backups(
+            self.hass,
+            int(
+                self.entry.options.get(
+                    CONF_RETENTION_DAYS, DEFAULT_RETENTION_DAYS
+                )
+            ),
+        )
+        if pruned:
+            LOGGER.info(
+                "Trim backups: pruned %d file(s) past the retention "
+                "window",
+                pruned,
+            )
         LOGGER.debug(
             "Day rollover: pushed daily maxima for %d of %d watched devices",
             pushed,
@@ -2169,6 +2315,26 @@ class DeviceSentinelCoordinator(
                 "retention_days": self.retention_days,
             }
         return out
+
+    @property
+    def storage_load_faulty(self) -> bool:
+        """Whether this session's load verified faulty (ruling #341)."""
+        return self._load_faulty
+
+    @property
+    def repairs_at_load(self) -> int:
+        """How many fields this session's load repaired."""
+        return self._repairs_at_load
+
+    @property
+    def last_good_taken(self) -> float | None:
+        """When the last-good pair was last refreshed, from the file."""
+        return self._last_good_taken
+
+    @property
+    def shape_faults(self) -> list[tuple[str, str, str]]:
+        """The standing faults, each addressable via fault_id (#338)."""
+        return list(self._shape_faults)
 
     @property
     def learning_buckets(self) -> dict[str, int]:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.17.8 (2026-08-25)
+# File: report_brief.py, Version: 0.18.0 (2026-08-25)
 
 """The daily brief: the one report written for a person.
 
@@ -84,6 +84,7 @@ from .const import (
     STORM_DAY_DOMAIN,
     STORM_DAY_INTERVAL,
     SYS_STORAGE_SHAPE,
+    SYS_STORAGE_REPAIR,
     SYS_MAINTENANCE_CLOSED,
     SYS_MAINTENANCE_OPEN,
     SYS_PAIRING_CLOSED,
@@ -401,6 +402,12 @@ class BriefMixin:
                 f"Learned history was erased at {when}{extra}. A copy "
                 f"of storage was written first."
             )
+        if kind == SYS_STORAGE_REPAIR:
+            # A repair nobody can see afterwards did not happen as
+            # far as the person is concerned (ruling #342), so the
+            # sentence names the action and its source.
+            extra = f": {detail}" if detail else ""
+            return f"Storage repaired itself at {when}{extra}."
         if kind == SYS_STORAGE_SHAPE:
             # The check writes what it found rather than a count on
             # its own, because a person reading this cannot act on a
@@ -492,6 +499,12 @@ class BriefMixin:
                 f"storage check: {detail}"
                 if detail
                 else "storage check found a record that does not fit"
+            )
+        if kind == SYS_STORAGE_REPAIR:
+            return (
+                f"storage repaired: {detail}"
+                if detail
+                else "storage repaired itself"
             )
         return str(kind)
 

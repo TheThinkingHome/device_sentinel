@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.16.11 (2026-08-21)
+# File: sensor.py, Version: 0.18.0 (2026-08-25)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -68,6 +68,10 @@ from .const import (
     ATTR_SENTINEL_VERSION,
     ATTR_SETUP_COUNT,
     ATTR_STORAGE_HEALTHY,
+    ATTR_LAST_GOOD_TAKEN,
+    ATTR_LAST_GOOD_AGE_DAYS,
+    ATTR_REPAIRS_AT_LOAD,
+    ATTR_SHAPE_FAULTS,
     BATTERY_CLEAR_MARGIN,
     BRIDGE_SENSOR_NAMES,
     BRIDGE_STATES,
@@ -207,8 +211,17 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
 
     @property
     def native_value(self) -> str:
-        """Return the state a person would want to read."""
+        """Return the state a person would want to read.
+
+        A failed data read is reportable and stays reported
+        (ruling #341): a load that verified faulty latches the state
+        at problem for the whole session, a repair does not clear it
+        because a repaired file is not a good read, and only a
+        restart that loads clean clears it.
+        """
         if not self._coordinator.storage_healthy:
+            return STATUS_PROBLEM
+        if self._coordinator.storage_load_faulty:
             return STATUS_PROBLEM
         if self._coordinator.learning_buckets["established"] == 0:
             return STATUS_LEARNING
@@ -224,6 +237,12 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
         recorder weight with no reader.
         """
         counts = self._coordinator.awaiting_enable_counts()
+        taken = self._coordinator.last_good_taken
+        age_days = None
+        if taken is not None:
+            age_days = round(
+                (dt_util.utcnow().timestamp() - taken) / 86400.0, 2
+            )
         return {
             **self._identity(),
             ATTR_FIRST_INSTALLED: self._coordinator.first_installed,
@@ -232,6 +251,20 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
             ATTR_AWAITING_SIGNAL: counts["signal"],
             ATTR_AWAITING_LAST_SEEN: counts["last_seen"],
             ATTR_AWAITING_BATTERY: counts["battery"],
+            # The backup's story (ruling #341): when the last-good
+            # pair was taken, how old it is, how many repairs the
+            # load performed, and how many faults stand. The age is
+            # an attribute rather than an alarm, because a withheld
+            # refresh is correct behaviour and a red sensor for it
+            # would teach people to ignore the sensor.
+            ATTR_LAST_GOOD_TAKEN: (
+                dt_util.utc_from_timestamp(taken).isoformat()
+                if taken is not None
+                else None
+            ),
+            ATTR_LAST_GOOD_AGE_DAYS: age_days,
+            ATTR_REPAIRS_AT_LOAD: self._coordinator.repairs_at_load,
+            ATTR_SHAPE_FAULTS: len(self._coordinator.shape_faults),
         }
 
 
