@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.18.0 (2026-08-25)
+# File: backup.py, Version: 0.18.2 (2026-08-26)
 
 """A one-shot copy of both storage files, taken before a release removes
 something it cannot put back.
@@ -33,6 +33,7 @@ exactly that is the file itself.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from pathlib import Path
@@ -324,3 +325,94 @@ async def async_prune_backups(
     except OSError as err:
         LOGGER.warning("Trim-backup pruning failed: %s", err)
         return 0
+
+
+async def async_restore_main_file(
+    hass: HomeAssistant,
+) -> tuple[bool, float | None]:
+    """Replace an unreadable main storage file from the last-good copy.
+
+    Called from the one place a storage file is found unreadable
+    (ruling #345). The alternative to replacing it is not running at
+    all, so nobody is asked: a question with one sensible answer is
+    not a question.
+
+    Only the main file is replaced. The clocks file is left where it
+    is, holding today's counters, because the merge matches by device
+    id and tolerates a companion that knows about devices the records
+    do not. Restoring it too would roll back a day of live counters to
+    buy consistency the merge does not need.
+
+    Returns (restored, taken), where taken is the copy's timestamp so
+    the caller can say how old it was and what that cost. A missing
+    copy, an unreadable one, or a failed write all return (False,
+    None) and the caller behaves exactly as it did before this
+    existed: it stops with the sentence #327 gives it. One attempt,
+    no retry: a copy that cannot be read now will not read better on
+    a second pass, and a loop here is a boot loop.
+    """
+    live = _storage_path(hass, STORAGE_KEY)
+    copy = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
+
+    def _restore() -> tuple[bool, float | None]:
+        if not os.path.exists(copy):
+            return False, None
+        try:
+            with open(copy, encoding="utf-8") as handle:
+                json.load(handle)
+        except (OSError, ValueError):
+            # The copy is unreadable too. Say nothing over the live
+            # file: a second bad file written over a first is worse
+            # than the first alone.
+            return False, None
+        taken = os.path.getmtime(copy)
+        shutil.copy2(copy, live)
+        return True, taken
+
+    try:
+        return await hass.async_add_executor_job(_restore)
+    except OSError as err:
+        LOGGER.error(
+            "Device Sentinel could not restore %s from its last-good "
+            "copy: %s. Nothing has been changed",
+            STORAGE_KEY,
+            err,
+        )
+        return False, None
+
+
+def describe_restore_loss(taken: float, now: float) -> str:
+    """Say what a copy of that age cost, without inventing a count.
+
+    The copy's timestamp is knowable and the corrupt file's contents
+    are not, so this states the window and the kinds of record inside
+    it, never how many (ruling #345). Any count of events or readings
+    here would be a guess dressed as a fact.
+
+    The number that matters is midnights crossed, not hours elapsed:
+    the nightly rollover is what writes a day into the history, so a
+    copy taken after last night's rollover has cost no daily history
+    at all however old it looks. Dividing hours by 24 gets that wrong
+    in both directions.
+    """
+    local_taken = dt_util.as_local(dt_util.utc_from_timestamp(taken))
+    local_now = dt_util.as_local(dt_util.utc_from_timestamp(now))
+    midnights = (local_now.date() - local_taken.date()).days
+    hours = max(0.0, (now - taken) / 3600.0)
+    when = local_taken.strftime("%B %-d at %-I:%M %p")
+
+    if midnights <= 0:
+        return (
+            f"The copy was taken today at {local_taken.strftime('%-I:%M %p')}, "
+            f"{hours:.1f} hours ago. Today's counters since then are gone. "
+            "No daily statistics were lost."
+        )
+    days = "day" if midnights == 1 else "days"
+    # Singular and plural have to agree: "1 day of daily statistics
+    # are gone" read wrong in the first run of this.
+    verb = "is" if midnights == 1 else "are"
+    return (
+        f"The copy was taken on {when}, {hours / 24:.1f} days ago. "
+        f"That means {midnights} {days} of daily statistics {verb} "
+        "gone for every device, along with today's counters."
+    )

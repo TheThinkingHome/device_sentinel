@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.18.1 (2026-08-26)
+# File: coordinator.py, Version: 0.18.2 (2026-08-26)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -79,6 +79,8 @@ from .backup import (
     async_prune_backups,
     async_refresh_last_good,
     async_take_backup,
+    async_restore_main_file,
+    describe_restore_loss,
 )
 from .const import (
     DEFAULT_RETENTION_DAYS,
@@ -418,6 +420,12 @@ class DeviceSentinelCoordinator(
         # The signal census is a fact about the fleet, not an event
         # (ruling #344): held so it is said only when it changes.
         self._signal_census_said: tuple | None = None
+        # Restore (ruling #345): the copy's timestamp and the evidence
+        # stamp, held until grace close so the notice can be sent when
+        # the notify platform actually exists.
+        self._restored_from: float | None = None
+        self._restore_evidence: str | None = None
+        self._restore_told: str | None = None
         # Whether this start is running a different version from the
         # one that last wrote storage (ruling #303). Set at load.
         self._version_changed = False
@@ -439,20 +447,51 @@ class DeviceSentinelCoordinator(
         try:
             loaded = await self._store.async_load()
         except (HomeAssistantError, ValueError) as err:
-            LOGGER.error(
-                "Device Sentinel cannot read %s and will not start: %s. "
-                "Nothing has been changed or deleted. Move that file "
-                "aside to begin recording again, or restore it from a "
-                "Home Assistant backup to keep what was learned",
-                STORAGE_KEY,
-                err,
-            )
-            raise ConfigEntryError(
-                f"Device Sentinel cannot read {STORAGE_KEY}. Nothing "
-                f"has been changed. Move that file aside to start "
-                f"fresh, or restore it from a backup to keep what was "
-                f"learned."
-            ) from err
+            # Restore (ruling #345). The alternative to replacing an
+            # unreadable file is not running at all, so nobody is
+            # asked. Evidence first: all four files, raw, before
+            # anything is overwritten (#340).
+            stamp = await async_copy_evidence(self.hass)
+            restored, taken = await async_restore_main_file(self.hass)
+            if restored:
+                LOGGER.warning(
+                    "Device Sentinel could not read %s (%s), so it was "
+                    "replaced from the last-good copy and startup "
+                    "continued. Copies of both files and both backups "
+                    "were written to %s as %s",
+                    STORAGE_KEY,
+                    err,
+                    TRIM_BACKUP_DIR,
+                    stamp or "unstamped",
+                )
+                loaded = await self._store.async_load()
+                self._restored_from = taken
+                self._restore_evidence = stamp
+                # A restored session is not a clean read (#341): the
+                # latch stands, so Status reports it, the repair issue
+                # opens, and the copy this came from is never
+                # overwritten by the file it produced (#339).
+                self._load_faulty = True
+            else:
+                LOGGER.error(
+                    "Device Sentinel cannot read %s and will not start: "
+                    "%s. The last-good copy could not be used either. "
+                    "Nothing has been changed or deleted; copies of what "
+                    "exists were written to %s as %s. Move that file "
+                    "aside to begin recording again, or restore it from "
+                    "a Home Assistant backup to keep what was learned",
+                    STORAGE_KEY,
+                    err,
+                    TRIM_BACKUP_DIR,
+                    stamp or "unstamped",
+                )
+                raise ConfigEntryError(
+                    f"Device Sentinel cannot read {STORAGE_KEY} and its "
+                    f"last-good copy could not be used. Nothing has "
+                    f"been changed. Move that file aside to start "
+                    f"fresh, or restore it from a backup to keep what "
+                    f"was learned."
+                ) from err
         if loaded is None:
             LOGGER.info(
                 "Device Sentinel v%s: no existing storage, creating %s",
@@ -2318,6 +2357,45 @@ class DeviceSentinelCoordinator(
                 "retention_days": self.retention_days,
             }
         return out
+
+    async def _announce_restore(self) -> None:
+        """Say that a restore happened, once, at grace close.
+
+        Ruling #345. Everything here is knowable: the copy's
+        timestamp, how old it was, how many local midnights it
+        crossed, where the evidence went, and that the integration is
+        running, which is provable by the fact that this code is
+        executing. What the corrupt file held is not knowable, so
+        nothing here counts events or readings.
+        """
+        taken = self._restored_from
+        if taken is None:
+            return
+        self._restored_from = None
+        loss = describe_restore_loss(taken, dt_util.utcnow().timestamp())
+        headline = (
+            "Device Sentinel could not read its storage file, so it "
+            "replaced the file from its last known-good backup and "
+            "started normally. It is running now."
+        )
+        where = (
+            f"Copies of the unreadable file, the clocks file and both "
+            f"backups were saved in {TRIM_BACKUP_DIR} under the stamp "
+            f"{self._restore_evidence}."
+            if self._restore_evidence
+            else "The unreadable file could not be copied aside."
+        )
+        self._record_system_event(
+            SYS_STORAGE_REPAIR,
+            detail=f"restored from the last-good copy: {loss}",
+        )
+        self._restore_told = f"{headline} {loss}"
+        await self.async_announce_restore(headline, f"{loss}\n\n{where}")
+
+    @property
+    def restore_told(self) -> str | None:
+        """The restore sentence for the brief, or None (#345)."""
+        return getattr(self, "_restore_told", None)
 
     @property
     def storage_load_faulty(self) -> bool:

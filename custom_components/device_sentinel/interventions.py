@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.16.0 (2026-08-19)
+# File: interventions.py, Version: 0.18.2 (2026-08-26)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -922,6 +922,13 @@ class InterventionMixin:
         # against the registry view this close has just corrected
         # rather than the one the startup window left behind.
         self._evaluate_repairs(REPAIR_MOMENT_GRACE)
+        if self._restored_from is not None:
+            # The restore happened inside setup, before the notify
+            # platform and the messenger existed, so the notice waits
+            # for the window to shut rather than failing silently on a
+            # cold boot (ruling #345). The restore is already done; a
+            # report five minutes later is still true.
+            self.hass.async_create_task(self._announce_restore())
         LOGGER.debug(
             # Same correction as the storm line: the grace window
             # mutes nothing from learning and has not since taint

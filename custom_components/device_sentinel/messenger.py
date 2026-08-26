@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.10.22 (2026-08-03)
+# File: messenger.py, Version: 0.18.2 (2026-08-26)
 
 """Sending the daily brief, and nothing else yet.
 
@@ -45,6 +45,8 @@ from .const import (
     LOGGER,
     PERSISTENT_CREATE,
     PERSISTENT_TARGET,
+    RESTORE_NOTICE_ID,
+    RESTORE_NOTICE_TITLE,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
 )
@@ -174,4 +176,73 @@ class MessengerMixin:
         LOGGER.debug(
             "Daily brief sent to %d of %d target(s)", sent, len(targets)
         )
+        return sent
+
+    async def async_announce_restore(
+        self, headline: str, detail: str
+    ) -> int:
+        """Send the restore notice everywhere, ignoring quiet hours.
+
+        Ruling #345. Three surfaces: the daily-brief targets, which
+        is where a person's email lives; the high-priority targets,
+        which is the phone; and a persistent notification carrying an
+        id of its own.
+
+        The id matters. The three standing surfaces each overwrite
+        themselves by design, and a restore notice sharing one of
+        those ids would be gone by the next brief. This one has its
+        own, so it sits in the panel until it is dismissed, which
+        makes it the most durable of the three channels rather than
+        the most fragile.
+
+        Quiet hours do not apply. A device flapping at three in the
+        morning should stay quiet; a storage file that could not be
+        read is a one-time event about the integrity of everything
+        the integration knows, and a person wants it on waking rather
+        than three days later.
+
+        Every target is tried on its own and a failure is a log line:
+        the restore already succeeded, and a notify platform that
+        will not answer must not turn a recovery into an error.
+        """
+        message = f"{headline}\n\n{detail}"
+        sent = 0
+        targets = {
+            target
+            for target in (self.entry.options.get(CONF_BRIEF_TARGETS) or [])
+            if target and target != PERSISTENT_TARGET
+        }
+        targets.update(self._high_priority_targets())
+        for target in sorted(targets):
+            domain, _, service = target.partition(".")
+            if not service:
+                continue
+            try:
+                await self.hass.services.async_call(
+                    domain,
+                    service,
+                    {"title": RESTORE_NOTICE_TITLE, "message": message},
+                    blocking=True,
+                )
+            except Exception as err:  # noqa: BLE001
+                LOGGER.warning(
+                    "Restore notice to %s was not delivered: %s", target, err
+                )
+                continue
+            sent += 1
+        try:
+            await self.hass.services.async_call(
+                PERSISTENT_TARGET,
+                PERSISTENT_CREATE,
+                {
+                    "title": RESTORE_NOTICE_TITLE,
+                    "message": message,
+                    "notification_id": RESTORE_NOTICE_ID,
+                },
+                blocking=True,
+            )
+            sent += 1
+        except Exception as err:  # noqa: BLE001
+            LOGGER.warning("Restore notice was not posted: %s", err)
+        LOGGER.warning("Restore notice sent to %d surface(s)", sent)
         return sent

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.18.0 (2026-08-25)
+# File: report_brief.py, Version: 0.18.2 (2026-08-26)
 
 """The daily brief: the one report written for a person.
 
@@ -1329,6 +1329,12 @@ class BriefMixin:
         # and a reader who has it will not read fifty consequences as
         # fifty faults.
         house = self._house_sentences(sys_events or [])
+        # The restore leads, above the house and above the devices
+        # (ruling #345). Nothing else in this brief matters as much
+        # as the fact that the file the rest of it came from had to
+        # be replaced, and how much of it is missing.
+        if self.restore_told:
+            lines += [self.restore_told, ""]
         if house:
             lines += [" ".join(house), ""]
         if told:

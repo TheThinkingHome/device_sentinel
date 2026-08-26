@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.18.1 (2026-08-26)
+# File: const.py, Version: 0.18.2 (2026-08-26)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1418,6 +1418,11 @@ CONF_BRIEF_TARGETS = "brief_document_targets"
 NOTIFY_DOMAIN = "notify"
 PERSISTENT_TARGET = "persistent_notification"
 PERSISTENT_CREATE = "create"
+# The restore notice keeps an id of its own (ruling #345). The three
+# standing surfaces overwrite themselves; this one must survive until
+# a person dismisses it.
+RESTORE_NOTICE_ID = "device_sentinel_storage_restored"
+RESTORE_NOTICE_TITLE = "Device Sentinel restored its storage"
 PERSISTENT_DISMISS = "dismiss"
 
 # The notification engine. Three self-overwriting surfaces, each a
@@ -1896,7 +1901,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 344
+HIGHEST_RULING = 345
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
