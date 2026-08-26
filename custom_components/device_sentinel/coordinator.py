@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.18.0 (2026-08-25)
+# File: coordinator.py, Version: 0.18.1 (2026-08-26)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -415,6 +415,9 @@ class DeviceSentinelCoordinator(
         self._load_faulty: bool = False
         self._repairs_at_load: int = 0
         self._last_good_taken: float | None = None
+        # The signal census is a fact about the fleet, not an event
+        # (ruling #344): held so it is said only when it changes.
+        self._signal_census_said: tuple | None = None
         # Whether this start is running a different version from the
         # one that last wrote storage (ruling #303). Set at load.
         self._version_changed = False
@@ -2707,37 +2710,58 @@ class DeviceSentinelCoordinator(
         scales apart, and nothing anywhere records what unit a
         Zigbee2MQTT linkquality entity carries or a ZHA LQI sensor
         carries. Guessing was the alternative and #283 rejected it.
-        One line per start, so two fleets answer it without shipping
-        an observation release ahead of the recording one.
 
         The second line is the count that matters more: a device with
         more than one accepted signal entity is a device whose series
         is a mixture of two measurements (ruling #282). On a
         Zigbee2MQTT fleet it is zero, which is why the fault was
         invisible for the life of the project.
+
+        Once per session, and only when the census changes
+        (ruling #344). The docstring said one line per start and the
+        call site said otherwise: this runs on every registry
+        rebuild, so the reference fleet's log carried 133 copies of
+        both lines on 26 August, 38 of them inside one second, each
+        with a 1.5 KB entity list attached. A census is a fact about
+        the fleet, not an event, so it is said when it is new.
+
+        The lists themselves are debug. A person reading an info log
+        wants the counts; a person hunting a specific entity turns
+        debug on and gets the whole list rather than the first
+        twenty.
         """
         if not units:
             return
         spread = ", ".join(
             f"{unit} x{count}" for unit, count in sorted(units.items())
         )
-        LOGGER.info("Signal units in use: %s", spread)
         doubled = sorted(
             device for device, count in per_device.items() if count > 1
         )
+        census = (spread, tuple(doubled), len(refused))
+        if census == self._signal_census_said:
+            return
+        self._signal_census_said = census
+        LOGGER.info("Signal units in use: %s", spread)
         if doubled:
             LOGGER.info(
                 "%d device(s) report more than one signal entity, so "
-                "their signal series mixes two measurements: %s",
+                "their signal series mixes two measurements",
                 len(doubled),
-                ", ".join(self._device_name(d) for d in doubled[:20]),
+            )
+            LOGGER.debug(
+                "Devices with more than one signal entity: %s",
+                ", ".join(self._device_name(d) for d in doubled),
             )
         if refused:
             LOGGER.info(
                 "%d signal entity(s) refused as a percentage rather "
-                "than a measurement: %s",
+                "than a measurement",
                 len(refused),
-                ", ".join(sorted(refused)[:20]),
+            )
+            LOGGER.debug(
+                "Signal entities refused as a percentage: %s",
+                ", ".join(sorted(refused)),
             )
 
     async def async_enable_signal_entities(self) -> dict[str, int]:
