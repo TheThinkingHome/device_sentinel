@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.15.8 (2026-08-18)
+# File: narrative.py, Version: 0.18.3 (2026-08-26)
 
 """How to say what happened: the composer.
 
@@ -59,6 +59,7 @@ from .const import (
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
     TODO_SORT_NAME,
+    BATTERY_CLEAR_MARGIN,
 )
 
 
@@ -148,17 +149,27 @@ class NarrativeMixin:
         ).strftime("%-I:%M %p")
 
     def _battery_phrase(self, device_id: str, state: bool) -> str:
-        """Return the battery clause with its level where known."""
+        """Return the battery clause with its level where known.
+
+        The level here is the record's level at composition time, not
+        at the alarm's moment, because an incident row carries no
+        reading. So the falling wording is only used while the level
+        still reads low (ruling #346): a row composed after the cell
+        recovered said "battery fell to 100%" on Tim Plas's fleet,
+        a rise described as a fall. When the level has recovered, the
+        sentence says what is actually known: it read low then, and
+        what it reads now.
+        """
         record = self.data[DATA_DEVICES].get(device_id) or {}
         level = record.get(DEV_BATTERY_VALUE)
         if isinstance(level, (int, float)):
             shown = f"{level:g}%"
-            return (
-                f"battery is at {shown}"
-                if state
-                else f"battery fell to {shown}"
-            )
-        return "battery is low" if state else "battery fell low"
+            if state:
+                return f"battery is at {shown}"
+            if level <= self.low_threshold + BATTERY_CLEAR_MARGIN:
+                return f"battery fell to {shown}"
+            return f"battery read low, now {shown}"
+        return "battery is low" if state else "battery read low"
 
     def _recovery_tail(self, row: dict[str, Any]) -> str:
         """Return what ended a silence, as a trailing clause.

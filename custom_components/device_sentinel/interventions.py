@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.18.2 (2026-08-26)
+# File: interventions.py, Version: 0.18.3 (2026-08-26)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -922,6 +922,11 @@ class InterventionMixin:
         # against the registry view this close has just corrected
         # rather than the one the startup window left behind.
         self._evaluate_repairs(REPAIR_MOMENT_GRACE)
+        # Batteries held during the window (ruling #346) are judged
+        # now rather than at their next state change, which for a
+        # battery can be hours away. A cell that read low through
+        # the whole window is genuinely low and flags here.
+        self._evaluate_all_batteries()
         if self._restored_from is not None:
             # The restore happened inside setup, before the notify
             # platform and the messenger existed, so the notice waits

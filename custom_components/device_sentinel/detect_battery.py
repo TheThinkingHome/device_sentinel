@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.15.8 (2026-08-18)
+# File: detect_battery.py, Version: 0.18.3 (2026-08-26)
 
 """Battery: the level threshold and what is tracked.
 
@@ -19,6 +19,8 @@ coordinator throughout and nothing here stands alone.
 """
 
 from __future__ import annotations
+
+import math
 
 from typing import Any
 
@@ -129,6 +131,20 @@ class BatteryMixin:
                 level = float(state.state)
             except ValueError:
                 return
+            if not math.isfinite(level):
+                # Infinity and NaN parse as floats and are not
+                # levels (ruling #347). A cell reporting -inf sits
+                # below every threshold, so it flagged low, reached
+                # the notification card, and the card's int(level)
+                # raised OverflowError, taking the card update down.
+                # Found by the 0.18.3 adversarial round; present
+                # since the card was written.
+                LOGGER.debug(
+                    "Battery reading refused as not a number: %s is %s",
+                    battery_entity_id,
+                    state.state,
+                )
+                return
             threshold = self.low_threshold
             if was_low:
                 is_low = level < threshold + BATTERY_CLEAR_MARGIN
@@ -140,6 +156,25 @@ class BatteryMixin:
             or record.get(DEV_BATTERY_VALUE) != level
         )
         record[DEV_BATTERY_VALUE] = level
+        if is_low and not was_low and self._in_startup_grace():
+            # A battery that reads low for the first time inside the
+            # startup window is held, not flagged (ruling #346). At a
+            # restart an entity can restore a stale or transient low
+            # before its first real reading corrects it, and the flag
+            # opened and resolved within seconds, twice per restart,
+            # on Tim Plas's fleet: "battery fell to 100% and recovered
+            # 0s later" led his brief on 26 August. Freeze judgments
+            # already hold through this window (ruling #291); the
+            # battery flag now holds the same way. A cell that is
+            # genuinely low still reads low when the window shuts,
+            # and the next evaluation flags it then. A flag already
+            # standing from before the restart is untouched: this
+            # holds new flags only, so a real low battery never
+            # unflags at a reboot.
+            record[DEV_BATTERY_VALUE] = level
+            if changed:
+                self._dirty = True
+            return
         if is_low and not was_low:
             record[DEV_BATTERY_LOW] = True
             record[DEV_BATTERY_SINCE] = dt_util.utcnow().isoformat()
