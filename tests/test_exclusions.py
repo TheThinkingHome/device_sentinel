@@ -231,6 +231,9 @@ async def test_device_level_battery_exclude(hass: HomeAssistant):
     coord = await setup_coordinator(
         hass, {CONF_BATTERY_MUTED_DEVICES: [dropped.id]}
     )
+    # Battery mechanics, not restart behaviour: the startup window
+    # the harness opens is shut so flags apply at once (#346).
+    coord._grace_until = 0.0
 
     hass.states.async_set(kept_eid, "5")
     hass.states.async_set(dropped_eid, "5")
@@ -251,6 +254,9 @@ async def test_integration_level_battery_exclude(hass: HomeAssistant):
     coord = await setup_coordinator(
         hass, {CONF_BATTERY_MUTED_INTEGRATIONS: ["mobile_app"]}
     )
+    # Battery mechanics, not restart behaviour: the startup window
+    # the harness opens is shut so flags apply at once (#346).
+    coord._grace_until = 0.0
 
     hass.states.async_set(phone_eid, "5")
     hass.states.async_set(sensor_eid, "5")
@@ -266,6 +272,9 @@ async def test_battery_exclude_applies_live(hass: HomeAssistant):
     device, eid = _battery_device(hass, source, 5, "bx", "BatX Device")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
+    # Battery mechanics, not restart behaviour: the startup window
+    # the harness opens is shut so flags apply at once (#346).
+    coord._grace_until = 0.0
 
     hass.states.async_set(eid, "5")
     await hass.async_block_till_done()

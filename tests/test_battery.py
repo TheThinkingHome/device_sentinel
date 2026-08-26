@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery.py, Version: 0.15.8 (2026-08-18)
+# File: test_battery.py, Version: 0.18.3 (2026-08-26)
 
 """Battery detection: the low verdict and the discharge recorder.
 
@@ -96,6 +96,9 @@ async def test_binary_fallback_and_on_is_low(hass: HomeAssistant):
     source.add_to_hass(hass)
     device, eids = _battery_device(hass, source, 2, percentage=False, binary=True)
     coord = await setup_coordinator(hass)
+    # Threshold mechanics, not restart behaviour: the startup
+    # window the harness opens is shut so flags apply at once (#346).
+    coord._grace_until = 0.0
 
     hass.states.async_set(eids["bin"], "on")
     await hass.async_block_till_done()
@@ -113,6 +116,9 @@ async def test_threshold_and_hysteresis(hass: HomeAssistant):
     source.add_to_hass(hass)
     device, eids = _battery_device(hass, source, 3)
     coord = await setup_coordinator(hass)
+    # Threshold mechanics, not restart behaviour: the startup
+    # window the harness opens is shut so flags apply at once (#346).
+    coord._grace_until = 0.0
     rec = coord.data[DATA_DEVICES][device.id]
 
     hass.states.async_set(eids["pct"], "50")
@@ -146,6 +152,9 @@ async def test_unavailable_battery_holds_verdict(hass: HomeAssistant):
     source.add_to_hass(hass)
     device, eids = _battery_device(hass, source, 4)
     coord = await setup_coordinator(hass)
+    # Threshold mechanics, not restart behaviour: the startup
+    # window the harness opens is shut so flags apply at once (#346).
+    coord._grace_until = 0.0
     rec = coord.data[DATA_DEVICES][device.id]
 
     hass.states.async_set(eids["pct"], "15")
@@ -164,6 +173,7 @@ async def test_options_change_applies_live(hass: HomeAssistant):
     device, eids = _battery_device(hass, source, 5)
     entry = await setup_entry(hass)
     coord = entry.runtime_data
+    coord._grace_until = 0.0
 
     hass.states.async_set(eids["pct"], "32")
     await hass.async_block_till_done()
@@ -197,6 +207,9 @@ async def test_list_shape_and_order(hass: HomeAssistant):
     await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
     coord = entry.runtime_data
+    # The reload built a fresh coordinator with a fresh window; shut
+    # the second one, since this test is about list shape (#346).
+    coord._grace_until = 0.0
 
     hass.states.async_set(e1["pct"], "10")
     hass.states.async_set(e2["pct"], "5")
@@ -233,6 +246,7 @@ async def test_since_survives_reload(hass: HomeAssistant, hass_storage):
     device, eids = _battery_device(hass, source, 8)
     entry = await setup_entry(hass)
     coord = entry.runtime_data
+    coord._grace_until = 0.0
 
     hass.states.async_set(eids["pct"], "12")
     await hass.async_block_till_done()
@@ -253,6 +267,9 @@ async def test_number_entity_sets_threshold_live(hass: HomeAssistant):
     source.add_to_hass(hass)
     device, eids = _battery_device(hass, source, 9)
     coord = await setup_coordinator(hass)
+    # Threshold mechanics, not restart behaviour: the startup
+    # window the harness opens is shut so flags apply at once (#346).
+    coord._grace_until = 0.0
 
     hass.states.async_set(eids["pct"], "32")
     await hass.async_block_till_done()
@@ -482,3 +499,115 @@ def test_an_esphome_wifi_signal_is_recognized(hass: HomeAssistant):
     assert not SignalMixin._is_signal(
         _entry("sensor.door_master_temperature", device_class="temperature")
     )
+
+
+# 0.18.3 (ruling #346): a restart transient is not a low battery, and
+# a sentence composed after recovery does not claim a fall. Reported
+# from Tim Plas's fleet: "battery fell to 100% and recovered 0s
+# later" led his brief on 26 August, twice per restart.
+
+
+async def test_a_low_reading_inside_grace_is_held(hass: HomeAssistant):
+    """The restore of a stale low at boot flags nothing."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, eids = _battery_device(hass, source, 60, percentage=False,
+                                   binary=True)
+    coord = await setup_coordinator(hass)
+    coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+
+    hass.states.async_set(eids["bin"], "on")
+    await hass.async_block_till_done()
+    record = coord.data[DATA_DEVICES][device.id]
+    assert not record.get(DEV_BATTERY_LOW), (
+        "a boot transient opened a battery flag"
+    )
+    assert coord.battery_low_count == 0
+
+    # The window shuts and the cell still reads low: flagged now.
+    coord._grace_until = 0.0
+    coord._evaluate_battery(device.id)
+    await hass.async_block_till_done()
+    assert coord.data[DATA_DEVICES][device.id][DEV_BATTERY_LOW] is True
+
+
+async def test_a_standing_flag_survives_a_graced_restart(
+    hass: HomeAssistant,
+):
+    """The hold is for new flags only; a real low never unflags."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, eids = _battery_device(hass, source, 61, percentage=True,
+                                   binary=False)
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    hass.states.async_set(eids["pct"], "5")
+    await hass.async_block_till_done()
+    assert coord.data[DATA_DEVICES][device.id][DEV_BATTERY_LOW] is True
+
+    # A restart's grace begins; the cell keeps reading low.
+    coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+    coord._evaluate_battery(device.id)
+    await hass.async_block_till_done()
+    assert coord.data[DATA_DEVICES][device.id][DEV_BATTERY_LOW] is True
+    # And a genuine recovery inside grace still clears it.
+    hass.states.async_set(eids["pct"], "80")
+    await hass.async_block_till_done()
+    assert coord.data[DATA_DEVICES][device.id][DEV_BATTERY_LOW] is False
+
+
+async def test_the_phrase_never_calls_a_recovery_a_fall(
+    hass: HomeAssistant,
+):
+    """Composed after the cell recovered, the sentence says so."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, _eids = _battery_device(hass, source, 62, percentage=True,
+                                    binary=False)
+    coord = await setup_coordinator(hass)
+    record = coord.data[DATA_DEVICES][device.id]
+
+    record[DEV_BATTERY_VALUE] = 100.0
+    said = coord._battery_phrase(device.id, False)
+    assert said == "battery read low, now 100%"
+    assert "fell" not in said
+
+    record[DEV_BATTERY_VALUE] = 7.7
+    said = coord._battery_phrase(device.id, False)
+    assert said == "battery fell to 7.7%"
+
+    record[DEV_BATTERY_VALUE] = None
+    assert coord._battery_phrase(device.id, False) == "battery read low"
+
+
+async def test_a_non_finite_reading_is_not_a_level(hass: HomeAssistant):
+    """Infinity and NaN parse as floats and are not levels (#347).
+
+    A cell reporting -inf sits below every threshold, so it flagged
+    low, reached the notification card, and the card's int(level)
+    raised OverflowError. Found by the 0.18.3 adversarial round.
+    """
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, eids = _battery_device(hass, source, 63, percentage=True,
+                                   binary=False)
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+
+    hass.states.async_set(eids["pct"], "55")
+    await hass.async_block_till_done()
+    record = coord.data[DATA_DEVICES][device.id]
+    assert record[DEV_BATTERY_VALUE] == 55.0
+
+    for hostile in ("-inf", "inf", "nan", "-nan", "Infinity"):
+        hass.states.async_set(eids["pct"], hostile)
+        await hass.async_block_till_done()
+        record = coord.data[DATA_DEVICES][device.id]
+        assert record[DEV_BATTERY_VALUE] == 55.0, (
+            f"{hostile} was stored as a level"
+        )
+        assert not record[DEV_BATTERY_LOW], f"{hostile} flagged low"
+
+    # And the card, which is what actually crashed, survives it.
+    await coord.async_update_card()
+    await hass.async_block_till_done()

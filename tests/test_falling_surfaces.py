@@ -189,6 +189,9 @@ async def test_the_crossing_announces_the_level_and_not_a_recovery(
     """
     device, entity_id = _battery_device(hass, "Door 2nd Bedroom", 24.0)
     coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0})
+    # Battery mechanics, not restart behaviour: the startup window
+    # the harness opens is shut so flags apply at once (#346).
+    coord._grace_until = 0.0
     _seed(coord, device.id, 24.0)
     opened = _events(coord)
     assert opened and opened[0][2] is False

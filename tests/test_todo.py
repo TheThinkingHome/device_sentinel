@@ -482,6 +482,9 @@ async def test_battery_flip_syncs_without_a_tick(hass: HomeAssistant):
                                     battery=True)
     entry = await setup_entry(hass)
     coord = entry.runtime_data
+    # Battery mechanics, not restart behaviour: the startup window
+    # the harness opens is shut so flags apply at once (#346).
+    coord._grace_until = 0.0
     hass.states.async_set(eids["plain"], "on")
 
     hass.states.async_set(eids["pct"], "14")
@@ -879,6 +882,9 @@ async def test_two_faults_at_once_fire_one_event_worst_first(
     device, eids = _register_device(hass, "e6", "Attic Sensor", battery=True)
     entry = await setup_entry(hass)
     coord = entry.runtime_data
+    # Battery mechanics, not restart behaviour: the startup window
+    # the harness opens is shut so flags apply at once (#346).
+    coord._grace_until = 0.0
     coord._grace_until = 0.0
     faults = _listen(hass, EVENT_FAULT)
     # Both faults are staged behind the grace, so they land in one
@@ -891,6 +897,9 @@ async def test_two_faults_at_once_fire_one_event_worst_first(
     await hass.async_block_till_done()
     _freeze(coord, device.id, category=FREEZE_CATEGORY_UNAVAILABLE)
     coord._grace_until = 0.0
+    # The real grace close sweeps held battery flags (#346); a test
+    # that shuts the window by hand sweeps the same way.
+    coord._evaluate_all_batteries()
     coord._sync_problem_list()
     await hass.async_block_till_done()
 
@@ -911,7 +920,6 @@ async def test_a_whole_line_clearing_answers_every_fault(
     device, eids = _register_device(hass, "e7", "Attic Sensor", battery=True)
     entry = await setup_entry(hass)
     coord = entry.runtime_data
-    coord._grace_until = 0.0
     recovered = _listen(hass, EVENT_RECOVERED)
     coord._grace_until = dt_util.utcnow().timestamp() + 300.0
     hass.states.async_set(eids["plain"], "21.5")
@@ -919,6 +927,9 @@ async def test_a_whole_line_clearing_answers_every_fault(
     await hass.async_block_till_done()
     _freeze(coord, device.id, category=FREEZE_CATEGORY_UNAVAILABLE)
     coord._grace_until = 0.0
+    # The real grace close sweeps held battery flags (#346); a test
+    # that shuts the window by hand sweeps the same way.
+    coord._evaluate_all_batteries()
     coord._sync_problem_list()
     await hass.async_block_till_done()
 
@@ -948,6 +959,9 @@ async def test_a_lesser_kind_clearing_under_a_worse_one_is_silent(
     await hass.async_block_till_done()
     _freeze(coord, device.id, category=FREEZE_CATEGORY_UNAVAILABLE)
     coord._grace_until = 0.0
+    # The real grace close sweeps held battery flags (#346); a test
+    # that shuts the window by hand sweeps the same way.
+    coord._evaluate_all_batteries()
     coord._sync_problem_list()
     await hass.async_block_till_done()
 
