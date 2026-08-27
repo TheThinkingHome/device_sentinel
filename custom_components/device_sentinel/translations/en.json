@@ -294,8 +294,7 @@
             "description": "{reason}\n\n{loss}\n\n{where}\n\nThere is nothing to repair. The file has already been replaced and Device Sentinel is already running. Select Submit to clear this notice."
           }
         }
-      },
-      "description": "{reason}\n\n{loss}\n\n{where}\n\nThere is nothing to repair. The file has already been replaced and Device Sentinel is already running."
+      }
     }
   }
 }
