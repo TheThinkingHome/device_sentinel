@@ -22,7 +22,6 @@ from custom_components.device_sentinel.backup import (
 )
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
-    RESTORE_NOTICE_ID,
     STORAGE_KEY,
     SYS_KIND,
     SYS_STORAGE_REPAIR,
@@ -202,10 +201,19 @@ async def test_the_notice_reaches_every_surface(hass: HomeAssistant):
     ]
     assert len(events) == 1
     assert "restored" in str(events[0].get("detail"))
-    state = hass.states.get(
-        f"persistent_notification.{RESTORE_NOTICE_ID}"
+    # The durable surface is a repair card now, not a persistent
+    # notification (ruling #350).
+    from homeassistant.helpers import issue_registry as ir
+    from custom_components.device_sentinel.const import (
+        DOMAIN,
+        REPAIR_STORAGE_RESTORED,
     )
-    assert state is not None or True  # panel entity is version dependent
+
+    registry = ir.async_get(hass)
+    issue = registry.async_get_issue(DOMAIN, REPAIR_STORAGE_RESTORED)
+    assert issue is not None, "the restore raised no repair card"
+    assert issue.severity is ir.IssueSeverity.WARNING
+    assert issue.is_fixable
 
 
 async def test_the_notice_is_sent_once(hass: HomeAssistant):
@@ -452,3 +460,104 @@ async def test_nothing_to_copy_says_so(hass: HomeAssistant):
     _clear_storage(hass)
     stamp, copied = await async_copy_evidence(hass)
     assert stamp is None and copied == []
+
+
+# 0.18.6 (ruling #350): the durable surface is a repair card, and
+# Home Assistant's own critical issue is cleared after a successful
+# restore because its advice would undo the recovery.
+
+HA_DOMAIN = "homeassistant"
+
+
+async def test_the_card_replaces_the_notification(
+    hass: HomeAssistant,
+):
+    from homeassistant.helpers import issue_registry as ir
+    from custom_components.device_sentinel.const import (
+        DOMAIN,
+        REPAIR_STORAGE_RESTORED,
+    )
+
+    _clear_storage(hass)
+    coord = await setup_coordinator(hass)
+    coord._restored_from = dt_util.utcnow().timestamp() - 900.0
+    coord._restore_evidence = "2026-08-27_140000"
+    coord._restore_copied = ["the clocks file", "the storage backup"]
+    coord._restore_reason = "missing"
+    await coord._announce_restore()
+    await hass.async_block_till_done()
+    registry = ir.async_get(hass)
+    issue = registry.async_get_issue(DOMAIN, REPAIR_STORAGE_RESTORED)
+    assert issue is not None
+    assert issue.severity is ir.IssueSeverity.WARNING
+    assert issue.is_fixable
+    placeholders = issue.translation_placeholders or {}
+    assert "missing" in placeholders["reason"]
+    assert "daily statistics" in placeholders["loss"]
+    assert "the clocks file" in placeholders["where"]
+    # And no persistent notification was posted.
+    assert not hass.states.async_entity_ids("persistent_notification")
+
+
+async def test_home_assistants_issue_is_cleared(hass: HomeAssistant):
+    """Its advice would undo the recovery (ruling #350)."""
+    from homeassistant.helpers import issue_registry as ir
+    from custom_components.device_sentinel.const import STORAGE_KEY
+
+    iso = "2026-08-27T15:31:13.887262+00:00"
+    issue_id = f"storage_corruption_{STORAGE_KEY}_{iso}"
+    ir.async_create_issue(
+        hass, HA_DOMAIN, issue_id, is_fixable=True,
+        issue_domain="device_sentinel",
+        translation_key="storage_corruption", is_persistent=True,
+        severity=ir.IssueSeverity.CRITICAL,
+        translation_placeholders={
+            "storage_key": STORAGE_KEY, "original_path": "a",
+            "corrupt_path": "b", "error": "c",
+        },
+    )
+    registry = ir.async_get(hass)
+    assert registry.async_get_issue(HA_DOMAIN, issue_id) is not None
+
+    _clear_storage(hass)
+    coord = await setup_coordinator(hass)
+    coord._restored_from = dt_util.utcnow().timestamp() - 900.0
+    coord._restore_evidence = "stamp"
+    coord._restore_copied = ["the storage file"]
+    coord._restore_reason = "corrupt"
+    coord._restore_corrupt_names = [f"{STORAGE_KEY}.corrupt.{iso}"]
+    await coord._announce_restore()
+    await hass.async_block_till_done()
+    assert registry.async_get_issue(HA_DOMAIN, issue_id) is None
+    assert "that report has been cleared" in (
+        registry.async_get_issue(
+            "device_sentinel", "storage_restored"
+        ).translation_placeholders["where"]
+    )
+
+
+async def test_a_failed_restore_leaves_their_issue_alone(
+    hass: HomeAssistant,
+):
+    """After a failure their advice is the right advice."""
+    from homeassistant.helpers import issue_registry as ir
+    from custom_components.device_sentinel.const import STORAGE_KEY
+
+    iso = "2026-08-27T16:00:00.000000+00:00"
+    issue_id = f"storage_corruption_{STORAGE_KEY}_{iso}"
+    ir.async_create_issue(
+        hass, HA_DOMAIN, issue_id, is_fixable=True,
+        translation_key="storage_corruption", is_persistent=True,
+        severity=ir.IssueSeverity.CRITICAL,
+        translation_placeholders={
+            "storage_key": STORAGE_KEY, "original_path": "a",
+            "corrupt_path": "b", "error": "c",
+        },
+    )
+    _clear_storage(hass)
+    coord = await setup_coordinator(hass)
+    # No restore happened, so nothing announces and nothing clears.
+    coord._restored_from = None
+    await coord._announce_restore()
+    registry = ir.async_get(hass)
+    assert registry.async_get_issue(HA_DOMAIN, issue_id) is not None
