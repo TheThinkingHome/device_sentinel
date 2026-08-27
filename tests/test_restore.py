@@ -6,6 +6,7 @@
 
 import json
 import os
+import re
 from unittest.mock import patch
 
 from homeassistant.core import HomeAssistant
@@ -248,6 +249,79 @@ async def test_the_loss_sentence_counts_midnights_not_hours(
     # Three days back.
     said = describe_restore_loss(midnight - 2 * 86400.0, now)
     assert "2 days of daily statistics are gone" in said
+
+
+async def test_the_loss_sentence_speaks_in_two_forms(hass: HomeAssistant):
+    """Ruling #352: one arithmetic, a standalone and an embedded head.
+
+    The standalone form stands in the repair card and the
+    notification. The embedded form continues "restored from the
+    last-good backup," in the event detail, which is what the brief
+    prints, so it must never open with a capital or carry a colon of
+    its own.
+    """
+    now = dt_util.utcnow().timestamp()
+    alone = describe_restore_loss(now - 720.0, now)
+    inline = describe_restore_loss(now - 720.0, now, embedded=True)
+    assert alone.startswith("The last-good backup was taken")
+    assert inline.startswith("which was taken")
+    # Same body after the head, so the two can never drift apart.
+    assert alone.removeprefix(
+        "The last-good backup was taken"
+    ) == inline.removeprefix("which was taken")
+    for said in (alone, inline):
+        assert "prior to the restore" in said
+        # Clock times carry a colon of their own; the loss text must
+        # add no structural colon beyond them.
+        assert re.sub(r"\d:\d", "", said).count(":") == 0
+        assert ".." not in said
+        assert said.endswith(".")
+    # The retired vocabulary stays retired: one name on every
+    # surface, and no "ago".
+    assert "copy" not in alone
+    assert "ago" not in alone
+
+
+async def test_the_brief_sentence_is_mechanically_clean(
+    hass: HomeAssistant,
+):
+    """Ruling #352: one colon, no capital splice, one full stop.
+
+    The 27 August brief on the reference fleet showed the fault
+    twice: two colons, a capital "The" mid-sentence, and a double
+    full stop. This drives the real event through the real renderer
+    and refuses all three.
+    """
+    coord = await setup_coordinator(hass)
+    coord._restored_from = dt_util.utcnow().timestamp() - 720.0
+    await coord._announce_restore()
+    rows = [
+        e
+        for e in coord.data.get("system_events", [])
+        if e.get(SYS_KIND) == SYS_STORAGE_REPAIR
+    ]
+    assert len(rows) == 1
+    detail = str(rows[0].get("detail"))
+    assert detail.startswith("restored from the last-good backup, which")
+    sentence = coord._system_event_sentence(rows[0])
+    # One structural colon, after the moment. Clock times ("1:41 PM")
+    # carry colons of their own and are not the fault being refused.
+    assert re.sub(r"\d:\d", "", sentence).count(":") == 1, sentence
+    assert ": The" not in sentence, sentence
+    assert ".." not in sentence, sentence
+    assert sentence.endswith("."), sentence
+    # A historic row from before 0.18.7 keeps its stored detail
+    # forever; the renderer must at least stop doubling its full
+    # stop. The colons inside old details are stored text and stay.
+    old = dict(rows[0])
+    old["detail"] = (
+        "restored from the last-good copy: The copy was taken today "
+        "at 9:53 AM, 0.2 hours ago. Today's counters since then are "
+        "gone. No daily statistics were lost."
+    )
+    said = coord._system_event_sentence(old)
+    assert ".." not in said, said
+    assert said.endswith("."), said
 
 
 async def test_the_brief_leads_with_the_restore(hass: HomeAssistant):
