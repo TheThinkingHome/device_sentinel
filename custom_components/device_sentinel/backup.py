@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.18.4 (2026-08-27)
+# File: backup.py, Version: 0.18.5 (2026-08-27)
 
 """A one-shot copy of both storage files, taken before a release removes
 something it cannot put back.
@@ -187,7 +187,9 @@ async def async_refresh_last_good(hass: HomeAssistant) -> bool:
     return True
 
 
-async def async_copy_evidence(hass: HomeAssistant) -> str | None:
+async def async_copy_evidence(
+    hass: HomeAssistant,
+) -> tuple[str | None, list[str]]:
     """Copy both storage files and both last-good files aside, raw.
 
     Called when a load has verified faulty, before the first save
@@ -205,15 +207,19 @@ async def async_copy_evidence(hass: HomeAssistant) -> str | None:
     the fold by the same retention setting as everything else
     (ruling #343).
 
-    Returns the stamp that names the copies, or None when nothing
-    could be copied. A failure is a log line, not a stop: refusing to
-    load because an evidence copy failed would turn a full disk into
-    a dead integration.
+    Returns the stamp that names the copies and a plain list of what
+    was actually written, or (None, []) when nothing could be copied.
+    The list matters because the notice used to name four files
+    whatever happened (ruling #349): on a missing storage file there
+    was no storage file to copy, and the sentence said there was. A
+    failure is a log line, not a stop: refusing to load because an
+    evidence copy failed would turn a full disk into a dead
+    integration.
     """
     directory = hass.config.path(TRIM_BACKUP_DIR)
     now = dt_util.now()
 
-    def _copy_all() -> str | None:
+    def _copy_all() -> tuple[str | None, list[str]]:
         os.makedirs(directory, exist_ok=True)
         base = now.strftime("%Y-%m-%d_%H%M%S")
         stamp = base
@@ -225,40 +231,50 @@ async def async_copy_evidence(hass: HomeAssistant) -> str | None:
         ):
             stamp = f"{base}_{suffix}"
             suffix += 1
+        # Each source carries the words the notice will use, so the
+        # sentence is built from what was copied rather than from an
+        # assumption about what existed (ruling #349).
         sources = [
-            (_storage_path(hass, STORAGE_KEY), f"{stamp}.storage.evidence"),
+            (
+                _storage_path(hass, STORAGE_KEY),
+                f"{stamp}.storage.evidence",
+                "the storage file",
+            ),
             (
                 _storage_path(hass, STORAGE_CLOCKS_KEY),
                 f"{stamp}.clocks.evidence",
+                "the clocks file",
             ),
             (
                 _storage_path(
                     hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}"
                 ),
                 f"{stamp}.storage.last-good",
+                "the storage backup",
             ),
             (
                 _storage_path(
                     hass, f"{STORAGE_CLOCKS_KEY}.{BACKUP_LAST_GOOD_SUFFIX}"
                 ),
                 f"{stamp}.clocks.last-good",
+                "the clocks backup",
             ),
         ]
-        copied = 0
-        for source, name in sources:
+        written: list[str] = []
+        for source, name, said in sources:
             if not os.path.exists(source):
                 continue
             shutil.copy2(
                 source, os.path.join(directory, f"device_sentinel_{name}")
             )
-            copied += 1
-        return stamp if copied else None
+            written.append(said)
+        return (stamp if written else None), written
 
     try:
         return await hass.async_add_executor_job(_copy_all)
     except OSError as err:
         LOGGER.warning("Storage evidence copy failed: %s", err)
-        return None
+        return None, []
 
 
 async def async_last_good_taken(hass: HomeAssistant) -> float | None:

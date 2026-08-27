@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.18.4 (2026-08-27)
+# File: coordinator.py, Version: 0.18.5 (2026-08-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -72,7 +72,7 @@ from .normalise import (
     check_storage,
     fault_id,
 )
-from .repairs import async_evaluate
+from .repairs import _english_list, async_evaluate
 from .backup import (
     async_copy_evidence,
     async_last_good_taken,
@@ -433,6 +433,9 @@ class DeviceSentinelCoordinator(
         # missing, or unreadable. Carried into the notice so a person
         # is told which of the three happened to them.
         self._restore_reason: str = "unreadable"
+        # What the evidence copy actually wrote (ruling #349), so the
+        # notice names files that exist rather than four by habit.
+        self._restore_copied: list[str] = []
         # Whether this start is running a different version from the
         # one that last wrote storage (ruling #303). Set at load.
         self._version_changed = False
@@ -458,7 +461,7 @@ class DeviceSentinelCoordinator(
             # unreadable file is not running at all, so nobody is
             # asked. Evidence first: all four files, raw, before
             # anything is overwritten (#340).
-            stamp = await async_copy_evidence(self.hass)
+            stamp, copied = await async_copy_evidence(self.hass)
             restored, taken = await async_restore_main_file(self.hass)
             if restored:
                 LOGGER.warning(
@@ -497,6 +500,7 @@ class DeviceSentinelCoordinator(
                     ) from second
                 self._restored_from = taken
                 self._restore_evidence = stamp
+                self._restore_copied = copied
                 # A restored session is not a clean read (#341): the
                 # latch stands, so Status reports it, the repair issue
                 # opens, and the copy this came from is never
@@ -535,7 +539,7 @@ class DeviceSentinelCoordinator(
             # history.
             reason, corrupt = await async_diagnose_empty_load(self.hass)
             if reason != "fresh":
-                stamp = await async_copy_evidence(self.hass)
+                stamp, copied = await async_copy_evidence(self.hass)
                 if corrupt and stamp:
                     await async_copy_corrupt_evidence(
                         self.hass, corrupt, stamp
@@ -560,6 +564,7 @@ class DeviceSentinelCoordinator(
                     loaded = await self._store.async_load()
                     self._restored_from = taken
                     self._restore_evidence = stamp
+                    self._restore_copied = copied
                     self._restore_reason = reason
                     self._load_faulty = True
                 else:
@@ -1881,12 +1886,13 @@ class DeviceSentinelCoordinator(
             # file after migrations have handled it, so without this
             # copy the original of what went wrong is destroyed by
             # the process that found it.
-            stamp = await async_copy_evidence(self.hass)
+            stamp, copied = await async_copy_evidence(self.hass)
             if stamp:
                 LOGGER.warning(
                     "Storage evidence copied to trim_backups as %s "
-                    "before anything writes",
+                    "before anything writes: %s",
                     stamp,
+                    ", ".join(copied),
                 )
             repaired = self._bank_damaged_clocks(faults)
             if repaired:
@@ -2492,13 +2498,24 @@ class DeviceSentinelCoordinator(
             "replaced the file from its last known-good backup and "
             "started normally. It is running now.",
         )
-        where = (
-            f"Copies of the unreadable file, the clocks file and both "
-            f"backups were saved in {TRIM_BACKUP_DIR} under the stamp "
-            f"{self._restore_evidence}."
-            if self._restore_evidence
-            else "The unreadable file could not be copied aside."
-        )
+        # Name what was actually copied (ruling #349). On a missing
+        # storage file there is no storage file to copy, and the
+        # sentence used to say there was: the reference fleet's own
+        # test of 27 August produced three files and a notice
+        # claiming four.
+        if self._restore_evidence and self._restore_copied:
+            where = (
+                f"Copies of {_english_list(self._restore_copied)} were "
+                f"saved in {TRIM_BACKUP_DIR} under the stamp "
+                f"{self._restore_evidence}."
+            )
+        elif self._restore_evidence:
+            where = (
+                f"Copies were saved in {TRIM_BACKUP_DIR} under the "
+                f"stamp {self._restore_evidence}."
+            )
+        else:
+            where = "Nothing could be copied aside."
         self._record_system_event(
             SYS_STORAGE_REPAIR,
             detail=f"restored from the last-good copy: {loss}",
