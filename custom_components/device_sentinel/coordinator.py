@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.18.5 (2026-08-27)
+# File: coordinator.py, Version: 0.18.6 (2026-08-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -72,7 +72,12 @@ from .normalise import (
     check_storage,
     fault_id,
 )
-from .repairs import _english_list, async_evaluate
+from .repairs import (
+    _english_list,
+    async_clear_home_assistant_corruption,
+    async_evaluate,
+    async_raise_restored,
+)
 from .backup import (
     async_copy_evidence,
     async_last_good_taken,
@@ -436,6 +441,9 @@ class DeviceSentinelCoordinator(
         # What the evidence copy actually wrote (ruling #349), so the
         # notice names files that exist rather than four by habit.
         self._restore_copied: list[str] = []
+        # The names Home Assistant renamed aside, kept so its own
+        # issue can be cleared after a successful restore (#350).
+        self._restore_corrupt_names: list[str] = []
         # Whether this start is running a different version from the
         # one that last wrote storage (ruling #303). Set at load.
         self._version_changed = False
@@ -565,6 +573,7 @@ class DeviceSentinelCoordinator(
                     self._restored_from = taken
                     self._restore_evidence = stamp
                     self._restore_copied = copied
+                    self._restore_corrupt_names = corrupt
                     self._restore_reason = reason
                     self._load_faulty = True
                 else:
@@ -2521,6 +2530,26 @@ class DeviceSentinelCoordinator(
             detail=f"restored from the last-good copy: {loss}",
         )
         self._restore_told = f"{headline} {loss}"
+        # Home Assistant's own critical issue, if it raised one, tells
+        # a person to repair the file by hand or restore the whole
+        # system from a backup. Both are wrong now (ruling #350).
+        cleared = 0
+        if self._restore_corrupt_names:
+            cleared = async_clear_home_assistant_corruption(
+                self.hass, self._restore_corrupt_names
+            )
+        if cleared:
+            where = (
+                f"{where} Home Assistant also reported this file as "
+                f"corrupt; that report has been cleared."
+            )
+        async_raise_restored(
+            self.hass,
+            self.entry.entry_id,
+            headline,
+            loss,
+            where,
+        )
         await self.async_announce_restore(headline, f"{loss}\n\n{where}")
 
     @property

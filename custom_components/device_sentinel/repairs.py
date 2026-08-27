@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.16.10 (2026-08-21)
+# File: repairs.py, Version: 0.18.6 (2026-08-27)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -58,6 +58,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
+from homeassistant.core import DOMAIN as HOMEASSISTANT_DOMAIN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 
@@ -79,6 +80,8 @@ from .const import (
     REPAIR_STORAGE_SHAPE,
     WIKI_LINK_NOTIFICATIONS,
     WIKI_LINK_REPAIRS,
+    REPAIR_STORAGE_RESTORED,
+    STORAGE_KEY,
 )
 
 
@@ -619,6 +622,12 @@ async def async_create_fix_flow(
         return EnableEntitiesFlow(entry_id)
     if issue_id == REPAIR_NOTIFY_TARGET_MISSING:
         return RemoveDeadTargetsFlow(entry_id)
+    if issue_id == REPAIR_STORAGE_RESTORED:
+        # Nothing left to repair, so the flow is acknowledgement
+        # (ruling #350). Home Assistant's own ConfirmRepairFlow shows
+        # the issue's words and clears it on Submit, which is exactly
+        # what is wanted and is not worth reimplementing.
+        return ConfirmRepairFlow()
     LOGGER.warning(
         "Repairs was asked for a fix flow for %s, which has none", issue_id
     )
@@ -629,6 +638,91 @@ __all__ = [
     "REPAIR_MOMENT_BRIEF",
     "REPAIR_MOMENT_GRACE",
     "async_clear_all",
+    "async_clear_home_assistant_corruption",
     "async_create_fix_flow",
     "async_evaluate",
+    "async_raise_restored",
 ]
+
+
+@callback
+def async_raise_restored(
+    hass: HomeAssistant,
+    entry_id: str,
+    reason: str,
+    loss: str,
+    where: str,
+) -> None:
+    """Report a completed restore as a repair card (ruling #350).
+
+    This replaces the persistent notification the restore used to
+    post. A persistent notification sits among transient things and
+    is dismissed by reflex; a repair card sits in the place a person
+    looks for things that need attention, survives a restart, and
+    carries a severity of its own.
+
+    A warning rather than an error, because the problem is over by
+    the time this is raised: the file has already been replaced and
+    the integration is already running. What survives it is the loss,
+    and the card says how much.
+
+    Fixable, and the fix is acknowledgement. There is nothing left to
+    repair, so a card that could not be cleared without restarting
+    would be a critical alert about a solved problem. Pressing Submit
+    means the person has read it.
+    """
+    _raise(
+        hass,
+        REPAIR_STORAGE_RESTORED,
+        severity=ir.IssueSeverity.WARNING,
+        is_fixable=True,
+        learn_more_url=WIKI_LINK_REPAIRS,
+        placeholders={
+            "reason": reason,
+            "loss": loss,
+            "where": where,
+        },
+        data={"entry_id": entry_id},
+    )
+
+
+@callback
+def async_clear_home_assistant_corruption(
+    hass: HomeAssistant, corrupt_names: list[str]
+) -> int:
+    """Remove Home Assistant's own storage-corruption issue.
+
+    When a storage file will not parse, Home Assistant raises a
+    critical issue of its own telling the person to repair the file by
+    hand and put it back, or to restore the whole system from a
+    backup. After a successful restore both instructions are wrong,
+    and the second is expensive: a system restore to recover a file
+    that has already been recovered (ruling #350).
+
+    The identifier is derived rather than searched for. Home Assistant
+    builds the corrupt filename and the issue identifier from the same
+    timestamp in the same function, so the text after `.corrupt.` in
+    the filename is exactly the text at the end of the identifier.
+    Only identifiers built from this integration's own storage key and
+    from files sitting beside its own file are ever touched.
+
+    Called only after a restore succeeded. A failed restore leaves the
+    issue standing, because then its advice is the right advice.
+
+    Deleting an issue that is not there is not an error, which is what
+    makes this safe against an upstream change: if the identifier ever
+    stops matching, nothing happens and the issue stays, which is the
+    behaviour before this existed.
+    """
+    cleared = 0
+    for name in corrupt_names:
+        _, marker, isotime = name.partition(".corrupt.")
+        if not marker or not isotime:
+            continue
+        ir.async_delete_issue(
+            hass,
+            HOMEASSISTANT_DOMAIN,
+            f"storage_corruption_{STORAGE_KEY}_{isotime}",
+        )
+        cleared += 1
+    return cleared

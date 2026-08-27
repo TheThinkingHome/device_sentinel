@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.18.2 (2026-08-26)
+# File: messenger.py, Version: 0.18.6 (2026-08-27)
 
 """Sending the daily brief, and nothing else yet.
 
@@ -45,7 +45,6 @@ from .const import (
     LOGGER,
     PERSISTENT_CREATE,
     PERSISTENT_TARGET,
-    RESTORE_NOTICE_ID,
     RESTORE_NOTICE_TITLE,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
@@ -230,19 +229,11 @@ class MessengerMixin:
                 )
                 continue
             sent += 1
-        try:
-            await self.hass.services.async_call(
-                PERSISTENT_TARGET,
-                PERSISTENT_CREATE,
-                {
-                    "title": RESTORE_NOTICE_TITLE,
-                    "message": message,
-                    "notification_id": RESTORE_NOTICE_ID,
-                },
-                blocking=True,
-            )
-            sent += 1
-        except Exception as err:  # noqa: BLE001
-            LOGGER.warning("Restore notice was not posted: %s", err)
+        # No persistent notification here any more (ruling #350). The
+        # durable surface is a repair card, raised by the caller: it
+        # sits where a person looks for things needing attention,
+        # survives a restart, and carries a severity. Posting both put
+        # one event on five surfaces with the most durable one in the
+        # place things are dismissed by reflex.
         LOGGER.warning("Restore notice sent to %d surface(s)", sent)
         return sent

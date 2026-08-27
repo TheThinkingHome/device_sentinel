@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.18.5 (2026-08-27)
+# File: const.py, Version: 0.18.6 (2026-08-27)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1418,10 +1418,10 @@ CONF_BRIEF_TARGETS = "brief_document_targets"
 NOTIFY_DOMAIN = "notify"
 PERSISTENT_TARGET = "persistent_notification"
 PERSISTENT_CREATE = "create"
-# The restore notice keeps an id of its own (ruling #345). The three
-# standing surfaces overwrite themselves; this one must survive until
-# a person dismisses it.
-RESTORE_NOTICE_ID = "device_sentinel_storage_restored"
+# The restore notice title, used by the email and the push. The
+# persistent notification it once carried is retired: the durable
+# surface is a repair card now (ruling #350), so the notification id
+# that #345 gave it is gone with it.
 RESTORE_NOTICE_TITLE = "Device Sentinel restored its storage"
 PERSISTENT_DISMISS = "dismiss"
 
@@ -1901,7 +1901,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 349
+HIGHEST_RULING = 350
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -2004,11 +2004,19 @@ REPAIR_STORAGE_SHAPE = "storage_shape"
 REPAIR_ENTITIES_DISABLED = "entities_disabled"
 REPAIR_NOTIFY_TARGET_MISSING = "notify_target_missing"
 REPAIR_NO_DELIVERY = "no_delivery_configured"
+# The restore report (ruling #350). A repair card rather than a
+# persistent notification: it sits in Settings, Repairs where a person
+# looks for things that need attention, it survives a restart, and it
+# carries a severity. The problem is over by the time it is raised, so
+# it is a warning rather than an error, and its only action is to say
+# it has been read.
+REPAIR_STORAGE_RESTORED = "storage_restored"
 REPAIRS_ALL = (
     REPAIR_STORAGE_SHAPE,
     REPAIR_ENTITIES_DISABLED,
     REPAIR_NOTIFY_TARGET_MISSING,
     REPAIR_NO_DELIVERY,
+    REPAIR_STORAGE_RESTORED,
 )
 
 # The two moments a Repair is evaluated (ruling #300, amended by
