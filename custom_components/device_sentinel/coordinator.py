@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.18.2 (2026-08-26)
+# File: coordinator.py, Version: 0.18.4 (2026-08-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -81,6 +81,9 @@ from .backup import (
     async_take_backup,
     async_restore_main_file,
     describe_restore_loss,
+    async_diagnose_empty_load,
+    async_copy_corrupt_evidence,
+    _last_good_holds_devices,
 )
 from .const import (
     DEFAULT_RETENTION_DAYS,
@@ -426,6 +429,10 @@ class DeviceSentinelCoordinator(
         self._restored_from: float | None = None
         self._restore_evidence: str | None = None
         self._restore_told: str | None = None
+        # Why the load came back empty (ruling #348): corrupt,
+        # missing, or unreadable. Carried into the notice so a person
+        # is told which of the three happened to them.
+        self._restore_reason: str = "unreadable"
         # Whether this start is running a different version from the
         # one that last wrote storage (ruling #303). Set at load.
         self._version_changed = False
@@ -464,7 +471,30 @@ class DeviceSentinelCoordinator(
                     TRIM_BACKUP_DIR,
                     stamp or "unstamped",
                 )
-                loaded = await self._store.async_load()
+                try:
+                    loaded = await self._store.async_load()
+                except (HomeAssistantError, ValueError) as second:
+                    # The restored file will not load either, so the
+                    # fault is not the file (ruling #348). Without
+                    # this the second failure escaped uncaught and a
+                    # person got a traceback instead of the sentence
+                    # #327 promised them. Found by the suite when the
+                    # first failure stopped being the only one.
+                    LOGGER.error(
+                        "Device Sentinel restored %s from its "
+                        "last-good copy and still cannot read it: "
+                        "%s. Nothing further has been changed; copies "
+                        "were written to %s as %s",
+                        STORAGE_KEY,
+                        second,
+                        TRIM_BACKUP_DIR,
+                        stamp or "unstamped",
+                    )
+                    raise ConfigEntryError(
+                        f"Device Sentinel restored {STORAGE_KEY} from "
+                        f"its last-good copy and still cannot read "
+                        f"it. Nothing further has been changed."
+                    ) from second
                 self._restored_from = taken
                 self._restore_evidence = stamp
                 # A restored session is not a clean read (#341): the
@@ -492,6 +522,58 @@ class DeviceSentinelCoordinator(
                     f"fresh, or restore it from a backup to keep what "
                     f"was learned."
                 ) from err
+        if loaded is None and self._restored_from is None:
+            # The trigger that matters (ruling #348). Corruption never
+            # reaches the except block above: Home Assistant's own
+            # Store catches every JSONDecodeError, renames the file to
+            # `.corrupt.<isotime>`, raises its own repair issue and
+            # returns None. So the common case arrives here, looking
+            # exactly like a first install, and 0.18.2 treated it as
+            # one: it started empty, found no faults in an empty
+            # document, and refreshed the last-good copy from it,
+            # destroying the only usable source of the fleet's
+            # history.
+            reason, corrupt = await async_diagnose_empty_load(self.hass)
+            if reason != "fresh":
+                stamp = await async_copy_evidence(self.hass)
+                if corrupt and stamp:
+                    await async_copy_corrupt_evidence(
+                        self.hass, corrupt, stamp
+                    )
+                restored, taken = await async_restore_main_file(self.hass)
+                if restored:
+                    LOGGER.warning(
+                        "Device Sentinel found %s %s, so it was "
+                        "replaced from the last-good copy and startup "
+                        "continued. Copies of what existed were "
+                        "written to %s as %s",
+                        STORAGE_KEY,
+                        (
+                            "unreadable and renamed aside by Home "
+                            "Assistant"
+                            if reason == "corrupt"
+                            else "missing"
+                        ),
+                        TRIM_BACKUP_DIR,
+                        stamp or "unstamped",
+                    )
+                    loaded = await self._store.async_load()
+                    self._restored_from = taken
+                    self._restore_evidence = stamp
+                    self._restore_reason = reason
+                    self._load_faulty = True
+                else:
+                    # The copy could not be used after all. Fall
+                    # through to first install, which is what would
+                    # have happened anyway, but never refresh the
+                    # last-good copy from it (#348).
+                    LOGGER.error(
+                        "Device Sentinel found %s empty and its "
+                        "last-good copy could not be used. Starting "
+                        "fresh. The copy has not been touched",
+                        STORAGE_KEY,
+                    )
+                    self._load_faulty = True
         if loaded is None:
             LOGGER.info(
                 "Device Sentinel v%s: no existing storage, creating %s",
@@ -1824,6 +1906,20 @@ class DeviceSentinelCoordinator(
         # release can act on one fault rather than on a list.
         self._shape_faults = faults
         if not faults and not self._load_faulty:
+            if not self.data.get(DATA_DEVICES) and await self.hass.async_add_executor_job(
+                _last_good_holds_devices, self.hass
+            ):
+                # An empty document checks clean, because there is
+                # nothing in it to be wrong (ruling #348). Refreshing
+                # from it would overwrite a copy that holds a fleet
+                # with one that holds nothing, which is the one way
+                # this integration could destroy a person's history by
+                # itself. The copy is left exactly as it was.
+                LOGGER.warning(
+                    "Storage holds no devices while the last-good copy "
+                    "does. The copy has not been refreshed",
+                )
+                return
             if await async_refresh_last_good(self.hass):
                 self._last_good_taken = dt_util.utcnow().timestamp()
             return
@@ -2373,10 +2469,28 @@ class DeviceSentinelCoordinator(
             return
         self._restored_from = None
         loss = describe_restore_loss(taken, dt_util.utcnow().timestamp())
-        headline = (
+        # Which of the three happened is knowable and worth saying:
+        # a person who deleted a file, a person whose disk failed, and
+        # a person whose file was corrupted have different next steps
+        # (ruling #348).
+        cause = {
+            "corrupt": (
+                "Device Sentinel's storage file was damaged and could "
+                "not be read. Home Assistant renamed it aside and "
+                "Device Sentinel replaced it from its last known-good "
+                "backup, then started normally. It is running now."
+            ),
+            "missing": (
+                "Device Sentinel's storage file was missing. It was "
+                "replaced from the last known-good backup and "
+                "startup continued. It is running now."
+            ),
+        }
+        headline = cause.get(
+            self._restore_reason,
             "Device Sentinel could not read its storage file, so it "
             "replaced the file from its last known-good backup and "
-            "started normally. It is running now."
+            "started normally. It is running now.",
         )
         where = (
             f"Copies of the unreadable file, the clocks file and both "

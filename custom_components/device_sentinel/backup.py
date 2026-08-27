@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.18.2 (2026-08-26)
+# File: backup.py, Version: 0.18.4 (2026-08-27)
 
 """A one-shot copy of both storage files, taken before a release removes
 something it cannot put back.
@@ -416,3 +416,111 @@ def describe_restore_loss(taken: float, now: float) -> str:
         f"That means {midnights} {days} of daily statistics {verb} "
         "gone for every device, along with today's counters."
     )
+
+
+def _last_good_holds_devices(hass: HomeAssistant) -> bool:
+    """Say whether the last-good main copy is worth restoring from.
+
+    Ruling #348. Existing is not enough and parsing is not enough: a
+    copy that parses to an empty document is indistinguishable from a
+    first install, and promoting it over a genuine first install would
+    invent a fleet from nothing. So the question asked is the only one
+    that matters, does it hold device records.
+    """
+    copy = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
+    try:
+        with open(copy, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return False
+    devices = data.get("devices")
+    return isinstance(devices, dict) and bool(devices)
+
+
+def _corrupt_siblings(hass: HomeAssistant) -> list[str]:
+    """Return Home Assistant's own corrupt-file renames, newest first.
+
+    When a storage file will not parse, Home Assistant renames it to
+    `<file>.corrupt.<isotime>`, raises its own repair issue, and hands
+    the integration None. It never raises, which is why the exception
+    branch below it almost never fires (ruling #348). The presence of
+    one of these files is Home Assistant telling us exactly what
+    happened, so it is read as evidence rather than guessed at.
+    """
+    live = _storage_path(hass, STORAGE_KEY)
+    directory = os.path.dirname(live)
+    prefix = f"{os.path.basename(live)}.corrupt."
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return []
+    return sorted(
+        (name for name in names if name.startswith(prefix)), reverse=True
+    )
+
+
+async def async_diagnose_empty_load(
+    hass: HomeAssistant,
+) -> tuple[str, list[str]]:
+    """Say why a load came back empty, and what evidence exists.
+
+    Returns (reason, corrupt file names). The reason is one of:
+
+    `corrupt`   Home Assistant renamed an unparseable file aside, and
+                a last-good copy holding devices is available.
+    `missing`   No file and no rename, but a last-good copy holding
+                devices is available. Deletion, or a write that left
+                nothing behind.
+    `fresh`     No last-good copy worth restoring from. A genuine
+                first install, or a fleet that has never recorded a
+                device.
+
+    A last-good copy is required for the first two, so a damaged or
+    empty copy can never be promoted over a real first install.
+    """
+
+    def _look() -> tuple[str, list[str]]:
+        corrupt = _corrupt_siblings(hass)
+        if not _last_good_holds_devices(hass):
+            return "fresh", corrupt
+        return ("corrupt" if corrupt else "missing"), corrupt
+
+    return await hass.async_add_executor_job(_look)
+
+
+async def async_copy_corrupt_evidence(
+    hass: HomeAssistant, names: list[str], stamp: str
+) -> int:
+    """Copy Home Assistant's corrupt renames into the evidence folder.
+
+    They are the only remaining trace of what went wrong, and Home
+    Assistant leaves them beside the live file where a later
+    corruption puts a second one (ruling #348). Copied, not moved:
+    moving a person's file out from under them is a decision they did
+    not ask for, and the trim retention already prunes what we own.
+    """
+    live = _storage_path(hass, STORAGE_KEY)
+    directory = os.path.dirname(live)
+    target = hass.config.path(TRIM_BACKUP_DIR)
+
+    def _copy() -> int:
+        copied = 0
+        os.makedirs(target, exist_ok=True)
+        for name in names:
+            try:
+                shutil.copy2(
+                    os.path.join(directory, name),
+                    os.path.join(target, f"{stamp}-{name}"),
+                )
+            except OSError as err:
+                LOGGER.warning("Could not copy %s aside: %s", name, err)
+                continue
+            copied += 1
+        return copied
+
+    return await hass.async_add_executor_job(_copy)
