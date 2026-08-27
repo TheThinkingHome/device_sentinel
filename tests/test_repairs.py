@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_repairs.py, Version: 0.16.1 (2026-08-19)
+# File: test_repairs.py, Version: 0.18.6 (2026-08-27)
 
 """What reaches the Repairs panel, and what is kept out of it.
 
@@ -653,3 +653,37 @@ async def test_the_brief_send_is_what_evaluates_repairs(
     await coordinator._on_brief_time(dt_util.utcnow())
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_ENTITIES_DISABLED) is not None
+
+
+def test_every_fixable_issue_carries_a_flow_and_no_description():
+    """hassfest rejects an issue holding both (ruling #351).
+
+    Found when a validate run failed on 0.18.6: `storage_restored`
+    was written with a description beside its fix_flow, which no
+    integration in Home Assistant core does. A fixable issue shows its
+    flow's first step, so the description is never read and its
+    presence is a schema error rather than a redundancy.
+    """
+    import json
+    from pathlib import Path
+
+    root = Path("custom_components/device_sentinel")
+    for name in ("strings.json", "translations/en.json"):
+        data = json.loads((root / name).read_text())
+        for issue, block in (data.get("issues") or {}).items():
+            if "fix_flow" in block:
+                assert "description" not in block, f"{name}: {issue}"
+            else:
+                assert "description" in block, f"{name}: {issue}"
+            assert "title" in block, f"{name}: {issue}"
+
+
+def test_the_two_string_files_agree():
+    """en.json is the shipped copy of strings.json."""
+    import json
+    from pathlib import Path
+
+    root = Path("custom_components/device_sentinel")
+    assert json.loads((root / "strings.json").read_text()) == json.loads(
+        (root / "translations/en.json").read_text()
+    )
