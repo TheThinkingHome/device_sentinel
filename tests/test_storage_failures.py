@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_failures.py, Version: 0.17.4 (2026-08-24)
+# File: test_storage_failures.py, Version: 0.18.4 (2026-08-27)
 
 """A storage file Home Assistant cannot read (ruling #327).
 
@@ -39,6 +39,25 @@ from custom_components.device_sentinel.const import (
 from tests.helpers import setup_entry
 
 
+def _clear_storage(hass: HomeAssistant) -> None:
+    """Start from a directory with no last-good copy in it.
+
+    The harness config directory is a fixed folder inside the
+    installed package, shared by every test in the session and left
+    on disk between runs. A copy written by another test file was
+    still there for this one, so the restore succeeded and the
+    refusal these tests describe never happened.
+    """
+    import os
+
+    directory = hass.config.path(".storage")
+    if not os.path.exists(directory):
+        return
+    for name in os.listdir(directory):
+        if name.startswith("device_sentinel"):
+            os.remove(os.path.join(directory, name))
+
+
 async def _entry_with_failing_load(hass: HomeAssistant, error: Exception):
     """Set up the integration with our own store raising on load.
 
@@ -46,6 +65,7 @@ async def _entry_with_failing_load(hass: HomeAssistant, error: Exception):
     break Home Assistant's own registries and prove nothing about
     this guard.
     """
+    _clear_storage(hass)
     real_load = Store.async_load
 
     async def _selective(self, *args, **kwargs):

@@ -14,10 +14,13 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.backup import (
+    _last_good_holds_devices,
+    async_diagnose_empty_load,
     async_restore_main_file,
     describe_restore_loss,
 )
 from custom_components.device_sentinel.const import (
+    DATA_DEVICES,
     RESTORE_NOTICE_ID,
     STORAGE_KEY,
     SYS_KIND,
@@ -248,3 +251,150 @@ async def test_the_brief_leads_with_the_restore(hass: HomeAssistant):
     # First sentence under the heading, above the house and the
     # devices: nothing else in the brief matters as much.
     assert "could not read its storage file" in said[0], said[:3]
+
+
+# 0.18.4 (ruling #348): the trigger that actually fires. Corruption
+# never raises to us. Home Assistant catches every JSONDecodeError,
+# renames the file to `.corrupt.<isotime>`, and returns None. Found
+# when James proposed testing Restore on his own system by deleting
+# the file and by renaming a text file over it: neither would have
+# fired Restore, and both would have overwritten his last-good copy
+# with an empty document.
+
+
+def _clear_storage(hass):
+    """Start from a known directory.
+
+    The harness reuses one config directory across tests in a file,
+    so a `.corrupt` file written by one test was still there for the
+    next and turned a missing-file case into a corrupt one. Found by
+    the suite, which is the right place to find it.
+    """
+    directory = hass.config.path(".storage")
+    if not os.path.exists(directory):
+        return
+    for name in os.listdir(directory):
+        if name.startswith("device_sentinel"):
+            os.remove(os.path.join(directory, name))
+
+
+CORRUPT = ".storage/device_sentinel.storage.corrupt.2026-08-27T12:00:00"
+
+
+async def test_a_deleted_file_is_diagnosed_as_missing(
+    hass: HomeAssistant,
+):
+    _clear_storage(hass)
+    _write(hass, COPY, _good())
+    live = hass.config.path(LIVE)
+    if os.path.exists(live):
+        os.remove(live)
+    reason, corrupt = await async_diagnose_empty_load(hass)
+    assert reason == "missing"
+    assert corrupt == []
+
+
+async def test_a_corrupt_rename_is_diagnosed_as_corrupt(
+    hass: HomeAssistant,
+):
+    """Home Assistant's own rename is the evidence."""
+    _clear_storage(hass)
+    _write(hass, COPY, _good())
+    _write(hass, CORRUPT, "{ this is what was in the file")
+    live = hass.config.path(LIVE)
+    if os.path.exists(live):
+        os.remove(live)
+    reason, corrupt = await async_diagnose_empty_load(hass)
+    assert reason == "corrupt"
+    assert len(corrupt) == 1
+
+
+async def test_a_first_install_is_still_a_first_install(
+    hass: HomeAssistant,
+):
+    """No usable copy means fresh, whatever else is lying about."""
+    _clear_storage(hass)
+    for name in (LIVE, COPY):
+        path = hass.config.path(name)
+        if os.path.exists(path):
+            os.remove(path)
+    reason, _corrupt = await async_diagnose_empty_load(hass)
+    assert reason == "fresh"
+
+
+async def test_an_empty_copy_is_never_promoted(hass: HomeAssistant):
+    """A copy that parses to nothing must not invent a fleet."""
+    _clear_storage(hass)
+    for text in (
+        '{"version": 1, "data": {"devices": {}}}',
+        '{"version": 1, "data": {}}',
+        '{"version": 1}',
+        "null",
+        "[]",
+        "not json",
+    ):
+        _write(hass, COPY, text)
+        assert not _last_good_holds_devices(hass), text[:20]
+        reason, _c = await async_diagnose_empty_load(hass)
+        assert reason == "fresh", text[:20]
+
+
+async def test_setup_restores_from_an_empty_load(hass: HomeAssistant):
+    """The whole point: no exception, and Restore still runs."""
+    _clear_storage(hass)
+    _write(hass, COPY, _good())
+    _write(hass, CORRUPT, "{ the original bytes")
+    live = hass.config.path(LIVE)
+    if os.path.exists(live):
+        os.remove(live)
+    entry = await setup_entry(hass, {})
+    coord = entry.runtime_data
+    assert coord.storage_load_faulty, "a restored session must latch"
+    assert coord._restored_from is not None
+    assert coord._restore_reason == "corrupt"
+    # The corrupt file was copied aside as evidence.
+    saved = os.listdir(hass.config.path(TRIM_BACKUP_DIR))
+    assert any("corrupt" in name for name in saved), saved
+
+
+async def test_an_empty_document_never_refreshes_a_good_copy(
+    hass: HomeAssistant,
+):
+    """The data-loss path 0.18.2 shipped with (ruling #348)."""
+    _clear_storage(hass)
+    _write(hass, COPY, _good())
+    before = open(hass.config.path(COPY)).read()
+    coord = await setup_coordinator(hass)
+    coord.data[DATA_DEVICES] = {}
+    coord._load_faulty = False
+    await coord._check_storage_shape("load")
+    assert open(hass.config.path(COPY)).read() == before, (
+        "an empty document overwrote a copy holding devices"
+    )
+
+
+async def test_a_restored_file_that_still_will_not_load(
+    hass: HomeAssistant,
+):
+    """A second failure gives the sentence, not a traceback (#348).
+
+    The reload after a restore was unguarded. When the restored file
+    would not load either, the exception escaped `async_setup_entry`
+    and a person got exactly the traceback #327 exists to prevent.
+    """
+    from homeassistant.config_entries import ConfigEntryState
+    from pytest_homeassistant_custom_component.common import (
+        MockConfigEntry,
+    )
+    from custom_components.device_sentinel.const import DOMAIN
+
+    _clear_storage(hass)
+    _write(hass, COPY, _good())
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="Device Sentinel", data={}, options={}
+    )
+    entry.add_to_hass(hass)
+    with _failing_main_store(times=99):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.SETUP_ERROR
