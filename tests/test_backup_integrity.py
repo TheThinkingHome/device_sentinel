@@ -114,7 +114,14 @@ async def test_evidence_copies_all_four_files(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     _write_live_files(hass)
     await coord._check_storage_shape("fold")  # makes the last-good pair
-    stamp = await async_copy_evidence(hass)
+    stamp, copied = await async_copy_evidence(hass)
+    # The copier now reports what it wrote (ruling #349).
+    assert copied == [
+        "the storage file",
+        "the clocks file",
+        "the storage backup",
+        "the clocks backup",
+    ], copied
     assert stamp
     directory = hass.config.path(TRIM_BACKUP_DIR)
     names = sorted(os.listdir(directory))
@@ -143,8 +150,8 @@ async def test_two_evidence_copies_in_one_second_both_survive(
     """The stamp collision rule trim learned the hard way (#340)."""
     await setup_coordinator(hass)
     _write_live_files(hass)
-    first = await async_copy_evidence(hass)
-    second = await async_copy_evidence(hass)
+    first, _ = await async_copy_evidence(hass)
+    second, _ = await async_copy_evidence(hass)
     assert first and second and first != second
 
 

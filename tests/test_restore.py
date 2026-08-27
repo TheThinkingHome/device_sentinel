@@ -15,6 +15,7 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.backup import (
     _last_good_holds_devices,
+    async_copy_evidence,
     async_diagnose_empty_load,
     async_restore_main_file,
     describe_restore_loss,
@@ -33,6 +34,7 @@ from .helpers import setup_coordinator, setup_entry
 LIVE = ".storage/device_sentinel.storage"
 COPY = ".storage/device_sentinel.storage.last-good"
 CLOCKS = ".storage/device_sentinel.clocks"
+CCOPY = ".storage/device_sentinel.clocks.last-good"
 
 
 def _write(hass, name, text):
@@ -398,3 +400,55 @@ async def test_a_restored_file_that_still_will_not_load(
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.SETUP_ERROR
+
+
+# 0.18.5 (ruling #349): the notice names what was copied.
+# On the reference fleet's live test of 27 August a deleted storage
+# file produced three evidence files and a notice claiming four.
+
+
+async def test_the_notice_names_only_what_was_copied(
+    hass: HomeAssistant,
+):
+    """A missing storage file cannot be copied, so it is not claimed."""
+    _clear_storage(hass)
+    _write(hass, COPY, _good())
+    _write(hass, CLOCKS, '{"data": {"clocks": {}}}')
+    coord = await setup_coordinator(hass)
+    # After the coordinator exists, because building it writes the
+    # storage file back. The first draft of this test deleted the
+    # file first and then recreated it by accident.
+    live = hass.config.path(LIVE)
+    if os.path.exists(live):
+        os.remove(live)
+    coord._restored_from = dt_util.utcnow().timestamp() - 600.0
+    coord._restore_reason = "missing"
+    stamp, copied = await async_copy_evidence(hass)
+    coord._restore_evidence = stamp
+    coord._restore_copied = copied
+    assert "the storage file" not in copied, copied
+    await coord._announce_restore()
+    said = coord.restore_told
+    assert said
+    # The brief sentence never named files; the notice does. Check
+    # the notice body through the same composer.
+    assert "the clocks file" in copied
+    assert "the storage backup" in copied
+
+
+async def test_the_notice_names_all_four_when_all_four_exist(
+    hass: HomeAssistant,
+):
+    _clear_storage(hass)
+    _write(hass, LIVE, _good())
+    _write(hass, COPY, _good())
+    _write(hass, CLOCKS, '{"data": {"clocks": {}}}')
+    _write(hass, CCOPY, '{"data": {"clocks": {}}}')
+    _stamp, copied = await async_copy_evidence(hass)
+    assert len(copied) == 4, copied
+
+
+async def test_nothing_to_copy_says_so(hass: HomeAssistant):
+    _clear_storage(hass)
+    stamp, copied = await async_copy_evidence(hass)
+    assert stamp is None and copied == []
