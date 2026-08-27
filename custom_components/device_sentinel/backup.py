@@ -397,40 +397,55 @@ async def async_restore_main_file(
         return False, None
 
 
-def describe_restore_loss(taken: float, now: float) -> str:
-    """Say what a copy of that age cost, without inventing a count.
+def describe_restore_loss(
+    taken: float, now: float, *, embedded: bool = False
+) -> str:
+    """Say what a backup of that age cost, without inventing a count.
 
-    The copy's timestamp is knowable and the corrupt file's contents
+    The backup's timestamp is knowable and the corrupt file's contents
     are not, so this states the window and the kinds of record inside
     it, never how many (ruling #345). Any count of events or readings
     here would be a guess dressed as a fact.
 
     The number that matters is midnights crossed, not hours elapsed:
     the nightly rollover is what writes a day into the history, so a
-    copy taken after last night's rollover has cost no daily history
+    backup taken after last night's rollover has cost no daily history
     at all however old it looks. Dividing hours by 24 gets that wrong
     in both directions.
+
+    Two forms from one arithmetic (ruling #352). The standalone form
+    opens "The last-good backup was taken" and stands on its own in
+    the repair card and the notification. The embedded form opens
+    "which was taken" and follows "restored from the last-good
+    backup," in the event detail, so the brief's sentence reads with
+    one colon, no capital mid-sentence, and one full stop. The old
+    shape embedded the standalone form and produced all three faults
+    at once, live on the reference fleet on 27 August.
     """
     local_taken = dt_util.as_local(dt_util.utc_from_timestamp(taken))
     local_now = dt_util.as_local(dt_util.utc_from_timestamp(now))
     midnights = (local_now.date() - local_taken.date()).days
     hours = max(0.0, (now - taken) / 3600.0)
     when = local_taken.strftime("%B %-d at %-I:%M %p")
+    head = (
+        "which was taken" if embedded else "The last-good backup was taken"
+    )
 
     if midnights <= 0:
         return (
-            f"The copy was taken today at {local_taken.strftime('%-I:%M %p')}, "
-            f"{hours:.1f} hours ago. Today's counters since then are gone. "
-            "No daily statistics were lost."
+            f"{head} today at {local_taken.strftime('%-I:%M %p')}, "
+            f"{hours:.1f} hours prior to the restore. Today's "
+            "counters since then are gone. No daily statistics were "
+            "lost."
         )
     days = "day" if midnights == 1 else "days"
     # Singular and plural have to agree: "1 day of daily statistics
     # are gone" read wrong in the first run of this.
     verb = "is" if midnights == 1 else "are"
     return (
-        f"The copy was taken on {when}, {hours / 24:.1f} days ago. "
-        f"That means {midnights} {days} of daily statistics {verb} "
-        "gone for every device, along with today's counters."
+        f"{head} on {when}, {hours / 24:.1f} days prior to the "
+        f"restore. That means {midnights} {days} of daily statistics "
+        f"{verb} gone for every device, along with today's counters."
     )
 
 

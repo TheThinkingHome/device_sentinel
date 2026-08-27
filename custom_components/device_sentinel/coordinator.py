@@ -2483,28 +2483,34 @@ class DeviceSentinelCoordinator(
         if taken is None:
             return
         self._restored_from = None
-        loss = describe_restore_loss(taken, dt_util.utcnow().timestamp())
+        moment = dt_util.utcnow().timestamp()
+        loss = describe_restore_loss(taken, moment)
+        # The embedded form continues "restored from the last-good
+        # backup," so the brief carries one sentence rather than a
+        # standalone paragraph spliced in after a colon (ruling #352).
+        loss_embedded = describe_restore_loss(taken, moment, embedded=True)
         # Which of the three happened is knowable and worth saying:
         # a person who deleted a file, a person whose disk failed, and
         # a person whose file was corrupted have different next steps
-        # (ruling #348).
+        # (ruling #348). One name for the backup on every surface
+        # (ruling #352): the last-good backup, nothing else.
         cause = {
             "corrupt": (
                 "Device Sentinel's storage file was damaged and could "
                 "not be read. Home Assistant renamed it aside and "
-                "Device Sentinel replaced it from its last known-good "
+                "Device Sentinel replaced it from its last-good "
                 "backup, then started normally. It is running now."
             ),
             "missing": (
                 "Device Sentinel's storage file was missing. It was "
-                "replaced from the last known-good backup and "
-                "startup continued. It is running now."
+                "replaced from the last-good backup and startup "
+                "continued. It is running now."
             ),
         }
         headline = cause.get(
             self._restore_reason,
             "Device Sentinel could not read its storage file, so it "
-            "replaced the file from its last known-good backup and "
+            "replaced the file from its last-good backup and "
             "started normally. It is running now.",
         )
         # Name what was actually copied (ruling #349). On a missing
@@ -2527,7 +2533,7 @@ class DeviceSentinelCoordinator(
             where = "Nothing could be copied aside."
         self._record_system_event(
             SYS_STORAGE_REPAIR,
-            detail=f"restored from the last-good copy: {loss}",
+            detail=f"restored from the last-good backup, {loss_embedded}",
         )
         self._restore_told = f"{headline} {loss}"
         # Home Assistant's own critical issue, if it raised one, tells

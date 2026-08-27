@@ -405,9 +405,15 @@ class BriefMixin:
         if kind == SYS_STORAGE_REPAIR:
             # A repair nobody can see afterwards did not happen as
             # far as the person is concerned (ruling #342), so the
-            # sentence names the action and its source.
+            # sentence names the action and its source. A detail that
+            # carries its own full stop keeps it (ruling #352): the
+            # unconditional stop produced the double full stop the
+            # reference brief showed twice on 27 August, and the
+            # guard also repairs the rows already sitting in the
+            # permanent event log with the old detail inside them.
             extra = f": {detail}" if detail else ""
-            return f"Storage repaired itself at {when}{extra}."
+            line = f"Storage repaired itself at {when}{extra}"
+            return line if line.endswith(".") else f"{line}."
         if kind == SYS_STORAGE_SHAPE:
             # The check writes what it found rather than a count on
             # its own, because a person reading this cannot act on a
