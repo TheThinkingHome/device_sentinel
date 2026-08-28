@@ -256,7 +256,20 @@ SENTINEL_TYPE_BROKER = "broker"
 # the sensors regardless of how the panel orders them, which
 # registration order alone could not guarantee (ruling #81), and the
 # sensor is one per stack and off by default (ruling #149).
-BRIDGE_SENSOR_NAMES = {STACK_Z2M: "Bridge: Zigbee2MQTT"}
+BRIDGE_SENSOR_NAMES = {
+    STACK_Z2M: "Bridge: Zigbee2MQTT",
+    STACK_ZHA: "Bridge: ZHA",
+}
+
+# How long ZHA's config entry must stay unloaded before the reader
+# will call the coordinator down (ruling #358). Measured on 28 August
+# 2026 rather than chosen: a routine ZHA reload takes every entity
+# unavailable for nine seconds and returns, while a coordinator with
+# no power is still gone at sixty and takes four to six minutes to
+# come back. Sixty seconds sits clear of the one and well inside the
+# other. One radio, one fleet of two devices, two runs: it moves when
+# a second fleet says so.
+ZHA_DOWN_DWELL_SECONDS = 60.0
 
 # The package logger. __package__ resolves to
 # custom_components.device_sentinel, which is the namespace Home
@@ -1901,7 +1914,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 357
+HIGHEST_RULING = 358
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

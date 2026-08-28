@@ -912,9 +912,18 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
             ATTR_BRIDGE_STACK: self._stack,
         }
         if reader is not None:
-            attrs[ATTR_BRIDGE_PERMIT_JOIN_END] = reader.permit_join_end
-            attrs[ATTR_BRIDGE_BASE_TOPIC] = reader.base_topic
-            attrs[ATTR_BRIDGE_LAST_HEARD] = reader.last_heard
+            # Only what this reader actually knows. Z2M answers all
+            # four; ZHA's coordinator reader has no pairing window
+            # and no topic, and inventing empty ones would put two
+            # blank rows on its sensor claiming knowledge it does not
+            # have (ruling #358).
+            for attr, name in (
+                (ATTR_BRIDGE_PERMIT_JOIN_END, "permit_join_end"),
+                (ATTR_BRIDGE_BASE_TOPIC, "base_topic"),
+                (ATTR_BRIDGE_LAST_HEARD, "last_heard"),
+            ):
+                if hasattr(reader, name):
+                    attrs[attr] = getattr(reader, name)
             # Whether the stack's availability feature is on, where
             # the reader knows (ruling #236). Z2M reports it in bridge
             # info; a stack that cannot say simply lacks the
