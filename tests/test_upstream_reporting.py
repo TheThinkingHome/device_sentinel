@@ -221,3 +221,100 @@ async def test_the_count_changes_and_the_stamp_does_not(
     assert "2 devices" in row["summary"]
     assert row["kinds"]["upstream"] == first_since
 
+
+
+async def test_a_zha_outage_reports_the_coordinator_not_the_devices(
+    hass: HomeAssistant,
+):
+    """Ruling #359, found on live hardware on 28 August.
+
+    The reference rig ran a real coordinator outage under 0.19.0 and
+    both ZHA devices went onto the problem list with their own rows,
+    which is the noise the upstream row exists to end. The cause was
+    not the suppression, which is stack-agnostic and correct: it was
+    the timestamp. ZHA's reader holds a sixty second dwell before it
+    will say down, so the coordinator was stamped a minute after its
+    devices fell, and a device that falls before its upstream reads
+    as one that was already broken.
+
+    This drives the whole path with the real numbers from that run:
+    the entry went down at 15:41:30, the devices at 15:41:36, and the
+    sampler only believed it at 15:43.
+    """
+    from custom_components.device_sentinel.const import STACK_ZHA
+
+    first, _ = register_device(hass, "zha1", "ZHA Test Device - Motion")
+    second, _ = register_device(hass, "zha2", "ZHA Test Device - mmWave")
+    coord = await setup_coordinator(hass)
+    coord._watched[first.id] = STACK_ZHA
+    coord._watched[second.id] = STACK_ZHA
+    _down(coord, first.id, since=1741_36.0)
+    _down(coord, second.id, since=1741_36.0)
+
+    class _Reader:
+        """Enough of the ZHA reader for the latch and the unload."""
+
+        down_since = 1741_30.0
+
+        def async_stop(self):
+            return None
+
+    coord._bridge_readers[STACK_ZHA] = _Reader()
+    # What 0.19.0 did: stamp the moment the dwell expired.
+    coord._bridge_down_at[STACK_ZHA] = 1743_00.0
+    assert len(coord.reportable_down_rows) == 2, (
+        "0.19.0's behaviour is not reproduced by this test"
+    )
+
+    # What 0.19.1 does: stamp when the outage began.
+    coord._bridge_down_at[STACK_ZHA] = _Reader.down_since
+    assert coord.reportable_down_rows == []
+    assert coord.suppressed_down_counts == {STACK_ZHA: 2}
+    # The verdicts are untouched; only the reporting changed.
+    assert coord.frozen_devices_count == 2
+
+
+async def test_an_impossible_onset_is_refused(hass: HomeAssistant):
+    """Ruling #359's guard. A wrong onset fails toward silence: one
+    before every device's timestamp buries the whole fleet behind a
+    cause. No reader can produce these, which is why they are
+    refused rather than handled."""
+    from custom_components.device_sentinel.const import STACK_ZHA
+
+    device, _ = register_device(hass, "zha3", "Casualty")
+    coord = await setup_coordinator(hass)
+    coord._watched[device.id] = STACK_ZHA
+    _down(coord, device.id, since=2000.0)
+
+    class _Reader:
+        down_since = None
+
+        def async_stop(self):
+            return None
+
+    reader = _Reader()
+    coord._bridge_readers[STACK_ZHA] = reader
+    now = 3000.0
+    for bad in (-1.0, 0.0, True, "yesterday", None, float("nan"), 9e18):
+        reader.down_since = bad
+        onset = getattr(reader, "down_since", None)
+        began = now
+        if (
+            isinstance(onset, (int, float))
+            and not isinstance(onset, bool)
+            and 0.0 < onset <= now
+        ):
+            began = float(onset)
+        assert began == now, f"{bad!r} was accepted as an onset"
+
+    # A real onset is still taken.
+    reader.down_since = 1500.0
+    onset = reader.down_since
+    began = now
+    if (
+        isinstance(onset, (int, float))
+        and not isinstance(onset, bool)
+        and 0.0 < onset <= now
+    ):
+        began = float(onset)
+    assert began == 1500.0

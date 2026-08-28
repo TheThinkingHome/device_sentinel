@@ -139,3 +139,38 @@ async def test_the_reader_starts_and_stops_clean(hass: HomeAssistant):
     assert await reader.async_start() is True
     assert reader.state == BRIDGE_UNKNOWN
     assert reader.async_stop() is None
+
+
+def test_the_reader_reports_when_the_outage_began():
+    """Ruling #359: the dwell is patience, not a start time.
+
+    The suppression rule reads a device that fell before its upstream
+    as one that was already broken, so a coordinator stamped a minute
+    late leaves every device it took down holding its own problem
+    row. That is exactly what the reference rig produced on 28 August
+    during a real outage.
+    """
+    hass = _hass_with([ConfigEntryState.SETUP_RETRY])
+    reader = stack_zha.make_reader(hass)
+    with _at(7000.0):
+        assert reader.state == BRIDGE_RUNNING
+        assert reader.down_since == 7000.0
+    # A minute later the reader believes it, and still says the
+    # outage began when the entry stopped being loaded.
+    with _at(7000.0 + ZHA_DOWN_DWELL_SECONDS + 1):
+        assert reader.state == BRIDGE_DOWN
+        assert reader.down_since == 7000.0
+    # Recovery clears it.
+    hass.config_entries.async_entries.return_value = [
+        MagicMock(state=ConfigEntryState.LOADED)
+    ]
+    with _at(7200.0):
+        assert reader.state == BRIDGE_RUNNING
+        assert reader.down_since is None
+
+
+def test_a_healthy_reader_offers_no_onset():
+    reader = stack_zha.make_reader(_hass_with([ConfigEntryState.LOADED]))
+    with _at(8000.0):
+        reader.state
+    assert reader.down_since is None
