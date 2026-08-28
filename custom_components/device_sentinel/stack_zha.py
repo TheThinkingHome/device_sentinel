@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.19.0 (2026-08-28)
+# File: stack_zha.py, Version: 0.19.1 (2026-08-28)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -216,6 +216,27 @@ class ZhaCoordinatorReader:
         if self._first_down_at is None:
             return None
         return dt_util.utcnow().timestamp() - self._first_down_at
+
+    @property
+    def down_since(self) -> float | None:
+        """Return when the entry actually went down, not when we were
+        sure of it (ruling #359).
+
+        The dwell means this reader says down about a minute after
+        the radio dies, and the suppression rule reads a device that
+        fell before its upstream as a device that was already broken.
+        On the reference rig on 28 August that made every ZHA device
+        keep its own problem row during a real coordinator outage,
+        which is the noise the upstream row exists to end. The outage
+        began when the entry stopped being loaded; the dwell is how
+        long this reader waits before believing it, and a wait is not
+        a start time.
+
+        None while the entry is loaded, and None on a stack whose
+        reader cannot say, in which case the caller stamps the
+        moment it noticed, exactly as before.
+        """
+        return self._first_down_at
 
 
 def make_reader(hass: HomeAssistant) -> Any:

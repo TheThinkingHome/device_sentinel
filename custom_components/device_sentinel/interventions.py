@@ -514,8 +514,37 @@ class InterventionMixin:
             self._remember_bridge_state(stack, state)
             if was is not None and was != state:
                 if state == BRIDGE_DOWN:
-                    self._bridge_down_at[stack] = now
-                    self._remember_bridge_state(stack, state, since=now)
+                    # When the outage began, not when this tick
+                    # noticed (ruling #359). A reader that holds a
+                    # dwell before believing an outage would
+                    # otherwise stamp its own patience as the start,
+                    # and the suppression rule reads a device that
+                    # fell before its upstream as one that was
+                    # already broken. On the reference rig that put
+                    # every ZHA device's own row on the list during
+                    # a real coordinator outage. Z2M's bridge
+                    # announces itself instantly and offers no onset,
+                    # so it stamps now exactly as it always did.
+                    #
+                    # An onset is believed only if it is a real
+                    # moment: a number, not a bool, after the epoch,
+                    # and not in the future. No reader can produce a
+                    # zero or a negative one, and the guard is here
+                    # because the cost of a wrong one is silence:
+                    # an onset before every device's timestamp
+                    # suppresses the whole fleet's rows behind a
+                    # cause, which is the one direction this feature
+                    # must never fail in.
+                    began = now
+                    onset = getattr(reader, "down_since", None)
+                    if (
+                        isinstance(onset, (int, float))
+                        and not isinstance(onset, bool)
+                        and 0.0 < onset <= now
+                    ):
+                        began = float(onset)
+                    self._bridge_down_at[stack] = began
+                    self._remember_bridge_state(stack, state, since=began)
                     self._record_system_event(
                         SYS_BRIDGE_DOWN, scope=stack
                     )
