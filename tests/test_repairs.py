@@ -158,7 +158,8 @@ async def test_storage_shape_raised_and_cleared(
     issue = _issue(hass, REPAIR_STORAGE_SHAPE)
     assert issue is not None
     assert issue.severity == ir.IssueSeverity.ERROR
-    # Fixable since 0.18.8: the Fix button opens Heal (ruling #353).
+    # Fixable since 0.18.8: Fix opens the storage repair flow
+    # (ruling #353).
     assert issue.is_fixable is True
     assert issue.is_persistent is False
     assert (issue.data or {}).get("entry_id") == coordinator.entry.entry_id
