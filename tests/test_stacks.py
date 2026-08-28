@@ -137,15 +137,22 @@ def test_z2m_recognises_the_bridge_by_model_when_the_name_is_changed():
     assert stack_z2m.is_bridge_device(NOT_BRIDGE) is False
 
 
-def test_only_z2m_makes_a_reader():
-    """A stack with no reader costs no subscription and no timer."""
-    assert stack_zha.make_reader(None) is None
+def test_only_the_built_stacks_make_a_reader():
+    """A stack with no reader costs no subscription and no timer.
+
+    Two stacks have one since 0.19.0: Z2M over MQTT, and ZHA over its
+    config entry (ruling #358). Z-Wave and Matter still have none,
+    and neither does a name no module claims.
+    """
     assert stack_zwave.make_reader(None) is None
     assert stack_matter.make_reader(None) is None
-    assert stacks.make_reader(STACK_ZHA, None) is None
     assert stacks.make_reader(STACK_ZWAVE, None) is None
     assert stacks.make_reader(STACK_MATTER, None) is None
     assert stacks.make_reader("no_such_stack", None) is None
+    # ZHA's reader needs no hass to be constructed; it reads on
+    # demand, so building one costs nothing until it is asked.
+    assert stack_zha.make_reader(None) is not None
+    assert stacks.make_reader(STACK_ZHA, None) is not None
 
 
 def test_detect_returns_the_stack_a_device_proves():
@@ -189,26 +196,32 @@ def test_the_domain_replay_agrees_with_the_form_it_replaced():
 
 
 def test_the_one_divergence_is_unreachable_and_stays_that_way():
-    """Where the two forms differ, and why it cannot happen.
+    """Where the two forms differ, and why it is now live.
 
     Handed a reader filed under a stack other than Z2M, the old form
     returns nothing (it looked only for z2m) and the new form returns
     that reader (it asks who owns the domain). The new form is the
-    generalization the old one would have become, so this is the
-    intended difference rather than a fault, and it is unreachable:
-    the only source of readers is the registry, and the registry
-    makes one for Z2M alone. The day a second stack gains a reader
-    this test is what says the divergence has become live, and the
-    pairing behaviour of that stack has to be ruled before it ships.
+    generalization the old one would have become. This test used to
+    end by proving the divergence unreachable, since only Z2M made a
+    reader; 0.19.0 gave ZHA one, so the divergence is live and what
+    this test now holds is the condition that made it safe: the new
+    stack's pairing behaviour was ruled before it shipped.
     """
     reader = object()
     zha_only = {STACK_ZHA: reader}
     assert _old_form(zha_only, "zha") is None
     assert stacks.reader_for_domain(zha_only, "zha") is reader
-    # Unreachable, because nothing but Z2M can produce a reader.
-    for module in stacks.STACK_MODULES:
-        made = module.make_reader(None)
-        assert (made is None) is (module.STACK != STACK_Z2M)
+    # Reachable since 0.19.0, which is what this test was written to
+    # catch: ZHA has a reader now, so the generalization is live
+    # rather than theoretical. Its pairing behaviour was ruled before
+    # it shipped (ruling #358): pairing_open is a constant False, so
+    # a ZHA device recovering is never mistaken for a pairing.
+    made = stack_zha.make_reader(None)
+    assert made is not None
+    assert made.pairing_open is False
+    assert made.pairing_active_within(300.0, 0.0) is False
+    for module in (stack_zwave, stack_matter):
+        assert module.make_reader(None) is None
 
 
 def _imported_names(path: pathlib.Path) -> set[str]:
