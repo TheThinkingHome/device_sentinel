@@ -67,6 +67,7 @@ from homeassistant.util import dt as dt_util
 
 from . import trim
 from .normalise import (
+    _describe,
     check_clocks,
     check_records,
     check_storage,
@@ -78,6 +79,7 @@ from .repairs import (
     async_evaluate,
     async_raise_restored,
 )
+from .trim import trim_devices
 from .backup import (
     async_copy_evidence,
     async_last_good_taken,
@@ -423,6 +425,18 @@ class DeviceSentinelCoordinator(
         # a fold produces a fault, cleared only by a restart that
         # loads clean, which is a new coordinator.
         self._load_faulty: bool = False
+        # Records that were not dicts at load, set aside so nothing
+        # iterating the record set crashes on them, kept so Heal can
+        # answer them and the check can keep naming them (#353).
+        self._quarantined: dict[str, Any] = {}
+        # The faults a discarded clocks file carried (#356), kept for
+        # the load report; they never reach the card.
+        self._clocks_discarded: list[tuple[str, str, str]] = []
+        # True once a person confirms Restore Backup on the repair
+        # card: the disk file has been replaced from the copy, so the
+        # unload that follows must not flush this session's damaged
+        # document over it.
+        self._restore_pending: bool = False
         self._repairs_at_load: int = 0
         self._last_good_taken: float | None = None
         # The signal census is a fact about the fleet, not an event
@@ -685,6 +699,31 @@ class DeviceSentinelCoordinator(
                 "storage"
             )
 
+        # A record corrupted to something that is not a dict would
+        # crash the first loop that writes into it, taking setup down
+        # before the shape check could even name it: reproduced on 27
+        # August with a string record and a TypeError from the clocks
+        # merge. Quarantined instead (ruling #353): held aside so the
+        # load survives, reported as a fault, and answered by Heal
+        # with a whole-record heal or a trim. Nothing is deleted here;
+        # deletion is Heal's decision and a person confirms it.
+        malformed = {
+            device_id: record
+            for device_id, record in (loaded.get(DATA_DEVICES) or {}).items()
+            if not isinstance(record, dict)
+        }
+        if malformed:
+            for device_id in malformed:
+                del loaded[DATA_DEVICES][device_id]
+            self._quarantined = malformed
+            LOGGER.warning(
+                "Storage holds %d record(s) that are not records at "
+                "all (%s). They are set aside for Heal and reported; "
+                "nothing was deleted",
+                len(malformed),
+                ", ".join(sorted(malformed)[:5]),
+            )
+
         # The clocks file is the small companion, and losing it costs
         # one interval of live counters rather than the record
         # (ruling #327). An unreadable one is a warning and a fresh
@@ -701,6 +740,29 @@ class DeviceSentinelCoordinator(
                 STORAGE_KEY,
                 err,
             )
+            hot_payload = None
+        # A clocks file that holds damage is discarded whole before
+        # the merge, never healed (ruling #356): it rebuilds itself
+        # within a day, so a damaged one is treated exactly like a
+        # missing one. Damage means a value of the wrong shape or a
+        # record that is not a record; a merely missing field is not
+        # damage, because that is what a version upgrade that adds a
+        # clock field looks like on its first boot, and discarding a
+        # whole fleet's clocks for it would turn every upgrade into a
+        # fleet-wide clock reset. Missing-field faults keep their old
+        # path: latched and reported, never a reason to discard.
+        clock_faults = check_clocks((hot_payload or {}).get("clocks"))
+        clock_damage = [f for f in clock_faults if f[2] != "missing"]
+        if clock_damage:
+            LOGGER.warning(
+                "The activity clocks file failed its shape check with "
+                "%d damaged value(s), so it is discarded and rebuilds "
+                "from this boot. First: %s: %s",
+                len(clock_damage),
+                fault_id(clock_damage[0]),
+                clock_damage[0][2],
+            )
+            self._clocks_discarded = clock_damage
             hot_payload = None
         # Held for the shape check, which runs a few lines later and
         # must see the file as it came off disk rather than the merge
@@ -1136,6 +1198,18 @@ class DeviceSentinelCoordinator(
         # that to one session and means a clean stop always leaves two
         # files that agree, which is what makes going back to an older
         # version safe.
+        #
+        # Except after a confirmed restore (ruling #353): the disk
+        # file has just been replaced from the last-good backup, and
+        # this flush would write the damaged document straight back
+        # over it. The one thing that session may not do is save.
+        if self._restore_pending:
+            LOGGER.warning(
+                "Skipping the stop flush: the storage file was just "
+                "restored and this session's document must not "
+                "overwrite it"
+            )
+            return
         await self._save_now()
 
     # ---------------------------------------------------- registry view
@@ -1889,12 +1963,16 @@ class DeviceSentinelCoordinator(
         repaired file is not a good read.
         """
         faults = self._gather_shape_faults(moment)
-        if faults and moment == "load":
+        if (faults or self._clocks_discarded) and moment == "load":
             # The evidence copy comes before anything else touches
             # disk (ruling #340): the first save re-serializes the
             # file after migrations have handled it, so without this
             # copy the original of what went wrong is destroyed by
-            # the process that found it.
+            # the process that found it. A discarded clocks file
+            # (ruling #356) is a faulty load too: its evidence is
+            # copied and the session latches, but its faults never
+            # reach the card, because the discard already answered
+            # them.
             stamp, copied = await async_copy_evidence(self.hass)
             if stamp:
                 LOGGER.warning(
@@ -1902,6 +1980,16 @@ class DeviceSentinelCoordinator(
                     "before anything writes: %s",
                     stamp,
                     ", ".join(copied),
+                )
+            if self._clocks_discarded:
+                self._record_system_event(
+                    SYS_STORAGE_REPAIR,
+                    detail=(
+                        "the activity clocks file failed its shape "
+                        f"check with {len(self._clocks_discarded)} "
+                        "fault(s) and was discarded. It rebuilds "
+                        "itself; the day's counters start over"
+                    ),
                 )
             repaired = self._bank_damaged_clocks(faults)
             if repaired:
@@ -1912,6 +2000,25 @@ class DeviceSentinelCoordinator(
             self._load_faulty = True
         if moment == "fold" and faults:
             self._load_faulty = True
+        # A device record with a standing fault is held out of every
+        # judging and reading surface for the session: the check
+        # changes nothing (ruling #278), so the poisoned value is
+        # still in the record and any reader can crash on it, which
+        # is a dead integration and no repair card. Held, not
+        # deleted: Heal is the exit.
+        devices_now = self.data.get(DATA_DEVICES)
+        devices_now = devices_now if isinstance(devices_now, dict) else {}
+        self._fault_held = frozenset(
+            holder
+            for holder, _field, _why in faults
+            if holder in devices_now
+        )
+        if self._fault_held:
+            LOGGER.warning(
+                "%d record(s) with standing faults are held out of "
+                "judgment and reports until repaired",
+                len(self._fault_held),
+            )
         # Kept for the Repairs pass, which runs at grace close rather
         # than here. The load check fires inside the startup grace,
         # where nothing is announced (ruling #291), so the result has
@@ -1983,6 +2090,13 @@ class DeviceSentinelCoordinator(
         holds and one the fold produced (ruling #332).
         """
         faults = check_records(self.data.get(DATA_DEVICES))
+        # The set-aside records are still faults (ruling #353): out of
+        # the working set so nothing crashes on them, but named on
+        # every check until Heal answers them or a person trims them.
+        for device_id, record in self._quarantined.items():
+            faults.append(
+                (device_id, "*", f"expected dict, found {_describe(record)}")
+            )
         faults += check_storage(self.data)
         if moment == "fold":
             faults += check_clocks(self._clocks_to_save().get("clocks"))
@@ -2160,7 +2274,14 @@ class DeviceSentinelCoordinator(
         now = dt_util.utcnow().timestamp()
         self._discard_excluded_records()
         pushed = 0
-        for record in self.data[DATA_DEVICES].values():
+        held = getattr(self, "_fault_held", frozenset())
+        for device_id, record in self.data[DATA_DEVICES].items():
+            if device_id in held:
+                # A record Verify cannot vouch for does not fold: the
+                # roll writes into its series, and writing into a
+                # poisoned series is how the fold itself would crash
+                # for the whole fleet at midnight.
+                continue
             if record[DEV_TODAY_MAX] is not None:
                 record[DEV_DAILY_MAX].append(record[DEV_TODAY_MAX])
                 del record[DEV_DAILY_MAX][:-self.retention_days]
@@ -2582,6 +2703,115 @@ class DeviceSentinelCoordinator(
     def shape_faults(self) -> list[tuple[str, str, str]]:
         """The standing faults, each addressable via fault_id (#338)."""
         return list(self._shape_faults)
+
+    def _gather_current_faults(self) -> list[tuple[str, str, str]]:
+        """Re-check the live document now, quarantine included.
+
+        The flow measures at the moment a person clicks, not at the
+        moment the card was raised (ruling #353), so a fault that
+        cleared in between is never repaired into. Clocks are left
+        out: a damaged clocks file was discarded at load (ruling
+        #356) and a healthy one is not the card's business.
+        """
+        faults = check_records(self.data.get(DATA_DEVICES))
+        for device_id, record in self._quarantined.items():
+            faults.append(
+                (device_id, "*", f"expected dict, found {_describe(record)}")
+            )
+        faults += check_storage(self.data)
+        return faults
+
+    async def async_restore_from_card(self) -> bool:
+        """Replace the main file from the last-good backup, on a
+        person's confirmation from the repair card (ruling #353).
+
+        The same restore the unreadable-file path runs automatically
+        (ruling #345), reached by hand for a file that loads but
+        verifies faulty. Pre-action copies of all four files come
+        first or nothing runs (ruling #340). The disk file is
+        replaced, this session's damaged document is barred from the
+        unload flush so it cannot overwrite the restoration, and the
+        reload starts on the copy, which was born clean, so the latch
+        and the refresh behave exactly as any clean start.
+        """
+        stamp, copied = await async_copy_evidence(self.hass)
+        if not stamp:
+            LOGGER.warning(
+                "Restore stopped before writing: the pre-action "
+                "copies could not be taken"
+            )
+            return False
+        LOGGER.warning(
+            "Restore pre-action copies written to trim_backups as "
+            "%s: %s",
+            stamp,
+            ", ".join(copied),
+        )
+        restored, taken = await async_restore_main_file(self.hass)
+        if not restored:
+            LOGGER.warning(
+                "Restore could not replace the file from the "
+                "last-good backup; nothing was changed"
+            )
+            return False
+        loss = describe_restore_loss(
+            taken or 0.0, dt_util.utcnow().timestamp()
+        )
+        self._record_system_event(
+            SYS_STORAGE_REPAIR,
+            detail=(
+                "restored from the last-good backup on a person's "
+                "confirmation, "
+                + describe_restore_loss(
+                    taken or 0.0,
+                    dt_util.utcnow().timestamp(),
+                    embedded=True,
+                )
+            ),
+        )
+        LOGGER.warning("Restore confirmed from the repair card. %s", loss)
+        self._restore_pending = True
+        self.hass.config_entries.async_schedule_reload(self.entry.entry_id)
+        return True
+
+    async def async_trim_from_card(self, device_ids: set[str]) -> int:
+        """Trim the named damaged records, on a person's confirmation
+        from the repair card (ruling #354).
+
+        The existing trim, reached from the card: a dated backup of
+        both storage files first, then the records and every row
+        keyed on them, quarantined junk included. Each device is
+        rediscovered on its next report and learns from nothing.
+        """
+        stamp, copied = await async_copy_evidence(self.hass)
+        if not stamp:
+            LOGGER.warning(
+                "Trim stopped before erasing: the pre-action copies "
+                "could not be taken"
+            )
+            return 0
+        for device_id in device_ids:
+            self._quarantined.pop(device_id, None)
+        removed = trim_devices(self.data, set(device_ids))
+        self._shape_faults = self._gather_current_faults()
+        devices_now = self.data.get(DATA_DEVICES)
+        devices_now = devices_now if isinstance(devices_now, dict) else {}
+        self._fault_held = frozenset(
+            holder
+            for holder, _field, _why in self._shape_faults
+            if holder in devices_now
+        )
+        self._record_system_event(
+            SYS_STORAGE_REPAIR,
+            detail=(
+                f"{len(device_ids)} damaged record(s) trimmed on a "
+                f"person's confirmation; copies under the stamp "
+                f"{stamp}"
+            ),
+        )
+        await self._save_now()
+        return removed.get("records", 0) + len(device_ids)
+
 
     @property
     def learning_buckets(self) -> dict[str, int]:

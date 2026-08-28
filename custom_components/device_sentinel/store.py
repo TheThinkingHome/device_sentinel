@@ -594,12 +594,23 @@ class StorageMixin:
         that reads the record store filters to the watched set first.
         The record survives, unjudged and unreported, exactly as the
         muting ladders promise; what stops is the reporting of it.
+
+        Since 0.18.8 the same line holds out a record with a standing
+        shape fault. The check reports and touches nothing (ruling
+        #278), which means the poisoned value is still in the record,
+        and the second adversarial round proved a reader will crash
+        on it: the setup report died comparing a corrupted series to
+        an hour and took the whole integration down before the repair
+        card could exist. A record Verify cannot vouch for is not a
+        record to judge or to report from; it is held here, named on
+        the card, and Heal is its exit.
         """
         devices = self.data.get(DATA_DEVICES) or {}
+        held = getattr(self, "_fault_held", frozenset())
         return [
             (device_id, record)
             for device_id, record in devices.items()
-            if device_id in self._watched
+            if device_id in self._watched and device_id not in held
         ]
 
     @property

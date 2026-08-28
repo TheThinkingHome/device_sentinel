@@ -439,13 +439,10 @@ def describe_restore_loss(
             "lost."
         )
     days = "day" if midnights == 1 else "days"
-    # Singular and plural have to agree: "1 day of daily statistics
-    # are gone" read wrong in the first run of this.
-    verb = "is" if midnights == 1 else "are"
     return (
         f"{head} on {when}, {hours / 24:.1f} days prior to the "
         f"restore. That means {midnights} {days} of daily statistics "
-        f"{verb} gone for every device, along with today's counters."
+        "will be lost."
     )
 
 
