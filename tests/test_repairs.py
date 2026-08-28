@@ -158,8 +158,10 @@ async def test_storage_shape_raised_and_cleared(
     issue = _issue(hass, REPAIR_STORAGE_SHAPE)
     assert issue is not None
     assert issue.severity == ir.IssueSeverity.ERROR
-    assert issue.is_fixable is False
+    # Fixable since 0.18.8: the Fix button opens Heal (ruling #353).
+    assert issue.is_fixable is True
     assert issue.is_persistent is False
+    assert (issue.data or {}).get("entry_id") == coordinator.entry.entry_id
 
     coordinator._shape_faults = []
     coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
@@ -182,12 +184,13 @@ async def test_storage_shape_names_the_device_and_field(
     coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
     await hass.async_block_till_done()
 
-    placeholders = _issue(hass, REPAIR_STORAGE_SHAPE).translation_placeholders
-    assert placeholders["count"] == "1"
-    assert placeholders["records"] == "record"
-    assert "Temperature Outdoors" in placeholders["detail"]
-    assert "tainted" in placeholders["detail"]
-    assert "fault(s)" not in placeholders["detail"]
+    issue = _issue(hass, REPAIR_STORAGE_SHAPE)
+    assert issue is not None
+    # A fixable issue carries a flow, not a description (ruling
+    # #351), so no composed placeholders live on the issue: the
+    # flow's plan names the device and the field at click time and
+    # is asserted in test_heal.py.
+    assert not issue.translation_placeholders
 
 
 async def test_storage_shape_counts_the_rest(hass: HomeAssistant) -> None:
@@ -201,10 +204,9 @@ async def test_storage_shape_counts_the_rest(hass: HomeAssistant) -> None:
     coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
     await hass.async_block_till_done()
 
-    placeholders = _issue(hass, REPAIR_STORAGE_SHAPE).translation_placeholders
-    assert placeholders["count"] == "5"
-    assert placeholders["records"] == "records"
-    assert "and 2 other records" in placeholders["detail"]
+    issue = _issue(hass, REPAIR_STORAGE_SHAPE)
+    assert issue is not None
+    assert not issue.translation_placeholders
 
 
 async def test_recurrence_updates_rather_than_stacks(
@@ -233,9 +235,6 @@ async def test_recurrence_updates_rather_than_stacks(
         if key[0] == DOMAIN and key[1] == REPAIR_STORAGE_SHAPE
     ]
     assert len(ours) == 1
-    assert _issue(hass, REPAIR_STORAGE_SHAPE).translation_placeholders[
-        "count"
-    ] == "2"
 
 
 # ------------------------------------------------- entities_disabled
@@ -552,8 +551,16 @@ def test_every_identifier_has_translations() -> None:
         assert block["title"], issue_id
         fixable = "fix_flow" in block
         if fixable:
-            confirm = block["fix_flow"]["step"]["confirm"]
-            assert confirm["title"] and confirm["description"], issue_id
+            steps = block["fix_flow"]["step"]
+            # A flow's step names vary (storage_shape carries a
+            # three-option menu since 0.18.8); what every step owes
+            # is a title and a description.
+            assert steps, issue_id
+            for step_id, step in steps.items():
+                assert step["title"] and step["description"], (
+                    issue_id,
+                    step_id,
+                )
         else:
             assert block["description"], issue_id
 
@@ -568,10 +575,13 @@ def test_the_not_built_sentence_matches_the_fixable_flag() -> None:
     prose that nothing watches goes stale (ruling #205).
     """
     strings = json.loads((COMPONENT / "strings.json").read_text())
-    description = strings["issues"][REPAIR_STORAGE_SHAPE]["description"]
-    says_not_built = "not built yet" in description
-    has_fix_flow = "fix_flow" in strings["issues"][REPAIR_STORAGE_SHAPE]
-    assert says_not_built is not has_fix_flow
+    block = strings["issues"][REPAIR_STORAGE_SHAPE]
+    # Heal shipped (ruling #353): the card is fixable, so it carries
+    # a flow and no description (ruling #351), and no prose anywhere
+    # in it may still claim the repair is not built (ruling #205).
+    assert "fix_flow" in block
+    assert "description" not in block
+    assert "not built" not in json.dumps(block)
 
 
 def test_no_issue_uses_critical_severity() -> None:

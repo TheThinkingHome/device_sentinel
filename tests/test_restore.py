@@ -245,10 +245,10 @@ async def test_the_loss_sentence_counts_midnights_not_hours(
     assert "No daily statistics were lost" in said
     # Just before midnight: one day, however few hours.
     said = describe_restore_loss(midnight - 60.0, now)
-    assert "1 day of daily statistics is gone" in said
+    assert "1 day of daily statistics will be lost" in said
     # Three days back.
     said = describe_restore_loss(midnight - 2 * 86400.0, now)
-    assert "2 days of daily statistics are gone" in said
+    assert "2 days of daily statistics will be lost" in said
 
 
 async def test_the_loss_sentence_speaks_in_two_forms(hass: HomeAssistant):

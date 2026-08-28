@@ -33,6 +33,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.device_sentinel import const
 from custom_components.device_sentinel.const import (
+    TAINT_UNAVAILABLE,
     CLOCK_FIELDS,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
@@ -417,8 +418,12 @@ async def test_the_epoch_wipe_still_has_the_last_word(
             DATA_SAVED_AT: 1000.0,
         },
     }
+    # A current-form taint reason, not the pre-#164 boolean flag: a
+    # bool here is a shape fault since 0.18.8 and would discard the
+    # whole hot file (ruling #356) before the wipe this test is
+    # about could run.
     _hot(hass_storage, {device.id: {
-        DEV_SIGNAL_VALUE: 42.0, DEV_TAINTED: True,
+        DEV_SIGNAL_VALUE: 42.0, DEV_TAINTED: TAINT_UNAVAILABLE,
     }}, saved_at=9000.0)
 
     entry = await setup_entry(hass)
