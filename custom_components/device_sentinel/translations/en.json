@@ -241,7 +241,26 @@
   "issues": {
     "storage_shape": {
       "title": "Device Sentinel Found a Problem in Its Storage",
-      "description": "Device Sentinel checked its storage and found {count} {records} that do not fit the shape it expects.\n\n{detail}\n\nNothing has been changed and no history has been lost. A copy of the last storage file that passed every check has been kept. Repairing a record from that copy is not built yet, so this issue reports and does nothing.\n\nThis clears itself when the next check finds nothing."
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Device Sentinel's Storage File Needs to Be Repaired",
+            "description": "While verifying Device Sentinel's storage file, it found {count} {faults}:\n\n{detail}\n\nNothing has been changed yet, and the devices with damaged records are not being watched until this is repaired. Copies of all four storage files were saved to trim_backups when the problem was found.\n\nOption 1: Restore from the latest last-good backup. {age}\n\nOption 2: Trim the affected record(s). Only the damaged records will be erased, and the learning will begin fresh.\n\nOption 3: Ignore the problem. This card will be hidden. You must investigate and repair the storage file manually."
+          },
+          "restore": {
+            "title": "Restore the Last-Good Backup",
+            "description": "The storage file will be replaced by the last-good backup and Device Sentinel will reload. {age}\n\nCopies of the current files are saved to trim_backups.\n\nSelect Submit to restore."
+          },
+          "trim": {
+            "title": "Affected Records Will Be Removed",
+            "description": "{count} damaged {devices} will be trimmed from the data file. These records will be permanently removed:\n\n{names}\n\nEach one will be rediscovered when it next reports and learning begins again. Backup copies of the corrupted files are saved to trim_backups.\n\nSelect Submit to trim."
+          }
+        },
+        "abort": {
+          "entry_not_loaded": "Device Sentinel is not running. Restart Home Assistant: an unreadable file restores automatically, and if this problem remains the card returns for you to choose Restore or Trim.",
+          "restore_failed": "The last-good backup could not be used. Nothing was changed and the faults remain."
+        }
+      }
     },
     "entities_disabled": {
       "title": "Device Sentinel Cannot See Everything It Watches",
