@@ -211,12 +211,27 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
     """
     found: list[Window] = []
     pending: dict[tuple[str, str], Window] = {}
-    for row in sorted(events or [], key=lambda item: item.get(SYS_WHEN) or 0):
+    # A corrupted event must not take the builder down. Storage can
+    # hold a log row whose kind or timestamp is the wrong type: the
+    # shape check names such damage on the repair card but removes
+    # nothing, and the held-record protection covers device records,
+    # not this log, so the crash would land here on the brief's next
+    # read. A row the builder cannot use is skipped instead, which
+    # costs one attribution and nothing else; the timestamp test is
+    # the same real-moment test the outage onset uses (ruling #363).
+    usable = [
+        row
+        for row in events or []
+        if isinstance(row, dict)
+        and isinstance(row.get(SYS_KIND), str)
+        and isinstance(row.get(SYS_WHEN), (int, float))
+        and not isinstance(row.get(SYS_WHEN), bool)
+        and row.get(SYS_WHEN) > 0.0
+    ]
+    for row in sorted(usable, key=lambda item: item[SYS_WHEN]):
         kind = row.get(SYS_KIND)
         scope = row.get(SYS_SCOPE) or ""
         when = row.get(SYS_WHEN)
-        if when is None:
-            continue
         if kind in (SYS_RESTART, SYS_UNCLEAN_RESTART):
             # Anything still open did not survive this, and the
             # closing was never going to be written. Bounded at the
@@ -227,7 +242,15 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
                 open_window.end = when
                 open_window.inferred_end = True
             pending.clear()
+            # A duration of the wrong type reads as zero, exactly as
+            # a missing one does: the window then covers the restart
+            # moment itself rather than crashing the arithmetic
+            # (ruling #363).
             span = row.get(SYS_DURATION) or 0.0
+            if isinstance(span, bool) or not isinstance(
+                span, (int, float)
+            ):
+                span = 0.0
             found.append(
                 Window(kind, scope, when - span, when + _RESTART_TAIL_SECONDS)
             )
