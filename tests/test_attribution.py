@@ -952,3 +952,56 @@ def test_a_closing_with_no_open_window_changes_nothing() -> None:
     orphan = next(w for w in found if w.scope == "zha")
     assert orphan.devices is None
     assert orphan.end is None
+
+
+# ------------------------- corrupted rows are skipped (ruling #363)
+
+
+def test_a_type_corrupted_row_is_skipped_not_fatal() -> None:
+    """A log row storage corruption gave the wrong types.
+
+    Found by the rebuilt attack rig on 29 August 2026, three shapes
+    reproduced: a string timestamp crashed the sort, a string
+    duration crashed the restart arithmetic, and a list kind crashed
+    the pairing lookup. The shape check names such damage but
+    removes nothing, so the builder must survive it: the row is
+    skipped, one attribution is lost, and everything readable still
+    builds.
+    """
+    log = [
+        _row(SYS_BRIDGE_DOWN, "z2m", T0),
+        {SYS_KIND: SYS_BRIDGE_UP, SYS_SCOPE: "z2m", SYS_WHEN: "later"},
+        {SYS_KIND: ["bridge_down"], SYS_SCOPE: "zha", SYS_WHEN: T0},
+        {SYS_KIND: SYS_RESTART, SYS_SCOPE: "", SYS_WHEN: T0 + 60.0,
+         SYS_DURATION: "x"},
+        "not a row at all",
+    ]
+    found = attribution.windows(log)
+    kinds = sorted(w.kind for w in found)
+    assert kinds == [SYS_BRIDGE_DOWN, SYS_RESTART]
+    restart = next(w for w in found if w.kind == SYS_RESTART)
+    assert restart.start == T0 + 60.0
+
+
+def test_a_timestamp_that_is_not_a_moment_is_skipped() -> None:
+    """The same real-moment test the outage onset uses: a number,
+    not a bool, greater than zero (ruling #363)."""
+    for stamp in (True, False, 0, -5.0, None, "yesterday", [T0]):
+        found = attribution.windows(
+            [{SYS_KIND: SYS_BRIDGE_DOWN, SYS_SCOPE: "z2m",
+              SYS_WHEN: stamp}]
+        )
+        assert found == []
+
+
+def test_a_wrong_typed_duration_reads_as_zero() -> None:
+    """The restart window then covers the restart moment itself,
+    exactly as a missing duration does (ruling #363)."""
+    with_junk = attribution.windows(
+        [{SYS_KIND: SYS_RESTART, SYS_SCOPE: "", SYS_WHEN: T0,
+          SYS_DURATION: {"deep": 1}}]
+    )
+    with_none = attribution.windows(
+        [{SYS_KIND: SYS_RESTART, SYS_SCOPE: "", SYS_WHEN: T0}]
+    )
+    assert with_junk[0].start == with_none[0].start == T0
