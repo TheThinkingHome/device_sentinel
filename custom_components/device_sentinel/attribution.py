@@ -54,6 +54,9 @@ from __future__ import annotations
 from typing import Any
 
 from .const import (
+    SYS_DETAIL,
+    SYS_DEVICE_HANDLED,
+    ZHA_HANDLED_TAIL_SECONDS,
     SYS_BRIDGE_DOWN,
     SYS_BRIDGE_UP,
     SYS_BROKER_DOWN,
@@ -140,6 +143,12 @@ class Window:
             return domain == "mqtt"
         if self.kind in (SYS_BRIDGE_DOWN, SYS_PAIRING_OPEN):
             return stack is not None and stack == self.scope
+        if self.kind == SYS_DEVICE_HANDLED:
+            # One device, named in `devices`, and no other. ZHA
+            # announces the device rather than a window, and every
+            # message names exactly one, so a handling explains that
+            # device's recovery and nothing else (ruling #362).
+            return False
         if self.kind == SYS_STORM_OPEN:
             return domain is not None and domain == self.scope
         return False
@@ -153,6 +162,17 @@ class Window:
         quiet just before the record, or returned just after it, is
         still the same event.
         """
+        if self.kind == SYS_DEVICE_HANDLED:
+            # No allowance for this one (ruling #362). The edge below
+            # exists because a sampler notices an outage up to a tick
+            # after it began, and a handling is not sampled: the
+            # dispatcher delivers it as it happens. Applying the
+            # allowance made a 60 second window reach 150 seconds
+            # forward and 90 seconds backward, which is to say it
+            # explained recoveries before the person touched the
+            # device. Found by the adversarial round; the measured
+            # tail must mean what it says.
+            return self.start <= moment <= (self.end or moment)
         if moment < self.start - _EDGE_SECONDS:
             return False
         if self.end is None:
@@ -212,6 +232,31 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
                 Window(kind, scope, when - span, when + _RESTART_TAIL_SECONDS)
             )
             continue
+        if kind == SYS_DEVICE_HANDLED:
+            # Bounded rather than open (ruling #362). Nothing ever
+            # writes a closing for a handling, and a person who
+            # touched a device and walked away must not explain that
+            # device's recovery an hour later. The tail is measured:
+            # a reconfigure runs 15 seconds and a re-pair 34, and the
+            # message precedes the recovery by two to eight.
+            #
+            # The device travels in `detail` because the event's own
+            # `devices` field is an integer by the storage shape and
+            # would raise a fault if given an id.
+            detail = row.get(SYS_DETAIL)
+            named = str(detail).split(" ", 1)[0] if detail else ""
+            if not named:
+                continue
+            found.append(
+                Window(
+                    kind,
+                    scope,
+                    when,
+                    when + ZHA_HANDLED_TAIL_SECONDS,
+                    [named],
+                )
+            )
+            continue
         if kind in _PAIRS:
             previous = pending.get((kind, scope))
             if previous is not None:
@@ -241,6 +286,7 @@ def attribute(
     stack: str | None,
     opened: float,
     closed: float | None,
+    device_id: str | None = None,
 ) -> Window | None:
     """Return the intervention that explains one incident, or None.
 
@@ -257,7 +303,20 @@ def attribute(
     saying so is more useful than saying nothing.
     """
     reach = [
-        window for window in all_windows if window.covers(domain, stack)
+        window
+        for window in all_windows
+        if window.covers(domain, stack)
+        or (
+            # A device-scoped window reaches the one device it names
+            # and nothing else (ruling #362). Kept here rather than
+            # inside covers() because covers() is answered from the
+            # domain and the stack, which cannot tell two ZHA devices
+            # apart, and this must never widen by accident.
+            window.kind == SYS_DEVICE_HANDLED
+            and device_id is not None
+            and window.devices is not None
+            and device_id in window.devices
+        )
     ]
     began = [
         window for window in reach if window.in_effect_at(opened)
@@ -277,6 +336,7 @@ def attribute(
 _PHRASE = {
     SYS_STORM_OPEN: "the {scope} integration reloading",
     SYS_PAIRING_OPEN: "a {scope} pairing window",
+    SYS_DEVICE_HANDLED: "somebody handling the device",
     SYS_BRIDGE_DOWN: "the {scope} bridge going down and coming back",
     SYS_BROKER_DOWN: "the MQTT broker going down and coming back",
     SYS_UNCLEAN_RESTART: "an unclean restart",

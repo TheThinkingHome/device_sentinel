@@ -178,6 +178,12 @@ LEARNED_MAINTENANCE = "no (maintenance)"
 # own rhythm (ruling #257). Same class as pairing and maintenance:
 # a hand caused the silence, so the gap is refused and retracted.
 LEARNED_DISABLED = "no (disabled)"
+# The same class again, for a device ZHA says was re-paired,
+# reconfigured or removed while it was silent (ruling #362). Its own
+# word rather than borrowing pairing's, because the episode report
+# should say what actually happened: nobody opened a pairing window
+# on this stack, somebody handled this device.
+LEARNED_HANDLED = "no (handled)"
 
 # The maintenance window (rulings #225 and #238): a button-declared span in
 # which any recovery is attributed to the person's hands rather than
@@ -270,6 +276,36 @@ BRIDGE_SENSOR_NAMES = {
 # other. One radio, one fleet of two devices, two runs: it moves when
 # a second fleet says so.
 ZHA_DOWN_DWELL_SECONDS = 60.0
+
+# The dispatcher signal ZHA's split library emits gateway messages
+# on, and the three message types that mean a device arrived. Named
+# here rather than imported from ZHA: a plain string cannot break on
+# an upgrade the way an import can, and a signal that is renamed
+# upstream simply stops delivering, which the observer's silence
+# says as clearly as an error would (ruling #360).
+ZHA_GATEWAY_SIGNAL = "zha_gateway_message"
+
+ZHA_JOIN_MESSAGES = frozenset(
+    {
+        "device_joined",
+        "raw_device_initialized",
+        "device_fully_initialized",
+        # A removal is a person acting too, and a sleeping battery
+        # device never hears the leave request, so it rejoins by
+        # itself at the next start (measured 29 August). Both halves
+        # of that are handling rather than recovery.
+        "device_removed",
+    }
+)
+
+# How long a device stays tagged as handled after the last message
+# naming it (ruling #362). Measured on 29 August rather than chosen:
+# a reconfigure ran 15 seconds from first message to last, a re-pair
+# 34 seconds, and the message always preceded the recovery by 2 to 8
+# seconds. Sixty covers both with room, and errs the safe way: a
+# recovery wrongly called handled loses one measurement, while one
+# wrongly called natural teaches a rhythm that is not real.
+ZHA_HANDLED_TAIL_SECONDS = 60.0
 
 # The package logger. __package__ resolves to
 # custom_components.device_sentinel, which is the namespace Home
@@ -1819,7 +1855,12 @@ RECOVERY_BY_SELF = "self"
 RECOVERY_BY_INTERVENTION = "intervention"
 RECOVERY_BY_UNKNOWN = "unknown"
 RECOVERY_CAUSES_INTERVENTION = frozenset(
-    {"bridge reconnect", "reboot", "unclean shutdown"}
+    {
+        "bridge reconnect",
+        "reboot",
+        "unclean shutdown",
+        "handled at the device",
+    }
 )
 RECOVERY_CAUSES_SELF = frozenset({RECOVERY_CAUSE_UNOBSERVED})
 # The wording this replaced, still sitting in stored incidents from
@@ -1914,7 +1955,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 359
+HIGHEST_RULING = 362
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -1950,6 +1991,11 @@ STORM_DURATION = "duration"
 SYS_BROKER_DOWN = "broker_down"
 SYS_BROKER_UP = "broker_up"
 SYS_PAIRING_OPEN = "pairing_open"
+# A person handled one device: re-paired it, reconfigured it, or
+# removed it. Its own kind rather than a pairing window (ruling
+# #362): ZHA keeps no window state anywhere, and what it does
+# announce is the device, so the wording says what happened.
+SYS_DEVICE_HANDLED = "device_handled"
 SYS_PAIRING_CLOSED = "pairing_closed"
 # A person declared they are working on the hardware, and the
 # declaration ended, by expiry or by a second press (rulings #225 and
@@ -2141,6 +2187,13 @@ EP_SIG_MEAN = "mean"
 EP_SIG_SD = "sd"
 EP_SIG_LINE = "line"
 EPISODE_ENDED_RESUMED = "resumed"
+# A device that came back because a person handled it, not because
+# it recovered (ruling #362). ZHA announces a re-pair, a reconfigure
+# and a removal on its gateway signal, always a few seconds before
+# the device's entities return, so the cause is already known when
+# the recovery arrives. The comment above RECOVERY_CAUSE_UNOBSERVED
+# describes the fault this closes: a rebind by hand read as "on its
+# own" in a live brief on 23 July.
 EPISODE_ENDED_REBOOT = "intervention (reboot)"
 EPISODE_ENDED_RECONNECT = "intervention (bridge reconnect)"
 # A storm inside startup grace is the restart itself: every device

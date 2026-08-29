@@ -88,6 +88,7 @@ from .const import (
     SYS_MAINTENANCE_CLOSED,
     SYS_MAINTENANCE_OPEN,
     SYS_PAIRING_CLOSED,
+    SYS_DEVICE_HANDLED,
     SYS_PAIRING_OPEN,
     SYS_RESTART,
     SYS_SCOPE,
@@ -350,6 +351,17 @@ class BriefMixin:
                     f"The MQTT broker came back at {when} after {held}."
                 )
             return f"The MQTT broker came back at {when}."
+        if kind == SYS_DEVICE_HANDLED:
+            # The device's own name rather than its id, and the plain
+            # fact rather than the mechanism: somebody was at it
+            # (ruling #362). The detail holds "<registry id> <kind>",
+            # and the id is no use to a person.
+            named = str(detail or "").split(" ", 1)[0]
+            who = self._device_name(named) if named else "A device"
+            return (
+                f"{who} was handled at {when}: somebody re-paired, "
+                f"reconfigured or removed it."
+            )
         if kind == SYS_PAIRING_OPEN:
             return f"A {scope} pairing window opened at {when}."
         if kind == SYS_PAIRING_CLOSED:
@@ -385,6 +397,19 @@ class BriefMixin:
                     f"{held} unwatched{extra}."
                 )
             return f"That restart followed an unclean shutdown{extra}."
+        if kind == SYS_DEVICE_HANDLED:
+            # The table row is per event and already sits beside the
+            # device's own rows, so it says what happened without
+            # repeating the id, which is no use to a person.
+            action = str(detail or "").split(" ", 1)
+            what = action[1] if len(action) > 1 else ""
+            plain = {
+                "device_joined": "re-paired",
+                "raw_device_initialized": "reconfigured",
+                "device_fully_initialized": "re-paired or reconfigured",
+                "device_removed": "removed",
+            }.get(what, "handled")
+            return f"a device was {plain} by hand"
         if kind == SYS_EPOCH_RESET:
             extra = f" for {detail}" if detail else ""
             return f"Learned statistics were reset at {when}{extra}."
@@ -490,6 +515,19 @@ class BriefMixin:
                 if detail
                 else "unclean shutdown"
             )
+        if kind == SYS_DEVICE_HANDLED:
+            # The table row is per event and already sits beside the
+            # device's own rows, so it says what happened without
+            # repeating the id, which is no use to a person.
+            action = str(detail or "").split(" ", 1)
+            what = action[1] if len(action) > 1 else ""
+            plain = {
+                "device_joined": "re-paired",
+                "raw_device_initialized": "reconfigured",
+                "device_fully_initialized": "re-paired or reconfigured",
+                "device_removed": "removed",
+            }.get(what, "handled")
+            return f"a device was {plain} by hand"
         if kind == SYS_EPOCH_RESET:
             return f"learned statistics reset ({detail})" if detail else "learned statistics reset"
         if kind == SYS_OPTIONS_CHANGED:
@@ -872,6 +910,7 @@ class BriefMixin:
                     self._device_stack(device_id),
                     opened[INC_WHEN],
                     resolved[INC_WHEN] if resolved is not None else None,
+                    device_id,
                 )
                 if spans
                 else None
@@ -1246,6 +1285,7 @@ class BriefMixin:
                 self._device_stack(device_id),
                 when,
                 closed,
+                device_id,
             )
             if window is not None:
                 continue

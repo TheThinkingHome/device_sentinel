@@ -85,6 +85,24 @@ def make_reader(stack: str, hass: HomeAssistant) -> Any | None:
     return None
 
 
+def make_join_observer(
+    stack: str, hass: HomeAssistant, record: Any = None
+) -> Any | None:
+    """Return a stack's join observer, or None if it has none.
+
+    Asked the same way a reader is (ruling #218): the caller names no
+    stack, and a stack with nothing to observe returns None and costs
+    nothing. Only ZHA answers today, because only ZHA has a pairing
+    window that cannot be seen any other way.
+    """
+    for module in STACK_MODULES:
+        if module.STACK != stack:
+            continue
+        factory = getattr(module, "make_join_observer", None)
+        return factory(hass, record) if factory is not None else None
+    return None
+
+
 def reader_for_domain(
     readers: dict[str, Any], domain: str | None
 ) -> Any | None:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.19.1 (2026-08-28)
+# File: stack_zha.py, Version: 0.19.2 (2026-08-28)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -51,8 +51,9 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -62,6 +63,9 @@ from .const import (
     LOGGER,
     STACK_ZHA,
     ZHA_DOWN_DWELL_SECONDS,
+    ZHA_GATEWAY_SIGNAL,
+    ZHA_HANDLED_TAIL_SECONDS,
+    ZHA_JOIN_MESSAGES,
 )
 
 STACK = STACK_ZHA
@@ -237,6 +241,177 @@ class ZhaCoordinatorReader:
         moment it noticed, exactly as before.
         """
         return self._first_down_at
+
+
+class ZhaJoinObserver:
+    """Report that a person handled a device, from what ZHA says.
+
+    The question is #145's, and ZHA answers it at the moment of
+    recovery: when a device comes back, did somebody cause it? A
+    silence ended by a person measures the hand rather than the
+    device, and its gap must not teach the device's rhythm.
+
+    Z2M answers this by publishing a pairing window. ZHA keeps no
+    window state anywhere: zigpy's permit broadcasts and returns,
+    and the frontend's Add Device sends a websocket command that
+    reaches no event bus. What ZHA does announce, on the
+    `zha_gateway_message` dispatcher signal, is the device itself.
+
+    Measured on 29 August 2026 with a throwaway probe, because a
+    dispatcher signal is in process and nothing outside can see it:
+    a re-pair fires `device_joined` then `device_fully_initialized`
+    twice; a reconfigure fires `raw_device_initialized` then the
+    full init; a removal fires `device_removed`; a battery swap and
+    an ordinary recovery fire nothing at all.
+
+    Three measured facts make this usable. The message always
+    precedes the recovery, by two to eight seconds across eighteen
+    observed recoveries, so nothing needs correlating backwards. The
+    full init carries `device_reg_id`, the registry id this
+    integration already files records under, so there is no matching
+    to get wrong. And a restart does not produce these for the
+    fleet, so no startup guard is needed; a restart that does carry
+    one is carrying a real join.
+
+    What it deliberately does not do: claim a pairing window.
+    `pairing_open` stays False on this stack. The window is
+    unobservable, and the log relay that hints at it started and
+    stopped 27 times in an hour of ordinary clicking.
+
+    Everything is guarded. A house without ZHA never constructs it,
+    a dispatcher that refuses the connection leaves the integration
+    untouched, and a message that cannot be understood is named as
+    such rather than parsed hopefully.
+    """
+
+    def __init__(self, hass: HomeAssistant, record: Any = None) -> None:
+        """Hold the hass reference and the callback that records.
+
+        The callback takes a device registry id and a message kind,
+        and is what turns an observation into a fact the reports can
+        use. None leaves this an observer, which is what a test uses
+        to watch it without a coordinator behind it.
+        """
+        self._hass = hass
+        self._record = record
+        self._unsubscribe: Any = None
+        self.seen: int = 0
+        # Registry id -> when that device was last handled.
+        self.handled: dict[str, float] = {}
+
+    def async_start(self) -> bool:
+        """Subscribe to the gateway signal. False if it could not."""
+        if self._unsubscribe is not None:
+            return True
+        try:
+            self._unsubscribe = async_dispatcher_connect(
+                self._hass, ZHA_GATEWAY_SIGNAL, self._on_message
+            )
+        except Exception as err:  # noqa: BLE001 - an instrument never breaks setup
+            LOGGER.warning(
+                "ZHA join observer could not subscribe to %s: %s",
+                ZHA_GATEWAY_SIGNAL,
+                err,
+            )
+            return False
+        LOGGER.info(
+            "ZHA join observer listening on %s; joins will be logged "
+            "and nothing else",
+            ZHA_GATEWAY_SIGNAL,
+        )
+        return True
+
+    def async_stop(self) -> None:
+        """Unsubscribe, so a reload leaves nothing behind."""
+        if self._unsubscribe is None:
+            return
+        try:
+            self._unsubscribe()
+        except Exception as err:  # noqa: BLE001
+            LOGGER.debug("ZHA join observer unsubscribe failed: %s", err)
+        self._unsubscribe = None
+
+    def handled_since(self, device_id: str, now: float) -> float | None:
+        """Return when a person last handled this device, if lately.
+
+        None when nobody has touched it inside the tail, which is
+        the ordinary answer for every device on a quiet fleet, and
+        the answer every other stack gives always.
+        """
+        when = self.handled.get(device_id)
+        if when is None:
+            return None
+        if now - when > ZHA_HANDLED_TAIL_SECONDS:
+            return None
+        return when
+
+    def forget(self, device_id: str) -> None:
+        """Drop a device's tag once its recovery has used it."""
+        self.handled.pop(device_id, None)
+
+    @callback
+    def _on_message(self, message: Any) -> None:
+        """Record one handling, and log it."""
+        if not isinstance(message, dict):
+            LOGGER.info(
+                "ZHA gateway message in an unexpected shape (%s); "
+                "logged and ignored",
+                type(message).__name__,
+            )
+            return
+        kind = message.get("type")
+        if not isinstance(kind, str):
+            # A message type that is not a string. Found by the
+            # adversarial round with a list, which crashed the
+            # membership test outright: an unhashable value cannot be
+            # looked up in a set, and the exception would have
+            # travelled back into whatever dispatched the message,
+            # which is ZHA. An instrument that can break the thing it
+            # watches is worse than no instrument (ruling #360).
+            LOGGER.info(
+                "ZHA gateway message with a %s type; logged and "
+                "ignored",
+                type(kind).__name__,
+            )
+            return
+        if kind not in ZHA_JOIN_MESSAGES:
+            # Groups, logs and the rest. Counted by silence: this
+            # instrument is about joins and says nothing else, so a
+            # busy network does not fill the log.
+            return
+        self.seen += 1
+        info = message.get("device_info")
+        if not isinstance(info, dict):
+            # `raw_device_initialized` carries its fields at the top
+            # level rather than under device_info, measured 29
+            # August. Both shapes are read rather than one assumed.
+            info = message
+        registry_id = info.get("device_reg_id")
+        LOGGER.info(
+            "ZHA says a device was handled (%s): ieee=%s reg=%s "
+            "status=%s name=%s",
+            kind,
+            info.get("ieee"),
+            registry_id,
+            info.get("pairing_status"),
+            info.get("user_given_name") or info.get("name"),
+        )
+        if not isinstance(registry_id, str) or not registry_id:
+            # `device_joined` and `raw_device_initialized` carry the
+            # ieee and no registry id; the full init that follows
+            # carries both, and it is what the recording waits for.
+            # A device this integration cannot name is one it cannot
+            # file, and mapping an ieee to a device by guesswork
+            # would attach a person's action to the wrong record.
+            return
+        self.handled[registry_id] = dt_util.utcnow().timestamp()
+        if self._record is not None:
+            self._record(registry_id, kind)
+
+
+def make_join_observer(hass: HomeAssistant, record: Any = None) -> Any:
+    """Return the join observer for ZHA."""
+    return ZhaJoinObserver(hass, record)
 
 
 def make_reader(hass: HomeAssistant) -> Any:

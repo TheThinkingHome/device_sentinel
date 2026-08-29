@@ -157,6 +157,7 @@ from .const import (
     INC_CAUSE,
     LEARNED_DISABLED,
     LEARNED_MAINTENANCE,
+    LEARNED_HANDLED,
     LEARNED_PAIRING,
     LEARNING_MIN_DAYS,
     LEGACY_CAUSE_UNOBSERVED,
@@ -432,6 +433,15 @@ class DeviceSentinelCoordinator(
         # The faults a discarded clocks file carried (#356), kept for
         # the load report; they never reach the card.
         self._clocks_discarded: list[tuple[str, str, str]] = []
+        # The join observers (rulings #360, #362). A stack that can
+        # say when a person handled a device reports it here, and
+        # the recovery that follows is attributed rather than
+        # learned. Empty on a house whose stacks have none, and
+        # stopped with the readers at shutdown.
+        self._join_observers: dict[str, Any] = {}
+        # Registry id -> when that device was last reported handled,
+        # so the same handling's several messages make one event.
+        self._handled_at: dict[str, float] = {}
         # True once a person confirms Restore Backup on the repair
         # card: the disk file has been replaced from the copy, so the
         # unload that follows must not flush this session's damaged
@@ -1164,6 +1174,9 @@ class DeviceSentinelCoordinator(
         if self._broker_reader is not None:
             self._broker_reader.async_stop()
             self._broker_reader = None
+        for observer in self._join_observers.values():
+            observer.async_stop()
+        self._join_observers.clear()
         for reader in self._bridge_readers.values():
             reader.async_stop()
         self._bridge_readers.clear()
@@ -1834,6 +1847,30 @@ class DeviceSentinelCoordinator(
             LOGGER.debug(
                 "Device %s returned from being set aside; gap "
                 "discarded as administrative",
+                device_id,
+            )
+        elif self._handled_recently(device_id, now):
+            # ZHA says a person re-paired, reconfigured or removed
+            # this device while it was silent, so the gap measures
+            # the hand rather than the device (ruling #362). The
+            # cause was already recorded as a system event when the
+            # message arrived, and attribution names it in the brief
+            # and the episode; this is the other half, the half the
+            # first build forgot: without the retraction the report
+            # says the gap was not learned while the daily maximum
+            # says it was, which is worse than saying nothing.
+            #
+            # Below pairing and being set aside, above maintenance:
+            # a named device on a stack that announced it is more
+            # specific than a window a person declared, and less
+            # specific than a pairing window that names the stack
+            # and the moment both.
+            learned = LEARNED_HANDLED
+            if not tainted and learned_gap is not None:
+                self._retract_today_max(record, learned_gap)
+            LOGGER.debug(
+                "Device %s was handled by a person; gap discarded "
+                "rather than learned",
                 device_id,
             )
         elif self._recovered_during_maintenance(now):

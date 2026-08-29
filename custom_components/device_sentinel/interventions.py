@@ -30,10 +30,16 @@ from collections import deque
 from typing import Any
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
-from .stacks import make_reader, reader_for_domain
+from .stacks import (
+    make_join_observer,
+    make_reader,
+    reader_for_domain,
+)
 from .transport_mqtt import MQTTBrokerReader
 
 from .const import (
+    SYS_DEVICE_HANDLED,
+    ZHA_HANDLED_TAIL_SECONDS,
     REPAIR_MOMENT_GRACE,
     BROKER_DOWN,
     BROKER_RUNNING,
@@ -155,10 +161,95 @@ class InterventionMixin:
             self._bridge_readers[stack] = reader
             await reader.async_start()
 
+        # The join observers (ruling #360). An instrument: it logs
+        # what a stack says when a device joins and changes nothing.
+        # It exists because a pairing window opened from the Home
+        # Assistant UI is invisible outside the process, so the rig
+        # could not answer whether the join itself is observable and
+        # only code running here can. Which stacks have one is the
+        # registry's question, not this file's (ruling #218), and a
+        # stack without one costs nothing at all.
+        for stack in sorted(self._stacks):
+            if stack in self._join_observers:
+                continue
+            observer = make_join_observer(
+                stack, self.hass, self._record_device_handled
+            )
+            if observer is None:
+                continue
+            if observer.async_start():
+                self._join_observers[stack] = observer
+
     def bridge_state(self, stack: str) -> str | None:
         """Return a stack's bridge state, or None if it has no reader."""
         reader = self._bridge_readers.get(stack)
         return reader.state if reader is not None else None
+
+    @callback
+    def _record_device_handled(self, device_id: str, kind: str) -> None:
+        """Write that a person handled one device (ruling #362).
+
+        A stack's observer calls this when it hears that a device was
+        re-paired, reconfigured or removed. The event is scoped to
+        that one device, so the attribution reaches it and nothing
+        else, and the window it opens closes after the measured tail
+        rather than staying open: a handling that never produced a
+        recovery must expire rather than explain the next one.
+
+        Nothing is written for a device this integration does not
+        watch. A device set aside is a device with no verdict to
+        explain, and an event about it would be noise in the log a
+        person reads.
+        """
+        if device_id not in self._watched:
+            return
+        now = dt_util.utcnow().timestamp()
+        last = self._handled_at.get(device_id)
+        self._handled_at[device_id] = now
+        if last is not None and now - last <= ZHA_HANDLED_TAIL_SECONDS:
+            # The same handling still running. A re-pair fires four
+            # or five messages over half a minute, and each is the
+            # same person at the same device: one event, refreshed,
+            # rather than five in the brief.
+            return
+        # The registry id travels in `detail`, which is a string.
+        # It cannot travel in `devices`: the shape check declares
+        # that field an integer (a count), and writing a list there
+        # would raise a storage fault on the next verify, which is
+        # to say this feature would have raised the repair card
+        # built for real corruption. Found before shipping, and the
+        # shape is the authority.
+        self._record_system_event(
+            SYS_DEVICE_HANDLED,
+            scope=self._device_stack(device_id) or "",
+            detail=f"{device_id} {kind}",
+        )
+        LOGGER.info(
+            "A person handled %s (%s); its next recovery will be "
+            "attributed to that rather than learned",
+            self._device_name(device_id),
+            kind,
+        )
+
+    def _handled_recently(self, device_id: str, now: float) -> bool:
+        """Return whether a person handled this device just now.
+
+        The other half of ruling #362. The system event explains the
+        recovery in the brief and the episode; this is what stops
+        the gap teaching a rhythm, and without it the two disagree:
+        the report says the silence was somebody's hands while the
+        daily maximum quietly widens as though it were the device's
+        own. Read from the same stamp the event was recorded
+        against, so the two can never drift apart.
+
+        Bounded by the measured tail rather than left open, because
+        a person who touched a device and walked away must not
+        explain its recovery an hour later.
+        """
+        when = self._handled_at.get(device_id)
+        if when is None:
+            return False
+        return 0.0 <= now - when <= ZHA_HANDLED_TAIL_SECONDS
 
     def bridge_reader(self, stack: str) -> Any | None:
         """Return the reader for a stack, or None if there is none."""
