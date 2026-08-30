@@ -335,3 +335,95 @@ def test_a_clean_record_is_false_and_not_merely_falsy():
         assert any(
             field == DEV_TAINTED for _d, field, _w in faults
         ), f"{wrong!r} was accepted"
+
+
+# ------------- an open episode across a fold raises nothing (#364)
+
+
+async def test_an_open_episode_across_a_fold_raises_no_card(
+    hass: HomeAssistant,
+):
+    """Tim's false card, driven through the live path.
+
+    Four devices silent past their basis at the moment of the fold
+    produced eight faults and a repair card naming nothing wrong. The
+    same four now produce no faults and no event.
+    """
+    register_device(hass, "quiet1", name="Quiet One")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._rebuild_registry_view()
+    _plant(hass, STORAGE_KEY, "main-v1")
+    _plant(hass, STORAGE_CLOCKS_KEY, "clocks-v1")
+    coord.data["silence_episodes"] = [
+        {
+            "device_id": f"open{index}",
+            "name": f"Quiet {index}",
+            "since": 1786000000.0,
+            "basis": 600.0,
+            "window": 1800.0,
+            "ended": None,
+            "at": None,
+            "lag": None,
+            "learned": None,
+            "taint_seconds": None,
+            "signal": None,
+        }
+        for index in range(4)
+    ]
+
+    await coord._check_storage_shape("fold")
+
+    assert coord.shape_faults == []
+    assert not _shape_events(coord)
+
+
+async def test_a_fold_fault_copies_the_evidence(hass: HomeAssistant):
+    """The load-only gap in #340, closed.
+
+    A fold that finds a fault used to copy nothing, so the file was
+    rewritten by the next save and the folder a person is pointed at
+    never existed (ruling #364).
+    """
+    register_device(hass, "bad2", name="Broken")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._rebuild_registry_view()
+    _plant(hass, STORAGE_KEY, "main-v1")
+    _plant(hass, STORAGE_CLOCKS_KEY, "clocks-v1")
+    device_id = next(iter(coord.data[DATA_DEVICES]))
+    coord.data[DATA_DEVICES][device_id][DEV_DAILY_MAX] = None
+
+    await coord._check_storage_shape("fold")
+
+    copies = Path(hass.config.path("device_sentinel/trim_backups"))
+    assert copies.is_dir(), "the fold took no evidence copy"
+    assert list(copies.iterdir()), "the copy folder is empty"
+
+
+async def test_the_shape_check_runs_after_every_migration_step(
+    hass: HomeAssistant,
+):
+    """A file is judged only once it has been upgraded.
+
+    Nothing enforces the order but the order itself: if the check
+    ever moved above the reconciler or the accumulator migration, an
+    old file would raise a card for being old rather than for being
+    damaged. This pins the order so a future step cannot land below
+    it unnoticed.
+    """
+    import inspect
+
+    from custom_components.device_sentinel import coordinator as cmod
+
+    source = inspect.getsource(cmod.DeviceSentinelCoordinator.async_setup)
+    check = source.index('_check_storage_shape("load")')
+    for step in (
+        "_migrate_signal_accumulators",
+        "_clear_mixed_signal",
+        "_reconcile_records",
+    ):
+        assert source.index(step) < check, (
+            f"{step} now runs after the shape check, so an unmigrated "
+            "file would be judged"
+        )

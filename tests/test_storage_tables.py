@@ -311,9 +311,17 @@ def test_every_row_defining_stamp_is_required():
     assert SYSTEM_EVENT_SHAPE["when"] == REAL_NUMBER
     assert STORM_SHAPE["at"] == REAL_NUMBER
     assert STRESS_SHAPE["at"] == REAL_NUMBER
-    for field in ("since", "basis", "window", "at"):
+    for field in ("since", "basis", "window"):
         assert EPISODE_SHAPE[field] == REAL_NUMBER
-    # And the ones that legitimately stay nullable.
+    # And the ones that legitimately stay nullable. An episode's `at`
+    # was in the list above until 0.19.4 and did not belong there:
+    # `since` is what defines an episode row, and `at` is when it
+    # closed, which is unknown for as long as the silence runs
+    # (ruling #364). A stress row's `at` is different and stays
+    # required, because a stress row is folded only from an episode
+    # that has already closed.
+    assert EPISODE_SHAPE["at"] != REAL_NUMBER
+    assert EPISODE_SHAPE["ended"] != REAL_NUMBER
     assert EPISODE_SHAPE["lag"] != REAL_NUMBER
     assert STORM_SHAPE["duration"] != REAL_NUMBER
 
@@ -382,3 +390,94 @@ def test_every_key_both_fleets_hold_has_a_shape():
         "storm_days", "signal_day_repair", "signal_weighting",
     }
     assert seen <= known, sorted(seen - known)
+
+
+# ------------------------- an open episode is not damage (#364)
+
+
+def _open_episode(**over):
+    """One silence episode as the journal writes it when it opens."""
+    row = {
+        "device_id": "abc",
+        "name": "Door Laundry",
+        "since": 1786000000.0,
+        "basis": 600.0,
+        "window": 1800.0,
+        "ended": None,
+        "at": None,
+        "lag": None,
+        "learned": None,
+        "taint_seconds": None,
+        "signal": None,
+    }
+    row.update(over)
+    return row
+
+
+def test_an_open_episode_is_not_a_fault():
+    """The false card Tim's fleet raised on 29 August 2026.
+
+    An episode opens the moment a silence passes its basis and stays
+    open until the device speaks, so a device silent across a load or
+    a fold has a row with None in `at` and `ended`. The table
+    required both, so four such devices produced eight faults and a
+    repair card that named nothing wrong.
+    """
+    assert check_storage({"silence_episodes": [_open_episode()]}) == []
+
+
+def test_four_open_episodes_no_longer_make_eight_faults():
+    """His card, reproduced and then silenced."""
+    rows = [_open_episode(device_id=f"d{index}") for index in range(4)]
+    assert check_storage({"silence_episodes": rows}) == []
+
+
+def test_a_closed_episode_is_still_fully_checked():
+    """Nullable is not unchecked: once a value is there, its type is
+    judged exactly as before."""
+    faults = check_storage(
+        {
+            "silence_episodes": [
+                _open_episode(at="yesterday", ended=["resumed"])
+            ]
+        }
+    )
+    fields = sorted(field for _holder, field, _why in faults)
+    assert fields == ["at", "ended"]
+
+
+def test_a_completed_episode_reports_nothing():
+    faults = check_storage(
+        {
+            "silence_episodes": [
+                _open_episode(
+                    at=1786003600.0,
+                    ended="resumed",
+                    lag=None,
+                    learned="yes",
+                )
+            ]
+        }
+    )
+    assert faults == []
+
+
+def test_a_signal_stress_row_still_requires_both():
+    """Stress rows are folded only from closed episodes, so they are
+    written with both fields and stay strict."""
+    faults = check_storage(
+        {
+            "signal_stress": [
+                {
+                    "device_id": "abc",
+                    "name": "Door Laundry",
+                    "since": 1786000000.0,
+                    "at": None,
+                    "ended": None,
+                    "signal": None,
+                }
+            ]
+        }
+    )
+    fields = sorted(field for _holder, field, _why in faults)
+    assert fields == ["at", "ended"]
