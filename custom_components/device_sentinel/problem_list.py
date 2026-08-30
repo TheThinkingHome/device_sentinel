@@ -746,7 +746,19 @@ class ProblemListMixin:
         # which was ruled the lesser evil: an automation pairing
         # faults to recoveries stays balanced (ruling #289).
         for kind in sort_kinds([k for k in kinds if k != UPSTREAM_KIND]):
-            opened = kinds.get(kind)
+            # The incident being closed is what this recovery is
+            # about, so its opening is what the duration measures.
+            # The item's own stamp is a fallback and no longer the
+            # first choice: a device set aside with a problem
+            # standing keeps its verdict and its stamp, so the stamp
+            # can predate this absence by any amount, and the event
+            # then contradicts the timeline the brief reads from. On
+            # 30 August a five minute absence was announced as
+            # twenty-seven minutes for exactly that reason
+            # (ruling #367).
+            opened = self._incident_opened_at(device_id, kind)
+            if opened is None:
+                opened = kinds.get(kind)
             self._resolve_incident(device_id, name, kind, now)
             self._collect_event(
                 kind, name, recovery=True, device_id=device_id
@@ -756,10 +768,14 @@ class ProblemListMixin:
                 name,
                 kind,
                 None if opened is None else now - opened,
-                self._recovery_cause(
-                    device_id,
-                    self._incident_opened_at(device_id, kind) or 0.0,
-                ),
+                # Bounded to this incident, using the opening read
+                # before the resolve. Asking again here returns None,
+                # because the row just written closes it, and the
+                # `or 0.0` that caught it made the bound meaningless:
+                # every episode on the device passed it, which is the
+                # unbounded reading #228 was written to end
+                # (ruling #367).
+                self._recovery_cause(device_id, opened or 0.0),
             )
 
     def _diff_kinds(
@@ -823,10 +839,11 @@ class ProblemListMixin:
                     problem["name"],
                     kind,
                     None if opened is None else now - opened,
-                    self._recovery_cause(
-                        device_id,
-                        self._incident_opened_at(device_id, kind) or 0.0,
-                    ),
+                    # The same bound as the retire path: read before
+                    # the resolve, because asking after it returns
+                    # None and the fallback let any episode on the
+                    # device answer (ruling #367).
+                    self._recovery_cause(device_id, opened or 0.0),
                 )
         return new_kinds
 

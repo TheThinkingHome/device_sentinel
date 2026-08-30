@@ -47,7 +47,7 @@ from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import (
     EVENT_HOMEASSISTANT_STOP,
     EVENT_STATE_REPORTED,
@@ -142,6 +142,7 @@ from .const import (
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FROZEN_CATEGORY,
+    DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     DEV_SET_ASIDE_SINCE,
     DEV_SIGNAL_DAILY_MEAN,
@@ -1380,7 +1381,9 @@ class DeviceSentinelCoordinator(
 
         in_grace = dt_util.utcnow().timestamp() < self._grace_until
         for device_id in [d for d in watched if d not in with_entities]:
-            if in_grace:
+            if in_grace and not self._integration_finished_loading(
+                watched.get(device_id)
+            ):
                 # Integrations register their entities as they load,
                 # so during the startup window a device with none is
                 # usually one whose owner has not finished, not one
@@ -1390,6 +1393,16 @@ class DeviceSentinelCoordinator(
                 # as administrative by the rule that exists for a
                 # disabling (ruling #260). The window is what it is
                 # for: things are still arriving.
+                #
+                # The clock alone was too blunt. An integration whose
+                # config entry has finished loading has registered
+                # what it is going to register, so a device of its
+                # own that still has no entities has none to come.
+                # The ZHA coordinator is exactly that and always
+                # will be, and the clock rule watched it for five
+                # minutes of every restart, judged it never reported,
+                # and set it aside again when grace closed
+                # (ruling #367).
                 continue
             # No entities at all: nothing exists that could ever
             # report, and nothing a person could switch on, so its
@@ -1425,6 +1438,7 @@ class DeviceSentinelCoordinator(
 
         self._display_names = display_names
         self._watched = watched
+        self._clear_verdicts_for_set_aside(set_aside)
         self._stacks = stacks
         self._stack_keys = stack_keys
         self._device_names = device_names
@@ -2258,6 +2272,68 @@ class DeviceSentinelCoordinator(
             version_changed=self._version_changed,
             namer=self._device_name,
         )
+
+    def _integration_finished_loading(self, domain: str | None) -> bool:
+        """Return whether this integration has finished setting up.
+
+        A loaded config entry has registered its entities, so a
+        device of its own with none has none coming and the startup
+        exemption of #260 does not apply to it. Anything unreadable,
+        unknown or still in progress answers False, which keeps the
+        old behaviour: the exemption is the safe side, since it costs
+        a device five minutes of watching and the alternative cost
+        eighteen devices their first gap (ruling #367).
+        """
+        if not domain:
+            return False
+        try:
+            entries = self.hass.config_entries.async_entries(domain)
+        except Exception as err:  # noqa: BLE001 - a read never breaks setup
+            LOGGER.debug("Entry state unreadable for %s: %s", domain, err)
+            return False
+        if not entries:
+            return False
+        return any(
+            entry.state is ConfigEntryState.LOADED for entry in entries
+        )
+
+    def _clear_verdicts_for_set_aside(
+        self, set_aside: dict[str, Any]
+    ) -> None:
+        """Drop the standing verdict of a device that is no longer
+        watched.
+
+        The sweep walks the watched set, so a device that leaves it
+        keeps whatever verdict and stamp it had at that moment, for
+        as long as it stays away. Nothing reads them while it is set
+        aside, but the day it is watched again the verdict already
+        matches, so no fresh stamp is taken, and the item raised from
+        it is born dated to an absence that ended long ago. That is
+        how a five minute absence was announced as twenty-seven
+        minutes on 30 August: the ZHA coordinator has no entities, so
+        the startup grace watches it and grace closing sets it aside,
+        twice in half an hour (ruling #367).
+
+        A set-aside device is one nothing may be said about, so
+        holding a verdict for it is holding an opinion that cannot be
+        published, cannot be corrected, and outlives the facts it was
+        formed from. The record itself is untouched: this clears the
+        judgment, never the history.
+        """
+        records = self.data.get(DATA_DEVICES) or {}
+        for device_id in set_aside:
+            record = records.get(device_id)
+            if not isinstance(record, dict):
+                continue
+            if (
+                record.get(DEV_FROZEN_CATEGORY) is None
+                and record.get(DEV_FROZEN_SINCE) is None
+            ):
+                continue
+            record[DEV_FROZEN_CATEGORY] = None
+            record[DEV_FROZEN_SINCE] = None
+            self._dirty = True
+            self._critical = True
 
     def _discard_excluded_records(self) -> None:
         """Drop what an excluded integration recorded before it was.
