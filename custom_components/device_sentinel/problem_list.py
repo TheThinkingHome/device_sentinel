@@ -34,6 +34,7 @@ from .const import (
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
+    ACTION_SET_ASIDE,
     ACTION_UNACKNOWLEDGED,
     CONF_SETTLE_SHARE,
     DATA_DEVICES,
@@ -728,17 +729,42 @@ class ProblemListMixin:
             await self.async_push_upstream(name, count, recovered)
 
     def _retire_item(
-        self, record: dict[str, Any], device_id: str, now: float
+        self,
+        record: dict[str, Any],
+        device_id: str,
+        now: float,
+        *,
+        announce: bool = True,
     ) -> None:
-        """Resolve every kind on an item whose device has recovered.
+        """Close every kind on an item that is going away.
 
         The item itself is dropped by the caller; this closes the
         incident timeline first, so the brief can tell the end of the
         story as well as its beginning. Acknowledged or not makes no
         difference: recovery is the automatic re-arm.
+
+        `announce` is False when the item is going because its device
+        left the watched set rather than because anything about the
+        device changed. Nothing recovered, so no recovery is fired
+        and the timeline records the device being set aside rather
+        than the problem resolving: a resolution that never happened
+        would leave the brief telling a house its device came back
+        when it had never gone (ruling #368).
         """
         name = record.get(TODO_SORT_NAME) or device_id
         kinds = record.get(TODO_KINDS, {})
+        if not announce:
+            for kind in sort_kinds(
+                [k for k in kinds if k != UPSTREAM_KIND]
+            ):
+                self._record_incident(
+                    device_id,
+                    name,
+                    kind,
+                    INCIDENT_ACTION,
+                    cause=ACTION_SET_ASIDE,
+                )
+            return
         # Worst first, and every kind fires as it becomes the top,
         # so a line carrying two faults answers both rather than
         # leaving one unanswered. A device leaving the list can
@@ -996,7 +1022,20 @@ class ProblemListMixin:
             device_id = record.get(TODO_DEVICE_ID)
             problem = problems.pop(device_id, None)
             if problem is None:
-                self._retire_item(record, device_id, now)
+                # Two different things arrive here as the same
+                # silence: a problem that ended, and a device nobody
+                # is watching any more. Only the first is a recovery.
+                # Announcing the second told a house that a device
+                # had come back when it had never gone: the ZHA
+                # coordinator is watched for the length of the
+                # startup grace and set aside when it closes, and a
+                # voice assistant said it was back up, out loud, at
+                # every restart. Eight devices do it on the tester's
+                # fleet (ruling #368).
+                watched = device_id in self._watched
+                self._retire_item(
+                    record, device_id, now, announce=watched
+                )
                 changed = True
                 continue
             stored_kinds: dict[str, float | None] = record.get(

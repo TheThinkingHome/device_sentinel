@@ -1804,6 +1804,11 @@ ACTION_ACKNOWLEDGED = "acknowledged"
 ACTION_UNACKNOWLEDGED = "unacknowledged"
 ACTION_DELETED = "deleted"
 ACTION_READDED = "readded"
+# A device that left the watched set with a problem standing. Not a
+# resolution: nothing about the device changed, and the watching
+# stopped. Recorded so the timeline says what happened rather than
+# claiming an ending (ruling #368).
+ACTION_SET_ASIDE = "set_aside"
 
 # The kinds whose recovery can name a cause. Only a silence has a
 # lever to credit: a battery rising or a rail clearing has no
@@ -1955,7 +1960,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 367
+HIGHEST_RULING = 368
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
