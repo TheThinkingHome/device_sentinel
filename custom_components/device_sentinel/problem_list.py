@@ -42,6 +42,7 @@ from .const import (
     DATA_TODO_JOURNAL,
     DEFAULT_SETTLE_SHARE_PCT,
     DEV_DAILY_MAX,
+    FREEZE_CATEGORY_NEVER_REPORTED,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
     NOTIFY_FAMILY_FREEZE,
@@ -49,24 +50,24 @@ from .const import (
     SHARE_PCT_MAX,
     SHARE_PCT_MIN,
     SIGNAL_PROBLEM_ADDITION,
+    STACK_DISPLAY_NAMES,
     TODO_ACKED_AT,
     TODO_DESCRIPTION,
     TODO_DEVICE_ID,
     TODO_JOURNAL_KEEP,
-    TODO_KINDS,
     TODO_KIND_FALLING_BATTERY,
-    TODO_KIND_FROZEN,
     TODO_KIND_FAMILIES,
+    TODO_KIND_FROZEN,
     TODO_KIND_LOW_BATTERY,
     TODO_KIND_NEVER_REPORTED,
     TODO_KIND_RAILED_SIGNAL,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
+    TODO_KINDS,
     TODO_SORT_NAME,
     TODO_STATUS,
     TODO_SUMMARY,
     TODO_UID,
-    STACK_DISPLAY_NAMES,
     UPSTREAM_KIND,
     UPSTREAM_SETTLE_SECONDS,
 )
@@ -757,6 +758,14 @@ class ProblemListMixin:
             for kind in sort_kinds(
                 [k for k in kinds if k != UPSTREAM_KIND]
             ):
+                # A fault still held for its debounce is withdrawn
+                # with the item. The release checks the list before
+                # sending and would find nothing, so this changes no
+                # outcome; it stops a timer outliving what it was
+                # timing.
+                cancel = self._held_events.pop((device_id, kind), None)
+                if cancel is not None:
+                    cancel()
                 self._record_incident(
                     device_id,
                     name,
@@ -1068,6 +1077,31 @@ class ProblemListMixin:
             kept.append(record)
 
         for device_id, problem in problems.items():
+            if now < self._grace_until:
+                # A device first detected as never reported inside the
+                # startup window stays off the list until the window
+                # shuts. The window exists because things are still
+                # arriving: integrations still loading, entities still
+                # registering, a device with none yet that will have
+                # some in a moment. A verdict of never reported taken
+                # then is taken on a house that has not finished
+                # waking up, and an item raised on it pushes a fault
+                # to a phone at once, because a device with no learned
+                # rhythm has no debounce. When the window shuts the
+                # rebuild sets aside what has nothing to say, and what
+                # is genuinely silent is listed then. A device already
+                # on the list before the restart is untouched: its
+                # item survived the restart and this loop never sees
+                # it (ruling #369).
+                remaining = {
+                    kind: since
+                    for kind, since in problem["kinds"].items()
+                    if kind != FREEZE_CATEGORY_NEVER_REPORTED
+                }
+                if not remaining:
+                    continue
+                if len(remaining) != len(problem["kinds"]):
+                    problem = dict(problem, kinds=remaining)
             kept.append(self._new_item(device_id, problem, now))
             changed = True
 

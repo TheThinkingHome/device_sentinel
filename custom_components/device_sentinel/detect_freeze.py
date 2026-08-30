@@ -314,6 +314,17 @@ class FreezeMixin:
         # device that reported and stopped, and because such a device
         # has no rhythm to miss and may have no live entity to read.
         if record[DEV_EVENT_COUNT] == 0 and record[DEV_LAST_ACTIVITY] is None:
+            if device_id not in self._devices_with_entities:
+                # Nothing that could report, so never reported says
+                # nothing about the device. A ZHA coordinator owns no
+                # entity and never will, and the startup window
+                # watched it long enough to judge it and send a
+                # person a notification about a device that was
+                # working perfectly. A device whose entities are all
+                # disabled is a different case and still qualifies:
+                # those entities exist, and the row is the prompt to
+                # switch them on (ruling #369).
+                return None
             first = record.get(DEV_FIRST_OBSERVED)
             if first is not None:
                 try:

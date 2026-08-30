@@ -286,6 +286,10 @@ class DeviceSentinelCoordinator(
         self._hand_deleted: set[str] = set()
 
         self._entity_map: dict[str, tuple[str, str | None]] = {}
+        # Every watched device that owns at least one registered
+        # entity, disabled or not. A device with none has nothing
+        # that could report (ruling #369).
+        self._devices_with_entities: set[str] = set()
         self._watched: dict[str, str] = {}  # device_id -> integration domain
         # Which coordinator stacks this house runs, derived from the
         # registry rather than asked (ruling #143).
@@ -1438,6 +1442,10 @@ class DeviceSentinelCoordinator(
 
         self._display_names = display_names
         self._watched = watched
+        # Kept rather than discarded with the rebuild: the judge needs
+        # to know whether a device has any entity at all, and that is
+        # the only place the registry has been walked (ruling #369).
+        self._devices_with_entities = with_entities
         self._clear_verdicts_for_set_aside(set_aside)
         self._stacks = stacks
         self._stack_keys = stack_keys
