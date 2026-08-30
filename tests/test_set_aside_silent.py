@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
@@ -36,6 +37,9 @@ from custom_components.device_sentinel.const import (
     DEV_LAST_ACTIVITY,
     EVENT_RECOVERED,
 )
+
+from homeassistant.helpers import device_registry as dr
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from tests.helpers import register_device, setup_coordinator
 
@@ -78,12 +82,31 @@ async def _run_restart_cycle(
     heard: list[dict] = []
     hass.bus.async_listen(EVENT_RECOVERED, lambda e: heard.append(e.data))
 
+    # The leavers as they really are on both fleets: a registry
+    # device with no entity of any kind, owned by an integration that
+    # has not finished loading, inside the startup window. That is
+    # the ZHA coordinator at every restart, and Tim's eight.
+    owner = MockConfigEntry(domain="leaver_stack", title="Leaver Stack")
+    owner.add_to_hass(hass)
+    registry = dr.async_get(hass)
     devices = []
     for index in range(leavers):
-        device, _eids = register_device(hass, f"{fleet}_leaver{index}")
-        devices.append(device)
+        devices.append(
+            registry.async_get_or_create(
+                config_entry_id=owner.entry_id,
+                identifiers={("leaver_stack", f"{fleet}-{index}")},
+                name=f"{fleet.title()} Leaver {index}",
+            )
+        )
     coord = await setup_coordinator(hass)
-    coord._grace_until = 0.0
+    # Inside the startup window, which is what watches them.
+    coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+    coord._rebuild_registry_view()
+    watched_leavers = [d.id for d in devices if d.id in coord._watched]
+    assert watched_leavers, (
+        "the simulation is not reproducing the condition: no "
+        "entity-less device was watched during grace"
+    )
 
     # Seed the fleet's own records so the run carries real history.
     for index, record in enumerate(records):
@@ -134,6 +157,10 @@ async def test_simulate_james_fleet_restart(hass: HomeAssistant) -> None:
         f"{result['false_recoveries']} device(s) announced a recovery "
         "they never had"
     )
+    assert result["items_raised"] == 0, (
+        f"{result['items_raised']} device(s) with no entity to report "
+        "with were put on the list and notified about"
+    )
 
 
 @pytest.mark.skipif(not TIM.exists(), reason="fleet file absent")
@@ -143,6 +170,10 @@ async def test_simulate_tim_fleet_restart(hass: HomeAssistant) -> None:
     assert result["false_recoveries"] == 0, (
         f"{result['false_recoveries']} device(s) announced a recovery "
         "they never had"
+    )
+    assert result["items_raised"] == 0, (
+        f"{result['items_raised']} device(s) with no entity to report "
+        "with were put on the list and notified about"
     )
 
 
@@ -278,3 +309,78 @@ async def test_a_device_that_leaves_and_returns_starts_a_new_incident(
     second_stamp = list(second["kinds"].values())[0]
     print("STAMPS:", first_stamp, second_stamp)
     assert second_stamp >= first_stamp, "the new item is dated backwards"
+
+
+async def test_a_device_whose_entities_are_all_disabled_still_qualifies(
+    hass: HomeAssistant,
+):
+    """The case the fix must not silence.
+
+    A device whose entities exist but are switched off is not the
+    same as a device with none. Those entities can be switched on,
+    and the never-reported row is the prompt to do it, so it keeps
+    its verdict (ruling #257 and #369).
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    from custom_components.device_sentinel.const import (
+        FREEZE_CATEGORY_NEVER_REPORTED,
+    )
+
+    owner = MockConfigEntry(domain="disabled_stack", title="Disabled")
+    owner.add_to_hass(hass)
+    registry = dr.async_get(hass)
+    device = registry.async_get_or_create(
+        config_entry_id=owner.entry_id,
+        identifiers={("disabled_stack", "all-off")},
+        name="Every Entity Disabled",
+    )
+    entities = er.async_get(hass)
+    entities.async_get_or_create(
+        "sensor",
+        "disabled_stack",
+        "off-uid",
+        device_id=device.id,
+        disabled_by=er.RegistryEntryDisabler.USER,
+    )
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+
+    record = coord.data[DATA_DEVICES].setdefault(device.id, {})
+    record[DEV_EVENT_COUNT] = 0
+    record[DEV_LAST_ACTIVITY] = None
+    record[DEV_FIRST_OBSERVED] = OBSERVED
+
+    verdict = coord._device_down_category(
+        device.id, record, 1_788_600_000.0
+    )
+    print("DISABLED-ENTITY VERDICT:", verdict)
+    assert verdict == FREEZE_CATEGORY_NEVER_REPORTED, (
+        "a device whose entities are merely switched off lost its "
+        "prompt to switch them on"
+    )
+
+
+async def test_an_ordinary_silent_device_still_qualifies(
+    hass: HomeAssistant,
+):
+    """The everyday case: a real device with real entities that has
+    genuinely never spoken must still be reported."""
+    from custom_components.device_sentinel.const import (
+        FREEZE_CATEGORY_NEVER_REPORTED,
+    )
+
+    device, _eids = register_device(hass, "ordinary_silent")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    record = coord.data[DATA_DEVICES].setdefault(device.id, {})
+    record[DEV_EVENT_COUNT] = 0
+    record[DEV_LAST_ACTIVITY] = None
+    record[DEV_FIRST_OBSERVED] = OBSERVED
+    verdict = coord._device_down_category(
+        device.id, record, 1_788_600_000.0
+    )
+    print("ORDINARY SILENT VERDICT:", verdict)
+    assert verdict == FREEZE_CATEGORY_NEVER_REPORTED, (
+        "a real device that has never reported was silenced"
+    )
