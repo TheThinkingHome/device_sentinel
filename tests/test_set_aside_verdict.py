@@ -89,67 +89,50 @@ async def test_the_sweep_alone_leaves_a_set_aside_verdict_standing(
     )
 
 
-async def test_the_second_recovery_measures_the_first_opening(
+async def test_a_recovery_is_timed_from_the_absence_that_ended(
     hass: HomeAssistant,
 ):
-    """The fault as James heard it, with the real timings.
+    """The duration fix, through the path that still announces.
 
-    Cycle one opens at the 12:28 restart and closes 300 s later when
-    grace ends. Twenty-three minutes pass with the device set aside
-    and its verdict untouched. Cycle two opens at the 12:51 restart
-    and closes 300 s later. The second recovery should say 300
-    seconds. It says 1668, the span since cycle one opened.
+    A device with a problem standing, watched throughout, whose
+    problem then clears. The item's own stamp is deliberately set
+    far in the past, as it would be for a device that has been on
+    the list a long time; the announcement must measure the incident
+    that just closed, not that stamp.
     """
     recoveries = _catch_recoveries(hass)
     coord, device, record = await _never_reporting_device(hass, "co2")
 
-    # Cycle one.
-    coord._judge_all_devices()
-    coord._sync_problem_list()
-    opened_at = record[DEV_FROZEN_SINCE]
-    assert opened_at is not None
-
-    # Grace closes 300 s later: set aside, item retired.
-    _set_aside(coord, device.id)
-    coord._sync_problem_list()
-    await hass.async_block_till_done()
-
-    # 23 minutes pass while the device is set aside. Nothing walks
-    # it, so its verdict and its stamp stand. Winding the stamp back
-    # is how that elapsed time is expressed to a harness that runs
-    # in one second.
-    elapsed = 1368.0
-    record[DEV_FROZEN_SINCE] = opened_at - elapsed
-
-    # Cycle two: the next restart watches it again.
-    _watch_again(coord, device.id)
     coord._judge_all_devices()
     coord._sync_problem_list()
     items = [
-        item
-        for item in coord.data.get("todo_items", [])
-        if item.get("device_id") == device.id
+        i for i in coord.data["todo_items"] if i["device_id"] == device.id
     ]
-    assert items, "no item on the second cycle"
-    stamp = list(items[0]["kinds"].values())[0]
-    print(
-        "SECOND ITEM STAMP is %.0f s old, though this cycle just began"
-        % (opened_at - stamp)
-    )
+    assert items, "no item was raised"
 
-    # Grace closes again.
-    _set_aside(coord, device.id)
+    # Age the item's own stamp by 23 minutes without touching the
+    # incident, which is the state a carried-forward stamp leaves.
+    kinds = items[0]["kinds"]
+    for kind in list(kinds):
+        kinds[kind] = kinds[kind] - 1368.0
+
+    # The device speaks. It never left the watched set.
+    record[DEV_EVENT_COUNT] = 1
+    record[DEV_LAST_ACTIVITY] = 1_788_000_000.0
+    record[DEV_FROZEN_CATEGORY] = None
+    record[DEV_FROZEN_SINCE] = None
+    coord._judge_all_devices()
     coord._sync_problem_list()
     await hass.async_block_till_done()
+
     mine = [r for r in recoveries if r.get("device_id") == device.id]
-    print("RECOVERY DURATIONS:", [r.get("down_for") for r in mine])
-    assert len(mine) >= 2, "the second recovery never fired"
+    assert mine, "a watched device's recovery was not announced"
     reported = mine[-1].get("down_for")
-    print("SECOND RECOVERY REPORTED:", reported, "seconds")
+    print("REPORTED:", reported, "seconds")
     assert reported is not None
     assert reported < 60, (
-        f"the second recovery reported {reported}s for an absence "
-        "that had only just begun, measured from the first cycle"
+        f"the recovery reported {reported}s, measured from the item's "
+        "stamp rather than from the incident that closed"
     )
 
 
@@ -233,7 +216,13 @@ async def test_the_cause_is_bounded_to_the_incident_that_closed(
     hass.bus.async_listen(
         EVENT_RECOVERED, lambda event: causes.append(event.data)
     )
-    _set_aside(coord, device.id)
+    # The device speaks again, watched throughout, so the recovery
+    # is a real one and does announce (ruling #368).
+    record[DEV_EVENT_COUNT] = 1
+    record[DEV_LAST_ACTIVITY] = 1_788_000_000.0
+    record[DEV_FROZEN_CATEGORY] = None
+    record[DEV_FROZEN_SINCE] = None
+    coord._judge_all_devices()
     coord._sync_problem_list()
     await hass.async_block_till_done()
 
