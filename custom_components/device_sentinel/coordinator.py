@@ -2036,6 +2036,23 @@ class DeviceSentinelCoordinator(
                 faults = self._gather_shape_faults(moment)
             self._load_faulty = True
         if moment == "fold" and faults:
+            # The fold finds a fault in a document that has been in
+            # memory all day, so there is no unmigrated original to
+            # protect, but the file on disk is still the only copy of
+            # what the fault looks like and the next save rewrites it.
+            # Verify names the damage and repairs nothing, so without
+            # a copy here the evidence is gone by morning and the
+            # person is asked for a folder that was never written
+            # (ruling #364, closing the load-only gap in #340).
+            stamp, copied = await async_copy_evidence(self.hass)
+            if stamp:
+                LOGGER.warning(
+                    "Storage evidence copied to trim_backups as %s "
+                    "after the fold found %d fault(s): %s",
+                    stamp,
+                    len(faults),
+                    ", ".join(copied),
+                )
             self._load_faulty = True
         # A device record with a standing fault is held out of every
         # judging and reading surface for the session: the check

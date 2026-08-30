@@ -377,8 +377,16 @@ EPISODE_SHAPE: dict[str, str] = {
     "since": REAL_NUMBER,
     "basis": REAL_NUMBER,
     "window": REAL_NUMBER,
-    "at": REAL_NUMBER,
-    "ended": TEXT,
+    # An episode is written the moment a silence passes its basis and
+    # stays open until the device speaks or something intervenes, so
+    # a row that is still running carries None in both of these by
+    # design. Requiring them called healthy in-flight data damage:
+    # any device silent across a load or a fold raised two faults and
+    # a repair card that named nothing wrong (ruling #364). They are
+    # checked as types the moment they hold a value, and a closed row
+    # is still fully checked, because the closer writes both.
+    "at": NUMBER,
+    "ended": STRING,
     "lag": NUMBER,
     "learned": STRING,
     "taint_seconds": NUMBER,
