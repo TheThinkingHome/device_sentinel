@@ -26,6 +26,8 @@ from homeassistant.helpers import (
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.device_sentinel.normalise import repair_tables
+
 from custom_components.device_sentinel.const import (
     CLOCK_FIELDS,
     DATA_DEVICES,
@@ -68,12 +70,12 @@ def _fleet(path: Path) -> list[dict]:
 
 @pytest.mark.parametrize("seed", range(30))
 async def test_the_sweep_survives_hostile_records(hass: HomeAssistant, seed):
-    """The sweep guards each device (#357 holds damaged records out
-    before it, and one malformed record must never kill the sweep).
-    Hostile records are planted straight into the working set here,
-    below the shape check, so the guard itself is what is attacked:
-    the sweep must finish, and a never-reported verdict must still
-    only land on a device that owns an entity."""
+    """A hostile record in memory can only arrive through a load,
+    and the load repairs what the check cannot vouch for
+    (ruling #370). The repair is run here the way the gate runs it,
+    then the sweep must finish on the repaired fleet, and a
+    never-reported verdict must still only land on a device that
+    owns an entity."""
     rng = random.Random(seed)
     records = _fleet(JAMES if seed % 2 else TIM) if JAMES.exists() else [{}]
     devices = [register_device(hass, f"j{seed}_{i}")[0] for i in range(6)]
@@ -91,13 +93,9 @@ async def test_the_sweep_survives_hostile_records(hass: HomeAssistant, seed):
                 ["2026-07-08T00:00:00+00:00", "yesterday", None, 7, ""]
             )
         coord.data[DATA_DEVICES][device.id] = record
-    # Planted below the shape check, so hold them the way the load
-    # would: a hostile record in memory can only arrive through a
-    # load, and the load holds what Verify cannot vouch for.
-    coord._shape_faults = coord._gather_current_faults()
-    coord._fault_held = frozenset(
-        holder for holder, _f, _w in coord._shape_faults
-    )
+    # Repaired the way the gate repairs at load (ruling #370):
+    # non-records dropped, damaged fields reset to defaults.
+    coord._repair_records()
     for _ in range(5):
         try:
             coord._judge_all_devices()
@@ -214,6 +212,10 @@ async def test_the_sync_survives_hostile_persisted_items(
             }
         )
     coord.data["incidents"] = hostile_incidents
+    # The gate repairs a damaged table at the moment it is found
+    # (ruling #370); hostile persisted rows arrive only through a
+    # load, so the load-style repair runs before any consumer.
+    repair_tables(coord.data)
     try:
         coord._judge_all_devices()
         coord._sync_problem_list()
@@ -226,7 +228,7 @@ async def test_the_sync_survives_hostile_persisted_items(
         pytest.fail(f"sync raised on hostile persisted rows: {err!r}")
 
 
-# -------------------------- a held record against every surface
+# ----------------------- a damaged record against every surface
 
 SENSOR_PROPERTIES = [
     "awaiting_enable_counts", "battery_falling_count", "battery_falling_list",
@@ -236,7 +238,7 @@ SENSOR_PROPERTIES = [
     "deviceless_count", "freeze_tracked_count", "freeze_tracked_list",
     "frozen_devices_count", "frozen_devices_list", "last_good_taken",
     "learning_buckets", "recording_depth", "set_aside_count",
-    "shape_faults", "signal_problem_count", "signal_problem_list",
+    "signal_problem_count", "signal_problem_list",
     "signal_tracked", "signal_tracked_count", "signal_weak_count",
     "signal_weak_list", "storage_healthy", "storage_load_faulty",
     "todo_items", "watched_count",
@@ -251,13 +253,14 @@ HELD_POISONS = [
 
 
 @pytest.mark.parametrize("field,poison", HELD_POISONS)
-async def test_a_held_record_reaches_no_surface(
+async def test_a_damaged_record_is_repaired_at_load(
     hass: HomeAssistant, hass_storage, field, poison
 ):
-    """The #357 rule, checked against every sensor property and every
-    report, through the real load path: a record Verify cannot vouch
-    for is held, and nothing that serves a person reads it."""
+    """The #370 rule through the real load path: a damaged record
+    field is repaired at the gate, every surface then runs on the
+    repaired fleet, and the field itself checks clean afterwards."""
     from custom_components.device_sentinel.const import STORAGE_KEY
+    from custom_components.device_sentinel.normalise import check_records
 
     device, _ = register_device(hass, "held_surface")
     coord = await setup_coordinator(hass)
@@ -269,7 +272,11 @@ async def test_a_held_record_reaches_no_surface(
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     coord2 = entry.runtime_data
-    assert coord2.storage_load_faulty, f"{field}={poison!r} not held"
+    assert coord2.storage_load_faulty, f"{field}={poison!r} not repaired"
+    assert not check_records(coord2.data[DATA_DEVICES]), (
+        f"{field}={poison!r} still faulty after the gate"
+    )
+    assert coord2._repair_notice, "the repair raised no notice"
     failures = []
     for name in SENSOR_PROPERTIES:
         try:

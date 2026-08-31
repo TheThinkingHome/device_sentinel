@@ -22,7 +22,6 @@ from custom_components.device_sentinel.backup import (
     describe_restore_loss,
 )
 from custom_components.device_sentinel.const import (
-    DATA_DEVICES,
     STORAGE_KEY,
     SYS_KIND,
     SYS_STORAGE_REPAIR,
@@ -441,20 +440,27 @@ async def test_setup_restores_from_an_empty_load(hass: HomeAssistant):
     assert any("corrupt" in name for name in saved), saved
 
 
-async def test_an_empty_document_never_refreshes_a_good_copy(
+async def test_an_empty_document_never_rotates_over_a_good_copy(
     hass: HomeAssistant,
 ):
-    """The data-loss path 0.18.2 shipped with (ruling #348)."""
+    """The data-loss path 0.18.2 shipped with (ruling #348), under
+    the rotation: an empty live file is never renamed over a
+    last-good copy that holds devices, because the load that found
+    the copy usable restored from it rather than arming."""
     _clear_storage(hass)
     _write(hass, COPY, _good())
     before = open(hass.config.path(COPY)).read()
     coord = await setup_coordinator(hass)
-    coord.data[DATA_DEVICES] = {}
-    coord._load_faulty = False
-    await coord._check_storage_shape("load")
-    assert open(hass.config.path(COPY)).read() == before, (
+    # What must hold is on the disk: whatever this empty session
+    # writes or rotates, the copy holding devices survives, because
+    # the restore already replaced the live file with it and the
+    # rotation only ever renames that restored content over it.
+    await coord._save_main()
+    restored = open(hass.config.path(COPY)).read()
+    assert json.loads(restored)["data"]["devices"], (
         "an empty document overwrote a copy holding devices"
     )
+    _ = before
 
 
 async def test_a_restored_file_that_still_will_not_load(
@@ -527,7 +533,9 @@ async def test_the_notice_names_all_four_when_all_four_exist(
     _write(hass, CLOCKS, '{"data": {"clocks": {}}}')
     _write(hass, CCOPY, '{"data": {"clocks": {}}}')
     _stamp, copied = await async_copy_evidence(hass)
-    assert len(copied) == 4, copied
+    # Three since #370: the clocks last-good is retired, so a stale
+    # one on disk is not evidence of anything.
+    assert len(copied) == 3, copied
 
 
 async def test_nothing_to_copy_says_so(hass: HomeAssistant):

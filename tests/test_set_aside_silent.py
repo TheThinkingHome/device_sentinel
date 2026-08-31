@@ -384,3 +384,35 @@ async def test_an_ordinary_silent_device_still_qualifies(
     assert verdict == FREEZE_CATEGORY_NEVER_REPORTED, (
         "a real device that has never reported was silenced"
     )
+
+
+async def test_a_set_aside_fires_a_withdrawal_not_a_recovery(
+    hass: HomeAssistant,
+):
+    """#289 promised every fault an answer; #368 silenced the
+    recovery for a device that never came back; #370 answers with a
+    withdrawal instead. Exactly one, carrying the kinds and why."""
+    from custom_components.device_sentinel.const import EVENT_WITHDRAWN
+
+    withdrawn: list[dict] = []
+    recovered: list[dict] = []
+    hass.bus.async_listen(EVENT_WITHDRAWN, lambda e: withdrawn.append(e.data))
+    hass.bus.async_listen(EVENT_RECOVERED, lambda e: recovered.append(e.data))
+    device, _ = register_device(hass, "withdraw_dev")
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    rec = coord.data[DATA_DEVICES].setdefault(device.id, {})
+    rec[DEV_EVENT_COUNT] = 0
+    rec[DEV_LAST_ACTIVITY] = None
+    rec[DEV_FIRST_OBSERVED] = OBSERVED
+    coord._judge_all_devices()
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    coord._watched.pop(device.id, None)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    mine = [w for w in withdrawn if w.get("device_id") == device.id]
+    assert len(mine) == 1, f"{len(mine)} withdrawals"
+    assert mine[0]["reason"] == "set_aside"
+    assert "never_reported" in mine[0]["kinds"]
+    assert not [r for r in recovered if r.get("device_id") == device.id]

@@ -40,13 +40,21 @@ def _furnish(coord, device_id: str, name: str) -> None:
     record = coord.data[DATA_DEVICES][device_id]
     record[DEV_SIGNAL_DAILY_P5] = [120.0, 118.0]
     coord.data.setdefault(DATA_EPISODES, []).append(
-        {INC_DEVICE_ID: device_id, "name": name, "since": 1.0}
+        {INC_DEVICE_ID: device_id, "name": name, "since": 1.0,
+         "basis": 60.0, "window": 120.0, "ended": None, "at": None,
+         "lag": None, "learned": None, "taint_seconds": None,
+         "signal": None}
     )
     coord.data.setdefault(DATA_INCIDENTS, []).append(
-        {INC_DEVICE_ID: device_id, "name": name, "when": 1.0}
+        {INC_DEVICE_ID: device_id, "name": name, "when": 1.0,
+         "kind": "frozen", "event": "opened", "cause": None,
+         "duration": None}
     )
     coord.data.setdefault(DATA_TODO_ITEMS, []).append(
-        {TODO_DEVICE_ID: device_id, "summary": f"{name}: frozen"}
+        {"uid": f"{device_id}-uid", TODO_DEVICE_ID: device_id,
+         "summary": f"{name}: frozen", "description": None,
+         "status": "needs_action", "acked_at": None,
+         "sort_name": name, "kinds": {"frozen": 1.0}}
     )
 
 

@@ -53,6 +53,7 @@ from custom_components.device_sentinel.const import (
     STORAGE_KEY,
     SYS_KIND,
     SYS_STORAGE_SHAPE,
+    SYS_STORAGE_REPAIR,
     TAINT_REASONS,
     DEV_SIGNAL_ALT,
     DEV_SIGNAL_DAILY_P50,
@@ -98,9 +99,11 @@ def _last_good(hass: HomeAssistant, key: str) -> Path:
 
 
 def _shape_events(coord) -> list[dict]:
+    """Storage events of either kind: a repair (#370) or a writer
+    fault named by the seam."""
     return [
         e for e in coord.data.get(DATA_SYSTEM_EVENTS) or []
-        if e.get(SYS_KIND) == SYS_STORAGE_SHAPE
+        if e.get(SYS_KIND) in (SYS_STORAGE_SHAPE, SYS_STORAGE_REPAIR)
     ]
 
 
@@ -180,49 +183,57 @@ def test_the_check_changes_nothing():
 # ---------------------------------------------------- integration level
 
 
-async def test_a_clean_check_refreshes_last_good(hass: HomeAssistant):
-    """The Store is mocked in memory, so the on-disk pair is planted by
-    hand; what is under test is that a clean check copies both."""
+async def test_a_clean_save_rotates_live_to_last_good(hass: HomeAssistant):
+    """The Store is mocked in memory, so the on-disk file is planted
+    by hand; what is under test is the rotation of ruling #370: a
+    clean save renames the live main file to last-good, and the
+    clocks file gets no copy at all."""
     register_device(hass, "ok1", name="Fine")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     coord._rebuild_registry_view()
     _plant(hass, STORAGE_KEY, "main-v1")
     _plant(hass, STORAGE_CLOCKS_KEY, "clocks-v1")
+    coord._rotation_armed = True
 
-    await coord._check_storage_shape("load")
+    await coord._save_main()
 
     assert _last_good(hass, STORAGE_KEY).read_text() == "main-v1"
-    assert _last_good(hass, STORAGE_CLOCKS_KEY).read_text() == "clocks-v1"
+    assert not _last_good(hass, STORAGE_CLOCKS_KEY).exists(), (
+        "the retired clocks last-good file was written"
+    )
     assert not _shape_events(coord)
 
 
-async def test_a_faulty_record_reports_and_withholds_last_good(
+async def test_a_faulty_save_repairs_and_leaves_last_good_alone(
     hass: HomeAssistant,
 ):
+    """Ruling #370: a save that found a fault repairs at that moment
+    and writes the live file without rotating, so last-good stays
+    the last clean file."""
     register_device(hass, "bad1", name="Broken")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     coord._rebuild_registry_view()
     _plant(hass, STORAGE_KEY, "main-v1")
-    _plant(hass, STORAGE_CLOCKS_KEY, "clocks-v1")
-    await coord._check_storage_shape("load")
+    coord._rotation_armed = True
+    await coord._save_main()
     assert _last_good(hass, STORAGE_KEY).read_text() == "main-v1"
 
     # the file on disk moves on, and one record in memory goes bad
     _plant(hass, STORAGE_KEY, "main-v2-corrupt")
     device_id = next(iter(coord.data[DATA_DEVICES]))
     coord.data[DATA_DEVICES][device_id][DEV_DAILY_MAX] = None
-    await coord._check_storage_shape("fold")
+    await coord._save_main()
 
     events = _shape_events(coord)
-    assert len(events) == 1
-    assert events[0]["detail"].startswith("fold:")
-    assert DEV_DAILY_MAX in events[0]["detail"]
+    assert events, "the repair wrote no system event"
+    assert DEV_DAILY_MAX in str(events[-1]["detail"])
     # last-good still holds the clean copy, not the corrupt file
     assert _last_good(hass, STORAGE_KEY).read_text() == "main-v1"
-    # and the record itself was not touched
-    assert coord.data[DATA_DEVICES][device_id][DEV_DAILY_MAX] is None
+    # and the record was repaired to its default, not left poisoned
+    assert coord.data[DATA_DEVICES][device_id][DEV_DAILY_MAX] == []
+    assert coord._repair_notice, "the repair raised no notice"
 
 
 async def test_the_reference_fleet_is_clean():
@@ -340,21 +351,20 @@ def test_a_clean_record_is_false_and_not_merely_falsy():
 # ------------- an open episode across a fold raises nothing (#364)
 
 
-async def test_an_open_episode_across_a_fold_raises_no_card(
+async def test_an_open_episode_saves_with_no_fault_and_no_repair(
     hass: HomeAssistant,
 ):
     """Tim's false card, driven through the live path.
 
-    Four devices silent past their basis at the moment of the fold
-    produced eight faults and a repair card naming nothing wrong. The
-    same four now produce no faults and no event.
+    Four devices silent past their basis at the moment of a save
+    produced eight faults and a repair card naming nothing wrong.
+    The same four now pass the save seam untouched: no repair, no
+    event, every row still in the table.
     """
     register_device(hass, "quiet1", name="Quiet One")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     coord._rebuild_registry_view()
-    _plant(hass, STORAGE_KEY, "main-v1")
-    _plant(hass, STORAGE_CLOCKS_KEY, "clocks-v1")
     coord.data["silence_episodes"] = [
         {
             "device_id": f"open{index}",
@@ -372,32 +382,29 @@ async def test_an_open_episode_across_a_fold_raises_no_card(
         for index in range(4)
     ]
 
-    await coord._check_storage_shape("fold")
+    await coord._save_main()
 
-    assert coord.shape_faults == []
+    assert coord._repair_notice is None
     assert not _shape_events(coord)
+    assert len(coord.data["silence_episodes"]) == 4
 
 
-async def test_a_fold_fault_copies_the_evidence(hass: HomeAssistant):
-    """The load-only gap in #340, closed.
-
-    A fold that finds a fault used to copy nothing, so the file was
-    rewritten by the next save and the folder a person is pointed at
-    never existed (ruling #364).
-    """
+async def test_a_save_fault_copies_the_evidence(hass: HomeAssistant):
+    """Ruling #340, carried into #370: a repair at save copies the
+    evidence before the file is rewritten, so the folder a person is
+    pointed at exists and holds the original."""
     register_device(hass, "bad2", name="Broken")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     coord._rebuild_registry_view()
     _plant(hass, STORAGE_KEY, "main-v1")
-    _plant(hass, STORAGE_CLOCKS_KEY, "clocks-v1")
     device_id = next(iter(coord.data[DATA_DEVICES]))
     coord.data[DATA_DEVICES][device_id][DEV_DAILY_MAX] = None
 
-    await coord._check_storage_shape("fold")
+    await coord._save_main()
 
     copies = Path(hass.config.path("device_sentinel/trim_backups"))
-    assert copies.is_dir(), "the fold took no evidence copy"
+    assert copies.is_dir(), "the repair took no evidence copy"
     assert list(copies.iterdir()), "the copy folder is empty"
 
 
@@ -417,13 +424,13 @@ async def test_the_shape_check_runs_after_every_migration_step(
     from custom_components.device_sentinel import coordinator as cmod
 
     source = inspect.getsource(cmod.DeviceSentinelCoordinator.async_setup)
-    check = source.index('_check_storage_shape("load")')
+    check = source.index("gate_faults = check_records")
     for step in (
         "_migrate_signal_accumulators",
         "_clear_mixed_signal",
         "_reconcile_records",
     ):
         assert source.index(step) < check, (
-            f"{step} now runs after the shape check, so an unmigrated "
+            f"{step} now runs after the gate, so an unmigrated "
             "file would be judged"
         )

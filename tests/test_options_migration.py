@@ -295,7 +295,6 @@ async def test_a_brief_covering_the_upgrade_still_names_its_settings(
                         "excluded_devices, battery_excluded_labels, "
                         "ignored_integrations"
                     ),
-                    SYS_DEVICES: None,
                 },
                 {
                     SYS_WHEN: now - 1800.0,
@@ -303,7 +302,6 @@ async def test_a_brief_covering_the_upgrade_still_names_its_settings(
                     SYS_SCOPE: "system",
                     SYS_DURATION: 28.0,
                     SYS_DETAIL: None,
-                    SYS_DEVICES: None,
                 },
                 {
                     # A trim's detail is a comma-joined list of names
@@ -352,7 +350,6 @@ async def test_a_key_it_does_not_know_passes_through(
                     SYS_SCOPE: "system",
                     SYS_DURATION: None,
                     SYS_DETAIL: "something_from_the_future",
-                    SYS_DEVICES: None,
                 }
             ],
         },
@@ -388,7 +385,6 @@ async def test_a_row_written_after_the_rename_is_left_alone(
                     SYS_SCOPE: "system",
                     SYS_DURATION: None,
                     SYS_DETAIL: "excluded_integrations",
-                    SYS_DEVICES: None,
                 }
             ],
         },

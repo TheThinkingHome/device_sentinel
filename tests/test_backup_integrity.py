@@ -16,6 +16,7 @@ from custom_components.device_sentinel.backup import (
     async_copy_evidence,
     async_prune_backups,
 )
+from custom_components.device_sentinel.normalise import check_records
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
     DEV_LAST_ACTIVITY,
@@ -30,6 +31,26 @@ from custom_components.device_sentinel.normalise import fault_id
 from .helpers import register_device, setup_coordinator
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _clean_storage_files(hass):
+    """The config directory is shared across tests, so a last-good
+    file another test rotated into place would poison the rotation
+    assertions here. Each test starts and ends with none present."""
+    def _sweep():
+        directory = hass.config.path(".storage")
+        if not os.path.isdir(directory):
+            return
+        for name in os.listdir(directory):
+            if name.startswith("device_sentinel."):
+                os.remove(os.path.join(directory, name))
+    _sweep()
+    yield
+    _sweep()
+
+
 def _write_live_files(hass):
     """The harness stores in memory, so the disk pair is written by
     hand for the tests that exercise real file copying."""
@@ -40,15 +61,18 @@ def _write_live_files(hass):
             handle.write('{"data": {}}')
 
 
-async def test_a_clean_load_refreshes_and_a_faulty_one_withholds(
+async def test_a_clean_save_rotates_and_a_faulty_one_leaves_it(
     hass: HomeAssistant,
 ):
-    """The refresh follows the load, not the latest check (#339)."""
+    """The rotation follows the save (ruling #370): a clean save
+    renames live to last-good, a save that repaired writes without
+    rotating, and the save after that rotates the repaired file in,
+    because a clean save is what proves it."""
     coord = await setup_coordinator(hass)
     assert not coord.storage_load_faulty
     _write_live_files(hass)
-    # A clean fold-moment check refreshes the copy.
-    await coord._check_storage_shape("fold")
+    coord._rotation_armed = True
+    await coord._save_main()
     good = hass.config.path(
         ".storage/device_sentinel.storage.last-good"
     )
@@ -56,23 +80,22 @@ async def test_a_clean_load_refreshes_and_a_faulty_one_withholds(
     first_taken = coord.last_good_taken
     assert first_taken is not None
 
-    # Damage a record and run the fold-moment check: the session
-    # latches and the copy does not advance.
+    # Damage a record and save: the repair runs and the copy does
+    # not advance.
+    _write_live_files(hass)
     device, _ = register_device(hass, "wf", name="WF")
     coord._rebuild_registry_view()
     record = coord.data[DATA_DEVICES].setdefault(device.id, {})
     record["window_basis"] = "not a number"
-    await coord._check_storage_shape("fold")
+    await coord._save_main()
     assert coord.storage_load_faulty
     assert coord.last_good_taken == first_taken
 
-    # Repair the damage by hand and check again: still withheld,
-    # because repaired is not the same as untouched (#339, #341).
-    record["window_basis"] = None
-    await coord._check_storage_shape("fold")
-    assert coord.storage_load_faulty, "the latch cleared without a restart"
-    assert coord.last_good_taken == first_taken, (
-        "the copy refreshed in a session whose load was not clean"
+    # The repaired file rotates in on the next clean save.
+    _write_live_files(hass)
+    await coord._save_main()
+    assert coord.last_good_taken != first_taken, (
+        "the clean save after a repair did not rotate"
     )
 
 
@@ -89,7 +112,7 @@ async def test_the_banking_repair_restarts_a_damaged_clock(
     record[DEV_TAINTED] = True
 
     before = dt_util.utcnow().timestamp()
-    faults = coord._gather_shape_faults("fold")
+    faults = check_records(coord.data[DATA_DEVICES])
     assert any(f[1] == DEV_LAST_ACTIVITY for f in faults)
     repaired = coord._bank_damaged_clocks(faults)
     assert repaired == 1
@@ -105,7 +128,7 @@ async def test_the_banking_repair_restarts_a_damaged_clock(
     assert len(events) == 1
     assert "banked" in str(events[0].get(SYS_DETAIL))
     # The repaired record now verifies clean on that field.
-    remaining = coord._gather_shape_faults("fold")
+    remaining = check_records(coord.data[DATA_DEVICES])
     assert not any(f[1] == DEV_LAST_ACTIVITY for f in remaining)
 
 
@@ -113,14 +136,16 @@ async def test_evidence_copies_all_four_files(hass: HomeAssistant):
     """The copy is raw bytes of whatever exists, stamped (#340)."""
     coord = await setup_coordinator(hass)
     _write_live_files(hass)
-    await coord._check_storage_shape("fold")  # makes the last-good pair
+    coord._rotation_armed = True
+    await coord._save_main()  # rotates the last-good copy into place
+    _write_live_files(hass)
     stamp, copied = await async_copy_evidence(hass)
-    # The copier now reports what it wrote (ruling #349).
+    # The copier now reports what it wrote (ruling #349). Three
+    # files since #370: the clocks last-good is retired.
     assert copied == [
         "the storage file",
         "the clocks file",
         "the storage backup",
-        "the clocks backup",
     ], copied
     assert stamp
     directory = hass.config.path(TRIM_BACKUP_DIR)
@@ -128,9 +153,11 @@ async def test_evidence_copies_all_four_files(hass: HomeAssistant):
     kinds = [n.split(".", 1)[1] for n in names if stamp in n]
     assert "storage.evidence" in kinds
     assert "clocks.evidence" in kinds
-    # The last-good pair exists after a clean setup, so it rode along.
+    # The last-good copy exists after the rotation, so it rode along.
     assert "storage.last-good" in kinds
-    assert "clocks.last-good" in kinds
+    assert "clocks.last-good" not in kinds, (
+        "the retired clocks backup was copied"
+    )
     # Raw bytes: the evidence equals the live file exactly.
     live = open(
         hass.config.path(".storage/device_sentinel.storage"), "rb"

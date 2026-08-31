@@ -92,7 +92,10 @@ _CUT = time.time() - 3600.0
 ANCHOR = _CUT                       # the last clocks write
 MOTION_BATH_MAIN = _CUT + 542.0     # inside the unsaved window
 WINDOW_LIVING_LEFT = _CUT - 5.0     # just before the anchor
-FIRST_OBSERVED = _CUT - 1508505.0   # about seventeen days before the cut
+# An iso string, as the schema has always demanded of this field; a
+# float here is damage the gate now repairs, which is not what this
+# fixture means to plant (ruling #370).
+FIRST_OBSERVED = "2026-07-25T00:00:00+00:00"
 
 
 def _record(last_activity, today_max=None, tainted=False):
@@ -193,7 +196,18 @@ async def test_a_device_on_the_problem_list_keeps_its_clock(
             flagged.id: _record(ANCHOR - 900000.0),
             ordinary.id: _record(ANCHOR - 600.0),
         },
-        todo=[{TODO_DEVICE_ID: flagged.id}],
+        # A complete item, as the sync writes it: the boundary holds
+        # a row missing its uid, summary, status or kinds (#370).
+        todo=[{
+            "uid": "flagged-uid",
+            TODO_DEVICE_ID: flagged.id,
+            "summary": "Flagged: stopped reporting",
+            "description": None,
+            "status": "needs_action",
+            "acked_at": None,
+            "sort_name": "Flagged",
+            "kinds": {"frozen": 1.0},
+        }],
     )
 
     entry = await setup_entry(hass)

@@ -49,6 +49,7 @@ from custom_components.device_sentinel.const import (
     REPAIR_NO_DELIVERY,
     REPAIR_NOTIFY_TARGET_MISSING,
     REPAIR_STORAGE_SHAPE,
+    REPAIR_STORAGE_REPAIRED,
 )
 from custom_components.device_sentinel import repairs as repairs_module
 from custom_components.device_sentinel.records import _new_device_record
@@ -132,113 +133,119 @@ async def test_nothing_raised_during_the_startup_grace(
     coordinator = await setup_coordinator(hass)
     await hass.async_block_till_done()
 
-    # The load check has run and found the planted fault.
-    assert coordinator._shape_faults
+    # The gate has run, repaired the planted fault, and left the
+    # notice for the person (ruling #370).
+    assert coordinator._repair_notice
     # And nothing has reached Settings, because grace has not closed.
-    assert _issue(hass, REPAIR_STORAGE_SHAPE) is None
+    assert _issue(hass, REPAIR_STORAGE_REPAIRED) is None
 
     coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
     await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_STORAGE_SHAPE) is not None
+    assert _issue(hass, REPAIR_STORAGE_REPAIRED) is not None
 
 
 # ---------------------------------------------------- storage_shape
 
 
-async def test_storage_shape_raised_and_cleared(
+async def test_storage_repaired_raised_and_cleared(
     hass: HomeAssistant,
 ) -> None:
-    """Raised on a fault, deleted on the next clean pass (#294)."""
+    """Raised while a repair notice stands, deleted on the next
+    clean pass (rulings #294, #370)."""
     coordinator = await setup_coordinator(hass)
-    device, _ = register_device(hass, "dev_shape", name="Temperature Outdoors")
-    coordinator._shape_faults = [(device.id, "tainted", "expected reason")]
+    coordinator._repair_notice = {
+        "moment": "load",
+        "what": "1 row(s) dropped from incidents",
+        "where": "the originals are in device_sentinel/trim_backups "
+        "under 2026-08-31_120000",
+    }
     coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
     await hass.async_block_till_done()
 
-    issue = _issue(hass, REPAIR_STORAGE_SHAPE)
+    issue = _issue(hass, REPAIR_STORAGE_REPAIRED)
     assert issue is not None
-    assert issue.severity == ir.IssueSeverity.ERROR
-    # Fixable since 0.18.8: Fix opens the storage repair flow
-    # (ruling #353).
+    # A notice, not an alarm: the problem is already answered.
+    assert issue.severity == ir.IssueSeverity.WARNING
+    # Fixable means dismissible: the flow is acknowledgement alone.
     assert issue.is_fixable is True
     assert issue.is_persistent is False
     assert (issue.data or {}).get("entry_id") == coordinator.entry.entry_id
 
-    coordinator._shape_faults = []
+    coordinator._repair_notice = None
+    coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
+    await hass.async_block_till_done()
+    assert _issue(hass, REPAIR_STORAGE_REPAIRED) is None
+
+
+async def test_the_notice_names_what_and_where(
+    hass: HomeAssistant,
+) -> None:
+    """The card carries what was repaired and where the originals
+    are, composed from the repair itself (ruling #370). A card
+    saying "load: 1 fault(s) in 1 record(s)" told a person nothing
+    they could act on; this names the table and the folder."""
+    coordinator = await setup_coordinator(hass)
+    coordinator.data.setdefault("incidents", []).append("junk")
+    await coordinator._save_main()
+    coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
+    await hass.async_block_till_done()
+
+    issue = _issue(hass, REPAIR_STORAGE_REPAIRED)
+    assert issue is not None
+    placeholders = issue.translation_placeholders or {}
+    assert "incidents" in placeholders.get("what", "")
+    assert placeholders.get("where")
+
+
+async def test_the_retired_shape_card_is_cleared_on_upgrade(
+    hass: HomeAssistant,
+) -> None:
+    """An install upgraded while the three-option card stood must
+    not keep a card whose flow no longer exists (ruling #370)."""
+    coordinator = await setup_coordinator(hass)
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        REPAIR_STORAGE_SHAPE,
+        is_fixable=False,
+        severity=ir.IssueSeverity.ERROR,
+        translation_key=REPAIR_STORAGE_SHAPE,
+    )
+    assert _issue(hass, REPAIR_STORAGE_SHAPE) is not None
     coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_STORAGE_SHAPE) is None
 
 
-async def test_storage_shape_names_the_device_and_field(
-    hass: HomeAssistant,
-) -> None:
-    """The card is composed from the fault list, not from the log line.
-
-    The system event carries "load: 1 fault(s) in 1 record(s):
-    tainted", which is written for a log and reads as one. A person
-    looking at Settings needs the device they can go and look at.
-    """
-    coordinator = await setup_coordinator(hass)
-    device, _ = register_device(hass, "dev_named", name="Temperature Outdoors")
-    coordinator._shape_faults = [(device.id, "tainted", "expected reason")]
-    coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
-    await hass.async_block_till_done()
-
-    issue = _issue(hass, REPAIR_STORAGE_SHAPE)
-    assert issue is not None
-    # A fixable issue carries a flow, not a description (ruling
-    # #351), so no composed placeholders live on the issue: the
-    # flow's plan names the device and the field at click time and
-    # is asserted in test_heal.py.
-    assert not issue.translation_placeholders
-
-
-async def test_storage_shape_counts_the_rest(hass: HomeAssistant) -> None:
-    """Beyond three records the card names three and counts the rest."""
-    coordinator = await setup_coordinator(hass)
-    faults = []
-    for index in range(5):
-        device, _ = register_device(hass, f"dev_many{index}")
-        faults.append((device.id, "daily_max", "expected list"))
-    coordinator._shape_faults = faults
-    coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
-    await hass.async_block_till_done()
-
-    issue = _issue(hass, REPAIR_STORAGE_SHAPE)
-    assert issue is not None
-    assert not issue.translation_placeholders
-
-
 async def test_recurrence_updates_rather_than_stacks(
     hass: HomeAssistant,
 ) -> None:
-    """A second fault changes the open issue; it does not add one
+    """A second repair changes the open issue; it does not add one
     (ruling #293)."""
     coordinator = await setup_coordinator(hass)
-    first, _ = register_device(hass, "dev_one")
-    second, _ = register_device(hass, "dev_two")
+    register_device(hass, "dev_one")
+    register_device(hass, "dev_two")
 
-    coordinator._shape_faults = [(first.id, "tainted", "expected reason")]
+    coordinator._repair_notice = {
+        "moment": "load", "what": "first", "where": "here"
+    }
     coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
     await hass.async_block_till_done()
 
-    coordinator._shape_faults = [
-        (first.id, "tainted", "expected reason"),
-        (second.id, "daily_max", "expected list"),
-    ]
+    coordinator._repair_notice = {
+        "moment": "save", "what": "second", "where": "there"
+    }
     coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
     await hass.async_block_till_done()
 
     ours = [
         key
         for key in ir.async_get(hass).issues
-        if key[0] == DOMAIN and key[1] == REPAIR_STORAGE_SHAPE
+        if key[0] == DOMAIN and key[1] == REPAIR_STORAGE_REPAIRED
     ]
     assert len(ours) == 1
-
-
-# ------------------------------------------------- entities_disabled
+    issue = _issue(hass, REPAIR_STORAGE_REPAIRED)
+    assert issue.translation_placeholders["what"] == "second"
 
 
 async def test_entities_disabled_raised_and_fixed(
@@ -553,9 +560,8 @@ def test_every_identifier_has_translations() -> None:
         fixable = "fix_flow" in block
         if fixable:
             steps = block["fix_flow"]["step"]
-            # A flow's step names vary (storage_shape carries a
-            # three-option menu since 0.18.8); what every step owes
-            # is a title and a description.
+            # A flow's step names vary; what every step owes is a
+            # title and a description.
             assert steps, issue_id
             for step_id, step in steps.items():
                 assert step["title"] and step["description"], (
@@ -566,23 +572,15 @@ def test_every_identifier_has_translations() -> None:
             assert block["description"], issue_id
 
 
-def test_the_not_built_sentence_matches_the_fixable_flag() -> None:
-    """The storage issue says the repair is not built, and is not
-    fixable. Those two must move together.
-
-    Heal ships in a later release and makes this issue fixable. On the
-    day it does, this test fails until the sentence is corrected,
-    which is the point: a promise about a future release is prose, and
-    prose that nothing watches goes stale (ruling #205).
-    """
+def test_the_retired_card_has_no_strings_and_no_flow() -> None:
+    """The three-option storage card is retired (ruling #370): its
+    strings are gone, its identifier is out of REPAIRS_ALL, and the
+    notice that replaced it carries a confirm step."""
     strings = json.loads((COMPONENT / "strings.json").read_text())
-    block = strings["issues"][REPAIR_STORAGE_SHAPE]
-    # Heal shipped (ruling #353): the card is fixable, so it carries
-    # a flow and no description (ruling #351), and no prose anywhere
-    # in it may still claim the repair is not built (ruling #205).
-    assert "fix_flow" in block
-    assert "description" not in block
-    assert "not built" not in json.dumps(block)
+    assert REPAIR_STORAGE_SHAPE not in strings["issues"]
+    assert REPAIR_STORAGE_SHAPE not in REPAIRS_ALL
+    notice = strings["issues"][REPAIR_STORAGE_REPAIRED]
+    assert "confirm" in notice["fix_flow"]["step"]
 
 
 def test_no_issue_uses_critical_severity() -> None:
@@ -604,11 +602,13 @@ async def test_unload_clears_every_issue(hass: HomeAssistant) -> None:
     #294)."""
     entry = await setup_entry(hass)
     coordinator = entry.runtime_data
-    device, _ = register_device(hass, "dev_unload")
-    coordinator._shape_faults = [(device.id, "tainted", "expected reason")]
+    register_device(hass, "dev_unload")
+    coordinator._repair_notice = {
+        "moment": "load", "what": "w", "where": "x"
+    }
     coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
     await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_STORAGE_SHAPE) is not None
+    assert _issue(hass, REPAIR_STORAGE_REPAIRED) is not None
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
