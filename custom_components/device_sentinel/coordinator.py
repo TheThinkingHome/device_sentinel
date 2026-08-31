@@ -2698,7 +2698,13 @@ class DeviceSentinelCoordinator(
         the number a person has otherwise had to read out of
         diagnostics.
         """
-        devices = list(self.data.get(DATA_DEVICES, {}).values())
+        # Through watched_records, the one-line rule every surface
+        # follows (ruling #257), which also holds out a record with a
+        # standing shape fault (ruling #357). This walked the store
+        # directly and crashed on a held record whose series was an
+        # integer, found by the 0.19.7 pre-stable campaign
+        # (ruling #369).
+        devices = [record for _device_id, record in self.watched_records()]
         out: dict[str, dict[str, Any]] = {}
         for area, series, arming, learned in (
             (AREA_FREEZE, SERIES_FREEZE, FREEZE_ARMING_DAYS, DAILY_MAX_KEEP),
@@ -2953,10 +2959,20 @@ class DeviceSentinelCoordinator(
 
     @property
     def learning_buckets(self) -> dict[str, int]:
-        """Return counts of devices by learning progress."""
+        """Return counts of devices by learning progress.
+
+        Read through watched_records rather than the raw store, which
+        is the one-line rule every surface follows (ruling #257) and
+        which since 0.18.8 also holds out a record with a standing
+        shape fault (ruling #357). This property had walked the store
+        directly, so a record the check correctly held out of judgment
+        still reached the coverage sensor and crashed it on a series
+        that was not a series, found by the 0.19.7 pre-stable
+        campaign through the real load path (ruling #369).
+        """
         buckets = {"observing": 0, "building": 0, "established": 0}
-        for record in self.data.get(DATA_DEVICES, {}).values():
-            days = len(record[DEV_DAILY_MAX])
+        for _device_id, record in self.watched_records():
+            days = len(record.get(DEV_DAILY_MAX) or [])
             if days == 0:
                 buckets["observing"] += 1
             elif days < LEARNING_MIN_DAYS:

@@ -40,6 +40,7 @@ from .const import (
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
+    ACTION_SET_ASIDE,
     ACTION_UNACKNOWLEDGED,
     CONF_REMINDER_TIME,
     DATA_DEVICES,
@@ -226,6 +227,10 @@ class BriefMixin:
                 ACTION_UNACKNOWLEDGED: "acknowledgment removed",
                 ACTION_DELETED: "deleted from the list",
                 ACTION_READDED: "re-added, the problem is still there",
+                # Nothing recovered and nobody acted: the watching
+                # stopped. Saying so keeps the table from claiming an
+                # acknowledgment nobody made (ruling #369).
+                ACTION_SET_ASIDE: "set aside, no longer watched",
             }.get(row.get(INC_CAUSE) or "", "acknowledged")
         if event == INCIDENT_ACKNOWLEDGED:
             # Legacy rows only, removable after 2026-08-11.

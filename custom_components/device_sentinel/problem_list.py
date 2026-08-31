@@ -128,8 +128,26 @@ class ProblemListMixin:
 
     @property
     def todo_items(self) -> list[dict[str, Any]]:
-        """Return the stored problem items in display order."""
-        return self.data.get(DATA_TODO_ITEMS, [])
+        """Return the stored problem items in display order.
+
+        Only rows a consumer can use. The store may hold a row the
+        shape check has named and Verify left untouched (ruling
+        #278); the to-do entity, the sensors and the brief all read
+        through here, so this is the one line that keeps such a row
+        off every surface, the way watched_records does for a
+        device record (rulings #257, #357). The row stays in the
+        store, still named on the card, until a restore or a trim
+        (ruling #369).
+        """
+        return [
+            record
+            for record in self.data.get(DATA_TODO_ITEMS, [])
+            if isinstance(record, dict)
+            and isinstance(record.get(TODO_UID), str)
+            and isinstance(record.get(TODO_SUMMARY), str)
+            and isinstance(record.get(TODO_DEVICE_ID), str)
+            and isinstance(record.get(TODO_KINDS), dict)
+        ]
 
     def _sort_todo_items(self) -> None:
         """Enforce the display order: open alphabetical, then
@@ -143,16 +161,23 @@ class ProblemListMixin:
         section reads as a stable history rather than reshuffling as
         problems come and go around it.
         """
-        def order(record: dict[str, Any]) -> tuple[bool, Any]:
+        def order(record: Any) -> tuple[int, str]:
+            # A row the sorter cannot read sorts last and sorts by
+            # nothing, rather than raising and taking the sync down:
+            # the shape check has named it, and it is carried through
+            # untouched (ruling #369). Every key is a string so no
+            # two rows can be incomparable.
+            if not isinstance(record, dict):
+                return 2, ""
             acknowledged = record.get(TODO_STATUS) == "completed"
             if acknowledged:
-                return True, record.get(TODO_ACKED_AT) or ""
+                return 1, str(record.get(TODO_ACKED_AT) or "")
             name = (
                 record.get(TODO_SORT_NAME)
                 or record.get(TODO_SUMMARY)
                 or ""
             )
-            return False, name.lower()
+            return 0, str(name).lower()
 
         self.data[DATA_TODO_ITEMS].sort(key=order)
 
@@ -794,6 +819,14 @@ class ProblemListMixin:
             opened = self._incident_opened_at(device_id, kind)
             if opened is None:
                 opened = kinds.get(kind)
+            if isinstance(opened, bool) or not isinstance(
+                opened, (int, float)
+            ):
+                # A stamp that is not a moment times nothing. The
+                # row it came from is named on the card and carried
+                # through; the recovery still fires, with no duration
+                # rather than with a crash (ruling #369).
+                opened = None
             self._resolve_incident(device_id, name, kind, now)
             self._collect_event(
                 kind, name, recovery=True, device_id=device_id
@@ -1028,6 +1061,20 @@ class ProblemListMixin:
         kept: list[dict[str, Any]] = []
 
         for record in items:
+            if (
+                not isinstance(record, dict)
+                or not isinstance(record.get(TODO_DEVICE_ID), str)
+                or not isinstance(record.get(TODO_KINDS), dict)
+            ):
+                # A row the sync cannot use is carried through
+                # untouched and skipped, never judged and never
+                # dropped: the shape check has named it on the card,
+                # Verify changes nothing (ruling #278), and a reader
+                # that raises on it takes the whole list down with
+                # it. The same rule #363 set for system events
+                # (ruling #369).
+                kept.append(record)
+                continue
             device_id = record.get(TODO_DEVICE_ID)
             problem = problems.pop(device_id, None)
             if problem is None:

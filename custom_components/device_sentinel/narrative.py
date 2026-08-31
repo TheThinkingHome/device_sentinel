@@ -34,6 +34,7 @@ from .const import (
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
+    ACTION_SET_ASIDE,
     ACTION_UNACKNOWLEDGED,
     DATA_DEVICES,
     DEV_BATTERY_VALUE,
@@ -250,6 +251,12 @@ class NarrativeMixin:
             )
         if cause == ACTION_ACKNOWLEDGED:
             return f"{name} acknowledged at {when}."
+        if cause == ACTION_SET_ASIDE:
+            # Not a recovery and not an acknowledgment. The device
+            # left the watched set with its problem standing, which
+            # the reader deserves to hear in those words rather than
+            # as an action nobody took (ruling #369).
+            return f"{name} was set aside at {when} and is no longer watched."
         # A cause this renderer has not learned yet. The check is by
         # far the common case, so it is the safest thing to say, and
         # a legacy row carries no cause at all.

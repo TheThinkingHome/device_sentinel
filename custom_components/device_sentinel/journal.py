@@ -32,7 +32,6 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CAUSE_EPISODE_SLACK_SECONDS,
-    DATA_DEVICES,
     DATA_EPISODES,
     DATA_INCIDENTS,
     DATA_SIGNAL_STRESS,
@@ -182,13 +181,17 @@ class JournalMixin:
             # are still open in the record from before the restart,
             # and new ones open once grace closes.
             return
-        for device_id in self._watched:
+        # Through watched_records, which holds out a record with a
+        # standing shape fault (ruling #357). This walked the watched
+        # set and read every record raw, and it runs before the
+        # sweep's per-device guard, so one held record whose series
+        # was a number took the whole sweep down on every tick and
+        # every device stopped being judged, silently. Found by the
+        # 0.19.7 pre-stable campaign (ruling #369).
+        for device_id, record in self.watched_records():
             if device_id in self._muted_devices or self._freeze_muted(
                 device_id
             ):
-                continue
-            record = self.data[DATA_DEVICES].get(device_id)
-            if not isinstance(record, dict):
                 continue
             last = record.get(DEV_LAST_ACTIVITY)
             if last is None:
@@ -437,8 +440,19 @@ class JournalMixin:
         cutoff = (
             dt_util.utcnow().timestamp() - INCIDENT_KEEP_DAYS * 86400.0
         )
+        # A row the pruner cannot date is kept rather than judged:
+        # the shape check has named it on the card, and a reader
+        # that raises on it takes the whole sync down with it, which
+        # is the #357 class in the incident log. The same rule #363
+        # set for system events: a row the reader cannot use is
+        # skipped, never fatal (ruling #369).
         self.data[DATA_INCIDENTS] = [
-            row for row in incidents if row[INC_WHEN] >= cutoff
+            row
+            for row in incidents
+            if not isinstance(row, dict)
+            or not isinstance(row.get(INC_WHEN), (int, float))
+            or isinstance(row.get(INC_WHEN), bool)
+            or row[INC_WHEN] >= cutoff
         ]
         self._mark_cold_dirty()
 
