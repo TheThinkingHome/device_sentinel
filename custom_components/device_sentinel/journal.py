@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.12.19 (2026-08-12)
+# File: journal.py, Version: 0.19.9 (2026-08-31)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -30,6 +30,7 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
+from .normalise import row_damage
 from .const import (
     CAUSE_EPISODE_SLACK_SECONDS,
     DATA_EPISODES,
@@ -124,6 +125,53 @@ def _promoted_learned(ended: str | None, learned: str | None) -> str | None:
 class JournalMixin:
     """The forensic record: episodes, incidents, system events."""
 
+    def _append_row(self, table: str, row: dict[str, Any]) -> bool:
+        """Write one table row through the boundary.
+
+        Every writer of a table row comes through here (ruling #370).
+        A row that fits its shape is appended and True is returned. A
+        row that does not is dropped at once, named as a writer
+        fault, and False is returned, so the fault is repaired the
+        instant it is made rather than at the next save, and no
+        reader or file ever carries it. The writer keeps running: a
+        fault in one row is not a reason to stop judging the fleet.
+        """
+        why = row_damage(table, row)
+        if why is None:
+            self.data.setdefault(table, []).append(row)
+            return True
+        LOGGER.error(
+            "Storage write: %s row refused by the shape check and "
+            "dropped (%s); this is a fault in the writer, not in the "
+            "file",
+            table,
+            why,
+        )
+        # Repair at the point of detection (ruling #370): the row
+        # never reaches the table, so no reader and no file ever
+        # carries it. There is nothing on disk to preserve, so no
+        # evidence copy; the event and the notice say it happened.
+        if table != DATA_SYSTEM_EVENTS:
+            # A refused system event cannot itself be recorded as a
+            # system event without risking the same refusal twice.
+            self._note_writer_fault(table, why)
+        return False
+
+    def incident_rows(self) -> list[dict[str, Any]]:
+        """Return the incident rows.
+
+        No filter (ruling #370): every row behind this line arrived
+        through the load gate or the write seam, so the check has
+        vouched for all of them and a reader guard would be the
+        pattern the boundary retired. A list copy, so a caller that
+        sorts or slices does not reorder the store.
+        """
+        return list(self.data.get(DATA_INCIDENTS) or [])
+
+    def episode_rows(self) -> list[dict[str, Any]]:
+        """Return the silence episodes, same rule."""
+        return list(self.data.get(DATA_EPISODES) or [])
+
     def _open_episode_for(self, device_id: str) -> dict[str, Any] | None:
         """Return a device's episode still awaiting its lag, if any.
 
@@ -134,7 +182,7 @@ class JournalMixin:
         had no lever to measure from), so it never blocks the next
         episode for that device.
         """
-        for episode in reversed(self.data.get(DATA_EPISODES) or []):
+        for episode in reversed(self.episode_rows()):
             if episode[EP_DEVICE_ID] != device_id:
                 continue
             if episode[EP_ENDED] is None:
@@ -181,13 +229,9 @@ class JournalMixin:
             # are still open in the record from before the restart,
             # and new ones open once grace closes.
             return
-        # Through watched_records, which holds out a record with a
-        # standing shape fault (ruling #357). This walked the watched
-        # set and read every record raw, and it runs before the
-        # sweep's per-device guard, so one held record whose series
-        # was a number took the whole sweep down on every tick and
-        # every device stopped being judged, silently. Found by the
-        # 0.19.7 pre-stable campaign (ruling #369).
+        # Through watched_records, the one line every reading
+        # surface shares (ruling #257). The records behind it are
+        # ones the boundary has vouched for (ruling #370).
         for device_id, record in self.watched_records():
             if device_id in self._muted_devices or self._freeze_muted(
                 device_id
@@ -208,7 +252,8 @@ class JournalMixin:
                 continue
             if self._open_episode_for(device_id) is not None:
                 continue
-            self.data.setdefault(DATA_EPISODES, []).append(
+            self._append_row(
+                DATA_EPISODES,
                 {
                     EP_DEVICE_ID: device_id,
                     EP_NAME: self._device_name(device_id),
@@ -316,8 +361,8 @@ class JournalMixin:
         scale.
         """
         since = episode.get(EP_SINCE)
-        rows = self.data.setdefault(DATA_SIGNAL_STRESS, [])
-        rows.append(
+        self._append_row(
+            DATA_SIGNAL_STRESS,
             {
                 EP_DEVICE_ID: episode.get(EP_DEVICE_ID),
                 EP_NAME: episode.get(EP_NAME),
@@ -325,8 +370,9 @@ class JournalMixin:
                 EP_AT: episode.get(EP_AT) or now,
                 EP_ENDED: episode.get(EP_ENDED),
                 EP_SIGNAL: episode.get(EP_SIGNAL),
-            }
+            },
         )
+        rows = self.data.setdefault(DATA_SIGNAL_STRESS, [])
         cutoff = now - self.retention_days * 86400.0
         self.data[DATA_SIGNAL_STRESS] = [
             row for row in rows if (row.get(EP_SINCE) or now) >= cutoff
@@ -349,7 +395,7 @@ class JournalMixin:
         A restart carries no entry_id, because it touches everything.
         """
         stamped = 0
-        for episode in self.data.get(DATA_EPISODES) or []:
+        for episode in self.episode_rows():
             if episode[EP_ENDED] is not None:
                 continue
             if entry_id is not None and entry_id not in (
@@ -377,11 +423,13 @@ class JournalMixin:
         kept = [
             episode
             for episode in episodes
+            # Walked without guards (ruling #370): every row here
+            # came through the gate or the seam.
             if episode[EP_SINCE] >= cutoff
-            or episode[EP_ENDED] is None
+            or episode.get(EP_ENDED) is None
             or (
-                episode[EP_ENDED] != EPISODE_ENDED_RESUMED
-                and episode[EP_LAG] is None
+                episode.get(EP_ENDED) != EPISODE_ENDED_RESUMED
+                and episode.get(EP_LAG) is None
             )
         ]
         if len(kept) != len(episodes):
@@ -436,23 +484,16 @@ class JournalMixin:
         incidents = self.data.setdefault(DATA_INCIDENTS, [])
         if self._reopens_a_closing_episode(incidents, entry):
             return
-        incidents.append(entry)
+        if not self._append_row(DATA_INCIDENTS, entry):
+            return
+        incidents = self.data.setdefault(DATA_INCIDENTS, [])
         cutoff = (
             dt_util.utcnow().timestamp() - INCIDENT_KEEP_DAYS * 86400.0
         )
-        # A row the pruner cannot date is kept rather than judged:
-        # the shape check has named it on the card, and a reader
-        # that raises on it takes the whole sync down with it, which
-        # is the #357 class in the incident log. The same rule #363
-        # set for system events: a row the reader cannot use is
-        # skipped, never fatal (ruling #369).
+        # Walked without guards (ruling #370): the gate and the seam
+        # vouch for every row this pruner dates.
         self.data[DATA_INCIDENTS] = [
-            row
-            for row in incidents
-            if not isinstance(row, dict)
-            or not isinstance(row.get(INC_WHEN), (int, float))
-            or isinstance(row.get(INC_WHEN), bool)
-            or row[INC_WHEN] >= cutoff
+            row for row in incidents if row[INC_WHEN] >= cutoff
         ]
         self._mark_cold_dirty()
 
@@ -532,8 +573,8 @@ class JournalMixin:
         that explain the statistics live exactly as long as the
         statistics they explain.
         """
-        events = self.data.setdefault(DATA_SYSTEM_EVENTS, [])
-        events.append(
+        self._append_row(
+            DATA_SYSTEM_EVENTS,
             {
                 # When it happened, which is not always when the row
                 # is written. A restart is recorded once setup has
@@ -554,8 +595,9 @@ class JournalMixin:
                 # Only a storm carries a count: it is the one event
                 # whose size a person wants in the sentence.
                 **({SYS_DEVICES: devices} if devices is not None else {}),
-            }
+            },
         )
+        events = self.data.setdefault(DATA_SYSTEM_EVENTS, [])
         cutoff = (
             dt_util.utcnow().timestamp()
             - self.retention_days * 86400.0
@@ -576,7 +618,7 @@ class JournalMixin:
         on a raw log.
         """
         opened: float | None = None
-        for row in self.data.get(DATA_INCIDENTS) or []:
+        for row in self.incident_rows():
             if row[INC_DEVICE_ID] != device_id or row[INC_KIND] != kind:
                 continue
             if row[INC_EVENT] == INCIDENT_OPENED:
@@ -595,7 +637,7 @@ class JournalMixin:
         the device closed itself says so. Only silences carry a
         cause; a battery or a rail recovering has no lever to name.
         """
-        for episode in reversed(self.data.get(DATA_EPISODES) or []):
+        for episode in reversed(self.episode_rows()):
             if episode[EP_DEVICE_ID] != device_id:
                 continue
             # Bounded to the incident. Without this the newest

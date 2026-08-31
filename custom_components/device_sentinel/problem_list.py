@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.15.9 (2026-08-18)
+# File: problem_list.py, Version: 0.19.9 (2026-08-31)
 
 """The problem list: the single memory every channel renders.
 
@@ -30,6 +30,7 @@ from homeassistant.helpers.event import (
 from homeassistant.util import dt as dt_util
 
 from .events import sort_kinds
+from .normalise import row_damage
 from .const import (
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
@@ -45,6 +46,7 @@ from .const import (
     FREEZE_CATEGORY_NEVER_REPORTED,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
+    LOGGER,
     NOTIFY_FAMILY_FREEZE,
     NOTIFY_KIND_FAMILY,
     SHARE_PCT_MAX,
@@ -70,6 +72,7 @@ from .const import (
     TODO_UID,
     UPSTREAM_KIND,
     UPSTREAM_SETTLE_SECONDS,
+    WITHDRAWN_REASON_SET_ASIDE,
 )
 
 
@@ -551,15 +554,16 @@ class ProblemListMixin:
         from raw detections.
         """
         when = dt_util.utcnow().isoformat()
-        journal = self.data.setdefault(DATA_TODO_JOURNAL, [])
-        journal.append(
+        self._append_row(
+            DATA_TODO_JOURNAL,
             {
                 "device_id": device_id,
                 "name": name,
                 "kind": kind,
                 "when": when,
-            }
+            },
         )
+        journal = self.data.setdefault(DATA_TODO_JOURNAL, [])
         del journal[:-TODO_JOURNAL_KEEP]
         async_dispatcher_send(
             self.hass,
@@ -780,9 +784,8 @@ class ProblemListMixin:
         name = record.get(TODO_SORT_NAME) or device_id
         kinds = record.get(TODO_KINDS, {})
         if not announce:
-            for kind in sort_kinds(
-                [k for k in kinds if k != UPSTREAM_KIND]
-            ):
+            withdrawn = sort_kinds([k for k in kinds if k != UPSTREAM_KIND])
+            for kind in withdrawn:
                 # A fault still held for its debounce is withdrawn
                 # with the item. The release checks the list before
                 # sending and would find nothing, so this changes no
@@ -791,12 +794,24 @@ class ProblemListMixin:
                 cancel = self._held_events.pop((device_id, kind), None)
                 if cancel is not None:
                     cancel()
+                # A hand deletion is forgotten with the item, as the
+                # verdict is (ruling #367): the incident it belonged
+                # to is closed here as set aside, so the device
+                # returning later is a fresh problem, not the deleted
+                # row coming back (ruling #369).
+                self._hand_deleted.discard(device_id)
                 self._record_incident(
                     device_id,
                     name,
                     kind,
                     INCIDENT_ACTION,
                     cause=ACTION_SET_ASIDE,
+                )
+            if withdrawn:
+                # The answer #289 promised, without the word
+                # "recovered" (ruling #370).
+                self.fire_withdrawn(
+                    device_id, name, withdrawn, WITHDRAWN_REASON_SET_ASIDE
                 )
             return
         # Worst first, and every kind fires as it becomes the top,
@@ -1149,7 +1164,22 @@ class ProblemListMixin:
                     continue
                 if len(remaining) != len(problem["kinds"]):
                     problem = dict(problem, kinds=remaining)
-            kept.append(self._new_item(device_id, problem, now))
+            item = self._new_item(device_id, problem, now)
+            why = row_damage(DATA_TODO_ITEMS, item)
+            if why is not None:
+                # The sync rebuilds the list wholesale, so this is
+                # its write seam: an item the shape refuses is
+                # dropped at the instant it is made and never listed
+                # (ruling #370).
+                LOGGER.error(
+                    "Storage write: to-do item refused by the shape "
+                    "check and dropped (%s); this is a fault in the "
+                    "writer",
+                    why,
+                )
+                self._note_writer_fault(DATA_TODO_ITEMS, why)
+                continue
+            kept.append(item)
             changed = True
 
         if changed:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.18.0 (2026-08-25)
+# File: normalise.py, Version: 0.19.9 (2026-08-31)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -611,3 +611,130 @@ def fault_id(fault: tuple[str, str, str]) -> str:
     holder, field, _why = fault
     file = "clocks" if field in CLOCK_FIELDS else "main"
     return f"{file}:{holder}:{field}"
+
+
+# The kinds whose absence a reader cannot survive: a row without its
+# device, its kind, its timestamp, or its text has no place in the
+# table at all. A nullable field that is merely absent reads as None,
+# which is the shape's own allowed value, and is left to the card
+# rather than held (the same boundary #356 drew for clock fields).
+_KEY_KINDS = frozenset({TEXT, REAL_NUMBER, INTEGER, MAPPING, FLOAT_SERIES,
+                        INT_SERIES, TEXT_LIST})
+
+
+def damaged_rows(data: Any) -> dict[str, list[int]]:
+    """Return, per table, the index of every row a reader cannot use.
+
+    The boundary rule (ruling #370): a row that is not a dict, a row
+    with a field of the wrong type, or a row missing a field whose
+    kind allows no None, is repaired out of the table at load and at
+    save, so no reader ever meets it. Unlike check_storage
+    this walks every row, because it decides what is repaired rather
+    than what the card prints, and a cap would let the uncounted
+    rows through to the readers.
+    """
+    found: dict[str, list[int]] = {}
+    if not isinstance(data, dict):
+        return found
+    for key, (shape, optional) in TABLES.items():
+        rows = data.get(key)
+        if not isinstance(rows, list):
+            continue
+        bad: list[int] = []
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                bad.append(index)
+                continue
+            for field, kind in shape.items():
+                if field not in row:
+                    if field not in optional and kind in _KEY_KINDS:
+                        bad.append(index)
+                        break
+                    continue
+                if _fault(kind, row[field]) is not None:
+                    bad.append(index)
+                    break
+        if bad:
+            found[key] = bad
+    return found
+
+
+def fill_missing_row_fields(data: Any) -> int:
+    """Give every usable table row the nullable fields it lacks.
+
+    The record reconciler has always filled a missing field on a
+    device record so that no reader has to ask whether a key exists.
+    Tables never had that, and a row written by an earlier version
+    that lacks a field a later version reads by name would raise in
+    the reader. A field whose kind allows None is filled with None,
+    which is the shape's own allowed value and describes exactly what
+    the row said before: nothing. A field whose kind allows no None
+    is not filled, because inventing a device or a timestamp would
+    be a lie; a row missing one of those is dropped instead
+    (ruling #370). Returns how many fields were filled.
+    """
+    filled = 0
+    if not isinstance(data, dict):
+        return filled
+    for key, (shape, _optional) in TABLES.items():
+        rows = data.get(key)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            for field, kind in shape.items():
+                if field not in row and kind not in _KEY_KINDS:
+                    row[field] = None
+                    filled += 1
+    return filled
+
+
+def row_damage(table: str, row: Any) -> str | None:
+    """Say what is wrong with one row for one table, or None.
+
+    The same rule damaged_rows applies to a file, applied to a single
+    row at the moment a writer makes it (ruling #370), so a writer
+    fault is caught when it happens rather than at the next save.
+    """
+    shape_and_optional = TABLES.get(table)
+    if shape_and_optional is None:
+        return None
+    shape, optional = shape_and_optional
+    if not isinstance(row, dict):
+        return f"expected dict, found {_describe(row)}"
+    for field, kind in shape.items():
+        if field not in row:
+            if field not in optional and kind in _KEY_KINDS:
+                return f"{field} missing"
+            continue
+        why = _fault(kind, row[field])
+        if why is not None:
+            return f"{field}: expected {kind}, found {why}"
+    return None
+
+
+def repair_tables(data: Any) -> dict[str, int]:
+    """Drop every damaged table row, in place, and say what went.
+
+    The repair half of the boundary (ruling #370): a row a reader
+    cannot use is removed from the table at the moment it is found,
+    at load or at save, after the evidence copy has preserved the
+    original. Nothing is invented: a dropped row is a row the shape
+    check named, by the same rules `damaged_rows` applies, and every
+    usable row keeps its position relative to its neighbours.
+
+    Returns rows dropped per table, empty when nothing was damaged.
+    """
+    dropped: dict[str, int] = {}
+    damaged = damaged_rows(data)
+    for table, indexes in damaged.items():
+        rows = data.get(table)
+        if not isinstance(rows, list):
+            continue
+        bad = set(indexes)
+        data[table] = [
+            row for index, row in enumerate(rows) if index not in bad
+        ]
+        dropped[table] = len(bad)
+    return dropped

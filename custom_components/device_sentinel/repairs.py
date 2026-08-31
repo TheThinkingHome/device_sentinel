@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.18.6 (2026-08-27)
+# File: repairs.py, Version: 0.19.9 (2026-08-31)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -58,20 +58,14 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
-from homeassistant.util import dt as dt_util
 from homeassistant.core import DOMAIN as HOMEASSISTANT_DOMAIN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 
-from .backup import (
-    _last_good_holds_devices,
-    describe_restore_loss,
-)
 from .const import (
     CONF_BRIEF_TARGETS,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_NORMAL_PRIORITY_TARGETS,
-    DATA_DEVICES,
     DOMAIN,
     LOGGER,
     NO_DELIVERY_MIN_DAYS,
@@ -84,6 +78,7 @@ from .const import (
     REPAIR_NO_DELIVERY,
     REPAIR_NOTIFY_TARGET_MISSING,
     REPAIR_STORAGE_SHAPE,
+    REPAIR_STORAGE_REPAIRED,
     WIKI_LINK_NOTIFICATIONS,
     WIKI_LINK_REPAIRS,
     REPAIR_STORAGE_RESTORED,
@@ -232,53 +227,42 @@ def async_clear_all(hass: HomeAssistant) -> None:
     """
     for issue_id in REPAIRS_ALL:
         _clear(hass, issue_id)
+    # The retired three-option card's identifier (ruling #370),
+    # cleared so an install upgraded mid-issue leaves nothing lit.
+    _clear(hass, REPAIR_STORAGE_SHAPE)
 
 
 # ------------------------------------------------------ the four issues
 
 
 @callback
-def _evaluate_storage_shape(
+def _evaluate_storage_repaired(
     hass: HomeAssistant,
-    faults: list[tuple[str, str, str]],
-    namer: Any,
+    notice: dict[str, str] | None,
     entry_id: str,
 ) -> None:
-    """Raise or clear the storage shape issue from the last check.
+    """Raise or clear the storage-repaired notice (ruling #370).
 
-    The description is composed from the fault list rather than from
-    the string the system event carries. That string is written for a
-    log and reads as one: a card saying "load: 1 fault(s) in 1
-    record(s): tainted" tells a person nothing they can act on, and
-    the same rawness has already leaked into the daily brief's prose
-    once. The device name and the field are what a person can look
-    at, so they are what the card names.
-
-    No Fix button in this release, on ruling #296: Heal is not built,
-    and a button opening a screen with nothing to press is worse than
-    no button. The text says the repair is being built, because the
-    alternative is a person reading that their storage is wrong and
-    being offered nothing at all. The identifier is fixed now so the
-    Phase 4 fix flow attaches to the issue a person already has open
-    rather than orphaning it (ruling #293).
+    A notice, not a decision: the repair already ran at the point of
+    detection, so the card names what was repaired and where the
+    originals are and offers nothing to press but acknowledgement.
+    No notice this session means nothing was repaired, and the card
+    clears, which is the self-clearing the ruling asks for: a
+    restart that loads clean starts a session with no notice.
     """
-    if not faults:
-        _clear(hass, REPAIR_STORAGE_SHAPE)
+    if not notice:
+        _clear(hass, REPAIR_STORAGE_REPAIRED)
         return
-    # A fixable issue carries a flow, not a description (ruling
-    # #351), so the card in the list is the title alone and every
-    # word a person reads comes from the flow, which composes them
-    # from the plan built at the moment they click (ruling #353).
-    # The namer stays in the signature because the flow's own words
-    # are checked against it in tests.
-    _ = namer
     _raise(
         hass,
-        REPAIR_STORAGE_SHAPE,
-        severity=ir.IssueSeverity.ERROR,
+        REPAIR_STORAGE_REPAIRED,
+        severity=ir.IssueSeverity.WARNING,
         is_fixable=True,
         learn_more_url=WIKI_LINK_REPAIRS,
-        placeholders=None,
+        placeholders={
+            "what": notice.get("what", ""),
+            "where": notice.get("where", ""),
+        },
         data={"entry_id": entry_id},
     )
 
@@ -409,7 +393,7 @@ def async_evaluate(
     entry: Any,
     moment: str,
     *,
-    shape_faults: list[tuple[str, str, str]],
+    repair_notice: dict[str, str] | None,
     awaiting: dict[str, int],
     days_installed: float | None,
     version_changed: bool,
@@ -440,7 +424,12 @@ def async_evaluate(
     likely to reach a person. The brief hour is the hour a person
     looks, and the two arrive together.
     """
-    _evaluate_storage_shape(hass, shape_faults, namer, entry.entry_id)
+    _ = namer
+    _evaluate_storage_repaired(hass, repair_notice, entry.entry_id)
+    # The identifier the retired three-option card used. Cleared
+    # unconditionally so an install upgraded mid-issue does not
+    # carry a card whose flow no longer exists (ruling #370).
+    _clear(hass, REPAIR_STORAGE_SHAPE)
     _evaluate_notify_targets(
         hass, missing_targets(hass, entry), entry.entry_id
     )
@@ -451,10 +440,10 @@ def async_evaluate(
             hass, delivery_is_configured(entry), days_installed
         )
     LOGGER.debug(
-        "Repairs evaluated at %s: %d shape fault(s), %d entity/entities "
+        "Repairs evaluated at %s: repair notice %s, %d entity/entities "
         "awaiting enable",
         moment,
-        len(shape_faults),
+        "standing" if repair_notice else "none",
         sum(awaiting.values()),
     )
 
@@ -545,165 +534,6 @@ class EnableEntitiesFlow(_SentinelRepairFlow):
         return self.async_create_entry(data={})
 
 
-class StorageRepairFlow(_SentinelRepairFlow):
-    """The storage_shape card's Fix: three options, one screen each.
-
-    Restore Backup replaces the file from the last-good copy, the
-    same restore the unreadable-file path runs automatically, with
-    the copy's age stated in the 0.18.7 wording (ruling #353). Trim
-    Record erases only the named damaged records (ruling #354).
-    Ignore hides the card and states its cost: the damaged records
-    stay unwatched until repaired (rulings #325, #355). Options are
-    offered only where they would work: no restore without a usable
-    copy, no trim without a damaged device record.
-    """
-
-    def __init__(self, entry_id: str) -> None:
-        super().__init__(entry_id)
-        self._faults: list[tuple[str, str, str]] = []
-        self._trim_ids: list[str] = []
-        self._copy_taken: float | None = None
-
-    def _coordinator(self) -> Any:
-        entry = self.hass.config_entries.async_get_entry(self._entry_id)
-        if entry is None or not entry.state.recoverable:
-            return None
-        return entry.runtime_data
-
-    async def async_step_init(
-        self, user_input: dict[str, str] | None = None
-    ) -> Any:
-        """Measure at click time, then offer what would work."""
-        coordinator = self._coordinator()
-        if coordinator is None:
-            return self.async_abort(reason="entry_not_loaded")
-        self._faults = coordinator._gather_current_faults()
-        if not self._faults:
-            # Everything the card named has cleared since it was
-            # raised: a live value overwrote itself, or a restart
-            # loaded clean. Nothing to repair is nothing to do.
-            _clear(self.hass, REPAIR_STORAGE_SHAPE)
-            return self.async_create_entry(data={})
-        devices = coordinator.data.get(DATA_DEVICES)
-        devices = devices if isinstance(devices, dict) else {}
-        quarantined = getattr(coordinator, "_quarantined", {})
-        self._trim_ids = sorted(
-            {
-                holder
-                for holder, _field, _why in self._faults
-                if holder in devices or holder in quarantined
-            }
-        )
-        usable = await self.hass.async_add_executor_job(
-            _last_good_holds_devices, self.hass
-        )
-        self._copy_taken = coordinator.last_good_taken
-        options = []
-        if usable:
-            options.append("restore")
-        if self._trim_ids:
-            options.append("trim")
-        options.append("ignore")
-        return self.async_show_menu(
-            step_id="init",
-            menu_options=options,
-            description_placeholders=self._card_placeholders(),
-        )
-
-    @callback
-    def _card_placeholders(self) -> dict[str, str]:
-        coordinator = self._coordinator()
-        namer = getattr(coordinator, "_device_name", str)
-        devices = (
-            coordinator.data.get(DATA_DEVICES)
-            if coordinator is not None
-            else {}
-        )
-        devices = devices if isinstance(devices, dict) else {}
-        quarantined = getattr(coordinator, "_quarantined", {})
-        lines: list[str] = []
-        seen: set[str] = set()
-        for holder, field, why in self._faults:
-            if holder in seen:
-                continue
-            seen.add(holder)
-            if holder in devices or holder in quarantined:
-                fields = sorted(
-                    {f for h, f, _w in self._faults if h == holder}
-                )
-                lines.append(
-                    f"{namer(holder)}: {_english_list(fields)}"
-                )
-            else:
-                lines.append(f"{holder}: {why}")
-            if len(lines) >= REPAIR_DETAIL_MAX:
-                rest = len(
-                    {h for h, _f, _w in self._faults}
-                ) - REPAIR_DETAIL_MAX
-                if rest > 0:
-                    lines.append(f"and {rest} more")
-                break
-        if self._copy_taken is not None:
-            age = describe_restore_loss(
-                self._copy_taken, dt_util.utcnow().timestamp()
-            )
-        else:
-            age = (
-                "The last-good backup could not be dated; its age "
-                "is shown before anything runs."
-            )
-        return {
-            "count": str(len(self._faults)),
-            "faults": "fault" if len(self._faults) == 1 else "faults",
-            "detail": "\n".join(f"- {line}" for line in lines),
-            "age": age,
-        }
-
-    async def async_step_restore(
-        self, user_input: dict[str, str] | None = None
-    ) -> Any:
-        """Confirm, then run the proven restore and reload."""
-        if user_input is None:
-            return self.async_show_form(
-                step_id="restore",
-                data_schema=vol.Schema({}),
-                description_placeholders=self._card_placeholders(),
-            )
-        coordinator = self._coordinator()
-        if coordinator is None:
-            return self.async_abort(reason="entry_not_loaded")
-        if not await coordinator.async_restore_from_card():
-            return self.async_abort(reason="restore_failed")
-        _clear(self.hass, REPAIR_STORAGE_SHAPE)
-        return self.async_create_entry(data={})
-
-    async def async_step_trim(
-        self, user_input: dict[str, str] | None = None
-    ) -> Any:
-        """Confirm the one destructive option, naming every device."""
-        coordinator = self._coordinator()
-        if coordinator is None:
-            return self.async_abort(reason="entry_not_loaded")
-        namer = getattr(coordinator, "_device_name", str)
-        if user_input is None:
-            names = [namer(d) for d in self._trim_ids]
-            return self.async_show_form(
-                step_id="trim",
-                data_schema=vol.Schema({}),
-                description_placeholders={
-                    "count": str(len(names)),
-                    "devices": (
-                        "device" if len(names) == 1 else "devices"
-                    ),
-                    "names": "\n".join(f"- {n}" for n in names),
-                },
-            )
-        await coordinator.async_trim_from_card(set(self._trim_ids))
-        if not coordinator._gather_current_faults():
-            _clear(self.hass, REPAIR_STORAGE_SHAPE)
-        return self.async_create_entry(data={})
-
-
 class RemoveDeadTargetsFlow(_SentinelRepairFlow):
     """Remove notification targets whose services no longer exist."""
 
@@ -780,8 +610,10 @@ async def async_create_fix_flow(
         return EnableEntitiesFlow(entry_id)
     if issue_id == REPAIR_NOTIFY_TARGET_MISSING:
         return RemoveDeadTargetsFlow(entry_id)
-    if issue_id == REPAIR_STORAGE_SHAPE:
-        return StorageRepairFlow(entry_id)
+    if issue_id == REPAIR_STORAGE_REPAIRED:
+        # The repair already ran (ruling #370); the flow is
+        # acknowledgement alone, the same as the restored card.
+        return ConfirmRepairFlow()
     if issue_id == REPAIR_STORAGE_RESTORED:
         # Nothing left to repair, so the flow is acknowledgement
         # (ruling #350). Home Assistant's own ConfirmRepairFlow shows

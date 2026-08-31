@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.18.0 (2026-08-25)
+# File: sensor.py, Version: 0.19.9 (2026-08-31)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -71,7 +71,6 @@ from .const import (
     ATTR_LAST_GOOD_TAKEN,
     ATTR_LAST_GOOD_AGE_DAYS,
     ATTR_REPAIRS_AT_LOAD,
-    ATTR_SHAPE_FAULTS,
     BATTERY_CLEAR_MARGIN,
     BRIDGE_SENSOR_NAMES,
     BRIDGE_STATES,
@@ -251,12 +250,13 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
             ATTR_AWAITING_SIGNAL: counts["signal"],
             ATTR_AWAITING_LAST_SEEN: counts["last_seen"],
             ATTR_AWAITING_BATTERY: counts["battery"],
-            # The backup's story (ruling #341): when the last-good
-            # pair was taken, how old it is, how many repairs the
-            # load performed, and how many faults stand. The age is
-            # an attribute rather than an alarm, because a withheld
-            # refresh is correct behaviour and a red sensor for it
-            # would teach people to ignore the sensor.
+            # The backup's story (ruling #341, amended by #370):
+            # when the last-good copy was made by the rotation, how
+            # old it is, and how many repairs the load performed. The
+            # age is an attribute rather than an alarm: an age frozen
+            # at the last clean save during a fault is correct
+            # behaviour, and a red sensor for it would teach people
+            # to ignore the sensor.
             ATTR_LAST_GOOD_TAKEN: (
                 dt_util.utc_from_timestamp(taken).isoformat()
                 if taken is not None
@@ -264,7 +264,6 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
             ),
             ATTR_LAST_GOOD_AGE_DAYS: age_days,
             ATTR_REPAIRS_AT_LOAD: self._coordinator.repairs_at_load,
-            ATTR_SHAPE_FAULTS: len(self._coordinator.shape_faults),
         }
 
 

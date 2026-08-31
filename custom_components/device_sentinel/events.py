@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.15.9 (2026-08-18)
+# File: events.py, Version: 0.19.9 (2026-08-31)
 
 """What Device Sentinel says on the Home Assistant bus.
 
@@ -45,6 +45,7 @@ from .const import (
     EVENT_ACKNOWLEDGED,
     EVENT_FAULT,
     EVENT_RECOVERED,
+    EVENT_WITHDRAWN,
     LOGGER,
     RECOVERY_BY_INTERVENTION,
     RECOVERY_BY_SELF,
@@ -203,6 +204,29 @@ class EventMixin:
                     None if down_for is None else round(down_for)
                 ),
                 "resolved_by": resolved_by(cause),
+            },
+        )
+
+    @callback
+    def fire_withdrawn(
+        self, device_id: str, name: str, kinds, reason: str
+    ) -> None:
+        """One event when a line leaves because nobody is watching.
+
+        Not a recovery: the device did not come back, the watching
+        stopped. An automation that paired a fault with this line
+        gets its closing event here, carrying every kind the line
+        held and why it went, and never hears "recovered" for a
+        device that was never away (ruling #370).
+        """
+        self._fire(
+            EVENT_WITHDRAWN,
+            {
+                "device_id": device_id,
+                "name": name,
+                "area": self._area_of(device_id),
+                "kinds": list(kinds),
+                "reason": reason,
             },
         )
 

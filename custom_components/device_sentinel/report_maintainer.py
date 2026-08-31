@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.13.4 (2026-08-13)
+# File: report_maintainer.py, Version: 0.19.9 (2026-08-31)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -30,7 +30,6 @@ from .const import (
     CONF_TAINT_FLOOR,
     CONF_TAINT_SHARE,
     DAILY_MAX_KEEP,
-    DATA_EPISODES,
     DEFAULT_TAINT_FLOOR_MINUTES,
     DEFAULT_TAINT_SHARE_PCT,
     DEV_DAILY_MAX,
@@ -98,7 +97,7 @@ class MaintainerReportMixin:
         any per-device summary because a device produces one episode
         per occurrence, not one number.
         """
-        episodes = list(self.data.get(DATA_EPISODES) or [])
+        episodes = list(self.episode_rows())
         episodes.sort(key=lambda row: row[EP_SINCE], reverse=True)
         now = dt_util.utcnow().timestamp()
         open_count = sum(1 for row in episodes if row[EP_ENDED] is None)

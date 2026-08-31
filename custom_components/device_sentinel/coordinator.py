@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.18.6 (2026-08-27)
+# File: coordinator.py, Version: 0.19.9 (2026-08-31)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -67,11 +67,12 @@ from homeassistant.util import dt as dt_util
 
 from . import trim
 from .normalise import (
-    _describe,
+    damaged_rows,
+    fill_missing_row_fields,
     check_clocks,
     check_records,
-    check_storage,
     fault_id,
+    repair_tables,
 )
 from .repairs import (
     _english_list,
@@ -79,13 +80,13 @@ from .repairs import (
     async_evaluate,
     async_raise_restored,
 )
-from .trim import trim_devices
 from .backup import (
     async_copy_evidence,
     async_last_good_taken,
     async_prune_backups,
-    async_refresh_last_good,
     async_take_backup,
+    async_delete_clocks_last_good,
+    read_main_file_raw,
     async_restore_main_file,
     describe_restore_loss,
     async_diagnose_empty_load,
@@ -290,6 +291,13 @@ class DeviceSentinelCoordinator(
         # entity, disabled or not. A device with none has nothing
         # that could report (ruling #369).
         self._devices_with_entities: set[str] = set()
+        # The one notice the repair raises (ruling #370): what was
+        # repaired and where the originals are. None when nothing
+        # this session repaired anything; self-clears on a clean load.
+        self._repair_notice: dict[str, str] | None = None
+        # Whether the live file on disk was last written clean, so
+        # the next clean save may rotate it to last-good (#370).
+        self._rotation_armed: bool = False
         self._watched: dict[str, str] = {}  # device_id -> integration domain
         # Which coordinator stacks this house runs, derived from the
         # registry rather than asked (ruling #143).
@@ -426,7 +434,6 @@ class DeviceSentinelCoordinator(
         # What the last shape check found, held for the Repairs pass
         # because the load check runs inside the grace and the issue
         # is raised when the grace closes (ruling #300).
-        self._shape_faults: list[tuple[str, str, str]] = []
         # The latch (ruling #341): set when a load verifies faulty or
         # a fold produces a fault, cleared only by a restart that
         # loads clean, which is a new coordinator.
@@ -434,7 +441,6 @@ class DeviceSentinelCoordinator(
         # Records that were not dicts at load, set aside so nothing
         # iterating the record set crashes on them, kept so Heal can
         # answer them and the check can keep naming them (#353).
-        self._quarantined: dict[str, Any] = {}
         # The faults a discarded clocks file carried (#356), kept for
         # the load report; they never reach the card.
         self._clocks_discarded: list[tuple[str, str, str]] = []
@@ -628,315 +634,449 @@ class DeviceSentinelCoordinator(
                 DATA_SETUP_COUNT: 0,
                 DATA_DEVICES: {},
             }
-        loaded[DATA_SETUP_COUNT] = int(loaded.get(DATA_SETUP_COUNT, 0)) + 1
-        loaded.setdefault(DATA_FIRST_INSTALLED, dt_util.utcnow().isoformat())
-        loaded.setdefault(DATA_DEVICES, {})
-        loaded.setdefault(DATA_TODO_ITEMS, [])
-        loaded.setdefault(DATA_TODO_JOURNAL, [])
-        loaded.setdefault(DATA_EPISODES, [])
-        loaded.setdefault(DATA_INCIDENTS, [])
-        loaded.setdefault(DATA_SYSTEM_EVENTS, [])
-        loaded.setdefault(DATA_BRIDGE_SEEN, {})
-        loaded.setdefault(DATA_BROKER_SEEN, {})
-        loaded.setdefault(DATA_STORMS, [])
-        loaded.setdefault(DATA_STORM_DAYS, [])
-        # The dry-run outbox was retired once the
-        # notifications it previewed had been sending for
-        # several releases. Drop what an older install stored,
-        # so nobody carries a dead key or its bytes.
-        loaded.pop("outbox", None)
-        # An earlier release renamed the cause an unobserved recovery
-        # carries, and
-        # the entries already stored kept the old wording, which the
-        # composer then failed to recognize and rendered as "revived
-        # by a on its own". Rewritten here so the fleet's history
-        # speaks one vocabulary rather than two.
-        for entry in loaded.get(DATA_INCIDENTS) or []:
-            if entry.get(INC_CAUSE) == LEGACY_CAUSE_UNOBSERVED:
-                entry[INC_CAUSE] = RECOVERY_CAUSE_UNOBSERVED
-        # And the same treatment for the four kinds renamed at 0.15.8,
-        # for the same reason one release later (ruling #299).
-        self._rename_stored_kinds(loaded)
-        # And the option keys those four kinds' neighbour carries:
-        # a settings-changed row names keys, and the brief resolves
-        # each to its screen label (ruling #316).
-        self._rename_stored_option_keys(loaded)
-        # The list is engine-owned. Anything stored without a
-        # device_id is a hand-typed item from the pre-sync backbone
-        # (the create feature is gone with this release) and is
-        # purged, so every install lands on a list the sync alone
-        # maintains. Engine items gain the new fields in place.
-        engine_items = [
-            record
-            for record in loaded[DATA_TODO_ITEMS]
-            if record.get(TODO_DEVICE_ID)
-        ]
-        purged = len(loaded[DATA_TODO_ITEMS]) - len(engine_items)
-        if purged:
-            LOGGER.info(
-                "Problem list: purged %d hand-typed item(s); the list "
-                "is maintained by detections alone from 0.6.0",
-                purged,
-            )
-        loaded[DATA_TODO_ITEMS] = engine_items
-        for record in engine_items:
-            record.setdefault(TODO_KINDS, {})
-            record.setdefault(TODO_ACKED_AT, None)
-        # The hot file is merged here, and the position is
-        # deliberate. Three of the thirteen clock fields are among
-        # what the statistics epoch below wipes, so merging after it
-        # would hand those fields straight back and a declared epoch
-        # would quietly fail to take. Merging first means the wipe
-        # still has the last word.
-        #
-        # The count was six of nine when this was written and neither
-        # number was updated as clock fields were added or as the
-        # wipe was narrowed (ruling #207). The ordering it argues for
-        # was correct throughout and still is: one field overlapping
-        # would be reason enough.
-        # The marker the retired one-time backup wrote (ruling #241). It
-        # named a copy this version never takes, so it is dropped
-        # rather than carried forever in every save. Any epoch
-        # markers beside it stay: #204 still uses that mechanism.
-        taken = loaded.get(BACKUP_TAKEN_KEY)
-        if isinstance(taken, list) and BACKUP_SUFFIX_PREPHASE_C in taken:
-            remaining = [
-                suffix
-                for suffix in taken
-                if suffix != BACKUP_SUFFIX_PREPHASE_C
+        # The load gate with its restore retry (ruling #370). The
+        # migrations run, the gate checks what they produced, and a
+        # faulty document with a usable last-good is answered by
+        # restoring the file and running this section once more on
+        # the restored copy. The second pass repairs in place instead,
+        # so the loop always ends with a document the gate vouches
+        # for. Per-pass state resets at the top so a retry never
+        # reads the first pass's clocks verdict.
+        malformed: dict[str, Any] = {}
+        gate_restored = False
+        for _load_attempt in (1, 2):
+            self._clocks_discarded = []
+            self._clocks_seen = None
+            loaded.setdefault(DATA_FIRST_INSTALLED, dt_util.utcnow().isoformat())
+            loaded.setdefault(DATA_DEVICES, {})
+            loaded.setdefault(DATA_TODO_ITEMS, [])
+            loaded.setdefault(DATA_TODO_JOURNAL, [])
+            loaded.setdefault(DATA_EPISODES, [])
+            loaded.setdefault(DATA_INCIDENTS, [])
+            loaded.setdefault(DATA_SYSTEM_EVENTS, [])
+            loaded.setdefault(DATA_BRIDGE_SEEN, {})
+            loaded.setdefault(DATA_BROKER_SEEN, {})
+            loaded.setdefault(DATA_STORMS, [])
+            loaded.setdefault(DATA_STORM_DAYS, [])
+            # The dry-run outbox was retired once the
+            # notifications it previewed had been sending for
+            # several releases. Drop what an older install stored,
+            # so nobody carries a dead key or its bytes.
+            loaded.pop("outbox", None)
+            # An earlier release renamed the cause an unobserved recovery
+            # carries, and
+            # the entries already stored kept the old wording, which the
+            # composer then failed to recognize and rendered as "revived
+            # by a on its own". Rewritten here so the fleet's history
+            # speaks one vocabulary rather than two.
+            for entry in loaded.get(DATA_INCIDENTS) or []:
+                if not isinstance(entry, dict):
+                    # Named by the shape check, left for the card. A
+                    # migration that raised on it stopped setup, which
+                    # is the #357 class at the one moment nothing can
+                    # yet hold it (ruling #369).
+                    continue
+                if entry.get(INC_CAUSE) == LEGACY_CAUSE_UNOBSERVED:
+                    entry[INC_CAUSE] = RECOVERY_CAUSE_UNOBSERVED
+            # And the same treatment for the four kinds renamed at 0.15.8,
+            # for the same reason one release later (ruling #299).
+            self._rename_stored_kinds(loaded)
+            # And the option keys those four kinds' neighbour carries:
+            # a settings-changed row names keys, and the brief resolves
+            # each to its screen label (ruling #316).
+            self._rename_stored_option_keys(loaded)
+            # The list is engine-owned. Anything stored without a
+            # device_id is a hand-typed item from the pre-sync backbone
+            # (the create feature is gone with this release) and is
+            # purged, so every install lands on a list the sync alone
+            # maintains. Engine items gain the new fields in place.
+            engine_items = [
+                record
+                for record in loaded[DATA_TODO_ITEMS]
+                # A row that is not a row has no device id either, so it
+                # is purged by the same rule rather than raising and
+                # stopping setup (ruling #369).
+                if isinstance(record, dict) and record.get(TODO_DEVICE_ID)
             ]
-            if remaining:
-                loaded[BACKUP_TAKEN_KEY] = remaining
-            else:
-                del loaded[BACKUP_TAKEN_KEY]
-            LOGGER.debug(
-                "Dropped the retired pre-strip backup marker from "
-                "storage"
-            )
-
-        # A record corrupted to something that is not a dict would
-        # crash the first loop that writes into it, taking setup down
-        # before the shape check could even name it: reproduced on 27
-        # August with a string record and a TypeError from the clocks
-        # merge. Quarantined instead (ruling #353): held aside so the
-        # load survives, reported as a fault, and answered by Heal
-        # with a whole-record heal or a trim. Nothing is deleted here;
-        # deletion is Heal's decision and a person confirms it.
-        malformed = {
-            device_id: record
-            for device_id, record in (loaded.get(DATA_DEVICES) or {}).items()
-            if not isinstance(record, dict)
-        }
-        if malformed:
-            for device_id in malformed:
-                del loaded[DATA_DEVICES][device_id]
-            self._quarantined = malformed
-            LOGGER.warning(
-                "Storage holds %d record(s) that are not records at "
-                "all (%s). They are set aside for Heal and reported; "
-                "nothing was deleted",
-                len(malformed),
-                ", ".join(sorted(malformed)[:5]),
-            )
-
-        # The clocks file is the small companion, and losing it costs
-        # one interval of live counters rather than the record
-        # (ruling #327). An unreadable one is a warning and a fresh
-        # start for those fields, not a refusal to run: the main file
-        # is intact and the merge already handles a missing companion.
-        try:
-            hot_payload = await self._clock_store.async_load()
-        except (HomeAssistantError, ValueError) as err:
-            LOGGER.warning(
-                "Device Sentinel cannot read %s, so this start uses "
-                "the clocks held in %s instead. Nothing learned is "
-                "lost; live counters resume from here (%s)",
-                STORAGE_CLOCKS_KEY,
-                STORAGE_KEY,
-                err,
-            )
-            hot_payload = None
-        # A clocks file that holds damage is discarded whole before
-        # the merge, never healed (ruling #356): it rebuilds itself
-        # within a day, so a damaged one is treated exactly like a
-        # missing one. Damage means a value of the wrong shape or a
-        # record that is not a record; a merely missing field is not
-        # damage, because that is what a version upgrade that adds a
-        # clock field looks like on its first boot, and discarding a
-        # whole fleet's clocks for it would turn every upgrade into a
-        # fleet-wide clock reset. Missing-field faults keep their old
-        # path: latched and reported, never a reason to discard.
-        clock_faults = check_clocks((hot_payload or {}).get("clocks"))
-        clock_damage = [f for f in clock_faults if f[2] != "missing"]
-        if clock_damage:
-            LOGGER.warning(
-                "The activity clocks file failed its shape check with "
-                "%d damaged value(s), so it is discarded and rebuilds "
-                "from this boot. First: %s: %s",
-                len(clock_damage),
-                fault_id(clock_damage[0]),
-                clock_damage[0][2],
-            )
-            self._clocks_discarded = clock_damage
-            hot_payload = None
-        # Held for the shape check, which runs a few lines later and
-        # must see the file as it came off disk rather than the merge
-        # of it (ruling #332). Cleared there.
-        self._clocks_seen = (hot_payload or {}).get("clocks")
-        merged = self._merge_clocks(loaded, hot_payload)
-        self._note_downtime(loaded, hot_payload)
-        if merged:
-            LOGGER.debug(
-                "Merged activity clocks for %d device(s) from %s",
-                merged,
-                STORAGE_CLOCKS_KEY,
-            )
-        if loaded.get(DATA_STATS_EPOCH) != STATS_EPOCH:
-            # A copy of both files before anything is destroyed. An
-            # epoch bump is the one operation in the integration that
-            # deletes learned data with nothing behind it, and there
-            # is no raw layer to rebuild from: readings are folded
-            # into a daily figure as they arrive and never stored. So
-            # it gets the same protection the clock strip has
-            # (ruling #204, on the mechanism of #130).
-            # False means it could not copy, and a caller about to
-            # delete must treat that as a stop: doing nothing is
-            # harmless, wiping without a copy cannot be undone. The
-            # suffix carries the epoch so a later bump takes its own
-            # copy rather than finding the first one's marker and
-            # skipping.
-            safe = not loaded[DATA_DEVICES] or await async_take_backup(
-                self.hass, loaded, f"pre-epoch-{STATS_EPOCH}"
-            )
-            wiped = 0
-            fresh = _new_device_record(
-                dt_util.utcnow().isoformat(), None
-            )
-            if safe:
-                for record in loaded[DATA_DEVICES].values():
-                    # The kept set is declared; the wipe is everything
-                    # else in the schema, so a field added later is
-                    # wiped by default rather than surviving unnoticed
-                    # (ruling #204).
-                    for field, value in fresh.items():
-                        if field not in EPOCH_KEPT:
-                            record[field] = value
-                    wiped += 1
-                loaded[DATA_STATS_EPOCH] = STATS_EPOCH
-                # The wipe destroys the series themselves, and the
-                # depth is read from the series (ruling #258), so the
-                # stamps an older version left behind are pruned here
-                # and nothing replaces them.
-                loaded.pop(DATA_SERIES_STAMPS, None)
-            else:
-                LOGGER.warning(
-                    "Statistics epoch %s: the pre-wipe backup could "
-                    "not be taken, so nothing was reset. The rhythm "
-                    "stays as it is and the epoch will be tried "
-                    "again on the next start",
-                    STATS_EPOCH,
+            purged = len(loaded[DATA_TODO_ITEMS]) - len(engine_items)
+            if purged:
+                LOGGER.info(
+                    "Problem list: purged %d hand-typed item(s); the list "
+                    "is maintained by detections alone from 0.6.0",
+                    purged,
                 )
-            # Only when it actually wiped something. A fresh
-            # install sets the epoch with no devices to reset, which
-            # is an install rather than an event.
-            self._pending_epoch_wipe = wiped or None
-            LOGGER.info(
-                "Statistics epoch %s: the learned rhythm reset for %d "
-                "devices so it is relearned under the final rule set; "
-                "clocks, identity, signal and battery history kept",
-                STATS_EPOCH,
-                wiped,
+            loaded[DATA_TODO_ITEMS] = engine_items
+            for record in engine_items:
+                record.setdefault(TODO_KINDS, {})
+                record.setdefault(TODO_ACKED_AT, None)
+            # The hot file is merged here, and the position is
+            # deliberate. Three of the thirteen clock fields are among
+            # what the statistics epoch below wipes, so merging after it
+            # would hand those fields straight back and a declared epoch
+            # would quietly fail to take. Merging first means the wipe
+            # still has the last word.
+            #
+            # The count was six of nine when this was written and neither
+            # number was updated as clock fields were added or as the
+            # wipe was narrowed (ruling #207). The ordering it argues for
+            # was correct throughout and still is: one field overlapping
+            # would be reason enough.
+            # The marker the retired one-time backup wrote (ruling #241). It
+            # named a copy this version never takes, so it is dropped
+            # rather than carried forever in every save. Any epoch
+            # markers beside it stay: #204 still uses that mechanism.
+            taken = loaded.get(BACKUP_TAKEN_KEY)
+            if isinstance(taken, list) and BACKUP_SUFFIX_PREPHASE_C in taken:
+                remaining = [
+                    suffix
+                    for suffix in taken
+                    if suffix != BACKUP_SUFFIX_PREPHASE_C
+                ]
+                if remaining:
+                    loaded[BACKUP_TAKEN_KEY] = remaining
+                else:
+                    del loaded[BACKUP_TAKEN_KEY]
+                LOGGER.debug(
+                    "Dropped the retired pre-strip backup marker from "
+                    "storage"
+                )
+
+            # A record corrupted to something that is not a dict would
+            # crash the first migration loop that writes into it, so it
+            # comes out before the merge: reproduced on 27 August with a
+            # string record and a TypeError from the clocks merge. Under
+            # the boundary this is gate damage (ruling #370, amending
+            # #357): the record is dropped here, the gate that follows
+            # counts it into the repair, and the evidence copy preserves
+            # the original.
+            malformed = {
+                device_id: record
+                for device_id, record in (loaded.get(DATA_DEVICES) or {}).items()
+                if not isinstance(record, dict)
+            }
+            if malformed:
+                for device_id in malformed:
+                    del loaded[DATA_DEVICES][device_id]
+                LOGGER.warning(
+                    "Storage holds %d record(s) that are not records at "
+                    "all (%s). The gate repairs them",
+                    len(malformed),
+                    ", ".join(sorted(malformed)[:5]),
+                )
+
+            # The clocks file is the small companion, and losing it costs
+            # one interval of live counters rather than the record
+            # (ruling #327). An unreadable one is a warning and a fresh
+            # start for those fields, not a refusal to run: the main file
+            # is intact and the merge already handles a missing companion.
+            try:
+                hot_payload = await self._clock_store.async_load()
+            except (HomeAssistantError, ValueError) as err:
+                LOGGER.warning(
+                    "Device Sentinel cannot read %s, so this start uses "
+                    "the clocks held in %s instead. Nothing learned is "
+                    "lost; live counters resume from here (%s)",
+                    STORAGE_CLOCKS_KEY,
+                    STORAGE_KEY,
+                    err,
+                )
+                hot_payload = None
+            # A clocks file that holds damage is discarded whole before
+            # the merge, never healed (ruling #356): it rebuilds itself
+            # within a day, so a damaged one is treated exactly like a
+            # missing one. Damage means a value of the wrong shape or a
+            # record that is not a record; a merely missing field is not
+            # damage, because that is what a version upgrade that adds a
+            # clock field looks like on its first boot, and discarding a
+            # whole fleet's clocks for it would turn every upgrade into a
+            # fleet-wide clock reset. Missing-field faults keep their old
+            # path: latched and reported, never a reason to discard.
+            clock_faults = check_clocks((hot_payload or {}).get("clocks"))
+            clock_damage = [f for f in clock_faults if f[2] != "missing"]
+            if clock_damage:
+                LOGGER.warning(
+                    "The activity clocks file failed its shape check with "
+                    "%d damaged value(s), so it is discarded and rebuilds "
+                    "from this boot. First: %s: %s",
+                    len(clock_damage),
+                    fault_id(clock_damage[0]),
+                    clock_damage[0][2],
+                )
+                self._clocks_discarded = clock_damage
+                hot_payload = None
+            # Held for the shape check, which runs a few lines later and
+            # must see the file as it came off disk rather than the merge
+            # of it (ruling #332). Cleared there.
+            self._clocks_seen = (hot_payload or {}).get("clocks")
+            merged = self._merge_clocks(loaded, hot_payload)
+            self._note_downtime(loaded, hot_payload)
+            if merged:
+                LOGGER.debug(
+                    "Merged activity clocks for %d device(s) from %s",
+                    merged,
+                    STORAGE_CLOCKS_KEY,
+                )
+            if loaded.get(DATA_STATS_EPOCH) != STATS_EPOCH:
+                # A copy of both files before anything is destroyed. An
+                # epoch bump is the one operation in the integration that
+                # deletes learned data with nothing behind it, and there
+                # is no raw layer to rebuild from: readings are folded
+                # into a daily figure as they arrive and never stored. So
+                # it gets the same protection the clock strip has
+                # (ruling #204, on the mechanism of #130).
+                # False means it could not copy, and a caller about to
+                # delete must treat that as a stop: doing nothing is
+                # harmless, wiping without a copy cannot be undone. The
+                # suffix carries the epoch so a later bump takes its own
+                # copy rather than finding the first one's marker and
+                # skipping.
+                safe = not loaded[DATA_DEVICES] or await async_take_backup(
+                    self.hass, loaded, f"pre-epoch-{STATS_EPOCH}"
+                )
+                wiped = 0
+                fresh = _new_device_record(
+                    dt_util.utcnow().isoformat(), None
+                )
+                if safe:
+                    for record in loaded[DATA_DEVICES].values():
+                        # The kept set is declared; the wipe is everything
+                        # else in the schema, so a field added later is
+                        # wiped by default rather than surviving unnoticed
+                        # (ruling #204).
+                        for field, value in fresh.items():
+                            if field not in EPOCH_KEPT:
+                                record[field] = value
+                        wiped += 1
+                    loaded[DATA_STATS_EPOCH] = STATS_EPOCH
+                    # The wipe destroys the series themselves, and the
+                    # depth is read from the series (ruling #258), so the
+                    # stamps an older version left behind are pruned here
+                    # and nothing replaces them.
+                    loaded.pop(DATA_SERIES_STAMPS, None)
+                else:
+                    LOGGER.warning(
+                        "Statistics epoch %s: the pre-wipe backup could "
+                        "not be taken, so nothing was reset. The rhythm "
+                        "stays as it is and the epoch will be tried "
+                        "again on the next start",
+                        STATS_EPOCH,
+                    )
+                # Only when it actually wiped something. A fresh
+                # install sets the epoch with no devices to reset, which
+                # is an install rather than an event.
+                self._pending_epoch_wipe = wiped or None
+                LOGGER.info(
+                    "Statistics epoch %s: the learned rhythm reset for %d "
+                    "devices so it is relearned under the final rule set; "
+                    "clocks, identity, signal and battery history kept",
+                    STATS_EPOCH,
+                    wiped,
+                )
+            # Reconcile every stored record against the schema, both
+            # directions. There used to be a prune here and a
+            # hand-maintained list of setdefault calls above it, so a
+            # field leaving the schema was removed automatically while a
+            # field joining it reached an existing record only if
+            # somebody remembered the other place. The list had already
+            # drifted (ruling #189).
+            # The two backup markers were written by earlier releases,
+            # whose one-shot copies have long since been taken. Dropping
+            # them here keeps a retired key from riding every save.
+            loaded.pop("pre_split_backup_taken", None)
+            loaded.pop("phase_b_backup_taken", None)
+            # Before the reconciler, which is the last moment the legacy
+            # signal accumulators exist: it removes any key the schema
+            # has dropped (ruling #256).
+            repair = loaded.get(DATA_SIGNAL_DAY_REPAIR) != SIGNAL_DAY_REPAIR_MARK
+            converted, day_reset = self._migrate_signal_accumulators(
+                loaded[DATA_DEVICES], repair
             )
-        # Reconcile every stored record against the schema, both
-        # directions. There used to be a prune here and a
-        # hand-maintained list of setdefault calls above it, so a
-        # field leaving the schema was removed automatically while a
-        # field joining it reached an existing record only if
-        # somebody remembered the other place. The list had already
-        # drifted (ruling #189).
-        # The two backup markers were written by earlier releases,
-        # whose one-shot copies have long since been taken. Dropping
-        # them here keeps a retired key from riding every save.
-        loaded.pop("pre_split_backup_taken", None)
-        loaded.pop("phase_b_backup_taken", None)
-        # Before the reconciler, which is the last moment the legacy
-        # signal accumulators exist: it removes any key the schema
-        # has dropped (ruling #256).
-        repair = loaded.get(DATA_SIGNAL_DAY_REPAIR) != SIGNAL_DAY_REPAIR_MARK
-        converted, day_reset = self._migrate_signal_accumulators(
-            loaded[DATA_DEVICES], repair
-        )
-        loaded[DATA_SIGNAL_DAY_REPAIR] = SIGNAL_DAY_REPAIR_MARK
-        # A history holding two scales at once cannot be separated
-        # after the fact, so it goes (ruling #282). Judged on the
-        # data rather than on a version, so a device that grows a
-        # second signal entity next month is treated the same.
-        mixed = self._clear_mixed_signal(loaded[DATA_DEVICES])
-        if mixed:
-            LOGGER.warning(
-                "Signal history discarded for %d device(s) whose "
-                "recorded readings held two different measurements at "
-                "once, RSSI in dBm and LQI on 0 to 255. The two are "
-                "recorded apart from now on and nothing says which "
-                "past reading came from which sensor: %s",
-                len(mixed),
-                ", ".join(self._device_name(d) for d in mixed[:20]),
+            loaded[DATA_SIGNAL_DAY_REPAIR] = SIGNAL_DAY_REPAIR_MARK
+            # A history holding two scales at once cannot be separated
+            # after the fact, so it goes (ruling #282). Judged on the
+            # data rather than on a version, so a device that grows a
+            # second signal entity next month is treated the same.
+            mixed = self._clear_mixed_signal(loaded[DATA_DEVICES])
+            if mixed:
+                LOGGER.warning(
+                    "Signal history discarded for %d device(s) whose "
+                    "recorded readings held two different measurements at "
+                    "once, RSSI in dBm and LQI on 0 to 255. The two are "
+                    "recorded apart from now on and nothing says which "
+                    "past reading came from which sensor: %s",
+                    len(mixed),
+                    ", ".join(self._device_name(d) for d in mixed[:20]),
+                )
+            if converted:
+                LOGGER.info(
+                    "Signal statistics: converted the day in progress for "
+                    "%d device(s) to the stable accumulator",
+                    converted,
+                )
+            if day_reset:
+                LOGGER.warning(
+                    "Signal statistics: the day in progress was unusable "
+                    "for %d device(s) after an earlier release restarted "
+                    "the running mean without its history, so today's "
+                    "signal mean and deviation start from now. Nothing "
+                    "already recorded is affected",
+                    day_reset,
+                )
+            # The depth is read from the series now (ruling #258), so the
+            # stamps an older version wrote are dead weight. Pruned on
+            # every load rather than only inside the epoch branch, which
+            # does not run on an ordinary start and left the key in place
+            # indefinitely (ruling #261).
+            loaded.pop(DATA_SERIES_STAMPS, None)
+            self._clear_reading_weighted_series(loaded)
+            removed, filled = self._reconcile_records(
+                loaded[DATA_DEVICES], dt_util.utcnow().isoformat()
             )
-        if converted:
-            LOGGER.info(
-                "Signal statistics: converted the day in progress for "
-                "%d device(s) to the stable accumulator",
-                converted,
-            )
-        if day_reset:
-            LOGGER.warning(
-                "Signal statistics: the day in progress was unusable "
-                "for %d device(s) after an earlier release restarted "
-                "the running mean without its history, so today's "
-                "signal mean and deviation start from now. Nothing "
-                "already recorded is affected",
-                day_reset,
-            )
-        # The depth is read from the series now (ruling #258), so the
-        # stamps an older version wrote are dead weight. Pruned on
-        # every load rather than only inside the epoch branch, which
-        # does not run on an ordinary start and left the key in place
-        # indefinitely (ruling #261).
-        loaded.pop(DATA_SERIES_STAMPS, None)
-        self._clear_reading_weighted_series(loaded)
-        removed, filled = self._reconcile_records(
-            loaded[DATA_DEVICES], dt_util.utcnow().isoformat()
-        )
-        # The reconciler reads top-level keys only, so the erased
-        # signal fields (ruling #322) are swept from second-scale
-        # blocks here: a dual-scale device carries its own copies
-        # inside signal_alt, which the schema sees as one key.
-        alt_swept = 0
-        for record in loaded[DATA_DEVICES].values():
-            alt = record.get(DEV_SIGNAL_ALT)
-            if isinstance(alt, dict):
-                for key in RETIRED_SIGNAL_KEYS:
-                    if key in alt:
-                        del alt[key]
-                        alt_swept += 1
-        if alt_swept:
-            LOGGER.info(
-                "Signal erasure (ruling #322): removed %d retired "
-                "field(s) from second-scale blocks",
-                alt_swept,
-            )
-        if removed:
-            LOGGER.info(
-                "Storage prune: removed %d legacy field(s) no longer "
-                "in the record schema",
-                removed,
-            )
-        if filled:
-            LOGGER.info(
-                "Storage upgrade: filled %d field(s) this version "
-                "adds to the record schema",
-                filled,
-            )
+            # The reconciler reads top-level keys only, so the erased
+            # signal fields (ruling #322) are swept from second-scale
+            # blocks here: a dual-scale device carries its own copies
+            # inside signal_alt, which the schema sees as one key.
+            alt_swept = 0
+            for record in loaded[DATA_DEVICES].values():
+                alt = record.get(DEV_SIGNAL_ALT)
+                if isinstance(alt, dict):
+                    for key in RETIRED_SIGNAL_KEYS:
+                        if key in alt:
+                            del alt[key]
+                            alt_swept += 1
+            if alt_swept:
+                LOGGER.info(
+                    "Signal erasure (ruling #322): removed %d retired "
+                    "field(s) from second-scale blocks",
+                    alt_swept,
+                )
+            if removed:
+                LOGGER.info(
+                    "Storage prune: removed %d legacy field(s) no longer "
+                    "in the record schema",
+                    removed,
+                )
+            if filled:
+                LOGGER.info(
+                    "Storage upgrade: filled %d field(s) this version "
+                    "adds to the record schema",
+                    filled,
+                )
+
+            # The boundary (ruling #370), placed here on purpose:
+            # after every migration, which may still repair a legacy
+            # shape, and before the first reader. From this line on
+            # no reader in the process meets a record or a table row
+            # the check would not vouch for.
+            filled = fill_missing_row_fields(loaded)
+            if filled:
+                LOGGER.info(
+                    "Storage load: %d missing nullable field(s) "
+                    "filled with None on table rows, as the record "
+                    "reconciler does for devices",
+                    filled,
+                )
+            gate_faults = check_records(loaded.get(DATA_DEVICES))
+            gate_faults += [
+                (table, str(index), "damaged row")
+                for table, indexes in damaged_rows(loaded).items()
+                for index in indexes
+            ]
+            for device_id in malformed:
+                gate_faults.append((device_id, "*", "not a record"))
+            if not gate_faults and not self._clocks_discarded:
+                break
+            # Evidence before anything else touches disk (ruling
+            # #340): the first save re-serializes the file after
+            # migrations have handled it, so without this copy the
+            # original of what went wrong is destroyed by the
+            # process that found it. A discarded clocks file
+            # (ruling #356) is preserved by the same copy.
+            stamp, copied = await async_copy_evidence(self.hass)
+            if stamp:
+                LOGGER.warning(
+                    "Storage evidence copied to trim_backups as %s "
+                    "before anything writes: %s",
+                    stamp,
+                    ", ".join(copied),
+                )
+            if self._clocks_discarded:
+                self.data = loaded
+                self._record_system_event(
+                    SYS_STORAGE_REPAIR,
+                    detail=(
+                        "the activity clocks file failed its shape "
+                        f"check with {len(self._clocks_discarded)} "
+                        "fault(s) and was discarded. It rebuilds "
+                        "itself; the day's counters start over"
+                    ),
+                )
+                self._load_faulty = True
+            if not gate_faults:
+                break
+            self._load_faulty = True
+            if (
+                not gate_restored
+                and self._restored_from is None
+                and await self.hass.async_add_executor_job(
+                    _last_good_holds_devices, self.hass
+                )
+            ):
+                # Rule: damage at load with a usable last-good
+                # restores from last-good, which under the rotation
+                # is one write interval old (ruling #370). The store
+                # object caches its first parse, so the restored file
+                # is read directly.
+                restored, taken = await async_restore_main_file(self.hass)
+                fresh = None
+                if restored:
+                    fresh = await self.hass.async_add_executor_job(
+                        read_main_file_raw, self.hass
+                    )
+                if fresh is not None:
+                    LOGGER.warning(
+                        "Storage loaded with %d fault(s), so the file "
+                        "was replaced from the last-good copy and the "
+                        "load ran again on the copy. The originals "
+                        "are in %s as %s",
+                        len(gate_faults),
+                        TRIM_BACKUP_DIR,
+                        stamp or "unstamped",
+                    )
+                    loaded = fresh
+                    loaded.setdefault(DATA_DEVICES, {})
+                    loaded.setdefault(DATA_TODO_ITEMS, [])
+                    loaded.setdefault(DATA_TODO_JOURNAL, [])
+                    loaded.setdefault(DATA_EPISODES, [])
+                    loaded.setdefault(DATA_INCIDENTS, [])
+                    loaded.setdefault(DATA_SYSTEM_EVENTS, [])
+                    loaded.setdefault(DATA_BRIDGE_SEEN, {})
+                    loaded.setdefault(DATA_BROKER_SEEN, {})
+                    loaded.setdefault(DATA_STORMS, [])
+                    loaded.setdefault(DATA_STORM_DAYS, [])
+                    malformed = {}
+                    self._restored_from = taken
+                    self._restore_evidence = stamp
+                    self._restore_copied = copied
+                    self._restore_reason = "damaged"
+                    gate_restored = True
+                    continue
+                LOGGER.warning(
+                    "Storage loaded with %d fault(s) and the "
+                    "last-good copy could not be used; repairing in "
+                    "place instead",
+                    len(gate_faults),
+                )
+            # Rule: damage with no usable last-good is repaired in
+            # place, damaged table rows dropped and a damaged record
+            # field reset to its default, the rest of the record
+            # kept (ruling #370). The clocks bank first (#338), so a
+            # damaged activity clock restarts honestly at now rather
+            # than being reset to a fresh record's None.
+            self.data = loaded
+            await self._repair_in_place("load", gate_faults, stamp)
+            break
+        loaded[DATA_SETUP_COUNT] = int(loaded.get(DATA_SETUP_COUNT, 0)) + 1
         # The clean-stop marker is read and cleared in one breath
         # (ruling #163), so a crash before the next clean stop is detected
         # again rather than inheriting this boot's verdict. Read after
@@ -975,22 +1115,28 @@ class DeviceSentinelCoordinator(
                 loaded.get(DATA_LAST_VERSION) or "an earlier version",
             )
         loaded[DATA_LAST_VERSION] = self.version
-        await self._check_storage_shape("load")
-        # The clock fields are the hot file's alone and the main file
-        # never carries copies. The one-time backup that guarded the
-        # transition, and the gate that kept writing copies where it
-        # failed, are gone (ruling #241): every install creates both files
-        # in this shape, so the pre-split state cannot occur. The
-        # marker that recorded the copy is pruned above.
-        # Both stamped, and stamped here rather than at the first
-        # later save. Setup writes storage directly rather than
-        # through _save_now, and an unstamped main file beside a
-        # stamped hot one is a pair the merge cannot compare, so it
-        # would decline and every clock written between this moment
-        # and the first critical save would be dropped at the next
-        # restart. Writing the stamp now closes that window to
-        # nothing.
-        await self._store.async_save(self._data_to_save())
+        # The rotation arms only when the live file on disk is one
+        # this process knows to be clean (ruling #370). A load that
+        # restored or repaired leaves the damaged original or the
+        # copy in place, so the first save writes without rotating
+        # and the file it writes arms the one after.
+        self._rotation_armed = (
+            not self._load_faulty and self._restored_from is None
+        )
+        # The clocks last-good file is retired (ruling #370): the
+        # clocks file's contents are derived and a restore has always
+        # deleted it rather than restored it. An install upgraded
+        # from 0.19.8 or earlier still carries one; removed here.
+        await async_delete_clocks_last_good(self.hass)
+        # Both files stamped, and stamped here rather than at the
+        # first later save. Setup writes storage through the same
+        # seam as every later save (ruling #370), and an unstamped
+        # main file beside a stamped hot one is a pair the merge
+        # cannot compare, so it would decline and every clock written
+        # between this moment and the first critical save would be
+        # dropped at the next restart. Writing the stamp now closes
+        # that window to nothing.
+        await self._save_main()
         # The hot file is written here too, not only on later
         # saves, or it did not exist until the first coalesced write
         # up to a window later and a system restarting inside that
@@ -999,7 +1145,7 @@ class DeviceSentinelCoordinator(
         self.storage_healthy = True
         # The stamp survives restarts by living on the file rather
         # than in memory (ruling #341): the age a person sees is the
-        # pair's real age, not this process's.
+        # copy's real age, not this process's.
         self._last_good_taken = await async_last_good_taken(self.hass)
 
         self._grace_until = (
@@ -1997,189 +2143,141 @@ class DeviceSentinelCoordinator(
             if reason == SET_ASIDE_EXCLUDED
         }
 
-    async def _check_storage_shape(self, moment: str) -> None:
-        """Check the whole file, protect the evidence, and refresh
-        the last-good copy only when nothing needed doing.
+    async def _repair_storage(
+        self, moment: str, faults: list[tuple[str, str, str]]
+    ) -> None:
+        """Repair the live document at the point of detection.
 
-        Two moments call this (ruling #278): after load, and after
-        the midnight fold once its records are folded and saved.
-
-        The refresh rule changed in 0.18.0 (ruling #339): the copy
-        refreshes only in a session whose load was clean the first
-        time, and never after any repair, automatic or human. A
-        repaired file checks clean by construction, because the check
-        judges shapes and a field just written is in the right shape
-        whatever value it holds. Refreshing after a repair would turn
-        the last-good pair from the last file that was born clean
-        into the last file patched until it looked clean, and the
-        whole ladder rests on the first guarantee. Verify has
-        produced one false positive already, the tainted field in
-        0.15.3, so none of this is hypothetical.
-
-        A load that verifies faulty latches (ruling #341): Status
-        reads `problem` for the whole session and only a restart that
-        loads clean clears it. A repair does not clear it, because a
-        repaired file is not a good read.
+        The save seam calls this the moment its check finds a fault
+        (ruling #370): evidence copy of everything first (#340), then
+        the repair in place, then the event and the notice. Nobody is
+        asked anything; a card asking a person to judge a damaged row
+        was retired because no person can.
         """
-        faults = self._gather_shape_faults(moment)
-        if (faults or self._clocks_discarded) and moment == "load":
-            # The evidence copy comes before anything else touches
-            # disk (ruling #340): the first save re-serializes the
-            # file after migrations have handled it, so without this
-            # copy the original of what went wrong is destroyed by
-            # the process that found it. A discarded clocks file
-            # (ruling #356) is a faulty load too: its evidence is
-            # copied and the session latches, but its faults never
-            # reach the card, because the discard already answered
-            # them.
-            stamp, copied = await async_copy_evidence(self.hass)
-            if stamp:
-                LOGGER.warning(
-                    "Storage evidence copied to trim_backups as %s "
-                    "before anything writes: %s",
-                    stamp,
-                    ", ".join(copied),
+        stamp, copied = await async_copy_evidence(self.hass)
+        if stamp:
+            LOGGER.warning(
+                "Storage evidence copied to trim_backups as %s before "
+                "the repair writes: %s",
+                stamp,
+                ", ".join(copied),
+            )
+        await self._repair_in_place(moment, faults, stamp)
+
+    async def _repair_in_place(
+        self,
+        moment: str,
+        faults: list[tuple[str, str, str]],
+        stamp: str | None,
+    ) -> None:
+        """Drop what cannot be used, reset what can be, and say so.
+
+        The repair half of the boundary (ruling #370): damaged table
+        rows are dropped, a record that is not a record is dropped,
+        and a damaged record field is reset to its default with the
+        rest of the record kept. The activity clocks bank first
+        (ruling #338), so a damaged clock restarts honestly at now
+        rather than being reset to a fresh record's None. Every
+        repair writes a system event and raises the one notice card,
+        which names what was repaired and where the originals are
+        and asks for nothing.
+        """
+        banked = self._bank_damaged_clocks(faults)
+        dropped_rows = repair_tables(self.data)
+        dropped_records, reset_fields = self._repair_records()
+        parts: list[str] = []
+        for table, count in sorted(dropped_rows.items()):
+            parts.append(f"{count} row(s) dropped from {table}")
+        if dropped_records:
+            parts.append(
+                f"{len(dropped_records)} record(s) dropped: "
+                + ", ".join(
+                    self._device_name(d) for d in dropped_records[:5]
                 )
-            if self._clocks_discarded:
-                self._record_system_event(
-                    SYS_STORAGE_REPAIR,
-                    detail=(
-                        "the activity clocks file failed its shape "
-                        f"check with {len(self._clocks_discarded)} "
-                        "fault(s) and was discarded. It rebuilds "
-                        "itself; the day's counters start over"
-                    ),
-                )
-            repaired = self._bank_damaged_clocks(faults)
-            if repaired:
-                # Verify again (the load path's step 4): the repair
-                # list is what remains, and the session stays dirty
-                # however clean it now checks.
-                faults = self._gather_shape_faults(moment)
-            self._load_faulty = True
-        if moment == "fold" and faults:
-            # The fold finds a fault in a document that has been in
-            # memory all day, so there is no unmigrated original to
-            # protect, but the file on disk is still the only copy of
-            # what the fault looks like and the next save rewrites it.
-            # Verify names the damage and repairs nothing, so without
-            # a copy here the evidence is gone by morning and the
-            # person is asked for a folder that was never written
-            # (ruling #364, closing the load-only gap in #340).
-            stamp, copied = await async_copy_evidence(self.hass)
-            if stamp:
-                LOGGER.warning(
-                    "Storage evidence copied to trim_backups as %s "
-                    "after the fold found %d fault(s): %s",
-                    stamp,
-                    len(faults),
-                    ", ".join(copied),
-                )
-            self._load_faulty = True
-        # A device record with a standing fault is held out of every
-        # judging and reading surface for the session: the check
-        # changes nothing (ruling #278), so the poisoned value is
-        # still in the record and any reader can crash on it, which
-        # is a dead integration and no repair card. Held, not
-        # deleted: Heal is the exit.
-        devices_now = self.data.get(DATA_DEVICES)
-        devices_now = devices_now if isinstance(devices_now, dict) else {}
-        self._fault_held = frozenset(
-            holder
-            for holder, _field, _why in faults
-            if holder in devices_now
+            )
+        if banked:
+            parts.append(f"{banked} activity clock(s) restarted")
+        if reset_fields:
+            named = ", ".join(
+                f"{self._device_name(d)}.{field}"
+                for d, field in reset_fields[:5]
+            )
+            parts.append(
+                f"{len(reset_fields)} field(s) reset to defaults ({named})"
+            )
+        what = "; ".join(parts) if parts else (
+            f"{len(faults)} fault(s) found and nothing needed changing"
         )
-        if self._fault_held:
-            LOGGER.warning(
-                "%d record(s) with standing faults are held out of "
-                "judgment and reports until repaired",
-                len(self._fault_held),
-            )
-        # Kept for the Repairs pass, which runs at grace close rather
-        # than here. The load check fires inside the startup grace,
-        # where nothing is announced (ruling #291), so the result has
-        # to survive the wait rather than the issue being raised from
-        # inside the window. Each fault carries a stable identity
-        # (ruling #338) naming file, holder and field, so a later
-        # release can act on one fault rather than on a list.
-        self._shape_faults = faults
-        if not faults and not self._load_faulty:
-            if not self.data.get(DATA_DEVICES) and await self.hass.async_add_executor_job(
-                _last_good_holds_devices, self.hass
-            ):
-                # An empty document checks clean, because there is
-                # nothing in it to be wrong (ruling #348). Refreshing
-                # from it would overwrite a copy that holds a fleet
-                # with one that holds nothing, which is the one way
-                # this integration could destroy a person's history by
-                # itself. The copy is left exactly as it was.
-                LOGGER.warning(
-                    "Storage holds no devices while the last-good copy "
-                    "does. The copy has not been refreshed",
-                )
-                return
-            if await async_refresh_last_good(self.hass):
-                self._last_good_taken = dt_util.utcnow().timestamp()
-            return
-        if not faults:
-            # Clean now, but the session is latched: the load needed
-            # repair, so the copy is withheld and the latch stands
-            # until a restart loads clean (ruling #341).
-            LOGGER.warning(
-                "Storage checks clean at %s, but this session's load "
-                "was not: the last-good copy is withheld and Status "
-                "stays a problem until a restart loads clean",
-                moment,
-            )
-            return
-        source = "the fold produced" if moment == "fold" else "storage holds"
-        for fault in faults[:50]:
-            LOGGER.warning(
-                "Storage shape: %s a record that does not fit: %s: %s. "
-                "Nothing was changed.",
-                source,
-                fault_id(fault),
-                fault[2],
-            )
-        if len(faults) > 50:
-            LOGGER.warning(
-                "Storage shape: %d further fault(s) not listed", len(faults) - 50
-            )
-        fields = sorted({field for _d, field, _w in faults})
+        where = (
+            f"the originals are in {TRIM_BACKUP_DIR} under {stamp}"
+            if stamp
+            else "the evidence copy could not be written"
+        )
+        LOGGER.warning("Storage repaired at %s: %s; %s", moment, what, where)
+        self._record_system_event(
+            SYS_STORAGE_REPAIR,
+            detail=f"{moment}: {what}; {where}",
+        )
+        self._repair_notice = {"moment": moment, "what": what, "where": where}
+        self._load_faulty = True
+
+    def _repair_records(self) -> tuple[list[str], list[tuple[str, str]]]:
+        """Repair the device records in place, by the two rules.
+
+        A record that is not a record is dropped; a damaged field is
+        reset to the fresh record's default and the rest of the
+        record is kept (ruling #370, amending #357). Returns what was
+        dropped and what was reset, for the notice.
+        """
+        devices = self.data.get(DATA_DEVICES)
+        if not isinstance(devices, dict):
+            self.data[DATA_DEVICES] = devices = {}
+        dropped: list[str] = []
+        reset: list[tuple[str, str]] = []
+        template = _new_device_record(dt_util.utcnow().isoformat(), None)
+        for device_id, field, _why in check_records(devices):
+            if device_id == "*":
+                continue
+            record = devices.get(device_id)
+            if record is None:
+                continue
+            if field == "*" or not isinstance(record, dict):
+                devices.pop(device_id, None)
+                dropped.append(device_id)
+                continue
+            if field not in template:
+                # An unknown key is damage the schema cannot describe,
+                # so its repair is removal, the same answer the
+                # reconciler gives a key a past version wrote.
+                record.pop(field, None)
+            else:
+                record[field] = template[field]
+            reset.append((device_id, field))
+        return dropped, reset
+
+    def _note_writer_fault(self, table: str, why: str) -> None:
+        """Record that a writer produced a row the seam refused.
+
+        The row was dropped at the instant it was made (ruling #370),
+        so no reader and no file ever carried it; there is nothing on
+        disk to preserve and no evidence copy. The event and the
+        notice say it happened, because a fault in this version's own
+        writer is a bug the person should see and report.
+        """
         self._record_system_event(
             SYS_STORAGE_SHAPE,
-            detail=f"{moment}: {len(faults)} fault(s) in "
-            f"{len({d for d, _f, _w in faults})} record(s): "
-            + ", ".join(fields[:8])
-            + (", ..." if len(fields) > 8 else ""),
-            devices=len({d for d, _f, _w in faults}),
+            detail=(
+                f"a {table} row written by {self.version} was refused "
+                f"by the shape check and dropped ({why}); this is a "
+                "fault in the writer, not in the file"
+            ),
         )
-
-    def _gather_shape_faults(
-        self, moment: str
-    ) -> list[tuple[str, str, str]]:
-        """Run all three checks for one moment and return the union.
-
-        At load the clocks subject is the file as it arrived; at the
-        fold it is what this process is about to write, the same
-        distinction the record check draws between a fault storage
-        holds and one the fold produced (ruling #332).
-        """
-        faults = check_records(self.data.get(DATA_DEVICES))
-        # The set-aside records are still faults (ruling #353): out of
-        # the working set so nothing crashes on them, but named on
-        # every check until Heal answers them or a person trims them.
-        for device_id, record in self._quarantined.items():
-            faults.append(
-                (device_id, "*", f"expected dict, found {_describe(record)}")
-            )
-        faults += check_storage(self.data)
-        if moment == "fold":
-            faults += check_clocks(self._clocks_to_save().get("clocks"))
-        else:
-            faults += check_clocks(self._clocks_seen)
-            self._clocks_seen = None
-        return faults
+        self._repair_notice = {
+            "moment": "write",
+            "what": f"one {table} row this version wrote was refused "
+            f"and dropped ({why})",
+            "where": "nothing reached the file",
+        }
 
     def _bank_damaged_clocks(
         self, faults: list[tuple[str, str, str]]
@@ -2274,7 +2372,7 @@ class DeviceSentinelCoordinator(
             self.hass,
             self.entry,
             moment,
-            shape_faults=self._shape_faults,
+            repair_notice=self._repair_notice,
             awaiting=self.awaiting_enable_counts(),
             days_installed=days_installed,
             version_changed=self._version_changed,
@@ -2330,6 +2428,11 @@ class DeviceSentinelCoordinator(
         """
         records = self.data.get(DATA_DEVICES) or {}
         for device_id in set_aside:
+            # A hand deletion is forgotten with the verdict: whatever
+            # the person deleted belonged to an incident that ends
+            # here, so a return is a fresh problem and not the
+            # deleted row coming back (ruling #369).
+            self._hand_deleted.discard(device_id)
             record = records.get(device_id)
             if not isinstance(record, dict):
                 continue
@@ -2380,13 +2483,13 @@ class DeviceSentinelCoordinator(
         # dropped rather than stamped because the promise is that an
         # excluded integration is never recorded, and an episode is a
         # record.
-        episodes = self.data.get(DATA_EPISODES) or []
+        episodes = self.episode_rows()
         kept_episodes = [
             episode
             for episode in episodes
             if episode.get(EP_DEVICE_ID) not in excluded
         ]
-        incidents = self.data.get(DATA_INCIDENTS) or []
+        incidents = self.incident_rows()
         kept_incidents = [
             row for row in incidents if row.get(INC_DEVICE_ID) not in excluded
         ]
@@ -2412,14 +2515,7 @@ class DeviceSentinelCoordinator(
         now = dt_util.utcnow().timestamp()
         self._discard_excluded_records()
         pushed = 0
-        held = getattr(self, "_fault_held", frozenset())
         for device_id, record in self.data[DATA_DEVICES].items():
-            if device_id in held:
-                # A record Verify cannot vouch for does not fold: the
-                # roll writes into its series, and writing into a
-                # poisoned series is how the fold itself would crash
-                # for the whole fleet at midnight.
-                continue
             if record[DEV_TODAY_MAX] is not None:
                 record[DEV_DAILY_MAX].append(record[DEV_TODAY_MAX])
                 del record[DEV_DAILY_MAX][:-self.retention_days]
@@ -2446,7 +2542,9 @@ class DeviceSentinelCoordinator(
         self._sync_problem_list()
         if pushed or self._dirty or self._critical:
             await self._save_now()
-        await self._check_storage_shape("fold")
+        # The midnight verify is retired (ruling #370): every row in
+        # memory arrived through the gate or the seam, and the save
+        # that just ran checked the whole outgoing document.
         # The evidence directory is bounded by the same retention
         # setting as every daily series, one retention idea rather
         # than two (ruling #343). No file is special: a copy older
@@ -2844,131 +2942,17 @@ class DeviceSentinelCoordinator(
         return self._last_good_taken
 
     @property
-    def shape_faults(self) -> list[tuple[str, str, str]]:
-        """The standing faults, each addressable via fault_id (#338)."""
-        return list(self._shape_faults)
-
-    def _gather_current_faults(self) -> list[tuple[str, str, str]]:
-        """Re-check the live document now, quarantine included.
-
-        The flow measures at the moment a person clicks, not at the
-        moment the card was raised (ruling #353), so a fault that
-        cleared in between is never repaired into. Clocks are left
-        out: a damaged clocks file was discarded at load (ruling
-        #356) and a healthy one is not the card's business.
-        """
-        faults = check_records(self.data.get(DATA_DEVICES))
-        for device_id, record in self._quarantined.items():
-            faults.append(
-                (device_id, "*", f"expected dict, found {_describe(record)}")
-            )
-        faults += check_storage(self.data)
-        return faults
-
-    async def async_restore_from_card(self) -> bool:
-        """Replace the main file from the last-good backup, on a
-        person's confirmation from the repair card (ruling #353).
-
-        The same restore the unreadable-file path runs automatically
-        (ruling #345), reached by hand for a file that loads but
-        verifies faulty. Pre-action copies of all four files come
-        first or nothing runs (ruling #340). The disk file is
-        replaced, this session's damaged document is barred from the
-        unload flush so it cannot overwrite the restoration, and the
-        reload starts on the copy, which was born clean, so the latch
-        and the refresh behave exactly as any clean start.
-        """
-        stamp, copied = await async_copy_evidence(self.hass)
-        if not stamp:
-            LOGGER.warning(
-                "Restore stopped before writing: the pre-action "
-                "copies could not be taken"
-            )
-            return False
-        LOGGER.warning(
-            "Restore pre-action copies written to trim_backups as "
-            "%s: %s",
-            stamp,
-            ", ".join(copied),
-        )
-        restored, taken = await async_restore_main_file(self.hass)
-        if not restored:
-            LOGGER.warning(
-                "Restore could not replace the file from the "
-                "last-good backup; nothing was changed"
-            )
-            return False
-        loss = describe_restore_loss(
-            taken or 0.0, dt_util.utcnow().timestamp()
-        )
-        self._record_system_event(
-            SYS_STORAGE_REPAIR,
-            detail=(
-                "restored from the last-good backup on a person's "
-                "confirmation, "
-                + describe_restore_loss(
-                    taken or 0.0,
-                    dt_util.utcnow().timestamp(),
-                    embedded=True,
-                )
-            ),
-        )
-        LOGGER.warning("Restore confirmed from the repair card. %s", loss)
-        self._restore_pending = True
-        self.hass.config_entries.async_schedule_reload(self.entry.entry_id)
-        return True
-
-    async def async_trim_from_card(self, device_ids: set[str]) -> int:
-        """Trim the named damaged records, on a person's confirmation
-        from the repair card (ruling #354).
-
-        The existing trim, reached from the card: a dated backup of
-        both storage files first, then the records and every row
-        keyed on them, quarantined junk included. Each device is
-        rediscovered on its next report and learns from nothing.
-        """
-        stamp, copied = await async_copy_evidence(self.hass)
-        if not stamp:
-            LOGGER.warning(
-                "Trim stopped before erasing: the pre-action copies "
-                "could not be taken"
-            )
-            return 0
-        for device_id in device_ids:
-            self._quarantined.pop(device_id, None)
-        removed = trim_devices(self.data, set(device_ids))
-        self._shape_faults = self._gather_current_faults()
-        devices_now = self.data.get(DATA_DEVICES)
-        devices_now = devices_now if isinstance(devices_now, dict) else {}
-        self._fault_held = frozenset(
-            holder
-            for holder, _field, _why in self._shape_faults
-            if holder in devices_now
-        )
-        self._record_system_event(
-            SYS_STORAGE_REPAIR,
-            detail=(
-                f"{len(device_ids)} damaged record(s) trimmed on a "
-                f"person's confirmation; copies under the stamp "
-                f"{stamp}"
-            ),
-        )
-        await self._save_now()
-        return removed.get("records", 0) + len(device_ids)
-
-
-    @property
     def learning_buckets(self) -> dict[str, int]:
         """Return counts of devices by learning progress.
 
-        Read through watched_records rather than the raw store, which
-        is the one-line rule every surface follows (ruling #257) and
-        which since 0.18.8 also holds out a record with a standing
-        shape fault (ruling #357). This property had walked the store
-        directly, so a record the check correctly held out of judgment
-        still reached the coverage sensor and crashed it on a series
-        that was not a series, found by the 0.19.7 pre-stable
-        campaign through the real load path (ruling #369).
+        Read through watched_records rather than the raw store,
+        which is the one-line rule every surface follows (ruling
+        #257). This property had walked the store directly, so a
+        damaged record reached the coverage sensor and crashed it on
+        a series that was not a series, found by the 0.19.7
+        pre-stable campaign through the real load path (ruling
+        #369). The record it met is repaired at the gate now
+        (ruling #370), and the one-line rule still stands here.
         """
         buckets = {"observing": 0, "building": 0, "established": 0}
         for _device_id, record in self.watched_records():

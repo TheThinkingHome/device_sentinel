@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.18.3 (2026-08-26)
+# File: interventions.py, Version: 0.19.9 (2026-08-31)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -793,15 +793,15 @@ class InterventionMixin:
         domain = self._entry_domain(entry_id)
         if announce:
             self._record_system_event(SYS_STORM_OPEN, scope=domain)
-        storms = self.data.setdefault(DATA_STORMS, [])
-        storms.append(
+        self._append_row(
+            DATA_STORMS,
             {
                 STORM_AT: now,
                 STORM_ENTRY: entry_id,
                 STORM_DOMAIN: domain,
                 STORM_DEVICES: 0,
                 STORM_DURATION: None,
-            }
+            },
         )
         self._trim_storms(now)
         self._dirty = True
@@ -927,7 +927,6 @@ class InterventionMixin:
         record the raw one-hour rows cannot be, and the brief's
         flood sentence (ruling #321) is its reader.
         """
-        rows = self.data.setdefault(DATA_STORM_DAYS, [])
         for domain, storms in sorted(self._storm_day.items()):
             if not storms:
                 continue
@@ -938,7 +937,8 @@ class InterventionMixin:
                 later - earlier
                 for earlier, later in zip(times, times[1:], strict=False)
             ]
-            rows.append(
+            self._append_row(
+                DATA_STORM_DAYS,
                 {
                     STORM_DAY_DATE: day,
                     STORM_DAY_DOMAIN: domain,
@@ -958,11 +958,12 @@ class InterventionMixin:
                         ),
                         1,
                     ),
-                }
+                },
             )
             self._dirty = True
         self._storm_day.clear()
         keep = self.retention_days * 12
+        rows = self.data.setdefault(DATA_STORM_DAYS, [])
         del rows[:-keep]
 
     def _end_storm(

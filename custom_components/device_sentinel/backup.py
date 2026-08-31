@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.18.5 (2026-08-27)
+# File: backup.py, Version: 0.19.9 (2026-08-31)
 
 """A one-shot copy of both storage files, taken before a release removes
 something it cannot put back.
@@ -142,64 +142,91 @@ async def async_take_backup(
     return True
 
 
-async def async_refresh_last_good(hass: HomeAssistant) -> bool:
-    """Overwrite the rolling last-good copy of both storage files.
+async def async_rotate_last_good(hass: HomeAssistant) -> bool:
+    """Rename the live main file to last-good, ahead of a clean save.
 
-    Unlike async_take_backup this is not once-per-suffix: it is meant
-    to be taken again and again, and the newest copy is the one worth
-    having. What makes it safe to overwrite is that the caller only
-    calls it after a shape check reported nothing (ruling #278), so
-    the copy is by construction of a file the checks passed. A boot or
-    a fold that found a fault does not call this, and last-good is
-    left as the previous clean copy: it lags a repaired boot by one,
-    which is the direction it should lag.
+    The one backup rule (ruling #370): before each clean save, the
+    file about to be replaced becomes the last-good copy, so
+    last-good is always the most recent clean file. A rename rather
+    than a copy, because the atomic write that follows puts a whole
+    new file in place and the old one is otherwise discarded; the
+    crash window between the rename and the write is the case the
+    loader already restores from, a missing live file beside a
+    last-good.
 
-    Returns True when both files were copied, False on any failure. A
-    False here is a log line and nothing else; a backup that could not
-    be refreshed is a stale backup, not a broken integration.
+    Only the caller knows whether the save is clean and whether the
+    live file on disk was itself written clean, so both judgments
+    stay with the caller; this renames and nothing more. A missing
+    live file is a first save and nothing to rotate. Returns True
+    when the rename happened.
     """
-    pairs = [
-        (
-            _storage_path(hass, key),
-            _storage_path(hass, f"{key}.{BACKUP_LAST_GOOD_SUFFIX}"),
-        )
-        for key in (STORAGE_KEY, STORAGE_CLOCKS_KEY)
-    ]
+    live = _storage_path(hass, STORAGE_KEY)
+    copy = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
 
-    def _copy_all() -> bool:
-        return all(
-            _copy_one(source, destination) for source, destination in pairs
-        )
+    def _rotate() -> bool:
+        if not live.exists():
+            return False
+        os.replace(live, copy)
+        return True
 
     try:
-        copied = await hass.async_add_executor_job(_copy_all)
+        return await hass.async_add_executor_job(_rotate)
+    except OSError as err:
+        LOGGER.warning("Storage last-good rotation failed: %s", err)
+        return False
+
+
+async def async_delete_clocks_last_good(hass: HomeAssistant) -> bool:
+    """Remove the clocks last-good file an earlier version wrote.
+
+    Retired by ruling #370: the clocks file's contents are derived, a
+    lost clock restarts honestly at now, and a restore has always
+    deleted the file rather than restored it, so a backup of it
+    protected nothing. Installs upgraded from 0.19.8 or earlier still
+    carry one; it is deleted once here so no dump or evidence copy
+    keeps carrying a file nothing reads. Returns True when a file was
+    removed.
+    """
+    stale = _storage_path(
+        hass, f"{STORAGE_CLOCKS_KEY}.{BACKUP_LAST_GOOD_SUFFIX}"
+    )
+
+    def _delete() -> bool:
+        if not stale.exists():
+            return False
+        stale.unlink()
+        return True
+
+    try:
+        removed = await hass.async_add_executor_job(_delete)
     except OSError as err:
         LOGGER.warning(
-            "Storage last-good copy could not be refreshed: %s", err
+            "The retired clocks last-good file could not be removed: %s",
+            err,
         )
         return False
-    if not copied:
-        LOGGER.warning(
-            "Storage last-good copy did not produce the expected files"
+    if removed:
+        LOGGER.info(
+            "Removed %s.%s: the clocks file is derived and its backup "
+            "is retired",
+            STORAGE_CLOCKS_KEY,
+            BACKUP_LAST_GOOD_SUFFIX,
         )
-        return False
-    LOGGER.debug("Storage last-good copy refreshed")
-    return True
+    return removed
 
 
 async def async_copy_evidence(
     hass: HomeAssistant,
 ) -> tuple[str | None, list[str]]:
-    """Copy both storage files and both last-good files aside, raw.
+    """Copy both storage files and the last-good file aside, raw.
 
-    Called when a load has verified faulty, before the first save
-    (ruling #340). The live pair is the evidence: the coordinator's
-    own first save re-serializes the file after migrations have
-    touched it, so without this copy the original of what actually
-    went wrong is destroyed by the process that found it. The
-    last-good pair rides along because it is what every later repair
-    reads, and a session that is about to act on either should
-    preserve both first.
+    Called before any repair touches anything (ruling #340). The live
+    pair is the evidence: a repair rewrites the file, so without this
+    copy the original of what actually went wrong is destroyed by the
+    process that found it. The main last-good copy rides along
+    because it is what a restore reads, and a session that is about
+    to act on either should preserve both first. The clocks file has
+    no last-good since ruling #370.
 
     Raw bytes, not a re-serialization: `shutil.copy2` of whichever of
     the four files exist. Nothing in the integration ever reads these
@@ -252,13 +279,6 @@ async def async_copy_evidence(
                 f"{stamp}.storage.last-good",
                 "the storage backup",
             ),
-            (
-                _storage_path(
-                    hass, f"{STORAGE_CLOCKS_KEY}.{BACKUP_LAST_GOOD_SUFFIX}"
-                ),
-                f"{stamp}.clocks.last-good",
-                "the clocks backup",
-            ),
         ]
         written: list[str] = []
         for source, name, said in sources:
@@ -278,28 +298,23 @@ async def async_copy_evidence(
 
 
 async def async_last_good_taken(hass: HomeAssistant) -> float | None:
-    """Return when the last-good pair was last refreshed.
+    """Return when the last-good main file was made.
 
-    The pair is written together, so the older of the two stamps is
-    the honest answer: a pair with one fresh file and one stale one
-    is only as current as the stale one. Read from the files rather
-    than from memory so the answer survives a restart (ruling #341).
+    One file since ruling #370: the clocks backup is retired, so the
+    main copy's own stamp is the whole answer. Read from the file
+    rather than from memory so the answer survives a restart
+    (ruling #341). Under the rotation this is the moment of the last
+    clean save's rename.
     """
-    paths = [
-        _storage_path(hass, f"{key}.{BACKUP_LAST_GOOD_SUFFIX}")
-        for key in (STORAGE_KEY, STORAGE_CLOCKS_KEY)
-    ]
+    path = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
 
-    def _oldest() -> float | None:
-        stamps = []
-        for path in paths:
-            if not os.path.exists(path):
-                return None
-            stamps.append(os.path.getmtime(path))
-        return min(stamps) if stamps else None
+    def _stamp() -> float | None:
+        if not os.path.exists(path):
+            return None
+        return os.path.getmtime(path)
 
     try:
-        return await hass.async_add_executor_job(_oldest)
+        return await hass.async_add_executor_job(_stamp)
     except OSError:
         return None
 
@@ -552,3 +567,21 @@ async def async_copy_corrupt_evidence(
         return copied
 
     return await hass.async_add_executor_job(_copy)
+
+
+def read_main_file_raw(hass: HomeAssistant) -> dict[str, Any] | None:
+    """Read the main storage file straight off disk, or None.
+
+    The Store object caches its first parse, so a load that has
+    already happened cannot see a file the restore just replaced.
+    This reads the file itself, for the one caller that restores
+    mid-load (ruling #370). Returns the data payload alone.
+    """
+    path = _storage_path(hass, STORAGE_KEY)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    data = payload.get("data") if isinstance(payload, dict) else None
+    return data if isinstance(data, dict) else None

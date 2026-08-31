@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.16.8 (2026-08-20)
+# File: store.py, Version: 0.19.9 (2026-08-31)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -23,6 +23,8 @@ from __future__ import annotations
 from typing import Any
 from homeassistant.core import Event, callback
 from homeassistant.util import dt as dt_util
+from .backup import async_rotate_last_good
+from .normalise import check_records, damaged_rows
 from .records import _new_device_record, _reset_signal_day, _span
 
 from .const import (
@@ -246,7 +248,19 @@ class StorageMixin:
 
         # The incident timeline, which the brief and the maintainer
         # report both read to write their sentences.
+        # Every walk below steps over a row that is not a row: a
+        # migration runs before the gate, so damage is still in the
+        # tables here, and a migration that raised on it would stop
+        # setup at the one moment nothing has yet repaired it. The
+        # gate that follows repairs what these walks step over
+        # (ruling #370).
         for entry in loaded.get(DATA_INCIDENTS) or []:
+            if not isinstance(entry, dict) or not isinstance(
+                entry.get(INC_KIND), str
+            ):
+                # Damage, not a legacy shape; the gate repairs it
+                # after the migrations (ruling #370).
+                continue
             fresh = LEGACY_KIND_RENAMES.get(entry.get(INC_KIND))
             if fresh is not None:
                 entry[INC_KIND] = fresh
@@ -257,6 +271,10 @@ class StorageMixin:
         # months. It stops being write-only the moment events fire
         # from this same boundary (ruling #289).
         for entry in loaded.get(DATA_TODO_JOURNAL) or []:
+            if not isinstance(entry, dict) or not isinstance(
+                entry.get(INC_KIND), str
+            ):
+                continue
             fresh = LEGACY_KIND_RENAMES.get(entry.get(INC_KIND))
             if fresh is not None:
                 entry[INC_KIND] = fresh
@@ -266,6 +284,8 @@ class StorageMixin:
         # value is the moment it was added, so the entry is rebuilt
         # rather than reassigned.
         for item in loaded.get(DATA_TODO_ITEMS) or []:
+            if not isinstance(item, dict):
+                continue
             kinds = item.get(TODO_KINDS)
             if not isinstance(kinds, dict):
                 continue
@@ -325,6 +345,8 @@ class StorageMixin:
 
         renamed = 0
         for entry in loaded.get(DATA_SYSTEM_EVENTS) or []:
+            if not isinstance(entry, dict):
+                continue
             if entry.get(SYS_KIND) != SYS_OPTIONS_CHANGED:
                 continue
             detail = entry.get(SYS_DETAIL)
@@ -538,6 +560,46 @@ class StorageMixin:
             "clocks": clocks,
         }
 
+    async def _save_main(self) -> None:
+        """Every main-file write passes through this one seam.
+
+        The boundary on the way out (ruling #370): the whole
+        outgoing document is checked, which is what catches a row
+        edited in place after it was written. A clean document
+        rotates first, the live file renamed to last-good, so
+        last-good is always the most recent clean file. A faulty one
+        is repaired at this moment, evidence copy first, and written
+        without rotating, so a repair never overwrites the clean
+        copy; the file the repair produced reaches last-good only
+        when the next save proves it by rotating over it.
+
+        The rotation is also withheld for the first save after a
+        load that needed repair or restore, because the live file on
+        disk at that moment is the damaged original or the restored
+        copy, not a file this session wrote clean.
+        """
+        faults = check_records(self.data.get(DATA_DEVICES))
+        faults += [
+            (table, str(index), "damaged row")
+            for table, indexes in damaged_rows(self.data).items()
+            for index in indexes
+        ]
+        clean = not faults
+        if faults:
+            await self._repair_storage("save", faults)
+            # The document being written is the repaired one. It
+            # arms the next rotation only if the repair proved out,
+            # so a fault the repair could not answer can never
+            # rotate into the clean copy.
+            clean = not check_records(
+                self.data.get(DATA_DEVICES)
+            ) and not damaged_rows(self.data)
+        elif self._rotation_armed:
+            await async_rotate_last_good(self.hass)
+            self._last_good_taken = dt_util.utcnow().timestamp()
+        await self._store.async_save(self._data_to_save())
+        self._rotation_armed = clean
+
     async def _save_now(self) -> None:
         """The single immediate-save path.
 
@@ -550,7 +612,7 @@ class StorageMixin:
         # is ever torn, the survivor is the one holding everything;
         # the hot file's stamp then tells the next load that it is the
         # older of the two and must not be merged over the newer.
-        await self._store.async_save(self._data_to_save())
+        await self._save_main()
         await self._clock_store.async_save(self._clocks_to_save())
         self._dirty = False
         self._critical = False
@@ -595,22 +657,16 @@ class StorageMixin:
         The record survives, unjudged and unreported, exactly as the
         muting ladders promise; what stops is the reporting of it.
 
-        Since 0.18.8 the same line holds out a record with a standing
-        shape fault. The check reports and touches nothing (ruling
-        #278), which means the poisoned value is still in the record,
-        and the second adversarial round proved a reader will crash
-        on it: the setup report died comparing a corrupted series to
-        an hour and took the whole integration down before the repair
-        card could exist. A record Verify cannot vouch for is not a
-        record to judge or to report from; it is held here, named on
-        the card, and Heal is its exit.
+        A record with a standing shape fault no longer exists to hold
+        out: the boundary repairs a faulty record at the moment it is
+        found (ruling #370), so every record behind this line is one
+        the check vouches for.
         """
         devices = self.data.get(DATA_DEVICES) or {}
-        held = getattr(self, "_fault_held", frozenset())
         return [
             (device_id, record)
             for device_id, record in devices.items()
-            if device_id in self._watched and device_id not in held
+            if device_id in self._watched
         ]
 
     @property

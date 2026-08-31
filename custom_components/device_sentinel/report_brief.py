@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.18.2 (2026-08-26)
+# File: report_brief.py, Version: 0.19.9 (2026-08-31)
 
 """The daily brief: the one report written for a person.
 
@@ -44,7 +44,6 @@ from .const import (
     ACTION_UNACKNOWLEDGED,
     CONF_REMINDER_TIME,
     DATA_DEVICES,
-    DATA_INCIDENTS,
     DATA_SYSTEM_EVENTS,
     DEFAULT_REMINDER_TIME,
     DEV_BATTERY_VALUE,
@@ -1250,7 +1249,7 @@ class BriefMixin:
         afternoon, and the reader should not need arithmetic to
         tell them apart (ruling #305).
         """
-        rows = self.data.get(DATA_INCIDENTS) or []
+        rows = self.incident_rows()
         events = self.data.get(DATA_SYSTEM_EVENTS) or []
         cutoff = now - REPEAT_WINDOW_DAYS * 86400.0
         floor_raw = self.entry.options.get(
@@ -1450,7 +1449,7 @@ class BriefMixin:
         silenced = self._acknowledged_devices()
         incidents = [
             row
-            for row in (self.data.get(DATA_INCIDENTS) or [])
+            for row in self.incident_rows()
             if window_start <= row[INC_WHEN] <= window_end
             and row[INC_DEVICE_ID] not in self._muted_devices
             and row[INC_DEVICE_ID] not in silenced

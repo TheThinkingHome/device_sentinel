@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.18.6 (2026-08-27)
+# File: const.py, Version: 0.19.9 (2026-08-31)
 
 """Constants for the Device Sentinel integration."""
 
@@ -884,7 +884,6 @@ ATTR_STORAGE_HEALTHY = "storage_healthy"
 ATTR_LAST_GOOD_TAKEN = "last_good_taken"
 ATTR_LAST_GOOD_AGE_DAYS = "last_good_age_days"
 ATTR_REPAIRS_AT_LOAD = "repairs_at_load"
-ATTR_SHAPE_FAULTS = "shape_faults"
 
 SENTINEL_TYPE_STATUS = "status"
 SENTINEL_TYPE_COVERAGE = "coverage"
@@ -1701,6 +1700,14 @@ TODO_KIND_FAMILIES = {
 EVENT_FAULT = "device_sentinel_fault"
 EVENT_RECOVERED = "device_sentinel_recovered"
 EVENT_ACKNOWLEDGED = "device_sentinel_acknowledged"
+# Fired when a line leaves the list because its device left the
+# watched set, not because anything recovered. Ruling #289 promised
+# every fault an answer so an automation pairing faults to
+# recoveries can close; ruling #368 rightly silenced the recovery for
+# a device that never came back; this is the answer that keeps both
+# (ruling #370).
+EVENT_WITHDRAWN = "device_sentinel_withdrawn"
+WITHDRAWN_REASON_SET_ASIDE = "set_aside"
 
 # Worst first, so kinds[0] is the headline and an automation reads it
 # without a template. Unavailable leads because
@@ -1960,7 +1967,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 369
+HIGHEST_RULING = 370
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -2065,6 +2072,8 @@ SYS_STORAGE_REPAIR = "storage_repair"
 # by both would make a later rename of either look safe when it is
 # not.
 REPAIR_STORAGE_SHAPE = "storage_shape"
+# The buttonless notice a completed repair raises (ruling #370).
+REPAIR_STORAGE_REPAIRED = "storage_repaired"
 REPAIR_ENTITIES_DISABLED = "entities_disabled"
 REPAIR_NOTIFY_TARGET_MISSING = "notify_target_missing"
 REPAIR_NO_DELIVERY = "no_delivery_configured"
@@ -2076,7 +2085,7 @@ REPAIR_NO_DELIVERY = "no_delivery_configured"
 # it has been read.
 REPAIR_STORAGE_RESTORED = "storage_restored"
 REPAIRS_ALL = (
-    REPAIR_STORAGE_SHAPE,
+    REPAIR_STORAGE_REPAIRED,
     REPAIR_ENTITIES_DISABLED,
     REPAIR_NOTIFY_TARGET_MISSING,
     REPAIR_NO_DELIVERY,
