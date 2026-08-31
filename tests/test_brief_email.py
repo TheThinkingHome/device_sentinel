@@ -303,6 +303,10 @@ async def test_a_device_name_cannot_inject_markup_into_the_brief(
     coord = await setup_coordinator(hass)
     coord.data[DATA_TODO_ITEMS] = [
         {
+            # Every field the shape requires (#332), because the
+            # to-do surface reads only rows that fit it (#369).
+            "uid": "inject1-uid",
+            "summary": "Sensor <script>alert(1)</script>: stopped reporting",
             TODO_DEVICE_ID: "inject1",
             TODO_SORT_NAME: "Sensor <script>alert(1)</script>",
             TODO_STATUS: "needs_action",
