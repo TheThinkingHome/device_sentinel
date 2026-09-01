@@ -46,14 +46,38 @@ from custom_components.device_sentinel.normalise import (
 
 from tests.helpers import register_device, setup_coordinator
 
-JAMES = Path("/home/claude/fleets/james_0199/device_sentinel.storage")
-JAMES_CLOCKS = Path("/home/claude/fleets/james_0199/device_sentinel.clocks")
-TIM = Path("/home/claude/fleets/tim/device_sentinel_storage.json")
-TIM_CLOCKS = Path("/home/claude/fleets/tim/device_sentinel_clocks.json")
+# The reference fleets are two real people's storage files and are
+# deliberately not in this repository. Point FLEET_DIR at a directory
+# holding them to run these cases; without it every fleet case skips,
+# which is what happens in continuous integration and on anyone
+# else's checkout.
+FLEET_DIR = Path(
+    os.environ.get("DEVICE_SENTINEL_FLEET_DIR", "/home/claude/fleets")
+)
+JAMES = FLEET_DIR / "james_0199" / "device_sentinel.storage"
+JAMES_CLOCKS = FLEET_DIR / "james_0199" / "device_sentinel.clocks"
+TIM = FLEET_DIR / "tim" / "device_sentinel_storage.json"
+TIM_CLOCKS = FLEET_DIR / "tim" / "device_sentinel_clocks.json"
+
+_ABSENT = "reference fleet file absent; set DEVICE_SENTINEL_FLEET_DIR"
 
 FLEETS = [
-    pytest.param(JAMES, JAMES_CLOCKS, id="james"),
-    pytest.param(TIM, TIM_CLOCKS, id="tim"),
+    pytest.param(
+        JAMES,
+        JAMES_CLOCKS,
+        id="james",
+        marks=pytest.mark.skipif(
+            not (JAMES.exists() and JAMES_CLOCKS.exists()), reason=_ABSENT
+        ),
+    ),
+    pytest.param(
+        TIM,
+        TIM_CLOCKS,
+        id="tim",
+        marks=pytest.mark.skipif(
+            not (TIM.exists() and TIM_CLOCKS.exists()), reason=_ABSENT
+        ),
+    ),
 ]
 
 POISONS = [None, "junk", [1, 2], {"x": 1}, True, -7, 4.1e18, "", 3.5, [], {}]
