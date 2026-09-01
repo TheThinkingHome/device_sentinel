@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: conftest.py, Version: 0.7.5 (2026-07-23)
+# File: conftest.py, Version: 0.19.11 (2026-08-31)
 
 """Shared test fixtures.
 
@@ -17,10 +17,13 @@ directory.
 """
 
 import glob
+import importlib.util
 import os
 import shutil
+from pathlib import Path
 
 import pytest
+from homeassistant.helpers import storage as ha_storage
 from pytest_homeassistant_custom_component.common import (
     get_test_config_dir,
 )
@@ -72,3 +75,94 @@ def read_brief():
         return entry.runtime_data._last_brief_text
 
     return _read
+
+
+# ----------------------------------------------- the reference fleets
+
+# The reference fleets are two real people's storage files and are
+# deliberately not in this repository. Point DEVICE_SENTINEL_FLEET_DIR
+# at a directory holding them to run the fleet cases; without it
+# every fleet case skips, which is what happens in continuous
+# integration and on anyone else's checkout. One place since 0.19.11,
+# so no test can hardcode a path the others do not share.
+FLEET_DIR = Path(
+    os.environ.get("DEVICE_SENTINEL_FLEET_DIR", "/home/claude/fleets")
+)
+FLEET_ABSENT = "reference fleet file absent; set DEVICE_SENTINEL_FLEET_DIR"
+
+
+def fleet_path(*parts: str) -> Path:
+    """A path under the fleet directory."""
+    return FLEET_DIR.joinpath(*parts)
+
+
+def fleet_param(*parts: str, id: str, clocks: tuple[str, ...] | None = None):
+    """A pytest param for one fleet file, skipping when it is absent.
+
+    With `clocks`, the param carries both paths and skips unless both
+    exist.
+    """
+    path = fleet_path(*parts)
+    if clocks is None:
+        return pytest.param(
+            path,
+            id=id,
+            marks=pytest.mark.skipif(not path.exists(), reason=FLEET_ABSENT),
+        )
+    clocks_path = fleet_path(*clocks)
+    return pytest.param(
+        path,
+        clocks_path,
+        id=id,
+        marks=pytest.mark.skipif(
+            not (path.exists() and clocks_path.exists()), reason=FLEET_ABSENT
+        ),
+    )
+
+
+# ------------------------------------------------------ the real disk
+
+
+@pytest.fixture
+def real_disk(hass):
+    """Put the real Store load and write back for one test.
+
+    The harness mocks storage in memory, so nothing a test does
+    ordinarily reaches a file. A few claims are about the files
+    themselves, the rotation and the crash window among them, and
+    those need the disk. This borrows the two methods from a fresh,
+    unpatched copy of Home Assistant's storage module for the
+    duration of one test, so every read and write goes to the real
+    `.storage` under the test config directory.
+
+    Restored by hand rather than through monkeypatch, because
+    monkeypatch tears down after the harness's own storage patch has
+    already exited and would leave the mock on the class for the
+    next test to trip over. The module is loaded as a member of its
+    own package so its relative imports resolve.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "homeassistant.helpers.storage_fresh", ha_storage.__file__
+    )
+    fresh = importlib.util.module_from_spec(spec)
+    fresh.__package__ = "homeassistant.helpers"
+    spec.loader.exec_module(fresh)
+    mocked_load = ha_storage.Store._async_load
+    mocked_write = ha_storage.Store._async_write_data
+    ha_storage.Store._async_load = fresh.Store._async_load
+    ha_storage.Store._async_write_data = fresh.Store._async_write_data
+    directory = hass.config.path(".storage")
+    os.makedirs(directory, exist_ok=True)
+
+    def _sweep() -> None:
+        for name in os.listdir(directory):
+            if name.startswith("device_sentinel"):
+                os.remove(os.path.join(directory, name))
+
+    _sweep()
+    try:
+        yield directory
+    finally:
+        ha_storage.Store._async_load = mocked_load
+        ha_storage.Store._async_write_data = mocked_write
+        _sweep()
