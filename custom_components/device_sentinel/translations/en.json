@@ -302,6 +302,17 @@
           }
         }
       }
+    },
+    "containers_repaired": {
+      "title": "Device Sentinel Repaired Its Storage Structure",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Device Sentinel Repaired Its Storage Structure",
+            "description": "Part of the storage file held the wrong kind of value and would have stopped Device Sentinel from starting. It was repaired automatically before anything else ran. What was repaired: {what}. Where the originals are: {where}. Nothing is asked of you; pressing Submit records that you have read this."
+          }
+        }
+      }
     }
   }
 }
