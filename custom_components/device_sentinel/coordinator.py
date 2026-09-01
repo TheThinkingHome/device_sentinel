@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.19.10 (2026-08-31)
+# File: coordinator.py, Version: 0.19.11 (2026-08-31)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -42,6 +42,7 @@ Core rules implemented here, all ruled in the project document:
 
 from __future__ import annotations
 
+import copy
 from collections import Counter, deque
 from collections.abc import Callable
 from datetime import timedelta
@@ -2324,7 +2325,13 @@ class DeviceSentinelCoordinator(
                 # reconciler gives a key a past version wrote.
                 record.pop(field, None)
             else:
-                record[field] = template[field]
+                # A fresh copy per record, never the template's own
+                # object: two records reset in the same pass would
+                # otherwise share one list, and a reading written
+                # into one would appear in the other. Found by the
+                # boundary campaign; gate 1 gives its nine fields a
+                # fresh list the same way (ruling #371).
+                record[field] = copy.deepcopy(template[field])
             reset.append((device_id, field))
         return dropped, reset
 
