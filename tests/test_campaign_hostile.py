@@ -37,10 +37,11 @@ from custom_components.device_sentinel.const import (
     FREEZE_CATEGORY_NEVER_REPORTED,
 )
 
+from tests.conftest import fleet_path
 from tests.helpers import register_device, setup_coordinator
 
-JAMES = Path("/home/claude/fleets/james/2026-08-29/device_sentinel.storage")
-TIM = Path("/home/claude/fleets/tim/2026-08-29/device_sentinel_storage.json")
+JAMES = fleet_path("james", "2026-08-29", "device_sentinel.storage")
+TIM = fleet_path("tim", "2026-08-29", "device_sentinel_storage.json")
 CLOCKS_FOR = {
     "device_sentinel.storage": "device_sentinel.clocks",
     "device_sentinel_storage.json": "device_sentinel_clocks.json",

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_attack_storage_boundary.py, Version: 0.19.9 (2026-08-31)
+# File: test_attack_storage_boundary.py, Version: 0.19.11 (2026-08-31)
 
 """Attack the storage boundary of ruling #370.
 
@@ -43,10 +43,11 @@ from custom_components.device_sentinel.normalise import (
     damaged_rows,
 )
 
+from tests.conftest import FLEET_ABSENT, fleet_path
 from tests.helpers import register_device, setup_coordinator
 
-JAMES = Path("/home/claude/fleets/james/2026-08-29/device_sentinel.storage")
-TIM = Path("/home/claude/fleets/tim/2026-08-29/device_sentinel_storage.json")
+JAMES = fleet_path("james", "2026-08-29", "device_sentinel.storage")
+TIM = fleet_path("tim", "2026-08-29", "device_sentinel_storage.json")
 POISONS = [None, "junk", [1, 2], {"x": 1}, True, -7, 4.1e18, "", 3.5]
 ROUNDS = 40
 
@@ -136,13 +137,13 @@ async def _round(hass, hass_storage, path: Path, seed: int) -> dict:
     return {"seed": seed, "damaged": expected_hits}
 
 
-@pytest.mark.skipif(not JAMES.exists(), reason="fleet file absent")
+@pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
 @pytest.mark.parametrize("seed", range(ROUNDS))
 async def test_boundary_james(hass: HomeAssistant, hass_storage, seed):
     await _round(hass, hass_storage, JAMES, 80_000 + seed)
 
 
-@pytest.mark.skipif(not TIM.exists(), reason="fleet file absent")
+@pytest.mark.skipif(not TIM.exists(), reason=FLEET_ABSENT)
 @pytest.mark.parametrize("seed", range(ROUNDS))
 async def test_boundary_tim(hass: HomeAssistant, hass_storage, seed):
     await _round(hass, hass_storage, TIM, 90_000 + seed)

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_campaign_boundary_hostile.py, Version: 0.19.9 (2026-08-31)
+# File: test_campaign_boundary_hostile.py, Version: 0.19.11 (2026-08-31)
 
 """The hostile campaign against ruling #370, both real fleets.
 
@@ -44,39 +44,22 @@ from custom_components.device_sentinel.normalise import (
     damaged_rows,
 )
 
+from tests.conftest import fleet_param, fleet_path
 from tests.helpers import register_device, setup_coordinator
 
-# The reference fleets are two real people's storage files and are
-# deliberately not in this repository. Point FLEET_DIR at a directory
-# holding them to run these cases; without it every fleet case skips,
-# which is what happens in continuous integration and on anyone
-# else's checkout.
-FLEET_DIR = Path(
-    os.environ.get("DEVICE_SENTINEL_FLEET_DIR", "/home/claude/fleets")
-)
-JAMES = FLEET_DIR / "james_0199" / "device_sentinel.storage"
-JAMES_CLOCKS = FLEET_DIR / "james_0199" / "device_sentinel.clocks"
-TIM = FLEET_DIR / "tim" / "device_sentinel_storage.json"
-TIM_CLOCKS = FLEET_DIR / "tim" / "device_sentinel_clocks.json"
-
-_ABSENT = "reference fleet file absent; set DEVICE_SENTINEL_FLEET_DIR"
+JAMES = fleet_path("james_0199", "device_sentinel.storage")
+JAMES_CLOCKS = fleet_path("james_0199", "device_sentinel.clocks")
+TIM = fleet_path("tim", "device_sentinel_storage.json")
+TIM_CLOCKS = fleet_path("tim", "device_sentinel_clocks.json")
 
 FLEETS = [
-    pytest.param(
-        JAMES,
-        JAMES_CLOCKS,
-        id="james",
-        marks=pytest.mark.skipif(
-            not (JAMES.exists() and JAMES_CLOCKS.exists()), reason=_ABSENT
-        ),
+    fleet_param(
+        "james_0199", "device_sentinel.storage", id="james",
+        clocks=("james_0199", "device_sentinel.clocks"),
     ),
-    pytest.param(
-        TIM,
-        TIM_CLOCKS,
-        id="tim",
-        marks=pytest.mark.skipif(
-            not (TIM.exists() and TIM_CLOCKS.exists()), reason=_ABSENT
-        ),
+    fleet_param(
+        "tim", "device_sentinel_storage.json", id="tim",
+        clocks=("tim", "device_sentinel_clocks.json"),
     ),
 ]
 
@@ -274,36 +257,74 @@ async def test_a_damaged_last_good_does_not_loop_or_win(
     assert ok, why
 
 
-@pytest.mark.xfail(
-    reason="finding 4, open: the harness holds storage in memory, so "
-    "this test never reaches the file it renames. The window is real "
-    "and unproven either way; the test has to reach the real disk "
-    "before it says anything.",
-    strict=True,
-)
 async def test_a_crash_between_the_rename_and_the_write(
-    hass: HomeAssistant, hass_storage
+    hass: HomeAssistant, real_disk
 ):
-    """Would catch: the one window the rotation opens. The live file
-    is renamed and the process dies before the new one is written,
-    so the next start finds a last-good and no live file."""
+    """The one window the rotation opens, on the real disk.
+
+    The live file is renamed to last-good and the process dies
+    before the new one is written, so the next start finds a copy
+    and no live file. Measured for finding 4: the missing-file
+    restore answers it, no record is lost, and the first save writes
+    the live file again.
+    """
+    device, _ = register_device(hass, "crash_dev")
     coord = await setup_coordinator(hass)
+    coord._rotation_armed = True
+    await coord._save_main()
     entry = coord.entry
-    directory = hass.config.path(".storage")
-    os.makedirs(directory, exist_ok=True)
-    live = os.path.join(directory, "device_sentinel.storage")
-    with open(live, "w", encoding="utf-8") as handle:
-        json.dump({"version": 1, "key": STORAGE_KEY,
-                   "data": {DATA_DEVICES: {"d1": {}}, "setup_count": 5}},
-                  handle)
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
-    os.replace(live, live + ".last-good")   # the rename, then the crash
+
+    live = os.path.join(real_disk, "device_sentinel.storage")
+    copy_path = live + ".last-good"
+    with open(live, encoding="utf-8") as handle:
+        devices_before = set(json.load(handle)["data"].get(DATA_DEVICES) or {})
+    os.replace(live, copy_path)  # the rename lands, then the crash
     assert not os.path.exists(live)
-    hass_storage.pop(STORAGE_KEY, None)
-    coord = await _boot(hass, entry)
-    assert coord is not None, "setup died after a crash mid-rotation"
-    ok, why = _clean(coord)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED, (
+        "setup died after a crash mid-rotation"
+    )
+    coord2 = entry.runtime_data
+    assert device.id in coord2.data[DATA_DEVICES], "the device record was lost"
+    assert devices_before <= set(coord2.data[DATA_DEVICES]), "records were lost"
+    assert coord2._restored_from is not None, "the copy was not restored from"
+    ok, why = _clean(coord2)
+    assert ok, why
+    assert os.path.exists(live), "the first save did not re-create the live file"
+
+
+async def test_a_crash_with_the_copy_damaged(hass: HomeAssistant, real_disk):
+    """The worst case of the window: the crash lands and the only file
+    left is damaged. Setup must still come up: restore, then gate 1."""
+    register_device(hass, "crash_bad")
+    coord = await setup_coordinator(hass)
+    coord._rotation_armed = True
+    await coord._save_main()
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    live = os.path.join(real_disk, "device_sentinel.storage")
+    copy_path = live + ".last-good"
+    os.replace(live, copy_path)
+    with open(copy_path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    payload["data"]["incidents"] = "garbage"
+    with open(copy_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED, (
+        "setup died with only a damaged copy on disk"
+    )
+    coord2 = entry.runtime_data
+    assert coord2._container_notice, "gate 1 did not repair the damaged copy"
+    ok, why = _clean(coord2)
     assert ok, why
 
 
@@ -342,19 +363,19 @@ async def test_repeated_damage_and_repair_converges(
         assert ok, f"round {round_number}: {why}"
 
 
-@pytest.mark.xfail(
-    reason="finding 3, open: the repair records its own system event "
-    "into the table it is repairing, so that table's count moves for "
-    "a reason the notice does not name. Not damage; scheduled after "
-    "ruling #371.",
-    strict=True,
-)
 @pytest.mark.parametrize("path,clocks_path", FLEETS)
-async def test_the_repair_never_empties_a_healthy_table(
+async def test_the_repair_keeps_every_good_row(
     hass: HomeAssistant, hass_storage, path, clocks_path
 ):
     """Would catch: a repair that drops good rows alongside the bad,
-    which would quietly erase a person's history."""
+    which would quietly erase a person's history.
+
+    The true invariant, measured for finding 3: after a repair a
+    table holds every good row it had, plus the one system event
+    that records the repair. The first draft of this test required
+    the count to be level, which was the test asking the wrong
+    question; the extra row is the log doing its job.
+    """
     data = copy.deepcopy(_fleet(path))
     _plant(hass_storage, data, _clocks(clocks_path))
     coord = await setup_coordinator(hass)
@@ -366,13 +387,18 @@ async def test_the_repair_never_empties_a_healthy_table(
     populated = [t for t, n in before.items() if n]
     if not populated:
         pytest.skip("this fleet snapshot has no populated tables")
+    good_rows = {t: list(coord.data[t]) for t in populated}
     for table in populated:
         coord.data[table].insert(0, "junk")
     await coord._save_main()
     for table in populated:
-        assert len(coord.data[table]) == before[table], (
-            f"{table}: repairing one bad row changed the count of good "
-            f"rows from {before[table]} to {len(coord.data[table])}"
+        after = coord.data[table]
+        for row in good_rows[table]:
+            assert row in after, f"{table}: a good row was dropped by the repair"
+        expected = before[table] + (1 if table == "system_events" else 0)
+        assert len(after) == expected, (
+            f"{table}: {before[table]} good rows became {len(after)}; "
+            "only system_events may grow, by the repair's own event"
         )
 
 
@@ -595,3 +621,147 @@ async def test_control_gate_one_can_fail(hass: HomeAssistant, hass_storage):
         cmod.check_containers = original
         await hass.config_entries.async_remove(entry.entry_id)
         await hass.async_block_till_done()
+
+
+# ================================== gate 2's template, finding 2
+
+
+async def test_gate_two_repair_does_not_share_a_template_object(
+    hass: HomeAssistant,
+):
+    """Would catch: gate 2's record repair assigning the template's
+    own list to several records, which finding 2 named. Gate 1 owns
+    the nine container fields, so this drives gate 2's path directly
+    on a field gate 1 does not check, by making the check see it as
+    damaged through a type the schema refuses."""
+    from custom_components.device_sentinel.normalise import check_records
+
+    first, _ = register_device(hass, "tmpl_one")
+    second, _ = register_device(hass, "tmpl_two")
+    coord = await setup_coordinator(hass)
+    ids = [first.id, second.id]
+    # The tainted field takes False or a reason string; an int is a
+    # gate 2 fault and not a container fault, so gate 1 leaves it.
+    for device_id in ids:
+        coord.data[DATA_DEVICES][device_id]["tainted"] = 7
+    assert check_records(coord.data[DATA_DEVICES])
+    dropped, reset = coord._repair_records()
+    assert not dropped
+    assert {d for d, _f in reset} == set(ids)
+    # For a scalar default the object identity cannot matter; the
+    # claim is proven on a list-valued field by driving the same
+    # path with the series faulted through a wrong element type.
+    for device_id in ids:
+        coord.data[DATA_DEVICES][device_id]["daily_max"] = ["x"]
+    faults = check_records(coord.data[DATA_DEVICES])
+    assert any(f[1] == "daily_max" for f in faults), "the series was not faulted"
+    coord._repair_records()
+    one = coord.data[DATA_DEVICES][ids[0]]["daily_max"]
+    two = coord.data[DATA_DEVICES][ids[1]]["daily_max"]
+    assert one == [] and two == []
+    assert one is not two, "gate 2 handed two records the same list"
+    one.append(1.0)
+    assert coord.data[DATA_DEVICES][ids[1]]["daily_max"] == []
+
+
+# ============================== gate 1 restores before it repairs
+
+
+async def test_gate_one_restores_from_the_copy_rather_than_emptying(
+    hass: HomeAssistant, real_disk
+):
+    """Ruling #372: a damaged devices map with a usable copy is
+    answered by restoring, not by emptying. Would catch the 0.19.10
+    behaviour, where every record was lost to a repair while the copy
+    one save back held them all."""
+    device, _ = register_device(hass, "restore_first")
+    coord = await setup_coordinator(hass)
+    coord._rotation_armed = True
+    await coord._save_main()
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    live = os.path.join(real_disk, "device_sentinel.storage")
+    copy_path = live + ".last-good"
+    assert os.path.exists(copy_path), "no copy to restore from"
+    with open(live, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    payload["data"][DATA_DEVICES] = "garbage"
+    with open(live, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    coord2 = entry.runtime_data
+    assert coord2._restored_from is not None, "gate 1 repaired instead"
+    assert device.id in coord2.data[DATA_DEVICES], (
+        "the record was lost; the copy held it"
+    )
+    ok, why = _clean(coord2)
+    assert ok, why
+
+
+async def test_gate_one_repairs_when_the_copy_carries_the_same_fault(
+    hass: HomeAssistant, real_disk
+):
+    """The other half of #372: a copy checked and refused. Restoring
+    to the same fault would cost a file copy and prove nothing, so
+    the repair runs instead."""
+    register_device(hass, "same_fault")
+    coord = await setup_coordinator(hass)
+    coord._rotation_armed = True
+    await coord._save_main()
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    live = os.path.join(real_disk, "device_sentinel.storage")
+    copy_path = live + ".last-good"
+    for path in (live, copy_path):
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+        payload["data"]["incidents"] = "garbage"
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    coord2 = entry.runtime_data
+    assert coord2._restored_from is None, (
+        "gate 1 restored to a copy carrying the same fault"
+    )
+    assert coord2._container_notice, "gate 1 neither restored nor repaired"
+    ok, why = _clean(coord2)
+    assert ok, why
+
+
+async def test_gate_one_repairs_when_there_is_no_copy(
+    hass: HomeAssistant, real_disk
+):
+    """A first install with no copy yet: repair in place, as before."""
+    register_device(hass, "no_copy")
+    coord = await setup_coordinator(hass)
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    live = os.path.join(real_disk, "device_sentinel.storage")
+    copy_path = live + ".last-good"
+    if os.path.exists(copy_path):
+        os.remove(copy_path)
+    with open(live, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    payload["data"]["incidents"] = "garbage"
+    with open(live, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    coord2 = entry.runtime_data
+    assert coord2._restored_from is None
+    assert coord2._container_notice
+    ok, why = _clean(coord2)
+    assert ok, why

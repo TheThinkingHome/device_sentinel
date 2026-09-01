@@ -42,10 +42,11 @@ from custom_components.device_sentinel.normalise import (
     check_storage,
 )
 
+from tests.conftest import FLEET_ABSENT, fleet_path
 from tests.helpers import register_device, setup_coordinator
 
-JAMES = Path("/home/claude/fleets/james/2026-08-29/device_sentinel.storage")
-TIM = Path("/home/claude/fleets/tim/2026-08-29/device_sentinel_storage.json")
+JAMES = fleet_path("james", "2026-08-29", "device_sentinel.storage")
+TIM = fleet_path("tim", "2026-08-29", "device_sentinel_storage.json")
 OBSERVED = "2026-07-08T00:00:00+00:00"
 STEPS = 60
 
@@ -186,13 +187,13 @@ async def _campaign(hass: HomeAssistant, path: Path, seed: int) -> dict:
     return {"seed": seed, "operations": operations, "worst": worst}
 
 
-@pytest.mark.skipif(not JAMES.exists(), reason="fleet file absent")
+@pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
 @pytest.mark.parametrize("seed", range(25))
 async def test_writer_and_checker_agree_james(hass: HomeAssistant, seed):
     await _campaign(hass, JAMES, 30_000 + seed)
 
 
-@pytest.mark.skipif(not TIM.exists(), reason="fleet file absent")
+@pytest.mark.skipif(not TIM.exists(), reason=FLEET_ABSENT)
 @pytest.mark.parametrize("seed", range(25))
 async def test_writer_and_checker_agree_tim(hass: HomeAssistant, seed):
     await _campaign(hass, TIM, 40_000 + seed)

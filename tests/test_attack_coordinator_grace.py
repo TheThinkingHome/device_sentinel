@@ -54,10 +54,11 @@ from custom_components.device_sentinel.const import (
     EVENT_RECOVERED,
 )
 
+from tests.conftest import FLEET_ABSENT, fleet_path
 from tests.helpers import setup_coordinator
 
-JAMES = Path("/home/claude/fleets/james/2026-08-29/device_sentinel.storage")
-TIM = Path("/home/claude/fleets/tim/2026-08-29/device_sentinel_storage.json")
+JAMES = fleet_path("james", "2026-08-29", "device_sentinel.storage")
+TIM = fleet_path("tim", "2026-08-29", "device_sentinel_storage.json")
 OBSERVED = "2026-07-08T00:00:00+00:00"
 ROUNDS = 150
 
@@ -252,13 +253,13 @@ async def test_attack_synthetic(hass: HomeAssistant, seed: int) -> None:
     await _run_round(hass, _fleet(None), seed)
 
 
-@pytest.mark.skipif(not JAMES.exists(), reason="fleet file absent")
+@pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
 @pytest.mark.parametrize("seed", range(40))
 async def test_attack_james_fleet(hass: HomeAssistant, seed: int) -> None:
     await _run_round(hass, _fleet(JAMES), 10_000 + seed)
 
 
-@pytest.mark.skipif(not TIM.exists(), reason="fleet file absent")
+@pytest.mark.skipif(not TIM.exists(), reason=FLEET_ABSENT)
 @pytest.mark.parametrize("seed", range(40))
 async def test_attack_tim_fleet(hass: HomeAssistant, seed: int) -> None:
     await _run_round(hass, _fleet(TIM), 20_000 + seed)

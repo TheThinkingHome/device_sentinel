@@ -49,10 +49,11 @@ from custom_components.device_sentinel.const import (
     INCIDENT_RESOLVED,
 )
 
+from tests.conftest import FLEET_ABSENT, fleet_path
 from tests.helpers import register_device, setup_coordinator
 
-JAMES = Path("/home/claude/fleets/james/2026-08-29/device_sentinel.storage")
-TIM = Path("/home/claude/fleets/tim/2026-08-29/device_sentinel_storage.json")
+JAMES = fleet_path("james", "2026-08-29", "device_sentinel.storage")
+TIM = fleet_path("tim", "2026-08-29", "device_sentinel_storage.json")
 CLOCKS_FOR = {
     "device_sentinel.storage": "device_sentinel.clocks",
     "device_sentinel_storage.json": "device_sentinel_clocks.json",
@@ -227,13 +228,13 @@ async def _round(hass: HomeAssistant, path: Path, seed: int) -> dict:
     return {"seed": seed, "recoveries": len(recoveries), "reports": written}
 
 
-@pytest.mark.skipif(not JAMES.exists(), reason="fleet file absent")
+@pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
 @pytest.mark.parametrize("seed", range(20))
 async def test_consistency_james(hass: HomeAssistant, seed):
     await _round(hass, JAMES, 50_000 + seed)
 
 
-@pytest.mark.skipif(not TIM.exists(), reason="fleet file absent")
+@pytest.mark.skipif(not TIM.exists(), reason=FLEET_ABSENT)
 @pytest.mark.parametrize("seed", range(20))
 async def test_consistency_tim(hass: HomeAssistant, seed):
     await _round(hass, TIM, 60_000 + seed)
