@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.19.9 (2026-08-31)
+# File: normalise.py, Version: 0.19.10 (2026-08-31)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -59,6 +59,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from .records import _new_device_record
 from .const import (
     DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
@@ -100,6 +101,7 @@ from .const import (
     CLOCK_FIELDS,
     DATA_BRIDGE_SEEN,
     DATA_BROKER_SEEN,
+    DATA_DEVICES,
     DATA_EPISODES,
     DATA_FIRST_INSTALLED,
     DATA_INCIDENTS,
@@ -738,3 +740,147 @@ def repair_tables(data: Any) -> dict[str, int]:
         ]
         dropped[table] = len(bad)
     return dropped
+
+
+# The container fields of a device record: those whose template
+# default is a list. Derived from the template rather than listed, so
+# a series added later is covered without an edit here (ruling #207's
+# principle, applied to the containers).
+RECORD_LIST_FIELDS: frozenset[str] = frozenset(
+    field
+    for field, value in _new_device_record(
+        "1970-01-01T00:00:00+00:00", None
+    ).items()
+    if isinstance(value, list)
+)
+
+
+def check_containers(data: Any) -> list[tuple[str, str, str]]:
+    """Name everything gate 1 can check before the clocks merge.
+
+    Gate 1 (ruling #371). The load-time steps run before the full
+    check, because one of them fills the seventeen clock fields the
+    main file does not carry and a full check ahead of it would fault
+    every record on a healthy fleet. Those steps walk the data raw,
+    so a value of the wrong container kind stops setup: forty crashes
+    were measured across five steps, every one of them an `.items()`
+    on something that is not a map, an iteration over something that
+    is not a list, or an assignment into something that is not a
+    record.
+
+    The seam is the clocks merge, not a list of shapes. Seventeen
+    record fields arrive from the hot file, so the record check
+    cannot run before the merge without faulting every record on a
+    healthy fleet. Everything else can, and does: the containers and
+    the top-level scalars.
+
+    Containers alone were the first attempt and were too narrow. A
+    scalar of the wrong kind crashes a step too, whenever a step
+    compares it: `saved_at` holding a map stops `_merge_clocks` at
+    `hot_at < cold_at`, found by the boundary campaign on the second
+    reference fleet.
+
+    The main document only. The clocks file is guarded by
+    `check_clocks` before the merge reads it, which discards a
+    damaged one whole (ruling #356) and was measured to catch all
+    eight damage shapes, so nothing here would add. Measured silent
+    on both reference fleets, live and last-good, all four files.
+
+    Returns (holder, field, why) triples in the shape the full check
+    uses, so one repair path serves both gates.
+    """
+    faults: list[tuple[str, str, str]] = []
+
+    devices = data.get(DATA_DEVICES) if isinstance(data, dict) else None
+    if DATA_DEVICES in (data if isinstance(data, dict) else {}):
+        if not isinstance(devices, dict):
+            faults.append(
+                (DATA_DEVICES, "*", f"expected a map, found {_describe(devices)}")
+            )
+        else:
+            for device_id, record in devices.items():
+                if not isinstance(record, dict):
+                    faults.append(
+                        (device_id, "*", f"expected a record, found {_describe(record)}")
+                    )
+                    continue
+                for field in sorted(RECORD_LIST_FIELDS):
+                    if field in record and not isinstance(record[field], list):
+                        faults.append(
+                            (
+                                device_id,
+                                field,
+                                f"expected a list, found {_describe(record[field])}",
+                            )
+                        )
+
+    if isinstance(data, dict):
+        for table in TABLES:
+            if table in data and not isinstance(data[table], list):
+                faults.append(
+                    (table, "*", f"expected a list, found {_describe(data[table])}")
+                )
+        for key, kind in SCALARS.items():
+            if key not in data:
+                continue
+            why = _fault(kind, data[key])
+            if why is not None:
+                faults.append((key, key, f"expected {kind}, found {why}"))
+
+    return faults
+
+
+def repair_containers(data: Any) -> dict[str, int]:
+    """Make every container a container, in place (ruling #371).
+
+    The repair half of gate 1, by the #370 rules: a map that is not a
+    map is emptied, a record that is not a record is dropped, a
+    series that is not a list is reset to its default, and a table
+    that is not a list is emptied. A damaged scalar is dropped rather
+    than reset: the load path calls `setdefault` for every one of
+    them a few lines later, so dropping restores the real default and
+    cannot invent a wrong one. The clocks file is not touched here;
+    it has its own guard (ruling #356).
+
+    Returns a count per kind, for the notice.
+    """
+    counts: dict[str, int] = {}
+
+    def _count(kind: str, by: int = 1) -> None:
+        if by:
+            counts[kind] = counts.get(kind, 0) + by
+
+    if not isinstance(data, dict):
+        return counts
+
+    devices = data.get(DATA_DEVICES)
+    if DATA_DEVICES in data and not isinstance(devices, dict):
+        data[DATA_DEVICES] = {}
+        _count("devices emptied")
+        devices = data[DATA_DEVICES]
+    if isinstance(devices, dict):
+        for device_id in [
+            device_id
+            for device_id, record in devices.items()
+            if not isinstance(record, dict)
+        ]:
+            del devices[device_id]
+            _count("records dropped")
+        for record in devices.values():
+            for field in RECORD_LIST_FIELDS:
+                if field in record and not isinstance(record[field], list):
+                    # A fresh list per record, never a shared default.
+                    record[field] = []
+                    _count("series reset")
+
+    for table in TABLES:
+        if table in data and not isinstance(data[table], list):
+            data[table] = []
+            _count("tables emptied")
+
+    for key, kind in SCALARS.items():
+        if key in data and _fault(kind, data[key]) is not None:
+            del data[key]
+            _count("keys dropped")
+
+    return counts

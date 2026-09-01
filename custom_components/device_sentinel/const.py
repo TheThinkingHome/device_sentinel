@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.19.9 (2026-08-31)
+# File: const.py, Version: 0.19.10 (2026-08-31)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1967,7 +1967,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 370
+HIGHEST_RULING = 371
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -2074,6 +2074,9 @@ SYS_STORAGE_REPAIR = "storage_repair"
 REPAIR_STORAGE_SHAPE = "storage_shape"
 # The buttonless notice a completed repair raises (ruling #370).
 REPAIR_STORAGE_REPAIRED = "storage_repaired"
+# Gate 1's notice (ruling #371): a container of the wrong kind,
+# repaired before the load-time steps could crash on it.
+REPAIR_CONTAINERS_REPAIRED = "containers_repaired"
 REPAIR_ENTITIES_DISABLED = "entities_disabled"
 REPAIR_NOTIFY_TARGET_MISSING = "notify_target_missing"
 REPAIR_NO_DELIVERY = "no_delivery_configured"
@@ -2086,6 +2089,7 @@ REPAIR_NO_DELIVERY = "no_delivery_configured"
 REPAIR_STORAGE_RESTORED = "storage_restored"
 REPAIRS_ALL = (
     REPAIR_STORAGE_REPAIRED,
+    REPAIR_CONTAINERS_REPAIRED,
     REPAIR_ENTITIES_DISABLED,
     REPAIR_NOTIFY_TARGET_MISSING,
     REPAIR_NO_DELIVERY,

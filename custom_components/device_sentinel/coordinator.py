@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.19.9 (2026-08-31)
+# File: coordinator.py, Version: 0.19.10 (2026-08-31)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -70,8 +70,10 @@ from .normalise import (
     damaged_rows,
     fill_missing_row_fields,
     check_clocks,
+    check_containers,
     check_records,
     fault_id,
+    repair_containers,
     repair_tables,
 )
 from .repairs import (
@@ -295,6 +297,9 @@ class DeviceSentinelCoordinator(
         # repaired and where the originals are. None when nothing
         # this session repaired anything; self-clears on a clean load.
         self._repair_notice: dict[str, str] | None = None
+        # Gate 1's own notice (ruling #371), separate because the two
+        # gates answer different questions.
+        self._container_notice: dict[str, str] | None = None
         # Whether the live file on disk was last written clean, so
         # the next clean save may rotate it to last-good (#370).
         self._rotation_armed: bool = False
@@ -634,19 +639,36 @@ class DeviceSentinelCoordinator(
                 DATA_SETUP_COUNT: 0,
                 DATA_DEVICES: {},
             }
-        # The load gate with its restore retry (ruling #370). The
-        # migrations run, the gate checks what they produced, and a
-        # faulty document with a usable last-good is answered by
-        # restoring the file and running this section once more on
-        # the restored copy. The second pass repairs in place instead,
-        # so the loop always ends with a document the gate vouches
-        # for. Per-pass state resets at the top so a retry never
-        # reads the first pass's clocks verdict.
+        # The two gates, with the restore retry (rulings #370, #371).
+        # Gate 1 checks the containers, the load-time steps run, gate
+        # 2 checks everything, and a faulty document with a usable
+        # last-good is answered by restoring the file and running
+        # this section once more on the restored copy. The second
+        # pass repairs in place instead, so the loop always ends with
+        # a document both gates vouch for. Per-pass state resets at
+        # the top so a retry never reads the first pass's verdict.
         malformed: dict[str, Any] = {}
         gate_restored = False
         for _load_attempt in (1, 2):
             self._clocks_discarded = []
             self._clocks_seen = None
+            # Gate 1 (ruling #371), before the first load-time step.
+            # Those steps walk the data raw, because the full check
+            # cannot run ahead of the clocks merge without faulting
+            # the seventeen fields the main file does not carry. A
+            # container of the wrong kind stops setup there, forty
+            # crashes measured across five steps, so the containers
+            # are made containers first. The main document only: the
+            # clocks file has its own guard a few lines below, which
+            # discards a damaged one whole before the merge reads it
+            # (ruling #356), measured against all eight damage
+            # shapes. Silent on a healthy file: zero faults on both
+            # reference fleets, live and last-good.
+            container_faults = check_containers(loaded)
+            if container_faults:
+                await self._repair_containers_at_load(
+                    loaded, container_faults
+                )
             loaded.setdefault(DATA_FIRST_INSTALLED, dt_util.utcnow().isoformat())
             loaded.setdefault(DATA_DEVICES, {})
             loaded.setdefault(DATA_TODO_ITEMS, [])
@@ -2221,6 +2243,57 @@ class DeviceSentinelCoordinator(
         self._repair_notice = {"moment": moment, "what": what, "where": where}
         self._load_faulty = True
 
+    async def _repair_containers_at_load(
+        self,
+        loaded: dict[str, Any],
+        faults: list[tuple[str, str, str]],
+    ) -> None:
+        """Gate 1's repair, at the point of detection (ruling #371).
+
+        Its own evidence copy and its own notice, because gate 1 and
+        gate 2 answer different questions and a person reading one
+        card should not have to work out which. The copies are
+        stamped to the second and collision-suffixed, so a boot where
+        both gates fire keeps the file as it arrived and the state
+        gate 1 handed on, which is what says whether gate 1's repair
+        caused gate 2's fault or merely preceded it.
+
+        No system event here: the event log is a table this repair
+        may be emptying, and writing into it mid-repair is the
+        self-reference that finding 3 named. Gate 2's event covers
+        the boot, and the log carries the detail.
+        """
+        stamp, copied = await async_copy_evidence(self.hass)
+        if stamp:
+            LOGGER.warning(
+                "Storage evidence copied to trim_backups as %s before "
+                "the container repair writes: %s",
+                stamp,
+                ", ".join(copied),
+            )
+        counts = repair_containers(loaded)
+        what = (
+            "; ".join(f"{count} {kind}" for kind, count in sorted(counts.items()))
+            or f"{len(faults)} fault(s) found and nothing needed changing"
+        )
+        where = (
+            f"the originals are in {TRIM_BACKUP_DIR} under {stamp}"
+            if stamp
+            else "the evidence copy could not be written"
+        )
+        named = "; ".join(
+            f"{holder}.{field}: {why}" for holder, field, why in faults[:5]
+        )
+        LOGGER.warning(
+            "Storage containers repaired before the load-time steps: "
+            "%s (%s); %s",
+            what,
+            named,
+            where,
+        )
+        self._container_notice = {"what": what, "where": where}
+        self._load_faulty = True
+
     def _repair_records(self) -> tuple[list[str], list[tuple[str, str]]]:
         """Repair the device records in place, by the two rules.
 
@@ -2373,6 +2446,7 @@ class DeviceSentinelCoordinator(
             self.entry,
             moment,
             repair_notice=self._repair_notice,
+            container_notice=self._container_notice,
             awaiting=self.awaiting_enable_counts(),
             days_installed=days_installed,
             version_changed=self._version_changed,

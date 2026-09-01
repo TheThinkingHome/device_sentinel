@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.19.9 (2026-08-31)
+# File: repairs.py, Version: 0.19.10 (2026-08-31)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -79,6 +79,7 @@ from .const import (
     REPAIR_NOTIFY_TARGET_MISSING,
     REPAIR_STORAGE_SHAPE,
     REPAIR_STORAGE_REPAIRED,
+    REPAIR_CONTAINERS_REPAIRED,
     WIKI_LINK_NOTIFICATIONS,
     WIKI_LINK_REPAIRS,
     REPAIR_STORAGE_RESTORED,
@@ -236,6 +237,36 @@ def async_clear_all(hass: HomeAssistant) -> None:
 
 
 @callback
+def _evaluate_containers_repaired(
+    hass: HomeAssistant,
+    notice: dict[str, str] | None,
+    entry_id: str,
+) -> None:
+    """Raise or clear gate 1's notice (ruling #371).
+
+    Its own card rather than a line inside gate 2's, because the two
+    gates answer different questions: this one says the file held a
+    container of the wrong kind, which would have stopped the load
+    before anything could judge it. Same shape as gate 2's notice: a
+    warning, dismissible, nothing to decide.
+    """
+    if not notice:
+        _clear(hass, REPAIR_CONTAINERS_REPAIRED)
+        return
+    _raise(
+        hass,
+        REPAIR_CONTAINERS_REPAIRED,
+        severity=ir.IssueSeverity.WARNING,
+        is_fixable=True,
+        learn_more_url=WIKI_LINK_REPAIRS,
+        placeholders={
+            "what": notice.get("what", ""),
+            "where": notice.get("where", ""),
+        },
+        data={"entry_id": entry_id},
+    )
+
+
 def _evaluate_storage_repaired(
     hass: HomeAssistant,
     notice: dict[str, str] | None,
@@ -394,6 +425,7 @@ def async_evaluate(
     moment: str,
     *,
     repair_notice: dict[str, str] | None,
+    container_notice: dict[str, str] | None,
     awaiting: dict[str, int],
     days_installed: float | None,
     version_changed: bool,
@@ -426,6 +458,7 @@ def async_evaluate(
     """
     _ = namer
     _evaluate_storage_repaired(hass, repair_notice, entry.entry_id)
+    _evaluate_containers_repaired(hass, container_notice, entry.entry_id)
     # The identifier the retired three-option card used. Cleared
     # unconditionally so an install upgraded mid-issue does not
     # carry a card whose flow no longer exists (ruling #370).
@@ -443,7 +476,7 @@ def async_evaluate(
         "Repairs evaluated at %s: repair notice %s, %d entity/entities "
         "awaiting enable",
         moment,
-        "standing" if repair_notice else "none",
+        "standing" if (repair_notice or container_notice) else "none",
         sum(awaiting.values()),
     )
 
@@ -610,6 +643,9 @@ async def async_create_fix_flow(
         return EnableEntitiesFlow(entry_id)
     if issue_id == REPAIR_NOTIFY_TARGET_MISSING:
         return RemoveDeadTargetsFlow(entry_id)
+    if issue_id == REPAIR_CONTAINERS_REPAIRED:
+        # The repair already ran (ruling #371); acknowledgement only.
+        return ConfirmRepairFlow()
     if issue_id == REPAIR_STORAGE_REPAIRED:
         # The repair already ran (ruling #370); the flow is
         # acknowledgement alone, the same as the restored card.
