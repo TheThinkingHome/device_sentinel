@@ -89,6 +89,7 @@ from .backup import (
     async_prune_backups,
     async_take_backup,
     async_delete_clocks_last_good,
+    read_last_good_raw,
     read_main_file_raw,
     async_restore_main_file,
     describe_restore_loss,
@@ -667,6 +668,60 @@ class DeviceSentinelCoordinator(
             # reference fleets, live and last-good.
             container_faults = check_containers(loaded)
             if container_faults:
+                # Rule 4 of #370, which gate 1 owes as much as gate 2
+                # does (ruling #372): damage with a usable last-good
+                # is answered by restoring, not by repairing. Repair
+                # here empties a `devices` map that arrived as a
+                # string, losing every record, when the copy one save
+                # back holds them all. The copy is checked with gate
+                # 1's own check before the restore, because a copy
+                # carrying the same fault is not worth restoring to.
+                copy_data = None
+                if not gate_restored and self._restored_from is None:
+                    copy_data = await self.hass.async_add_executor_job(
+                        read_last_good_raw, self.hass
+                    )
+                    if copy_data is not None and (
+                        check_containers(copy_data)
+                        or not copy_data.get(DATA_DEVICES)
+                    ):
+                        # Same fault, or a copy holding no records at
+                        # all, which #348 refuses to promote over a
+                        # genuine first install.
+                        copy_data = None
+                if copy_data is not None:
+                    stamp, copied = await async_copy_evidence(self.hass)
+                    restored, taken = await async_restore_main_file(self.hass)
+                    fresh = None
+                    if restored:
+                        fresh = await self.hass.async_add_executor_job(
+                            read_main_file_raw, self.hass
+                        )
+                    if fresh is not None:
+                        LOGGER.warning(
+                            "Storage held %d container fault(s), so the "
+                            "file was replaced from the last-good copy "
+                            "and the load ran again on the copy. The "
+                            "originals are in %s as %s",
+                            len(container_faults),
+                            TRIM_BACKUP_DIR,
+                            stamp or "unstamped",
+                        )
+                        loaded = fresh
+                        malformed = {}
+                        self._restored_from = taken
+                        self._restore_evidence = stamp
+                        self._restore_copied = copied
+                        self._restore_reason = "damaged"
+                        self._load_faulty = True
+                        gate_restored = True
+                        continue
+                    LOGGER.warning(
+                        "Storage held %d container fault(s) and the "
+                        "last-good copy could not be used; repairing "
+                        "in place instead",
+                        len(container_faults),
+                    )
                 await self._repair_containers_at_load(
                     loaded, container_faults
                 )

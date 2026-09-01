@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.19.9 (2026-08-31)
+# File: backup.py, Version: 0.19.11 (2026-08-31)
 
 """A one-shot copy of both storage files, taken before a release removes
 something it cannot put back.
@@ -578,6 +578,24 @@ def read_main_file_raw(hass: HomeAssistant) -> dict[str, Any] | None:
     mid-load (ruling #370). Returns the data payload alone.
     """
     path = _storage_path(hass, STORAGE_KEY)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    data = payload.get("data") if isinstance(payload, dict) else None
+    return data if isinstance(data, dict) else None
+
+
+def read_last_good_raw(hass: HomeAssistant) -> dict[str, Any] | None:
+    """Read the last-good main copy straight off disk, or None.
+
+    Gate 1 looks before it leaps (ruling #372): a copy carrying the
+    same container fault is not worth restoring to, and reading it
+    first is cheaper than restoring and finding out. Returns the data
+    payload alone.
+    """
+    path = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
     try:
         with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
