@@ -108,7 +108,11 @@ async def test_a_non_dict_record_no_longer_kills_setup(
     assert record is None or isinstance(record, dict), (
         "the garbage record survived the gate"
     )
-    assert coord2._repair_notice, "the repair raised no notice"
+    # A record that is not a record is a container fault, so gate 1
+    # answers it now and gate 2 finds nothing left (ruling #371).
+    assert coord2._container_notice or coord2._repair_notice, (
+        "the repair raised no notice"
+    )
 
 
 async def test_a_faulted_record_is_repaired_and_setup_survives(

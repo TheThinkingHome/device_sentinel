@@ -276,7 +276,12 @@ async def test_a_damaged_record_is_repaired_at_load(
     assert not check_records(coord2.data[DATA_DEVICES]), (
         f"{field}={poison!r} still faulty after the gate"
     )
-    assert coord2._repair_notice, "the repair raised no notice"
+    # Either gate may be the one that answers, depending on the
+    # field: gate 1 owns the container fields, gate 2 the rest
+    # (ruling #371).
+    assert coord2._repair_notice or coord2._container_notice, (
+        "the repair raised no notice"
+    )
     failures = []
     for name in SENSOR_PROPERTIES:
         try:
