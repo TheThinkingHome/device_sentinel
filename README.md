@@ -11,6 +11,8 @@
 
 **Your dashboard cannot tell a quiet device from a dead one. Device Sentinel can, and it watches the batteries and radio links that fail first.**
 
+> **Pre-Release.** This integration is under rapid development, with frequent releases. See the table below for what is stable today.
+
 ## Integration Status
 
 | Area             | Status                         | What that means                                                                                                                                                                                          |
