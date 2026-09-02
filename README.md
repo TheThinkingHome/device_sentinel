@@ -13,15 +13,16 @@
 
 ## Integration Status
 
-| Area | Status | What you get |
-| --- | --- | --- |
-| Freeze detection | Stable | Every device gets its own deadline, learned from its own habits. A device that has gone quiet is caught while its last reading still looks perfectly fine. |
-| Battery | Stable | Warning while you can still act, from the level you set and from how fast the cell is actually falling. |
-| Signal | Experimental | Weak links are found and charted against each device's own normal. Nothing reaches your phone yet except a link stuck at a false value. |
-| Zigbee2MQTT | Coordinator watched | When the coordinator stops, you get one message naming it instead of sixty devices blamed for it. Re-pair a device by hand and that is not learned as its normal behavior. |
-| ZHA | Coordinator watched | When the coordinator stops, you get one message naming it, timed from when the radio really stopped. Press Maintenance Mode before you work on a device and your fix is not learned as its normal behavior. |
-| MQTT | Broker watched | When the broker stops, every device behind it goes quiet at once. You get one message naming the broker, and none of them is blamed. |
-| Z-Wave | Devices watched | Every device is watched as usual. The controller is not, so a controller outage reads as a fault on each device behind it. [Help change that](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave). |
+| Area             | Status                         | What that means                                                                                                                                                                                          |
+| ---------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Freeze detection | Stable                         | Per-device rhythms are fully modeled. Verdicts accurately distinguish between frozen, unavailable, unknown, and never reported states. The core logic is settled and unchanged in this release.          |
+| Battery          | Stable                         | Dual-evaluation is live: cells are judged against a fixed threshold and a predictive time-to-empty trend. Works on any device that reports a battery level.                                              |
+| Signal           | Experimental                   | Each day's readings are folded into a time-weighted fifth percentile and median, and a day is called bad when it falls far below that device's own recent normal, in its own units and in its own spread. Where a device exposes both, RSSI and LQI are recorded side by side. Only railed links trigger phone alerts. The gates are still being tuned, and recorded metrics will shift as that settles. |
+| Storage          | Hardening (Verify and Backup live) | The **Verify, Backup, Heal, Restore** framework guards the learned data against corruption. Verify and Backup are live and under test in this release. Heal and Restore follow once the checks have proven quiet on good data. |
+| Zigbee2MQTT      | Working                        | Supports pairing window recognition, bridge and broker outage detection, and bridge/broker sensor integration. Provides a second-opinion availability check alongside freeze verdicts.                   |
+| MQTT             | Working                        | Watches the MQTT broker itself. Supports broker outage detection and broker sensor integration. Devices behind a stopped broker are cleared of blame rather than reported one by one. A broker outage outranks any bridge outage.                                     |
+| ZHA              | In progress                    | Coordinator support has begun. Thank you to Tim for working with me to start building it out. See the [ZHA](https://github.com/TheThinkingHome/device_sentinel/wiki/ZHA) documentation to follow along or contribute. |
+| Z-Wave           | Coordinator features not built | Not started. If interested, see the [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) documentation to contribute.                                                                |
 
 ## The Problem
 
