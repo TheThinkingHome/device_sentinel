@@ -13,15 +13,15 @@
 
 ## Integration Status
 
-| Area             | Status                         | What that means                                                                                                                                                                                          |
-| ---------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Freeze detection | Stable                         | Per-device rhythms are fully modeled. Verdicts accurately distinguish between frozen, unavailable, unknown, and never reported states. The core logic is settled and unchanged in this release.          |
-| Battery          | Stable                         | Dual-evaluation is live: cells are judged against a fixed threshold and a predictive time-to-empty trend. Works on any device that reports a battery level.                                              |
-| Signal           | Experimental                   | Each day's readings are folded into a time-weighted fifth percentile and median, and a day is called bad when it falls far below that device's own recent normal, in its own units and in its own spread. Where a device exposes both, RSSI and LQI are recorded side by side. Only railed links trigger phone alerts. The gates are still being tuned, and recorded metrics will shift as that settles. |
-| Storage          | Hardening (Verify and Backup live) | The **Verify, Backup, Heal, Restore** framework guards the learned data against corruption. Verify and Backup are live and under test in this release. Heal and Restore follow once the checks have proven quiet on good data. |
-| Zigbee2MQTT      | Working                        | Supports pairing window recognition, bridge and broker outage detection, and bridge/broker sensor integration. Provides a second-opinion availability check alongside freeze verdicts.                   |
-| ZHA              | In progress                    | Coordinator support has begun. Thank you to Tim for working with me to start building it out. See the [ZHA](https://github.com/TheThinkingHome/device_sentinel/wiki/ZHA) documentation to follow along or contribute. |
-| Z-Wave           | Coordinator features not built | Not started. If interested, see the [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) documentation to contribute.                                                                |
+| Area | Status | What that means |
+| --- | --- | --- |
+| Freeze detection | Stable | Every device's own reporting rhythm is modelled, and its freeze window is set from that rhythm rather than from a number you pick. Frozen, unavailable, unknown and never reported are told apart and named separately. |
+| Battery | Stable | Every cell is judged twice: against a threshold you set, and against how fast it is actually falling. Works on any device that reports a battery level. |
+| Signal | Experimental | Each day's readings become a time-weighted fifth percentile and median, and a day counts as bad when it falls far below that device's own normal, in its own units and in its own spread. Where a device reports both, RSSI and LQI are kept apart. Bad days are listed and charted; only a railed link reaches your phone. See the roadmap. |
+| Zigbee2MQTT | Working | Coordinator watched, with a **Bridge: Zigbee2MQTT** sensor.<br>A coordinator outage becomes one line naming it and a count of what sits behind it, not a fault per device.<br>Silences spanning an outage are set aside rather than learned.<br>A pairing window is recognized, so a hand re-pair is not learned as the device's own rhythm.<br>A second opinion on every freeze verdict, from Zigbee2MQTT's own view of each device. |
+| ZHA | Working | Coordinator watched, with a **Bridge: ZHA** sensor.<br>A coordinator outage becomes one line naming it and a count, dated from when the radio stopped rather than from when it was noticed.<br>Silences spanning an outage are set aside rather than learned.<br>No pairing window to read, so use Maintenance Mode when you work on a device by hand.<br>No per-device second opinion; verdicts stand on Device Sentinel's own learning. |
+| MQTT | Working | Broker watched, with a **Broker: MQTT** sensor.<br>A broker outage clears every device behind it of blame and gives you one line naming the broker.<br>A broker outranks any coordinator, because a broker that is down takes every bridge with it.<br>Needs a broker that publishes uptime statistics, which Mosquitto does by default. |
+| Z-Wave | Devices only | Every Z-Wave device is watched, learned and judged like any other.<br>The controller itself is not watched, so a controller outage reads as a fault on each device behind it.<br>Use Maintenance Mode when you include or replace hardware.<br>If you run Z-Wave and want to help change this, see the [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) page. |
 
 ## The Problem
 
@@ -93,7 +93,7 @@ A radio link is judged against its own recent history rather than a fixed number
 
 ### It Does Not Learn Your Repairs As Normal
 
-The learning has to survive you. A battery swap, a re-pair, a Home Assistant restart: each looks exactly like a device choosing to be silent, and an integration that learned those gaps would slowly teach itself that broken is normal. Device Sentinel tells them apart. A recovery during a Zigbee2MQTT pairing window is recognized as your hand. A silence that spans a restart is not counted against anybody, because nothing was listening. And for everything no coordinator can see, there is a Maintenance Mode button: press it before you work on your hardware, and whatever recovers in the next ten minutes is credited to you rather than learned as the device's own rhythm.
+The learning has to survive you. A battery swap, a re-pair, a Home Assistant restart: each looks exactly like a device choosing to be silent, and an integration that learned those gaps would slowly teach itself that broken is normal. Device Sentinel tells them apart. A recovery during a Zigbee2MQTT pairing window is recognized as your hand, and on a coordinator with no window to read, Maintenance Mode says the same thing. A silence that spans a restart is not counted against anybody, because nothing was listening. And for everything no coordinator can see, there is a Maintenance Mode button: press it before you work on your hardware, and whatever recovers in the next ten minutes is credited to you rather than learned as the device's own rhythm.
 
 ### One List Of What Is Actually Wrong
 
@@ -186,7 +186,9 @@ The [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki) is the full 
 
 Worked on in this order:
 
-- **Signal alerts.** Weak links are already found, charted, and listed; they do not yet reach your phone, because the judgment is still learning what a real failure looks like across enough hardware to be trusted. Alerting ships when the formula has earned it, not before.
+- **Signal alerts.** Weak links are already found, charted, and listed; they do not yet reach your phone. Nobody yet knows which signal pattern predicts a device actually failing: a link can sit low for months and never miss a report, and another can look healthy and drop out weekly. Alerting on that today would mean warnings about devices that are fine, which teaches you to ignore the one that is not.
+
+  What settles it is meshes that misbehave. **If yours does, you can help.** Open an issue titled **contribute signal**, attach a diagnostics download and your signal report from `config/www/device_sentinel/signal_report.html`, and say which devices actually give you trouble and how often. A healthy mesh cannot answer the question, however long it runs.
 - **The signal trail on an alert.** The last few readings before a device went dark, attached to the alert. Forty, thirty-two, twenty-four, then gone tells you the link died. Two hundred, two hundred and one, then gone tells you to look elsewhere.
 - **A dashboard card.** One card showing the problem list, the counts, and the maintenance state, installable from HACS beside the integration.
 
