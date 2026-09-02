@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_signal.py, Version: 0.16.16 (2026-08-22)
+# File: report_signal.py, Version: 0.19.14 (2026-09-02)
 
 """The signal report and the signal cells of the telemetry.
 
@@ -166,12 +166,17 @@ class SignalReportMixin:
 
     def _signal_strip_rows(
         self, rows: list[dict[str, Any]]
-    ) -> tuple[list[dict[str, Any]], int]:
-        """Return the devices worth a look, and how many are not.
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Return the devices worth a look, and the ones that are not.
 
         Ruling #315. The full fleet is still available behind a
         toggle, for the once-in-a-while troubleshooting a person
         actually opens this page for.
+
+        The steady devices come back as rows rather than a count so
+        the page can name them (ruling #380). A count on its own tells
+        a person how many devices are fine without telling them which,
+        which is the question they came to the page with.
         """
         worth = [
             row for row in rows
@@ -181,7 +186,9 @@ class SignalReportMixin:
             worth = rows[:STRIP_MIN_ROWS]
         if len(worth) > STRIP_MAX_ROWS:
             worth = worth[:STRIP_MAX_ROWS]
-        return worth, len(rows) - len(worth)
+        named = {id(row) for row in worth}
+        quiet = [row for row in rows if id(row) not in named]
+        return worth, quiet
 
     def _signal_baddays_today(
         self, rows: list[dict[str, Any]]
@@ -400,15 +407,65 @@ class SignalReportMixin:
         parts.append("</svg>")
         return "".join(parts)
 
+    @staticmethod
+    def _signal_depth_words(deviations: float) -> str:
+        """Return how far a fall sat below normal, in the legend's words.
+
+        The biography said "10 of its own spreads", which is the unit
+        the shading is computed in and means nothing to a person
+        reading it. The same four words the legend uses, so the chart
+        and the paragraph beneath it agree (ruling #380).
+        """
+        if deviations >= 6.0:
+            return "far below"
+        if deviations >= 3.0:
+            return "well below"
+        if deviations >= 2.0:
+            return "slightly below"
+        return "below"
+
+    @staticmethod
+    def _signal_name_grid(names: list[str], columns: int) -> str:
+        """Return a multi-column table of device names.
+
+        The same shape the battery report uses for the devices with
+        no cell, so a person meeting one page has already read the
+        other (ruling #380).
+        """
+        if not names:
+            return ""
+        per = -(-len(names) // columns)
+        blocks = [
+            names[index * per : (index + 1) * per]
+            for index in range(columns)
+        ]
+        header = "".join("<th>DEVICE</th>" for _ in blocks)
+        out = [f"<table><tr>{header}</tr>"]
+        for index in range(len(blocks[0])):
+            body = [
+                f"<td>{escape(block[index])}</td>"
+                if index < len(block)
+                else "<td></td>"
+                for block in blocks
+            ]
+            out.append("<tr>" + "".join(body) + "</tr>")
+        out.append("</table>")
+        return "".join(out)
+
     # ------------------------------------------------------ the page
 
     def _write_signal_report_html(self) -> None:
         """Write the signal report to www for browsers and dashboards."""
         rows = self._signal_report_rows()
         worth, quiet = self._signal_strip_rows(rows)
-        quiet_line = (
-            f"<p class='empty'>{quiet} other device(s) stayed within "
-            "their own normal and are not shown.</p>"
+        # The count and the list come from one place, so the page can
+        # never say a different number than it shows (ruling #380).
+        quiet_block = (
+            f"<h2>Steady Signals</h2>\n<p>{len(quiet)} device(s) "
+            "stayed within their own normal.</p>\n"
+            + self._signal_name_grid(
+                sorted(row["name"] for row in quiet), 3
+            )
             if quiet
             else ""
         )
@@ -428,7 +485,7 @@ class SignalReportMixin:
             lede = (
                 "<p class='empty'>No device had a bad signal day on "
                 f"{day_label}. {len(rows)} device(s) judged; nothing "
-                "here needs you.</p>"
+                "here needs your attention.</p>"
             )
 
         biographies = []
@@ -463,9 +520,10 @@ class SignalReportMixin:
             biographies.append(
                 f"<h3>{escape(row['name'])}</h3>\n"
                 f"<p>Worst day {when.strftime('%b %-d')}: signal fell from "
-                f"{worst['baseline']:.0f} to {worst['today']:.0f}, "
-                f"{worst['fall']:.0f} points and "
-                f"{worst['deviations']:.0f} of its own spreads. "
+                f"{worst['baseline']:.0f} to {worst['today']:.0f}, a drop "
+                f"of {worst['fall']:.0f} points, "
+                f"{self._signal_depth_words(worst['deviations'])} "
+                "anything this device normally reads. "
                 f"{'It has since come back.' if back else 'It has not come back.'}"
                 f"{traffic}</p>\n"
                 f"{self._signal_biography_svg(row)}"
@@ -499,12 +557,15 @@ td, th {{ border: 1px solid #D3D1C7; padding: 4px 8px;
 summary {{ font-size: 14px; cursor: pointer; margin-top: 8px; }}
 .swatch {{ display: inline-block; width: 11px; height: 11px;
   border-radius: 2px; margin-right: 4px; vertical-align: -1px; }}
-footer {{ margin-top: 28px; font-size: 12px; color: #5F5E5A; }}
+footer {{ margin-top: 28px; font-size: 13px; color: #5F5E5A; }}
+footer code {{ font-size: 12px; background: #F0EFE9; padding: 1px 4px;
+  border-radius: 3px; }}
 @media (prefers-color-scheme: dark) {{
   body {{ background: #1a1a19; color: #eee; }}
   .lbl {{ fill: #eee; }}
   .lede {{ background: #262624; }}
   td, th {{ border-color: #444; }}
+  footer code {{ background: #2a2a28; }}
   footer, .empty {{ color: #B4B2A9; }} }}
 </style></head><body>
 <h1>Device Sentinel Signal Report</h1>
@@ -512,48 +573,41 @@ footer {{ margin-top: 28px; font-size: 12px; color: #5F5E5A; }}
 has closed. {len(rows)} device(s) have enough history to judge.</p>
 <h2>{day_label}</h2>
 {lede}
-<h2>Devices Worth a Look</h2>
-<p>One row per device, worst first, one cell per folded day. A cell is
-shaded by how far that day's signal sat below the device's own normal,
-measured in that device's own spread, so a steady link and a jittery
-one are read on the same scale. A ringed cell is a bad signal day. The
-shape to look for is a vertical band: devices falling on the same day
-share a cause, which can mean one router rather than several devices.
-The area beside each name is where the device sits, which is not
-always where its router sits.</p>
+<h2>Signal Anomalies</h2>
+{self._signal_strip_svg(worth)}
 <p class='legend'>
 <span><span class='swatch' style='background:#7FA86B'></span>normal</span>
-<span><span class='swatch' style='background:#E3C463'></span>2 to 3
-spreads below</span>
-<span><span class='swatch' style='background:#E09A4E'></span>3 to 4
+<span><span class='swatch' style='background:#E3C463'></span>slightly
+below normal</span>
+<span><span class='swatch' style='background:#E09A4E'></span>well
 below</span>
-<span><span class='swatch' style='background:#D03B3B'></span>6 or more
+<span><span class='swatch' style='background:#D03B3B'></span>far
 below</span>
 <span><span class='swatch' style='background:#E8E6DF'></span>not
 judged</span></p>
-{self._signal_strip_svg(worth)}
-{quiet_line}
+<p>Worst device at the top, one square per day. A vertical cluster of
+orange signifies a bad signal day. A horizontal cluster of orange shows
+a device that is struggling with chronic low signal. Devices that
+cluster on a vertical band usually share one cause, like an offline
+router. The area beside each name is where the device sits, not
+necessarily where its router sits. What counts as a bad day is set on
+the <b>Signal Strength</b> settings screen.</p>
 <details>
 <summary>Show All {len(rows)} Devices</summary>
-<p>The full fleet, worst first, for when you are chasing something
-specific.</p>
 {self._signal_strip_svg(rows)}
+<p>The full fleet on one chart, worst first, for when you are chasing
+something specific.</p>
 </details>
+{quiet_block}
 <h2>Devices That Had a Bad Day</h2>
 {biography_html}
-<footer>A bad signal day is a fall in a device's own time-weighted
-fifth percentile, measured against the median of the days before it:
-far enough in the device's own units, and far enough in its own
-spread, both together. The four settings are on the Signal Strength
-configuration screen: Settings, Devices and Services, Device Sentinel,
-Configure, Signal Strength. Nothing on this page alerts or joins the
-problem list. This page replaced the dwell chart, which measured
-distance from a line that descends to meet a failing device, so a
-broken link read its way back to healthy over a week. Its dated copy
-is named for the day it covers rather than the day it was written. It
-is written beside the daily brief and on Regenerate Reports, and
-renders on a dashboard with a Webpage card pointed at
-{REPORT_SIGNAL_URL}. How to read this page:
+<p>Each device here fell far enough below its own normal to be worth
+investigating. Nothing on this page raises an alert or reaches your
+problem list; it is here to be read when you are chasing a problem. A
+device that has come back needs nothing from you.</p>
+<footer>Written beside the daily brief, and again whenever you run
+Regenerate Reports. To keep it on a dashboard, add a Webpage card
+pointing at <code>{REPORT_SIGNAL_URL}</code>. How to read this page:
 <a href="{WIKI_BASE_URL}/The-Signal-Report">The Signal Report</a> on
 the Device Sentinel wiki.</footer>
 </body></html>
