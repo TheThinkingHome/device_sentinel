@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.12.13 (2026-08-07)
+# File: report_battery.py, Version: 0.19.13 (2026-09-02)
 
 """The battery report: which cells are going to be low.
 
@@ -242,6 +242,79 @@ class BatteryReportMixin:
         )
         return "".join(parts)
 
+    @staticmethod
+    def _battery_columns(
+        items: list[str], columns: int
+    ) -> list[list[str]]:
+        """Return items dealt into columns of equal length.
+
+        Split by count rather than by value, so the columns are the
+        same height whatever the data does. Reading order is down the
+        first column and then down the next, which is why the split
+        is a slice rather than a deal: a person scanning for one
+        device follows the sorted order without crossing back.
+
+        An odd count puts the extra entry in the earlier column.
+        """
+        if not items:
+            return []
+        per = -(-len(items) // columns)
+        return [
+            items[index * per : (index + 1) * per]
+            for index in range(columns)
+        ]
+
+    def _battery_grid(
+        self, cells: list[tuple[str, str]], columns: int
+    ) -> str:
+        """Return a multi-column table of name and value pairs.
+
+        The steady list was a paragraph of forty-seven names and
+        levels, which is a wall nobody reads. The same names in two
+        columns take a third of the height and can be scanned, and
+        the table matches every other table on the page.
+        """
+        blocks = self._battery_columns(cells, columns)
+        if not blocks:
+            return "<p class='empty'>None.</p>"
+        header = "".join(
+            "<th>DEVICE</th><th>LEVEL</th>" for _ in blocks
+        )
+        rows: list[str] = [f"<table><tr>{header}</tr>"]
+        for index in range(len(blocks[0])):
+            body: list[str] = []
+            for block in blocks:
+                if index < len(block):
+                    name, value = block[index]
+                    body.append(
+                        f"<td>{escape(name)}</td><td>{value}</td>"
+                    )
+                else:
+                    body.append("<td></td><td></td>")
+            rows.append("<tr>" + "".join(body) + "</tr>")
+        rows.append("</table>")
+        return "".join(rows)
+
+    def _battery_name_grid(
+        self, names: list[str], columns: int
+    ) -> str:
+        """Return a multi-column table of names with no value."""
+        blocks = self._battery_columns(names, columns)
+        if not blocks:
+            return "<p class='empty'>None.</p>"
+        header = "".join("<th>DEVICE</th>" for _ in blocks)
+        rows: list[str] = [f"<table><tr>{header}</tr>"]
+        for index in range(len(blocks[0])):
+            body = [
+                f"<td>{escape(block[index])}</td>"
+                if index < len(block)
+                else "<td></td>"
+                for block in blocks
+            ]
+            rows.append("<tr>" + "".join(body) + "</tr>")
+        rows.append("</table>")
+        return "".join(rows)
+
     def _write_battery_html(self) -> None:
         """Write the battery report (ruling #194).
 
@@ -296,33 +369,48 @@ class BatteryReportMixin:
         else:
             low_block = "<p class='empty'>Nothing under the threshold.</p>"
 
-        flat_names = ", ".join(
-            f"{escape(r['name'] or '')} {r['level']:.0f}%"
-            for r in groups["flat"]
-        )
         flat_block = (
-            f"<p>{len(groups['flat'])} cell(s) holding steady. "
-            f"{flat_names}</p>"
+            f"<p>{len(groups['flat'])} cell(s) holding steady.</p>"
+            + self._battery_grid(
+                [
+                    (r["name"] or "", f"{r['level']:.0f}%")
+                    for r in groups["flat"]
+                ],
+                2,
+            )
+            + "<p>These cells have not moved. A battery holds its "
+            "level for most of its life and then falls, so a steady "
+            "reading is a healthy one rather than a stale one.</p>"
             if groups["flat"]
             else "<p class='empty'>None.</p>"
         )
         unreadable_block = (
-            "<p>"
-            + ", ".join(
-                f"{escape(r['name'] or '')} reads {r['level']:.0f}%"
-                for r in groups["unreadable"]
+            self._battery_grid(
+                [
+                    (r["name"] or "", f"{r['level']:.0f}%")
+                    for r in groups["unreadable"]
+                ],
+                1,
             )
-            + ". A percentage cannot be above 100, so this is a raw "
-            "scale rather than a level. It can never cross the low "
-            "threshold.</p>"
+            + "<p>These devices report a raw sensor reading rather "
+            "than a valid battery level between 0 to 100 percent. "
+            "They will never be flagged low. Turn Battery off for "
+            "them on their Device Sentinel device page.</p>"
             if groups["unreadable"]
             else "<p class='empty'>None.</p>"
         )
+        # The list and the count come from one source, so the page
+        # can never name a different number of devices than it shows.
         absent_block = (
             f"<p>{len(groups['absent'])} watched device(s) report no "
-            "battery: mains powered, or a battery entity that has "
-            "never been switched on. Enable Battery on the Device "
-            "Sentinel device page turns on the ones that exist.</p>"
+            "battery.</p>"
+            + self._battery_name_grid(
+                [r["name"] or "" for r in groups["absent"]], 3
+            )
+            + "<p>These devices report no battery level. Most are "
+            "mains powered. If one of these runs on batteries, turn "
+            "Battery on for it on its Device Sentinel device "
+            "page.</p>"
             if groups["absent"]
             else "<p class='empty'>None.</p>"
         )
@@ -340,11 +428,14 @@ p, td, th {{ font-size: 13px; }} .lbl {{ fill: #1a1a19; }}
 table {{ border-collapse: collapse; margin: 8px 0; }}
 td, th {{ border: 1px solid #D3D1C7; padding: 4px 8px;
   text-align: left; }}
-footer {{ margin-top: 24px; font-size: 12px; color: #5F5E5A; }}
+footer {{ margin-top: 24px; font-size: 13px; color: #5F5E5A; }}
+footer code {{ font-size: 12px; background: #F0EFE9; padding: 1px 4px;
+  border-radius: 3px; }}
 @media (prefers-color-scheme: dark) {{
   body {{ background: #1a1a19; color: #eee; }}
   .lbl {{ fill: #eee; }}
   td, th {{ border-color: #444; }}
+  footer code {{ background: #2a2a28; }}
   footer, .empty {{ color: #B4B2A9; }} }}
 </style></head><body>
 <h1>Device Sentinel Battery Report</h1>
@@ -355,31 +446,26 @@ threshold.</p>
 <h2>The Bank</h2>
 {self._battery_bank_svg(readable)}
 <h2>Falling</h2>
-<p>Sorted by how long is left, which is the order that matters. The
-rate is the median daily change over the last {BATTERY_SLOPE_DAYS}
-days, and how long is left is the current level divided by it. It is
-said in words rather than a count of days on purpose: the projection
-moves, and it moves further the further out it reaches. A cell reaches
-this table when its projection falls inside your Days Till Empty
-Warning setting, on the same screen as the threshold.</p>
 {falling_block}
+<p>A cell appears in this table when its projected <b>time till
+empty</b> falls inside your <b>Days Till Empty Warning</b> setting, on
+the Low Battery settings screen. Raise that setting to see cells
+earlier, lower it to see fewer. Times are deliberately vague, because
+a cell can hold its charge for weeks and then drop in days.</p>
 <h2>Under the Threshold</h2>
 {low_block}
+<p>A cell appears in this table when its level is at or below your
+<b>Low Battery Threshold</b>, on the Low Battery settings screen. That
+setting is what raises an alert; this page only reports.</p>
 <h2>Steady</h2>
 {flat_block}
 <h2>Unreadable</h2>
 {unreadable_block}
 <h2>No Battery Reported</h2>
 {absent_block}
-<footer>A cell holds a level for most of its life and then falls, so
-a steady reading is a healthy one rather than a stale one. Days left
-is a projection and it moves: it assumes the last {BATTERY_SLOPE_DAYS}
-days continue, which a failing cell often does not. Nothing on this
-page raises an alert; the Low Battery Threshold on the Low Battery
-configuration screen is what does that: Settings, Devices and
-Services, Device Sentinel, Configure, Low Battery. Written beside the daily
-brief and on Regenerate Reports, and renders on a dashboard with a
-Webpage card pointed at {REPORT_BATTERY_URL}. How to read this page:
+<footer>Written beside the daily brief, and again whenever you run
+Regenerate Reports. To keep it on a dashboard, add a Webpage card
+pointing at <code>{REPORT_BATTERY_URL}</code>. How to read this page:
 <a href="{WIKI_BASE_URL}/The-Battery-Report">The Battery Report</a>
 on the Device Sentinel wiki.</footer>
 </body></html>
