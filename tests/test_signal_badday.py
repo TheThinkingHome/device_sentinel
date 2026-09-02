@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_signal_badday.py, Version: 0.16.11 (2026-08-21)
+# File: tests/test_signal_badday.py, Version: 0.19.14 (2026-09-02)
 
 """The bad signal day detector (ruling #310).
 
@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
@@ -260,7 +261,7 @@ async def test_the_strip_shows_only_devices_worth_a_look(
     # The floor holds: a fleet with one fallen device still shows
     # enough rows to read a band against.
     assert len(worth) == 5
-    assert quiet == 5
+    assert len(quiet) == 5
 
 
 async def test_a_fleet_wide_event_cannot_put_every_row_back(
@@ -280,7 +281,7 @@ async def test_a_fleet_wide_event_cannot_put_every_row_back(
 
     assert len(rows) == 30
     assert len(worth) == 20
-    assert quiet == 10
+    assert len(quiet) == 10
 
 
 async def test_each_row_carries_its_area(hass: HomeAssistant):
@@ -305,3 +306,95 @@ async def test_each_row_carries_its_area(hass: HomeAssistant):
 
     assert rows[0]["area"] == "Master Bedroom"
     assert "Master Bedroom" in coord._signal_strip_svg(rows)
+
+
+# 0.19.14: the signal report release (ruling #380).
+
+
+def _signal_page(hass):
+    """Return the signal report as written to www."""
+    import os
+    from custom_components.device_sentinel.const import REPORT_WWW_DIR
+
+    path = os.path.join(
+        hass.config.path(REPORT_WWW_DIR), "signal_report.html"
+    )
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+async def test_the_steady_devices_are_named(hass: HomeAssistant):
+    """The count and the list come from one place, so the page can
+    never say a different number than it shows (ruling #380)."""
+    coord = await setup_coordinator(hass)
+    for index in range(9):
+        device, _ = register_device(hass, f"sq{index}", f"Quiet {index}")
+        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
+            150.0 + index
+        ] * 12
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _signal_page(hass)
+
+    assert "<h2>Steady Signals</h2>" in page
+    assert "stayed within their own normal." in page
+    steady = page[page.index("<h2>Steady Signals</h2>"):]
+    steady = steady[: steady.index("<h2>Devices That Had a Bad Day")]
+    named = [
+        cell
+        for cell in re.findall(r"<td>(.*?)</td>", steady)
+        if cell.strip()
+    ]
+    counted = int(
+        re.search(r"(\d+) device\(s\) stayed within", steady).group(1)
+    )
+    assert len(named) == counted
+    # The old line that counted without naming is gone.
+    assert "and are not shown" not in page
+
+
+async def test_the_page_reads_in_plain_words(hass: HomeAssistant):
+    """The section heading, the legend and the help text carry no
+    method, and the footer says only what a footer can (#380)."""
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "pw1", "Plain Device")
+    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
+        150.0
+    ] * 12
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = " ".join(_signal_page(hass).split())
+
+    assert "<h2>Signal Anomalies</h2>" in page
+    assert "Devices Worth a Look" not in page
+    # The legend names depths rather than spreads.
+    assert "slightly below normal" in page
+    assert "spreads below" not in page
+    # The help text sits under its chart, not above it.
+    assert page.index("Signal Anomalies") < page.index("<svg")
+    assert page.index("<svg") < page.index("A vertical cluster of orange")
+    assert "needs your attention" in page
+
+    footer = page[page.index("<footer>"):]
+    assert "Regenerate Reports" in footer
+    assert "<code>" in footer
+    assert "The Signal Report" in footer
+    # What left the footer.
+    assert "fifth percentile" not in footer
+    assert "dwell chart" not in footer
+    assert "Configure, Signal Strength" not in footer
+    assert "alerts or joins the problem list" not in footer
+
+
+async def test_a_bad_day_is_described_without_arithmetic(
+    hass: HomeAssistant,
+):
+    """The biography says how far below normal in the legend's own
+    words rather than in spreads (ruling #380)."""
+    coord = await setup_coordinator(hass)
+
+    assert coord._signal_depth_words(10.0) == "far below"
+    assert coord._signal_depth_words(6.0) == "far below"
+    assert coord._signal_depth_words(3.5) == "well below"
+    assert coord._signal_depth_words(2.5) == "slightly below"
+    assert coord._signal_depth_words(1.0) == "below"
