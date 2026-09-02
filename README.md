@@ -13,15 +13,15 @@
 
 ## Integration Status
 
-| Area | Status | What that means |
+| Area | Status | What you get |
 | --- | --- | --- |
-| Freeze detection | Stable | Every device's own reporting rhythm is modelled, and its freeze window is set from that rhythm rather than from a number you pick. Frozen, unavailable, unknown and never reported are told apart and named separately. |
-| Battery | Stable | Every cell is judged twice: against a threshold you set, and against how fast it is actually falling. Works on any device that reports a battery level. |
-| Signal | Experimental | Each day's readings become a time-weighted fifth percentile and median, and a day counts as bad when it falls far below that device's own normal, in its own units and in its own spread. Where a device reports both, RSSI and LQI are kept apart. Bad days are listed and charted; only a railed link reaches your phone. See the roadmap. |
-| Zigbee2MQTT | Working | Coordinator watched, with a **Bridge: Zigbee2MQTT** sensor.<br>A coordinator outage becomes one line naming it and a count of what sits behind it, not a fault per device.<br>Silences spanning an outage are set aside rather than learned.<br>A pairing window is recognized, so a hand re-pair is not learned as the device's own rhythm.<br>A second opinion on every freeze verdict, from Zigbee2MQTT's own view of each device. |
-| ZHA | Working | Coordinator watched, with a **Bridge: ZHA** sensor.<br>A coordinator outage becomes one line naming it and a count, dated from when the radio stopped rather than from when it was noticed.<br>Silences spanning an outage are set aside rather than learned.<br>No pairing window to read, so use Maintenance Mode when you work on a device by hand.<br>No per-device second opinion; verdicts stand on Device Sentinel's own learning. |
-| MQTT | Working | Broker watched, with a **Broker: MQTT** sensor.<br>A broker outage clears every device behind it of blame and gives you one line naming the broker.<br>A broker outranks any coordinator, because a broker that is down takes every bridge with it.<br>Needs a broker that publishes uptime statistics, which Mosquitto does by default. |
-| Z-Wave | Devices only | Every Z-Wave device is watched, learned and judged like any other.<br>The controller itself is not watched, so a controller outage reads as a fault on each device behind it.<br>Use Maintenance Mode when you include or replace hardware.<br>If you run Z-Wave and want to help change this, see the [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) page. |
+| Freeze detection | Stable | Every device gets its own deadline, learned from its own habits. A device that has gone quiet is caught while its last reading still looks perfectly fine. |
+| Battery | Stable | Warning while you can still act, from the level you set and from how fast the cell is actually falling. |
+| Signal | Experimental | Weak links are found and charted against each device's own normal. Nothing reaches your phone yet except a link stuck at a false value. |
+| Zigbee2MQTT | Coordinator watched | When the coordinator stops, you get one message naming it instead of sixty devices blamed for it. Re-pair a device by hand and that is not learned as its normal behavior. |
+| ZHA | Coordinator watched | When the coordinator stops, you get one message naming it, timed from when the radio really stopped. Press Maintenance Mode before you work on a device and your fix is not learned as its normal behavior. |
+| MQTT | Broker watched | When the broker stops, every device behind it goes quiet at once. You get one message naming the broker, and none of them is blamed. |
+| Z-Wave | Devices watched | Every device is watched as usual. The controller is not, so a controller outage reads as a fault on each device behind it. [Help change that](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave). |
 
 ## The Problem
 
