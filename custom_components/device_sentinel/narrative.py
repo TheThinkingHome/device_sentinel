@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.18.3 (2026-08-26)
+# File: narrative.py, Version: 0.19.12 (2026-09-02)
 
 """How to say what happened: the composer.
 
@@ -71,6 +71,26 @@ class NarrativeMixin:
     Mixed into DeviceSentinelCoordinator; every attribute reached for
     here belongs to that class.
     """
+
+    def _told_name(self, row: dict[str, Any]) -> str:
+        """Return the name a device has now, never the stored one.
+
+        An incident row stores the name a device had when the row was
+        written, and a device renamed since then made the brief name
+        hardware the reader does not own (ruling #373). Every place
+        that shows a stored name to a person resolves it against the
+        device as it is at the moment of writing. The stored name is
+        the fallback, kept for a device the registry and the maps no
+        longer know, because what was true then still beats a hex id.
+        """
+        device_id = row.get(INC_DEVICE_ID)
+        stored = row.get(INC_NAME)
+        if not device_id:
+            return stored or "unknown device"
+        current = self._trim_name(device_id)
+        if current == device_id and stored:
+            return stored
+        return current
 
     # How bad a problem is, worst first. A device with several
     # problems is described by its worst one, because a phone line
@@ -196,7 +216,7 @@ class NarrativeMixin:
         reuse the exact wording rather than growing a second copy
         that could drift from it.
         """
-        name = row[INC_NAME]
+        name = self._told_name(row)
         kind = row[INC_KIND]
         when = self._clock(row[INC_WHEN])
         if kind == TODO_KIND_LOW_BATTERY:
@@ -212,7 +232,7 @@ class NarrativeMixin:
         answer later: one composer, so the same event can never be
         described three different ways by three different renderers.
         """
-        name = row[INC_NAME]
+        name = self._told_name(row)
         kind = row[INC_KIND]
         when = self._clock(row[INC_WHEN])
         event = row[INC_EVENT]
@@ -295,7 +315,7 @@ class NarrativeMixin:
             # recovery are (ruling #134).
             when = self._clock(opened[INC_WHEN])
             return (
-                f"{opened[INC_NAME]} deleted from the list at {when}, "
+                f"{self._told_name(opened)} deleted from the list at {when}, "
                 "and re-added because the problem is still there."
             )
         tail = (

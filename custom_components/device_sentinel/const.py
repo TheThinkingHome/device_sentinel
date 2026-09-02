@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.19.11 (2026-08-31)
+# File: const.py, Version: 0.19.12 (2026-09-02)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1558,7 +1558,11 @@ DEFAULT_REPEAT_FLOOR = 2
 REPEAT_FLOOR_MIN = 1
 REPEAT_FLOOR_MAX = 4
 # The section reads up to this many days of incidents, growing from
-# day one rather than waiting for a full week (ruling #305).
+# day one rather than waiting for the window to exist (ruling #305).
+# Seven so that noise which stopped repeating drops off the table
+# sooner, and the paragraph beneath the table says seven to match:
+# the number is stated in one place and the prose follows it, never
+# the reverse (ruling #378).
 REPEAT_WINDOW_DAYS = 7.0
 DEFAULT_EPISODE_SHARE_PCT = 50
 SHARE_PCT_MIN = 10
@@ -1967,7 +1971,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 372
+HIGHEST_RULING = 378
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.19.9 (2026-08-31)
+# File: report_brief.py, Version: 0.19.12 (2026-09-02)
 
 """The daily brief: the one report written for a person.
 
@@ -126,6 +126,23 @@ _REPEAT_NOUNS = {
     TODO_KIND_LOW_BATTERY: "low-battery alarm",
     TODO_KIND_FALLING_BATTERY: "falling-battery alarm",
 }
+
+# The author's own wording, printed verbatim beneath the Repeat
+# Offenders table (ruling #374).
+_REPEAT_PARAGRAPH = (
+    "This table lists repeat offenders. Every row represents a "
+    "device that failed more than once in the last seven days "
+    "for no obvious reason. We ruled out the usual causes. These "
+    "failures did not happen during a system restart, a "
+    "coordinator outage, or work you did yourself in Maintenance "
+    "Mode. To help you track down the real problem, the table "
+    "attempts to correlate a cause by grouping devices that failed "
+    "at the same moment. If multiple devices fail together, it "
+    "usually means the cause is shared. A device on this list is a "
+    "candidate for muting or excluding if you recognize the cause, "
+    "like a smart TV whose state goes unavailable when it is "
+    "switched off."
+)
 
 
 class BriefMixin:
@@ -394,13 +411,34 @@ class BriefMixin:
             # moved. On the morning after a real one this is the first
             # sentence read, so it says the count rather than leaving
             # the reader to find it in a diagnostics download.
-            extra = f", {detail}" if detail else ""
+            # The line says what it cost and stops (ruling #376):
+            # the gap length and the timers restarted. What that
+            # means for detection is the wiki's job. The moment named
+            # is the shutdown itself, worked back from the resume the
+            # row was written at, because "did not shut down cleanly
+            # at" must point at the stop rather than the start.
+            gap = row.get(SYS_DURATION) or 0.0
+            stopped = self._brief_moment(
+                (row.get(SYS_WHEN) or 0.0) - gap
+            )
+            count = str(detail or "").split(" ", 1)[0]
+            costs: list[str] = []
             if held:
-                return (
-                    f"That restart followed an unclean shutdown, with "
-                    f"{held} unwatched{extra}."
+                costs.append(f"{held} went unwatched")
+            if count.isdigit():
+                costs.append(
+                    f"{count} devices had their silence timers "
+                    f"restarted"
                 )
-            return f"That restart followed an unclean shutdown{extra}."
+            if costs:
+                return (
+                    f"Home Assistant did not shut down cleanly at "
+                    f"{stopped}: {' and '.join(costs)}."
+                )
+            return (
+                f"Home Assistant did not shut down cleanly at "
+                f"{stopped}."
+            )
         if kind == SYS_DEVICE_HANDLED:
             # The table row is per event and already sits beside the
             # device's own rows, so it says what happened without
@@ -706,12 +744,32 @@ class BriefMixin:
         only part a reader can act on.
         """
         said: list[str] = []
-        worst = self._longest(rows, SYS_RESTART)
+        # The gap ends at the time given, and a clean stop is named
+        # as one (ruling #376): a clean stop wrote the file on the
+        # way down and lost nothing. An unclean restart is excluded
+        # here because its own sentence tells it, with what it cost,
+        # and claiming "shut down cleanly" of it would be false.
+        unclean = {
+            row.get(SYS_WHEN)
+            for row in rows
+            if row.get(SYS_KIND) == SYS_UNCLEAN_RESTART
+        }
+        worst = self._longest(
+            [
+                row
+                for row in rows
+                if not (
+                    row.get(SYS_KIND) == SYS_RESTART
+                    and row.get(SYS_WHEN) in unclean
+                )
+            ],
+            SYS_RESTART,
+        )
         if worst is not None:
             said.append(
-                "The system was unwatched for "
-                f"{self._human_span(worst[SYS_DURATION])} at "
-                f"{self._brief_moment(worst[SYS_WHEN])}."
+                "The system was shut down cleanly and was unwatched "
+                f"for {self._human_span(worst[SYS_DURATION])}, "
+                f"ending {self._brief_moment(worst[SYS_WHEN])}."
             )
         scopes: list[str] = []
         for row in rows:
@@ -769,6 +827,66 @@ class BriefMixin:
             when = self._brief_moment(changes[0][SYS_WHEN])
             return [f"Settings changed at {when}: {listed}."]
         return [f"Settings changed {len(changes)} times: {listed}."]
+
+    def _storms_inside_restart(
+        self, rows: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Return the storm rows that are the restart, told twice.
+
+        A storm inside a restart is the restart, and is not reported
+        (ruling #375): the storm the reference brief called "the mqtt
+        integration reloaded" was the last seconds before Home
+        Assistant went down, and the restart row on the next line
+        said the same thing more accurately. No new threshold: the
+        test is the same restart window the incident attribution
+        uses, which reaches a measured 90 seconds backward.
+
+        A pair is the restart's only when both its moments fall
+        inside a restart window. A storm that began before the
+        window, or that is still open, is its own event and keeps
+        its rows. Windows are built from the whole event log rather
+        than the brief's slice, because a restart just outside the
+        window still explains a storm just inside it.
+        """
+        events = self.data.get(DATA_SYSTEM_EVENTS) or []
+        restarts = [
+            window
+            for window in attribution.windows(events)
+            if window.kind in (SYS_RESTART, SYS_UNCLEAN_RESTART)
+        ]
+        if not restarts:
+            return []
+
+        def inside(moment: float) -> bool:
+            return any(
+                window.in_effect_at(moment) for window in restarts
+            )
+
+        suppressed: list[dict[str, Any]] = []
+        pending: dict[str, dict[str, Any]] = {}
+        storms = sorted(
+            (
+                row
+                for row in rows
+                if row.get(SYS_KIND)
+                in (SYS_STORM_OPEN, SYS_STORM_CLOSED)
+            ),
+            key=lambda row: row.get(SYS_WHEN) or 0.0,
+        )
+        for row in storms:
+            scope = row.get(SYS_SCOPE) or ""
+            if row.get(SYS_KIND) == SYS_STORM_OPEN:
+                pending[scope] = row
+                continue
+            opened = pending.pop(scope, None)
+            if opened is None:
+                continue
+            if inside(opened.get(SYS_WHEN) or 0.0) and inside(
+                row.get(SYS_WHEN) or 0.0
+            ):
+                suppressed.append(opened)
+                suppressed.append(row)
+        return suppressed
 
     def _storm_sentences(self, rows: list[dict[str, Any]]) -> list[str]:
         """Return the storm sentences, grouped per integration.
@@ -1125,7 +1243,7 @@ class BriefMixin:
         it, since on a live system they carry no cause at all
         (ruling #308).
         """
-        name = members[0][0][INC_NAME]
+        name = self._told_name(members[0][0])
         record = (self.data.get(DATA_DEVICES) or {}).get(device_id) or {}
         anchor = float(record[DEV_FROZEN_SINCE])
         now = dt_util.utcnow().timestamp()
@@ -1150,7 +1268,7 @@ class BriefMixin:
     ) -> str:
         """Return one sentence for a device that went and came back
         more than once: how often, and how long it was gone in all."""
-        name = members[0][0][INC_NAME]
+        name = self._told_name(members[0][0])
         went, state = self._flap_verbs(members[0][0])
         total = sum(
             (resolved.get(INC_DURATION) or 0.0)
@@ -1218,8 +1336,10 @@ class BriefMixin:
             )
         return f"{len(members)} devices {word} at {when}, with {clause}."
 
-    def _repeat_offender_lines(self, now: float) -> list[str]:
-        """Return one line per device that keeps failing on its own.
+    def _repeat_offender_rows(
+        self, now: float
+    ) -> list[dict[str, Any]]:
+        """Return one row per device that keeps failing on its own.
 
         The brief's answer to the device nobody can detect (ruling
         #305): a TV that reads unavailable whenever a person turns it
@@ -1242,12 +1362,12 @@ class BriefMixin:
         the next.
 
         Reads up to REPEAT_WINDOW_DAYS of incidents, from day one,
-        so the view grows with the record rather than waiting for a
-        week to exist. The line carries the count, the days it
-        spread over, and the worst day, because "18 over 6 days" is
-        a failing device and "15, all on one day" was one bad
-        afternoon, and the reader should not need arithmetic to
-        tell them apart (ruling #305).
+        so the view grows with the record rather than waiting for
+        the window to exist. Each row is evidence a person can act
+        on (ruling #374): what the device did, how often, when, how
+        long a typical episode ran, and which device failed in the
+        same second, because devices failing together usually share
+        a cause.
         """
         rows = self.incident_rows()
         events = self.data.get(DATA_SYSTEM_EVENTS) or []
@@ -1296,14 +1416,25 @@ class BriefMixin:
             key = (device_id, row.get(INC_KIND))
             entry = found.setdefault(
                 key,
-                {"name": row.get(INC_NAME), "n": 0, "days": {}},
+                {
+                    "device_id": device_id,
+                    "kind": row.get(INC_KIND),
+                    "stored": row.get(INC_NAME),
+                    "n": 0,
+                    "days": {},
+                    "whens": [],
+                    "durations": [],
+                },
             )
             entry["n"] += 1
+            entry["whens"].append(when)
+            if closed is not None:
+                entry["durations"].append(closed - when)
             day = dt_util.as_local(
                 dt_util.utc_from_timestamp(when)
             ).strftime("%Y-%m-%d")
             entry["days"][day] = entry["days"].get(day, 0) + 1
-        lines: list[str] = []
+        table: list[dict[str, Any]] = []
         already_told: set[Any] = getattr(self, "_flapping_told", set())
         for (device_id, kind), entry in sorted(
             found.items(), key=lambda item: -item[1]["n"]
@@ -1313,27 +1444,152 @@ class BriefMixin:
             if len(entry["days"]) == 1 and device_id in already_told:
                 # The whole pattern is today, and today's flapping
                 # sentence already says it (ruling #305, amended by
-                # the collision test): this line's job is the
+                # the collision test): this row's job is the
                 # pattern the day's sentences cannot show, and a
                 # one-day pattern is not one of those.
                 continue
-            noun = _REPEAT_NOUNS.get(kind, "interruption")
-            day_count = len(entry["days"])
-            worst = max(entry["days"].values())
-            if day_count == 1:
-                spread = "all on one day"
-            elif worst > 1:
-                spread = (
-                    f"over {day_count} days, "
-                    f"worst day {worst}"
+            entry["name"] = self._repeat_name(entry)
+            entry["what"] = self._repeat_verb(kind)
+            entry["when"] = self._repeat_when(entry["whens"])
+            entry["typical"] = (
+                self._human_span(
+                    sorted(entry["durations"])[
+                        len(entry["durations"]) // 2
+                    ]
                 )
-            else:
-                spread = f"over {day_count} days"
-            lines.append(
-                f"{entry['name']}: {entry['n']} unexplained "
-                f"{noun}{'s' if entry['n'] != 1 else ''} "
-                f"{spread}, nothing intervened."
+                if entry["durations"]
+                else "unknown"
             )
+            entry["with"] = self._repeat_with(entry, found)
+            table.append(entry)
+        return table
+
+    def _repeat_name(self, entry: dict[str, Any]) -> str:
+        """Return the name the device has now (ruling #373)."""
+        device_id = entry.get("device_id")
+        stored = entry.get("stored")
+        if not device_id:
+            return stored or "unknown device"
+        current = self._trim_name(device_id)
+        if current == device_id and stored:
+            return stored
+        return current
+
+    @staticmethod
+    def _repeat_verb(kind: str) -> str:
+        """Return what the device did, as the table's second column."""
+        if kind == TODO_KIND_UNAVAILABLE:
+            return "went unavailable"
+        if kind == TODO_KIND_RAILED_SIGNAL:
+            return "signal railed"
+        noun = _REPEAT_NOUNS.get(kind)
+        if noun:
+            return noun
+        return "went silent"
+
+    def _repeat_when(self, whens: list[float]) -> str:
+        """Return the WHEN cell: the days, or one day's span.
+
+        One day carries its first and last time, because "Aug 28,
+        08:02 to 16:22" is a shape a person can chase through their
+        own memory of the day. Two days are named; more become a
+        range, since a roll of dates is a column nobody reads.
+        """
+
+        def day(moment: float) -> str:
+            return dt_util.as_local(
+                dt_util.utc_from_timestamp(moment)
+            ).strftime("%b %-d")
+
+        def clock(moment: float) -> str:
+            return dt_util.as_local(
+                dt_util.utc_from_timestamp(moment)
+            ).strftime("%H:%M")
+
+        ordered = sorted(whens)
+        days: list[str] = []
+        for moment in ordered:
+            named = day(moment)
+            if named not in days:
+                days.append(named)
+        if len(days) == 1:
+            if len(ordered) == 1:
+                return f"{days[0]}, {clock(ordered[0])}"
+            return (
+                f"{days[0]}, {clock(ordered[0])} to "
+                f"{clock(ordered[-1])}"
+            )
+        if len(days) == 2:
+            return f"{days[0]} and {days[1]}"
+        return f"{days[0]} to {days[-1]}"
+
+    def _repeat_with(
+        self,
+        entry: dict[str, Any],
+        found: dict[tuple[str, str], dict[str, Any]],
+    ) -> str:
+        """Return which device failed in the same second, or alone.
+
+        The column that earns its place (ruling #374): devices that
+        fail in the same second usually share a cause, and the prose
+        form read two halves of one problem as two mysteries. "Every
+        time" is said only when it matched every time; anything less
+        is counted rather than overstated.
+
+        One shared second is not a pattern, so a partner is named
+        only when it matched more than once, unless one match is the
+        whole record. Measured on the reference fleet: the two ZHA
+        devices matched six of six, and the coordinator matched one
+        of six, which is a coincidence wearing the same column as a
+        cause.
+        """
+        mine = [int(moment) for moment in entry["whens"]]
+        partners: list[str] = []
+        for key, other in found.items():
+            if other is entry or key[0] == entry.get("device_id"):
+                continue
+            theirs = {int(moment) for moment in other["whens"]}
+            matched = sum(1 for second in mine if second in theirs)
+            if matched < 2 and len(mine) > 1:
+                continue
+            if not matched:
+                continue
+            name = self._repeat_name(other)
+            if matched == len(mine):
+                partners.append(f"{name}, every time")
+            else:
+                partners.append(
+                    f"{name}, {matched} of {len(mine)} times"
+                )
+        if not partners:
+            return "alone"
+        return "; ".join(partners)
+
+    def _repeat_offenders_section(self, now: float) -> list[str]:
+        """Return the Repeat Offenders section, or nothing.
+
+        Its own heading below Now (ruling #374), because In Short is
+        read in ten seconds and a table does not belong in it. The
+        paragraph beneath the table is the author's own wording,
+        verbatim.
+        """
+        table = self._repeat_offender_rows(now)
+        if not table:
+            return []
+        lines = [
+            "## Repeat Offenders",
+            "",
+            "| DEVICE | WHAT HAPPENED | TIMES | WHEN "
+            "| TYPICAL | WITH |",
+            "|---|---|---|---|---|---|",
+        ]
+        for row in table:
+            lines.append(
+                f"| {self._report_cell(row['name'])} "
+                f"| {row['what']} | {row['n']} | {row['when']} "
+                f"| {row['typical']} | {row['with']} |"
+            )
+        lines += ["", _REPEAT_PARAGRAPH, ""]
         return lines
 
     def _brief_prose(
@@ -1390,24 +1646,20 @@ class BriefMixin:
         if told:
             lines += [f"Since {since_text}: " + " ".join(told), ""]
         else:
-            lines += [f"Nothing has happened since {since_text}.", ""]
-        if standing:
-            lines += ["Right now: " + " ".join(standing), ""]
-        repeats = self._repeat_offender_lines(
-            dt_util.utcnow().timestamp()
-        )
-        if repeats:
+            # Which nothing it means (ruling #377): the line counts
+            # device incidents, and it sat beneath a paragraph of
+            # system events it appeared to deny.
             lines += [
-                "Keeps failing on its own: " + " ".join(repeats),
+                "No device problems started or ended in this "
+                "window.",
                 "",
             ]
-        # The all-clear answers both sentences above it, so it is
-        # printed only when neither was. Written as the else of the
-        # repeats alone, which is where the repeat-offender lines
-        # were inserted, it told a person nothing needed attention
-        # directly beneath a device that did: every brief with a
-        # standing problem and no repeat offender said both.
-        if not standing and not repeats:
+        if standing:
+            lines += ["Right now: " + " ".join(standing), ""]
+        else:
+            # The repeat offenders left this paragraph for their own
+            # section below Now (ruling #374), so the all-clear
+            # answers the standing problems alone.
             lines += ["Nothing needs attention right now.", ""]
         return lines
 
@@ -1464,6 +1716,16 @@ class BriefMixin:
             for row in (self.data.get(DATA_SYSTEM_EVENTS) or [])
             if window_start <= row[SYS_WHEN] <= window_end
         ]
+        # Filtered once, here, so the summary and the Last 24 Hours
+        # table cannot disagree about which storms exist (ruling
+        # #375). The permanent log keeps every row.
+        told_twice = {
+            id(row) for row in self._storms_inside_restart(sys_events)
+        }
+        if told_twice:
+            sys_events = [
+                row for row in sys_events if id(row) not in told_twice
+            ]
         sys_events.sort(key=lambda row: row[SYS_WHEN], reverse=True)
         # The span is counted rather than asserted. The window is
         # anchored to the wall clock so a person's seven o'clock brief
@@ -1548,6 +1810,9 @@ class BriefMixin:
                     ),
                     "",
                 ]
+        lines += self._repeat_offenders_section(
+            dt_util.utcnow().timestamp()
+        )
         # Dwell no longer reports (ruling #310). It measured distance
         # from a line derived from the floor, which descends to meet
         # a degraded device, so a permanently broken link reads its
@@ -1618,7 +1883,7 @@ class BriefMixin:
                 "|---|---|---|",
             ]
             merged: list[tuple[float, str, str]] = [
-                (row[INC_WHEN], self._report_cell(row[INC_NAME]),
+                (row[INC_WHEN], self._report_cell(self._told_name(row)),
                  self._brief_phrase(row))
                 for row in shown
             ] + [
