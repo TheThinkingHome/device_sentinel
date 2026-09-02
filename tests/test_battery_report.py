@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.11.10 (2026-08-04)
+# File: test_battery_report.py, Version: 0.19.13 (2026-09-02)
 
 """The battery report (ruling #194).
 
@@ -137,7 +137,9 @@ async def test_a_steady_cell_is_not_projected(
     page = _page(hass)
 
     assert "holding steady" in page
-    assert "Motion Hall 100%" in page
+    # The names sit in a two-column table now rather than a wall of
+    # prose (ruling #379), so the cell and its level are separate.
+    assert "<td>Motion Hall</td><td>100%</td>" in page
 
 
 async def test_a_reading_above_100_is_called_unreadable(
@@ -155,8 +157,8 @@ async def test_a_reading_above_100_is_called_unreadable(
     await hass.async_add_executor_job(coord._write_reports, "manual")
     page = _page(hass)
 
-    assert "LUX Outdoors reads 186%" in page
-    assert "A percentage cannot be above 100" in page
+    assert "<td>LUX Outdoors</td><td>186%</td>" in page
+    assert "raw sensor reading rather than a valid battery level" in page
 
 
 async def test_a_device_with_no_battery_is_counted_not_listed_as_zero(
@@ -526,8 +528,84 @@ async def test_the_page_names_the_settings_that_govern_it(
     # HTML does not care and neither should the assertion.
     page = " ".join(_page(hass).split())
 
-    assert "the Low Battery Threshold on the Low Battery" in page
-    assert "Configure, Low Battery" in page
-    assert "Days Till Empty Warning setting" in page
+    # Each section names the setting that governs it, beneath its own
+    # table, rather than one footer naming all of them (ruling #379).
+    assert (
+        "<b>Low Battery Threshold</b>, on the Low Battery settings "
+        "screen" in page
+    )
+    assert (
+        "<b>Days Till Empty Warning</b> setting, on the Low Battery "
+        "settings screen" in page
+    )
     # The description that named nothing is gone.
     assert "the low threshold on the Low Battery" not in page
+
+
+# 0.19.13: the battery report release (ruling #379).
+
+
+async def test_the_steady_table_columns_are_equal(hass: HomeAssistant):
+    """Split by count, not by level, so the columns are the same
+    height whatever the data does (ruling #379).
+
+    An odd count puts the extra entry in the earlier column, and the
+    short column is padded so the table stays rectangular.
+    """
+    coord = await setup_coordinator(hass)
+    for index in range(7):
+        device, _ = register_device(hass, f"col{index}", f"Cell {index}")
+        _seed(coord, device.id, STEADY, 60.0 + index)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+
+    assert "<th>DEVICE</th><th>LEVEL</th><th>DEVICE</th><th>LEVEL</th>" in page
+    # Seven cells become four rows: four left, three right, with the
+    # last right-hand pair blank.
+    assert "<td></td><td></td></tr>" in page
+    # Reading order is down the first column, so the lowest level
+    # leads the left and the split falls after the fourth.
+    assert "<td>Cell 0</td><td>60%</td><td>Cell 4</td><td>64%</td>" in page
+
+
+async def test_the_no_battery_list_names_the_devices(
+    hass: HomeAssistant,
+):
+    """The count and the list come from one source, so the page can
+    never name a different number than it shows (ruling #379)."""
+    coord = await setup_coordinator(hass)
+    register_device(hass, "mains1", "Switch Kitchen")
+    register_device(hass, "mains2", "Switch Laundry")
+    coord._rebuild_registry_view()
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+
+    assert "watched device(s) report no battery." in page
+    assert "<td>Switch Kitchen</td>" in page
+    assert "<td>Switch Laundry</td>" in page
+    assert "These devices report no battery level." in page
+
+
+async def test_the_footer_carries_only_what_a_footer_can_say(
+    hass: HomeAssistant,
+):
+    """The projection caution and the threshold pointer moved to the
+    sections they belong to, so the footer no longer repeats them
+    (ruling #379)."""
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "foot1", "Door 2nd Bedroom")
+    _seed(coord, device.id, DYING, 12.0, low=True)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = " ".join(_page(hass).split())
+    footer = page[page.index("<footer>"):]
+
+    assert "Regenerate Reports" in footer
+    assert "<code>" in footer
+    assert "The Battery Report" in footer
+    # What left the footer.
+    assert "holds a level for most of its life" not in footer
+    assert "Low Battery Threshold" not in footer
+    assert "projection" not in footer
