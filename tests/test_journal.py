@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_journal.py, Version: 0.16.2 (2026-08-19)
+# File: test_journal.py, Version: 0.19.12 (2026-09-02)
 
 """The forensic record: incidents, episodes, and system events.
 
@@ -202,7 +202,7 @@ async def test_the_unclean_restart_reads_as_english(
 
     assert SYS_UNCLEAN_RESTART not in text
     assert "unclean shutdown" in text
-    assert "120 devices reset" in text
+    assert "120 devices" in text
     # Asserted against the sentence itself, not the file. The table
     # row carries the count too, so a whole-file search passes even
     # when the prose has dropped it, and the prose is what gets read
@@ -210,8 +210,13 @@ async def test_the_unclean_restart_reads_as_english(
     sentence = coord._system_event_sentence(
         coord.data[DATA_SYSTEM_EVENTS][0]
     )
-    assert "120 devices reset" in sentence
-    assert "unclean shutdown" in sentence
+    # The wording is the ruled one (ruling #376): the sentence says
+    # what the gap cost and stops. The count still leads the reader
+    # to it on the morning after, which is what this test guards.
+    assert (
+        "120 devices had their silence timers restarted" in sentence
+    )
+    assert "did not shut down cleanly" in sentence
 
 
 async def test_every_system_event_kind_has_wording(

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.17.8 (2026-08-25)
+# File: test_brief_wording.py, Version: 0.19.12 (2026-09-02)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -326,7 +326,7 @@ async def test_quiet_day_says_so_plainly(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = _brief_text(hass)
-    assert "Nothing has happened since" in text
+    assert "No device problems started or ended in this window." in text
     assert "Nothing needs attention right now." in text
 
 
@@ -483,7 +483,7 @@ async def test_acknowledged_device_leaves_the_whole_brief(
     # remain, because acknowledging one device is not a request to
     # stop hearing that the system restarted (0.10.6), so the table
     # is asserted free of the device rather than empty.
-    assert "Nothing has happened since" in text
+    assert "No device problems started or ended in this window." in text
     assert "| Quiet Please |" not in text
 
 
@@ -507,7 +507,7 @@ async def test_an_ordinary_restart_is_not_worth_a_sentence(
     short = text.split("## Last 24 Hours")[0]
     assert "The system restarted" not in short
     assert "The system was unwatched" not in short
-    assert "Nothing has happened since" in text
+    assert "No device problems started or ended in this window." in text
     # Not lost, only moved: the table still carries it.
     assert "| The system |" in text
 
@@ -1061,11 +1061,12 @@ async def test_repeat_offenders_count_only_unexplained(
     coord.data[DATA_INCIDENTS] = incidents
     coord.data[DATA_SYSTEM_EVENTS] = events
 
-    lines = coord._repeat_offender_lines(now)
+    rows = coord._repeat_offender_rows(now)
 
-    assert len(lines) == 1
-    assert lines[0].startswith("True Flapper: 3 unexplained")
-    assert "Reboot Rider" not in " ".join(lines)
+    assert len(rows) == 1
+    assert rows[0]["name"] == "True Flapper"
+    assert rows[0]["n"] == 3
+    assert all(row["name"] != "Reboot Rider" for row in rows)
 
 
 async def test_the_repeat_line_says_the_spread(hass: HomeAssistant):
@@ -1094,9 +1095,9 @@ async def test_the_repeat_line_says_the_spread(hass: HomeAssistant):
     coord.data[DATA_INCIDENTS] = incidents
     coord.data[DATA_SYSTEM_EVENTS] = []
 
-    lines = coord._repeat_offender_lines(now)
-    assert len(lines) == 1
-    assert "all on one day" in lines[0]
+    rows = coord._repeat_offender_rows(now)
+    assert len(rows) == 1
+    assert len(rows[0]["days"]) == 1
 
 
 async def test_the_repeat_floor_is_the_slider(hass: HomeAssistant):
@@ -1124,14 +1125,14 @@ async def test_the_repeat_floor_is_the_slider(hass: HomeAssistant):
     coord.data[DATA_SYSTEM_EVENTS] = []
 
     # Default floor 2: two unexplained openings are named.
-    assert len(coord._repeat_offender_lines(now)) == 1
+    assert len(coord._repeat_offender_rows(now)) == 1
 
     # Floor raised to 3: the same record earns no line.
     hass.config_entries.async_update_entry(
         coord.entry,
         options={**coord.entry.options, CONF_REPEAT_FLOOR: 3},
     )
-    assert coord._repeat_offender_lines(now) == []
+    assert coord._repeat_offender_rows(now) == []
 
 
 async def test_a_multi_day_pattern_earns_both_sentences(
@@ -1197,7 +1198,13 @@ async def test_a_multi_day_pattern_earns_both_sentences(
         )
     )
     assert "went unavailable twice" in prose
-    assert "unexplained interruptions over" in prose
+    # The repeat offenders left In Short for their own section
+    # (ruling #374), so the prose carries the flapping sentence only.
+    assert "unexplained" not in prose
+    # The multi-day pattern keeps its row beside today's sentence.
+    rows = coord._repeat_offender_rows(now)
+    assert len(rows) == 1
+    assert rows[0]["n"] == 4
 
 
 def _incident_row(device, kind, event, when, cause=None, duration=None):
@@ -1341,3 +1348,368 @@ async def test_kinds_flap_separately_on_one_device(hass: HomeAssistant):
         and "railed for 2.0h in total" in line
         for line in told
     )
+
+
+# 0.19.12: the daily brief improvement update (rulings #373 to #377).
+
+
+async def test_the_brief_prints_the_current_name(hass: HomeAssistant):
+    """A renamed device is named as it is now (ruling #373).
+
+    The stored name stays in the record, because it is what was true
+    then, and nothing shown to a reader uses it.
+    """
+    device, _entity_id, _ = _register(hass, "rn1", "Old Name")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    coord.data[DATA_INCIDENTS] = [
+        {
+            INC_DEVICE_ID: device.id,
+            INC_NAME: "Old Name",
+            INC_KIND: TODO_KIND_UNAVAILABLE,
+            INC_EVENT: INCIDENT_OPENED,
+            INC_WHEN: now - 3600.0,
+            INC_DURATION: None,
+        }
+    ]
+    dr.async_get(hass).async_update_device(
+        device.id, name_by_user="New Name"
+    )
+    coord._rebuild_registry_view()
+
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = _brief_text(hass)
+    assert "New Name" in text
+    assert "Old Name" not in text
+
+
+async def test_a_gone_device_keeps_its_stored_name(
+    hass: HomeAssistant,
+):
+    """A device the registry no longer knows falls back to the
+    stored name, because what was true then still beats a hex id
+    (ruling #373)."""
+    coord = await setup_coordinator(hass)
+    row = {
+        INC_DEVICE_ID: "gone0123456789abcdef",
+        INC_NAME: "Departed Sensor",
+        INC_KIND: TODO_KIND_UNAVAILABLE,
+        INC_EVENT: INCIDENT_OPENED,
+        INC_WHEN: dt_util.utcnow().timestamp() - 100.0,
+        INC_DURATION: None,
+    }
+    assert coord._told_name(row) == "Departed Sensor"
+
+
+async def test_repeat_offenders_are_a_table_below_now(
+    hass: HomeAssistant,
+):
+    """The section takes its own heading with the ruled columns and
+    the verbatim paragraph beneath (ruling #374)."""
+    device, _entity_id, _ = _register(hass, "rt1", "Closet Switch")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    incidents = []
+    for index in range(2):
+        at = now - 40000.0 - index * 90000.0
+        incidents.append(
+            {
+                INC_DEVICE_ID: device.id,
+                INC_NAME: "Closet Switch",
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_OPENED,
+                INC_WHEN: at,
+                INC_DURATION: None,
+            }
+        )
+        incidents.append(
+            {
+                INC_DEVICE_ID: device.id,
+                INC_NAME: "Closet Switch",
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_RESOLVED,
+                INC_WHEN: at + 720.0,
+                INC_DURATION: 720.0,
+            }
+        )
+    coord.data[DATA_INCIDENTS] = incidents
+    coord.data[DATA_SYSTEM_EVENTS] = []
+
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = _brief_text(hass)
+    assert "## Repeat Offenders" in text
+    assert text.index("## Now") < text.index("## Repeat Offenders")
+    assert (
+        "| DEVICE | WHAT HAPPENED | TIMES | WHEN | TYPICAL | WITH |"
+        in text
+    )
+    assert "| Closet Switch | went unavailable | 2 |" in text
+    assert "| 12m | alone |" in text
+    assert "This table lists repeat offenders." in text
+    # The paragraph states the same number the code reads, so one
+    # cannot drift from the other (ruling #378).
+    assert "the last seven days" in text
+    assert "fourteen" not in text
+    assert "Keeps failing on its own" not in text
+
+
+async def test_with_says_every_time_only_when_it_matched(
+    hass: HomeAssistant,
+):
+    """WITH names the device that failed in the same second, and
+    says "every time" only when it matched every time (#374)."""
+    first, _e1, source = _register(hass, "wp1", "Motion J")
+    second, _e2, _ = _register(hass, "wp2", "Wave J", source=source)
+    third, _e3, _ = _register(hass, "wp3", "Loner", source=source)
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    base = now - 90000.0
+    incidents = []
+    for device, name in ((first, "Motion J"), (second, "Wave J")):
+        for index in range(3):
+            incidents.append(
+                {
+                    INC_DEVICE_ID: device.id,
+                    INC_NAME: name,
+                    INC_KIND: TODO_KIND_UNAVAILABLE,
+                    INC_EVENT: INCIDENT_OPENED,
+                    INC_WHEN: base + index * 7000.0,
+                    INC_DURATION: None,
+                }
+            )
+    for index in range(2):
+        incidents.append(
+            {
+                INC_DEVICE_ID: third.id,
+                INC_NAME: "Loner",
+                INC_KIND: TODO_KIND_UNAVAILABLE,
+                INC_EVENT: INCIDENT_OPENED,
+                INC_WHEN: base + 3000.0 + index * 11111.0,
+                INC_DURATION: None,
+            }
+        )
+    coord.data[DATA_INCIDENTS] = incidents
+    coord.data[DATA_SYSTEM_EVENTS] = []
+
+    rows = {
+        row["name"]: row for row in coord._repeat_offender_rows(now)
+    }
+    assert rows["Motion J"]["with"] == "Wave J, every time"
+    assert rows["Wave J"]["with"] == "Motion J, every time"
+    assert rows["Loner"]["with"] == "alone"
+
+
+async def test_one_shared_second_is_not_a_partner(
+    hass: HomeAssistant,
+):
+    """A device matching once out of many is a coincidence, not a
+    shared cause, and is not named (ruling #374)."""
+    first, _e1, source = _register(hass, "cf1", "Steady Failer")
+    second, _e2, _ = _register(hass, "cf2", "Passer By", source=source)
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    base = now - 300000.0
+    incidents = [
+        {
+            INC_DEVICE_ID: first.id,
+            INC_NAME: "Steady Failer",
+            INC_KIND: TODO_KIND_UNAVAILABLE,
+            INC_EVENT: INCIDENT_OPENED,
+            INC_WHEN: base + index * 9000.0,
+            INC_DURATION: None,
+        }
+        for index in range(4)
+    ]
+    # Two openings, one of which lands on the other device's second.
+    incidents += [
+        {
+            INC_DEVICE_ID: second.id,
+            INC_NAME: "Passer By",
+            INC_KIND: TODO_KIND_UNAVAILABLE,
+            INC_EVENT: INCIDENT_OPENED,
+            INC_WHEN: when,
+            INC_DURATION: None,
+        }
+        for when in (base, base + 4500.0)
+    ]
+    coord.data[DATA_INCIDENTS] = incidents
+    coord.data[DATA_SYSTEM_EVENTS] = []
+
+    rows = {
+        row["name"]: row for row in coord._repeat_offender_rows(now)
+    }
+    assert rows["Steady Failer"]["with"] == "alone"
+
+
+async def test_a_storm_inside_a_restart_is_the_restart(
+    hass: HomeAssistant,
+):
+    """The storm rows a restart explains leave the summary and the
+    table; a storm on its own keeps them (ruling #375)."""
+    coord = await setup_coordinator(hass)
+    now = dt_util.utcnow().timestamp()
+    events = [
+        # A storm running into a restart: the last seconds before
+        # Home Assistant went down.
+        {
+            SYS_WHEN: now - 646.0,
+            SYS_KIND: "storm_open",
+            SYS_SCOPE: "mqtt",
+        },
+        {
+            SYS_WHEN: now - 638.0,
+            SYS_KIND: "storm_closed",
+            SYS_SCOPE: "mqtt",
+            SYS_DEVICES: 74,
+        },
+        {
+            SYS_WHEN: now - 600.0,
+            SYS_KIND: SYS_RESTART,
+            SYS_SCOPE: "system",
+            SYS_DURATION: 28.0,
+        },
+        # A storm hours from any restart: its own event.
+        {
+            SYS_WHEN: now - 7200.0,
+            SYS_KIND: "storm_open",
+            SYS_SCOPE: "zha",
+        },
+        {
+            SYS_WHEN: now - 7190.0,
+            SYS_KIND: "storm_closed",
+            SYS_SCOPE: "zha",
+            SYS_DEVICES: 12,
+        },
+    ]
+    coord.data[DATA_SYSTEM_EVENTS] = events
+
+    suppressed = coord._storms_inside_restart(events)
+    kept = [row for row in events if row not in suppressed]
+    scopes = {row.get(SYS_SCOPE) for row in suppressed}
+    assert scopes == {"mqtt"}
+    assert len(suppressed) == 2
+    assert sum(
+        1 for row in kept if row.get(SYS_KIND) == "storm_open"
+    ) == 1
+
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = _brief_text(hass)
+    assert "The mqtt integration reloaded" not in text
+    assert "The zha integration reloaded" in text
+
+
+async def test_a_clean_stop_is_named_clean(hass: HomeAssistant):
+    """The gap ends at the time given, and a clean stop says so
+    (ruling #376)."""
+    coord = await setup_coordinator(hass)
+    now = dt_util.utcnow().timestamp()
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        {
+            SYS_WHEN: now - 3600.0,
+            SYS_KIND: SYS_RESTART,
+            SYS_SCOPE: "system",
+            SYS_DURATION: 960.0,
+        }
+    ]
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = _brief_text(hass)
+    assert (
+        "The system was shut down cleanly and was unwatched for "
+        "16m, ending" in text
+    )
+    assert "was unwatched for 16m at " not in text
+
+
+async def test_an_unclean_stop_says_what_it_cost(
+    hass: HomeAssistant,
+):
+    """The unclean line names the shutdown moment, the gap and the
+    timers restarted, and stops (ruling #376). The clean sentence is
+    not said of it."""
+    from custom_components.device_sentinel.const import (
+        SYS_UNCLEAN_RESTART,
+    )
+
+    coord = await setup_coordinator(hass)
+    now = dt_util.utcnow().timestamp()
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        {
+            SYS_WHEN: now - 3600.0,
+            SYS_KIND: SYS_RESTART,
+            SYS_SCOPE: "system",
+            SYS_DURATION: 120.0,
+        },
+        {
+            SYS_WHEN: now - 3600.0,
+            SYS_KIND: SYS_UNCLEAN_RESTART,
+            SYS_SCOPE: "system",
+            SYS_DURATION: 120.0,
+            SYS_DETAIL: "96 devices reset",
+        },
+    ]
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = _brief_text(hass)
+    assert "Home Assistant did not shut down cleanly at " in text
+    assert (
+        "2m went unwatched and 96 devices had their silence "
+        "timers restarted." in text
+    )
+    assert "shut down cleanly and was unwatched" not in text
+    assert "That restart followed an unclean shutdown" not in text
+
+
+async def test_no_repeat_offenders_prints_no_section(
+    hass: HomeAssistant,
+):
+    """An empty table shows nothing at all, not an all-clear
+    (ruling #374 as ruled on 2 September)."""
+    coord = await setup_coordinator(hass)
+    coord.data[DATA_INCIDENTS] = []
+    coord.data[DATA_SYSTEM_EVENTS] = []
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = _brief_text(hass)
+    assert "Repeat Offenders" not in text
+    assert "This table lists repeat offenders" not in text
+
+
+async def test_the_repeat_window_matches_its_paragraph(
+    hass: HomeAssistant,
+):
+    """An opening older than the window is not on the table, and the
+    paragraph names the same number the code reads (ruling #378)."""
+    from custom_components.device_sentinel.const import (
+        REPEAT_WINDOW_DAYS,
+    )
+    from custom_components.device_sentinel.report_brief import (
+        _REPEAT_PARAGRAPH,
+    )
+
+    assert REPEAT_WINDOW_DAYS == 7.0
+    assert "seven days" in _REPEAT_PARAGRAPH
+
+    device, _entity_id, _ = _register(hass, "rw1", "Old Noise")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    now = dt_util.utcnow().timestamp()
+    coord.data[DATA_INCIDENTS] = [
+        {
+            INC_DEVICE_ID: device.id,
+            INC_NAME: "Old Noise",
+            INC_KIND: TODO_KIND_UNAVAILABLE,
+            INC_EVENT: INCIDENT_OPENED,
+            INC_WHEN: now - (REPEAT_WINDOW_DAYS + 1.0) * 86400.0
+            - index * 3600.0,
+            INC_DURATION: None,
+        }
+        for index in range(3)
+    ]
+    coord.data[DATA_SYSTEM_EVENTS] = []
+    assert coord._repeat_offender_rows(now) == []
