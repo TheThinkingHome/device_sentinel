@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_signal_badday.py, Version: 0.19.14 (2026-09-02)
+# File: tests/test_signal_badday.py, Version: 0.19.14 (2026-09-03)
 
 """The bad signal day detector (ruling #310).
 
@@ -22,6 +22,7 @@ was a rule reading a field the live journal never writes.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 
@@ -30,6 +31,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 
 from custom_components.device_sentinel.const import (
+    REPORT_WWW_DIR,
     CONF_BADDAY_BASELINE_DAYS,
     CONF_BADDAY_DROP_LQI,
     CONF_BADDAY_SENSITIVITY,
@@ -311,11 +313,16 @@ async def test_each_row_carries_its_area(hass: HomeAssistant):
 # 0.19.14: the signal report release (ruling #380).
 
 
+def _mk(hass, count, prefix):
+    """Register `count` signal devices and return them."""
+    return [
+        register_device(hass, f"{prefix}{index}", f"{prefix.upper()} {index}")[0]
+        for index in range(count)
+    ]
+
+
 def _signal_page(hass):
     """Return the signal report as written to www."""
-    import os
-    from custom_components.device_sentinel.const import REPORT_WWW_DIR
-
     path = os.path.join(
         hass.config.path(REPORT_WWW_DIR), "signal_report.html"
     )
@@ -398,3 +405,81 @@ async def test_a_bad_day_is_described_without_arithmetic(
     assert coord._signal_depth_words(3.5) == "well below"
     assert coord._signal_depth_words(2.5) == "slightly below"
     assert coord._signal_depth_words(1.0) == "below"
+
+
+async def test_a_router_taking_a_room_down(hass: HomeAssistant):
+    """Twelve devices behind one router fall on the same day.
+
+    This is the vertical band the chart exists to show, and the case
+    the help text tells a person to look for. What is checked is that
+    the page describes the fall in words rather than in spreads
+    (ruling #380), and that the steady list still agrees with its
+    count while a third of the fleet is in trouble.
+    """
+    room = _mk(hass, 12, "room")
+    far = _mk(hass, 30, "far")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    for device in far:
+        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
+            160.0
+        ] * 14
+    for device in room:
+        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = (
+            [170.0] * 9 + [90.0] + [168.0] * 4
+        )
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _signal_page(hass)
+
+    assert "<h2>Signal Anomalies</h2>" in page
+    assert "<h2>Devices That Had a Bad Day</h2>" in page
+    assert "of its own spreads" not in page
+    assert "anything this device normally reads" in page
+
+    block = page[
+        page.index("<h2>Steady Signals</h2>"):
+        page.index("<h2>Devices That Had a Bad Day")
+    ]
+    counted = int(
+        re.search(r"(\d+) device\(s\) stayed within", block).group(1)
+    )
+    named = [
+        cell for cell in re.findall(r"<td>(.*?)</td>", block)
+        if cell.strip()
+    ]
+    assert len(named) == counted, (counted, len(named))
+
+
+async def test_a_fleet_where_every_link_falls_on_one_day(
+    hass: HomeAssistant,
+):
+    """A hundred devices fall together: the coordinator, not a room.
+
+    The page has to stay finite. The chart is capped, the steady list
+    is empty, and neither may lie about its count.
+    """
+    devices = _mk(hass, 100, "all")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    for device in devices:
+        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = (
+            [175.0] * 9 + [80.0] + [174.0] * 4
+        )
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _signal_page(hass)
+
+    block = page[
+        page.index("<h2>Signal Anomalies</h2>"):
+        page.index("<h2>Devices That Had a Bad Day")
+    ]
+    found = re.search(r"(\d+) device\(s\) stayed within", block)
+    if found is not None:
+        named = [
+            cell for cell in re.findall(r"<td>(.*?)</td>", block)
+            if cell.strip()
+        ]
+        assert len(named) == int(found.group(1))
+    # The biographies are capped rather than one per device.
+    assert page.count("<h3>") <= 12, page.count("<h3>")

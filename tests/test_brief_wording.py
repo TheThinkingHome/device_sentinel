@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.19.12 (2026-09-02)
+# File: test_brief_wording.py, Version: 0.19.14 (2026-09-03)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -1713,3 +1713,126 @@ async def test_the_repeat_window_matches_its_paragraph(
     ]
     coord.data[DATA_SYSTEM_EVENTS] = []
     assert coord._repeat_offender_rows(now) == []
+
+
+def _opened(device, when, duration=None, event=INCIDENT_OPENED):
+    """One incident row for a device that went unavailable."""
+    return {
+        INC_DEVICE_ID: device.id,
+        INC_NAME: device.name,
+        INC_KIND: TODO_KIND_UNAVAILABLE,
+        INC_EVENT: event,
+        INC_WHEN: when,
+        INC_DURATION: duration,
+    }
+
+
+async def test_a_device_that_will_not_settle_is_one_row(
+    hass: HomeAssistant,
+):
+    """Forty unexplained failures in a week, one device.
+
+    The table names it once with a count. The failure this looks for
+    is the count collapsing into forty rows, or the brief carrying
+    forty sentences, which is what the prose form did before #374.
+    """
+    device, _entity_id, _ = _register(hass, "flap", "Will Not Settle")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    incidents = []
+    for index in range(40):
+        at = now - 500000.0 + index * 12000.0
+        incidents.append(_opened(device, at))
+        incidents.append(
+            _opened(device, at + 300.0, 300.0, INCIDENT_RESOLVED)
+        )
+    coord.data[DATA_INCIDENTS] = incidents
+    coord.data[DATA_SYSTEM_EVENTS] = []
+
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = _brief_text(hass)
+
+    assert "Repeat Offenders" in text
+    section = text[text.index("Repeat Offenders"):]
+    section = section[: section.index("Last 24 Hours")]
+    assert section.count("Will Not Settle") == 1, section
+    assert "| 40 |" in section.replace("  ", " ")
+
+
+async def test_twenty_devices_failing_together_name_each_other(
+    hass: HomeAssistant,
+):
+    """A shared cause with nothing recorded behind it.
+
+    WITH is the column that earns its place (#374). Twenty devices
+    failing in the same second is true and is also nineteen names in
+    one cell, which is worth seeing before a real fleet does it.
+    """
+    devices = []
+    source = None
+    for index in range(20):
+        device, _entity_id, source = _register(
+            hass, f"twin{index}", f"Twin {index}", source=source
+        )
+        devices.append(device)
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    incidents = []
+    for round_index in range(4):
+        at = now - 400000.0 + round_index * 80000.0
+        for device in devices:
+            incidents.append(_opened(device, at))
+    coord.data[DATA_INCIDENTS] = incidents
+    coord.data[DATA_SYSTEM_EVENTS] = []
+
+    rows = coord._repeat_offender_rows(now)
+    assert len(rows) == 20, len(rows)
+    assert rows[0]["with"].count("every time") == 19
+
+
+async def test_a_flood_with_a_cause_is_one_sentence(
+    hass: HomeAssistant,
+):
+    """Two hundred devices fall behind one bridge and come back.
+
+    In Short is a ten-second read. A flood that something explains
+    collapses into one sentence naming the count and the cause, which
+    is what the collapse exists for.
+    """
+    devices = []
+    source = None
+    for index in range(200):
+        device, _entity_id, source = _register(
+            hass, f"flood{index}", f"Flood {index}", source=source
+        )
+        devices.append(device)
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        {
+            SYS_WHEN: now - 7200.0,
+            SYS_KIND: SYS_RESTART,
+            SYS_SCOPE: "system",
+            SYS_DURATION: 1800.0,
+        }
+    ]
+    incidents = []
+    for device in devices:
+        incidents.append(_opened(device, now - 7100.0))
+        incidents.append(
+            _opened(device, now - 5300.0, 1800.0, INCIDENT_RESOLVED)
+        )
+    coord.data[DATA_INCIDENTS] = incidents
+
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = _brief_text(hass)
+
+    short = text[text.index("In Short"):text.index("Now")]
+    assert short.count("Flood ") < 5, short.count("Flood ")
+    assert "200 devices" in text

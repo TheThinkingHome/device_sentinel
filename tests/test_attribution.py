@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.15.5 (2026-08-17)
+# File: tests/test_attribution.py, Version: 0.19.14 (2026-09-03)
 
 """What explains an incident, and what a flood reads as.
 
@@ -21,9 +21,16 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
+
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel import attribution
 from custom_components.device_sentinel.const import (
+    DATA_INCIDENTS,
+    DATA_SYSTEM_EVENTS,
     INC_CAUSE,
     INC_DEVICE_ID,
     INC_EVENT,
@@ -1005,3 +1012,114 @@ def test_a_wrong_typed_duration_reads_as_zero() -> None:
         [{SYS_KIND: SYS_RESTART, SYS_SCOPE: "", SYS_WHEN: T0}]
     )
     assert with_junk[0].start == with_none[0].start == T0
+
+
+# Whole-stack outages, on the coordinators that report their own
+# liveness. Both cases assert the same thing from opposite ends: an
+# opening a stack outage explains is not a mystery, and never reaches
+# the repeat-offender table (#305, #374).
+
+
+def _stack_fleet(hass, count, prefix, domain, z2m=False):
+    """Register a fleet under one integration.
+
+    With z2m, the identifiers carry the shape Zigbee2MQTT publishes
+    through MQTT discovery, which is what makes the stack own the
+    device. A plain mqtt identifier is not Z2M's and must not be read
+    as one.
+    """
+    source = MockConfigEntry(domain=domain, title=f"{domain} source")
+    source.add_to_hass(hass)
+    registry = dr.async_get(hass)
+    entities = er.async_get(hass)
+    made = []
+    for index in range(count):
+        uid = (
+            f"zigbee2mqtt_0x{index:016x}" if z2m else f"{prefix}{index}"
+        )
+        device = registry.async_get_or_create(
+            config_entry_id=source.entry_id,
+            identifiers={(domain, uid)},
+            name=f"{prefix.upper()} {index}",
+        )
+        entities.async_get_or_create(
+            "sensor", domain, uid,
+            device_id=device.id, config_entry=source,
+        )
+        made.append(device)
+    return made
+
+
+async def test_a_coordinator_outage_explains_every_device_behind_it(
+    hass: HomeAssistant,
+):
+    """Thirty ZHA devices drop across three restarts.
+
+    None may reach the repeat table. An explained opening is not a
+    mystery, however many times it repeats.
+    """
+    devices = _stack_fleet(hass, 30, "zha", "zha")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    events = []
+    incidents = []
+    for round_index in range(3):
+        at = now - 300000.0 + round_index * 90000.0
+        events.append(
+            {SYS_WHEN: at, SYS_KIND: SYS_RESTART, SYS_SCOPE: "system"}
+        )
+        for device in devices:
+            incidents.append(
+                _incident(device.id, device.name, at + 5.0)
+            )
+    coord.data[DATA_INCIDENTS] = incidents
+    coord.data[DATA_SYSTEM_EVENTS] = events
+
+    assert coord._repeat_offender_rows(now) == []
+
+
+async def test_a_bridge_flapping_all_night_explains_its_devices(
+    hass: HomeAssistant,
+):
+    """Twelve bridge cycles, forty devices going with each.
+
+    480 openings, every one caused. The repeat table stays empty and
+    the brief carries no Repeat Offenders section at all.
+    """
+    devices = _stack_fleet(hass, 40, "z2m", "mqtt", z2m=True)
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    events = []
+    incidents = []
+    for cycle in range(12):
+        down = now - 80000.0 + cycle * 6000.0
+        up = down + 1200.0
+        events.append(
+            {SYS_WHEN: down, SYS_KIND: SYS_BRIDGE_DOWN, SYS_SCOPE: "z2m"}
+        )
+        events.append(
+            {
+                SYS_WHEN: up,
+                SYS_KIND: SYS_BRIDGE_UP,
+                SYS_SCOPE: "z2m",
+                SYS_DURATION: 1200.0,
+            }
+        )
+        for device in devices:
+            incidents.append(
+                _incident(device.id, device.name, down + 10.0)
+            )
+            incidents.append(
+                _incident(
+                    device.id, device.name, up + 10.0,
+                    event=INCIDENT_RESOLVED,
+                )
+            )
+    coord.data[DATA_INCIDENTS] = incidents
+    coord.data[DATA_SYSTEM_EVENTS] = events
+
+    assert coord._repeat_offender_rows(now) == []

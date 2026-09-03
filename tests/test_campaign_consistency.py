@@ -24,12 +24,15 @@ crash or as a sentence that is untrue.
 from __future__ import annotations
 
 import json
+import os
 import random
+import re
 from pathlib import Path
 
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -37,6 +40,28 @@ from custom_components.device_sentinel.const import (
     ACTION_SET_ASIDE,
     CLOCK_FIELDS,
     DATA_DEVICES,
+    DATA_SYSTEM_EVENTS,
+    DATA_INCIDENTS,
+    TODO_KIND_UNAVAILABLE,
+    SYS_WHEN,
+    SYS_SCOPE,
+    SYS_RESTART,
+    SYS_KIND,
+    SYS_DURATION,
+    SYS_BRIDGE_UP,
+    SYS_BRIDGE_DOWN,
+    INC_WHEN,
+    INC_NAME,
+    INC_KIND,
+    INC_EVENT,
+    INC_DURATION,
+    INC_DEVICE_ID,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_BATTERY_VALUE,
+    DEV_BATTERY_SINCE,
+    DEV_BATTERY_LOW,
+    DEV_BATTERY_DAILY,
+    REPORT_WWW_DIR,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
@@ -54,6 +79,10 @@ from tests.helpers import register_device, setup_coordinator
 
 JAMES = fleet_path("james", "2026-08-29", "device_sentinel.storage")
 TIM = fleet_path("tim", "2026-08-29", "device_sentinel_storage.json")
+# The newest copy of each fleet, for the forward simulation below. The
+# dated pair above is the campaign's fixed ground; these move.
+JAMES_LIVE = fleet_path("james", "device_sentinel.storage")
+TIM_LIVE = fleet_path("tim", "device_sentinel_storage.json")
 CLOCKS_FOR = {
     "device_sentinel.storage": "device_sentinel.clocks",
     "device_sentinel_storage.json": "device_sentinel_clocks.json",
@@ -238,3 +267,269 @@ async def test_consistency_james(hass: HomeAssistant, seed):
 @pytest.mark.parametrize("seed", range(20))
 async def test_consistency_tim(hass: HomeAssistant, seed):
     await _round(hass, TIM, 60_000 + seed)
+
+
+# Forward simulation: both real fleets through the current readers.
+#
+# The campaign above drives synthetic rounds. This drives the real
+# thing: each reference fleet's own storage loaded into a live
+# coordinator, every device registered, every report written and read
+# back. A replay over existing data proves what wrote it; only
+# rendering the whole output surface proves what reads it (#306).
+
+
+def _fleet_names(path):
+    """Return the device names, which the storage file does not carry.
+
+    The record holds statistics and no name. The name lives in the
+    registry, and the diagnostics dump beside the fleet file is the
+    only copy of that registry available here.
+    """
+    found = sorted(path.parent.glob("config_entry*.json"))
+    if not found:
+        return {}
+    with open(found[0], encoding="utf-8") as handle:
+        dump = json.load(handle)
+    devices = (dump.get("data") or {}).get("devices") or {}
+    return {
+        device_id: (record or {}).get("name") or device_id
+        for device_id, record in devices.items()
+    }
+
+
+async def _render_fleet(hass, path):
+    """Load a fleet, write every report, return the pages by name."""
+    with open(path, encoding="utf-8") as handle:
+        loaded = json.load(handle)
+    data = loaded.get("data", loaded)
+    records = data.get("devices") or {}
+    names = _fleet_names(path)
+
+    source = MockConfigEntry(domain="test", title="Fleet")
+    source.add_to_hass(hass)
+    registry = dr.async_get(hass)
+    entities = er.async_get(hass)
+    for device_id in records:
+        device = registry.async_get_or_create(
+            config_entry_id=source.entry_id,
+            identifiers={("test", device_id)},
+            name=names.get(device_id) or device_id,
+        )
+        entities.async_get_or_create(
+            "sensor", "test", device_id,
+            device_id=device.id, config_entry=source,
+        )
+
+    coord = await setup_coordinator(hass)
+    # The registry ids the harness mints are not the fleet's, so each
+    # record is keyed onto the device planted under the fleet's own id.
+    live_for = {
+        ident: device.id
+        for device in registry.devices.values()
+        for domain, ident in device.identifiers
+        if domain == "test"
+    }
+    carried = 0
+    for device_id, record in records.items():
+        live = live_for.get(device_id)
+        if live is None or not isinstance(record, dict):
+            continue
+        coord.data[DATA_DEVICES][live] = dict(record)
+        carried += 1
+    for key in ("system_events", "incidents", "storm_days",
+                "silence_episodes"):
+        coord.data[key] = data.get(key) or []
+    coord._rebuild_registry_view()
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    directory = hass.config.path(REPORT_WWW_DIR)
+    pages = {}
+    for name in os.listdir(directory):
+        if name.endswith((".html", ".md")):
+            with open(
+                os.path.join(directory, name), encoding="utf-8"
+            ) as handle:
+                pages[name] = handle.read()
+    return carried, pages
+
+
+def _agree(page, heading, stop, pattern, pairs=False):
+    """Assert a section shows as many devices as it claims.
+
+    Rulings #379 and #380 put the count and the list in one source.
+    This is that promise checked against real data rather than a
+    fixture.
+    """
+    if heading not in page:
+        return
+    block = page[page.index(heading):]
+    if stop in block:
+        block = block[: block.index(stop)]
+    found = re.search(pattern, block)
+    if found is None:
+        return
+    counted = int(found.group(1))
+    rows = re.findall(r"<tr><td>.*?</tr>", block)
+    step = 2 if pairs else 1
+    shown = sum(
+        1
+        for row in rows
+        for cell in re.findall(r"<td>(.*?)</td>", row)[::step]
+        if cell.strip()
+    )
+    assert shown == counted, (heading, counted, shown)
+
+
+def _check_pages(pages):
+    """Every page renders, agrees with itself, and names no raw id."""
+    for name in ("daily_brief.html", "battery_report.html",
+                 "signal_report.html"):
+        assert name in pages, name
+
+    battery = pages["battery_report.html"]
+    _agree(battery, "<h2>Steady</h2>", "<h2>Unreadable</h2>",
+           r"(\d+) cell\(s\) holding steady", pairs=True)
+    _agree(battery, "<h2>No Battery Reported</h2>", "<footer>",
+           r"(\d+) watched device\(s\)")
+    _agree(pages["signal_report.html"], "<h2>Steady Signals</h2>",
+           "<h2>Devices That Had a Bad Day",
+           r"(\d+) device\(s\) stayed within")
+
+    # A registry id in reader-facing text is the fault #307 found on
+    # the first live trim: a name lookup that missed and printed the
+    # id at a person.
+    for name, page in pages.items():
+        body = re.sub(r"<svg.*?</svg>", "", page, flags=re.S)
+        assert not re.findall(r">\s*[0-9a-f]{32}\s*<", body), name
+
+
+@pytest.mark.skipif(not JAMES_LIVE.exists(), reason=FLEET_ABSENT)
+async def test_the_reference_fleet_renders_every_page(
+    hass: HomeAssistant,
+):
+    """The whole output surface, over the first fleet's own record."""
+    carried, pages = await _render_fleet(hass, JAMES_LIVE)
+    assert carried > 90, carried
+    _check_pages(pages)
+
+
+@pytest.mark.skipif(not TIM_LIVE.exists(), reason=FLEET_ABSENT)
+async def test_the_second_fleet_renders_every_page(
+    hass: HomeAssistant,
+):
+    """The same, on a fleet twice the size and differently shaped."""
+    carried, pages = await _render_fleet(hass, TIM_LIVE)
+    assert carried > 200, carried
+    _check_pages(pages)
+
+
+async def test_the_worst_night_a_fleet_could_have(hass: HomeAssistant):
+    """Everything at once, on a fleet with two stacks.
+
+    Restarts, a bridge outage, freezes, a bank at the floor, signal
+    falls, and one device nobody can explain. The single question is
+    whether every page still writes and every count still matches the
+    list beside it when nothing is quiet.
+    """
+    source = MockConfigEntry(domain="mqtt", title="Zigbee")
+    source.add_to_hass(hass)
+    registry = dr.async_get(hass)
+    entities = er.async_get(hass)
+
+    def plant(count, prefix, domain, entry):
+        made = []
+        for index in range(count):
+            uid = f"{prefix}{index}"
+            device = registry.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(domain, uid)},
+                name=f"{prefix.upper()} {index}",
+            )
+            entities.async_get_or_create(
+                "sensor", domain, uid,
+                device_id=device.id, config_entry=entry,
+            )
+            made.append(device)
+        return made
+
+    zha_entry = MockConfigEntry(domain="zha", title="Radio")
+    zha_entry.add_to_hass(hass)
+    zigbee = plant(60, "zb", "mqtt", source)
+    zha = plant(25, "zh", "zha", zha_entry)
+
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    now = dt_util.utcnow().timestamp()
+
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        {SYS_WHEN: now - 70000.0, SYS_KIND: SYS_RESTART,
+         SYS_SCOPE: "system", SYS_DURATION: 900.0},
+        {SYS_WHEN: now - 60000.0, SYS_KIND: SYS_BRIDGE_DOWN,
+         SYS_SCOPE: "z2m"},
+        {SYS_WHEN: now - 58000.0, SYS_KIND: SYS_BRIDGE_UP,
+         SYS_SCOPE: "z2m", SYS_DURATION: 2000.0},
+        {SYS_WHEN: now - 3600.0, SYS_KIND: SYS_RESTART,
+         SYS_SCOPE: "system", SYS_DURATION: 30.0},
+    ]
+
+    def incident(device, when, event=INCIDENT_OPENED, duration=None):
+        return {
+            INC_DEVICE_ID: device.id,
+            INC_NAME: device.name,
+            INC_KIND: TODO_KIND_UNAVAILABLE,
+            INC_EVENT: event,
+            INC_WHEN: when,
+            INC_DURATION: duration,
+        }
+
+    incidents = []
+    for device in zigbee[:40]:
+        incidents.append(incident(device, now - 59900.0))
+        incidents.append(
+            incident(device, now - 57900.0, INCIDENT_RESOLVED, 2000.0)
+        )
+    # One device nobody can explain, four times, hours from any event.
+    rogue = zha[0]
+    for index in range(4):
+        incidents.append(
+            incident(rogue, now - 400000.0 + index * 90000.0)
+        )
+    coord.data[DATA_INCIDENTS] = incidents
+
+    for index, device in enumerate(zigbee):
+        record = coord.data[DATA_DEVICES][device.id]
+        level = float(5 + index)
+        record[DEV_BATTERY_VALUE] = level
+        record[DEV_BATTERY_DAILY] = [
+            level + step for step in range(9, -1, -1)
+        ]
+        if level <= 10.0:
+            record[DEV_BATTERY_LOW] = True
+            record[DEV_BATTERY_SINCE] = "2026-08-28T06:00:00+00:00"
+        record[DEV_SIGNAL_DAILY_P5] = (
+            [165.0] * 9 + [95.0] + [163.0] * 4
+            if index % 3 == 0
+            else [165.0] * 14
+        )
+    coord._sync_problem_list()
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    directory = hass.config.path(REPORT_WWW_DIR)
+    pages = {}
+    for name in os.listdir(directory):
+        if name.endswith((".html", ".md")):
+            with open(
+                os.path.join(directory, name), encoding="utf-8"
+            ) as handle:
+                pages[name] = handle.read()
+
+    _check_pages(pages)
+
+    # The one unexplained device is named, and only it.
+    brief = pages["daily_brief.html"]
+    assert "<h2>Repeat Offenders</h2>" in brief
+    block = brief[brief.index("<h2>Repeat Offenders</h2>"):]
+    block = block[: block.index("<h2>", 30)]
+    rows = re.findall(r"<tr><td>.*?</tr>", block)
+    assert len(rows) == 1, len(rows)
+    assert rogue.name in rows[0]

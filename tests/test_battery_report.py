@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.19.13 (2026-09-02)
+# File: test_battery_report.py, Version: 0.19.14 (2026-09-03)
 
 """The battery report (ruling #194).
 
@@ -609,3 +609,144 @@ async def test_the_footer_carries_only_what_a_footer_can_say(
     assert "holds a level for most of its life" not in footer
     assert "Low Battery Threshold" not in footer
     assert "projection" not in footer
+
+
+def _bank(hass, count, prefix):
+    """Register `count` battery devices and return them."""
+    return [
+        register_device(hass, f"{prefix}{index}", f"{prefix.upper()} Cell {index}")[0]
+        for index in range(count)
+    ]
+
+
+def _counted_and_shown(page, heading, stop, pattern, pairs):
+    """Return what a section claims and what it shows.
+
+    Ruling #379 put the count and the list in one source so a page can
+    never claim a different number than it shows. That is only true
+    while something checks it, and at scale is where it would break.
+    """
+    block = page[page.index(heading):page.index(stop)]
+    found = re.search(pattern, block)
+    if found is None:
+        # An empty section prints "None." and claims no number, which
+        # is a section that cannot disagree with itself.
+        return None, None
+    counted = int(found.group(1))
+    rows = re.findall(r"<tr><td>.*?</tr>", block)
+    step = 2 if pairs else 1
+    shown = sum(
+        1
+        for row in rows
+        for cell in re.findall(r"<td>(.*?)</td>", row)[::step]
+        if cell.strip()
+    )
+    return counted, shown
+
+
+async def test_a_bank_of_five_hundred_cells_stays_legible(
+    hass: HomeAssistant,
+):
+    """Ten times the reference fleet, every cell steady.
+
+    The failure this looks for is the count and the list parting
+    company once the list is long, and the two columns drifting out of
+    balance when the split has hundreds of rows to make.
+    """
+    devices = _bank(hass, 500, "big")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    for index, device in enumerate(devices):
+        level = float(40 + (index % 60))
+        _seed(coord, device.id, [level] * 10, level)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+
+    counted, shown = _counted_and_shown(
+        page, "<h2>Steady</h2>", "<h2>Unreadable</h2>",
+        r"(\d+) cell\(s\) holding steady", True,
+    )
+    assert counted == 500, counted
+    assert shown == counted, (counted, shown)
+
+    block = page[page.index("<h2>Steady</h2>"):page.index("<h2>Unreadable</h2>")]
+    rows = re.findall(r"<tr><td>.*?</tr>", block)
+    left = sum(
+        1 for row in rows
+        if re.findall(r"<td>(.*?)</td>", row)[0].strip()
+    )
+    right = sum(
+        1 for row in rows
+        if len(re.findall(r"<td>(.*?)</td>", row)) > 2
+        and re.findall(r"<td>(.*?)</td>", row)[2].strip()
+    )
+    assert abs(left - right) <= 1, (left, right)
+
+
+async def test_a_bank_falling_off_a_cliff(hass: HomeAssistant):
+    """Sixty cells dropping fast, one already at zero.
+
+    The page must not print an impossible percentage, and the sections
+    that claim a count must still show that many when most of the bank
+    is in trouble at once.
+    """
+    devices = _bank(hass, 60, "cliff")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    for index, device in enumerate(devices):
+        level = max(0.0, 90.0 - index * 1.5)
+        _seed(
+            coord, device.id,
+            [level + step * 2.0 for step in range(9, -1, -1)],
+            level,
+            low=level <= 10.0,
+            since="2026-08-30T06:00:00+00:00" if level <= 10.0 else None,
+        )
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+
+    assert "<h2>Falling</h2>" in page
+    assert "<h2>Under the Threshold</h2>" in page
+    levels = [int(value) for value in re.findall(r"<td>(\d+)%</td>", page)]
+    assert levels, "no levels rendered"
+    assert min(levels) >= 0 and max(levels) <= 100, (min(levels), max(levels))
+
+    counted, shown = _counted_and_shown(
+        page, "<h2>Steady</h2>", "<h2>Unreadable</h2>",
+        r"(\d+) cell\(s\) holding steady", True,
+    )
+    assert shown == counted, (counted, shown)
+    # Every cell is falling here, so Steady is empty and claims
+    # nothing, which is the one state where there is no count to check.
+    assert counted is None or counted > 0
+
+
+async def test_a_bank_of_raw_scales_never_reads_as_healthy(
+    hass: HomeAssistant,
+):
+    """Ten devices reporting a raw scale above 100.
+
+    They belong in Unreadable, and must never be counted among the
+    healthiest cells in the bank because their number is the largest.
+    """
+    devices = _bank(hass, 10, "lux")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    for index, device in enumerate(devices):
+        level = 150.0 + index
+        _seed(coord, device.id, [level] * 10, level)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+
+    block = page[
+        page.index("<h2>Unreadable</h2>"):page.index("<h2>No Battery Reported</h2>")
+    ]
+    named = [
+        cell for cell in re.findall(r"<td>(.*?)</td>", block)
+        if cell.strip() and "%" not in cell
+    ]
+    assert len(named) == 10, len(named)
+    assert "holding steady" not in block
