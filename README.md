@@ -20,10 +20,10 @@
 | Freeze detection | Stable                         | Per-device rhythms are fully modeled. Verdicts accurately distinguish between frozen, unavailable, unknown, and never reported states. The core logic is settled and unchanged in this release.          |
 | Battery          | Stable                         | Dual-evaluation is live: cells are judged against a fixed threshold and a predictive time-to-empty trend. Works on any device that reports a battery level.                                              |
 | Signal           | Experimental                   | Each day's readings are folded into a time-weighted fifth percentile and median, and a day is called bad when it falls far below that device's own recent normal, in its own units and in its own spread. Where a device exposes both, RSSI and LQI are recorded side by side. Only railed links trigger phone alerts. The gates are still being tuned, and recorded metrics will shift as that settles. |
-| Storage          | Hardening                      | Guards weeks of learning against corruption. A recent backup is always kept. If a power outage ever corrupts the integration's data file, damage is repaired where it can be, and the backup is restored where it cannot. |
+| Storage          | Stable                         | Guards weeks of learning against corruption. A recent backup is always kept. If a power outage ever corrupts the integration's data file, the backup is restored where it can be and the damage is repaired where it cannot, without asking you anything. Both halves have now run on real hardware against a live file. |
 | Zigbee2MQTT      | Working                        | Supports pairing window recognition, bridge and broker outage detection, and bridge/broker sensor integration. Provides a second-opinion availability check alongside freeze verdicts.                   |
 | MQTT             | Working                        | Watches the MQTT broker itself. Supports broker outage detection and broker sensor integration. Devices behind a stopped broker are cleared of blame rather than reported one by one. A broker outage outranks any bridge outage.                                     |
-| ZHA              | Working                    | Supports coordinator outage detection and bridge sensor integration. Devices behind a downed coordinator are cleared of blame rather than reported one by one. Reloads, reconfigures, and re-pairs ride through without being reported as faults, so no pairing window is needed. See the [ZHA](https://github.com/TheThinkingHome/device_sentinel/wiki/ZHA) documentation to follow along or contribute. |
+| ZHA              | Experimental                   | Supports coordinator outage detection and bridge sensor integration. Devices behind a downed coordinator are cleared of blame rather than reported one by one. Reloads, reconfigures, and re-pairs ride through without being reported as faults, so no pairing window is needed. Every number behind this was measured on one house with three ZHA devices, so it is marked experimental until a second mesh has confirmed it. If you run ZHA, see the [ZHA](https://github.com/TheThinkingHome/device_sentinel/wiki/ZHA) documentation to follow along or contribute. |
 | Z-Wave           | Coordinator features not built | Not started. If interested, see the [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) documentation to contribute.                                                                |
 
 ## The Problem
@@ -106,7 +106,7 @@ Every fault, whatever kind, lands in one Home Assistant to-do list. A device tha
 
 - **A dashboard card** that is always current and never makes a sound. When nothing is wrong it says so.
 - **Phone pushes** for real faults, one per kind rather than one per device. When a bridge or broker goes down, the devices behind it are counted rather than listed, and you get one message naming the thing you can actually fix. Faults arrive audibly, recoveries silently.
-- **A daily brief** in plain language: two paragraphs on what happened and what is still broken, then the exact times. Delivered by email or push on your schedule.
+- **A daily brief** in plain language: a short summary of what happened and what is still broken, a table of the devices that keep failing for no clear reason, then the exact times. Delivered by email or push on your schedule.
 
 Quiet hours hold every phone push, while the card and the morning brief still carry what happened. A new fault waits a short, per-device moment before it reaches you, so a problem that fixes itself in thirty seconds never wakes you at all.
 
@@ -164,7 +164,7 @@ Every screen explains itself and links to its own wiki page. Most people change 
 
 ## Reports And Diagnostics
 
-Two more pages are written for a person, beside the daily brief: **the battery report**, which ranks every falling cell by how long it has left, and **the signal report**, which names the devices whose radio link is worse than it usually is and leaves the rest off the page. Both live under `www` so a dashboard card can point at them.
+Two more pages are written for a person, beside the daily brief: **the battery report**, which ranks every falling cell by how long it has left, and **the signal report**, which charts the devices whose radio link is worse than it usually is. Both name every device they count, so you can find the one you are looking for rather than reading that some number of devices are fine. Both live under `www` so a dashboard card can point at them.
 
 Three further files are written for whoever maintains the system:
 
