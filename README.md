@@ -19,11 +19,11 @@
 | ---------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Freeze detection | Stable                         | Per-device rhythms are fully modeled. Verdicts accurately distinguish between frozen, unavailable, unknown, and never reported states. The core logic is settled and unchanged in this release.          |
 | Battery          | Stable                         | Dual-evaluation is live: cells are judged against a fixed threshold and a predictive time-to-empty trend. Works on any device that reports a battery level.                                              |
-| Signal           | Experimental                   | Each day's readings are folded into a time-weighted fifth percentile and median, and a day is called bad when it falls far below that device's own recent normal, in its own units and in its own spread. Where a device exposes both, RSSI and LQI are recorded side by side. Only railed links trigger phone alerts. The gates are still being tuned, and recorded metrics will shift as that settles. |
+| Signal           | Experimental                   | Every device's radio link is recorded daily and judged against its own history, so a bad day means bad for that device rather than bad by some borrowed number. Weak links are charted and listed today; only a link stuck at no reading at all reaches your phone, until the alerting has earned trust. Expect the recorded figures to shift while that settles. |
 | Storage          | Stable                         | Guards weeks of learning against corruption. A recent backup is always kept. If a power outage ever corrupts the integration's data file, the backup is restored where it can be and the damage is repaired where it cannot, without asking you anything. Both halves have now run on real hardware against a live file. |
 | Zigbee2MQTT      | Working                        | Supports pairing window recognition, bridge and broker outage detection, and bridge/broker sensor integration. Provides a second-opinion availability check alongside freeze verdicts.                   |
 | MQTT             | Working                        | Watches the MQTT broker itself. Supports broker outage detection and broker sensor integration. Devices behind a stopped broker are cleared of blame rather than reported one by one. A broker outage outranks any bridge outage.                                     |
-| ZHA              | Experimental                   | Supports coordinator outage detection and bridge sensor integration. Reloads, reconfigures, and re-pairs ride through without being reported as faults, so no pairing window is needed. ZHA bridge detection will be marked experimental until proven stable over time. If you run ZHA, see the [ZHA](https://github.com/TheThinkingHome/device_sentinel/wiki/ZHA) documentation to follow along or contribute. |
+| ZHA              | Experimental                   | Supports coordinator outage detection and bridge sensor integration. Devices behind a downed coordinator are cleared of blame rather than reported one by one. Reloads, reconfigures, and re-pairs ride through without being reported as faults, so no pairing window is needed. Every number behind this was measured on one house with three ZHA devices, so it is marked experimental until a second mesh has confirmed it. If you run ZHA, see the [ZHA](https://github.com/TheThinkingHome/device_sentinel/wiki/ZHA) documentation to follow along or contribute. |
 | Z-Wave           | Coordinator features not built | Not started. If interested, see the [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) documentation to contribute.                                                                |
 
 ## The Problem
@@ -68,7 +68,7 @@ And two that give you warning first:
 |---|---|---|
 | **Low battery** | The level falls past your threshold, default twenty percent, and stays there. | Warning while you can still act, rather than a post-mortem once the device has gone quiet. |
 | **Falling battery** | The cell is projected to reach empty inside your chosen horizon, default thirty days, from how fast it is actually dropping. | The earlier warning. A cell at 24 percent falling steadily can have less life left than one sitting at 80 that has not moved in a month. |
-| **Weak or railed signal** | A link that spends much of its day below its own danger line, which sits just above the floor that device has actually held, or stuck at the value that means no reading at all. | Links degrade before they fail. This is the part you can fix with a repeater. Weak links are listed and charted today; only the railed case reaches your phone, until the alerting formula has earned trust. |
+| **Weak or railed signal** | A link spending much of its day worse than that device has ever normally run, or stuck at the value that means no reading at all. | Links degrade before they fail. This is the one you can fix with a repeater. Weak links are listed and charted today; only the stuck case reaches your phone, until the alerting has earned trust. |
 
 ## What You Get
 
@@ -90,9 +90,9 @@ The time left is said in words rather than days, "empty in about 2 weeks" rather
 
 ![Device Sentinel battery decay beside a device's radio link](https://xeazy.com/wp-content/uploads/Battery-Decay-Signal-Dwell.png)
 
-A radio link is judged against its own recent history rather than a fixed number. Each night the day's readings become a time-weighted fifth percentile, and that is compared against the median of the days before it. The day counts as bad only when the fall is large in the device's own units and also large measured in the device's own spread, which is what lets a steady link and a jittery one be read on the same page. A link stuck at its rail, the 255 or the minus 128 that means the field was filled in rather than measured, is called out for what it is rather than read as a strong signal.
+A radio link is judged against its own recent history rather than a fixed number, so a naturally weak sensor at the end of the garden is left alone while it stays where it has always been, and a strong one that quietly halves is not. A steady link and a jittery one are read on the same page. And a link stuck at the value that means no reading at all is called out for what it is rather than read as a strong signal, which is the reading most likely to fool you.
 
-![The Device Sentinel signal report, one row per device worth a look, each day shaded by how far it fell below that device's own normal](https://xeazy.com/wp-content/uploads/signal_report.webp)
+![The Device Sentinel signal report, charting the devices whose radio link is worse than usual, with every steady device named below](https://xeazy.com/wp-content/uploads/signal_report.webp)
 
 ### It Does Not Learn Your Repairs As Normal
 
@@ -101,6 +101,27 @@ The learning has to survive you. A battery swap, a re-pair, a Home Assistant res
 ### One List Of What Is Actually Wrong
 
 Every fault, whatever kind, lands in one Home Assistant to-do list. A device that is both frozen and low on battery is one line, not two. Tick it to acknowledge: it stays listed and keeps updating, but stops making noise on your phone and on the dashboard card until it recovers, on its own or by your intervention.
+
+### It Shows You Which Devices Keep Failing, And What They Fail With
+
+Some devices fail for a reason no integration can see. A television
+that reads unavailable every time somebody turns it off. A sensor
+whose dying cell crosses the threshold three hundred times a day.
+Nothing can tell those from a real fault at the moment it happens, so
+instead of guessing, Device Sentinel shows you the pattern and lets
+you decide.
+
+The daily brief lists every device that failed more than once in the
+last week for no reason it could find, having already ruled out
+restarts, coordinator outages and your own maintenance. For each one
+it gives what happened, how often, when, how long a typical failure
+lasted, and which other device failed in the same second.
+
+That last column is the one that solves things. In the author's house
+two sensors kept dropping out, six times in one day, and the table
+showed they always went together. Two devices failing together is
+rarely two broken devices. It is one cause, and now you know where to
+look.
 
 ### Alerts That Respect Your Evening
 
@@ -158,9 +179,9 @@ Every screen explains itself and links to its own wiki page. Most people change 
 | **Notifications** | Where alerts go, quiet hours, and when the daily brief is written. The brief's time is also the boundary of its window: a 7 AM brief covers 7 AM to 7 AM. |
 | **Exclusions and Muting** | Integrations to exclude, whose devices are never watched or recorded, and hardware to mute by integration, label, or device, which is still watched but never reported. |
 | **Low Battery** | The threshold, default twenty percent; how far ahead a falling cell is flagged, default thirty days; and devices to leave out of battery reporting. |
-| **Signal Strength** | What counts as a bad signal day: how far a link must fall in its own units, how far in its own spread, and how many past days form the normal it is measured against. Also devices to leave out of signal reporting. |
-| **Freeze Detection** | Two sliders shaping how much grace a device gets on top of its learned rhythm. Fast devices are governed by the first (1 to 8 minutes, default 3), slow ones by the second (4 to 12 hours, default 8). |
-| **Advanced** | Settings most people never need: how long a fault must persist before your phone hears about it, how long a device may be unreachable before that counts as real downtime, how long the Maintenance Mode window lasts, how often work is written to disk, and how much history to keep. |
+| **Signal Strength** | What counts as a bad signal day, and how forgiving to be about it. Also devices to leave out of signal reporting. |
+| **Freeze Detection** | Two sliders setting how much grace a device gets on top of its own rhythm, one for the fast devices and one for the slow. Raise them if you are being told too early, lower them if you want to know sooner. |
+| **Advanced** | The dials most people never touch: how patient to be before a fault reaches your phone, how much history to keep, and how often work is written to disk. Also the Data Trim tool, which erases what has been recorded about a device or an integration. |
 
 ## Reports And Diagnostics
 
