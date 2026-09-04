@@ -20,7 +20,7 @@ Held until 1.0. The pre-release build follows a single design under active devel
 
 ## Code standards, for later
 
-Docstrings carry the decision and the reason, not just the what. Inline comments explain why, never narrate. Names are fully descriptive, no abbreviations. Every source file carries the copyright header. The test suite runs on every push and stays green. Run it serially (plain `pytest`, never `pytest -n`): the pinned Home Assistant harness shares one `testing_config/www/` directory across xdist workers, so a parallel run races the daily brief's atomic write and fails intermittently. That is the harness, not the integration.
+Docstrings carry the decision and the reason, not just the what. Inline comments explain why. Names are fully descriptive, no abbreviations. Every source file carries the copyright header. The test suite runs on every push and stays green. Run it serially (plain `pytest`, never `pytest -n`): the pinned Home Assistant harness shares one `testing_config/www/` directory across xdist workers, so a parallel run races the daily brief's atomic write and fails intermittently.
 
 ## License
 
