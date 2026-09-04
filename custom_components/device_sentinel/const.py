@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.20.0 (2026-09-03)
+# File: const.py, Version: 0.20.1 (2026-09-04)
 
 """Constants for the Device Sentinel integration."""
 
@@ -276,6 +276,23 @@ BRIDGE_SENSOR_NAMES = {
 # other. One radio, one fleet of two devices, two runs: it moves when
 # a second fleet says so.
 ZHA_DOWN_DWELL_SECONDS = 60.0
+
+# An integration is called down when its config entry has been in any
+# state other than loaded for this long. The same sixty seconds ZHA
+# uses and for the same reason: a reload drops an entry for about nine
+# seconds and an upgrade drops every entry it touches, so the first
+# sighting of an unloaded entry is evidence of nothing. Home Assistant
+# passes through setup_in_progress on the way back up, which clears
+# itself well inside the dwell.
+#
+# Unproven on a second fleet. Every integration on the reference fleet
+# holds its entry loaded while its devices go unreachable, which is
+# what the 3 September tests established, so what this catches there
+# is an integration that failed to start rather than one that lost its
+# hardware. Z-Wave and Matter reload their entry on a dropped
+# connection and are the case it is built for; neither exists on the
+# reference fleet.
+INTEGRATION_DOWN_DWELL_SECONDS = 60.0
 
 # The dispatcher signal ZHA's split library emits gateway messages
 # on, and the three message types that mean a device arrived. Named
@@ -1957,6 +1974,8 @@ SYS_DETAIL = "detail"
 SYS_DURATION = "duration"
 
 SYS_RESTART = "restart"
+SYS_INTEGRATION_DOWN = "integration_down"
+SYS_INTEGRATION_UP = "integration_up"
 SYS_BRIDGE_DOWN = "bridge_down"
 SYS_BRIDGE_UP = "bridge_up"
 # The broker going and returning. Its own pair rather than a bridge
@@ -1989,7 +2008,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 381
+HIGHEST_RULING = 382
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

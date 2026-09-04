@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.19.12 (2026-09-02)
+# File: report_brief.py, Version: 0.20.1 (2026-09-04)
 
 """The daily brief: the one report written for a person.
 
@@ -65,6 +65,8 @@ from .const import (
     REPORT_BRIEF_PREFIX,
     REPORT_SIGNAL_URL,
     REPORT_WWW_DIR,
+    SYS_INTEGRATION_DOWN,
+    SYS_INTEGRATION_UP,
     SYS_BRIDGE_DOWN,
     SYS_BRIDGE_UP,
     SYS_BROKER_DOWN,
@@ -342,6 +344,15 @@ class BriefMixin:
                     "with nothing listening."
                 )
             return f"The system restarted at {when}."
+        if kind == SYS_INTEGRATION_DOWN:
+            return f"The {scope} integration went down at {when}."
+        if kind == SYS_INTEGRATION_UP:
+            return (
+                f"The {scope} integration came back at {when} after "
+                f"{held}."
+                if held
+                else f"The {scope} integration came back at {when}."
+            )
         if kind == SYS_BRIDGE_DOWN:
             return f"The {scope} bridge went down at {when}."
         if kind == SYS_BRIDGE_UP:
@@ -507,6 +518,14 @@ class BriefMixin:
                 f"system restarted, {held} unwatched"
                 if held
                 else "system restarted"
+            )
+        if kind == SYS_INTEGRATION_DOWN:
+            return f"{scope} integration went down"
+        if kind == SYS_INTEGRATION_UP:
+            return (
+                f"{scope} integration came back after {held}"
+                if held
+                else f"{scope} integration came back"
             )
         if kind == SYS_BRIDGE_DOWN:
             return f"{scope} bridge went down"

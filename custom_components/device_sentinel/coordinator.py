@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.19.11 (2026-08-31)
+# File: coordinator.py, Version: 0.20.1 (2026-09-04)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -434,8 +434,20 @@ class DeviceSentinelCoordinator(
         # told. Held is what the startup grace swallowed and owes an
         # announcement; said is what has been announced and is
         # therefore owed a recovery (ruling #291).
-        self._upstream_held: dict[str, tuple[str, str | None, float]] = {}
-        self._upstream_said: dict[str, tuple[str, str | None, float]] = {}
+        self._upstream_held: dict[
+            str, tuple[str, str | None, float, int | None]
+        ] = {}
+        self._upstream_said: dict[
+            str, tuple[str, str | None, float, int | None]
+        ] = {}
+        # Which config entry owns each device, rebuilt on every
+        # registry walk, and when each entry was first seen in any
+        # state other than loaded. An integration is called down only
+        # once that has outlived the dwell.
+        self._entry_of_device: dict[str, str] = {}
+        self._entry_down_at: dict[str, float] = {}
+        self._integration_told: set[str] = set()
+        self._entry_seen_loaded: set[str] = set()
         self._pairing_open_at: dict[str, float] = {}
         self._pending_epoch_wipe: int | None = None
         # Rulings #163 and #167. The first is how many devices this
@@ -1464,6 +1476,23 @@ class DeviceSentinelCoordinator(
 
     # ---------------------------------------------------- registry view
 
+    def _primary_entry(self, device: dr.DeviceEntry) -> str | None:
+        """Return the config entry id that owns this device.
+
+        The same order the domain is read in, so the entry whose state
+        is watched is the entry whose domain the device is filed
+        under. A device with several entries is answered by its
+        primary, which is what Home Assistant itself considers the
+        owner.
+        """
+        primary = getattr(device, "primary_config_entry", None)
+        if primary is not None:
+            return primary
+        for entry_id in sorted(device.config_entries):
+            if self.hass.config_entries.async_get_entry(entry_id):
+                return entry_id
+        return None
+
     def _primary_domain(self, device: dr.DeviceEntry) -> str:
         """Return the integration domain owning a device.
 
@@ -1510,8 +1539,12 @@ class DeviceSentinelCoordinator(
         muted_entities: dict[str, str] = {}
         stacks: set[str] = set()
         stack_keys: dict[str, tuple[str, str]] = {}
+        entry_of: dict[str, str] = {}
         for device in dev_reg.devices.values():
             domain = self._primary_domain(device)
+            entry_id = self._primary_entry(device)
+            if entry_id is not None:
+                entry_of[device.id] = entry_id
             name = device.name_by_user or device.name or device.id
             # Which coordinator stacks the house runs, read from the
             # same walk (ruling #143). Which device proves which stack
@@ -1681,6 +1714,7 @@ class DeviceSentinelCoordinator(
         self._clear_verdicts_for_set_aside(set_aside)
         self._stacks = stacks
         self._stack_keys = stack_keys
+        self._entry_of_device = entry_of
         self._device_names = device_names
         self._device_labels = device_labels
         self._set_aside = set_aside
