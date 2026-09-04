@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.20.1 (2026-09-04)
+# File: interventions.py, Version: 0.20.2 (2026-09-04)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -673,10 +673,30 @@ class InterventionMixin:
         return stack, since
 
     def upstream_down_since_for(self, name: str) -> float | None:
-        """Return when a named upstream went down, or None if it is up."""
+        """Return when a named upstream went down, or None if it is up.
+
+        The name is what a row or a push carries: the broker label, a
+        bridge's stack, or an integration's domain (#382). The domain
+        branch exists because the to-do row's stamp and the settle
+        gate on the push both ask this by name, and a name that does
+        not resolve leaves the row undated and the push unsent. A
+        domain can hold several entries, so the outage is dated from
+        the first told entry to fall.
+        """
         if name == BROKER_LABEL:
             return self._broker_down_at
-        return self._bridge_down_at.get(name)
+        since = self._bridge_down_at.get(name)
+        if since is not None:
+            return since
+        stamps = []
+        for entry_id in self._integration_told:
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is None or entry.domain != name:
+                continue
+            first = self._entry_down_at.get(entry_id)
+            if first is not None:
+                stamps.append(first)
+        return min(stamps) if stamps else None
 
     def _stack_for_device(self, device_id: str) -> str | None:
         """Return the stack whose bridge owns this device, if any."""
