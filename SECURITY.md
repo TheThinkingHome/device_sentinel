@@ -19,7 +19,7 @@ open a public issue for a security problem.
 
 You can expect an acknowledgment within a few days. If the report is valid,
 the fix ships in the next release and the advisory is published after it; if
-it is declined, you will get the reasoning, not silence.
+it is declined, you will get the reasoning.
 
 Scope worth knowing: Device Sentinel runs entirely inside Home Assistant,
 takes no input from the network, and exposes no services to the outside
