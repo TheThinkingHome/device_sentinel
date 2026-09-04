@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.20.4 (2026-09-04)
+# File: tests/test_wifi_outage.py, Version: 0.20.5 (2026-09-04)
 
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim.
 
@@ -33,7 +33,10 @@ from custom_components.device_sentinel.const import (
     WIFI_HOLD_SECONDS,
     WIFI_KEY,
 )
-from custom_components.device_sentinel.wifi import normalize_mac
+from custom_components.device_sentinel.wifi import (
+    normalize_mac,
+    tracker_medium,
+)
 
 from tests.helpers import setup_coordinator
 
@@ -541,3 +544,146 @@ async def test_diagnostics_carry_the_tie_table(hass: HomeAssistant):
     assert view["retry_pending"] is False
     assert view["down_since"] is None
     assert set(view["tied"]) == {d.id for d in devices}
+
+
+# --------------------------------------------------- wired and wireless
+
+
+def test_the_medium_reader_knows_both_published_markers():
+    """Read from source: TP-Link publishes `connection`, Fritz
+    `connection_type`, and no integration publishes a positive wifi
+    marker. Unifi and Fritz publish an SSID only when wireless."""
+    assert tracker_medium({"connection": "wired"}) == "wired"
+    assert tracker_medium({"connection_type": "LAN"}) == "wired"
+    # TP-Link's wireless value is the network's own name, never
+    # "wifi", which is why this is an exclusion and not an allow list.
+    assert tracker_medium({"connection": "IoT"}) == "unknown"
+    assert tracker_medium({"essid": "Home"}) == "wireless"
+    assert tracker_medium({"ssid": "Home"}) == "wireless"
+    # Wired wins, because it is the marker the ladder acts on.
+    assert tracker_medium({"connection": "wired", "ssid": "Home"}) == "wired"
+    # A house that publishes nothing keeps every tie it had.
+    assert tracker_medium({}) == "unknown"
+    assert tracker_medium(None) == "unknown"
+
+
+async def test_a_wired_tracker_is_never_tied(hass: HomeAssistant):
+    """The reference fleet's four PoE cameras and its printer tied
+    themselves in on 0.20.4: MAC matching says nothing about medium,
+    and a switch reboot could then have declared a Wi-Fi outage. The
+    worst wired cluster measured was five inside sixty seconds,
+    above the floor."""
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    camera = _wifi_device(
+        hass, source, "cam0", "Camera Living Room",
+        "ec:71:db:98:ad:44",
+    )
+    blind = _wifi_device(
+        hass, source, "blind0", "Master City Blinds",
+        "bc:ff:4d:28:3b:9b",
+    )
+    wired = er.async_get(hass).async_get_or_create(
+        "device_tracker", "tplink_router", "cam_t0"
+    )
+    hass.states.async_set(
+        wired.entity_id, "home",
+        {
+            "source_type": "router", "mac": "EC-71-DB-98-AD-44",
+            "connection": "wired", "band": None,
+        },
+    )
+    wireless = er.async_get(hass).async_get_or_create(
+        "device_tracker", "tplink_router", "blind_t0"
+    )
+    hass.states.async_set(
+        wireless.entity_id, "home",
+        {
+            "source_type": "router", "mac": "BC-FF-4D-28-3B-9B",
+            "connection": "IoT", "band": "2G",
+        },
+    )
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+
+    assert camera.id not in coord._wifi_ties
+    assert coord._wifi_ties.get(blind.id) == wireless.entity_id
+    assert coord._wifi_wired_skipped == [wired.entity_id]
+    assert coord._wifi_medium_census.get("wired") == 1
+
+
+async def test_a_wired_tracker_cannot_reach_the_floor(hass: HomeAssistant):
+    """Three wired trackers leaving together says nothing, because
+    none of them was ever tied."""
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    trackers = []
+    for index in range(3):
+        mac = f"EC-71-DB-00-00-{index:02X}"
+        _wifi_device(
+            hass, source, f"w{index}", f"Wired Device {index}",
+            mac.lower().replace("-", ":"),
+        )
+        entry = er.async_get(hass).async_get_or_create(
+            "device_tracker", "tplink_router", f"w_t{index}"
+        )
+        hass.states.async_set(
+            entry.entity_id, "home",
+            {
+                "source_type": "router", "mac": mac,
+                "connection": "wired",
+            },
+        )
+        trackers.append(entry.entity_id)
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+    seen = _heard(hass)
+
+    assert coord._wifi_ties == {}
+    assert not coord.wifi_capable
+    for tracker in trackers:
+        state = hass.states.get(tracker)
+        hass.states.async_set(
+            tracker, "not_home", dict(state.attributes)
+        )
+    await hass.async_block_till_done()
+    assert coord._wifi_hold_since is None
+    coord._sample_wifi(dt_util.utcnow().timestamp())
+    await hass.async_block_till_done()
+    assert seen == []
+
+
+async def test_fritz_spelling_is_excluded_too(hass: HomeAssistant):
+    """Fritz publishes connection_type LAN, read from its own
+    CONNECTION_TYPE_LAN constant."""
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    device = _wifi_device(
+        hass, source, "fz0", "Fritz Wired Device", "aa:bb:cc:dd:ee:ff"
+    )
+    entry = er.async_get(hass).async_get_or_create(
+        "device_tracker", "fritz", "fz_t0"
+    )
+    hass.states.async_set(
+        entry.entity_id, "home",
+        {
+            "source_type": "router", "mac": "AA-BB-CC-DD-EE-FF",
+            "connection_type": "LAN",
+        },
+    )
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+    assert device.id not in coord._wifi_ties
+
+
+async def test_the_census_reaches_the_diagnostics(hass: HomeAssistant):
+    """What was tied, what was skipped for being wired, and how the
+    house's trackers divide by medium, all visible in a download."""
+    coord, _trackers, _devices, _ = await _house(hass, 2)
+    view = coord.wifi_diagnostics
+    assert view["ties"] == 2
+    assert "medium_census" in view
+    assert view["wired_skipped"] == []
