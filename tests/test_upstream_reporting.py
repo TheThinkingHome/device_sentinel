@@ -1,7 +1,7 @@
 """Reporting an upstream outage as one fault, not seventy-six.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_upstream_reporting.py, Version: 0.13.11 (2026-08-13)
+# File: test_upstream_reporting.py, Version: 0.20.2 (2026-09-04)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -13,7 +13,13 @@ a reporting fault: the person is told the casualties and never the
 cause, and the cause is the only thing they can act on.
 """
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
+
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     BROKER_LABEL,
@@ -21,6 +27,7 @@ from custom_components.device_sentinel.const import (
     DATA_TODO_ITEMS,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
+    INTEGRATION_DOWN_DWELL_SECONDS,
     UPSTREAM_SETTLE_SECONDS,
 )
 
@@ -318,3 +325,64 @@ async def test_an_impossible_onset_is_refused(hass: HomeAssistant):
     ):
         began = float(onset)
     assert began == 1500.0
+
+
+async def test_an_integration_outage_stamps_its_row_and_pushes(
+    hass: HomeAssistant,
+):
+    """The resolver answers for an integration's domain (#382).
+
+    Found by asking. The to-do row's stamp and the settle gate on the
+    push both resolve the upstream by name, and the integration rung
+    shipped without a branch there: the outage fired its event, the
+    devices were suppressed, and then the row read "is not reporting"
+    with no time and no push ever left. A bridge in the identical
+    position stamps and pushes, so this holds the third rung to the
+    standard of the first two.
+    """
+    source = MockConfigEntry(
+        domain="controller_hub", title="controller_hub hub"
+    )
+    source.add_to_hass(hass)
+    made = []
+    for index in range(2):
+        uid = f"rg{index}"
+        device = dr.async_get(hass).async_get_or_create(
+            config_entry_id=source.entry_id,
+            identifiers={("controller_hub", uid)},
+            name=f"RG {index}",
+        )
+        er.async_get(hass).async_get_or_create(
+            "sensor", "controller_hub", uid,
+            device_id=device.id, config_entry=source,
+        )
+        made.append(device)
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+
+    # The outage begins five minutes ago, so by the time the push is
+    # asserted the settle window is long past on the wall clock
+    # `_upstream_messages` reads.
+    now = dt_util.utcnow().timestamp() - 300.0
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    coord._sample_integrations(now - 1)
+    source.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    coord._sample_integrations(now)
+    coord._sample_integrations(now + INTEGRATION_DOWN_DWELL_SECONDS + 2)
+    await hass.async_block_till_done()
+
+    for device in made:
+        _down(
+            coord, device.id,
+            since=now + INTEGRATION_DOWN_DWELL_SECONDS + 30,
+        )
+    assert coord.suppressed_down_counts == {"controller_hub": 2}
+
+    # The resolver dates the outage, so the row is stamped.
+    since = coord.upstream_down_since_for("controller_hub")
+    assert since is not None
+    assert abs(since - now) < 2.0, (since, now)
+
+    # And the push leaves once the outage has settled.
+    assert coord._upstream_messages() == [("controller_hub", 2, False)]
