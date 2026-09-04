@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.20.0 (2026-09-03)
+# File: events.py, Version: 0.20.3 (2026-09-04)
 
 """What Device Sentinel says on the Home Assistant bus.
 
@@ -234,7 +234,8 @@ class EventMixin:
 
     @callback
     def fire_upstream_down(
-        self, kind: str, name: str, since: str, devices: int
+        self, kind: str, name: str, since: str, devices: int,
+        confirmed: int | None = None,
     ) -> None:
         """One event when the thing carrying a house's devices stops.
 
@@ -249,15 +250,20 @@ class EventMixin:
         outage looks alike on the bus, and a bridge carrying two
         devices reads the same as one carrying seventy-six.
         """
-        self._fire(
-            EVENT_UPSTREAM_DOWN,
-            {
-                "kind": kind,
-                "name": name,
-                "since": since,
-                "devices": devices,
-            },
-        )
+        payload = {
+            "kind": kind,
+            "name": name,
+            "since": since,
+            "devices": devices,
+        }
+        # Evidence, present only where a kind produces it (the Wi-Fi
+        # outage, ruled 4 September): how many claimed devices
+        # already read unavailable at declaration. The contract's
+        # four fields are untouched; a field that is absent for
+        # every other kind amends nothing.
+        if confirmed is not None:
+            payload["confirmed"] = confirmed
+        self._fire(EVENT_UPSTREAM_DOWN, payload)
 
     @callback
     def fire_upstream_restored(

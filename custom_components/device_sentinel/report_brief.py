@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.20.1 (2026-09-04)
+# File: report_brief.py, Version: 0.20.3 (2026-09-04)
 
 """The daily brief: the one report written for a person.
 
@@ -69,6 +69,8 @@ from .const import (
     SYS_INTEGRATION_UP,
     SYS_BRIDGE_DOWN,
     SYS_BRIDGE_UP,
+    SYS_WIFI_DOWN,
+    SYS_WIFI_UP,
     SYS_BROKER_DOWN,
     SYS_DEVICES,
     SYS_STORM_CLOSED,
@@ -375,6 +377,23 @@ class BriefMixin:
                     f"{_plural(count)} affected."
                 )
             return f"It settled after {held or 'a moment'}."
+        if kind == SYS_WIFI_DOWN:
+            count = row.get(SYS_DEVICES)
+            if count:
+                return (
+                    f"The WiFi network went down at {when}, "
+                    f"{_plural(count)} behind it."
+                )
+            return f"The WiFi network went down at {when}."
+        if kind == SYS_WIFI_UP:
+            count = row.get(SYS_DEVICES)
+            tail = f", {_plural(count)} behind it" if count else ""
+            if held:
+                return (
+                    f"The WiFi network came back at {when} after "
+                    f"{held}{tail}."
+                )
+            return f"The WiFi network came back at {when}{tail}."
         if kind == SYS_BROKER_DOWN:
             return f"The MQTT broker went down at {when}."
         if kind == SYS_BROKER_UP:
@@ -544,6 +563,14 @@ class BriefMixin:
                 f"{_plural(count)}"
                 if held and count
                 else f"{scope} integration settled"
+            )
+        if kind == SYS_WIFI_DOWN:
+            return "WiFi network went down"
+        if kind == SYS_WIFI_UP:
+            return (
+                f"WiFi network came back after {held}"
+                if held
+                else "WiFi network came back"
             )
         if kind == SYS_BROKER_DOWN:
             return "MQTT broker went down"
@@ -993,6 +1020,8 @@ class BriefMixin:
             SYS_BRIDGE_UP,
             SYS_BROKER_DOWN,
             SYS_BROKER_UP,
+            SYS_WIFI_DOWN,
+            SYS_WIFI_UP,
             SYS_STORM_OPEN,
             SYS_STORM_CLOSED,
             SYS_OPTIONS_CHANGED,

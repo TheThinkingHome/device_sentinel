@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.20.2 (2026-09-04)
+# File: interventions.py, Version: 0.20.3 (2026-09-04)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -58,6 +58,7 @@ from .const import (
     SYS_INTEGRATION_DOWN,
     SYS_INTEGRATION_UP,
     UPSTREAM_INTEGRATION,
+    WIFI_KEY,
     UPSTREAM_BRIDGE,
     UPSTREAM_BROKER,
     SYS_BROKER_DOWN,
@@ -464,6 +465,7 @@ class InterventionMixin:
     def _say_upstream_down(
         self, kind: str, name: str, stack: str | None, since: float,
         devices: int | None = None,
+        confirmed: int | None = None,
     ) -> None:
         """Put an upstream failure on the bus, or hold it for grace.
 
@@ -492,6 +494,7 @@ class InterventionMixin:
             self._upstream_devices(stack)
             if devices is None
             else devices,
+            confirmed=confirmed,
         )
 
     def _announce_held_upstreams(self) -> None:
@@ -664,8 +667,15 @@ class InterventionMixin:
             return BROKER_LABEL, broker_since
         stack = self._stack_for_device(device_id)
         if stack is None:
-            # Nothing watches this device's stack, so the last thing
-            # that can carry it is the integration itself (#382).
+            # No stack reader carries this device, so the ladder
+            # continues: the network first, because during a Wi-Fi
+            # outage the config entries mostly stay loaded and the
+            # integration rung stays silent, and a device claimed by
+            # its own tracker is claimed by the surest witness. Then
+            # the integration itself (#382).
+            wifi = self.wifi_down_since(device_id)
+            if wifi is not None:
+                return wifi
             return self.integration_down_since(device_id)
         since = self._bridge_down_at.get(stack)
         if since is None:
@@ -688,6 +698,8 @@ class InterventionMixin:
         since = self._bridge_down_at.get(name)
         if since is not None:
             return since
+        if name == WIFI_KEY:
+            return self._wifi_down_at
         stamps = []
         for entry_id in self._integration_told:
             entry = self.hass.config_entries.async_get_entry(entry_id)
@@ -849,6 +861,10 @@ class InterventionMixin:
         # would name the wrong thing (ruling #224).
         self._announce_held_upstreams()
         self._sample_integrations(now)
+        # Wi-Fi before the broker gate: the trackers come from a
+        # router integration and a dead MQTT broker says nothing
+        # about them.
+        self._sample_wifi(now)
         broker = self._sample_broker(now)
         if broker == BROKER_DOWN:
             return

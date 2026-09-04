@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.20.1 (2026-09-04)
+# File: coordinator.py, Version: 0.20.3 (2026-09-04)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -211,6 +211,7 @@ from .detect_freeze import FreezeMixin
 from .detect_signal import SignalMixin, _entity_unit, _is_percentage
 from .events import EventMixin
 from .interventions import InterventionMixin
+from .wifi import WifiMixin
 from .journal import JournalMixin
 from .messenger import MessengerMixin
 from .narrative import NarrativeMixin
@@ -236,6 +237,7 @@ class DeviceSentinelCoordinator(
     ProblemListMixin,
     StorageMixin,
     InterventionMixin,
+    WifiMixin,
 ):
     """Owns Device Sentinel's storage, registry view, and telemetry."""
 
@@ -448,6 +450,17 @@ class DeviceSentinelCoordinator(
         self._entry_down_at: dict[str, float] = {}
         self._integration_told: set[str] = set()
         self._entry_seen_loaded: set[str] = set()
+        # The Wi-Fi outage (0.20.3). Ties resolve at registry rebuild;
+        # nothing here persists, which is the recorded
+        # restart-mid-outage limitation.
+        self._wifi_ties: dict[str, str] = {}
+        self._wifi_device_of: dict[str, str] = {}
+        self._wifi_not_home: dict[str, float] = {}
+        self._wifi_burst: list[float] = []
+        self._wifi_hold_since: float | None = None
+        self._wifi_first_fall: float | None = None
+        self._wifi_down_at: float | None = None
+        self._wifi_unsub = None
         self._pairing_open_at: dict[str, float] = {}
         self._pending_epoch_wipe: int | None = None
         # Rulings #163 and #167. The first is how many devices this
@@ -1429,6 +1442,9 @@ class DeviceSentinelCoordinator(
         for reader in self._bridge_readers.values():
             reader.async_stop()
         self._bridge_readers.clear()
+        if self._wifi_unsub is not None:
+            self._wifi_unsub()
+            self._wifi_unsub = None
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
@@ -1783,6 +1799,12 @@ class DeviceSentinelCoordinator(
                     for name, domain, reason in sorted(set_aside.values())
                 ),
             )
+
+        # The Wi-Fi tie ladder follows every rebuild: a tracker that
+        # appeared, a device that gained a MAC, or a dissolved tie is
+        # picked up here, and where no ties exist this is a no-op
+        # that subscribes to nothing.
+        self._rebuild_wifi_ties()
 
     @staticmethod
     def _is_last_seen(ent: er.RegistryEntry) -> bool:

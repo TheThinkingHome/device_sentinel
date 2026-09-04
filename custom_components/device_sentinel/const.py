@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.20.1 (2026-09-04)
+# File: const.py, Version: 0.20.3 (2026-09-04)
 
 """Constants for the Device Sentinel integration."""
 
@@ -108,6 +108,10 @@ STACK_DISPLAY_NAMES = {
     "zha": "ZHA",
     "zwave_js": "Z-Wave",
     "matter": "Matter",
+    # Not a stack, but the problem list resolves every upstream's
+    # display name through this map, and the Wi-Fi row must read the
+    # way the sensor does.
+    "wifi": "WiFi",
 }
 
 BROKER_LABEL = "MQTT broker"
@@ -1747,6 +1751,21 @@ EVENT_UPSTREAM_RESTORED = "device_sentinel_upstream_restored"
 UPSTREAM_BROKER = "broker"
 UPSTREAM_BRIDGE = "bridge"
 UPSTREAM_INTEGRATION = "integration"
+UPSTREAM_WIFI = "wifi"
+
+# The Wi-Fi outage capability (0.20.3). Not a stack: it exists only
+# where watched devices have router trackers tied to them, the way
+# signal detection exists only where a device reports signal. The
+# numbers are measured, not chosen: on the reference fleet a real
+# outage put nine watched trackers not_home inside sixty seconds and
+# ordinary churn never exceeded three, once, in a post-restart wobble
+# the hold absorbed.
+WIFI_KEY = "wifi"
+WIFI_DISPLAY_NAME = "WiFi"
+WIFI_SENSOR_NAME = "Bridge: WiFi"
+WIFI_BURST_FLOOR = 3
+WIFI_BURST_WINDOW_SECONDS = 60.0
+WIFI_HOLD_SECONDS = 60.0
 
 # Worst first, so kinds[0] is the headline and an automation reads it
 # without a template. Unavailable leads because
@@ -1977,6 +1996,8 @@ SYS_RESTART = "restart"
 SYS_INTEGRATION_DOWN = "integration_down"
 SYS_INTEGRATION_UP = "integration_up"
 SYS_BRIDGE_DOWN = "bridge_down"
+SYS_WIFI_DOWN = "wifi_down"
+SYS_WIFI_UP = "wifi_up"
 SYS_BRIDGE_UP = "bridge_up"
 # The broker going and returning. Its own pair rather than a bridge
 # event, because a bridge reader is blind to it: when the broker dies

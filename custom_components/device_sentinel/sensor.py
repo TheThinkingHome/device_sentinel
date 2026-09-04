@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.19.9 (2026-08-31)
+# File: sensor.py, Version: 0.20.3 (2026-09-04)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -72,10 +72,13 @@ from .const import (
     ATTR_LAST_GOOD_AGE_DAYS,
     ATTR_REPAIRS_AT_LOAD,
     BATTERY_CLEAR_MARGIN,
+    BRIDGE_DOWN,
+    BRIDGE_RUNNING,
     BRIDGE_SENSOR_NAMES,
     BRIDGE_STATES,
     BRIDGE_UNKNOWN,
     BROKER_SENSOR_NAME,
+    WIFI_SENSOR_NAME,
     BROKER_STATES,
     DATA_STATE_ARMED,
     DATA_STATE_LEARNED,
@@ -145,6 +148,13 @@ async def async_setup_entry(
         for stack in coordinator.bridge_stacks
     )
     async_add_entities([DeviceSentinelBrokerSensor(coordinator)])
+    # The Wi-Fi sensor only where the capability exists: at least one
+    # watched device tied to a router tracker. A house without ties
+    # gets no entity, the way a house without a stack gets no bridge
+    # sensor, because an entity that can never say anything is a
+    # feature nobody wanted.
+    if coordinator.wifi_capable:
+        async_add_entities([DeviceSentinelWifiSensor(coordinator)])
 
 
 class DeviceSentinelBaseSensor(SensorEntity):
@@ -933,3 +943,47 @@ class DeviceSentinelBridgeSensor(DeviceSentinelBaseSensor):
                     reader.availability_enabled
                 )
         return attrs
+
+
+class DeviceSentinelWifiSensor(DeviceSentinelBaseSensor):
+    """The Wi-Fi network, where router trackers make it visible.
+
+    In the bridge family and shaped like a bridge sensor, because to
+    the devices behind it the network is exactly what a bridge is:
+    the thing that carries them, whose failure explains theirs. It
+    is not a stack and has no reader; the state comes from the tie
+    ladder and the tracker burst in wifi.py. Created only where at
+    least one tie exists, so its very existence says the capability
+    is real in this house.
+
+    Two states rather than four: a network is running or it is down,
+    and there is no pairing window and no unknown, because a house
+    with no ties has no sensor at all.
+    """
+
+    _attr_icon = "mdi:wifi"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [BRIDGE_RUNNING, BRIDGE_DOWN]
+
+    def __init__(self, coordinator: DeviceSentinelCoordinator) -> None:
+        """Initialize the Wi-Fi sensor."""
+        self.sentinel_type = f"{SENTINEL_TYPE_BRIDGE}_wifi"
+        super().__init__(coordinator)
+        self._attr_name = WIFI_SENSOR_NAME
+
+    @property
+    def native_value(self) -> str:
+        """Running unless an outage is declared."""
+        return (
+            BRIDGE_DOWN
+            if self._coordinator.wifi_down_at is not None
+            else BRIDGE_RUNNING
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """The tie count, the trackers currently gone, and the onset."""
+        return {
+            **self._identity(),
+            **self._coordinator.wifi_attributes,
+        }
