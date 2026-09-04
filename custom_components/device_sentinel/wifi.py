@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: wifi.py, Version: 0.20.4 (2026-09-04)
+# File: wifi.py, Version: 0.20.5 (2026-09-04)
 
 """The Wi-Fi outage: a capability, deliberately not a stack.
 
@@ -79,6 +79,52 @@ STATE_NOT_HOME = "not_home"
 STATE_HOME = "home"
 _HEX_ONLY = re.compile(r"[^0-9a-f]")
 
+# Wired markers, read from each integration's source rather than
+# guessed from its name. TP-Link publishes `connection`, whose wired
+# value is the word itself and whose wireless value is the network's
+# own name; Fritz publishes `connection_type`, whose wired value is
+# its own CONNECTION_TYPE_LAN constant. No integration publishes a
+# positive "wifi" marker, which is why this is an exclusion rather
+# than an allow list: an allow list would have emptied the reference
+# fleet's entire tie set.
+#
+# Unifi, Asuswrt, Netgear, Ubus and Huawei publish no marker at all.
+# Unifi and Huawei filter instead, offering a setting for whether to
+# create wired trackers, so on those systems a wired client is
+# usually absent rather than labelled. A house that publishes
+# nothing keeps every tie it had, which is the same posture the rest
+# of this module takes toward absent information.
+WIRED_MARKERS = (
+    ("connection", "wired"),
+    ("connection_type", "lan"),
+)
+
+# Positive wireless confirmation, again only where published: an
+# SSID exists for a wireless client and not for a wired one. Unifi
+# spells it `essid` and Fritz `ssid`. Recorded in the diagnostics
+# rather than acted on: no measured case needs it, and a tie the
+# exclusion already kept does not need a second reason to stay.
+SSID_KEYS = ("essid", "ssid")
+
+
+def tracker_medium(attributes: Any) -> str:
+    """Return wired, wireless or unknown for a tracker's attributes.
+
+    Wired wins, because it is the exclusion the tie ladder acts on.
+    Wireless is only ever a recorded observation.
+    """
+    if not isinstance(attributes, dict):
+        return "unknown"
+    for key, wired_value in WIRED_MARKERS:
+        value = attributes.get(key)
+        if isinstance(value, str) and value.strip().lower() == wired_value:
+            return "wired"
+    for key in SSID_KEYS:
+        value = attributes.get(key)
+        if isinstance(value, str) and value.strip():
+            return "wireless"
+    return "unknown"
+
 
 def normalize_mac(value: Any) -> str | None:
     """Reduce any MAC spelling to twelve lowercase hex characters.
@@ -122,6 +168,8 @@ class WifiMixin:
         # (the router's own report), then from its registry device's
         # connections.
         tracker_by_mac: dict[str, str] = {}
+        census: dict[str, int] = {}
+        wired: list[str] = []
         for entry in registry.entities.values():
             if entry.domain != "device_tracker" or entry.disabled_by:
                 continue
@@ -136,6 +184,16 @@ class WifiMixin:
                         if kind == dr.CONNECTION_NETWORK_MAC:
                             mac = normalize_mac(value)
                             break
+            medium = tracker_medium(state.attributes)
+            census[medium] = census.get(medium, 0) + 1
+            if medium == "wired":
+                # A wired client cannot be taken down by a Wi-Fi
+                # outage, and counting one toward the floor lets a
+                # switch reboot declare a network outage that never
+                # happened. Found on the reference fleet, where four
+                # PoE cameras and a printer tied themselves in.
+                wired.append(entry.entity_id)
+                continue
             if mac is not None and mac not in tracker_by_mac:
                 tracker_by_mac[mac] = entry.entity_id
 
@@ -165,6 +223,8 @@ class WifiMixin:
             if tracker is not None:
                 ties[device_id] = tracker
 
+        self._wifi_medium_census = census
+        self._wifi_wired_skipped = sorted(wired)
         changed = ties != self._wifi_ties
         self._wifi_ties = ties
         self._wifi_device_of = {t: d for d, t in ties.items()}
@@ -410,6 +470,8 @@ class WifiMixin:
         return {
             "ties": len(self._wifi_ties),
             "tied": dict(sorted(self._wifi_ties.items())),
+            "medium_census": dict(sorted(self._wifi_medium_census.items())),
+            "wired_skipped": list(self._wifi_wired_skipped),
             "trackers_not_home": len(self._wifi_not_home),
             "retry_pending": self._wifi_retry_pending,
             "down_since": (
