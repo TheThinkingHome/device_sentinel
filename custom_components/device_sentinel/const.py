@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.19.14 (2026-09-02)
+# File: const.py, Version: 0.20.0 (2026-09-03)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1713,6 +1713,24 @@ EVENT_ACKNOWLEDGED = "device_sentinel_acknowledged"
 EVENT_WITHDRAWN = "device_sentinel_withdrawn"
 WITHDRAWN_REASON_SET_ASIDE = "set_aside"
 
+# The upstream pair. A stopped broker or bridge silences every device
+# behind it deliberately (rulings #264, #266), so until now the one
+# failure that takes a house quiet was the one an automation could
+# not see. Two names rather than one with an action field, for the
+# same reason as the four above (ruling #289).
+EVENT_UPSTREAM_DOWN = "device_sentinel_upstream_down"
+EVENT_UPSTREAM_RESTORED = "device_sentinel_upstream_restored"
+
+# What kind of upstream the payload is about. A property of the
+# subject rather than of the action, so it rides in the payload.
+# INTEGRATION is in the contract from the start although nothing
+# fires it yet: the detection is the next release, and a contract the
+# README calls permanent is not amended to add a value that was known
+# when it was written.
+UPSTREAM_BROKER = "broker"
+UPSTREAM_BRIDGE = "bridge"
+UPSTREAM_INTEGRATION = "integration"
+
 # Worst first, so kinds[0] is the headline and an automation reads it
 # without a template. Unavailable leads because
 # FREEZE_CATEGORY_PRIORITY already ruled it above frozen: an
@@ -1971,7 +1989,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 380
+HIGHEST_RULING = 381
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

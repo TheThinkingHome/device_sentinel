@@ -428,6 +428,14 @@ class DeviceSentinelCoordinator(
         # was first seen, so the first push sounds and later ones do
         # not (ruling #265).
         self._upstream_announced: dict[str, float] = {}
+        # The bus pair, kept apart from the push map above because
+        # they answer different questions: that one is whether a
+        # person has been pushed at, this one is whether the bus was
+        # told. Held is what the startup grace swallowed and owes an
+        # announcement; said is what has been announced and is
+        # therefore owed a recovery (ruling #291).
+        self._upstream_held: dict[str, tuple[str, str | None, float]] = {}
+        self._upstream_said: dict[str, tuple[str, str | None, float]] = {}
         self._pairing_open_at: dict[str, float] = {}
         self._pending_epoch_wipe: int | None = None
         # Rulings #163 and #167. The first is how many devices this

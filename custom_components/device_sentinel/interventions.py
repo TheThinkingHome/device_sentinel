@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.19.9 (2026-08-31)
+# File: interventions.py, Version: 0.20.0 (2026-09-03)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -53,6 +53,8 @@ from .const import (
     ATTR_BROKER_TOPIC,
     ATTR_BROKER_UPTIME,
     DATA_BROKER_SEEN,
+    UPSTREAM_BRIDGE,
+    UPSTREAM_BROKER,
     SYS_BROKER_DOWN,
     SYS_BROKER_UP,
     BRIDGE_DOWN,
@@ -377,6 +379,9 @@ class InterventionMixin:
                 self._record_system_event(
                     SYS_BROKER_DOWN, scope=BROKER_SCOPE
                 )
+                self._say_upstream_down(
+                    UPSTREAM_BROKER, BROKER_LABEL, None, now
+                )
             elif was == BROKER_DOWN:
                 self._broker_down_at = None
                 since = stored.pop(BRIDGE_SEEN_SINCE, None)
@@ -386,6 +391,9 @@ class InterventionMixin:
                     duration=(
                         now - since if since is not None else None
                     ),
+                )
+                self._say_upstream_restored(
+                    UPSTREAM_BROKER, BROKER_LABEL, None, since, now
                 )
 
         if (
@@ -415,6 +423,105 @@ class InterventionMixin:
         if session_start is None:
             return False
         return last_alive <= started <= session_start + 1.0
+
+    def _upstream_devices(self, stack: str | None) -> int:
+        """Count the watched devices behind an upstream.
+
+        Membership, not casualties. `suppressed_down_counts` answers a
+        different question, how many devices this upstream is masking
+        right now, and at the moment an upstream fails that number is
+        zero: no device has been judged silent yet, because judging
+        one takes minutes. So the event carries how many devices sit
+        behind the thing that stopped, which is stable, means the same
+        on both halves of the pair, and is what an automation deciding
+        whether to wake somebody actually wants.
+
+        Watched and not freeze-muted. A muted device is never given an
+        unavailable verdict, so it would never have been reported and
+        must not swell a number a person acts on. Excluded and
+        set-aside devices are not in `_watched` at all.
+
+        A broker, with stack None, carries every watched device on
+        every stack that has a reader, because that is what a stopped
+        broker takes with it.
+        """
+        return sum(
+            1
+            for device_id in self._watched
+            if (
+                self._stack_for_device(device_id) is not None
+                if stack is None
+                else self._stack_for_device(device_id) == stack
+            )
+            and not self._freeze_muted(device_id)
+        )
+
+    def _say_upstream_down(
+        self, kind: str, name: str, stack: str | None, since: float
+    ) -> None:
+        """Put an upstream failure on the bus, or hold it for grace.
+
+        Nothing is announced during the startup grace, because that is
+        what the grace is for: every other integration is still coming
+        up and none of what it reports is news (ruling #291). But an
+        upstream that fails inside the grace and is still down when it
+        ends is news, and without this it would produce a recovery
+        with no failure before it, which is an automation pairing the
+        two that never closes.
+
+        So the announcement is held rather than dropped, and
+        `_announce_held_upstreams` fires it on the first sample after
+        the grace, carrying the moment it really happened.
+        """
+        if self._in_startup_grace():
+            self._upstream_held[name] = (kind, stack, since)
+            return
+        self._upstream_said[name] = (kind, stack, since)
+        self.fire_upstream_down(
+            kind,
+            name,
+            dt_util.utc_from_timestamp(since)
+            .astimezone(dt_util.DEFAULT_TIME_ZONE)
+            .isoformat(),
+            self._upstream_devices(stack),
+        )
+
+    def _announce_held_upstreams(self) -> None:
+        """Announce anything the grace swallowed, once, when it ends."""
+        if not self._upstream_held or self._in_startup_grace():
+            return
+        held = dict(self._upstream_held)
+        self._upstream_held.clear()
+        for name, (kind, stack, since) in held.items():
+            self._say_upstream_down(kind, name, stack, since)
+
+    def _say_upstream_restored(
+        self,
+        kind: str,
+        name: str,
+        stack: str | None,
+        since: float | None,
+        now: float,
+    ) -> None:
+        """Put an upstream recovery on the bus."""
+        # An outage nobody was told about gets no recovery. The held
+        # map covers the case where it was still down when the grace
+        # ended; this covers the narrower one where it came and went
+        # entirely inside it, which is a restart artifact and not an
+        # event a person needs.
+        self._upstream_held.pop(name, None)
+        if self._upstream_said.pop(name, None) is None:
+            return
+        began = since if since is not None else now
+        self.fire_upstream_restored(
+            kind,
+            name,
+            dt_util.utc_from_timestamp(began)
+            .astimezone(dt_util.DEFAULT_TIME_ZONE)
+            .isoformat(),
+            self._upstream_devices(stack),
+            max(0.0, now - began),
+        )
 
     def upstream_down_since(self, device_id: str) -> tuple[str, float] | None:
         """Return the upstream that is down for this device, and when.
@@ -540,6 +647,13 @@ class InterventionMixin:
             since = entry.get(BRIDGE_SEEN_SINCE)
             if state == BRIDGE_DOWN and isinstance(since, (int, float)):
                 self._bridge_down_at[stack] = since
+                # Still down across a restart, so still news when the
+                # grace ends (ruling #291). Without this its recovery
+                # would arrive with no failure before it, and an
+                # automation pairing the two would never close.
+                self._upstream_held[stack] = (
+                    UPSTREAM_BRIDGE, stack, float(since)
+                )
 
     def _read_bridge(
         self, stack: str, reader: Any
@@ -590,6 +704,7 @@ class InterventionMixin:
         # broker dies nothing delivers the bridge's last will, since
         # the broker is the deliverer, so a bridge event written here
         # would name the wrong thing (ruling #224).
+        self._announce_held_upstreams()
         broker = self._sample_broker(now)
         if broker == BROKER_DOWN:
             return
@@ -639,6 +754,9 @@ class InterventionMixin:
                     self._record_system_event(
                         SYS_BRIDGE_DOWN, scope=stack
                     )
+                    self._say_upstream_down(
+                        UPSTREAM_BRIDGE, stack, stack, began
+                    )
                 elif was == BRIDGE_DOWN:
                     since = self._bridge_down_at.pop(stack, None)
                     self._record_system_event(
@@ -647,6 +765,9 @@ class InterventionMixin:
                         duration=(
                             now - since if since is not None else None
                         ),
+                    )
+                    self._say_upstream_restored(
+                        UPSTREAM_BRIDGE, stack, stack, since, now
                     )
             open_was = self._pairing_seen.get(stack)
             self._pairing_seen[stack] = pairing

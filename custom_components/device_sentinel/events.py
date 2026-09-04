@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.19.9 (2026-08-31)
+# File: events.py, Version: 0.20.0 (2026-09-03)
 
 """What Device Sentinel says on the Home Assistant bus.
 
@@ -44,6 +44,8 @@ from homeassistant.helpers import device_registry as dr
 from .const import (
     EVENT_ACKNOWLEDGED,
     EVENT_FAULT,
+    EVENT_UPSTREAM_DOWN,
+    EVENT_UPSTREAM_RESTORED,
     EVENT_RECOVERED,
     EVENT_WITHDRAWN,
     LOGGER,
@@ -227,6 +229,55 @@ class EventMixin:
                 "area": self._area_of(device_id),
                 "kinds": list(kinds),
                 "reason": reason,
+            },
+        )
+
+    @callback
+    def fire_upstream_down(
+        self, kind: str, name: str, since: str, devices: int
+    ) -> None:
+        """One event when the thing carrying a house's devices stops.
+
+        A stopped broker or bridge silences every device behind it
+        deliberately: they are reported as the upstream rather than
+        as themselves (ruling #264), and they get no incident, no
+        event and no journal line of their own (ruling #266). Both
+        are right, and together they left the one failure that takes
+        a house quiet as the one failure an automation could not see.
+
+        `devices` is what makes it actionable. Without it every
+        outage looks alike on the bus, and a bridge carrying two
+        devices reads the same as one carrying seventy-six.
+        """
+        self._fire(
+            EVENT_UPSTREAM_DOWN,
+            {
+                "kind": kind,
+                "name": name,
+                "since": since,
+                "devices": devices,
+            },
+        )
+
+    @callback
+    def fire_upstream_restored(
+        self, kind: str, name: str, since: str, devices: int,
+        for_seconds: float,
+    ) -> None:
+        """The closing half of the pair.
+
+        Fired on the transition rather than on the state, so a
+        restart that comes up with an upstream already down does not
+        announce a recovery that never happened (ruling #222).
+        """
+        self._fire(
+            EVENT_UPSTREAM_RESTORED,
+            {
+                "kind": kind,
+                "name": name,
+                "since": since,
+                "devices": devices,
+                "for_seconds": round(float(for_seconds), 1),
             },
         )
 
