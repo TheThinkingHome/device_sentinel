@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_reachability.py, Version: 0.12.3 (2026-08-05)
+# File: tests/test_reachability.py, Version: 0.20.0 (2026-09-03)
 
 """Zigbee2MQTT reachability, replayed against a captured fleet.
 
@@ -27,6 +27,8 @@ from types import SimpleNamespace
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel import stack_z2m
@@ -323,3 +325,271 @@ async def test_the_registry_walk_records_the_key(hass: HomeAssistant):
         "z2m",
         "0x282c02bfffeafa5b",
     )
+
+
+# The upstream events (ruling #381). A stopped broker or bridge
+# silences every device behind it deliberately, so until this pair
+# existed the one failure that takes a house quiet was the one an
+# automation could not see.
+
+
+def _heard(hass, kind):
+    """Collect one event kind off the bus."""
+    seen: list = []
+    hass.bus.async_listen(kind, lambda event: seen.append(event.data))
+    return seen
+
+
+def _past_grace(coord):
+    """Leave the startup grace, where the bus is deliberately silent.
+
+    Everything reports at once on a restart and none of it is news
+    (ruling #291), so a freshly built coordinator fires nothing. A
+    test about the bus has to step outside that window first.
+    """
+    coord._grace_until = 0.0
+
+
+async def test_a_bridge_going_down_reaches_the_bus(hass: HomeAssistant):
+    """The down half, with the count of what it took with it."""
+    from custom_components.device_sentinel.const import (
+        EVENT_UPSTREAM_DOWN,
+    )
+
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+
+    coord._bridge_seen["z2m"] = BRIDGE_RUNNING
+    coord._bridge_readers["z2m"] = _stub_reader(BRIDGE_DOWN)
+    coord._sample_bridges()
+    await hass.async_block_till_done()
+
+    assert len(down) == 1, down
+    assert down[0]["kind"] == "bridge"
+    assert down[0]["name"] == "z2m"
+    assert down[0]["since"]
+    assert isinstance(down[0]["devices"], int)
+
+
+async def test_a_bridge_coming_back_reaches_the_bus(hass: HomeAssistant):
+    """The restored half, carrying how long it was gone."""
+    from custom_components.device_sentinel.const import (
+        EVENT_UPSTREAM_RESTORED,
+    )
+
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    back = _heard(hass, EVENT_UPSTREAM_RESTORED)
+
+    down_at = dt_util.utcnow().timestamp() - 600.0
+    coord.data[DATA_BRIDGE_SEEN] = {
+        "z2m": {BRIDGE_SEEN_STATE: BRIDGE_DOWN, BRIDGE_SEEN_SINCE: down_at}
+    }
+    coord._bridge_seen.clear()
+    coord._bridge_down_at.clear()
+    coord._restore_bridge_state()
+    coord._bridge_readers["z2m"] = _stub_reader(BRIDGE_RUNNING)
+    coord._sample_bridges()
+    await hass.async_block_till_done()
+
+    assert len(back) == 1, back
+    assert back[0]["kind"] == "bridge"
+    assert back[0]["name"] == "z2m"
+    assert back[0]["for_seconds"] > 500.0
+
+
+async def test_a_fresh_install_announces_no_recovery(
+    hass: HomeAssistant,
+):
+    """Nothing stored is a start, not a recovery (ruling #222).
+
+    The events sit on the transition rather than on the state, so a
+    restart that comes up with a bridge already running must not
+    announce a recovery that never happened.
+    """
+    from custom_components.device_sentinel.const import (
+        EVENT_UPSTREAM_DOWN,
+        EVENT_UPSTREAM_RESTORED,
+    )
+
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+    back = _heard(hass, EVENT_UPSTREAM_RESTORED)
+
+    coord.data[DATA_BRIDGE_SEEN] = {}
+    coord._bridge_seen.clear()
+    coord._restore_bridge_state()
+    coord._bridge_readers["z2m"] = _stub_reader(BRIDGE_RUNNING)
+    coord._sample_bridges()
+    await hass.async_block_till_done()
+
+    assert down == []
+    assert back == []
+
+
+async def test_a_bridge_still_down_across_a_restart_is_announced(
+    hass: HomeAssistant,
+):
+    """An outage that survived a restart is still news (ruling #291).
+
+    Nothing is said during the grace, because every integration is
+    still coming up and none of it is news. But an upstream still
+    down when the grace ends owes the bus an announcement, or its
+    eventual recovery arrives with no failure before it and an
+    automation pairing the two never closes.
+    """
+    from custom_components.device_sentinel.const import (
+        EVENT_UPSTREAM_DOWN,
+        EVENT_UPSTREAM_RESTORED,
+    )
+
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+    back = _heard(hass, EVENT_UPSTREAM_RESTORED)
+
+    down_at = dt_util.utcnow().timestamp() - 900.0
+    coord.data[DATA_BRIDGE_SEEN] = {
+        "z2m": {BRIDGE_SEEN_STATE: BRIDGE_DOWN, BRIDGE_SEEN_SINCE: down_at}
+    }
+    coord._bridge_seen.clear()
+    coord._bridge_down_at.clear()
+    coord._restore_bridge_state()
+    coord._bridge_readers["z2m"] = _stub_reader(BRIDGE_DOWN)
+    coord._sample_bridges()
+    await hass.async_block_till_done()
+
+    assert len(down) == 1, down
+    assert down[0]["name"] == "z2m"
+    # Carrying when it really began, not when the grace ended.
+    assert down[0]["since"] < dt_util.now().isoformat()
+    assert back == []
+
+    # Said once, not on every sample after.
+    coord._sample_bridges()
+    await hass.async_block_till_done()
+    assert len(down) == 1
+
+
+async def test_the_count_is_membership_not_casualties(
+    hass: HomeAssistant,
+):
+    """How many devices sit behind it, not how many have fallen yet.
+
+    At the moment an upstream fails no device has been judged silent,
+    because judging one takes minutes. A count of casualties would
+    therefore always be zero on the down event and something else on
+    the restored one, which is two meanings for one field.
+    """
+    from custom_components.device_sentinel.const import (
+        EVENT_UPSTREAM_DOWN,
+    )
+
+    source = MockConfigEntry(domain="mqtt", title="Zigbee")
+    source.add_to_hass(hass)
+    bridge = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("mqtt", "z2m_bridge")},
+        name="SLZB-06M Zigbee2MQTT Bridge",
+    )
+    er.async_get(hass).async_get_or_create(
+        "sensor", "mqtt", "z2m_bridge_0",
+        device_id=bridge.id, config_entry=source,
+    )
+    for index in range(5):
+        uid = f"zigbee2mqtt_0x{index:016x}"
+        device = dr.async_get(hass).async_get_or_create(
+            config_entry_id=source.entry_id,
+            identifiers={("mqtt", uid)},
+            name=f"Sensor {index}",
+        )
+        er.async_get(hass).async_get_or_create(
+            "sensor", "mqtt", uid,
+            device_id=device.id, config_entry=source,
+        )
+
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    coord._rebuild_registry_view()
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+
+    coord._bridge_seen["z2m"] = BRIDGE_RUNNING
+    coord._bridge_readers["z2m"] = _stub_reader(BRIDGE_DOWN)
+    coord._sample_bridges()
+    await hass.async_block_till_done()
+
+    assert len(down) == 1
+    # Nothing has been judged silent, and the count is still real.
+    assert down[0]["devices"] >= 5, down[0]
+
+
+async def test_an_outage_inside_the_grace_is_held_not_dropped(
+    hass: HomeAssistant,
+):
+    """Silent during the grace, announced the moment it ends.
+
+    The grace exists so every other integration can finish starting
+    without its noise being read as news (ruling #291). An upstream
+    that fails inside it and is still down afterwards is news, and
+    the announcement carries the moment it really failed.
+    """
+    from custom_components.device_sentinel.const import (
+        EVENT_UPSTREAM_DOWN,
+        EVENT_UPSTREAM_RESTORED,
+    )
+
+    coord = await setup_coordinator(hass)
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+    back = _heard(hass, EVENT_UPSTREAM_RESTORED)
+
+    coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+    coord._bridge_seen["z2m"] = BRIDGE_RUNNING
+    coord._bridge_readers["z2m"] = _stub_reader(BRIDGE_DOWN)
+    coord._sample_bridges()
+    await hass.async_block_till_done()
+    assert down == [], "the grace must be silent"
+    failed_at = coord._bridge_down_at["z2m"]
+
+    _past_grace(coord)
+    coord._sample_bridges()
+    await hass.async_block_till_done()
+
+    assert len(down) == 1, down
+    said = dt_util.parse_datetime(down[0]["since"])
+    assert abs(said.timestamp() - failed_at) < 2.0
+
+    coord._bridge_readers["z2m"] = _stub_reader(BRIDGE_RUNNING)
+    coord._sample_bridges()
+    await hass.async_block_till_done()
+    assert len(back) == 1, back
+
+
+async def test_an_outage_that_came_and_went_inside_the_grace_is_silent(
+    hass: HomeAssistant,
+):
+    """A restart artifact, not an event a person needs."""
+    from custom_components.device_sentinel.const import (
+        EVENT_UPSTREAM_DOWN,
+        EVENT_UPSTREAM_RESTORED,
+    )
+
+    coord = await setup_coordinator(hass)
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+    back = _heard(hass, EVENT_UPSTREAM_RESTORED)
+
+    coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+    coord._bridge_seen["z2m"] = BRIDGE_RUNNING
+    coord._bridge_readers["z2m"] = _stub_reader(BRIDGE_DOWN)
+    coord._sample_bridges()
+    coord._bridge_readers["z2m"] = _stub_reader(BRIDGE_RUNNING)
+    coord._sample_bridges()
+    await hass.async_block_till_done()
+
+    _past_grace(coord)
+    coord._sample_bridges()
+    await hass.async_block_till_done()
+
+    assert down == []
+    assert back == []
