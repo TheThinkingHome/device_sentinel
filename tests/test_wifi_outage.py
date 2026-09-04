@@ -1,0 +1,422 @@
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: tests/test_wifi_outage.py, Version: 0.20.3 (2026-09-04)
+
+"""The Wi-Fi outage: the tie ladder, the burst, the hold, the claim.
+
+Every number asserted here was measured on the reference fleet before
+it was ruled: nine of seventeen watched trackers not_home inside
+sixty seconds on a real outage, a worst ordinary burst of three that
+the hold absorbed, and a tie coverage of thirteen of sixteen from the
+two MAC rungs. The cases follow those shapes rather than inventing
+new ones.
+"""
+
+from __future__ import annotations
+
+from datetime import timedelta
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
+
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.device_sentinel.const import (
+    EVENT_UPSTREAM_DOWN,
+    EVENT_UPSTREAM_RESTORED,
+    WIFI_BURST_FLOOR,
+    WIFI_HOLD_SECONDS,
+    WIFI_KEY,
+)
+from custom_components.device_sentinel.wifi import normalize_mac
+
+from tests.helpers import setup_coordinator
+
+
+def _tracker(hass, uid: str, mac: str, state: str = "home"):
+    """Register one router tracker with its own entity and no shared
+    device, which is the separate-registry-device shape the reference
+    fleet actually has."""
+    entry = er.async_get(hass).async_get_or_create(
+        "device_tracker", "tplink_router", uid
+    )
+    hass.states.async_set(
+        entry.entity_id,
+        state,
+        {"source_type": "router", "mac": mac},
+    )
+    return entry.entity_id
+
+
+def _wifi_device(hass, source, uid: str, name: str, mac: str | None,
+                 identifier: str | None = None):
+    """Register one watched Wi-Fi device, tied by MAC connection or
+    by an identifier that embeds the full MAC, or by nothing."""
+    connections = (
+        {(dr.CONNECTION_NETWORK_MAC, mac)} if mac else set()
+    )
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("wifi_hub", identifier or uid)},
+        connections=connections,
+        name=name,
+    )
+    er.async_get(hass).async_get_or_create(
+        "sensor", "wifi_hub", uid,
+        device_id=device.id, config_entry=source,
+    )
+    return device
+
+
+async def _house(hass, count: int = 4):
+    """A hub with `count` Wi-Fi devices, each tied to a tracker by a
+    normalized MAC, plus one device with no tracker at all."""
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    trackers, devices = [], []
+    for index in range(count):
+        mac = f"AA-BB-CC-00-00-{index:02X}"
+        trackers.append(_tracker(hass, f"t{index}", mac))
+        devices.append(
+            _wifi_device(
+                hass, source, f"d{index}", f"WiFi Device {index}",
+                mac.lower().replace("-", ":"),
+            )
+        )
+    untied = _wifi_device(hass, source, "lone", "No Tracker", None)
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+    return coord, trackers, devices, untied
+
+
+def _heard(hass):
+    seen: list[tuple[str, dict]] = []
+    hass.bus.async_listen(
+        EVENT_UPSTREAM_DOWN,
+        lambda e: seen.append(("down", dict(e.data))),
+    )
+    hass.bus.async_listen(
+        EVENT_UPSTREAM_RESTORED,
+        lambda e: seen.append(("restored", dict(e.data))),
+    )
+    return seen
+
+
+async def _fall(hass, tracker: str):
+    state = hass.states.get(tracker)
+    hass.states.async_set(tracker, "not_home", dict(state.attributes))
+    await hass.async_block_till_done()
+
+
+async def _rise(hass, tracker: str):
+    state = hass.states.get(tracker)
+    hass.states.async_set(tracker, "home", dict(state.attributes))
+    await hass.async_block_till_done()
+
+
+# ---------------------------------------------------------- the ladder
+
+
+def test_mac_normalization_is_one_canonical_form():
+    """Dashes, colons, case and bare hex all reduce to one spelling,
+    and anything that is not twelve hex characters reduces to
+    nothing."""
+    assert normalize_mac("AA-BB-CC-00-11-22") == "aabbcc001122"
+    assert normalize_mac("aa:bb:cc:00:11:22") == "aabbcc001122"
+    assert normalize_mac("aabbcc001122") == "aabbcc001122"
+    assert normalize_mac("aabbcc0011") is None
+    assert normalize_mac(None) is None
+    assert normalize_mac(42) is None
+
+
+async def test_the_mac_rung_ties_across_spellings(hass: HomeAssistant):
+    """The router says dashes and upper case, the registry says colons
+    and lower case, and the tie holds anyway."""
+    coord, trackers, devices, untied = await _house(hass, 3)
+    assert len(coord._wifi_ties) == 3
+    for device, tracker in zip(devices, trackers):
+        assert coord._wifi_ties[device.id] == tracker
+    assert untied.id not in coord._wifi_ties
+    assert coord.wifi_capable
+
+
+async def test_the_identifier_rung_claims_the_nspanel_shape(
+    hass: HomeAssistant,
+):
+    """A device whose identifier embeds the full twelve-hex MAC is
+    tied, which is the shape the NSPanels actually have."""
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    tracker = _tracker(hass, "panel", "7C-88-99-B2-C8-2B")
+    device = _wifi_device(
+        hass, source, "panel_dev", "NSPanel Pro James", None,
+        identifier="nspanelpro7c8899b2c82b",
+    )
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+    assert coord._wifi_ties.get(device.id) == tracker
+
+
+async def test_a_matching_name_alone_ties_nothing(hass: HomeAssistant):
+    """A device named exactly like its tracker but sharing no MAC is
+    honestly unclaimed: people rename devices to be descriptive, and
+    a wrong tie suppresses an innocent device's verdicts."""
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    _tracker(hass, "fp2", "54-EF-44-5E-83-4A")
+    device = _wifi_device(
+        hass, source, "fp2_dev", "Presence Guest", None
+    )
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+    assert device.id not in coord._wifi_ties
+    assert not coord.wifi_capable
+
+
+async def test_a_phone_tracker_ties_to_nothing(hass: HomeAssistant):
+    """A tracker whose MAC matches no watched device feeds nothing,
+    which is how 17 of 44 curates itself without a list."""
+    coord, trackers, _devices, _untied = await _house(hass, 3)
+    phone = _tracker(hass, "phone", "12-34-56-78-9A-BC")
+    coord._rebuild_registry_view()
+    assert phone not in coord._wifi_device_of
+    assert len(coord._wifi_ties) == 3
+
+
+# ------------------------------------------------- trigger, hold, claim
+
+
+async def test_the_measured_outage_shape_declares(
+    hass: HomeAssistant, freezer
+):
+    """Three tied trackers inside the window, still gone at the end of
+    the hold: declared, dated from the first fall, membership count on
+    the event, confirmation field present."""
+    coord, trackers, devices, _ = await _house(hass, 4)
+    seen = _heard(hass)
+
+    first_fall = dt_util.utcnow().timestamp()
+    for tracker in trackers[:3]:
+        await _fall(hass, tracker)
+    assert coord._wifi_hold_since is not None
+
+    # Inside the hold: nothing, whatever the tick asks.
+    coord._sample_wifi(first_fall + WIFI_HOLD_SECONDS - 5)
+    await hass.async_block_till_done()
+    assert seen == []
+    assert coord.wifi_down_at is None
+
+    # Past it: declared.
+    freezer.tick(timedelta(seconds=WIFI_HOLD_SECONDS + 5))
+    coord._sample_wifi(dt_util.utcnow().timestamp())
+    await hass.async_block_till_done()
+
+    assert [word for word, _ in seen] == ["down"], seen
+    payload = seen[0][1]
+    assert payload["kind"] == WIFI_KEY
+    assert payload["name"] == WIFI_KEY
+    assert payload["devices"] == 4
+    assert "confirmed" in payload
+    assert abs(coord.wifi_down_at - first_fall) < 2.0
+
+
+async def test_two_trackers_never_trigger(hass: HomeAssistant, freezer):
+    """One below the floor, over many ticks. The quiet case."""
+    coord, trackers, _devices, _ = await _house(hass, 4)
+    seen = _heard(hass)
+    for tracker in trackers[:WIFI_BURST_FLOOR - 1]:
+        await _fall(hass, tracker)
+    now = dt_util.utcnow().timestamp()
+    for tick in range(10):
+        coord._sample_wifi(now + tick * 60.0)
+    await hass.async_block_till_done()
+    assert seen == []
+    assert coord._wifi_hold_since is None
+
+
+async def test_a_flap_clears_inside_the_hold(hass: HomeAssistant, freezer):
+    """The 4 September wobble: three fall, all return before the hold
+    ends, nothing is reported and the state is clean for next time."""
+    coord, trackers, _devices, _ = await _house(hass, 4)
+    seen = _heard(hass)
+    for tracker in trackers[:3]:
+        await _fall(hass, tracker)
+    assert coord._wifi_hold_since is not None
+    for tracker in trackers[:3]:
+        await _rise(hass, tracker)
+
+    freezer.tick(timedelta(seconds=WIFI_HOLD_SECONDS + 5))
+    coord._sample_wifi(dt_util.utcnow().timestamp())
+    await hass.async_block_till_done()
+    assert seen == []
+    assert coord.wifi_down_at is None
+    assert coord._wifi_hold_since is None
+    assert coord._wifi_burst == []
+
+
+async def test_the_startup_grace_counts_nothing(hass: HomeAssistant):
+    """Restored trackers flapping at boot are the outage's shape in
+    miniature, and the grace is the only thing separating them."""
+    coord, trackers, _devices, _ = await _house(hass, 4)
+    seen = _heard(hass)
+    coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+    for tracker in trackers[:3]:
+        await _fall(hass, tracker)
+    assert coord._wifi_hold_since is None
+    assert coord._wifi_burst == []
+    now = dt_util.utcnow().timestamp()
+    coord._sample_wifi(now + 120.0)
+    await hass.async_block_till_done()
+    assert seen == []
+
+
+async def test_a_router_reload_is_not_an_outage(hass: HomeAssistant):
+    """Trackers going unavailable is the router integration failing,
+    not stations leaving, and unavailable back to not_home carries no
+    home before it, so neither shape feeds the burst."""
+    coord, trackers, _devices, _ = await _house(hass, 4)
+    for tracker in trackers[:3]:
+        state = hass.states.get(tracker)
+        hass.states.async_set(
+            tracker, "unavailable", dict(state.attributes)
+        )
+    await hass.async_block_till_done()
+    assert coord._wifi_hold_since is None
+    for tracker in trackers[:3]:
+        state = hass.states.get(tracker)
+        hass.states.async_set(
+            tracker, "not_home", dict(state.attributes)
+        )
+    await hass.async_block_till_done()
+    assert coord._wifi_hold_since is None
+    assert coord._wifi_burst == []
+
+
+async def _declared(hass, coord, trackers, freezer, count=3):
+    """Drive a declared outage and return the moment it began."""
+    first = dt_util.utcnow().timestamp()
+    for tracker in trackers[:count]:
+        await _fall(hass, tracker)
+    freezer.tick(timedelta(seconds=WIFI_HOLD_SECONDS + 5))
+    coord._sample_wifi(dt_util.utcnow().timestamp())
+    await hass.async_block_till_done()
+    assert coord.wifi_down_at is not None
+    return first
+
+
+async def test_a_device_is_claimed_only_by_its_own_tracker(
+    hass: HomeAssistant, freezer
+):
+    """During a declared outage: a tied device whose tracker is gone
+    is claimed, a tied device whose tracker reads home is not, and a
+    device with no tie never is."""
+    coord, trackers, devices, untied = await _house(hass, 4)
+    await _declared(hass, coord, trackers, freezer, count=3)
+
+    for device in devices[:3]:
+        found = coord.upstream_down_since(device.id)
+        assert found is not None and found[0] == WIFI_KEY
+    # The fourth tracker still reads home.
+    assert coord.upstream_down_since(devices[3].id) is None
+    assert coord.upstream_down_since(untied.id) is None
+
+
+async def test_the_resolver_and_the_push_know_the_name(
+    hass: HomeAssistant, freezer
+):
+    """The 0.20.2 lesson, applied before shipping instead of after:
+    the row stamps and the push leaves once the outage settles."""
+    coord, trackers, devices, _ = await _house(hass, 4)
+    from custom_components.device_sentinel.const import (
+        DATA_DEVICES,
+        DEV_FROZEN_CATEGORY,
+        DEV_FROZEN_SINCE,
+    )
+    first = await _declared(hass, coord, trackers, freezer, count=3)
+
+    assert coord.upstream_down_since_for(WIFI_KEY) == coord.wifi_down_at
+
+    # Verdicts land on the claimed devices, then the settle passes.
+    for device in devices[:3]:
+        record = coord.data[DATA_DEVICES][device.id]
+        record[DEV_FROZEN_CATEGORY] = "unavailable"
+        record[DEV_FROZEN_SINCE] = first + 90.0
+    freezer.tick(timedelta(seconds=120))
+    assert coord.suppressed_down_counts == {WIFI_KEY: 3}
+    assert coord._upstream_messages() == [(WIFI_KEY, 3, False)]
+
+
+async def test_the_broker_still_outranks_the_network(
+    hass: HomeAssistant, freezer
+):
+    """Order is broker, then bridge, then wifi, then integration."""
+    coord, trackers, devices, _ = await _house(hass, 4)
+    await _declared(hass, coord, trackers, freezer, count=3)
+    assert coord.upstream_down_since(devices[0].id)[0] == WIFI_KEY
+    coord._broker_down_at = dt_util.utcnow().timestamp()
+    found = coord.upstream_down_since(devices[0].id)
+    assert found is not None and found[0] != WIFI_KEY
+
+
+async def test_wifi_outranks_the_integration_rung(
+    hass: HomeAssistant, freezer
+):
+    """A device claimed by its tracker is claimed by the surest
+    witness, even while its config entry also reads down."""
+    coord, trackers, devices, _ = await _house(hass, 4)
+    await _declared(hass, coord, trackers, freezer, count=3)
+
+    called: list[str] = []
+    original = coord.integration_down_since
+
+    def _spy(device_id):
+        called.append(device_id)
+        return original(device_id)
+
+    coord.integration_down_since = _spy
+    found = coord.upstream_down_since(devices[0].id)
+    assert found is not None and found[0] == WIFI_KEY
+    assert called == []
+
+
+async def test_recovery_pairs_and_releases_the_claims(
+    hass: HomeAssistant, freezer
+):
+    """Below the floor the outage closes: the restored half fires with
+    the same membership, and every claim drops."""
+    coord, trackers, devices, _ = await _house(hass, 4)
+    seen = _heard(hass)
+    await _declared(hass, coord, trackers, freezer, count=3)
+
+    for tracker in trackers[:2]:
+        await _rise(hass, tracker)
+    freezer.tick(timedelta(seconds=30))
+    coord._sample_wifi(dt_util.utcnow().timestamp())
+    await hass.async_block_till_done()
+
+    assert [word for word, _ in seen] == ["down", "restored"], seen
+    assert seen[1][1]["devices"] == seen[0][1]["devices"] == 4
+    assert seen[1][1]["for_seconds"] > 0.0
+    assert coord.wifi_down_at is None
+    for device in devices:
+        assert coord.upstream_down_since(device.id) is None
+
+
+async def test_a_house_with_no_ties_pays_nothing(hass: HomeAssistant):
+    """The absent-capability case: no ties, no subscription, no
+    sensor, and the sampler is a no-op."""
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+    assert not coord.wifi_capable
+    assert coord._wifi_unsub is None
+    coord._sample_wifi(dt_util.utcnow().timestamp())
+    assert coord.wifi_down_at is None
