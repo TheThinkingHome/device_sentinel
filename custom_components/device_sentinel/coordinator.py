@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.20.3 (2026-09-04)
+# File: coordinator.py, Version: 0.20.4 (2026-09-04)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -461,6 +461,7 @@ class DeviceSentinelCoordinator(
         self._wifi_first_fall: float | None = None
         self._wifi_down_at: float | None = None
         self._wifi_unsub = None
+        self._wifi_retry_pending = False
         self._pairing_open_at: dict[str, float] = {}
         self._pending_epoch_wipe: int | None = None
         # Rulings #163 and #167. The first is how many devices this

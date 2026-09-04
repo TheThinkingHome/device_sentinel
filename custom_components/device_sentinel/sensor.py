@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.20.3 (2026-09-04)
+# File: sensor.py, Version: 0.20.4 (2026-09-04)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -155,6 +155,29 @@ async def async_setup_entry(
     # feature nobody wanted.
     if coordinator.wifi_capable:
         async_add_entities([DeviceSentinelWifiSensor(coordinator)])
+    else:
+        # On a real boot the router integration has not polled when
+        # this platform sets up, so the ladder has tied nothing yet
+        # and the capability check above reads false. A listener
+        # waits for the first refresh where a tie exists, adds the
+        # sensor once, and removes itself; a house that never grows
+        # a tie keeps a no-op callback and nothing else.
+        holder: dict[str, Any] = {}
+
+        @callback
+        def _add_wifi_sensor_when_capable() -> None:
+            if not coordinator.wifi_capable:
+                return
+            async_add_entities([DeviceSentinelWifiSensor(coordinator)])
+            unsub = holder.pop("unsub", None)
+            if unsub is not None:
+                unsub()
+
+        holder["unsub"] = coordinator.async_add_listener(
+            _add_wifi_sensor_when_capable
+        )
+
+
 
 
 class DeviceSentinelBaseSensor(SensorEntity):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: wifi.py, Version: 0.20.3 (2026-09-04)
+# File: wifi.py, Version: 0.20.4 (2026-09-04)
 
 """The Wi-Fi outage: a capability, deliberately not a stack.
 
@@ -168,6 +168,23 @@ class WifiMixin:
         changed = ties != self._wifi_ties
         self._wifi_ties = ties
         self._wifi_device_of = {t: d for d, t in ties.items()}
+        # The boot-order retry gate. On a real boot the tracker
+        # registry entries exist before the router integration has
+        # polled, so their states are absent and the ladder ties
+        # nothing; the create-once surfaces then read the house as
+        # incapable forever. While ties are empty and any tracker
+        # entry is still stateless, information is still arriving
+        # and the tick retries the ladder. The condition is
+        # terminal both ways: ties appearing ends it, and every
+        # tracker having a state ends it, so a house of phone
+        # trackers stops after its first look and a house with no
+        # trackers never starts.
+        self._wifi_retry_pending = not ties and any(
+            entry.domain == "device_tracker"
+            and not entry.disabled_by
+            and self.hass.states.get(entry.entity_id) is None
+            for entry in registry.entities.values()
+        )
         if changed:
             LOGGER.info(
                 "device_sentinel: wifi ties rebuilt, %d watched "
@@ -266,6 +283,9 @@ class WifiMixin:
         ends within a minute of its deadline is immaterial against an
         outage measured in minutes.
         """
+
+        if self._wifi_retry_pending:
+            self._rebuild_wifi_ties()
         if not self._wifi_ties:
             return
         if self._wifi_down_at is not None:
@@ -378,6 +398,26 @@ class WifiMixin:
     def wifi_down_at(self) -> float | None:
         """When the declared outage began, or None."""
         return self._wifi_down_at
+
+    @property
+    def wifi_diagnostics(self) -> dict[str, Any]:
+        """The tie table and outage state, for a diagnostics download.
+
+        Added after the day its absence cost a question a download
+        should have answered: whether the ladder tied anything on a
+        live system was unknowable without a template.
+        """
+        return {
+            "ties": len(self._wifi_ties),
+            "tied": dict(sorted(self._wifi_ties.items())),
+            "trackers_not_home": len(self._wifi_not_home),
+            "retry_pending": self._wifi_retry_pending,
+            "down_since": (
+                dt_util.utc_from_timestamp(self._wifi_down_at).isoformat()
+                if self._wifi_down_at is not None
+                else None
+            ),
+        }
 
     @property
     def wifi_attributes(self) -> dict[str, Any]:
