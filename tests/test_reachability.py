@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_reachability.py, Version: 0.20.0 (2026-09-03)
+# File: tests/test_reachability.py, Version: 0.20.1 (2026-09-04)
 
 """Zigbee2MQTT reachability, replayed against a captured fleet.
 
@@ -27,12 +27,16 @@ from types import SimpleNamespace
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel import stack_z2m
 from custom_components.device_sentinel.const import (
+    EVENT_UPSTREAM_DOWN,
+    EVENT_UPSTREAM_RESTORED,
+    INTEGRATION_DOWN_DWELL_SECONDS,
     BRIDGE_DOWN,
     BRIDGE_RUNNING,
     BRIDGE_SEEN_SINCE,
@@ -352,10 +356,6 @@ def _past_grace(coord):
 
 async def test_a_bridge_going_down_reaches_the_bus(hass: HomeAssistant):
     """The down half, with the count of what it took with it."""
-    from custom_components.device_sentinel.const import (
-        EVENT_UPSTREAM_DOWN,
-    )
-
     coord = await setup_coordinator(hass)
     _past_grace(coord)
     down = _heard(hass, EVENT_UPSTREAM_DOWN)
@@ -374,10 +374,6 @@ async def test_a_bridge_going_down_reaches_the_bus(hass: HomeAssistant):
 
 async def test_a_bridge_coming_back_reaches_the_bus(hass: HomeAssistant):
     """The restored half, carrying how long it was gone."""
-    from custom_components.device_sentinel.const import (
-        EVENT_UPSTREAM_RESTORED,
-    )
-
     coord = await setup_coordinator(hass)
     _past_grace(coord)
     back = _heard(hass, EVENT_UPSTREAM_RESTORED)
@@ -408,11 +404,6 @@ async def test_a_fresh_install_announces_no_recovery(
     restart that comes up with a bridge already running must not
     announce a recovery that never happened.
     """
-    from custom_components.device_sentinel.const import (
-        EVENT_UPSTREAM_DOWN,
-        EVENT_UPSTREAM_RESTORED,
-    )
-
     coord = await setup_coordinator(hass)
     _past_grace(coord)
     down = _heard(hass, EVENT_UPSTREAM_DOWN)
@@ -440,11 +431,6 @@ async def test_a_bridge_still_down_across_a_restart_is_announced(
     eventual recovery arrives with no failure before it and an
     automation pairing the two never closes.
     """
-    from custom_components.device_sentinel.const import (
-        EVENT_UPSTREAM_DOWN,
-        EVENT_UPSTREAM_RESTORED,
-    )
-
     coord = await setup_coordinator(hass)
     _past_grace(coord)
     down = _heard(hass, EVENT_UPSTREAM_DOWN)
@@ -483,10 +469,6 @@ async def test_the_count_is_membership_not_casualties(
     therefore always be zero on the down event and something else on
     the restored one, which is two meanings for one field.
     """
-    from custom_components.device_sentinel.const import (
-        EVENT_UPSTREAM_DOWN,
-    )
-
     source = MockConfigEntry(domain="mqtt", title="Zigbee")
     source.add_to_hass(hass)
     bridge = dr.async_get(hass).async_get_or_create(
@@ -535,11 +517,6 @@ async def test_an_outage_inside_the_grace_is_held_not_dropped(
     that fails inside it and is still down afterwards is news, and
     the announcement carries the moment it really failed.
     """
-    from custom_components.device_sentinel.const import (
-        EVENT_UPSTREAM_DOWN,
-        EVENT_UPSTREAM_RESTORED,
-    )
-
     coord = await setup_coordinator(hass)
     down = _heard(hass, EVENT_UPSTREAM_DOWN)
     back = _heard(hass, EVENT_UPSTREAM_RESTORED)
@@ -570,11 +547,6 @@ async def test_an_outage_that_came_and_went_inside_the_grace_is_silent(
     hass: HomeAssistant,
 ):
     """A restart artifact, not an event a person needs."""
-    from custom_components.device_sentinel.const import (
-        EVENT_UPSTREAM_DOWN,
-        EVENT_UPSTREAM_RESTORED,
-    )
-
     coord = await setup_coordinator(hass)
     down = _heard(hass, EVENT_UPSTREAM_DOWN)
     back = _heard(hass, EVENT_UPSTREAM_RESTORED)
@@ -593,3 +565,259 @@ async def test_an_outage_that_came_and_went_inside_the_grace_is_silent(
 
     assert down == []
     assert back == []
+
+
+# The integration outage (ruling #382). The third thing that can
+# carry a house's devices, after the broker and a bridge, and the
+# only one with nothing watching it until now.
+
+
+def _plant(hass, count, domain, prefix):
+    """Register devices under one integration, and return its entry.
+
+    The domains are stand-ins rather than real ones. Home Assistant
+    tries to load and unload a real domain around the test, which
+    leaves the loop holding work at teardown. `controller_hub` stands
+    for Z-Wave and `server_hub` for Matter: one entry, many devices,
+    and a reload on a dropped connection.
+    """
+    source = MockConfigEntry(domain=domain, title=f"{domain} hub")
+    source.add_to_hass(hass)
+    made = []
+    for index in range(count):
+        uid = f"{prefix}{index}"
+        device = dr.async_get(hass).async_get_or_create(
+            config_entry_id=source.entry_id,
+            identifiers={(domain, uid)},
+            name=f"{prefix.upper()} {index}",
+        )
+        er.async_get(hass).async_get_or_create(
+            "sensor", domain, uid,
+            device_id=device.id, config_entry=source,
+        )
+        made.append(device)
+    return source, made
+
+
+async def test_an_integration_that_falls_over_is_the_upstream(
+    hass: HomeAssistant,
+):
+    """Past the dwell, the devices behind it are reported as it."""
+    source, made = _plant(hass, 4, "controller_hub", "zw")
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    coord._rebuild_registry_view()
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+
+    now = dt_util.utcnow().timestamp()
+    # Seen up first. Nothing that was never up can go down, so a
+    # real system always observes loaded before an outage.
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    coord._sample_integrations(now - 1)
+    source.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+
+    # First sighting proves nothing.
+    coord._sample_integrations(now)
+    assert down == []
+    assert coord.upstream_down_since(made[0].id) is None
+
+    # Inside the dwell, still nothing.
+    coord._sample_integrations(now + INTEGRATION_DOWN_DWELL_SECONDS - 1)
+    assert down == []
+
+    # Past it, the integration is the upstream.
+    coord._sample_integrations(now + INTEGRATION_DOWN_DWELL_SECONDS + 1)
+    await hass.async_block_till_done()
+    assert len(down) == 1, down
+    assert down[0]["kind"] == "integration"
+    assert down[0]["name"] == "controller_hub"
+    assert down[0]["devices"] == 4
+
+    for device in made:
+        found = coord.upstream_down_since(device.id)
+        assert found is not None
+        assert found[0] == "controller_hub"
+
+
+async def test_a_reload_is_not_an_outage(hass: HomeAssistant):
+    """An entry dropped for nine seconds says nothing.
+
+    This is the whole reason for the dwell. Every upgrade drops every
+    entry it touches, and without it an upgrade would announce an
+    outage per integration.
+    """
+    source, _made = _plant(hass, 3, "server_hub", "mt")
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    coord._rebuild_registry_view()
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+
+    now = dt_util.utcnow().timestamp()
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    coord._sample_integrations(now - 1)
+    source.mock_state(hass, ConfigEntryState.NOT_LOADED)
+    coord._sample_integrations(now)
+    source.mock_state(hass, ConfigEntryState.SETUP_IN_PROGRESS)
+    coord._sample_integrations(now + 5)
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    coord._sample_integrations(now + 9)
+    await hass.async_block_till_done()
+
+    assert down == []
+
+
+async def test_an_integration_coming_back_pairs(hass: HomeAssistant):
+    """The restored half, and the devices are theirs again."""
+    source, made = _plant(hass, 5, "controller_hub", "zw")
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    coord._rebuild_registry_view()
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+    back = _heard(hass, EVENT_UPSTREAM_RESTORED)
+
+    now = dt_util.utcnow().timestamp()
+    # Seen up first. Nothing that was never up can go down, so a
+    # real system always observes loaded before an outage.
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    coord._sample_integrations(now - 1)
+    source.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    coord._sample_integrations(now)
+    coord._sample_integrations(now + INTEGRATION_DOWN_DWELL_SECONDS + 1)
+    await hass.async_block_till_done()
+    assert len(down) == 1
+
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    coord._sample_integrations(now + 600.0)
+    await hass.async_block_till_done()
+
+    assert len(back) == 1, back
+    assert back[0]["kind"] == "integration"
+    assert back[0]["name"] == "controller_hub"
+    assert back[0]["for_seconds"] > 500.0
+    assert coord.upstream_down_since(made[0].id) is None
+
+
+async def test_an_integration_with_no_watched_devices_is_ignored(
+    hass: HomeAssistant,
+):
+    """Nobody is relying on it, so it has no story to tell."""
+    source = MockConfigEntry(domain="grok_conversation", title="Grok")
+    source.add_to_hass(hass)
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    coord._rebuild_registry_view()
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+
+    now = dt_util.utcnow().timestamp()
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    coord._sample_integrations(now - 1)
+    source.mock_state(hass, ConfigEntryState.SETUP_ERROR)
+    coord._sample_integrations(now)
+    coord._sample_integrations(now + INTEGRATION_DOWN_DWELL_SECONDS + 1)
+    await hass.async_block_till_done()
+
+    assert down == []
+
+
+async def test_a_stack_with_a_reader_answers_for_itself(
+    hass: HomeAssistant,
+):
+    """A Zigbee device is never blamed on its integration.
+
+    ZHA and Zigbee2MQTT report their own liveness, so a device on
+    either is answered by the bridge and this must not speak for it.
+    """
+    source = MockConfigEntry(domain="mqtt", title="Zigbee")
+    source.add_to_hass(hass)
+    bridge = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("mqtt", "z2m_bridge")},
+        name="SLZB-06M Zigbee2MQTT Bridge",
+    )
+    er.async_get(hass).async_get_or_create(
+        "sensor", "mqtt", "z2m_bridge_0",
+        device_id=bridge.id, config_entry=source,
+    )
+    for index in range(4):
+        uid = f"zigbee2mqtt_0x{index:016x}"
+        device = dr.async_get(hass).async_get_or_create(
+            config_entry_id=source.entry_id,
+            identifiers={("mqtt", uid)},
+            name=f"Sensor {index}",
+        )
+        er.async_get(hass).async_get_or_create(
+            "sensor", "mqtt", uid,
+            device_id=device.id, config_entry=source,
+        )
+
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    coord._rebuild_registry_view()
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+
+    now = dt_util.utcnow().timestamp()
+    # Seen up first. Nothing that was never up can go down, so a
+    # real system always observes loaded before an outage.
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    coord._sample_integrations(now - 1)
+    source.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    coord._sample_integrations(now)
+    coord._sample_integrations(now + INTEGRATION_DOWN_DWELL_SECONDS + 1)
+    await hass.async_block_till_done()
+
+    kinds = [payload["kind"] for payload in down]
+    assert "integration" not in kinds, down
+
+
+async def test_the_broker_still_outranks_an_integration(
+    hass: HomeAssistant,
+):
+    """Order is broker, then bridge, then integration (#264)."""
+    source, made = _plant(hass, 3, "controller_hub", "zw")
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    # Seen up first. Nothing that was never up can go down, so a
+    # real system always observes loaded before an outage.
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    coord._sample_integrations(now - 1)
+    source.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    coord._sample_integrations(now)
+    coord._sample_integrations(now + INTEGRATION_DOWN_DWELL_SECONDS + 1)
+    assert coord.upstream_down_since(made[0].id)[0] == "controller_hub"
+
+    coord._broker_down_at = now - 30.0
+    assert coord.upstream_down_since(made[0].id)[0] != "controller_hub"
+
+
+async def test_an_entry_never_seen_loaded_is_not_an_outage(
+    hass: HomeAssistant,
+):
+    """Nothing that was never up can have gone down.
+
+    Found by the suite: the rung claimed every device whose entry had
+    not been observed loaded, which suppressed a real freeze because
+    the integration behind it was read as down. An entry that has
+    never been seen loaded is either still starting or was broken
+    before the house came up, and neither is an outage this can date.
+    """
+    source, made = _plant(hass, 3, "controller_hub", "zw")
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    coord._rebuild_registry_view()
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+
+    now = dt_util.utcnow().timestamp()
+    source.mock_state(hass, ConfigEntryState.SETUP_ERROR)
+    coord._sample_integrations(now)
+    coord._sample_integrations(now + INTEGRATION_DOWN_DWELL_SECONDS + 1)
+    coord._sample_integrations(now + 3600.0)
+    await hass.async_block_till_done()
+
+    assert down == []
+    # And the devices are still their own story, which is what makes
+    # a freeze behind such an entry reach the list.
+    for device in made:
+        assert coord.upstream_down_since(device.id) is None
