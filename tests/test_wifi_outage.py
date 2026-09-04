@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.20.3 (2026-09-04)
+# File: tests/test_wifi_outage.py, Version: 0.20.4 (2026-09-04)
 
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim.
 
@@ -420,3 +420,124 @@ async def test_a_house_with_no_ties_pays_nothing(hass: HomeAssistant):
     assert coord._wifi_unsub is None
     coord._sample_wifi(dt_util.utcnow().timestamp())
     assert coord.wifi_down_at is None
+
+
+# ------------------------------------------------- the real boot order
+
+
+async def test_the_real_boot_order_heals_itself(hass: HomeAssistant):
+    """Found on the reference fleet the hour 0.20.3 deployed. At boot
+    the tracker registry entries exist and their states do not,
+    because the router integration has not polled; the ladder tied
+    nothing and the create-once sensor check read the house as
+    incapable forever. The retry gate holds while ties are empty and
+    any tracker is stateless, and the tick heals it."""
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    device = _wifi_device(
+        hass, source, "boot0", "WiFi Device Boot",
+        "aa:bb:cc:00:00:00",
+    )
+    tracker = er.async_get(hass).async_get_or_create(
+        "device_tracker", "tplink_router", "boot_t0"
+    )
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+
+    assert coord._wifi_ties == {}
+    assert not coord.wifi_capable
+    assert coord._wifi_retry_pending
+
+    # The router polls; the state appears; the next tick ties.
+    hass.states.async_set(
+        tracker.entity_id, "home",
+        {"source_type": "router", "mac": "AA-BB-CC-00-00-00"},
+    )
+    await hass.async_block_till_done()
+    coord._sample_wifi(dt_util.utcnow().timestamp())
+
+    assert coord._wifi_ties.get(device.id) == tracker.entity_id
+    assert coord.wifi_capable
+    assert not coord._wifi_retry_pending
+
+
+async def test_a_house_of_phone_trackers_stops_looking(
+    hass: HomeAssistant,
+):
+    """Phone trackers with states and no router: after one look the
+    gate closes and the tick pays one boolean forever."""
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    _wifi_device(hass, source, "p0", "Some Device", None)
+    phone = er.async_get(hass).async_get_or_create(
+        "device_tracker", "mobile_app", "phone0"
+    )
+    hass.states.async_set(phone.entity_id, "home", {"source_type": "gps"})
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+
+    assert not coord._wifi_retry_pending
+    calls = []
+    original = coord._rebuild_wifi_ties
+    coord._rebuild_wifi_ties = lambda: calls.append(1) or original()
+    coord._sample_wifi(dt_util.utcnow().timestamp())
+    assert calls == []
+
+
+async def test_the_sensor_arrives_when_the_capability_does(
+    hass: HomeAssistant,
+):
+    """The platform sets up before the router polls, and the sensor
+    still appears, once, on the first refresh with a tie."""
+    from custom_components.device_sentinel import sensor as sensor_mod
+
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    device = _wifi_device(
+        hass, source, "late0", "WiFi Device Late",
+        "aa:bb:cc:00:00:01",
+    )
+    tracker = er.async_get(hass).async_get_or_create(
+        "device_tracker", "tplink_router", "late_t0"
+    )
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+
+    added: list = []
+
+    class _Entry:
+        runtime_data = coord
+
+    await sensor_mod.async_setup_entry(
+        hass, _Entry(), lambda ents, **kw: added.extend(ents)
+    )
+    names = [type(e).__name__ for e in added]
+    assert "DeviceSentinelWifiSensor" not in names
+
+    hass.states.async_set(
+        tracker.entity_id, "home",
+        {"source_type": "router", "mac": "AA-BB-CC-00-00-01"},
+    )
+    await hass.async_block_till_done()
+    coord._sample_wifi(dt_util.utcnow().timestamp())
+    assert coord._wifi_ties.get(device.id) == tracker.entity_id
+    coord._notify()
+    names = [type(e).__name__ for e in added]
+    assert names.count("DeviceSentinelWifiSensor") == 1
+    coord._notify()
+    names = [type(e).__name__ for e in added]
+    assert names.count("DeviceSentinelWifiSensor") == 1
+
+
+async def test_diagnostics_carry_the_tie_table(hass: HomeAssistant):
+    """The section that would have answered the live question without
+    a template: tie count, the table, the retry gate, the outage."""
+    coord, trackers, devices, _ = await _house(hass, 2)
+    view = coord.wifi_diagnostics
+    assert view["ties"] == 2
+    assert view["retry_pending"] is False
+    assert view["down_since"] is None
+    assert set(view["tied"]) == {d.id for d in devices}
