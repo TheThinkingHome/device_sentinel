@@ -41,6 +41,10 @@ from custom_components.device_sentinel.const import (
     INCIDENT_RESOLVED,
     SYS_BRIDGE_DOWN,
     SYS_BRIDGE_UP,
+    SYS_INTEGRATION_DOWN,
+    SYS_INTEGRATION_UP,
+    SYS_WIFI_DOWN,
+    SYS_WIFI_UP,
     SYS_BROKER_DOWN,
     SYS_BROKER_UP,
     SYS_DEVICES,
@@ -1123,3 +1127,92 @@ async def test_a_bridge_flapping_all_night_explains_its_devices(
     coord.data[DATA_SYSTEM_EVENTS] = events
 
     assert coord._repeat_offender_rows(now) == []
+
+
+# ------------------------------- outages this file had never heard of
+
+
+async def test_a_wifi_outage_explains_the_devices_it_took_down(
+    hass: HomeAssistant,
+):
+    """Found on the reference fleet, in the brief itself.
+
+    A Wi-Fi outage was announced four lines above a Repeat Offenders
+    table listing three presence sensors that failed during it, each
+    correlated with the other two, under a paragraph promising that
+    the usual causes had been ruled out. The outage was recorded in
+    0.20.3 and never registered here, so it explained nothing.
+
+    A network outage reaches every integration, because what failed
+    is the transport under all of them rather than any one stack.
+    """
+    devices = _stack_fleet(hass, 3, "hk", "homekit_controller")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    events, incidents = [], []
+    for round_index in range(3):
+        at = now - 300000.0 + round_index * 90000.0
+        events.append({SYS_WHEN: at, SYS_KIND: SYS_WIFI_DOWN,
+                       SYS_SCOPE: "wifi"})
+        events.append({SYS_WHEN: at + 480.0, SYS_KIND: SYS_WIFI_UP,
+                       SYS_SCOPE: "wifi"})
+        for device in devices:
+            incidents.append(_incident(device.id, device.name, at + 5.0))
+    coord.data[DATA_INCIDENTS] = incidents
+    coord.data[DATA_SYSTEM_EVENTS] = events
+
+    assert coord._repeat_offender_rows(now) == []
+
+
+async def test_an_integration_outage_explains_its_own_devices_only(
+    hass: HomeAssistant,
+):
+    """The same omission, shipped one release earlier (0.20.1).
+
+    Scoped to its own domain, unlike the network: an integration
+    falling says nothing about a device belonging to another one, and
+    excusing those would hide real faults behind an unrelated outage.
+    """
+    mine = _stack_fleet(hass, 3, "zw", "zwave_js")
+    theirs = _stack_fleet(hass, 3, "mq", "mqtt")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+
+    now = dt_util.utcnow().timestamp()
+    events, incidents = [], []
+    for round_index in range(3):
+        at = now - 300000.0 + round_index * 90000.0
+        events.append({SYS_WHEN: at, SYS_KIND: SYS_INTEGRATION_DOWN,
+                       SYS_SCOPE: "zwave_js"})
+        events.append({SYS_WHEN: at + 600.0, SYS_KIND: SYS_INTEGRATION_UP,
+                       SYS_SCOPE: "zwave_js"})
+        for device in mine + theirs:
+            incidents.append(_incident(device.id, device.name, at + 5.0))
+    coord.data[DATA_INCIDENTS] = incidents
+    coord.data[DATA_SYSTEM_EVENTS] = events
+
+    rows = coord._repeat_offender_rows(now)
+    named = {row["name"] for row in rows}
+    for device in mine:
+        assert device.name not in named, device.name
+    for device in theirs:
+        assert device.name in named, device.name
+
+
+def test_both_outages_build_a_window() -> None:
+    """The unit beneath both cases: a pair that is not in the map
+    builds nothing at all, which is how two shipped outages came to
+    explain nothing."""
+    for down, up, scope in (
+        (SYS_WIFI_DOWN, SYS_WIFI_UP, "wifi"),
+        (SYS_INTEGRATION_DOWN, SYS_INTEGRATION_UP, "zwave_js"),
+    ):
+        wins = attribution.windows([
+            {SYS_KIND: down, SYS_SCOPE: scope, SYS_WHEN: 1_000_000.0},
+            {SYS_KIND: up, SYS_SCOPE: scope, SYS_WHEN: 1_000_480.0},
+        ])
+        assert len(wins) == 1, down
+        assert wins[0].in_effect_at(1_000_120.0), down
+        assert wins[0].covers(scope, scope), down
