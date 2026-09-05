@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: wifi.py, Version: 0.20.5 (2026-09-04)
+# File: wifi.py, Version: 0.20.6 (2026-09-05)
 
 """The Wi-Fi outage: a capability, deliberately not a stack.
 
@@ -184,7 +184,28 @@ class WifiMixin:
                         if kind == dr.CONNECTION_NETWORK_MAC:
                             mac = normalize_mac(value)
                             break
-            medium = tracker_medium(state.attributes)
+            # A medium is judged only while the tracker is home. A
+            # router does not maintain a disconnected client's
+            # attributes: on the reference fleet an outage left seven
+            # wireless trackers reading wired, and because a skipped
+            # tracker was never looked at again the tie set fell from
+            # twelve to six and stayed there. The feature that detects
+            # Wi-Fi outages was being shrunk by Wi-Fi outages.
+            #
+            # So an away tracker keeps whatever it was last judged
+            # while connected, which is the #221 principle: a live
+            # reading confirms or doubts a classification and never
+            # decides one on its own.
+            if state.state == STATE_HOME:
+                medium = tracker_medium(state.attributes)
+                self._wifi_medium_seen[entry.entity_id] = medium
+            else:
+                medium = self._wifi_medium_seen.get(entry.entity_id)
+                if medium is None:
+                    # Never seen home, so nothing is known about it.
+                    # Unknown keeps the tie, because the exclusion
+                    # acts only on a published wired marker (#388).
+                    medium = "unknown"
             census[medium] = census.get(medium, 0) + 1
             if medium == "wired":
                 # A wired client cannot be taken down by a Wi-Fi
@@ -327,6 +348,34 @@ class WifiMixin:
             # no longer claimed.
             self._wifi_not_home.pop(entity_id, None)
 
+    def _wired_can_rejoin(self) -> bool:
+        """Whether any skipped tracker has come back as wireless.
+
+        The safety net, swept on the tick rather than driven by an
+        event. A state change says a tracker returned; it does not say
+        the router has finished re-reporting its attributes, and on
+        the reference fleet those arrived in scan batches thirty five
+        seconds apart. Reading them a minute later reads them settled,
+        and a tie that recovers within a minute is indistinguishable
+        from one that recovers at once, because nothing is said about
+        an outage for sixty seconds anyway.
+
+        Costs one dictionary read per skipped tracker per minute, and
+        nothing at all where none were skipped.
+        """
+        for entity_id in self._wifi_wired_skipped:
+            state = self.hass.states.get(entity_id)
+            if state is None or state.state != STATE_HOME:
+                continue
+            if tracker_medium(state.attributes) != "wired":
+                LOGGER.info(
+                    "device_sentinel: %s is home and no longer reads "
+                    "wired, rebuilding wifi ties",
+                    entity_id,
+                )
+                return True
+        return False
+
     def _prune_wifi_burst(self, now: float) -> None:
         """Keep only transitions inside the sliding window."""
         cutoff = now - WIFI_BURST_WINDOW_SECONDS
@@ -344,7 +393,7 @@ class WifiMixin:
         outage measured in minutes.
         """
 
-        if self._wifi_retry_pending:
+        if self._wifi_retry_pending or self._wired_can_rejoin():
             self._rebuild_wifi_ties()
         if not self._wifi_ties:
             return
@@ -471,6 +520,7 @@ class WifiMixin:
             "ties": len(self._wifi_ties),
             "tied": dict(sorted(self._wifi_ties.items())),
             "medium_census": dict(sorted(self._wifi_medium_census.items())),
+            "medium_seen": dict(sorted(self._wifi_medium_seen.items())),
             "wired_skipped": list(self._wifi_wired_skipped),
             "trackers_not_home": len(self._wifi_not_home),
             "retry_pending": self._wifi_retry_pending,
