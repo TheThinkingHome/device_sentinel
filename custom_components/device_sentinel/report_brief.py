@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.20.3 (2026-09-04)
+# File: report_brief.py, Version: 0.20.7 (2026-09-05)
 
 """The daily brief: the one report written for a person.
 
@@ -138,8 +138,9 @@ _REPEAT_PARAGRAPH = (
     "device that failed more than once in the last seven days "
     "for no obvious reason. We ruled out the usual causes. These "
     "failures did not happen during a system restart, a "
-    "coordinator outage, or work you did yourself in Maintenance "
-    "Mode. To help you track down the real problem, the table "
+    "coordinator outage, a network or integration outage, or work "
+    "you did yourself in Maintenance Mode. To help you track down "
+    "the real problem, the table "
     "attempts to correlate a cause by grouping devices that failed "
     "at the same moment. If multiple devices fail together, it "
     "usually means the cause is shared. A device on this list is a "

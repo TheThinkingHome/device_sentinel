@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: attribution.py, Version: 0.15.5 (2026-08-17)
+# File: attribution.py, Version: 0.20.7 (2026-09-05)
 
 """Which recorded event explains an incident, and which do not.
 
@@ -72,6 +72,10 @@ from .const import (
     SYS_STORM_OPEN,
     SYS_UNCLEAN_RESTART,
     SYS_WHEN,
+    SYS_WIFI_DOWN,
+    SYS_WIFI_UP,
+    SYS_INTEGRATION_DOWN,
+    SYS_INTEGRATION_UP,
 )
 
 # The pairs, opening kind to closing kind. Each becomes one window
@@ -82,6 +86,16 @@ _PAIRS = {
     SYS_BROKER_DOWN: SYS_BROKER_UP,
     SYS_PAIRING_OPEN: SYS_PAIRING_CLOSED,
     SYS_STORM_OPEN: SYS_STORM_CLOSED,
+    # Added late, and their absence was a defect in both releases
+    # that introduced them. An integration outage (0.20.1) and a Wi-Fi
+    # outage (0.20.3) were each announced in the brief and unknown to
+    # this file, so every device that failed during one was counted as
+    # a mystery. On the reference fleet a Wi-Fi outage put three
+    # presence sensors on the Repeat Offenders table, correlated with
+    # each other, four lines below the sentence naming the outage that
+    # explained all three.
+    SYS_INTEGRATION_DOWN: SYS_INTEGRATION_UP,
+    SYS_WIFI_DOWN: SYS_WIFI_UP,
 }
 _CLOSERS = set(_PAIRS.values())
 
@@ -151,6 +165,18 @@ class Window:
             return False
         if self.kind == SYS_STORM_OPEN:
             return domain is not None and domain == self.scope
+        if self.kind == SYS_INTEGRATION_DOWN:
+            # Scoped to the integration's own domain, which is what
+            # the outage records.
+            return domain is not None and domain == self.scope
+        if self.kind == SYS_WIFI_DOWN:
+            # The network reaches every integration, because what
+            # fails is the transport under all of them and not any
+            # one stack. A device tied to a tracker is already held
+            # back from reporting entirely (#266); this covers the
+            # ones no tie could claim, which are exactly the devices
+            # the Repeat Offenders table was blaming.
+            return True
         return False
 
     def in_effect_at(self, moment: float) -> bool:
