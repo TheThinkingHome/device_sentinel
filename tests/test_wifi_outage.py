@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.20.5 (2026-09-04)
+# File: tests/test_wifi_outage.py, Version: 0.20.6 (2026-09-05)
 
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim.
 
@@ -687,3 +687,129 @@ async def test_the_census_reaches_the_diagnostics(hass: HomeAssistant):
     assert view["ties"] == 2
     assert "medium_census" in view
     assert view["wired_skipped"] == []
+
+
+# ------------------------------------------- a tie must survive an outage
+
+
+async def test_a_tie_survives_the_outage_it_exists_to_detect(
+    hass: HomeAssistant,
+):
+    """Found on the reference fleet during the first live Wi-Fi test.
+
+    An outage left seven wireless trackers reading wired while they
+    were away, the ladder ran in that moment and skipped them, and
+    nothing looked at them again: the tie set fell from twelve to six
+    and was still six ten minutes after every attribute had recovered.
+    A second outage would have been judged on half a fleet, and a
+    third on fewer, each time silently.
+
+    A medium is judged only while a tracker is home. An away tracker
+    keeps what it was last judged to be, which is the #221 principle:
+    a live reading confirms or doubts a classification, it does not
+    decide one.
+    """
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    device = _wifi_device(
+        hass, source, "sv0", "Voice Assistant", "20:f8:3b:09:97:53"
+    )
+    tracker = er.async_get(hass).async_get_or_create(
+        "device_tracker", "tplink_router", "sv_t0"
+    )
+    home_attrs = {"source_type": "router", "mac": "20-F8-3B-09-97-53",
+                  "connection": "IoT", "band": "2G"}
+    hass.states.async_set(tracker.entity_id, "home", home_attrs)
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+    assert coord._wifi_ties.get(device.id) == tracker.entity_id
+
+    # Away, and the router re-reports it without its network
+    # attributes, which is what the live fleet actually did.
+    hass.states.async_set(
+        tracker.entity_id, "not_home",
+        {"source_type": "router", "mac": "20-F8-3B-09-97-53",
+         "connection": "wired", "band": None},
+    )
+    await hass.async_block_till_done()
+    coord._rebuild_registry_view()
+    assert coord._wifi_ties.get(device.id) == tracker.entity_id
+    assert coord._wifi_wired_skipped == []
+
+    hass.states.async_set(tracker.entity_id, "home", home_attrs)
+    await hass.async_block_till_done()
+    coord._rebuild_registry_view()
+    assert coord._wifi_ties.get(device.id) == tracker.entity_id
+
+
+async def test_a_skipped_tracker_rejoins_when_it_reads_wireless(
+    hass: HomeAssistant,
+):
+    """The safety net, swept on the tick.
+
+    However a tie is lost, it comes back on its own once the tracker
+    is home and no longer reads wired. Without this the only way back
+    from a wrong exclusion was a restart.
+    """
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    device = _wifi_device(
+        hass, source, "rj0", "Rejoining Device", "aa:bb:cc:11:22:33"
+    )
+    tracker = er.async_get(hass).async_get_or_create(
+        "device_tracker", "tplink_router", "rj_t0"
+    )
+    # Home and genuinely wired at first, so it is properly skipped.
+    hass.states.async_set(
+        tracker.entity_id, "home",
+        {"source_type": "router", "mac": "AA-BB-CC-11-22-33",
+         "connection": "wired"},
+    )
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+    assert device.id not in coord._wifi_ties
+    assert coord._wifi_wired_skipped == [tracker.entity_id]
+
+    # Moved to Wi-Fi. The tick notices without being told.
+    hass.states.async_set(
+        tracker.entity_id, "home",
+        {"source_type": "router", "mac": "AA-BB-CC-11-22-33",
+         "connection": "IoT", "band": "2G"},
+    )
+    await hass.async_block_till_done()
+    coord._sample_wifi(dt_util.utcnow().timestamp())
+    assert coord._wifi_ties.get(device.id) == tracker.entity_id
+    assert coord._wifi_wired_skipped == []
+
+
+async def test_an_away_wired_tracker_stays_skipped(hass: HomeAssistant):
+    """The reverse must also hold: remembering the medium must not
+    quietly re-admit a wired device just because it went away."""
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    device = _wifi_device(
+        hass, source, "aw0", "Wired Camera", "ec:71:db:98:ad:44"
+    )
+    tracker = er.async_get(hass).async_get_or_create(
+        "device_tracker", "tplink_router", "aw_t0"
+    )
+    hass.states.async_set(
+        tracker.entity_id, "home",
+        {"source_type": "router", "mac": "EC-71-DB-98-AD-44",
+         "connection": "wired"},
+    )
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+    assert device.id not in coord._wifi_ties
+
+    # The switch reboots and the camera goes away, losing its marker.
+    hass.states.async_set(
+        tracker.entity_id, "not_home",
+        {"source_type": "router", "mac": "EC-71-DB-98-AD-44"},
+    )
+    await hass.async_block_till_done()
+    coord._rebuild_registry_view()
+    assert device.id not in coord._wifi_ties, "a wired device was re-admitted"
