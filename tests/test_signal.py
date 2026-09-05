@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal.py, Version: 0.15.6 (2026-08-17)
+# File: test_signal.py, Version: 0.20.5 (2026-09-05)
 
 """Signal detection: the floor line and the rail.
 
@@ -688,3 +688,69 @@ def test_routing_is_stable_however_the_readings_interleave():
         assert rec[DEV_SIGNAL_SCALE] == SIGNAL_SCALE_RSSI, order
         assert rec[DEV_SIGNAL_VALUE] < 0, order
         assert rec[DEV_SIGNAL_ALT][DEV_SIGNAL_VALUE] > 0, order
+
+
+# ------------------------------------------- a series past its window
+
+
+async def test_the_floor_reads_only_the_window_it_is_given(
+    hass: HomeAssistant,
+):
+    """A long series does not drag an old regime forward.
+
+    The floor reads the most recent thirty days (SIGNAL_DAYS_KEEP,
+    widened by #196), and a device that has been running for months
+    holds more than that. A link that was poor in its first month and
+    steady since must be judged on the month it is in, or every
+    device that ever had a bad patch carries it as a permanent
+    excuse.
+    """
+    coord = await setup_coordinator_flat_line(hass)
+    record = _new_device_record("2026-06-01T00:00:00+00:00", None)
+    # Sixty days at a poor floor, then thirty steady and high.
+    record[DEV_SIGNAL_DAILY_P5] = [40.0] * 60 + [88.0] * 30
+    assert coord._danger_line(record) == 88.0
+
+    # And the reverse: a link that has just gone bad is judged bad,
+    # however good its history was.
+    record[DEV_SIGNAL_DAILY_P5] = [95.0] * 60 + [52.0] * 30
+    assert coord._danger_line(record) == 52.0
+
+
+async def test_the_floor_at_the_window_boundary(hass: HomeAssistant):
+    """Exactly thirty days in, and one day past it.
+
+    The day the oldest reading leaves the window is the day the line
+    can move without anything about the device changing, which is the
+    one moment a person would call the reading wrong.
+    """
+    coord = await setup_coordinator_flat_line(hass)
+    record = _new_device_record("2026-06-01T00:00:00+00:00", None)
+    record[DEV_SIGNAL_DAILY_P5] = [30.0] + [90.0] * 29
+    assert coord._danger_line(record) == 30.0
+    record[DEV_SIGNAL_DAILY_P5] = [30.0] + [90.0] * 30
+    assert coord._danger_line(record) == 90.0
+
+
+async def test_a_long_series_with_gaps_and_rails(hass: HomeAssistant):
+    """Ninety days of real shape: null days, rail days, and a floor.
+
+    A rail value means no reading at all (#305) and must not become
+    the floor, and a null day must be skipped rather than read as
+    zero. Over three months a device collects both, and the floor has
+    to survive the mixture.
+    """
+    coord = await setup_coordinator_flat_line(hass)
+    record = _new_device_record("2026-06-01T00:00:00+00:00", None)
+    series = []
+    for day in range(90):
+        if day % 17 == 0:
+            series.append(None)
+        elif day % 23 == 0:
+            series.append(255.0)
+        else:
+            series.append(70.0 + (day % 11))
+    record[DEV_SIGNAL_DAILY_P5] = series
+    line = coord._danger_line(record)
+    assert line is not None
+    assert 70.0 <= line <= 81.0, line

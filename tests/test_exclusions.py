@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_exclusions.py, Version: 0.17.9 (2026-08-25)
+# File: test_exclusions.py, Version: 0.20.5 (2026-09-05)
 
 """Exclusion: watched and recorded, but not judged or reported.
 
@@ -1373,3 +1373,119 @@ async def test_an_excluded_integration_clears_no_label(
     await hass.async_block_till_done()
 
     assert entry.options[CONF_SIGNAL_MUTED_LABELS] == [label.label_id]
+
+
+# ------------------------------------------------- coming back again
+
+
+async def test_a_device_returns_when_its_exclusion_is_lifted(
+    hass: HomeAssistant, freezer
+):
+    """Un-excluding puts a device back under judgment.
+
+    Excluding is easy to test and easy to get right. What nothing
+    covered was the way back: a person excludes a noisy integration,
+    recognises later that they excluded the wrong thing, and takes it
+    off the list. The device must return to the watched set, and its
+    record must still be there, because setting a device aside clears
+    its judgment and never its history (#367).
+    """
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, battery_eid = _battery_device(hass, source, 1)
+    coord = await setup_coordinator(
+        hass, {CONF_EXCLUDED_INTEGRATIONS: ["test"]}
+    )
+    freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 5))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    hass.states.async_set(battery_eid, "55")
+    await hass.async_block_till_done()
+    assert device.id not in coord._watched
+    before = coord.data[DATA_DEVICES].get(device.id)
+
+    hass.config_entries.async_update_entry(
+        coord.entry, options={CONF_EXCLUDED_INTEGRATIONS: []}
+    )
+    await hass.async_block_till_done()
+    coord._rebuild_registry_view()
+
+    assert device.id in coord._watched
+    record = coord.data[DATA_DEVICES][device.id]
+    assert record is not None
+    if before is not None:
+        # The history survived the round trip.
+        assert record[DEV_EVENT_COUNT] >= before[DEV_EVENT_COUNT]
+
+
+async def test_a_device_returns_when_its_muting_is_lifted(
+    hass: HomeAssistant, freezer
+):
+    """Un-muting restores reporting, and the learning never stopped.
+
+    Muting and excluding differ in exactly this: a muted device is
+    still watched and still recorded, so when the muting lifts it has
+    a full history rather than starting again. That difference is the
+    reason both settings exist, and nothing asserted it.
+    """
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, battery_eid = _battery_device(hass, source, 2)
+    coord = await setup_coordinator(
+        hass, {CONF_MUTED_DEVICES: [device.id]}
+    )
+    freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 5))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    hass.states.async_set(battery_eid, "10")
+    await hass.async_block_till_done()
+    assert coord.battery_low_count == 0
+    counted = coord.data[DATA_DEVICES][device.id][DEV_EVENT_COUNT]
+    assert counted > 0
+
+    hass.config_entries.async_update_entry(
+        coord.entry, options={CONF_MUTED_DEVICES: []}
+    )
+    await hass.async_block_till_done()
+    coord._rebuild_registry_view()
+
+    assert device.id not in coord._muted_devices
+    hass.states.async_set(battery_eid, "9")
+    await hass.async_block_till_done()
+    assert coord.battery_low_count == 1
+    # Nothing was relearned: the count carried straight through.
+    assert coord.data[DATA_DEVICES][device.id][DEV_EVENT_COUNT] > counted
+
+
+async def test_muting_and_unmuting_around_an_open_fault(
+    hass: HomeAssistant, freezer
+):
+    """A fault open when the muting arrives, and still open when it
+    lifts, is reported again rather than forgotten."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    device, battery_eid = _battery_device(hass, source, 3)
+    coord = await setup_coordinator(hass)
+    freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 5))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    hass.states.async_set(battery_eid, "8")
+    await hass.async_block_till_done()
+    assert coord.battery_low_count == 1
+
+    hass.config_entries.async_update_entry(
+        coord.entry, options={CONF_MUTED_DEVICES: [device.id]}
+    )
+    await hass.async_block_till_done()
+    coord._rebuild_registry_view()
+    assert coord.battery_low_count == 0
+
+    hass.config_entries.async_update_entry(
+        coord.entry, options={CONF_MUTED_DEVICES: []}
+    )
+    await hass.async_block_till_done()
+    coord._rebuild_registry_view()
+    assert coord.battery_low_count == 1
