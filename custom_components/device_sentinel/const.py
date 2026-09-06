@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.20.3 (2026-09-04)
+# File: const.py, Version: 0.20.9 (2026-09-06)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1767,6 +1767,23 @@ WIFI_BURST_FLOOR = 3
 WIFI_BURST_WINDOW_SECONDS = 60.0
 WIFI_HOLD_SECONDS = 60.0
 
+# WiFi detection from the host's own radio (#391, #392). Independent
+# of every router integration: the host scans for access points and
+# the network is up while any of them broadcasts a chosen name.
+CONF_WIFI_NETWORKS = "wifi_networks"
+CONF_WIFI_CONFIRM_SECONDS = "wifi_confirm_seconds"
+DEFAULT_WIFI_CONFIRM_SECONDS = 60
+
+# How often the radio is asked what it can hear. A scan is not free
+# and an outage is held for a minute anyway, so a faster sweep would
+# buy nothing a person could act on.
+WIFI_SCAN_SECONDS = 60.0
+
+# What the person volunteered for study (#393). The toggles store a
+# choice and nothing else in this release; what each one gathers is
+# researched and built one at a time.
+CONF_STUDY_HARDWARE = "study_hardware"
+
 # Worst first, so kinds[0] is the headline and an automation reads it
 # without a template. Unavailable leads because
 # FREEZE_CATEGORY_PRIORITY already ruled it above frozen: an
@@ -2492,6 +2509,8 @@ def _wiki_link(page: str | None = None) -> str:
 WIKI_LINK_HOME = _wiki_link()
 WIKI_LINK_NOTIFICATIONS = _wiki_link("Notifications-and-Daily-Brief")
 WIKI_LINK_ADVANCED = _wiki_link("Advanced")
+WIKI_LINK_WIFI = _wiki_link("WiFi")
+WIKI_LINK_EXTENDED = _wiki_link("Extended-Diagnostics")
 WIKI_LINK_EXCLUSIONS = _wiki_link("Exclusions-and-Muting")
 WIKI_LINK_BATTERY = _wiki_link("Low-Battery")
 WIKI_LINK_SIGNAL = _wiki_link("Signal-Strength")

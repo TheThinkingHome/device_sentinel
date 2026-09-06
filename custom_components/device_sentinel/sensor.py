@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.20.4 (2026-09-04)
+# File: sensor.py, Version: 0.20.9 (2026-09-06)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -281,6 +281,14 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
             ATTR_STORAGE_HEALTHY: self._coordinator.storage_healthy,
             ATTR_SETUP_COUNT: self._coordinator.setup_count,
             ATTR_AWAITING_SIGNAL: counts["signal"],
+            # A network chosen for WiFi detection that the radio
+            # cannot currently hear. Named here rather than silently
+            # unselected on the settings screen, because a network
+            # that was renamed and one that is down look the same
+            # from a picker and only a person can tell them apart.
+            "wifi_networks_missing": (
+                self._coordinator.wifi_missing_networks or None
+            ),
             ATTR_AWAITING_LAST_SEEN: counts["last_seen"],
             ATTR_AWAITING_BATTERY: counts["battery"],
             # The backup's story (ruling #341, amended by #370):

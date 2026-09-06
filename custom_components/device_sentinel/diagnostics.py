@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.20.4 (2026-09-04)
+# File: diagnostics.py, Version: 0.20.9 (2026-09-06)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -35,6 +35,7 @@ from homeassistant.helpers import entity_registry as er
 
 from . import DeviceSentinelConfigEntry
 from .const import (
+    CONF_STUDY_HARDWARE,
     DATA_STORMS,
     EP_LEARNED,
     BATTERY_CLEAR_MARGIN,
@@ -273,6 +274,10 @@ async def async_get_config_entry_diagnostics(
             "storms": len(coordinator.data.get(DATA_STORMS) or []),
             "broker_state": coordinator.broker_state,
             "wifi": coordinator.wifi_diagnostics,
+            "wifi_scan": coordinator.wifi_scan_diagnostics,
+            "study_hardware": list(
+                entry.options.get(CONF_STUDY_HARDWARE) or []
+            ),
             "broker": coordinator.broker_attributes,
             "bridge_state": {
                 stack: coordinator.bridge_state(stack)

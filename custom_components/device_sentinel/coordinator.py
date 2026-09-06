@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.20.8 (2026-09-06)
+# File: coordinator.py, Version: 0.20.9 (2026-09-06)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -212,6 +212,7 @@ from .detect_signal import SignalMixin, _entity_unit, _is_percentage
 from .events import EventMixin
 from .interventions import InterventionMixin
 from .router_ties import RouterTiesMixin
+from .wifi import WifiScanMixin
 from .journal import JournalMixin
 from .messenger import MessengerMixin
 from .narrative import NarrativeMixin
@@ -238,6 +239,7 @@ class DeviceSentinelCoordinator(
     StorageMixin,
     InterventionMixin,
     RouterTiesMixin,
+    WifiScanMixin,
 ):
     """Owns Device Sentinel's storage, registry view, and telemetry."""
 
@@ -468,6 +470,12 @@ class DeviceSentinelCoordinator(
         # Survives a rebuild that happens mid outage, which a live
         # reading does not.
         self._wifi_medium_seen: dict[str, str] = {}
+        # WiFi detection from the host's own radio (#391, #392).
+        # Absent until a network is chosen and an adapter is found.
+        self._wifi_scan_interface: str | None = None
+        self._wifi_scan_gone_at: float | None = None
+        self._wifi_scan_down_at: float | None = None
+        self._wifi_heard: set[str] = set()
         self._pairing_open_at: dict[str, float] = {}
         self._pending_epoch_wipe: int | None = None
         # Rulings #163 and #167. The first is how many devices this
@@ -2883,6 +2891,10 @@ class DeviceSentinelCoordinator(
         closes, and clears the instant the device reports (that half
         runs in the report path, not here).
         """
+        # The radio sweep, where a network was chosen and an adapter
+        # found. It reads the Supervisor, so it is awaited here rather
+        # than run inside the synchronous judgment below.
+        await self.async_sweep_wifi()
         self._sweep_storms(dt_util.utcnow().timestamp())
         self._expire_maintenance(dt_util.utcnow().timestamp())
         self._sample_bridges()

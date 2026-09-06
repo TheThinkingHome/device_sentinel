@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.17.9 (2026-08-25)
+# File: config_flow.py, Version: 0.20.9 (2026-09-06)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -63,7 +63,15 @@ from homeassistant.data_entry_flow import section
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import selector
 
+from .wifi import scan_networks, wireless_interfaces
+
 from .const import (
+    CONF_STUDY_HARDWARE,
+    CONF_WIFI_CONFIRM_SECONDS,
+    CONF_WIFI_NETWORKS,
+    DEFAULT_WIFI_CONFIRM_SECONDS,
+    WIKI_LINK_EXTENDED,
+    WIKI_LINK_WIFI,
     OPTIONS_MINOR_VERSION,
     BATTERY_DAYS_MAX,
     BATTERY_DAYS_MIN,
@@ -343,6 +351,30 @@ class DeviceSentinelConfigFlow(ConfigFlow, domain=DOMAIN):
         return DeviceSentinelOptionsFlow()
 
 
+def _studiable(hass) -> list[str]:
+    """What this system has that support is still being built for.
+
+    Only what is present, and only what is still wanted. When a
+    stack is supported the entry is removed from this list rather
+    than left offering to study something already understood, so the
+    screen never asks for data nobody needs (#393).
+    """
+    wanted = {
+        "tplink_router": "Router: TP-Link",
+        "unifi": "Router: UniFi",
+        "fritz": "Router: FRITZ!Box",
+        "asuswrt": "Router: AsusWRT",
+        "netgear": "Router: NETGEAR",
+        "mikrotik": "Router: MikroTik",
+        "zwave_js": "Z-Wave",
+        "matter": "Matter",
+    }
+    present = {
+        entry.domain for entry in hass.config_entries.async_entries()
+    }
+    return [label for domain, label in wanted.items() if domain in present]
+
+
 class DeviceSentinelOptionsFlow(OptionsFlow):
     """A menu branching to each configuration surface."""
 
@@ -532,7 +564,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 "battery",
                 "signal",
                 "freeze",
+                "wifi",
                 "advanced",
+                "extended",
             ],
         )
 
@@ -1508,6 +1542,123 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     ),
                     vol.Required("brief"): section(
                         brief_section, {"collapsed": True}
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_wifi(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """WiFi detection, read from the host's own radio.
+
+        Detection and attribution are separate jobs (#391): this
+        screen configures the first, which needs no router
+        integration at all. The screen explains itself differently
+        depending on whether a wireless adapter exists, because a
+        person with none can do nothing here until they set one up,
+        and telling them that is the only useful thing the screen can
+        say.
+
+        The picker offers what the radio can currently hear. A
+        network already chosen stays selected even when it cannot be
+        heard, because a network that is down at the moment somebody
+        opens this screen must not quietly unselect itself; the
+        status sensor names it instead.
+        """
+        if user_input is not None:
+            return await self._save_and_return(dict(user_input))
+
+        options = self.config_entry.options
+        chosen = list(options.get(CONF_WIFI_NETWORKS) or [])
+        interfaces = await wireless_interfaces(self.hass)
+        heard: list[str] = []
+        if interfaces:
+            points = await scan_networks(
+                self.hass, interfaces[0].get("interface") or ""
+            )
+            heard = sorted(
+                {
+                    point.get("ssid")
+                    for point in (points or [])
+                    if isinstance(point.get("ssid"), str)
+                    and point.get("ssid")
+                }
+            )
+        # Chosen first, so a network that is down right now is still
+        # offered and still ticked.
+        names = sorted(set(heard) | set(chosen))
+
+        return self.async_show_form(
+            step_id="wifi",
+            description_placeholders={
+                "wiki_link": WIKI_LINK_WIFI,
+                "state": "ready" if interfaces else "unconfigured",
+            },
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_WIFI_NETWORKS, default=chosen
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=names,
+                            multiple=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                            custom_value=True,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_WIFI_CONFIRM_SECONDS,
+                        default=options.get(
+                            CONF_WIFI_CONFIRM_SECONDS,
+                            DEFAULT_WIFI_CONFIRM_SECONDS,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=30, max=120, step=5,
+                            mode=selector.NumberSelectorMode.BOX,
+                            unit_of_measurement="seconds",
+                        )
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_extended(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Hardware a person volunteers for study (#393).
+
+        Support for a stack or a router cannot be built without
+        seeing how it behaves on a fleet nobody here owns. This
+        screen offers only what is detected on this system, and only
+        where support is still being built, so a house without
+        Z-Wave is never asked about Z-Wave. Choosing something
+        changes no behaviour: it adds readings to the diagnostics
+        download, which the person then attaches to an issue
+        themselves. Nothing is transmitted.
+        """
+        if user_input is not None:
+            return await self._save_and_return(dict(user_input))
+
+        options = self.config_entry.options
+        chosen = list(options.get(CONF_STUDY_HARDWARE) or [])
+        available = sorted(
+            set(_studiable(self.hass)) | set(chosen)
+        )
+        return self.async_show_form(
+            step_id="extended",
+            description_placeholders={"wiki_link": WIKI_LINK_EXTENDED},
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_STUDY_HARDWARE, default=chosen
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=available,
+                            multiple=True,
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
                     ),
                 }
             ),

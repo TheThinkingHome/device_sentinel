@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.20.8 (2026-09-06)
+# File: router_ties.py, Version: 0.20.9 (2026-09-06)
 
 """Router ties: which watched devices a router says have left.
 
@@ -345,6 +345,7 @@ class RouterTiesMixin:
             if (
                 self._wifi_down_at is None
                 and self._wifi_hold_since is None
+                and not self.wifi_scan_configured
                 and len(self._wifi_burst) >= WIFI_BURST_FLOOR
             ):
                 self._wifi_hold_since = now
@@ -399,6 +400,26 @@ class RouterTiesMixin:
     # ---------------------------------------------------------- sampler
 
     @callback
+    def wifi_confirmation(self) -> dict[str, Any]:
+        """What the ties can say about an outage the scan declared.
+
+        Where the scan is primary (#391) this is the whole of the
+        ties' contribution to detection: how many watched devices the
+        router says have left, and which. The count is what turns
+        twenty individual reports into one line naming a cause.
+        """
+        away = [
+            device_id
+            for device_id, tracker in self._wifi_ties.items()
+            if tracker in self._wifi_not_home
+        ]
+        return {
+            "tied": len(self._wifi_ties),
+            "away": len(away),
+            "devices": sorted(away),
+        }
+
+    @callback
     def _sample_wifi(self, now: float) -> None:
         """Judge the hold and the recovery on the tick.
 
@@ -432,6 +453,46 @@ class RouterTiesMixin:
             self._wifi_hold_since = None
             self._wifi_first_fall = None
             self._wifi_burst = []
+
+    @callback
+    def on_wifi_scan_down(self, since: float, missing: list[str]) -> None:
+        """The scan says the network is gone, so declare it (#391).
+
+        The same outage the ties would have declared, dated from when
+        the network actually went. What the ties add is the count:
+        how many watched devices the router says went with it.
+        """
+        if self._wifi_down_at is not None:
+            return
+        self._wifi_down_at = since
+        self._wifi_hold_since = None
+        confirmed = self._wifi_confirmed_count()
+        seen = self.wifi_confirmation()
+        LOGGER.info(
+            "device_sentinel: wifi outage declared by scan (%s), "
+            "%d tied device(s), %d away by the router, %d already "
+            "unavailable",
+            ", ".join(missing),
+            seen["tied"],
+            seen["away"],
+            confirmed,
+        )
+        self._record_system_event(
+            SYS_WIFI_DOWN, scope=WIFI_KEY, devices=len(self._wifi_ties)
+        )
+        self._say_upstream_down(
+            UPSTREAM_WIFI, WIFI_KEY, None, since, len(self._wifi_ties),
+            confirmed=confirmed,
+        )
+
+    @callback
+    def on_wifi_scan_restored(
+        self, since: float | None, now: float
+    ) -> None:
+        """The scan hears every chosen network again."""
+        if self._wifi_down_at is None:
+            return
+        self._wifi_restore(now)
 
     def _wifi_declare(self, now: float, still_gone: int) -> None:
         """Declare the outage, dated from the first fall."""

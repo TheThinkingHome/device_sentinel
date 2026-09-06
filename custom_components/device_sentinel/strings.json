@@ -22,7 +22,9 @@
           "battery": "Low Battery",
           "signal": "Signal Strength",
           "freeze": "Freeze Detection",
-          "advanced": "Advanced"
+          "wifi": "WiFi",
+          "advanced": "Advanced",
+          "extended": "Extended Diagnostics"
         }
       },
       "notifications": {
@@ -225,6 +227,28 @@
               "trim_devices": "Erases the learned history of any devices selected here."
             }
           }
+        }
+      },
+      "wifi": {
+        "title": "WiFi",
+        "description": "Device Sentinel can watch for your WiFi network availability and report a WiFi outage bringing down a single count of devices instead of reporting each device individually. To work, your Home Assistant server must be equipped with a wireless adapter that is properly joined to your network. Set that up first in Settings, System, Network, then come back here. [WiFi on the wiki]({wiki_link})",
+        "data": {
+          "wifi_networks": "Your IoT WiFi Networks",
+          "wifi_confirm_seconds": "Confirmation Delay"
+        },
+        "data_description": {
+          "wifi_networks": "The networks your devices and sensors use to communicate with Home Assistant. Device Sentinel cannot tell which network any of your devices use. If you pick more than one, when any one of them goes down, the integration will report that WiFi is unavailable. Using a single network for every one of your devices is recommended for optimum performance.",
+          "wifi_confirm_seconds": "The number of seconds a network becomes unavailable before an outage is reported. A router rebooting overnight goes missing for about thirty seconds."
+        }
+      },
+      "extended": {
+        "title": "Extended Diagnostics",
+        "description": "Some hardware will not be supported until we see how it behaves on a real system, and nobody working on Device Sentinel owns one of everything. Turning a toggle on here adds raw readings about that hardware to your diagnostics download. Nothing is transmitted. If you want support for hardware listed here, turn this toggle on and wait 48 hours. Then, download your diagnostics from the Device Sentinel integration page and open an issue with the diagnostic file attached, telling us what you would like built. [Extended Diagnostics on the wiki]({wiki_link})",
+        "data": {
+          "study_hardware": "Hardware To Study"
+        },
+        "data_description": {
+          "study_hardware": "Only hardware found on your system appears here, and only where support is still being built. Choosing something changes nothing about how Device Sentinel behaves."
         }
       }
     }
