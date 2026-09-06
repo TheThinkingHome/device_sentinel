@@ -258,6 +258,41 @@ async def test_the_nightly_reboot_is_absorbed(
     assert coord.wifi_scan_diagnostics["gone_at"] is None
 
 
+async def test_the_delay_holds_across_repeated_sweeps(
+    hass: HomeAssistant, supervisor: FakeSupervisor, freezer
+):
+    """Missing across several sweeps, but for less than the delay.
+
+    Found by a control run: removing the confirmation delay entirely
+    left every other test in this file green, because a network that
+    goes missing sets its clock on the first sweep and can only be
+    declared on a later one, and the reboot case recovers before that
+    second sweep arrives. So nothing here was actually testing the
+    delay; it was testing that two sweeps are needed.
+
+    The reference fleet sweeps every sixty seconds and the delay
+    defaults to sixty, so this shape happens whenever a sweep lands
+    early in the window.
+    """
+    from datetime import timedelta
+
+    coord = await _coord(hass)
+    await coord.async_sweep_wifi()
+
+    supervisor.points = [OTHER]
+    for _ in range(4):
+        await coord.async_sweep_wifi()
+        freezer.tick(timedelta(seconds=10))
+        assert coord.wifi_scan_down_at is None, (
+            "declared before the delay had passed"
+        )
+
+    # Now past it.
+    freezer.tick(timedelta(seconds=30))
+    await coord.async_sweep_wifi()
+    assert coord.wifi_scan_down_at is not None
+
+
 async def test_recovery_closes_the_outage(
     hass: HomeAssistant, supervisor: FakeSupervisor, freezer
 ):
