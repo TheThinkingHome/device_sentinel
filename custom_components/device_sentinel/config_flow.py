@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.20.9 (2026-09-06)
+# File: config_flow.py, Version: 0.20.10 (2026-09-06)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -67,6 +67,7 @@ from .wifi import scan_networks, wireless_interfaces
 
 from .const import (
     CONF_STUDY_HARDWARE,
+    STUDIABLE,
     CONF_WIFI_CONFIRM_SECONDS,
     CONF_WIFI_NETWORKS,
     DEFAULT_WIFI_CONFIRM_SECONDS,
@@ -359,20 +360,12 @@ def _studiable(hass) -> list[str]:
     than left offering to study something already understood, so the
     screen never asks for data nobody needs (#393).
     """
-    wanted = {
-        "tplink_router": "Router: TP-Link",
-        "unifi": "Router: UniFi",
-        "fritz": "Router: FRITZ!Box",
-        "asuswrt": "Router: AsusWRT",
-        "netgear": "Router: NETGEAR",
-        "mikrotik": "Router: MikroTik",
-        "zwave_js": "Z-Wave",
-        "matter": "Matter",
-    }
     present = {
         entry.domain for entry in hass.config_entries.async_entries()
     }
-    return [label for domain, label in wanted.items() if domain in present]
+    return [
+        label for domain, label in STUDIABLE.items() if domain in present
+    ]
 
 
 class DeviceSentinelOptionsFlow(OptionsFlow):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.20.9 (2026-09-06)
+# File: const.py, Version: 0.20.10 (2026-09-06)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1783,6 +1783,27 @@ WIFI_SCAN_SECONDS = 60.0
 # choice and nothing else in this release; what each one gathers is
 # researched and built one at a time.
 CONF_STUDY_HARDWARE = "study_hardware"
+
+# What may be volunteered for study, and nothing else (#393). Only
+# what support is still being built for: TP-Link is supported and
+# proven on hardware, so it is not here, and asking for data nobody
+# needs would waste the one thing this screen spends, which is a
+# person's willingness to help.
+STUDIABLE = {
+    "unifi": "Router: UniFi",
+    "fritz": "Router: FRITZ!Box",
+    "asuswrt": "Router: AsusWRT",
+    "netgear": "Router: NETGEAR",
+    "mikrotik": "Router: MikroTik",
+    "zwave_js": "Z-Wave",
+    "matter": "Matter",
+}
+
+# A study keeps the shapes it has seen, not every reading: one stored
+# example per distinct transition, counted thereafter. Capped so a
+# varied fleet cannot grow the file without bound, and the cap is
+# recorded when reached rather than silently dropping.
+STUDY_SHAPE_CAP = 200
 
 # Worst first, so kinds[0] is the headline and an automation reads it
 # without a template. Unavailable leads because

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.20.9 (2026-09-06)
+# File: coordinator.py, Version: 0.20.10 (2026-09-06)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -212,6 +212,7 @@ from .detect_signal import SignalMixin, _entity_unit, _is_percentage
 from .events import EventMixin
 from .interventions import InterventionMixin
 from .router_ties import RouterTiesMixin
+from .study import StudyMixin
 from .wifi import WifiScanMixin
 from .journal import JournalMixin
 from .messenger import MessengerMixin
@@ -240,6 +241,7 @@ class DeviceSentinelCoordinator(
     InterventionMixin,
     RouterTiesMixin,
     WifiScanMixin,
+    StudyMixin,
 ):
     """Owns Device Sentinel's storage, registry view, and telemetry."""
 
@@ -476,6 +478,12 @@ class DeviceSentinelCoordinator(
         self._wifi_scan_gone_at: float | None = None
         self._wifi_scan_down_at: float | None = None
         self._wifi_heard: set[str] = set()
+        # Volunteered hardware study (#393). Empty unless a toggle is
+        # on, and dropped at the fold when one goes off.
+        self._study_shapes: dict[str, dict[str, dict]] = {}
+        self._study_capped: dict[str, bool] = {}
+        self._study_unsub = None
+        self._study_watching: dict[str, str] = {}
         self._pairing_open_at: dict[str, float] = {}
         self._pending_epoch_wipe: int | None = None
         # Rulings #163 and #167. The first is how many devices this
@@ -1820,6 +1828,7 @@ class DeviceSentinelCoordinator(
         # picked up here, and where no ties exist this is a no-op
         # that subscribes to nothing.
         self._rebuild_wifi_ties()
+        self.resubscribe_study()
 
     @staticmethod
     def _is_last_seen(ent: er.RegistryEntry) -> bool:
@@ -2729,6 +2738,9 @@ class DeviceSentinelCoordinator(
         """Roll today's maxima into the bounded daily set."""
         now = dt_util.utcnow().timestamp()
         self._discard_excluded_records()
+        # Study readings for hardware no longer volunteered go here,
+        # with everything else that ages out at the fold (#393).
+        self.study_fold()
         pushed = 0
         for device_id, record in self.data[DATA_DEVICES].items():
             if record[DEV_TODAY_MAX] is not None:
