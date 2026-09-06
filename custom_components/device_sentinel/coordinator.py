@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.20.6 (2026-09-05)
+# File: coordinator.py, Version: 0.20.8 (2026-09-06)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -211,7 +211,7 @@ from .detect_freeze import FreezeMixin
 from .detect_signal import SignalMixin, _entity_unit, _is_percentage
 from .events import EventMixin
 from .interventions import InterventionMixin
-from .wifi import WifiMixin
+from .router_ties import RouterTiesMixin
 from .journal import JournalMixin
 from .messenger import MessengerMixin
 from .narrative import NarrativeMixin
@@ -237,7 +237,7 @@ class DeviceSentinelCoordinator(
     ProblemListMixin,
     StorageMixin,
     InterventionMixin,
-    WifiMixin,
+    RouterTiesMixin,
 ):
     """Owns Device Sentinel's storage, registry view, and telemetry."""
 
