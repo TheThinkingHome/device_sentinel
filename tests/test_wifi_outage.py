@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.20.6 (2026-09-05)
+# File: tests/test_wifi_outage.py, Version: 0.20.8 (2026-09-06)
 
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim.
 
@@ -33,7 +33,7 @@ from custom_components.device_sentinel.const import (
     WIFI_HOLD_SECONDS,
     WIFI_KEY,
 )
-from custom_components.device_sentinel.wifi import (
+from custom_components.device_sentinel.router_ties import (
     normalize_mac,
     tracker_medium,
 )
