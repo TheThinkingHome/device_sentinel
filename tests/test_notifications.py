@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.15.8 (2026-08-18)
+# File: test_notifications.py, Version: 0.20.9 (2026-09-06)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -185,7 +185,7 @@ async def test_options_menu_branches(hass: HomeAssistant):
     assert result["type"] is FlowResultType.MENU
     assert set(result["menu_options"]) == {
         "exclusions", "battery", "notifications", "signal", "freeze",
-        "advanced",
+        "wifi", "advanced", "extended",
     }
 
 

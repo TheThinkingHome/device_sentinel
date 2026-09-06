@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_exclusions.py, Version: 0.20.5 (2026-09-05)
+# File: test_exclusions.py, Version: 0.20.9 (2026-09-06)
 
 """Exclusion: watched and recorded, but not judged or reported.
 
@@ -1124,7 +1124,9 @@ async def test_options_flow_menu_is_work_ordered(hass: HomeAssistant):
         "battery",
         "signal",
         "freeze",
+        "wifi",
         "advanced",
+        "extended",
     ]
 
 
