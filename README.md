@@ -133,7 +133,7 @@ Device Sentinel generates several reports to help you understand your network's 
 | **MQTT** | Working | Watches the MQTT broker itself; devices clear blame during broker outages. |
 | **ZHA** | Working | Coordinator outage detection. Re-pairs/reconfigures recognized automatically. |
 | **Signal** | Experimental | Weak links charted; alerts held back until logic is field-proven. |
-| **WiFi** | Experimental | Detects Wi-Fi outages from the host adapter. Requires server wireless capability. |
+| **WiFi** | Experimental | Detects Wi-Fi outages from the host adapter, or from supported router integrations (like TP-Link and UniFi). Requires server wireless capability if a supported router is not used. See the [WiFi](https://github.com/TheThinkingHome/device_sentinel/wiki/WiFi) documentation. |
 | **Z-Wave** | Basic Detection | Watches the integration itself. An integration outage or a storm of devices dropping simultaneously is reported as a single event, clearing the individual devices of blame. The running controller is not built yet. See [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) to contribute. See [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) to contribute. |
 
 ## AI Disclosure
