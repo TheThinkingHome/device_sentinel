@@ -25,7 +25,7 @@
 | Zigbee2MQTT      | Working                        | Supports pairing window recognition, bridge and broker outage detection, and bridge/broker sensor integration. Provides a second-opinion availability check alongside freeze verdicts.                   |
 | MQTT             | Working                        | Watches the MQTT broker itself. Supports broker outage detection and broker sensor integration. Devices behind a stopped broker are cleared of blame rather than reported one by one. A broker outage outranks any bridge outage.                                     |
 | ZHA              | Working                        | Supports coordinator outage detection and bridge sensor integration. Devices behind a downed coordinator are cleared of blame rather than reported one by one. Reloads, reconfigures, and re-pairs ride through without being reported as faults, so no pairing window is needed. Confirmed on a second mesh of 41 devices through a coordinator outage, a recovery, a reconfigure and a re-pair. |
-| Z-Wave           | Coordinator features not built | Not started. If interested, see the [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) documentation to contribute.                                                                |
+| Z-Wave           | Coordinator features not built | Every Z-Wave device is watched, and a Z-Wave integration that fails and stays failed is reported as one outage with the devices behind it cleared of blame. The running controller is not read: no bridge sensor, no inclusion-window recognition. If interested, see the [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) documentation to contribute. |
 
 ## The Problem
 
