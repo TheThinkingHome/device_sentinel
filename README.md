@@ -134,7 +134,7 @@ Device Sentinel generates several reports to help you understand your network's 
 | **ZHA** | Working | Coordinator outage detection. Re-pairs/reconfigures recognized automatically. |
 | **Signal** | Experimental | Weak links charted; alerts held back until logic is field-proven. |
 | **WiFi** | Experimental | Detects Wi-Fi outages from the host adapter. Requires server wireless capability. |
-| **Z-Wave** | Coordinator features not built | A Z-Wave integration that fails and stays failed is reported as one outage, with the devices behind it cleared of blame; the running controller is not read. See [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) to contribute. |
+| **Z-Wave** | Basic Detection | Watches the integration itself. An integration outage or a storm of devices dropping simultaneously is reported as a single event, clearing the individual devices of blame. The running controller is not built yet. See [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) to contribute. See [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) to contribute. |
 
 ## AI Disclosure
 
