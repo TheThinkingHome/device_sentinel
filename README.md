@@ -49,7 +49,7 @@ And two warnings that arrive *before* the failure:
 | Verdict | What it means | Why you care |
 |---|---|---|
 | **Low battery** | The level falls past your threshold (default 20%). | Warning while you can still act. |
-| **Falling battery** | The cell is projected to reach empty inside your chosen horizon, based on how fast it is *actually* dropping. | A cell at 24% falling steadily can have less life left than one sitting at 80% that hasn't moved in a month. |
+| **Falling battery** | The cell is projected to reach empty inside your chosen horizon, based on how fast it is *actually* dropping. | A lithium coin cell at 82% that is falling steadily can be dead within days, while an alkaline cell sitting at 24% that hasn't moved in a month keeps going. |
 | **Weak or railed signal** | A link spending much of its day worse than that device has ever normally run, or stuck at a "no reading" value. | Links degrade before they fail. |
 
 ![Device Sentinel battery decay beside a device's radio link](https://xeazy.com/wp-content/uploads/Battery-Decay-Signal-Dwell.png)
@@ -133,8 +133,8 @@ Device Sentinel generates several reports to help you understand your network's 
 | **MQTT** | Working | Watches the MQTT broker itself; devices clear blame during broker outages. |
 | **ZHA** | Working | Coordinator outage detection. Re-pairs/reconfigures recognized automatically. |
 | **Signal** | Experimental | Weak links charted; alerts held back until logic is field-proven. |
-| **WiFi** | Experimental | Detects Wi-Fi outages two ways: the server's own wireless adapter listens for your networks, and supported router integrations, currently TP-Link, UniFi, and compatibles, tie devices to the network so an outage names what went down with it. Either path works alone; the adapter needs server wireless capability. |
-| **Z-Wave** | Coordinator features not built | A Z-Wave integration that fails and stays failed is reported as one outage, with the devices behind it cleared of blame; the running controller is not read. See [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) to contribute. |
+| **WiFi** | Experimental | Detects Wi-Fi outages from the host adapter, or from supported router integrations (like TP-Link and UniFi). Requires server wireless capability if a supported router is not used. See the [WiFi](https://github.com/TheThinkingHome/device_sentinel/wiki/WiFi) documentation. |
+| **Z-Wave** | Basic Detection | Watches the integration itself. An integration outage or a storm of devices dropping simultaneously is reported as a single event, clearing the individual devices of blame. The running controller is not built yet. See [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) to contribute. See [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) to contribute. |
 
 ## AI Disclosure
 
