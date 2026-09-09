@@ -57,7 +57,7 @@ from custom_components.device_sentinel.const import (
     STORAGE_KEY,
     STORM_DEVICE_THRESHOLD,
     STORM_EXEMPT_PER_HOUR,
-    DEFAULT_TAINT_FLOOR_MINUTES,
+    TAINT_FLOOR_MINUTES,
 )
 
 from tests.helpers import register_fleet, setup_coordinator, setup_entry
@@ -244,7 +244,7 @@ async def test_long_outage_taints_short_blip_does_not(
     # Long outage: past the debounce floor -> taint applies, gap
     # excluded. This device is unarmed (no learned window), so its
     # debounce is the floor alone (#137); the outage must exceed it.
-    floor = DEFAULT_TAINT_FLOOR_MINUTES * 60
+    floor = TAINT_FLOOR_MINUTES * 60
     freezer.tick(timedelta(seconds=20))
     hass.states.async_set(eid, "unavailable")
     await hass.async_block_till_done()
@@ -267,7 +267,7 @@ async def test_taint_log_reports_bad_state(
 
     hass.states.async_set(eid, "unavailable")
     await hass.async_block_till_done()
-    freezer.tick(timedelta(seconds=DEFAULT_TAINT_FLOOR_MINUTES * 60 + 60))
+    freezer.tick(timedelta(seconds=TAINT_FLOOR_MINUTES * 60 + 60))
     hass.states.async_set(eid, "-42")
     await hass.async_block_till_done()
 
@@ -306,7 +306,7 @@ async def test_taint_episode_dedupes_across_siblings(
     for eid in entity_ids:
         hass.states.async_set(eid, "unavailable")
     await hass.async_block_till_done()
-    freezer.tick(timedelta(seconds=DEFAULT_TAINT_FLOOR_MINUTES * 60 + 120))
+    freezer.tick(timedelta(seconds=TAINT_FLOOR_MINUTES * 60 + 120))
     for eid in entity_ids:
         hass.states.async_set(eid, "2")
     await hass.async_block_till_done()

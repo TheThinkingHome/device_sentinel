@@ -23,7 +23,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
-    CONF_INCIDENT_SETTLE,
     DATA_DEVICES,
     DATA_INCIDENTS,
     DEV_DAILY_MAX,
@@ -169,30 +168,6 @@ async def test_another_device_is_not_swallowed(hass: HomeAssistant):
 
     assert len(_rows(coord, first.id)) == 2
     assert len(_rows(coord, second.id)) == 1
-
-
-async def test_zero_switches_the_rule_off(hass: HomeAssistant):
-    """A person who wants every crossing recorded can have it."""
-    device, _ = register_device(hass, "c6", "Raw Device")
-    coord = await setup_coordinator(hass, {CONF_INCIDENT_SETTLE: 0})
-
-    coord._record_incident(
-        device.id, "Raw Device", TODO_KIND_LOW_BATTERY, INCIDENT_OPENED
-    )
-    coord._record_incident(
-        device.id,
-        "Raw Device",
-        TODO_KIND_LOW_BATTERY,
-        INCIDENT_RESOLVED,
-        duration=3.0,
-    )
-    coord._record_incident(
-        device.id, "Raw Device", TODO_KIND_LOW_BATTERY, INCIDENT_OPENED
-    )
-
-    assert len(_rows(coord, device.id)) == 3
-
-
 async def test_a_re_description_does_not_reach_the_phone(
     hass: HomeAssistant,
 ):

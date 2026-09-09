@@ -137,9 +137,6 @@ async def test_every_count_sensor_carries_a_unit(hass: HomeAssistant):
         "low_batteries",
         "falling_batteries",
         "frozen_devices",
-        "tracked_signals",
-        "tracked_batteries",
-        "tracked_devices",
     ):
         eid = reg.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_{suffix}")
         if eid and reg.async_get(eid).disabled:
@@ -149,9 +146,6 @@ async def test_every_count_sensor_carries_a_unit(hass: HomeAssistant):
     expected = {
         "sensor.device_sentinel_devices_watched": UNIT_DEVICES,
         "sensor.device_sentinel_devices_learned": UNIT_DEVICES,
-        "sensor.device_sentinel_signal_tracked": UNIT_SIGNALS,
-        "sensor.device_sentinel_battery_tracked": UNIT_BATTERIES,
-        "sensor.device_sentinel_device_tracked": UNIT_DEVICES,
         "sensor.device_sentinel_signal_rails": UNIT_SIGNALS,
         "sensor.device_sentinel_signal_weak": UNIT_SIGNALS,
         "sensor.device_sentinel_battery_falling": UNIT_BATTERIES,

@@ -32,7 +32,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.device_sentinel.const import (
     CONF_BRIEF_TARGETS,
     CONF_COALESCE_MINUTES,
-    CONF_EPISODE_SHARE,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_NORMAL_PRIORITY_TARGETS,
     CONF_PERSISTENT_ENABLED,
@@ -41,9 +40,8 @@ from custom_components.device_sentinel.const import (
     CONF_QUIET_START,
     CONF_REMINDER_MODE,
     CONF_REMINDER_TIME,
-    CONF_SETTLE_SHARE,
-    DEFAULT_EPISODE_SHARE_PCT,
-    DEFAULT_SETTLE_SHARE_PCT,
+    EPISODE_SHARE_PCT,
+    SETTLE_SHARE_PCT,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
@@ -141,31 +139,28 @@ async def test_advanced_stores_and_coordinator_reads_live(
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            CONF_SETTLE_SHARE: 50,
-            CONF_EPISODE_SHARE: 30,
             CONF_COALESCE_MINUTES: 5,
         },
     )
     assert result["type"] is FlowResultType.MENU
     coord = entry.runtime_data
-    assert coord.episode_share == 0.30
     assert coord.coalesce_seconds == 300
 
 
 async def test_advanced_defaults_match_the_shipped_constants(
     hass: HomeAssistant,
 ):
-    """An untouched install behaves exactly as 0.7.0 did."""
+    """An untouched install behaves exactly as 0.7.0 did.
+
+    The two shares are constants since 0.20.11 rather than settings,
+    so what is asserted here is that the constant reaches the
+    coordinator, not that an option does (ruling #394).
+    """
     entry = await setup_entry(hass)
     coord = entry.runtime_data
-    assert DEFAULT_SETTLE_SHARE_PCT == 30
-    assert coord.episode_share == DEFAULT_EPISODE_SHARE_PCT / 100.0
+    assert SETTLE_SHARE_PCT == 30
+    assert coord.episode_share == EPISODE_SHARE_PCT / 100.0
     assert coord.coalesce_seconds == 900
-
-
-async def test_episode_share_is_clamped(hass: HomeAssistant):
-    entry = await setup_entry(hass, {CONF_EPISODE_SHARE: 500})
-    assert entry.runtime_data.episode_share == 0.90
 
 
 # ==================================================================

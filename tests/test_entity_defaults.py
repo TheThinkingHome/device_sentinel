@@ -52,9 +52,6 @@ EXPECTED_DEFAULTS = {
     # sensor nobody can find does not answer it either. Diagnostic
     # category, so they sit under the device page's own heading
     # rather than on the dashboard.
-    "sensor.device_sentinel_data_freeze": True,
-    "sensor.device_sentinel_data_battery": True,
-    "sensor.device_sentinel_data_signal": True,
     "todo.device_sentinel_problem_list": True,
     "button.device_sentinel_enable_signals": True,
     "button.device_sentinel_enable_last_seen": True,
@@ -63,9 +60,6 @@ EXPECTED_DEFAULTS = {
     "button.device_sentinel_maintenance_mode": True,
     # Dashboard-builder detail: off, the problem list carries what is
     # wrong and the brief carries the day.
-    "sensor.device_sentinel_signal_tracked": False,
-    "sensor.device_sentinel_battery_tracked": False,
-    "sensor.device_sentinel_device_tracked": False,
     "sensor.device_sentinel_signal_rails": False,
     "sensor.device_sentinel_signal_weak": False,
     "sensor.device_sentinel_battery_low": False,
@@ -183,9 +177,7 @@ async def test_the_count_sensors_split_found_from_watched(
     reg = er.async_get(hass)
     found = ("frozen_devices", "low_batteries", "falling_batteries",
              "signal_weak", "signal_rails")
-    watched = ("classification", "tracked_signals",
-               "tracked_batteries", "tracked_devices",
-               "coverage", "learning_progress")
+    watched = ("classification", "coverage", "learning_progress")
     for key in found:
         eid = reg.async_get_entity_id(
             "sensor", DOMAIN, f"{entry.entry_id}_{key}"

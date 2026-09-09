@@ -14,7 +14,7 @@ estimators, and the confirmed rail is three consecutive days on which
 the device spoke and said nothing but the fill value, read as a zero
 reading count beside a rail count above zero (ruling #322). This file
 holds the floor line and how it renders, the rail detector, signal
-muting as recorded-not-reported, and the tracked count surface.
+muting as recorded-not-reported.
 """
 
 from homeassistant.core import HomeAssistant
@@ -40,7 +40,6 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_VALUE,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
-    UNIT_SIGNALS,
 )
 from custom_components.device_sentinel.detect_signal import (
     SignalMixin,
@@ -428,45 +427,6 @@ async def test_the_erased_fields_are_swept_at_load(
             assert key not in alt
     # The surviving series is untouched.
     assert reloaded[DEV_SIGNAL_DAILY_P5] == [84.0, 97.0]
-
-
-# ------------------------------------------------ the tracked surface
-
-async def _enable_tracked_signals(hass, entry):
-    """Turn on the tracked-signals sensor, disabled by default under
-    #239, so the two tests below have a state to read."""
-    reg = er.async_get(hass)
-    eid = reg.async_get_entity_id(
-        "sensor", "device_sentinel", f"{entry.entry_id}_tracked_signals"
-    )
-    reg.async_update_entity(eid, disabled_by=None)
-    await hass.config_entries.async_reload(entry.entry_id)
-    await hass.async_block_till_done()
-
-
-async def test_tracked_signals_sensor_exists(hass: HomeAssistant):
-    entry = await setup_entry(hass)
-    await _enable_tracked_signals(hass, entry)
-    state = hass.states.get("sensor.device_sentinel_signal_tracked")
-    assert state is not None
-    assert state.attributes["unit_of_measurement"] == UNIT_SIGNALS
-
-
-async def test_tracked_counts_armed_devices_and_splits_by_scale(
-    hass: HomeAssistant,
-):
-    device = _register_device(hass, "tracked")
-    entry = await setup_entry(hass)
-    await _enable_tracked_signals(hass, entry)
-    coord = entry.runtime_data
-    record = coord.data["devices"][device.id]
-    record[DEV_SIGNAL_DAILY_P5] = [80, 96, 88, 80, 104, 92, 80]
-    coord._notify()
-    await hass.async_block_till_done()
-    state = hass.states.get("sensor.device_sentinel_signal_tracked")
-    assert int(state.state) == 1
-    assert state.attributes["lqi"] == 1
-    assert state.attributes["rssi"] == 0
 
 
 def _sig_entry(entity_id, device_class=None, unit=None, name=None):

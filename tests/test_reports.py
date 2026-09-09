@@ -44,6 +44,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.device_sentinel.const import (
+    DEFAULT_LOW_THRESHOLD,
     CONF_BATTERY_MUTED_DEVICES,
     CONF_MUTED_DEVICES,
     CONF_FREEZE_MUTED_DEVICES,
@@ -373,7 +374,7 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     # The trim word left with the ladder (ruling #322).
     assert "SIGNAL |" in header
     assert "GAPS (K=" in header
-    assert "BAT LEVEL (floor 20%)" in header
+    assert f"BAT LEVEL (floor {DEFAULT_LOW_THRESHOLD}%)" in header
     # The retired columns are gone.
     assert "LINE" not in header
     assert "FAMILY" not in header

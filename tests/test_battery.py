@@ -29,6 +29,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     CONF_LOW_THRESHOLD,
+    DEFAULT_LOW_THRESHOLD,
     DATA_DEVICES,
     DEFAULT_RETENTION_DAYS,
     DEV_BATTERY_DAILY,
@@ -111,11 +112,16 @@ async def test_binary_fallback_and_on_is_low(hass: HomeAssistant):
 
 
 async def test_threshold_and_hysteresis(hass: HomeAssistant):
-    """Flag at or below 20; clear only above 22 (threshold + 2)."""
+    """Flag at or below 20; clear only above 22 (threshold + 2).
+
+    The threshold is set here rather than taken from the default,
+    which is fifteen since 0.20.11. What is under test is the
+    hysteresis, so the number it hinges on is stated (ruling #394).
+    """
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device, eids = _battery_device(hass, source, 3)
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 20})
     # Threshold mechanics, not restart behaviour: the startup
     # window the harness opens is shut so flags apply at once (#346).
     coord._grace_until = 0.0
@@ -236,7 +242,7 @@ async def test_list_shape_and_order(hass: HomeAssistant):
     assert row["level"] == 10.0
     assert row["since"] is not None
     assert row["area"] == "Unassigned"
-    assert state.attributes["low_threshold"] == 20.0
+    assert state.attributes["low_threshold"] == DEFAULT_LOW_THRESHOLD
     assert state.attributes["clear_margin"] == 2
 
 

@@ -32,6 +32,9 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
+    CONF_LOW_THRESHOLD,
+    LEGACY_LOW_THRESHOLD,
+    RETIRED_SLIDER_KEYS,
     DATA_DEVICES,
     DATA_LAST_VERSION,
     DATA_SYSTEM_EVENTS,
@@ -393,3 +396,58 @@ async def test_a_row_written_after_the_rename_is_left_alone(
 
     events = coordinator.data[DATA_SYSTEM_EVENTS]
     assert events[0][SYS_DETAIL] == "excluded_integrations"
+
+
+# ==================================================================
+# Step 4: the retired sliders, and the threshold that is pinned.
+# ==================================================================
+
+
+async def test_the_retired_sliders_are_dropped(hass: HomeAssistant):
+    """Five keys go, and a hand-edited value cannot outlive them.
+
+    They were sliders while their numbers were guesses. The numbers
+    settled, so the code states them as constants, and a stored value
+    left behind would make an entry behave differently from what the
+    code says (ruling #394).
+    """
+    entry = await _migrated(
+        hass,
+        {
+            "settle_share_pct": 70,
+            "episode_share_pct": 20,
+            "incident_settle_seconds": 0,
+            "taint_floor_minutes": 45,
+            "taint_share_pct": 80,
+            CONF_LOW_THRESHOLD: 25,
+        },
+        minor_version=3,
+    )
+
+    for key in RETIRED_SLIDER_KEYS:
+        assert key not in entry.options, key
+    assert entry.minor_version == OPTIONS_MINOR_VERSION
+
+
+async def test_a_threshold_nobody_set_is_pinned_at_twenty(
+    hass: HomeAssistant,
+):
+    """The new default is for new installs, not for existing houses.
+
+    Twenty was the default until 0.20.11 and fifteen is the default
+    after it. An entry that never stored one would otherwise start
+    judging batteries differently on upgrade, without its owner
+    asking for that (ruling #394).
+    """
+    entry = await _migrated(hass, {}, minor_version=3)
+
+    assert entry.options[CONF_LOW_THRESHOLD] == LEGACY_LOW_THRESHOLD
+
+
+async def test_a_threshold_somebody_chose_is_left_alone(
+    hass: HomeAssistant,
+):
+    """A stored value is a decision and the migration never edits it."""
+    entry = await _migrated(hass, {CONF_LOW_THRESHOLD: 12}, minor_version=3)
+
+    assert entry.options[CONF_LOW_THRESHOLD] == 12

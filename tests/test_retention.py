@@ -32,10 +32,8 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.device_sentinel.const import (
     BRIEF_KEEP_DAYS,
     CONF_COALESCE_MINUTES,
-    CONF_EPISODE_SHARE,
     CONF_LOW_THRESHOLD,
     CONF_RETENTION_DAYS,
-    CONF_SETTLE_SHARE,
     DAILY_MAX_KEEP,
     DATA_EPISODES,
     DATA_INCIDENTS,
@@ -522,8 +520,6 @@ async def test_the_slider_reaches_the_advanced_screen(
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            CONF_SETTLE_SHARE: 30,
-            CONF_EPISODE_SHARE: 50,
             CONF_COALESCE_MINUTES: 15,
             CONF_RETENTION_DAYS: 180,
         },

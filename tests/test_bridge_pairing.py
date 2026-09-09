@@ -45,7 +45,7 @@ from custom_components.device_sentinel.const import (
     BRIDGE_UNKNOWN,
     DATA_DEVICES,
     DATA_EPISODES,
-    DEFAULT_TAINT_FLOOR_MINUTES,
+    TAINT_FLOOR_MINUTES,
     DEV_DAILY_MAX,
     DEV_LAST_ACTIVITY,
     DEV_TAINTED,
@@ -552,7 +552,7 @@ async def test_an_unarmed_device_uses_the_floor(
         freezer,
         eid,
         silent_hours=0.5,
-        unavailable_seconds=DEFAULT_TAINT_FLOOR_MINUTES * 60 - 120,
+        unavailable_seconds=TAINT_FLOOR_MINUTES * 60 - 120,
     )
 
     # Five minutes < the ten-minute floor, so no taint: learned.

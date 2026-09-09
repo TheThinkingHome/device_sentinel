@@ -49,7 +49,6 @@ from custom_components.device_sentinel.const import (
     CONF_QUIET_START,
     CONF_REMINDER_MODE,
     CONF_REMINDER_TIME,
-    CONF_SETTLE_SHARE,
     DATA_DEVICES,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
@@ -786,7 +785,7 @@ async def test_the_delay_is_a_share_of_the_learned_gap(
     """Thirty percent of an hourly gap is eighteen minutes, and a
     device with nothing learned has no gap to take a share of."""
     device, _eid = _debounce_device(hass, "dl1", "Delay Device")
-    entry = await setup_entry(hass, {CONF_SETTLE_SHARE: 30})
+    entry = await setup_entry(hass, {})
     coord = entry.runtime_data
     record = coord.data[DATA_DEVICES][device.id]
 
@@ -807,7 +806,6 @@ async def test_a_learned_fault_waits_then_is_announced(
         hass,
         {
             CONF_HIGH_PRIORITY_TARGETS: ["notify.phone"],
-            CONF_SETTLE_SHARE: 30,
         },
     )
     coord = entry.runtime_data
@@ -840,7 +838,6 @@ async def test_a_fault_that_heals_inside_the_hold_is_never_announced(
         hass,
         {
             CONF_HIGH_PRIORITY_TARGETS: ["notify.phone"],
-            CONF_SETTLE_SHARE: 30,
         },
     )
     coord = entry.runtime_data
@@ -878,7 +875,6 @@ async def test_an_acknowledged_fault_is_dropped_at_maturity(
         hass,
         {
             CONF_HIGH_PRIORITY_TARGETS: ["notify.phone"],
-            CONF_SETTLE_SHARE: 30,
         },
     )
     coord = entry.runtime_data
@@ -910,7 +906,6 @@ async def test_a_device_with_nothing_learned_is_announced_at_once(
         hass,
         {
             CONF_HIGH_PRIORITY_TARGETS: ["notify.phone"],
-            CONF_SETTLE_SHARE: 30,
         },
     )
     coord = entry.runtime_data
