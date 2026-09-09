@@ -21,7 +21,7 @@ Home Assistant only reacts to what your devices tell it. When a device quietly d
 * A door sensor dies while the door is closed. Your security automations happily believe that door is secure, indefinitely.
 * The batteries in your smart lock have been draining for a month. Nothing warns you until you are standing outside, locked out.
 
-The early warning signs are usually there—in battery levels and radio signal data—but they are ignored because a battery reading of 20% means "two weeks left" on one device and "dead this afternoon" on another. 
+The early warning signs are usually there, in battery levels and radio signal data, but they are ignored because a battery reading of 20% means "two weeks left" on one device and "dead this afternoon" on another. 
 
 ## The Solution
 
@@ -31,7 +31,7 @@ There are no watch lists to maintain and no arbitrary timeouts to assign. A chat
 
 It applies that same logic to your batteries and radio links. A radio link is judged against the baseline *that specific device* normally holds. A battery is judged twice: once against a flat level you choose, and again against how fast it is actually draining. 
 
-If a battery is projected to reach empty inside your chosen horizon—say, thirty days—it is flagged, even if it still reads 80%.
+If a battery is projected to reach empty inside your chosen horizon, say thirty days, it is flagged, even if it still reads 80%.
 
 ### What It Catches
 
@@ -68,7 +68,7 @@ Every fault lands in one Home Assistant to-do list. A device that is both frozen
 When a coordinator, broker, or Wi-Fi network goes down, every device behind it goes quiet. Device Sentinel reports the one failure you can fix, rather than giving you sixty separate alerts for sixty silent devices. 
 
 **Alerts That Respect Your Evening**
-Live push notifications are sent for real faults, but quiet hours hold them overnight. A daily brief—delivered by email or push on your schedule—summarizes what happened and highlights devices that keep failing for no clear reason.
+Live push notifications are sent for real faults, but quiet hours hold them overnight. A daily brief, delivered by email or push on your schedule, summarizes what happened and highlights devices that keep failing for no clear reason.
 
 ![A Device Sentinel daily brief, listing the devices that need attention and what happened over the last day](https://xeazy.com/wp-content/uploads/daily_brief.webp)
 
@@ -134,7 +134,7 @@ Device Sentinel generates several reports to help you understand your network's 
 | **ZHA** | Working | Coordinator outage detection. Re-pairs/reconfigures recognized automatically. |
 | **Signal** | Experimental | Weak links charted; alerts held back until logic is field-proven. |
 | **WiFi** | Experimental | Detects Wi-Fi outages from the host adapter, or from supported router integrations (like TP-Link and UniFi). Requires server wireless capability if a supported router is not used. See the [WiFi](https://github.com/TheThinkingHome/device_sentinel/wiki/WiFi) documentation. |
-| **Z-Wave** | Basic Detection | Watches the integration itself. An integration outage or a storm of devices dropping simultaneously is reported as a single event, clearing the individual devices of blame. The running controller is not built yet. See [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) to contribute. See [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) to contribute. |
+| **Z-Wave** | Basic Detection | Watches the integration itself. An integration outage or a storm of devices dropping simultaneously is reported as a single event, clearing the individual devices of blame. The running controller is not built yet. See [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) to contribute. |
 
 ## AI Disclosure
 
