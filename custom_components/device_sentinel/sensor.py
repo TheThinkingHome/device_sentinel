@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.20.9 (2026-09-06)
+# File: sensor.py, Version: 0.20.11 (2026-09-08)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -52,9 +52,6 @@ from . import DeviceSentinelConfigEntry
 from .const import (
     SIGNAL_SCALE_LQI,
     SIGNAL_SCALE_RSSI,
-    AREA_BATTERY,
-    AREA_FREEZE,
-    AREA_SIGNAL,
     ATTR_AWAITING_BATTERY,
     ATTR_AWAITING_LAST_SEEN,
     ATTR_AWAITING_SIGNAL,
@@ -80,17 +77,11 @@ from .const import (
     BROKER_SENSOR_NAME,
     WIFI_SENSOR_NAME,
     BROKER_STATES,
-    DATA_STATE_ARMED,
-    DATA_STATE_LEARNED,
-    DATA_STATE_TRACKING,
     DOMAIN,
     SENTINEL_TYPE_BRIDGE,
     SENTINEL_TYPE_BROKER,
     SENTINEL_TYPE_CLASSIFICATION,
     SENTINEL_TYPE_COVERAGE,
-    SENTINEL_TYPE_DATA_BATTERY,
-    SENTINEL_TYPE_DATA_FREEZE,
-    SENTINEL_TYPE_DATA_SIGNAL,
     SENTINEL_TYPE_FALLING_BATTERIES,
     SENTINEL_TYPE_FROZEN_DEVICES,
     SENTINEL_TYPE_LEARNING,
@@ -99,9 +90,6 @@ from .const import (
     SENTINEL_TYPE_SIGNAL_RAILS,
     SENTINEL_TYPE_SIGNAL_WEAK,
     SENTINEL_TYPE_STATUS,
-    SENTINEL_TYPE_TRACKED_BATTERIES,
-    SENTINEL_TYPE_TRACKED_DEVICES,
-    SENTINEL_TYPE_TRACKED_SIGNALS,
     STATUS_LEARNING,
     STATUS_PROBLEM,
     STATUS_WATCHING,
@@ -124,13 +112,7 @@ async def async_setup_entry(
             DeviceSentinelStatusSensor(coordinator),
             DeviceSentinelCoverageSensor(coordinator),
             DeviceSentinelLearningSensor(coordinator),
-            DeviceSentinelDataFreezeSensor(coordinator),
-            DeviceSentinelDataBatterySensor(coordinator),
-            DeviceSentinelDataSignalSensor(coordinator),
             DeviceSentinelClassificationSensor(coordinator),
-            DeviceSentinelTrackedSignalsSensor(coordinator),
-            DeviceSentinelTrackedBatteriesSensor(coordinator),
-            DeviceSentinelTrackedDevicesSensor(coordinator),
             DeviceSentinelSignalRailsSensor(coordinator),
             DeviceSentinelSignalWeakSensor(coordinator),
             DeviceSentinelLowBatteriesSensor(coordinator),
@@ -378,96 +360,6 @@ class DeviceSentinelLearningSensor(DeviceSentinelBaseSensor):
         return {**self._identity(), **self._coordinator.learning_buckets}
 
 
-class DeviceSentinelDataSensor(DeviceSentinelBaseSensor):
-    """Base for the three Data sensors (ruling #255).
-
-    Each reports how much complete history stands behind one area of
-    judgment. Complete is the operative word: when a release changes
-    what an area records, the count restarts, because a set that
-    gained a series yesterday has one day of complete history however
-    deep its older members run. Finding this out used to mean reading
-    diagnostics.
-
-    The state counts while the area is still filling and becomes a
-    word when it is full. Freeze and signal have two milestones, the
-    seven-day arming and the judgment window that follows (fourteen
-    days of rhythm, thirty of signal floor), so their middle phase
-    says Armed and keeps counting. Battery's slope reads a fixed
-    seven days and has no second milestone, so it is a two-phase
-    count.
-    """
-
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    area: str = ""
-    full_word: str = DATA_STATE_LEARNED
-
-    @property
-    def _depth(self) -> dict[str, Any]:
-        """Return this area's depth reading."""
-        return self._coordinator.recording_depth[self.area]
-
-    @property
-    def native_value(self) -> str:
-        """Return the count, or the word once the set is full."""
-        depth = self._depth
-        days = depth["complete_days"]
-        target = depth["learned_days"] or depth["arming_days"]
-        if days >= target:
-            return self.full_word
-        if depth["armed"]:
-            return f"{DATA_STATE_ARMED}, {days} of {target}"
-        return f"{days} of {depth['arming_days']}"
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the depth detail, including the fleet's volume."""
-        depth = self._depth
-        return {
-            **self._identity(),
-            "complete_days": depth["complete_days"],
-            "target_days": (
-                depth["learned_days"]
-                if depth["armed"] and depth["learned_days"]
-                else depth["arming_days"]
-            ),
-            "armed": depth["armed"],
-            "device_days": depth["device_days"],
-            "series": depth["series"],
-            "retention_days": depth["retention_days"],
-        }
-
-
-class DeviceSentinelDataFreezeSensor(DeviceSentinelDataSensor):
-    """Complete freeze history: the rhythm behind every freeze
-    verdict."""
-
-    _attr_name = "Data: Freeze"
-    _attr_icon = "mdi:database-clock-outline"
-    area = AREA_FREEZE
-    sentinel_type = SENTINEL_TYPE_DATA_FREEZE
-
-
-class DeviceSentinelDataBatterySensor(DeviceSentinelDataSensor):
-    """Complete battery history: the levels behind the falling
-    trend."""
-
-    _attr_name = "Data: Battery"
-    _attr_icon = "mdi:database-clock-outline"
-    area = AREA_BATTERY
-    full_word = DATA_STATE_TRACKING
-    sentinel_type = SENTINEL_TYPE_DATA_BATTERY
-
-
-class DeviceSentinelDataSignalSensor(DeviceSentinelDataSensor):
-    """Complete signal history: the daily series behind every floor
-    and line."""
-
-    _attr_name = "Data: Signal"
-    _attr_icon = "mdi:database-clock-outline"
-    area = AREA_SIGNAL
-    sentinel_type = SENTINEL_TYPE_DATA_SIGNAL
-
-
 class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):
     """Soak diagnostic: the per-integration classification breakdown."""
 
@@ -497,100 +389,6 @@ class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):
         return {
             **self._identity(),
             "by_integration": self._coordinator.classification_breakdown,
-        }
-
-
-class DeviceSentinelTrackedSignalsSensor(DeviceSentinelBaseSensor):
-    """How many devices we watch for signal, after signal muting.
-
-    A device is tracked once it has a learned floor and so a live
-    danger line, minus the signal-muted. The signal member of the
-    Tracked family. The scale split and the still-learning count ride
-    in attributes.
-    """
-
-    _attr_name = "Signal: Tracked"
-    _attr_icon = "mdi:access-point-network"
-    _attr_native_unit_of_measurement = UNIT_SIGNALS
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_entity_registry_enabled_default = False
-    sentinel_type = SENTINEL_TYPE_TRACKED_SIGNALS
-
-    @property
-    def native_value(self) -> int:
-        """Return how many devices we watch for signal."""
-        return self._coordinator.signal_tracked_count
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the scale split and the still-learning count."""
-        counts = self._coordinator.signal_tracked
-        return {
-            **self._identity(),
-            "lqi": counts["lqi"],
-            "rssi": counts["rssi"],
-            "still_learning": counts["learning"],
-        }
-
-
-class DeviceSentinelTrackedBatteriesSensor(DeviceSentinelBaseSensor):
-    """How many devices we watch for battery, after battery muting.
-
-    A device is battery-tracked when a battery entity was elected for
-    it and it is not battery-muted. The battery member of the
-    Tracked family. The devices ride in attributes.
-    """
-
-    _attr_name = "Battery: Tracked"
-    _attr_icon = "mdi:battery-heart-outline"
-    _attr_native_unit_of_measurement = UNIT_BATTERIES
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_entity_registry_enabled_default = False
-    sentinel_type = SENTINEL_TYPE_TRACKED_BATTERIES
-
-    @property
-    def native_value(self) -> int:
-        """Return how many devices we watch for battery."""
-        return self._coordinator.battery_tracked_count
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the tracked devices."""
-        return {
-            **self._identity(),
-            "devices": self._coordinator.battery_tracked_list,
-        }
-
-
-class DeviceSentinelTrackedDevicesSensor(DeviceSentinelBaseSensor):
-    """How many devices are eligible for freeze detection.
-
-    A device with a learned rhythm, minus the global device muting.
-    The freeze member of the Tracked family: the set freeze detection
-    judges. The devices ride in attributes.
-    """
-
-    _attr_name = "Device: Tracked"
-    _attr_icon = "mdi:heart-pulse"
-    _attr_native_unit_of_measurement = UNIT_DEVICES
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_entity_registry_enabled_default = False
-    sentinel_type = SENTINEL_TYPE_TRACKED_DEVICES
-
-    @property
-    def native_value(self) -> int:
-        """Return how many devices are freeze-eligible."""
-        return self._coordinator.freeze_tracked_count
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the freeze-eligible devices."""
-        return {
-            **self._identity(),
-            "devices": self._coordinator.freeze_tracked_list,
         }
 
 

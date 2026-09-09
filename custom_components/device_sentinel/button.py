@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: button.py, Version: 0.16.1 (2026-08-19)
+# File: button.py, Version: 0.20.11 (2026-09-08)
 
 """Button platform for the Device Sentinel integration.
 
@@ -11,6 +11,16 @@ Three enable-assist buttons, one per diagnostic kind: signals, last
 seen, and battery. Each walks the entity registry for entities of its
 kind that are turned off on a watched device, and turns them on,
 whoever turned them off (ruling #302).
+
+Last seen is the one that changes the most. A door sensor's own
+entities move twice a day, so with only those enabled the learned
+rhythm is measured in hours and a sensor that dies just after the
+door closes stays unnoticed until the next opening. Its `last_seen`
+entity is the coordinator's own record of contact, updated every few
+minutes, and it carries a timestamp no republished state can fake.
+Turning it on moves that device from a twelve-hour window to a
+minutes-long one. Anything written for a reader should lead with
+that rather than listing three buttons evenly.
 
 Three buttons rather than one so a user can enable exactly the
 diagnostic they want. Battery is its own match rule (a percentage

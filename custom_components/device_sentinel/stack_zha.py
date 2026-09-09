@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.19.2 (2026-08-28)
+# File: stack_zha.py, Version: 0.20.11 (2026-09-08)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -166,7 +166,17 @@ class ZhaCoordinatorReader:
     def pairing_active_within(
         self, grace_seconds: float, now: float
     ) -> bool:
-        """Return False: no pairing window is observed on this stack."""
+        """Return False: no pairing window is observed on this stack.
+
+        A window is not the only way a person's hand is recognized
+        here. ZHA announces each device it re-pairs, reconfigures or
+        removes, the coordinator records that device as handled, and
+        the silence around it is discarded per device with no button
+        pressed. Anything written for a reader should say that rather
+        than sending them to Maintenance Mode for work ZHA already
+        announces; Maintenance Mode covers what it does not, a
+        battery pull or a power cycle.
+        """
         return False
 
     @property

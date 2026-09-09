@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: trim.py, Version: 0.16.7 (2026-08-20)
+# File: trim.py, Version: 0.20.11 (2026-09-08)
 
 """Erasing one device's or one integration's learned history.
 
@@ -32,10 +32,11 @@ what the fold left.
 It erases history and nothing else. Muting and exclude entries
 survive, because a trimmed device is rediscovered within seconds and
 trimming data is not a statement about wanting the device gone
-(ruling #307). Bridge, broker, pairing and storm state survive,
-because they describe the house's plumbing rather than a device's
-learned history, and clearing them would fabricate gaps in the
-attribution windows other devices depend on.
+(ruling #307). Every kind of plumbing state survives, bridge, broker,
+Wi-Fi and integration outages alongside pairing and storm state,
+because they describe the house rather than a device's learned
+history, and clearing them would fabricate gaps in the attribution
+windows other devices depend on.
 """
 
 from __future__ import annotations

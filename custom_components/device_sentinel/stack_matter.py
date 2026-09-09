@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_matter.py, Version: 0.12.3 (2026-08-05)
+# File: stack_matter.py, Version: 0.20.11 (2026-09-08)
 
 """Matter: everything Device Sentinel knows about this stack.
 
@@ -24,7 +24,11 @@ researched at all, so there is not even a design ruled from
 documentation to record here. Recorded as banked rather than as
 work in progress. A house on Matter gets every other family of
 judgment and falls to the per-device debounce for interventions
-(ruling #138).
+(ruling #138). As on Z-Wave, a Matter integration that fails setup
+and stays failed is still caught by the domain-agnostic integration
+outage watcher, one row naming the integration with its devices
+counted; what is missing here is the commissioning window and any
+reading of the stack while it runs.
 
 WHAT IS KNOWN AND UNVERIFIED. Nothing is known beyond the domain.
 Whether commissioning is observable from Home Assistant, what a

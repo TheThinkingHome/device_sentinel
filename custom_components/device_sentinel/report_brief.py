@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.20.7 (2026-09-05)
+# File: report_brief.py, Version: 0.20.11 (2026-09-08)
 
 """The daily brief: the one report written for a person.
 
@@ -232,7 +232,7 @@ class BriefMixin:
         need to know what "frozen" means inside this integration to
         understand that a device stopped reporting. A resolution
         carries how long it lasted and what ended it in the same
-        phrase, which over a fortnight is the column that says
+        phrase, which over two weeks is the column that says
         whether a device recovers on its own or only when levered.
         """
         kind = row[INC_KIND]

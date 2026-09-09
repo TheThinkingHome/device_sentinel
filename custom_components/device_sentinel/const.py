@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.20.10 (2026-09-06)
+# File: const.py, Version: 0.20.11 (2026-09-08)
 
 """Constants for the Device Sentinel integration."""
 
@@ -443,18 +443,15 @@ STORM_HISTORY_SECONDS = 3600
 # Past two minutes it begins collapsing real recoveries on a healthy
 # fleet, which is the failure this must never have. Zero switches it
 # off.
-CONF_INCIDENT_SETTLE = "incident_settle_seconds"
-DEFAULT_INCIDENT_SETTLE_SECONDS = 60
-INCIDENT_SETTLE_SECONDS_MIN = 0
-INCIDENT_SETTLE_SECONDS_MAX = 120
+# A constant since 0.20.11: sixty stood unmoved on both fleets, so
+# the slider was paying for a question nobody was asking any more
+# (ruling #394).
+INCIDENT_SETTLE_SECONDS = 60
 
-CONF_TAINT_FLOOR = "taint_floor_minutes"
-CONF_TAINT_SHARE = "taint_share_pct"
-DEFAULT_TAINT_FLOOR_MINUTES = 10
-DEFAULT_TAINT_SHARE_PCT = 10
-TAINT_FLOOR_MINUTES_MIN = 1
-TAINT_FLOOR_MINUTES_MAX = 60
-# Shares reuse the existing SHARE_PCT bounds (10 to 90, step 10).
+# Constants since 0.20.11, same reasoning: ten minutes and ten
+# percent were never moved on either fleet (ruling #394).
+TAINT_FLOOR_MINUTES = 10
+TAINT_SHARE_PCT = 10
 
 
 # Statistics epoch: when storage carries an older epoch, learned
@@ -780,7 +777,7 @@ DAILY_MAX_KEEP = 14
 # is not (ruling #131).
 #
 # How much is kept is a separate question and is the person's.
-# Long series exist because a fortnight is far too short to see what
+# Long series exist because two weeks is far too short to see what
 # they measure: nothing measurably discharges in two weeks, a signal
 # floor wants a season, and three months of gap history is what will
 # eventually let the fourteen-day window itself be questioned rather
@@ -1047,7 +1044,22 @@ TRIM_MIN_SAMPLES = 7
 # should clear the flag, not a flap to suppress; widen only if the
 # soak shows flapping.
 CONF_LOW_THRESHOLD = "low_threshold"
-DEFAULT_LOW_THRESHOLD = 20
+# Fifteen since 0.20.11: the value the reference fleet ran on and
+# found right. An entry that never stored one keeps twenty through
+# the migration, so nobody's alerts change without them asking
+# (ruling #394).
+DEFAULT_LOW_THRESHOLD = 15
+LEGACY_LOW_THRESHOLD = 20
+
+# The option keys step 4 of the migration removes, each now a
+# constant in this file (ruling #394).
+RETIRED_SLIDER_KEYS = (
+    "settle_share_pct",
+    "episode_share_pct",
+    "incident_settle_seconds",
+    "taint_floor_minutes",
+    "taint_share_pct",
+)
 # The range both doors offer. Written twice and shared nowhere until
 # 0.11.8: the options dialog and the dashboard slider each carried
 # their own copy, so the one setting could have been offered with two
@@ -1272,7 +1284,7 @@ SIGNAL_ARMING_DAYS = 7
 # The ladder is one trimmed reading per full week held, so the share
 # discarded stays near a seventh at every rung instead of thinning as
 # the window grows (ruling #196). Two rungs were enough while the
-# window was a fortnight; on thirty days a fixed k of two would drop
+# window was two weeks; on thirty days a fixed k of two would drop
 # nine percent where it used to drop fourteen, which lowers every
 # floor on the fleet by about a tenth as a side effect of a change
 # meant to be about stability. Measured on the reference fleet: one
@@ -1286,7 +1298,7 @@ SIGNAL_TRIM_PER_WEEK = 7
 # different shapes (ruling #196). A floor is a trimmed minimum, so a
 # short window forgets a device's genuinely bad days and sits too
 # high: on the reference fleet fifty-one of seventy-eight devices had
-# a worse day just outside the fortnight, and the floor jumping as
+# a worse day just outside the two weeks, and the floor jumping as
 # one aged out is what made dwell spike to a hundred percent and back
 # to zero within days. A line that moves under the device cannot be
 # read across days, and dwell is only useful read across days.
@@ -1295,7 +1307,7 @@ SIGNAL_TRIM_PER_WEEK = 7
 # window can only raise it, and on the same fleet a longer window
 # left seventy-nine of ninety-four devices identical while making the
 # rest less sensitive. Battery stays at seven, because it is watching
-# for the moment a plateau ends and a fortnight averages the plateau
+# for the moment a plateau ends and two weeks averages the plateau
 # in with the fall, halving the apparent rate.
 SIGNAL_DAYS_KEEP = 30
 
@@ -1557,9 +1569,8 @@ DEFAULT_REMINDER_TIME = "08:00:00"
 # (ruling #117). Each is a
 # share of something the device already earned, or a plain interval,
 # so no value here can produce a nonsensical result.
-CONF_SETTLE_SHARE = "settle_share_pct"
-DEFAULT_SETTLE_SHARE_PCT = 30
-CONF_EPISODE_SHARE = "episode_share_pct"
+# A constant since 0.20.11 (ruling #394).
+SETTLE_SHARE_PCT = 30
 
 # How many unexplained interruptions put a device in the brief's
 # repeat-offender section (ruling #305). An interruption is
@@ -1585,7 +1596,9 @@ REPEAT_FLOOR_MAX = 4
 # the number is stated in one place and the prose follows it, never
 # the reverse (ruling #378).
 REPEAT_WINDOW_DAYS = 7.0
-DEFAULT_EPISODE_SHARE_PCT = 50
+# A constant since 0.20.11 (ruling #394). It shapes one forensic
+# file and nothing a person is alerted about.
+EPISODE_SHARE_PCT = 50
 SHARE_PCT_MIN = 10
 SHARE_PCT_MAX = 90
 SHARE_PCT_STEP = 10
@@ -1974,7 +1987,7 @@ RECOVERY_CAUSES_SELF = frozenset({RECOVERY_CAUSE_UNOBSERVED})
 # The wording this replaced, still sitting in stored incidents from
 # before the wording changed. Migrated at load rather than left to
 # age out, because the composer tests for the current string and
-# would otherwise write "revived by a on its own" for a fortnight.
+# would otherwise write "revived by a on its own" for two weeks.
 LEGACY_CAUSE_UNOBSERVED = "on its own"
 
 # The span the live copy of the brief covers, as opposed to the
@@ -2000,7 +2013,7 @@ BRIEF_KEEP_DAYS = 14
 #
 # Kept for the retention the person chose for device statistics
 # rather than the fourteen days an incident keeps. An incident older
-# than a fortnight has been fixed or is still standing, but how often
+# than two weeks has been fixed or is still standing, but how often
 # this house loses power is a question about the house, and it is
 # only answerable over seasons.
 # The last bridge state each stack was seen in, kept across a restart
@@ -2067,7 +2080,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 382
+HIGHEST_RULING = 394
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -2272,7 +2285,7 @@ EPISODE_KEEP_DAYS = 14
 # episode closes, a compact row (who, when, how long, how it ended,
 # and the signal snapshot from its open) folds into this series,
 # kept on the history retention setting rather than the fourteen-day
-# episode trim. Episodes explain a fortnight; the anchor needs
+# episode trim. Episodes explain two weeks; the anchor needs
 # seasons.
 DATA_SIGNAL_STRESS = "signal_stress"
 EP_DEVICE_ID = "device_id"
@@ -2421,7 +2434,7 @@ DEAD_OPTION_KEYS = (
 # Step 3 renames the ignore list to the word it vacated. Excluding
 # now means what it looks like, the record discarded, and muting
 # carries the gentler act (ruling #317).
-OPTIONS_MINOR_VERSION = 3
+OPTIONS_MINOR_VERSION = 4
 
 # The muting keys, old spelling to new, in the order a person meets
 # them on the screens. Read by the migration and by the guard that
@@ -2579,4 +2592,14 @@ DEAD_ENTITY_SENTINEL_TYPES = (
     # Signal: Problems, split into Signal: Rails and Signal: Weak in
     # the same release (ruling #211).
     "signal_problems",
+    # The soak six, retired in 0.20.11 (ruling #394). Three counted
+    # what was eligible for each family's judgment and three counted
+    # the days of history behind it; both sets existed to watch the
+    # arming soak, and that question closed.
+    SENTINEL_TYPE_TRACKED_DEVICES,
+    SENTINEL_TYPE_TRACKED_BATTERIES,
+    SENTINEL_TYPE_TRACKED_SIGNALS,
+    SENTINEL_TYPE_DATA_FREEZE,
+    SENTINEL_TYPE_DATA_BATTERY,
+    SENTINEL_TYPE_DATA_SIGNAL,
 )

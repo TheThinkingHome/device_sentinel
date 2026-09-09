@@ -3,9 +3,26 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.15.8 (2026-08-18)
+# File: detect_freeze.py, Version: 0.20.11 (2026-09-08)
 
 """Freeze: the learned rhythm, the window, and the verdict.
+
+The failure this exists for is the quiet one: a device that has
+stopped reporting while its entities still hold their last values,
+so every dashboard and every automation downstream keeps believing a
+dead reading. Unavailable and unknown are the honest cases and are
+caught here too, along with a device that has never spoken since it
+was discovered.
+
+Each device is measured against its own learned rhythm plus a grace
+margin, never a fixed timeout, because a chatty motion sensor and a
+twice-a-day rain gauge cannot share a number. A device is judged
+frozen only once it has learned enough days to have a trustworthy
+rhythm; until then it is watched for the honest cases only. Devices
+with no natural heartbeat, buttons and remotes that speak when
+pressed, learn a very long rhythm and are effectively never called
+frozen for ordinary quiet, which is why the watched count always
+exceeds the learned one.
 
 One of six subject modules split out of coordinator.py, which
 had reached four thousand lines. The seam is the subject, chosen
@@ -36,14 +53,12 @@ from .const import (
     CONF_FREEZE_MUTED_DEVICES,
     CONF_FREEZE_MUTED_INTEGRATIONS,
     CONF_FREEZE_MUTED_LABELS,
-    CONF_TAINT_FLOOR,
-    CONF_TAINT_SHARE,
     DAILY_MAX_KEEP,
     DATA_DEVICES,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
     DEFAULT_FREEZE_DELTA_LOW_MIN,
-    DEFAULT_TAINT_FLOOR_MINUTES,
-    DEFAULT_TAINT_SHARE_PCT,
+    TAINT_FLOOR_MINUTES,
+    TAINT_SHARE_PCT,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
@@ -263,20 +278,10 @@ class FreezeMixin:
         learned there is no grace to take a share of.
         """
         floor = (
-            float(
-                self.entry.options.get(
-                    CONF_TAINT_FLOOR, DEFAULT_TAINT_FLOOR_MINUTES
-                )
-            )
-            * 60.0
+            float(TAINT_FLOOR_MINUTES) * 60.0
         )
         share = (
-            float(
-                self.entry.options.get(
-                    CONF_TAINT_SHARE, DEFAULT_TAINT_SHARE_PCT
-                )
-            )
-            / 100.0
+            float(TAINT_SHARE_PCT) / 100.0
         )
         window = self._freeze_window(record)
         if window is None:

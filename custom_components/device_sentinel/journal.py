@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.19.9 (2026-08-31)
+# File: journal.py, Version: 0.20.11 (2026-09-08)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -62,16 +62,13 @@ from .const import (
     INC_CAUSE,
     INC_DEVICE_ID,
     INC_DURATION,
-    CONF_INCIDENT_SETTLE,
-    DEFAULT_INCIDENT_SETTLE_SECONDS,
+    INCIDENT_SETTLE_SECONDS,
     INC_EVENT,
     INC_KIND,
     INC_NAME,
     INC_WHEN,
     INCIDENT_KEEP_DAYS,
     INCIDENT_OPENED,
-    INCIDENT_SETTLE_SECONDS_MAX,
-    INCIDENT_SETTLE_SECONDS_MIN,
     INCIDENT_RESOLVED,
     LOGGER,
     RECOVERY_CAUSE_UNOBSERVED,
@@ -440,19 +437,13 @@ class JournalMixin:
     def incident_settle_seconds(self) -> float:
         """Return how long a resolved problem stays reopenable.
 
-        Live from options, clamped to the band the screen offers, so
-        a hand-edited entry cannot switch the recorder off by
-        accident or hold an episode open for a day (ruling #318).
+        A constant since 0.20.11. It was a slider while sixty seconds
+        was a guess; replayed over both fleets it left one untouched
+        and collapsed the other's 3,866 rows to 614, and neither
+        fleet ever moved it, so the guess is settled (rulings #318
+        and #394).
         """
-        raw = float(
-            self.entry.options.get(
-                CONF_INCIDENT_SETTLE, DEFAULT_INCIDENT_SETTLE_SECONDS
-            )
-        )
-        return min(
-            float(INCIDENT_SETTLE_SECONDS_MAX),
-            max(float(INCIDENT_SETTLE_SECONDS_MIN), raw),
-        )
+        return float(INCIDENT_SETTLE_SECONDS)
 
     def _record_incident(
         self,
@@ -566,7 +557,7 @@ class JournalMixin:
         overload the kind column to carry what happened, and the
         pairing machinery that matches an opening to its recovery
         would have rows it could never pair. It also wants a longer
-        memory: an incident is spent after a fortnight, while how
+        memory: an incident is spent after two weeks, while how
         often this house loses power is a question worth years.
 
         Retention follows the person's history setting, so the events

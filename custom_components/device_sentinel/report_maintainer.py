@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.19.9 (2026-08-31)
+# File: report_maintainer.py, Version: 0.20.11 (2026-09-08)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -27,11 +27,9 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_TAINT_FLOOR,
-    CONF_TAINT_SHARE,
     DAILY_MAX_KEEP,
-    DEFAULT_TAINT_FLOOR_MINUTES,
-    DEFAULT_TAINT_SHARE_PCT,
+    TAINT_FLOOR_MINUTES,
+    TAINT_SHARE_PCT,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     EP_AT,
@@ -179,8 +177,8 @@ class MaintainerReportMixin:
         is by definition chosen after the outliers are removed.
         """
         # The series holds up to a year; this cell shows the same
-        # fortnight it always has, and the indices below are into
-        # that fortnight.
+        # two weeks it always has, and the indices below are into
+        # that window.
         daily_maximum_gaps = list(daily_maximum_gaps)[-DAILY_MAX_KEEP:]
         if not daily_maximum_gaps:
             return "-"
@@ -383,8 +381,8 @@ class MaintainerReportMixin:
             f"{STORM_DEVICE_THRESHOLD} devices/"
             f"{STORM_WINDOW_SECONDS:g} s (exempt at "
             f"{STORM_EXEMPT_PER_HOUR}/h), taint debounce "
-            f"{self.entry.options.get(CONF_TAINT_FLOOR, DEFAULT_TAINT_FLOOR_MINUTES)}"
-            f" min + {self.entry.options.get(CONF_TAINT_SHARE, DEFAULT_TAINT_SHARE_PCT)}"
+            f"{TAINT_FLOOR_MINUTES}"
+            f" min + {TAINT_SHARE_PCT}"
             f"% of window, arming floor "
             f"{LEARNING_MIN_DAYS} days, judge on {DAILY_MAX_KEEP} "
             f"days, keep {self.retention_days} days.",

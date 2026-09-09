@@ -3,9 +3,26 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.16.12 (2026-08-21)
+# File: detect_signal.py, Version: 0.20.11 (2026-09-08)
 
 """Signal: the learned floor, the line, and the rails.
+
+Every device is judged against its own history and never against a
+fixed number or against another device: a sensor two rooms away
+lives its whole life at a level that would mean trouble in the same
+room, and both can be reliable. A day is bad only when the fall
+clears two gates, far enough in the device's own units and far
+enough outside its own everyday bounce, because either gate alone
+flags a steady device for a wobble or a jittery one every day.
+
+Two findings come out of this file and they are not the same thing.
+A weak day is recorded, charted and reported and never reaches a
+phone, because nobody has yet shown which signal pattern predicts a
+real failure and an alert that cries wolf teaches its owner to
+ignore it. A railed reading, pinned at exactly 255 LQI or -128 RSSI
+for three days, is a false reading rather than a weak link, and it
+does notify. Anything written for a reader has to keep those two
+apart; saying signal never alerts is wrong.
 
 One of six subject modules split out of coordinator.py, which
 had reached four thousand lines. The seam is the subject, chosen

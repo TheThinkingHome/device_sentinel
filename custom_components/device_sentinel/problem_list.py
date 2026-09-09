@@ -3,9 +3,22 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.19.9 (2026-08-31)
+# File: problem_list.py, Version: 0.20.11 (2026-09-08)
 
 """The problem list: the single memory every channel renders.
+
+One line per device however many problems it carries, worst first,
+so a device that is both frozen and low on battery is one row rather
+than two. Above the devices sit the upstream rows: a coordinator,
+broker, Wi-Fi network or integration that has gone down takes one
+row naming the cause with its casualties counted, and the devices
+behind it never reach the list at all. The two exceptions are the
+device already broken before the outage and the one still down after
+it clears.
+
+Checking a row is an acknowledgment and never a recovery. Recovery
+is detected, and the row leaves on its own when the device speaks
+again, whether or not anybody checked it.
 
 One of six subject modules split out of coordinator.py, which
 had reached four thousand lines. The seam is the subject, chosen
@@ -37,11 +50,10 @@ from .const import (
     ACTION_READDED,
     ACTION_SET_ASIDE,
     ACTION_UNACKNOWLEDGED,
-    CONF_SETTLE_SHARE,
     DATA_DEVICES,
     DATA_TODO_ITEMS,
     DATA_TODO_JOURNAL,
-    DEFAULT_SETTLE_SHARE_PCT,
+    SETTLE_SHARE_PCT,
     DEV_DAILY_MAX,
     FREEZE_CATEGORY_NEVER_REPORTED,
     INCIDENT_ACTION,
@@ -49,8 +61,6 @@ from .const import (
     LOGGER,
     NOTIFY_FAMILY_FREEZE,
     NOTIFY_KIND_FAMILY,
-    SHARE_PCT_MAX,
-    SHARE_PCT_MIN,
     SIGNAL_PROBLEM_ADDITION,
     STACK_DISPLAY_NAMES,
     TODO_ACKED_AT,
@@ -1270,12 +1280,7 @@ class ProblemListMixin:
         all. Clamped to the band the screen offers, so a hand-edited
         entry cannot hold an alert for a week.
         """
-        raw = int(
-            self.entry.options.get(
-                CONF_SETTLE_SHARE, DEFAULT_SETTLE_SHARE_PCT
-            )
-        )
-        return min(SHARE_PCT_MAX, max(SHARE_PCT_MIN, raw)) / 100.0
+        return SETTLE_SHARE_PCT / 100.0
 
     def _notification_delay(self, device_id: str) -> float:
         """Return the seconds a fault on this device waits to be sent.

@@ -3,9 +3,23 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.18.3 (2026-08-26)
+# File: detect_battery.py, Version: 0.20.11 (2026-09-08)
 
 """Battery: the level threshold and what is tracked.
+
+A cell is judged twice, and the second judgment is the one a
+percentage cannot make. The threshold answers which cells are low
+now. The daily record answers which are about to be: a lithium coin
+cell holds a near-full charge for its whole life and then falls to
+nothing in days, so a cell reading 82 percent and falling can have
+less life left than one sitting at 24 percent that has not moved in
+a month. A projection landing inside the chosen horizon is flagged
+while the number still looks comfortable.
+
+Time left is said in words rather than a count of days on purpose.
+The projection assumes the last week continues, which a failing cell
+often does not, so it is a ranking of which cell to replace first
+rather than a date.
 
 One of six subject modules split out of coordinator.py, which
 had reached four thousand lines. The seam is the subject, chosen

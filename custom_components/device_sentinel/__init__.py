@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.16.0 (2026-08-19)
+# File: __init__.py, Version: 0.20.11 (2026-09-08)
 
 """The Device Sentinel integration.
 
@@ -41,7 +41,10 @@ from .const import (
     IGNORE_KEY_RENAMES,
     MUTING_KEY_RENAMES,
     LOGGER,
+    CONF_LOW_THRESHOLD,
+    LEGACY_LOW_THRESHOLD,
     OPTIONS_MINOR_VERSION,
+    RETIRED_SLIDER_KEYS,
     REPORT_DIR,
     REPORT_WWW_DIR,
     REPORT_WWW_PARENT,
@@ -94,6 +97,8 @@ async def async_migrate_entry(
         options = _migrate_muting_names(options)
     if entry.minor_version < 3:
         options = _migrate_ignore_name(options)
+    if entry.minor_version < 4:
+        options = _migrate_retired_sliders(options)
     hass.config_entries.async_update_entry(
         entry, options=options, minor_version=OPTIONS_MINOR_VERSION
     )
@@ -124,6 +129,39 @@ def _migrate_muting_names(options: dict[str, Any]) -> dict[str, Any]:
         LOGGER.info(
             "Options migration step 2, muting names: nothing stored to move"
         )
+    return options
+
+
+def _migrate_retired_sliders(options: dict[str, Any]) -> dict[str, Any]:
+    """Step 4: five sliders become constants, and the battery
+    threshold keeps its old value for anybody who never set one.
+
+    The five were only ever sliders because their numbers were
+    guesses, and neither fleet moved one off its default in the
+    months since (ruling #394). The stored keys go, so an entry
+    carrying a hand-edited value cannot quietly keep behaving
+    differently from the constant the code now states.
+
+    The threshold is the other half and runs the other way. Its
+    default moves from twenty to fifteen, so an entry that never
+    stored one would silently start judging batteries differently
+    on upgrade. It is pinned at twenty here instead: the new default
+    is for new installs, and an existing house changes only when its
+    owner asks.
+    """
+    dropped = [key for key in RETIRED_SLIDER_KEYS if key in options]
+    for key in dropped:
+        options.pop(key)
+    if CONF_LOW_THRESHOLD not in options:
+        options[CONF_LOW_THRESHOLD] = LEGACY_LOW_THRESHOLD
+        pinned = f"; low_threshold pinned at {LEGACY_LOW_THRESHOLD}"
+    else:
+        pinned = ""
+    LOGGER.info(
+        "Options migration step 4, retired sliders: %s%s",
+        ", ".join(dropped) if dropped else "nothing stored to drop",
+        pinned,
+    )
     return options
 
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.20.10 (2026-09-06)
+# File: config_flow.py, Version: 0.20.11 (2026-09-08)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -84,7 +84,6 @@ from .const import (
     CONF_BATTERY_MUTED_LABELS,
     CONF_BRIEF_TARGETS,
     CONF_COALESCE_MINUTES,
-    CONF_EPISODE_SHARE,
     CONF_REPEAT_FLOOR,
     CONF_TRIM_DEVICES,
     CONF_TRIM_INTEGRATIONS,
@@ -108,7 +107,6 @@ from .const import (
     CONF_REMINDER_MODE,
     CONF_REMINDER_TIME,
     CONF_RETENTION_DAYS,
-    CONF_SETTLE_SHARE,
     CONF_SIGNAL_MUTED_DEVICES,
     CONF_SIGNAL_MUTED_INTEGRATIONS,
     CONF_SIGNAL_MUTED_LABELS,
@@ -116,12 +114,8 @@ from .const import (
     CONF_BADDAY_DROP_LQI,
     CONF_BADDAY_DROP_RSSI,
     CONF_BADDAY_SENSITIVITY,
-    CONF_INCIDENT_SETTLE,
-    CONF_TAINT_FLOOR,
-    CONF_TAINT_SHARE,
     DEFAULT_BATTERY_DAYS,
     DEFAULT_COALESCE_MINUTES,
-    DEFAULT_EPISODE_SHARE_PCT,
     DEFAULT_REPEAT_FLOOR,
     REPEAT_FLOOR_MAX,
     REPEAT_FLOOR_MIN,
@@ -137,14 +131,10 @@ from .const import (
     DEFAULT_REMINDER_MODE,
     DEFAULT_REMINDER_TIME,
     DEFAULT_RETENTION_DAYS,
-    DEFAULT_SETTLE_SHARE_PCT,
     DEFAULT_BADDAY_BASELINE_DAYS,
     DEFAULT_BADDAY_DROP_LQI,
     DEFAULT_BADDAY_DROP_RSSI,
     DEFAULT_BADDAY_SENSITIVITY,
-    DEFAULT_INCIDENT_SETTLE_SECONDS,
-    DEFAULT_TAINT_FLOOR_MINUTES,
-    DEFAULT_TAINT_SHARE_PCT,
     DOMAIN,
     FREEZE_DELTA_HIGH_HR_MAX,
     FREEZE_DELTA_HIGH_HR_MIN,
@@ -174,10 +164,6 @@ from .const import (
     BADDAY_DROP_RSSI_MIN,
     BADDAY_SENSITIVITY_MAX,
     BADDAY_SENSITIVITY_MIN,
-    INCIDENT_SETTLE_SECONDS_MAX,
-    INCIDENT_SETTLE_SECONDS_MIN,
-    TAINT_FLOOR_MINUTES_MAX,
-    TAINT_FLOOR_MINUTES_MIN,
     WIKI_LINK_ADVANCED,
     WIKI_LINK_BATTERY,
     WIKI_LINK_EXCLUSIONS,
@@ -397,9 +383,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     ) -> dict[str, Any]:
         """Return the options with every superseded pick removed.
 
-        The ladder has three rungs and they were only ever settled
-        along one axis: within a screen, a device pick went when that
-        screen's own integration or label pick covered it. Nothing
+        The ladder has four rungs, integration, label, device and
+        entity, with Battery stopping at device. They were only ever
+        settled along one axis: within a screen, a device pick went
+        when that screen's own integration or label pick covered it. Nothing
         ever settled the rungs against each other, so excluding an
         integration left it muted, and muting one globally left it
         muted in all three sections. Reported by James on 25 August
@@ -410,6 +397,13 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         never cleared is a decision that comes back: un-exclude an
         integration tomorrow and the mute nobody removed is waiting
         underneath, with no screen having said so.
+
+        Settling is a deletion and not a suppression, which is what
+        the screens warn about before a save. A narrower pick a
+        broader mute covered is gone from the stored options, and
+        removing the broader mute later does not bring it back; the
+        person re-picks it. Any wording written for a reader has to
+        say that plainly rather than calling it hiding.
 
         Settling runs here rather than in each screen's own pruner,
         because every screen saves through this one method and the
@@ -1730,18 +1724,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_SETTLE_SHARE,
-                        default=options.get(
-                            CONF_SETTLE_SHARE, DEFAULT_SETTLE_SHARE_PCT
-                        ),
-                    ): share_selector(),
-                    vol.Required(
-                        CONF_EPISODE_SHARE,
-                        default=options.get(
-                            CONF_EPISODE_SHARE, DEFAULT_EPISODE_SHARE_PCT
-                        ),
-                    ): share_selector(),
-                    vol.Required(
                         CONF_REPEAT_FLOOR,
                         default=options.get(
                             CONF_REPEAT_FLOOR, DEFAULT_REPEAT_FLOOR
@@ -1754,41 +1736,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
-                    vol.Required(
-                        CONF_INCIDENT_SETTLE,
-                        default=options.get(
-                            CONF_INCIDENT_SETTLE,
-                            DEFAULT_INCIDENT_SETTLE_SECONDS,
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=INCIDENT_SETTLE_SECONDS_MIN,
-                            max=INCIDENT_SETTLE_SECONDS_MAX,
-                            step=10,
-                            unit_of_measurement="s",
-                            mode=selector.NumberSelectorMode.SLIDER,
-                        )
-                    ),
-                    vol.Required(
-                        CONF_TAINT_FLOOR,
-                        default=options.get(
-                            CONF_TAINT_FLOOR, DEFAULT_TAINT_FLOOR_MINUTES
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=TAINT_FLOOR_MINUTES_MIN,
-                            max=TAINT_FLOOR_MINUTES_MAX,
-                            step=1,
-                            unit_of_measurement="min",
-                            mode=selector.NumberSelectorMode.SLIDER,
-                        )
-                    ),
-                    vol.Required(
-                        CONF_TAINT_SHARE,
-                        default=options.get(
-                            CONF_TAINT_SHARE, DEFAULT_TAINT_SHARE_PCT
-                        ),
-                    ): share_selector(),
                     vol.Required(
                         CONF_COALESCE_MINUTES,
                         default=options.get(

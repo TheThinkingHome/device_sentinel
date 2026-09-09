@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zwave.py, Version: 0.12.3 (2026-08-05)
+# File: stack_zwave.py, Version: 0.20.11 (2026-09-08)
 
 """Z-Wave JS: everything Device Sentinel knows about this stack.
 
@@ -38,6 +38,16 @@ gap is discarded, while a SmartStart auto-rejoin is the network
 healing itself and its gap is a real measurement to learn (ruling
 #141). Whether the two can be told apart from what is published, and
 what Z-Wave JS names a device's availability, are both unknown here.
+
+WHAT A Z-WAVE HOUSE STILL GETS. Nothing above means a failed Z-Wave
+stack goes unreported. The integration outage watcher is domain
+agnostic and covers `zwave_js` like any other: a config entry that
+fails and stays failed is one row naming the integration with the
+devices behind it counted and cleared of blame. Measured on a
+tester's fleet on 7 September 2026, a coordinator pull to
+replug and clear, with no false device faults in the window and the
+folded statistics of all seventeen Z-Wave devices unchanged. What is
+missing is the running controller, not the outage.
 
 THE ASK. This file stays as it is until somebody with Z-Wave hardware
 runs the named commands and attaches the output. The wiki page for

@@ -3,13 +3,23 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: todo.py, Version: 0.10.20 (2026-08-03)
+# File: todo.py, Version: 0.20.11 (2026-09-08)
 
 """Todo platform for the Device Sentinel integration.
 
 One list, todo.device_sentinel_problem_list, holding every problem the detections
 find: frozen, unavailable, unknown, and never-reported devices, low
-batteries, and signal problems. One item per device, keyed by its
+and falling batteries, and railed signals. Three families, and any
+wording written for a reader names all three.
+
+The list also carries what is wrong above the devices. When a
+coordinator, the broker, the Wi-Fi network or a whole integration
+goes down, the devices behind it do not each take a line: one row
+names the cause and counts them, reading like `Zigbee2MQTT down: 74
+devices unavailable`, and it clears itself when the cause returns.
+Two devices keep their own row through such an outage, the one
+already broken before it began and the one still down after it
+clears, because those are the two the outage does not explain. One item per device, keyed by its
 registry id, so a device with two problems carries two kinds on one
 line rather than appearing twice. The sync in the coordinator owns
 the list: items appear the moment a detection fires, follow the
@@ -19,8 +29,9 @@ one clears.
 The acknowledgment lifecycle, carried from Sentinel Notify:
 
 - Checking an item is the acknowledgment. It stays on the list,
-  marked done, and Step 8 will send nothing about it while it sits
-  checked. Checking never means recovered.
+  marked done, and nothing is sent about it while it sits checked:
+  not a push, not the card, not the daily brief. Checking never
+  means recovered.
 - Recovery deletes the item, acknowledged or not. One symbol, one
   meaning, and the deletion is the automatic re-arm: the next
   failure is a new incident and a fresh item.

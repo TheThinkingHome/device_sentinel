@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.20.10 (2026-09-06)
+# File: coordinator.py, Version: 0.20.11 (2026-09-08)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -111,7 +111,6 @@ from .const import (
     BATTERY_SLOPE_DAYS,
     BRIEF_TRIGGER,
     CONF_BATTERY_MUTED_DEVICES,
-    CONF_EPISODE_SHARE,
     CONF_MUTED_DEVICES,
     CONF_MUTED_INTEGRATIONS,
     CONF_MUTED_LABELS,
@@ -141,9 +140,9 @@ from .const import (
     DATA_SYSTEM_EVENTS,
     DATA_TODO_ITEMS,
     DATA_TODO_JOURNAL,
-    DEFAULT_EPISODE_SHARE_PCT,
+    EPISODE_SHARE_PCT,
     DEFAULT_MAINTENANCE_MINUTES,
-    DEFAULT_TAINT_FLOOR_MINUTES,
+    TAINT_FLOOR_MINUTES,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FROZEN_CATEGORY,
@@ -179,8 +178,6 @@ from .const import (
     SET_ASIDE_EXCLUDED,
     SET_ASIDE_NO_ENTITIES,
     SET_ASIDE_SERVICE,
-    SHARE_PCT_MAX,
-    SHARE_PCT_MIN,
     SIGNAL_ARMING_DAYS,
     SIGNAL_DAY_REPAIR_MARK,
     SIGNAL_DAYS_KEEP,
@@ -1973,7 +1970,7 @@ class DeviceSentinelCoordinator(
         debounce = (
             self._taint_debounce(record)
             if record is not None
-            else DEFAULT_TAINT_FLOOR_MINUTES * 60.0
+            else TAINT_FLOOR_MINUTES * 60.0
         )
         if gone < debounce:
             return
@@ -2172,8 +2169,8 @@ class DeviceSentinelCoordinator(
             # silence is a disabled entity or integration rather than
             # the device's own rhythm (ruling #257). Same treatment as
             # pairing and maintenance: refused and retracted, so a
-            # fortnight switched off cannot teach a fortnight-long
-            # window. The stamp is cleared by the registry rebuild
+            # two weeks switched off cannot teach a two-week
+            # window of normal silence. The stamp is cleared by the registry rebuild
             # that brought the device back.
             learned = LEARNED_DISABLED
             if not tainted and learned_gap is not None:
@@ -2852,12 +2849,7 @@ class DeviceSentinelCoordinator(
         offers, so a hand-edited entry cannot produce a threshold
         that records everything or nothing.
         """
-        raw = int(
-            self.entry.options.get(
-                CONF_EPISODE_SHARE, DEFAULT_EPISODE_SHARE_PCT
-            )
-        )
-        return min(SHARE_PCT_MAX, max(SHARE_PCT_MIN, raw)) / 100.0
+        return EPISODE_SHARE_PCT / 100.0
 
 
     async def _routine_save(self) -> None:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.15.8 (2026-08-18)
+# File: notifier.py, Version: 0.20.11 (2026-09-08)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -23,6 +23,15 @@ family sees both what just happened and what is true now. A fault plays
 the device's own system sound; a recovery is sent silently. Events fire
 only outside quiet hours; what quiet hours drops, the persistent card
 and the daily brief carry.
+
+The upstream push. A coordinator, the broker, the Wi-Fi network or a
+whole integration going down silences everything behind it at once,
+and those devices deliberately raise no faults of their own. One
+message names the thing a person can actually fix and counts the
+casualties rather than listing them; every later message about the
+same outage is silent and carries the running tally, so the number
+stays true without interrupting again, and the recovery is announced
+once and silently with how many had gone quiet.
 
 Normal-priority targets receive none of this. They get the daily brief
 and nothing else, which is the whole difference between the tiers: not
