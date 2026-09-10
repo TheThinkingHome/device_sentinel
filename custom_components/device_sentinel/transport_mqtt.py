@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: transport_mqtt.py, Version: 0.16.8 (2026-08-20)
+# File: transport_mqtt.py, Version: 0.20.13 (2026-09-10)
 
 """The MQTT broker itself, watched directly.
 
@@ -84,6 +84,7 @@ class MQTTBrokerReader:
         self._hass = hass
         self._unsubs: list[Any] = []
         self._uptime: float | None = None
+        self._stopped_at: float | None = None
         self._last_heard: float | None = None
         self._last_heard_iso: str | None = None
         self._intervals: list[float] = []
@@ -229,10 +230,29 @@ class MQTTBrokerReader:
                 self._intervals.append(interval)
                 del self._intervals[:-_CADENCE_SAMPLES]
         self._arrivals += 1
+        # A value lower than the last one seen is a restart, and the
+        # arrival before it is the last moment the broker was known
+        # to be up. That, not the previous start, is where an outage
+        # is measured from: the previous start is the length of the
+        # session that just ended, and reporting that as downtime
+        # turned a ten second restart into a twelve hour outage on
+        # the reference fleet, 10 September 2026 (ruling #396).
+        if self._uptime is not None and seconds < self._uptime:
+            self._stopped_at = self._last_heard
         self._uptime = seconds
         self._last_heard = arrived
         self._last_heard_iso = now.isoformat()
         self._started_at = arrived - seconds
+
+    @property
+    def stopped_at(self) -> float | None:
+        """Return when the broker was last heard before its latest restart.
+
+        None until a restart has been observed by this reader, which
+        is the case for a restart that spanned Home Assistant's own:
+        nothing was listening, so there is no last arrival to name.
+        """
+        return self._stopped_at
 
     def regressed_since(self, known_start: float | None) -> bool:
         """Return whether the broker has restarted since known_start.

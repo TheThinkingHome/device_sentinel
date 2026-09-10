@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.20.3 (2026-09-04)
+# File: interventions.py, Version: 0.20.13 (2026-09-10)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -365,7 +365,11 @@ class InterventionMixin:
             and reader.regressed_since(known_start)
         )
         if restarted and not self._inside_unwatched(started):
-            since = known_start
+            # Measured from the last arrival before the restart, not
+            # from the previous start: the latter is how long the
+            # broker had been up, which is the opposite of an outage
+            # (ruling #396).
+            since = reader.stopped_at
             self._record_system_event(SYS_BROKER_DOWN, scope=BROKER_SCOPE)
             self._record_system_event(
                 SYS_BROKER_UP,
