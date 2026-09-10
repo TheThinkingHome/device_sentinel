@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.19.13 (2026-09-02)
+# File: report_battery.py, Version: 0.20.12 (2026-09-10)
 
 """The battery report: which cells are going to be low.
 
@@ -24,16 +24,36 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from html import escape
+from statistics import median
 from typing import Any
 
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BATTERY_ACCELERATING_GAP,
+    BATTERY_BLOCK_DAYS,
+    BATTERY_BLOCK_MIN_DAYS,
+    BATTERY_STABILIZED_RATIO,
+    BATTERY_TREND_COLOURS,
+    BATTERY_TREND_MIN_DAYS,
+    BATTERY_TREND_WINDOWS,
+    BATTERY_WIDE_BLOCK_AFTER,
+    BATTERY_WIDE_BLOCK_DAYS,
+    TREND_ACCELERATING,
+    TREND_DISAGREE,
+    TREND_JUST_STARTED,
+    TREND_STABILIZED,
+    TREND_STEADY,
+    TREND_TOO_NEW,
+    BATTERY_CURVE_HEIGHT,
+    BATTERY_CURVE_WIDTH,
     BATTERY_FALLING_SLOPE,
+    BATTERY_HISTORY_WIDTH,
     BATTERY_LEFT_BANDS,
     BATTERY_LEFT_BEYOND,
     BATTERY_READABLE_MAX,
     BATTERY_SLOPE_DAYS,
+    BATTERY_STEADY_CHARTED,
     CONF_BATTERY_DAYS,
     DEFAULT_BATTERY_DAYS,
     DEV_BATTERY_DAILY,
@@ -89,6 +109,144 @@ class BatteryReportMixin:
             return slopes[middle]
         return (slopes[middle - 1] + slopes[middle]) / 2.0
 
+    @staticmethod
+    def _battery_spread(levels: list[float]) -> float | None:
+        """Return how much the pairwise slopes disagree, in points a day.
+
+        The same slopes the trend is a median of, measured for their
+        spread rather than their middle. It is an interquartile range
+        and not a standard deviation, because a deviation is dragged
+        by the same outliers Theil-Sen exists to ignore, and a
+        confidence that moves with the noise is no confidence at all.
+
+        Small means every pair of days tells the same story. Large
+        means they do not, and a projection drawn from them would
+        only look precise (ruling #395).
+        """
+        n = len(levels)
+        if n < 4:
+            return None
+        slopes = sorted(
+            (levels[j] - levels[i]) / (j - i)
+            for i in range(n)
+            for j in range(i + 1, n)
+        )
+        return slopes[3 * len(slopes) // 4] - slopes[len(slopes) // 4]
+
+    def _battery_windows(self, series: list[float]) -> dict[int, float | None]:
+        """Return the slope over each nested window that has the days."""
+        return {
+            days: (
+                self._battery_slope(series[-days:])
+                if len(series) >= days
+                else None
+            )
+            for days in BATTERY_TREND_WINDOWS
+        }
+
+    def _battery_blocks(
+        self, series: list[float]
+    ) -> list[tuple[int, int, float]]:
+        """Return the periods before the nested windows, oldest first.
+
+        Each is (days ago it started, days ago it ended, slope), and
+        each covers only itself. A running total back from today
+        cannot say a cell fell hard and then held, because the fall
+        and the plateau average each other out; separate periods can.
+
+        Blocks are a month wide until day ninety and a quarter wide
+        after it, so a year of retention reads as five periods rather
+        than eleven (ruling #395).
+        """
+        older = series[: -BATTERY_BLOCK_DAYS]
+        blocks: list[tuple[int, int, float]] = []
+        ago_end = BATTERY_BLOCK_DAYS
+        while older:
+            width = (
+                BATTERY_BLOCK_DAYS
+                if ago_end < BATTERY_WIDE_BLOCK_AFTER
+                else BATTERY_WIDE_BLOCK_DAYS
+            )
+            block = older[-width:]
+            older = older[:-width]
+            ago_start = ago_end + len(block)
+            if len(block) >= BATTERY_BLOCK_MIN_DAYS:
+                blocks.append(
+                    (ago_start, ago_end, self._battery_slope(block))
+                )
+            ago_end = ago_start
+        blocks.reverse()
+        return blocks
+
+    def _battery_reading(
+        self, windows: dict[int, float | None], days_held: int
+    ) -> str:
+        """Return what the nested windows say about the decline.
+
+        Thirty days sets the baseline pace, fourteen confirms the
+        direction, seven is the pace now.
+
+        A window shallower than the falling floor is read as level
+        rather than as a decline. A cell reporting in half point
+        steps produces a slope of a few hundredths from rounding
+        alone, and on the reference fleet five of ten negative thirty
+        day slopes sat inside that band. Dividing by one of those is
+        comparing a rate against rounding.
+
+        Acceleration is a progression and not a ratio: every window
+        steeper than the one before it, and the seven day slope at
+        least one falling-step steeper than the thirty. The
+        progression alone would call a cell drifting at -0.100,
+        -0.104, -0.108 an acceleration, which is not news.
+
+        A verdict the middle window contradicts is not offered. Where
+        the three do not form a progression but seven is far steeper
+        than thirty, the reading says the slopes disagree rather than
+        asserting an acceleration one of the three does not support
+        (ruling #395).
+        """
+
+        def falling(slope: float | None) -> float | None:
+            """The slope, or None where it is inside the rounding band."""
+            if slope is None or slope > BATTERY_FALLING_SLOPE:
+                return None
+            return slope
+
+        short = falling(windows.get(7))
+        if short is None:
+            return ""
+        if days_held < BATTERY_TREND_MIN_DAYS or windows.get(30) is None:
+            return TREND_TOO_NEW
+
+        middle = windows.get(14)
+        long = windows.get(30)
+        ordered = [
+            windows[days]
+            for days in BATTERY_TREND_WINDOWS
+            if windows.get(days) is not None
+        ]
+        steepening = len(ordered) > 1 and all(
+            earlier >= later
+            for earlier, later in zip(ordered, ordered[1:])
+        )
+        gap = (long - short) if long is not None else None
+
+        if steepening:
+            if gap is not None and gap >= BATTERY_ACCELERATING_GAP:
+                return TREND_ACCELERATING
+            return TREND_STEADY
+
+        baseline = falling(long)
+        if baseline is None:
+            return TREND_JUST_STARTED
+        if gap is not None and gap >= BATTERY_ACCELERATING_GAP:
+            if middle is not None:
+                return TREND_DISAGREE
+            return TREND_ACCELERATING
+        if short / baseline <= BATTERY_STABILIZED_RATIO:
+            return TREND_STABILIZED
+        return TREND_STEADY
+
     def _battery_rows(self) -> dict[str, list[dict[str, Any]]]:
         """Sort every watched cell into what the report has to say.
 
@@ -132,8 +290,22 @@ class BatteryReportMixin:
             if row["level"] > BATTERY_READABLE_MAX:
                 unreadable.append(row)
                 continue
-            series = list(record.get(DEV_BATTERY_DAILY) or [])
+            series = [
+                level
+                for level in (record.get(DEV_BATTERY_DAILY) or [])
+                if isinstance(level, (int, float))
+            ]
             slope = self._battery_slope(series[-BATTERY_SLOPE_DAYS:])
+            row["series"] = series
+            row["windows"] = self._battery_windows(series)
+            row["blocks"] = self._battery_blocks(series)
+            row["reading"] = self._battery_reading(row["windows"], len(series))
+            # Carried for the dashboard. It does not decide anything:
+            # measured across 667 samples of both fleets and synthetic
+            # decliners, neither absolute nor relative spread
+            # predicts how a projection then behaves, so no rule is
+            # built on it (ruling #395).
+            row["spread"] = self._battery_spread(series[-BATTERY_SLOPE_DAYS:])
             if slope < BATTERY_FALLING_SLOPE and row["level"] > 0:
                 row["slope"] = slope
                 row["days"] = row["level"] / -slope
@@ -192,6 +364,284 @@ class BatteryReportMixin:
             for row in self._battery_rows()["falling"]
             if row["days"] <= self._battery_days() and not row["low"]
         ]
+
+    def _battery_panel(
+        self,
+        points: list[float],
+        left: float,
+        width: float,
+        height: float,
+        trends: bool,
+        dots: int = 0,
+        caption: str = "",
+    ) -> str:
+        """Return one panel of a cell's curve, on its own scale.
+
+        Each panel carries its own high and low, which is the whole
+        point of splitting them: on a year of retention a recent
+        movement of two points drawn against a hundred point axis is
+        a single pixel, and the trend it represents is invisible
+        (ruling #395).
+        """
+        low, high = min(points), max(points)
+        if high - low < 1:
+            low, high = low - 1, high + 1
+        count = len(points)
+
+        def x_at(index: int) -> float:
+            return left + 6 + index * (width - 40) / max(1, count - 1)
+
+        def y_at(value: float) -> float:
+            return 12 + (high - value) * (height - 26) / (high - low)
+
+        parts = [
+            f"<rect x='{left}' y='1' width='{width}' height='{height - 2}' "
+            f"fill='none' stroke='#D3D1C7'/>"
+        ]
+        if dots:
+            parts.append(
+                f"<rect x='{left}' y='1' width='{x_at(dots) - left - 4:.0f}' "
+                f"height='{height - 2}' fill='#000' opacity='0.05'/>"
+            )
+        line = " ".join(
+            f"{x_at(i):.1f},{y_at(v):.1f}" for i, v in enumerate(points)
+        )
+        parts.append(
+            f"<polyline fill='none' stroke='#2A78D6' stroke-width='1.8' "
+            f"points='{line}'/>"
+        )
+        for index in range(dots):
+            parts.append(
+                f"<circle cx='{x_at(index):.1f}' cy='{y_at(points[index]):.1f}' "
+                f"r='2.2' fill='#2A78D6'/>"
+            )
+        if trends:
+            for days, colour in BATTERY_TREND_COLOURS:
+                if count < days:
+                    continue
+                slope = self._battery_slope(points[-days:])
+                last = points[-1]
+                first = max(low, min(high, last - slope * (days - 1)))
+                parts.append(
+                    f"<line x1='{x_at(count - days):.1f}' y1='{y_at(first):.1f}' "
+                    f"x2='{x_at(count - 1):.1f}' "
+                    f"y2='{y_at(max(low, min(high, last))):.1f}' "
+                    f"stroke='{colour}' stroke-width='1.6' "
+                    f"stroke-dasharray='3,2'/>"
+                )
+            parts.append(
+                f"<text x='{x_at(0):.1f}' y='{y_at(points[0]) - 7:.1f}' "
+                f"font-size='10' class='lbl'>{points[0]:.0f}%</text>"
+            )
+            parts.append(
+                f"<text x='{x_at(count - 1):.1f}' "
+                f"y='{y_at(points[-1]) - 7:.1f}' font-size='10' class='lbl' "
+                f"text-anchor='end'>{points[-1]:.0f}%</text>"
+            )
+        parts.append(
+            f"<text x='{left + width - 4}' y='13' font-size='10' "
+            f"fill='#8a8a86' text-anchor='end'>{high:.0f}%</text>"
+        )
+        parts.append(
+            f"<text x='{left + width - 4}' y='{height - 5}' font-size='10' "
+            f"fill='#8a8a86' text-anchor='end'>{low:.0f}%</text>"
+        )
+        if caption:
+            parts.append(
+                f"<text x='{left + 5}' y='{height - 5}' font-size='10' "
+                f"fill='#8a8a86'>{caption}</text>"
+            )
+        return "".join(parts)
+
+    def _battery_months(self, series: list[float]) -> list[float]:
+        """Return one median a month, oldest first, for the whole series."""
+        months: list[float] = []
+        rest = list(series)
+        while rest:
+            block = rest[-BATTERY_BLOCK_DAYS:]
+            rest = rest[:-BATTERY_BLOCK_DAYS]
+            if len(block) >= BATTERY_BLOCK_MIN_DAYS:
+                months.append(median(block))
+        months.reverse()
+        return months
+
+    def _battery_curve(self, series: list[float]) -> str:
+        """Return a cell's history and its last month, side by side."""
+        if len(series) < 3:
+            return ""
+        recent = series[-BATTERY_BLOCK_DAYS:]
+        months = self._battery_months(series[:-BATTERY_BLOCK_DAYS])
+        history = months + recent
+        gap = 16
+        left_width = int((BATTERY_CURVE_WIDTH - gap) * 0.42)
+        right_width = BATTERY_CURVE_WIDTH - gap - left_width
+        height = BATTERY_CURVE_HEIGHT
+        return (
+            f"<svg viewBox='0 0 {BATTERY_CURVE_WIDTH} {height}' "
+            f"width='{BATTERY_CURVE_WIDTH}' height='{height}' role='img' "
+            f"aria-label='This cell over time'>"
+            + self._battery_panel(
+                history, 0, left_width, height, False,
+                dots=len(months), caption="all history",
+            )
+            + self._battery_panel(
+                recent, left_width + gap, right_width, height, True,
+                caption="last 30 days",
+            )
+            + "</svg>"
+        )
+
+    def _battery_history_chart(self, series: list[float]) -> str:
+        """Return one point a month, each carrying the level it sat at.
+
+        For cells that are not falling. Nothing is moving, so there
+        is no trend to draw and no reason to spend half the width on
+        a second panel.
+        """
+        points = self._battery_months(series)
+        if len(points) < 2:
+            return ""
+        width, height = BATTERY_HISTORY_WIDTH, BATTERY_CURVE_HEIGHT
+        low, high = min(points), max(points)
+        if high - low < 1:
+            low, high = low - 1, high + 1
+        count = len(points)
+
+        def x_at(index: int) -> float:
+            return 26 + index * (width - 52) / max(1, count - 1)
+
+        def y_at(value: float) -> float:
+            return 18 + (high - value) * (height - 38) / (high - low)
+
+        parts = [
+            f"<svg viewBox='0 0 {width} {height}' width='{width}' "
+            f"height='{height}' role='img' aria-label='A month at a time'>",
+            f"<rect x='0' y='1' width='{width}' height='{height - 2}' "
+            f"fill='none' stroke='#D3D1C7'/>",
+            "<polyline fill='none' stroke='#2A78D6' stroke-width='1.8' "
+            "points='"
+            + " ".join(f"{x_at(i):.1f},{y_at(v):.1f}" for i, v in enumerate(points))
+            + "'/>",
+        ]
+        for index, value in enumerate(points):
+            parts.append(
+                f"<circle cx='{x_at(index):.1f}' cy='{y_at(value):.1f}' "
+                f"r='2.6' fill='#2A78D6'/>"
+            )
+            parts.append(
+                f"<text x='{x_at(index):.1f}' y='{y_at(value) - 7:.1f}' "
+                f"font-size='10' class='lbl' text-anchor='middle'>"
+                f"{value:.0f}%</text>"
+            )
+        parts.append(
+            f"<text x='4' y='{height - 5}' font-size='10' "
+            f"fill='#8a8a86'>oldest</text>"
+        )
+        parts.append(
+            f"<text x='{width - 4}' y='{height - 5}' font-size='10' "
+            f"fill='#8a8a86' text-anchor='end'>newest</text></svg>"
+        )
+        return "".join(parts)
+
+    @staticmethod
+    def _battery_rate(slope: float | None) -> str:
+        """Return a slope as a cell, or a dash where there is none."""
+        if slope is None:
+            return "<td>&ndash;</td>"
+        return f"<td>{slope:+.3f}/day</td>"
+
+    def _battery_falling_table(self, rows: list[dict[str, Any]]) -> str:
+        """Return the falling table: the trend, the reading, the curve.
+
+        The columns run oldest on the left to newest on the right, so
+        reading across is reading the cell's history in order. The
+        dated ones each cover their own period and nothing since; the
+        last three end today and are what the reading is drawn from
+        (ruling #395).
+
+        Every period any cell can show becomes a column, because a
+        table where one row's third column means a different stretch
+        of time from another row's cannot be read across.
+        """
+        periods: list[tuple[int, int]] = []
+        for row in rows:
+            for start, end, _slope in row.get("blocks") or []:
+                if (start, end) not in periods:
+                    periods.append((start, end))
+        periods.sort(reverse=True)
+
+        head = ["<table><tr><th>DEVICE</th><th>LEVEL</th>"]
+        head += [f"<th>DAY {start}&ndash;{end}</th>" for start, end in periods]
+        head += [f"<th>{days} DAY</th>" for days in BATTERY_TREND_WINDOWS]
+        head.append(
+            "<th>READING</th><th>LEFT</th>"
+            "<th>ALL HISTORY &nbsp;|&nbsp; LAST 30 DAYS</th></tr>"
+        )
+        html = ["".join(head)]
+
+        horizon = self._battery_days()
+        for row in rows:
+            blocks = {
+                (start, end): slope
+                for start, end, slope in (row.get("blocks") or [])
+            }
+            cells = [
+                f"<tr><td>{escape(row['name'] or '')}</td>",
+                f"<td>{row['level']:.0f}%</td>",
+            ]
+            cells += [self._battery_rate(blocks.get(p)) for p in periods]
+            cells += [
+                self._battery_rate((row.get("windows") or {}).get(days))
+                for days in BATTERY_TREND_WINDOWS
+            ]
+            reading = row.get("reading") or ""
+            cells.append(f"<td>{reading}</td>")
+            left = self.battery_time_left(row["days"])
+            cells.append(
+                f"<td style='color:#D03B3B'>{left}</td>"
+                if row["days"] <= horizon
+                else f"<td>{left}</td>"
+            )
+            cells.append(f"<td>{self._battery_curve(row.get('series') or [])}</td>")
+            cells.append("</tr>")
+            html.append("".join(cells))
+        html.append("</table>")
+        return "".join(html)
+
+    def _battery_steady_table(self, rows: list[dict[str, Any]]) -> str:
+        """Return the steady cells: the lowest few charted, the rest gridded.
+
+        A chart per cell reads well for twelve and badly for five
+        hundred, which is the fleet the grid of ruling #379 was built
+        for. So the lowest cells, the ones nearest the threshold and
+        therefore the ones a person has a reason to look at, get a
+        month-by-month chart, and everything above them keeps the
+        grid. The section is a bounded length whatever the fleet size
+        (ruling #395).
+        """
+        ordered = sorted(rows, key=lambda r: r["level"])
+        charted = ordered[:BATTERY_STEADY_CHARTED]
+        gridded = ordered[BATTERY_STEADY_CHARTED:]
+
+        html = ["<table><tr><th>DEVICE</th><th>LEVEL</th><th>HISTORY</th></tr>"]
+        for row in charted:
+            chart = self._battery_history_chart(row.get("series") or [])
+            html.append(
+                f"<tr><td>{escape(row['name'] or '')}</td>"
+                f"<td>{row['level']:.0f}%</td><td>{chart}</td></tr>"
+            )
+        html.append("</table>")
+        if gridded:
+            html.append(
+                f"<p>{len(gridded)} more cell(s) above these, holding steady.</p>"
+            )
+            html.append(
+                self._battery_grid(
+                    [(r["name"] or "", f"{r['level']:.0f}%") for r in gridded],
+                    2,
+                )
+            )
+        return "".join(html)
 
     def _battery_bank_svg(self, rows: list[dict[str, Any]]) -> str:
         """Return the whole bank as ten-point bands, as inline SVG.
@@ -335,23 +785,7 @@ class BatteryReportMixin:
         written = dt_util.now().strftime("%B %d, %Y at %-I:%M %p")
 
         if groups["falling"]:
-            falling_html = ["<table><tr><th>DEVICE</th><th>LEVEL</th>"
-                            "<th>RATE</th><th>LEFT</th></tr>"]
-            horizon = self._battery_days()
-            for row in groups["falling"]:
-                left = self.battery_time_left(row["days"])
-                cell = (
-                    f"<td style='color:#D03B3B'>{left}</td>"
-                    if row["days"] <= horizon
-                    else f"<td>{left}</td>"
-                )
-                falling_html.append(
-                    f"<tr><td>{escape(row['name'] or '')}</td>"
-                    f"<td>{row['level']:.0f}%</td>"
-                    f"<td>{row['slope']:.2f}/day</td>{cell}</tr>"
-                )
-            falling_html.append("</table>")
-            falling_block = "".join(falling_html)
+            falling_block = self._battery_falling_table(groups["falling"])
         else:
             falling_block = "<p class='empty'>No cell is measurably falling.</p>"
 
@@ -370,14 +804,10 @@ class BatteryReportMixin:
             low_block = "<p class='empty'>Nothing under the threshold.</p>"
 
         flat_block = (
-            f"<p>{len(groups['flat'])} cell(s) holding steady.</p>"
-            + self._battery_grid(
-                [
-                    (r["name"] or "", f"{r['level']:.0f}%")
-                    for r in groups["flat"]
-                ],
-                2,
-            )
+            f"<p>{len(groups['flat'])} cell(s) holding steady. The lowest "
+            "are charted, one point a month, each carrying the level that "
+            "month sat at.</p>"
+            + self._battery_steady_table(groups["flat"])
             + "<p>These cells have not moved. A battery holds its "
             "level for most of its life and then falls, so a steady "
             "reading is a healthy one rather than a stale one.</p>"
@@ -447,11 +877,29 @@ threshold.</p>
 {self._battery_bank_svg(readable)}
 <h2>Falling</h2>
 {falling_block}
-<p>A cell appears in this table when its projected <b>time till
-empty</b> falls inside your <b>Days Till Empty Warning</b> setting, on
-the Low Battery settings screen. Raise that setting to see cells
-earlier, lower it to see fewer. Times are deliberately vague, because
-a cell can hold its charge for weeks and then drop in days.</p>
+<p>This table isolates batteries that are losing charge. It tracks the
+daily drain rate across time. The READING column interprets the raw
+data by comparing recent decay against the cells long-term trend. To
+interpret the history, observe how the drain rates shift from left to
+right:</p>
+<ul>
+<li><b>Accelerating:</b> Drain rates increase as you move right. For
+lithium coin cells, this indicates the steep voltage drop immediately
+preceding failure.</li>
+<li><b>Steady:</b> Drain rates remain consistent across all columns.
+The projected lifespan estimate is reliable.</li>
+<li><b>Slopes do not agree:</b> The 30, 14 and 7 day rates do not form
+a consistent progression, so the recent decline is not confirmed by
+the period between. Treat the estimate with caution.</li>
+<li><b>Stabilized:</b> High drain in older columns is followed by flat
+recent columns. This indicates a temporary voltage dip (e.g., cold
+weather, mesh storm) that has since recovered. Replacement is not yet
+required.</li>
+</ul>
+<p>Times are deliberately vague, because a cell can hold its charge
+for weeks and then drop in days. A time shown in red falls inside
+your <b>Days Till Empty Warning</b> setting, on the Low Battery
+settings screen.</p>
 <h2>Under the Threshold</h2>
 {low_block}
 <p>A cell appears in this table when its level is at or below your
