@@ -29,6 +29,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
+    BATTERY_STEADY_CHARTED,
     CONF_BATTERY_DAYS,
     DATA_DEVICES,
     DATA_INCIDENTS,
@@ -95,7 +96,10 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
     page = _page(hass)
 
     assert page.index("Door 2nd Bedroom") < page.index("Soil Moisture")
-    assert "-1.75/day" in page
+    # The rate now sits in the 7 DAY column of the trend, at three
+    # decimals rather than two, because a block slope of a few
+    # thousandths reads as 0.00 at two (ruling #395).
+    assert "-1.750/day" in page
     # Words rather than a count, and widening with distance, because
     # the projection moves further the further out it reaches
     # (ruling #197).
@@ -553,8 +557,10 @@ async def test_the_steady_table_columns_are_equal(hass: HomeAssistant):
     short column is padded so the table stays rectangular.
     """
     coord = await setup_coordinator(hass)
-    for index in range(7):
-        device, _ = register_device(hass, f"col{index}", f"Cell {index}")
+    # The twelve lowest cells are charted (ruling #395); the grid
+    # begins after them, so seven more are seeded to fill it.
+    for index in range(BATTERY_STEADY_CHARTED + 7):
+        device, _ = register_device(hass, f"col{index}", f"Cell {index:02d}")
         _seed(coord, device.id, STEADY, 60.0 + index)
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
@@ -564,9 +570,9 @@ async def test_the_steady_table_columns_are_equal(hass: HomeAssistant):
     # Seven cells become four rows: four left, three right, with the
     # last right-hand pair blank.
     assert "<td></td><td></td></tr>" in page
-    # Reading order is down the first column, so the lowest level
-    # leads the left and the split falls after the fourth.
-    assert "<td>Cell 0</td><td>60%</td><td>Cell 4</td><td>64%</td>" in page
+    # Reading order is down the first column, so the lowest gridded
+    # level leads the left and the split falls after the fourth.
+    assert "<td>Cell 12</td><td>72%</td><td>Cell 16</td><td>76%</td>" in page
 
 
 async def test_the_no_battery_list_names_the_devices(
@@ -671,6 +677,9 @@ async def test_a_bank_of_five_hundred_cells_stays_legible(
     assert shown == counted, (counted, shown)
 
     block = page[page.index("<h2>Steady</h2>"):page.index("<h2>Unreadable</h2>")]
+    # The charted cells sit in their own table first; the grid whose
+    # balance is under test is the one after it (ruling #395).
+    block = block[block.index("more cell(s) above these"):]
     rows = re.findall(r"<tr><td>.*?</tr>", block)
     left = sum(
         1 for row in rows
@@ -750,3 +759,82 @@ async def test_a_bank_of_raw_scales_never_reads_as_healthy(
     ]
     assert len(named) == 10, len(named)
     assert "holding steady" not in block
+
+
+# ================================================================
+# The trend on the page (ruling #395).
+# ================================================================
+
+
+async def test_the_falling_table_reads_the_cells_history_in_order(
+    hass: HomeAssistant,
+):
+    """Oldest on the left, newest on the right, the reading, the curve.
+
+    A cell with sixty days of history shows one dated period before
+    the three nested windows. The columns are in that order, every
+    rate is a daily rate, and the row carries a two panel curve.
+    """
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "trend", "Motion Master Shower")
+    # Flat for a month, then falling faster every week: an
+    # acceleration by the rule, with a period before it.
+    series = [96.0] * 30 + [96.0 - 0.02 * i for i in range(15)] + [
+        95.7 - 0.2 * i for i in range(15)
+    ]
+    _seed(coord, device.id, series, series[-1])
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+    block = page[page.index("<h2>Falling</h2>"):page.index("<h2>Under the Threshold</h2>")]
+
+    header = re.search(r"<tr>(.*?)</tr>", block).group(1)
+    columns = re.findall(r"<th>(.*?)</th>", header)
+    assert columns[:2] == ["DEVICE", "LEVEL"]
+    assert columns[2].startswith("DAY 60")
+    assert columns[3:6] == ["30 DAY", "14 DAY", "7 DAY"]
+    assert columns[6:8] == ["READING", "LEFT"]
+
+    assert "<td>accelerating</td>" in block
+    assert block.count("/day</td>") == 4
+    assert "all history" in block and "last 30 days" in block
+    assert "class='lbl'" in block
+
+
+async def test_a_new_install_is_told_only_that_a_cell_is_falling(
+    hass: HomeAssistant,
+):
+    """Ten days of history buys no comparison and no dated column."""
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "young", "New Sensor")
+    series = [90.0 - 0.5 * i for i in range(10)]
+    _seed(coord, device.id, series, series[-1])
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+    block = page[page.index("<h2>Falling</h2>"):page.index("<h2>Under the Threshold</h2>")]
+
+    header = re.search(r"<tr>(.*?)</tr>", block).group(1)
+    columns = re.findall(r"<th>(.*?)</th>", header)
+    assert not any(c.startswith("DAY ") for c in columns)
+    assert "<td>falling</td>" in block
+    # The windows it cannot fill read as dashes rather than zeros.
+    assert block.count("&ndash;</td>") == 2
+
+
+async def test_the_help_text_sits_below_the_falling_table(
+    hass: HomeAssistant,
+):
+    """Every report explains itself after the table, not before it."""
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "bat1", "Door 2nd Bedroom")
+    _seed(coord, device.id, DYING, 12.0)
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    page = _page(hass)
+
+    assert page.index("</table>", page.index("<h2>Falling</h2>")) < page.index(
+        "This table isolates batteries"
+    )
+    assert "<b>Accelerating:</b>" in page
+    assert "<b>Stabilized:</b>" in page

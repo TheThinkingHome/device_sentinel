@@ -369,13 +369,16 @@ def _agree(page, heading, stop, pattern, pairs=False):
     if found is None:
         return
     counted = int(found.group(1))
-    rows = re.findall(r"<tr><td>.*?</tr>", block)
+    rows = re.findall(r"<tr><td>.*?</tr>", block, re.S)
     step = 2 if pairs else 1
     shown = sum(
         1
         for row in rows
-        for cell in re.findall(r"<td>(.*?)</td>", row)[::step]
-        if cell.strip()
+        for cell in re.findall(r"<td>(.*?)</td>", row, re.S)[::step]
+        # A chart cell is not a device. The steady table charts the
+        # lowest cells at name, level, chart, so its third cell holds
+        # an SVG where the grid holds a second name (ruling #395).
+        if cell.strip() and "<svg" not in cell
     )
     assert shown == counted, (heading, counted, shown)
 
