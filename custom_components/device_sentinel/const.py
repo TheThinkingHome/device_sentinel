@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.20.11 (2026-09-08)
+# File: const.py, Version: 0.20.12 (2026-09-10)
 
 """Constants for the Device Sentinel integration."""
 
@@ -989,6 +989,88 @@ BATTERY_FALLING_SLOPE = -0.05
 # distorts any summary of the bank, so it is named as unreadable
 # instead of counted as very healthy.
 BATTERY_READABLE_MAX = 100.0
+
+# ---------------------------------------------------------------
+# The trend: three nested windows and the periods before them.
+# ---------------------------------------------------------------
+# The 7 day slope answers what a cell is doing now, and it is what
+# the projection has always been built from. It cannot say whether
+# that is new. Two more nested windows and a run of earlier periods
+# answer that, and cost nothing to compute: the daily levels they
+# read have been kept since 0.9.0 (ruling #395).
+BATTERY_TREND_WINDOWS = (30, 14, 7)
+# Blocks of history before the nested windows, in days. A month at a
+# time for the first quarter, then a quarter at a time, so a year of
+# retention is five blocks rather than eleven.
+BATTERY_BLOCK_DAYS = 30
+BATTERY_WIDE_BLOCK_DAYS = 90
+BATTERY_WIDE_BLOCK_AFTER = 90
+# A block shorter than this is not reported. A handful of days
+# produces a slope with nothing behind it.
+BATTERY_BLOCK_MIN_DAYS = 5
+# Days of history before the 30 day window is trusted at all. Under
+# this a cell is simply falling, with no comparison offered, which
+# is what every cell on a new install looks like for three weeks.
+BATTERY_TREND_MIN_DAYS = 21
+# What counts as steeper. Acceleration is a progression rather than a
+# ratio: every window steeper than the one before it. A ratio needs a
+# real denominator and three of the reference fleet's seven falling
+# cells have a 30 day slope of zero or positive, so there was nothing
+# to divide by. A progression works whatever the sign, and a positive
+# 30 day figure only means the recent fall has not yet outweighed
+# what came before it (ruling #395).
+#
+# The progression alone is not enough. A cell drifting down at a
+# tenth of a point a day produces -0.100, -0.104, -0.108, which is a
+# progression and is not news. So the 7 day slope must also be at
+# least one falling-step steeper than the 30 day slope before the
+# decline is called accelerating. Measured over 105 samples of the
+# reference fleet's history: where the progression holds the gap has
+# a median of 0.111 and a lower quartile of 0.050. A floor of 0.05
+# keeps 38 of 47 monotonic samples, while 0.10 would discard 28 of
+# them including a live cell sitting at exactly 0.100.
+BATTERY_ACCELERATING_GAP = 0.05
+# A decline that has eased to half its 30 day pace or less.
+BATTERY_STABILIZED_RATIO = 0.5
+# There is no erratic threshold, and the reason is recorded so it is
+# not re-derived. The spread of the pairwise slopes was proposed as a
+# confidence measure, and on the reference fleet's 153 samples it
+# correlated 0.375 with how far a projection then swung. Remeasured
+# on 667 samples across both fleets and synthetic cells falling up to
+# four points a day, that fell to 0.047 absolute and -0.006 relative:
+# nothing. The first figure was an artifact of a fleet with no cell
+# falling faster than a quarter point a day. A test caught the rule
+# suppressing a cell losing 1.75 a day, the one case it must never
+# suppress. The spread is still computed and carried on each row for
+# a dashboard to show; it decides nothing (ruling #395).
+
+# The curve beside each falling cell. Two panels: the whole kept
+# history, then the last month on its own vertical scale. One chart
+# cannot carry both, because on a year of retention a recent
+# movement of two points drawn against a hundred point axis is a
+# single pixel (ruling #395).
+BATTERY_CURVE_WIDTH = 470
+BATTERY_CURVE_HEIGHT = 72
+# Wider, because it has a label over every point and no second panel.
+BATTERY_HISTORY_WIDTH = 640
+# The trend lines drawn on the recent panel, longest first so the
+# shortest is drawn last and stays legible where they cross.
+BATTERY_TREND_COLOURS = ((30, "#8E7CC3"), (14, "#E8A33D"), (7, "#D03B3B"))
+# How many steady cells get a chart. The lowest ones, since a cell
+# near the threshold is the one a person has reason to look at, and
+# the rest keep the compact grid of ruling #379 so the section stays
+# a bounded length whatever the fleet size (ruling #395).
+BATTERY_STEADY_CHARTED = 12
+
+# What the reading can say. Ordered as the rules are tested.
+TREND_TOO_NEW = "falling"
+TREND_ACCELERATING = "accelerating"
+TREND_DISAGREE = "slopes do not agree"
+TREND_JUST_STARTED = "just started falling"
+TREND_STABILIZED = "stabilized"
+TREND_STEADY = "steady"
+TREND_ERRATIC_SUFFIX = "erratic"
+
 # How near the end a cell has to be before the daily brief names it.
 # The report lists every cell that is measurably falling, which on a
 # real fleet is a third of it, most of them a season away. The brief
@@ -2080,7 +2162,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 394
+HIGHEST_RULING = 395
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
