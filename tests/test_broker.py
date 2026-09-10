@@ -47,11 +47,12 @@ FIXTURE = json.loads(
 )
 
 
-def _stub(state, started_at, regressed=False):
+def _stub(state, started_at, regressed=False, stopped_at=None):
     """The smallest reader the sampler and teardown both accept."""
     return SimpleNamespace(
         state=state,
         started_at=started_at,
+        stopped_at=stopped_at,
         regressed_since=lambda known: regressed,
         async_stop=lambda: None,
     )
@@ -298,3 +299,52 @@ async def test_a_reader_that_raises_is_no_opinion(hass: HomeAssistant):
     coord._broker_reader = Broken()
     assert coord.broker_state == BROKER_UNKNOWN
     assert coord._sample_broker(1.0) == BROKER_UNKNOWN
+
+
+# ==================================================================
+# A restart is measured from the last arrival, not the previous start
+# (ruling #396).
+# ==================================================================
+
+
+def test_a_restart_names_the_last_moment_the_broker_was_heard(monkeypatch):
+    """The reference fleet, 10 September 2026, 15:55:51.
+
+    The broker had published uptime every ten seconds for 12.2 hours
+    and then restarted: 44044 seconds on one arrival, 2 on the next.
+    The outage that restart represents is the ten seconds between
+    those arrivals. The previous start is how long the broker had
+    been up, which is the opposite of what an outage is, and it is
+    what the brief printed.
+    """
+    clock = _Clock(monkeypatch, 1_789_073_741.0)
+    reader = transport_mqtt.MQTTBrokerReader(hass=None)
+
+    # Twelve hours of ten second arrivals, then the restart.
+    session_start = 1_789_029_697.0
+    rows = [
+        {"t": session_start + 44_000 + 10 * i, "u": 44_000 + 10 * i}
+        for i in range(5)
+    ]
+    rows.append({"t": rows[-1]["t"] + 10, "u": 2})
+    _feed(reader, rows, now_at=clock.set)
+
+    assert reader.stopped_at == rows[-2]["t"]
+    # The gap the outage is measured across is ten seconds, not the
+    # 44,044 the previous start would have produced.
+    assert reader.started_at - reader.stopped_at < 20
+    assert reader.started_at - session_start > 44_000
+
+
+def test_no_restart_seen_means_no_moment_to_name(monkeypatch):
+    """A reader that has only ever seen a rising counter has nothing
+    to measure an outage from, and says so rather than guessing."""
+    clock = _Clock(monkeypatch, 1_789_000_000.0)
+    reader = transport_mqtt.MQTTBrokerReader(hass=None)
+    _feed(
+        reader,
+        [{"t": 1_789_000_000.0 + 10 * i, "u": 100 + 10 * i} for i in range(4)],
+        now_at=clock.set,
+    )
+
+    assert reader.stopped_at is None
