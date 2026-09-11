@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.20.15 (2026-09-11)
+# File: const.py, Version: 0.20.16 (2026-09-11)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2214,7 +2214,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 398
+HIGHEST_RULING = 399
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

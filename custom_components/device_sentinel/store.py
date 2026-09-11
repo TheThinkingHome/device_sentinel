@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.19.9 (2026-08-31)
+# File: store.py, Version: 0.20.16 (2026-09-11)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -67,6 +67,7 @@ from .const import (
     DEFAULT_COALESCE_MINUTES,
     DEFAULT_EXCLUDED_INTEGRATIONS,
     DEFAULT_RETENTION_DAYS,
+    DEV_FIRST_OBSERVED,
     DEV_LAST_ACTIVITY,
     DEV_TAINTED,
     DEV_TODAY_MAX,
@@ -744,7 +745,11 @@ class StorageMixin:
         of what it holds and what arrives, so a lower bound can only
         move that figure toward the truth and never past it;
         discarding it leaves the maximum lower than the device
-        actually earned. Only the clock fields move: the event count,
+        actually earned. What the bank cannot do is reach back past
+        the moment this device came under watch, because a clock read
+        from the protocol can be years older than the install and the
+        difference would then be silence nobody was here for
+        (ruling #399). Only the clock fields move: the event count,
         the learned series, the first-observed stamp, and every
         battery and signal field are what the device earned and are
         untouched.
@@ -773,6 +778,7 @@ class StorageMixin:
             for item in loaded.get(DATA_TODO_ITEMS) or []
             if item.get(TODO_DEVICE_ID)
         }
+        installed = loaded.get(DATA_FIRST_INSTALLED)
         reset = 0
         bankers: set[str] = set()
         for device_id, record in (loaded.get(DATA_DEVICES) or {}).items():
@@ -783,6 +789,24 @@ class StorageMixin:
                 continue
             if anchor is not None and anchor > last:
                 truncated = anchor - last
+                watched = _watched_seconds(record, anchor, installed)
+                if watched is not None and truncated > watched:
+                    # The bound of ruling #399. A clock carried from
+                    # the protocol rather than from arrival (rulings
+                    # #124, #125) is the coordinator's own record of
+                    # contact and can predate the install by years: a
+                    # Z-Wave JS last_seen reading 2023 on a fleet set
+                    # up in 2026. Banking the raw difference invents a
+                    # silence measured across time nobody was
+                    # watching, and the fold turns it into a freeze
+                    # window wider than the device's whole history,
+                    # which is a window no silence can ever close.
+                    # Six devices on the second fleet carried one, the
+                    # largest reading 1,020 days against 25 days of
+                    # observation. Silence we did not observe is not a
+                    # lower bound on anything, so the bank stops at
+                    # the moment we began watching this device.
+                    truncated = watched
                 current = record.get(DEV_TODAY_MAX)
                 if current is None or truncated > current:
                     record[DEV_TODAY_MAX] = truncated
@@ -983,3 +1007,36 @@ class StorageMixin:
     def first_installed(self) -> str | None:
         """Return the ISO timestamp of the first ever setup."""
         return self.data.get(DATA_FIRST_INSTALLED)
+
+
+def _watched_seconds(
+    record: dict[str, Any], anchor: float, installed: str | None
+) -> float | None:
+    """Return how long this device has been watched, at the anchor.
+
+    Two stamps, tried in that order. A device's own first-observed is
+    the tighter answer and is preferred. It is not always usable: a
+    record whose stamp was missing has it repaired to the moment of
+    repair (ruling #370), which sits at or after the anchor and says
+    nothing about the past, and bounding by it would zero a bank the
+    device had honestly earned. The install stamp answers the looser
+    question, how long this integration could have observed anything
+    at all, and cannot be written forward by a per-record repair.
+
+    None where neither stamp predates the anchor, in which case
+    nothing is bounded and the caller banks what it had. That is the
+    old behaviour, kept deliberately: a bound we cannot measure must
+    not cost a fleet a lower bound it earned.
+    """
+    for stamp in (record.get(DEV_FIRST_OBSERVED), installed):
+        if not isinstance(stamp, str):
+            continue
+        parsed = dt_util.parse_datetime(stamp)
+        if parsed is None:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt_util.UTC)
+        watched = anchor - parsed.timestamp()
+        if watched > 0.0:
+            return watched
+    return None
