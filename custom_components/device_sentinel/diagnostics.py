@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.20.11 (2026-09-08)
+# File: diagnostics.py, Version: 0.20.15 (2026-09-11)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -35,6 +35,9 @@ from homeassistant.helpers import entity_registry as er
 
 from . import DeviceSentinelConfigEntry
 from .const import (
+    BROKER_SCOPE,
+    INFRASTRUCTURE_DEVICE_CAP,
+    ROUTER_DOMAINS,
     CONF_STUDY_HARDWARE,
     DATA_STORMS,
     EP_LEARNED,
@@ -125,6 +128,57 @@ def _diagnostic_entities(
     return rows
 
 
+def _infrastructure(
+    hass: HomeAssistant, coordinator: Any
+) -> dict[str, Any]:
+    """Return what the house's plumbing is, not just how it behaves.
+
+    Every other part of this file says what a coordinator, a broker
+    or a router did. None of it says what any of them are, so a
+    report describing a stack misbehaving cannot be matched against
+    that hardware's own documentation, and the only way to learn the
+    model has been to ask (ruling #398).
+
+    Read live from the registry and the config entries, stored
+    nowhere. One entry per domain that carries the house: the stacks
+    the coordinator detected, the broker if MQTT is running, and any
+    router integration whose device trackers the tie reader could be
+    using.
+    """
+    device_registry = dr.async_get(hass)
+    domains: set[str] = set(coordinator._stacks or ())
+    domains.update(ROUTER_DOMAINS)
+    domains.add(BROKER_SCOPE)
+
+    out: dict[str, Any] = {}
+    for domain in sorted(domains):
+        entries = hass.config_entries.async_entries(domain)
+        if not entries:
+            continue
+        hardware: list[dict[str, Any]] = []
+        for entry in entries:
+            for device in dr.async_entries_for_config_entry(
+                device_registry, entry.entry_id
+            ):
+                hardware.append(
+                    {
+                        "name": device.name_by_user or device.name,
+                        "manufacturer": device.manufacturer,
+                        "model": device.model,
+                        "sw_version": device.sw_version,
+                        "hw_version": device.hw_version,
+                        "via_device": device.via_device_id is not None,
+                    }
+                )
+        out[domain] = {
+            "entries": [entry.title for entry in entries],
+            "state": [str(entry.state) for entry in entries],
+            "devices": hardware[:INFRASTRUCTURE_DEVICE_CAP],
+            "device_count": len(hardware),
+        }
+    return out
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: DeviceSentinelConfigEntry
 ) -> dict[str, Any]:
@@ -154,6 +208,15 @@ async def async_get_config_entry_diagnostics(
                 if device
                 else None
             ),
+            # Read live from the registry, stored nowhere. Two
+            # questions a report cannot answer without it: which
+            # coordinator or router somebody runs when their stack
+            # misbehaves, and whether a battery library would match
+            # their fleet at all (ruling #398).
+            "manufacturer": device.manufacturer if device else None,
+            "model": device.model if device else None,
+            "sw_version": device.sw_version if device else None,
+            "hw_version": device.hw_version if device else None,
             "integration": coordinator._watched.get(device_id),
             "clock_source": (
                 "last_seen"
@@ -225,6 +288,7 @@ async def async_get_config_entry_diagnostics(
     return {
         "version": coordinator.version,
         "entry_options": async_redact_data(dict(entry.options), TO_REDACT),
+        "infrastructure": _infrastructure(hass, coordinator),
         "storage": {
             "first_installed": coordinator.first_installed,
             "setup_count": coordinator.setup_count,

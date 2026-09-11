@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.20.14 (2026-09-10)
+# File: const.py, Version: 0.20.15 (2026-09-11)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1918,6 +1918,24 @@ CONF_STUDY_HARDWARE = "study_hardware"
 # proven on hardware, so it is not here, and asking for data nobody
 # needs would waste the one thing this screen spends, which is a
 # person's willingness to help.
+# The router integrations whose device trackers the tie reader can
+# use, named so the diagnostics can say which one a house runs
+# (ruling #398). Wider than what is supported today on purpose: a
+# report from a router nobody has built for is exactly the report
+# worth having.
+ROUTER_DOMAINS = (
+    "tplink_router",
+    "unifi",
+    "fritz",
+    "asuswrt",
+    "netgear",
+    "mikrotik",
+)
+# How many devices one infrastructure entry reports. A router with
+# two hundred tracked clients would otherwise bury the four lines
+# that say what the router is.
+INFRASTRUCTURE_DEVICE_CAP = 12
+
 STUDIABLE = {
     "unifi": "Router: UniFi",
     "fritz": "Router: FRITZ!Box",
@@ -2196,7 +2214,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 397
+HIGHEST_RULING = 398
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
