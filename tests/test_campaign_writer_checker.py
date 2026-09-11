@@ -37,6 +37,7 @@ from custom_components.device_sentinel.const import (
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
 )
+from custom_components.device_sentinel.store import StorageMixin
 from custom_components.device_sentinel.normalise import (
     check_records,
     check_storage,
@@ -64,7 +65,7 @@ def _fleet(path: Path) -> list[dict]:
         devices = json.load(handle)["data"]["devices"]
     with open(path.parent / CLOCKS_FOR[path.name], encoding="utf-8") as h:
         clocks = json.load(h)["data"].get("clocks") or {}
-    out = []
+    merged_all: dict[str, dict] = {}
     for device_id, record in devices.items():
         if not isinstance(record, dict):
             continue
@@ -73,8 +74,15 @@ def _fleet(path: Path) -> list[dict]:
         for field in CLOCK_FIELDS:
             if field in fields:
                 merged[field] = fields[field]
-        out.append(merged)
-    return out
+        merged_all[device_id] = merged
+    # The load path reconciles every stored record against the
+    # current schema before anything reads it, filling fields a
+    # newer version added and dropping ones it retired. A fleet file
+    # from an earlier release is what the reconciler exists for, and
+    # a campaign that skipped it would fail on every field added
+    # since the file was written (ruling #397 added two).
+    StorageMixin._reconcile_records(merged_all, "")
+    return list(merged_all.values())
 
 
 def _faults(coord) -> list:

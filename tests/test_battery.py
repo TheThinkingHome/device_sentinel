@@ -28,6 +28,10 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
+    DEV_BATTERY_DAILY_PREVIOUS,
+    DEV_BATTERY_REPLACED_AT,
+    SYS_BATTERY_REPLACED,
+    DATA_SYSTEM_EVENTS,
     CONF_LOW_THRESHOLD,
     DEFAULT_LOW_THRESHOLD,
     DATA_DEVICES,
@@ -617,3 +621,89 @@ async def test_a_non_finite_reading_is_not_a_level(hass: HomeAssistant):
     # And the card, which is what actually crashed, survives it.
     await coord.async_update_card()
     await hass.async_block_till_done()
+
+
+# ---------------------------------- a replacement starts day one (#397)
+
+
+def _roll_levels(coord, record, levels):
+    for level in levels:
+        record[DEV_BATTERY_VALUE] = level
+        coord._roll_battery(record, "dev-r")
+
+
+async def test_a_large_rise_is_a_replacement(hass: HomeAssistant):
+    """A cell does not climb thirty points overnight."""
+    coord = await setup_coordinator(hass)
+    record = _record()
+    _roll_levels(coord, record, [40.0, 38.0, 36.0, 100.0])
+
+    assert record[DEV_BATTERY_DAILY] == [100.0]
+    assert record[DEV_BATTERY_DAILY_PREVIOUS] == [40.0, 38.0, 36.0]
+    assert record[DEV_BATTERY_REPLACED_AT] is not None
+    kinds = [e["kind"] for e in coord.data[DATA_SYSTEM_EVENTS]]
+    assert SYS_BATTERY_REPLACED in kinds
+
+
+async def test_a_smaller_rise_that_lands_full_is_a_replacement(
+    hass: HomeAssistant,
+):
+    """A cell changed at eighty reads a hundred: a rise of twenty,
+    which the large-rise test alone would miss."""
+    coord = await setup_coordinator(hass)
+    record = _record()
+    _roll_levels(coord, record, [82.0, 81.0, 80.0, 100.0])
+
+    assert record[DEV_BATTERY_DAILY] == [100.0]
+    assert record[DEV_BATTERY_DAILY_PREVIOUS] == [82.0, 81.0, 80.0]
+
+
+async def test_the_largest_natural_rise_on_record_is_not_a_replacement(
+    hass: HomeAssistant,
+):
+    """Door 2nd Bedroom on the reference fleet: a sag to 12 and a
+    recovery to 23.5 the next day. A rise of 11.5 that lands nowhere
+    near full."""
+    coord = await setup_coordinator(hass)
+    record = _record()
+    _roll_levels(coord, record, [21.0, 12.0, 23.5, 24.0])
+
+    assert record[DEV_BATTERY_DAILY] == [21.0, 12.0, 23.5, 24.0]
+    assert record[DEV_BATTERY_DAILY_PREVIOUS] == []
+    assert record[DEV_BATTERY_REPLACED_AT] is None
+
+
+async def test_a_drift_up_near_full_is_not_a_replacement(hass: HomeAssistant):
+    """Motion Hall on the reference fleet went 94 to 99.5 on its own.
+    Landing above 95 only counts from at or below 90."""
+    coord = await setup_coordinator(hass)
+    record = _record()
+    _roll_levels(coord, record, [95.0, 94.0, 99.5])
+
+    assert record[DEV_BATTERY_DAILY] == [95.0, 94.0, 99.5]
+    assert record[DEV_BATTERY_DAILY_PREVIOUS] == []
+    assert record[DEV_BATTERY_REPLACED_AT] is None
+
+
+async def test_the_crossing_boundaries_are_inclusive(hass: HomeAssistant):
+    """Exactly 90 to exactly 95 is a replacement; 91 to 95 is not."""
+    coord = await setup_coordinator(hass)
+    crossing = _record()
+    _roll_levels(coord, crossing, [90.0, 95.0])
+    assert crossing[DEV_BATTERY_DAILY] == [95.0]
+
+    drifting = _record()
+    _roll_levels(coord, drifting, [91.0, 95.0])
+    assert drifting[DEV_BATTERY_DAILY] == [91.0, 95.0]
+
+
+async def test_a_replacement_clears_a_standing_low(hass: HomeAssistant):
+    """The low verdict belonged to the cell that was taken out."""
+    coord = await setup_coordinator(hass)
+    record = _record()
+    record[DEV_BATTERY_LOW] = True
+    record[DEV_BATTERY_SINCE] = "2026-09-01T00:00:00+00:00"
+    _roll_levels(coord, record, [12.0, 100.0])
+
+    assert record[DEV_BATTERY_LOW] is False
+    assert record[DEV_BATTERY_SINCE] is None
