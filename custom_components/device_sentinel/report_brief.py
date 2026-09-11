@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.20.11 (2026-09-08)
+# File: report_brief.py, Version: 0.20.14 (2026-09-10)
 
 """The daily brief: the one report written for a person.
 
@@ -92,6 +92,7 @@ from .const import (
     SYS_MAINTENANCE_CLOSED,
     SYS_MAINTENANCE_OPEN,
     SYS_PAIRING_CLOSED,
+    SYS_BATTERY_REPLACED,
     SYS_DEVICE_HANDLED,
     SYS_PAIRING_OPEN,
     SYS_RESTART,
@@ -414,6 +415,19 @@ class BriefMixin:
                 f"{who} was handled at {when}: somebody re-paired, "
                 f"reconfigured or removed it."
             )
+        if kind == SYS_BATTERY_REPLACED:
+            # "<registry id> <from> <to>": the name, and the two levels
+            # that made it a replacement rather than a recovery
+            # (ruling #397).
+            parts = str(detail or "").split(" ")
+            who = self._device_name(parts[0]) if parts and parts[0] else "A device"
+            levels = (
+                f", {parts[1]}% to {parts[2]}%" if len(parts) >= 3 else ""
+            )
+            return (
+                f"{who} had its battery replaced at {when}{levels}. "
+                f"Its history starts again from that day."
+            )
         if kind == SYS_PAIRING_OPEN:
             return f"A {scope} pairing window opened at {when}."
         if kind == SYS_PAIRING_CLOSED:
@@ -483,6 +497,12 @@ class BriefMixin:
                 "device_removed": "removed",
             }.get(what, "handled")
             return f"a device was {plain} by hand"
+        if kind == SYS_BATTERY_REPLACED:
+            parts = str(detail or "").split(" ")
+            levels = (
+                f" ({parts[1]}% to {parts[2]}%)" if len(parts) >= 3 else ""
+            )
+            return f"battery replaced{levels}"
         if kind == SYS_EPOCH_RESET:
             extra = f" for {detail}" if detail else ""
             return f"Learned statistics were reset at {when}{extra}."
@@ -617,6 +637,12 @@ class BriefMixin:
                 "device_removed": "removed",
             }.get(what, "handled")
             return f"a device was {plain} by hand"
+        if kind == SYS_BATTERY_REPLACED:
+            parts = str(detail or "").split(" ")
+            levels = (
+                f" ({parts[1]}% to {parts[2]}%)" if len(parts) >= 3 else ""
+            )
+            return f"battery replaced{levels}"
         if kind == SYS_EPOCH_RESET:
             return f"learned statistics reset ({detail})" if detail else "learned statistics reset"
         if kind == SYS_OPTIONS_CHANGED:

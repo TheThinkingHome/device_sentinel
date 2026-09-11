@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.20.11 (2026-09-08)
+# File: detect_battery.py, Version: 0.20.14 (2026-09-10)
 
 """Battery: the level threshold and what is tracked.
 
@@ -44,6 +44,13 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BATTERY_REPLACED_LANDS,
+    BATTERY_REPLACED_FROM_BELOW,
+    BATTERY_REPLACED_RISE,
+    DEV_BATTERY_DAILY_PREVIOUS,
+    DEV_BATTERY_REPLACED_AT,
+    SYS_BATTERY_REPLACED,
+    SYS_SCOPE_SYSTEM,
     BATTERY_CLEAR_MARGIN,
     CONF_BATTERY_MUTED_DEVICES,
     CONF_BATTERY_MUTED_INTEGRATIONS,
@@ -63,7 +70,7 @@ from .records import BAD_STATES
 class BatteryMixin:
     """Battery: the level threshold and what is tracked."""
 
-    def _roll_battery(self, record: dict[str, Any]) -> None:
+    def _roll_battery(self, record: dict[str, Any], device_id: str = "") -> None:
         """Append today's battery level to the daily discharge series.
 
         One point per day, sampled here at the rollover: the value,
@@ -78,8 +85,46 @@ class BatteryMixin:
         level = record.get(DEV_BATTERY_VALUE)
         if level is None:
             return
-        record.setdefault(DEV_BATTERY_DAILY, []).append(level)
-        del record[DEV_BATTERY_DAILY][:-self.retention_days]
+        series = record.setdefault(DEV_BATTERY_DAILY, [])
+        previous = next(
+            (v for v in reversed(series) if isinstance(v, (int, float))),
+            None,
+        )
+        if previous is not None and self._battery_replaced(previous, level):
+            # A cell does not climb: this is a new one. The series it
+            # replaces is kept, unread, and the cell in the device now
+            # starts at day one so nothing learned about its
+            # predecessor is projected onto it (ruling #397).
+            record[DEV_BATTERY_DAILY_PREVIOUS] = list(series)
+            record[DEV_BATTERY_REPLACED_AT] = dt_util.utcnow().isoformat()
+            record[DEV_BATTERY_LOW] = False
+            record[DEV_BATTERY_SINCE] = None
+            series = record[DEV_BATTERY_DAILY] = []
+            self._record_system_event(
+                SYS_BATTERY_REPLACED,
+                scope=SYS_SCOPE_SYSTEM,
+                detail=f"{device_id} {previous:.0f} {level:.0f}",
+            )
+        series.append(level)
+        del series[:-self.retention_days]
+
+    @staticmethod
+    def _battery_replaced(previous: float, level: float) -> bool:
+        """Return whether a rise between two days is a new cell.
+
+        Either a rise too large to be anything else, or a crossing
+        from at or below ninety to at or above ninety-five. The
+        second exists because a cell changed at eighty reads a
+        hundred, which the first test misses; its lower bound exists
+        because a cell already near full can drift the last few
+        points on its own (ruling #397).
+        """
+        if level - previous >= BATTERY_REPLACED_RISE:
+            return True
+        return (
+            level >= BATTERY_REPLACED_LANDS
+            and previous <= BATTERY_REPLACED_FROM_BELOW
+        )
 
     @staticmethod
     def _is_battery(ent: er.RegistryEntry) -> bool:

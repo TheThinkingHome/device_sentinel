@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.20.13 (2026-09-10)
+# File: const.py, Version: 0.20.14 (2026-09-10)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1062,6 +1062,34 @@ BATTERY_TREND_COLOURS = ((30, "#8E7CC3"), (14, "#E8A33D"), (7, "#D03B3B"))
 # a bounded length whatever the fleet size (ruling #395).
 BATTERY_STEADY_CHARTED = 12
 
+# ---------------------------------------------------------------
+# A battery replacement, and the day one that follows it.
+# ---------------------------------------------------------------
+# A cell does not climb. When the level rises by this much between
+# one day and the next, somebody changed it. Measured on the
+# reference fleet's 51 days: the largest natural rise was 11.5
+# points, a sag under load recovering, so twenty-five is twice that
+# with margin (ruling #397).
+BATTERY_REPLACED_RISE = 25.0
+# The other way a replacement looks: a cell that was at or below the
+# second figure and lands at or above the first. A cell at 80
+# replaced reads 100, a rise of twenty, which the first test misses.
+# The lower bound is what stops a cell already near full from
+# qualifying by drifting: Motion Hall went 94 to 99.5 on its own and
+# starts above ninety, so it is not one. On the reference fleet's 51
+# days no cell crossed from at or below ninety to at or above
+# ninety-five naturally. Both figures are data driven and stay open
+# to the next fleet that shows a counterexample (ruling #397).
+BATTERY_REPLACED_LANDS = 95.0
+BATTERY_REPLACED_FROM_BELOW = 90.0
+# On a replacement the daily series starts again at day one. The
+# series it replaces is kept under this key and never read, so the
+# history survives and the trend, the projection and every chart
+# describe the cell that is in the device now.
+DEV_BATTERY_DAILY_PREVIOUS = "battery_daily_previous"
+DEV_BATTERY_REPLACED_AT = "battery_replaced_at"
+SYS_BATTERY_REPLACED = "battery_replaced"
+
 # What the reading can say. Ordered as the rules are tested.
 TREND_TOO_NEW = "falling"
 TREND_ACCELERATING = "accelerating"
@@ -1238,9 +1266,15 @@ DEV_FROZEN_SINCE = "frozen_since"
 # leave a device half remembered. The scale label rides with it,
 # because a block whose partner had been forgotten would let the next
 # reading put the same scale on both sides of the record.
+# A battery replacement is a fact about the hardware, not learned
+# rhythm, so it survives an epoch reset with the series it splits
+# (ruling #397). The comment sits outside the tuple because a guard
+# reads the tuple's lines as names.
 EPOCH_KEPT = (
     DEV_SIGNAL_SCALE,
     DEV_SIGNAL_ALT,
+    DEV_BATTERY_DAILY_PREVIOUS,
+    DEV_BATTERY_REPLACED_AT,
     DEV_SIGNAL_READS,
     DEV_SET_ASIDE_SINCE,
     DEV_LAST_ACTIVITY,
@@ -2162,7 +2196,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 396
+HIGHEST_RULING = 397
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

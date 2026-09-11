@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.20.11 (2026-09-08)
+# File: coordinator.py, Version: 0.20.14 (2026-09-10)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -2755,7 +2755,7 @@ class DeviceSentinelCoordinator(
                 # report and resets with the day.
                 bucket[DEV_SIGNAL_TODAY_MIN] = None
             self._roll_dwell(record, now)
-            self._roll_battery(record)
+            self._roll_battery(record, device_id)
         # The day's storm tally, one row per domain (ruling #320),
         # written before the save that carries it.
         self._fold_storm_days(dt_util.now().date().isoformat())
