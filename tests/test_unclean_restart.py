@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_unclean_restart.py, Version: 0.10.12 (2026-07-31)
+# File: test_unclean_restart.py, Version: 0.20.16 (2026-09-11)
 
 """What a restart with no clean-stop marker does to the clocks (#163).
 
@@ -41,6 +41,7 @@ event rather than as an abstraction.
 from __future__ import annotations
 
 import time
+from datetime import datetime
 
 from homeassistant.core import HomeAssistant
 
@@ -96,6 +97,11 @@ WINDOW_LIVING_LEFT = _CUT - 5.0     # just before the anchor
 # float here is damage the gate now repairs, which is not what this
 # fixture means to plant (ruling #370).
 FIRST_OBSERVED = "2026-07-25T00:00:00+00:00"
+
+
+def _iso_seconds(stamp: str) -> float:
+    """Return an iso stamp as epoch seconds, as the rule reads it."""
+    return datetime.fromisoformat(stamp).timestamp()
 
 
 def _record(last_activity, today_max=None, tainted=False):
@@ -256,6 +262,66 @@ async def test_a_larger_maximum_already_earned_is_not_lowered(
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
 
     assert record[DEV_TODAY_MAX] == 2400.0
+
+
+async def test_a_protocol_clock_older_than_the_watch_banks_only_the_watch(
+    hass: HomeAssistant, hass_storage
+):
+    """D01 (spare) Range Extender, from the second fleet (ruling #399).
+
+    A Z-Wave JS last_seen entity reads 2023-11-22 on a fleet set up
+    on 2026-08-17, and ruling #124 makes that the device's clock. The
+    raw truncation was 1,020.43 days, banked, folded, and turned into
+    a freeze window wider than the whole install. Six devices on that
+    fleet carried one. The bank now stops where the watch began.
+    """
+    device, _ = register_device(hass, "d01", "D01 (spare) Range Extender")
+    watched = ANCHOR - _iso_seconds(FIRST_OBSERVED)
+    stale = ANCHOR - 1020.43 * 86400.0
+    _on_disk(hass_storage, {device.id: _record(stale)})
+
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+
+    assert record[DEV_TODAY_MAX] == watched
+    assert record[DEV_TODAY_MAX] < 1020.43 * 86400.0
+
+
+async def test_a_clock_inside_the_watch_banks_the_whole_truncation(
+    hass: HomeAssistant, hass_storage
+):
+    """The bound touches nothing it was not built for.
+
+    A silence that fits inside the observation window is a real lower
+    bound and is banked whole, which is the control on the case above.
+    """
+    device, _ = register_device(hass, "inside", "Door Terrace Dining")
+    _on_disk(hass_storage, {device.id: _record(ANCHOR - 7200.0)})
+
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+
+    assert record[DEV_TODAY_MAX] == 7200.0
+
+
+async def test_a_record_with_no_first_observed_stamp_banks_as_before(
+    hass: HomeAssistant, hass_storage
+):
+    """No stamp, no bound.
+
+    The bound is measured from first-observed, so a record that does
+    not carry one keeps the behaviour it had rather than losing a
+    bank it earned.
+    """
+    device, _ = register_device(hass, "nostamp", "Switch Kitchen")
+    record_on_disk = _record(ANCHOR - 7200.0)
+    del record_on_disk[DEV_FIRST_OBSERVED]
+    _on_disk(hass_storage, {device.id: record_on_disk})
+
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+
+    assert record[DEV_TODAY_MAX] == 7200.0
 
 
 async def test_the_learned_series_and_identity_are_untouched(
