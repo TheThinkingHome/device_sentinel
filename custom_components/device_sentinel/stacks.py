@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stacks.py, Version: 0.12.3 (2026-08-05)
+# File: stacks.py, Version: 0.20.17 (2026-09-11)
 
 """The one place a coordinator stack is registered.
 
@@ -51,6 +51,18 @@ def detect(domain: str, device: dr.DeviceEntry) -> str | None:
         if module.detects(domain, device):
             return module.STACK
     return None
+
+
+def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
+    """Return whether this device is a stack's own plumbing.
+
+    Asked once per device on the registry rebuild that already
+    happens, beside detection, which is what keeps this a reduction
+    over an existing walk rather than a new traversal (ruling #143).
+    A stack that owns no such device answers no, so adding one later
+    touches that stack's file and nothing else (ruling #218).
+    """
+    return any(module.is_plumbing(domain, device) for module in STACK_MODULES)
 
 
 def device_key(domain: str, device: dr.DeviceEntry) -> tuple[str, str] | None:

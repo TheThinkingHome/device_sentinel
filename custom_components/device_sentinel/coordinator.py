@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.20.14 (2026-09-10)
+# File: coordinator.py, Version: 0.20.17 (2026-09-11)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -175,6 +175,7 @@ from .const import (
     SERIES_FREEZE,
     SERIES_SIGNAL,
     SET_ASIDE_DISABLED,
+    SET_ASIDE_DUPLICATE_COORDINATOR,
     SET_ASIDE_EXCLUDED,
     SET_ASIDE_NO_ENTITIES,
     SET_ASIDE_SERVICE,
@@ -219,7 +220,7 @@ from .problem_list import ProblemListMixin
 from .records import BAD_STATES, _new_device_record, _reset_signal_day, _span
 from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
-from .stacks import device_key
+from .stacks import device_key, is_plumbing
 from .store import StorageMixin
 
 
@@ -1607,6 +1608,20 @@ class DeviceSentinelCoordinator(
                 # its silence is noise, and reporting it is the
                 # false negative issue #1 describes (ruling #257).
                 set_aside[device.id] = (name, domain, SET_ASIDE_DISABLED)
+                continue
+            if is_plumbing(domain, device):
+                # A coordinator reaching the registry a second time as
+                # an ordinary device (ruling #400). It is already
+                # watched properly by its own bridge sensor, which
+                # reads the stack directly. Judged as hardware it
+                # learns a rhythm from the intervals between unrelated
+                # events and is eventually convicted frozen while that
+                # sensor reads running. Last on the fact ladder so a
+                # person's exclusion, a service device and a disabled
+                # device all keep their own reason.
+                set_aside[device.id] = (
+                    name, domain, SET_ASIDE_DUPLICATE_COORDINATOR
+                )
                 continue
             watched[device.id] = domain
             # What the owning stack calls this device, where it can

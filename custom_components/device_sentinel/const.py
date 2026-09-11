@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.20.16 (2026-09-11)
+# File: const.py, Version: 0.20.17 (2026-09-11)
 
 """Constants for the Device Sentinel integration."""
 
@@ -100,6 +100,12 @@ BROKER_STATES = [BROKER_RUNNING, BROKER_DOWN, BROKER_UNKNOWN]
 # reported under (ruling #264). Not a stack: no bridge owns it, and
 # it outranks every bridge, because a broker that is down takes them
 # all with it.
+# Wi-Fi's display name, defined here because the map below reads it
+# and a module runs top to bottom. One copy of the string: the
+# problem list resolves Wi-Fi through that map and the sensor reads
+# it directly, and the two must not be able to drift apart.
+WIFI_DISPLAY_NAME = "WiFi"
+
 # What a stack is called when a person reads it (ruling #266). The
 # internal key is the domain the stacks module uses; a to-do row
 # saying "z2m: upstream" is accurate and tells nobody anything.
@@ -111,7 +117,7 @@ STACK_DISPLAY_NAMES = {
     # Not a stack, but the problem list resolves every upstream's
     # display name through this map, and the Wi-Fi row must read the
     # way the sensor does.
-    "wifi": "WiFi",
+    "wifi": WIFI_DISPLAY_NAME,
 }
 
 BROKER_LABEL = "MQTT broker"
@@ -498,11 +504,16 @@ DATA_SIGNAL_WEIGHTING = "signal_weighting"
 SIGNAL_WEIGHTING_MARK = "minutes-2"
 # Why a device is set aside: recorded rather than inferred, because
 # the classification file has to say which, and because only one of
-# the three can end (ruling #257).
+# the four can end (ruling #257).
 SET_ASIDE_SERVICE = "service"
 SET_ASIDE_DISABLED = "disabled"
 SET_ASIDE_NO_ENTITIES = "no entities"
 SET_ASIDE_EXCLUDED = "excluded"
+# A coordinator already watched properly by something else, reaching
+# the registry a second time as an ordinary device (ruling #400).
+# Today that is the Zigbee2MQTT bridge and nothing else; each stack
+# answers for its own.
+SET_ASIDE_DUPLICATE_COORDINATOR = "duplicate coordinator"
 
 # The integrations a person has asked never to watch. Muting in
 # every other place suppresses judgment and reporting and keeps the
@@ -526,16 +537,10 @@ AREA_FREEZE = "freeze"
 AREA_BATTERY = "battery"
 AREA_SIGNAL = "signal"
 
-# What each area counts toward, and the words at the end of the
-# count. Freeze and signal arm at seven days and mature later: the
-# freeze rhythm judges on the most recent fourteen (DAILY_MAX_KEEP),
-# the signal floor on the most recent thirty (SIGNAL_DAYS_KEEP, the
-# widening of ruling #196). Battery's slope reads a fixed seven, and
-# has no second milestone, so it is a two-phase count.
-DATA_STATE_ARMED = "Armed"
-DATA_STATE_LEARNED = "Learned"
-DATA_STATE_TRACKING = "Tracking"
-
+# The sentinel types of the three Data sensors. The sensors were
+# retired in 0.20.11 (ruling #394) and these names remain because
+# DEAD_ENTITY_SENTINEL_TYPES needs them to delete the registry
+# entries; their state strings went with the sensors.
 SENTINEL_TYPE_DATA_FREEZE = "data_freeze"
 SENTINEL_TYPE_DATA_BATTERY = "data_battery"
 SENTINEL_TYPE_DATA_SIGNAL = "data_signal"
@@ -1097,7 +1102,6 @@ TREND_DISAGREE = "slopes do not agree"
 TREND_JUST_STARTED = "just started falling"
 TREND_STABILIZED = "stabilized"
 TREND_STEADY = "steady"
-TREND_ERRATIC_SUFFIX = "erratic"
 
 # How near the end a cell has to be before the daily brief names it.
 # The report lists every cell that is measurably falling, which on a
@@ -1483,16 +1487,6 @@ SIGNAL_DAYS_KEEP = 30
 # lift of 5 put Door Entryway back from 7 reporting days to 11.
 
 
-# Where yellow turns red on the dwell report. The dwell
-# chart bands every nonzero device: 0 to 5 percent is green always,
-# because a healthy link brushing its line is the design working; 5 to
-# this setting is yellow; above it is red, and every red device is
-# also pulled out as an anomaly and described in full. The bands are
-# report coloring only. Signal is reported as dwell rather than as
-# threshold crossings, and it does not push at all yet (ruling #59):
-# nothing alerts from these bands, nothing joins
-# the problem list, and moving the slider repaints the next report
-# rather than changing any judgment.
 # The bad signal day (ruling #310). A device has a bad day when its
 # own P5 falls well below its own recent normal, judged in that
 # device's units and in its own spread, both gates together. The
@@ -1536,7 +1530,6 @@ BADDAY_MIN_SPREAD = 1.0
 SIGNAL_MARGIN = 5
 SIGNAL_LIFT = 0.0
 
-SIGNAL_GREEN_CEILING = 5.0
 
 # Signal-only muting, the same broad-to-narrow ladder as battery:
 # integration, label, device. Muting suppresses judgment, not
@@ -1643,12 +1636,6 @@ NOTIFY_CARD_ID = "device_sentinel_state"
 NOTIFY_FAMILY_BATTERY = "battery"
 NOTIFY_FAMILY_SIGNAL = "signal"
 NOTIFY_FAMILY_FREEZE = "freeze"
-NOTIFY_FAMILIES_ALL = (
-    NOTIFY_FAMILY_BATTERY,
-    NOTIFY_FAMILY_SIGNAL,
-    NOTIFY_FAMILY_FREEZE,
-)
-
 # The phone's notification tag per family: a push carrying a tag
 # replaces the previous one rather than stacking beside it, so all
 # battery news collapses into one entry on the lock screen. These
@@ -1890,7 +1877,6 @@ UPSTREAM_WIFI = "wifi"
 # ordinary churn never exceeded three, once, in a post-restart wobble
 # the hold absorbed.
 WIFI_KEY = "wifi"
-WIFI_DISPLAY_NAME = "WiFi"
 WIFI_SENSOR_NAME = "Bridge: WiFi"
 WIFI_BURST_FLOOR = 3
 WIFI_BURST_WINDOW_SECONDS = 60.0
@@ -2214,7 +2200,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 399
+HIGHEST_RULING = 400
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.12.11 (2026-08-07)
+# File: stack_z2m.py, Version: 0.20.17 (2026-09-11)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -87,6 +87,27 @@ def detects(domain: str, device: dr.DeviceEntry) -> bool:
 
     The bridge device is the tell, never a count of mqtt devices
     (rulings #139 and #143).
+    """
+    return owns_domain(domain) and is_bridge_device(device)
+
+
+def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
+    """Return whether this device is the stack itself, not hardware.
+
+    Zigbee2MQTT publishes its bridge through MQTT discovery, so the
+    registry holds the coordinator as an ordinary device on the mqtt
+    domain. It is not ordinary. It speaks only when something changes,
+    so a rhythm learned from it measures the intervals between
+    unrelated events rather than a heartbeat: 16.5 hours on the
+    reference fleet, 70.9 on the second, 30.8 on a third where it was
+    convicted frozen while the Bridge sensor for the same coordinator
+    read running. The coordinator is watched twice and the two answers
+    disagree, which is the fault ruling #400 closes.
+
+    This is not `detects`. That question asks which device proves the
+    stack is present, and for ZHA, Z-Wave and Matter every device on
+    the domain answers yes. This question asks whether the device is
+    the plumbing, and only Z2M has a device that is.
     """
     return owns_domain(domain) and is_bridge_device(device)
 

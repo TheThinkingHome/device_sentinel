@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_matter.py, Version: 0.20.11 (2026-09-08)
+# File: stack_matter.py, Version: 0.20.17 (2026-09-11)
 
 """Matter: everything Device Sentinel knows about this stack.
 
@@ -70,6 +70,20 @@ def detects(domain: str, device: dr.DeviceEntry) -> bool:
     needs the device to find its bridge.
     """
     return owns_domain(domain)
+
+
+def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
+    """Return whether this device is the stack itself, not hardware.
+
+    No for Matter (ruling #400). Matter has no reader yet, and nothing here is known to be
+    plumbing rather than hardware. Answering no is the honest
+    default: a stack that cannot say costs nothing.
+
+    Every stack module answers this question so the walk can ask it
+    without knowing which stacks exist (ruling #218). The signature
+    matches the others; neither argument is consulted.
+    """
+    return False
 
 
 def device_key(device: dr.DeviceEntry) -> None:

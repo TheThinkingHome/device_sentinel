@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zwave.py, Version: 0.20.11 (2026-09-08)
+# File: stack_zwave.py, Version: 0.20.17 (2026-09-11)
 
 """Z-Wave JS: everything Device Sentinel knows about this stack.
 
@@ -83,6 +83,21 @@ def detects(domain: str, device: dr.DeviceEntry) -> bool:
     needs the device to find its bridge.
     """
     return owns_domain(domain)
+
+
+def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
+    """Return whether this device is the stack itself, not hardware.
+
+    No for Z-Wave JS (ruling #400). A Z-Wave controller reports through its own entities like any
+    other device: the reference tester's Aeotec Z-Stick speaks every
+    204 seconds and carries a real signal series, so watching it is
+    right.
+
+    Every stack module answers this question so the walk can ask it
+    without knowing which stacks exist (ruling #218). The signature
+    matches the others; neither argument is consulted.
+    """
+    return False
 
 
 def device_key(device: dr.DeviceEntry) -> None:
