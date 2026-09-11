@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_stacks.py, Version: 0.12.1 (2026-08-05)
+# File: tests/test_stacks.py, Version: 0.20.17 (2026-09-11)
 
 """The stack registry, the four stack modules, and the silence.
 
@@ -92,12 +92,49 @@ NOT_BRIDGE = _Device(name="Kitchen Motion")
 
 
 def test_every_stack_module_implements_the_contract():
-    """Four names on every stack module, not three plus a special case."""
+    """Five names on every stack module, not four plus a special case."""
     for module in stacks.STACK_MODULES:
         assert isinstance(module.STACK, str)
         assert callable(module.owns_domain)
         assert callable(module.detects)
+        assert callable(module.is_plumbing)
         assert callable(module.make_reader)
+
+
+def test_only_z2m_owns_a_device_that_is_its_own_plumbing():
+    """Ruling #400, and why it cannot be `detects` reused.
+
+    `detects` answers yes for every device on an unbuilt stack's
+    domain, so building the rule on it would set aside a tester's
+    Z-Wave stick, which reports every 204 seconds and carries a real
+    signal series.
+    """
+    assert stack_z2m.is_plumbing("mqtt", BRIDGE) is True
+    assert stack_z2m.is_plumbing("mqtt", NOT_BRIDGE) is False
+    assert stack_z2m.is_plumbing("zha", BRIDGE) is False
+    for module, domain in (
+        (stack_zha, "zha"),
+        (stack_zwave, "zwave_js"),
+        (stack_matter, "matter"),
+    ):
+        assert module.detects(domain, NOT_BRIDGE) is True
+        assert module.is_plumbing(domain, NOT_BRIDGE) is False
+        assert module.is_plumbing(domain, BRIDGE) is False
+
+
+def test_the_walk_asks_one_question_and_every_stack_answers():
+    """The dispatcher, so the walk never names a stack (ruling #218)."""
+    assert stacks.is_plumbing("mqtt", BRIDGE) is True
+    assert stacks.is_plumbing("mqtt", NOT_BRIDGE) is False
+    assert stacks.is_plumbing("zwave_js", NOT_BRIDGE) is False
+
+
+def test_a_renamed_bridge_is_still_plumbing():
+    """The model tell carries the rule when the name has been changed."""
+    renamed = _Device(
+        name="Coordinator", model="Bridge", manufacturer="Zigbee2MQTT"
+    )
+    assert stacks.is_plumbing("mqtt", renamed) is True
 
 
 def test_each_stack_owns_its_own_domain_and_no_other():

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_classification.py, Version: 0.13.4 (2026-08-13)
+# File: test_classification.py, Version: 0.20.17 (2026-09-11)
 
 """How devices are counted and attributed to integrations.
 
@@ -26,6 +26,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
+    SET_ASIDE_DUPLICATE_COORDINATOR,
     SET_ASIDE_SERVICE,
     CONF_MUTED_DEVICES,
     DATA_DEVICES,
@@ -183,6 +184,82 @@ async def test_classification_sets_service_devices_aside(
     own = dr.async_get(hass).async_get_device({(DOMAIN, entry.entry_id)})
     assert own is not None
     assert own.id not in coord.data[DATA_DEVICES]
+
+
+async def test_the_z2m_bridge_is_set_aside_as_a_duplicate(
+    hass: HomeAssistant,
+):
+    """Ruling #400, measured on three fleets before it was built.
+
+    Zigbee2MQTT publishes its bridge through MQTT discovery, so the
+    coordinator reaches the registry twice: once as the thing the
+    Bridge sensor reads, and once as an ordinary mqtt device. Judged
+    as hardware it learned 16.5 hours of rhythm on the reference
+    fleet, 70.9 on the second and 30.8 on a third, where it was
+    convicted frozen while its own Bridge sensor read running.
+    """
+    source = MockConfigEntry(domain="mqtt")
+    source.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    bridge = dev_reg.async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("mqtt", "zigbee2mqtt_bridge_0x804b50fffea7ee09")},
+        name="SLZB-06M Zigbee2MQTT Bridge",
+    )
+    ent_reg.async_get_or_create(
+        "sensor", "mqtt", "bridge_state",
+        device_id=bridge.id, config_entry=source,
+    )
+    hardware = dev_reg.async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("mqtt", "zigbee2mqtt_0xa4c138cefc1f0e33")},
+        name="Switch Hall Guest",
+    )
+    ent_reg.async_get_or_create(
+        "sensor", "mqtt", "switch_state",
+        device_id=hardware.id, config_entry=source,
+    )
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+
+    assert bridge.id not in coord.data[DATA_DEVICES]
+    assert coord._set_aside[bridge.id][2] == SET_ASIDE_DUPLICATE_COORDINATOR
+    # Every other mqtt device is hardware and stays watched.
+    assert hardware.id in coord.data[DATA_DEVICES]
+    assert hardware.id not in coord._set_aside
+
+
+async def test_setting_the_bridge_aside_still_detects_the_stack(
+    hass: HomeAssistant,
+):
+    """The stack must survive its own bridge leaving the watched set.
+
+    Detection runs earlier in the same walk than the set-aside ladder,
+    so the house is still known to run Zigbee2MQTT. If this broke, a
+    fleet would lose its bridge sensor and its pairing-window discard
+    the moment the duplicate was cured.
+    """
+    source = MockConfigEntry(domain="mqtt")
+    source.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    bridge = dev_reg.async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("mqtt", "zigbee2mqtt_bridge_0x804b50fffea7ee09")},
+        name="Zigbee2MQTT Bridge",
+    )
+    ent_reg.async_get_or_create(
+        "sensor", "mqtt", "bridge_state",
+        device_id=bridge.id, config_entry=source,
+    )
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+
+    assert bridge.id not in coord.data[DATA_DEVICES]
+    assert "z2m" in coord._stacks
 
 
 async def test_coverage_sensors(hass: HomeAssistant):
