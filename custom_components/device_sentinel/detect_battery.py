@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.20.14 (2026-09-10)
+# File: detect_battery.py, Version: 0.20.19 (2026-09-12)
 
 """Battery: the level threshold and what is tracked.
 
@@ -48,6 +48,7 @@ from .const import (
     BATTERY_REPLACED_FROM_BELOW,
     BATTERY_REPLACED_RISE,
     DEV_BATTERY_DAILY_PREVIOUS,
+    DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_REPLACED_AT,
     SYS_BATTERY_REPLACED,
     SYS_SCOPE_SYSTEM,
@@ -90,20 +91,50 @@ class BatteryMixin:
             (v for v in reversed(series) if isinstance(v, (int, float))),
             None,
         )
-        if previous is not None and self._battery_replaced(previous, level):
-            # A cell does not climb: this is a new one. The series it
-            # replaces is kept, unread, and the cell in the device now
-            # starts at day one so nothing learned about its
-            # predecessor is projected onto it (ruling #397).
-            record[DEV_BATTERY_DAILY_PREVIOUS] = list(series)
+        rose = previous is not None and self._battery_replaced(previous, level)
+        pending = record.get(DEV_BATTERY_REPLACED_PENDING)
+        if rose and pending is None:
+            # A rise is a candidate, not a verdict (ruling #405).
+            # Wiping on one sample means any transient reading taken
+            # at the rollover erases a history: a cell that reads 0
+            # during a reconnect and its real value the next night
+            # is indistinguishable from a replacement, and the second
+            # fleet's own brief records exactly that shape, a battery
+            # falling to 100 percent and recovering nought seconds
+            # later. So the rise is remembered and the series keeps
+            # growing; the next sample decides.
+            record[DEV_BATTERY_REPLACED_PENDING] = previous
+            series.append(level)
+            del series[:-self.retention_days]
+            return
+        if pending is not None:
+            record[DEV_BATTERY_REPLACED_PENDING] = None
+            if not self._battery_replaced(pending, level):
+                # The rise did not hold against the reading before
+                # it, so the day it appeared was a bad sample and the
+                # history it would have erased is still the truth.
+                series.append(level)
+                del series[:-self.retention_days]
+                return
+            # Confirmed on a second consecutive sample. A cell does
+            # not climb: this is a new one. The series it replaces is
+            # kept, unread, and the cell in the device now starts at
+            # day one so nothing learned about its predecessor is
+            # projected onto it (ruling #397).
+            # The day the rise appeared is the new cell's first day,
+            # not the old cell's last, so it moves across rather than
+            # being kept with the history it does not belong to or
+            # discarded as though it never happened.
+            carried = series[-1:]
+            record[DEV_BATTERY_DAILY_PREVIOUS] = list(series[:-1])
             record[DEV_BATTERY_REPLACED_AT] = dt_util.utcnow().isoformat()
             record[DEV_BATTERY_LOW] = False
             record[DEV_BATTERY_SINCE] = None
-            series = record[DEV_BATTERY_DAILY] = []
+            series = record[DEV_BATTERY_DAILY] = carried
             self._record_system_event(
                 SYS_BATTERY_REPLACED,
                 scope=SYS_SCOPE_SYSTEM,
-                detail=f"{device_id} {previous:.0f} {level:.0f}",
+                detail=f"{device_id} {pending:.0f} {level:.0f}",
             )
         series.append(level)
         del series[:-self.retention_days]

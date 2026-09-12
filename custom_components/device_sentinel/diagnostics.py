@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.20.15 (2026-09-11)
+# File: diagnostics.py, Version: 0.20.19 (2026-09-12)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -117,6 +117,20 @@ def _diagnostic_entities(
             {
                 "entity_id": ent.entity_id,
                 "kind": kind,
+                # Which integration published it, and whether that is
+                # the device's own (ruling #404). Without this a
+                # series that changed which sensor it reads cannot be
+                # told from a cell that was changed, which is exactly
+                # the question the second fleet's six flat-100 cells
+                # raised and could not answer from data.
+                "platform": ent.platform,
+                "own": ent.platform == coordinator._watched.get(device_id),
+                "elected": ent.entity_id
+                in (
+                    (coordinator._battery_entity.get(device_id) or ("",))[0],
+                    coordinator._last_seen_entity.get(device_id),
+                )
+                or ent.entity_id in coordinator._signal_entities,
                 "disabled_by": (
                     str(ent.disabled_by.value)
                     if ent.disabled_by is not None

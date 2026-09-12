@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.20.18 (2026-09-12)
+# File: const.py, Version: 0.20.19 (2026-09-12)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1093,6 +1093,10 @@ BATTERY_REPLACED_FROM_BELOW = 90.0
 # describe the cell that is in the device now.
 DEV_BATTERY_DAILY_PREVIOUS = "battery_daily_previous"
 DEV_BATTERY_REPLACED_AT = "battery_replaced_at"
+# The reading a rise was measured against, held for one day while a
+# suspected replacement waits for a second sample to confirm it
+# (ruling #405). None when nothing is pending.
+DEV_BATTERY_REPLACED_PENDING = "battery_replaced_pending"
 SYS_BATTERY_REPLACED = "battery_replaced"
 
 # What the reading can say. Ordered as the rules are tested.
@@ -1279,6 +1283,7 @@ EPOCH_KEPT = (
     DEV_SIGNAL_ALT,
     DEV_BATTERY_DAILY_PREVIOUS,
     DEV_BATTERY_REPLACED_AT,
+    DEV_BATTERY_REPLACED_PENDING,
     DEV_SIGNAL_READS,
     DEV_SET_ASIDE_SINCE,
     DEV_LAST_ACTIVITY,
@@ -2200,7 +2205,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 403
+HIGHEST_RULING = 405
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

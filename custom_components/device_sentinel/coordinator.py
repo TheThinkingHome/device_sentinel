@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.20.18 (2026-09-12)
+# File: coordinator.py, Version: 0.20.19 (2026-09-12)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -343,6 +343,11 @@ class DeviceSentinelCoordinator(
         # device_id -> (entity_id, is_binary). Election prefers the
         # percentage entity; the binary low flag is the fallback.
         self._battery_entity: dict[str, tuple[str, bool]] = {}
+        # Whether each elected reading came from the device's own
+        # integration (ruling #404).
+        self._battery_own: dict[str, bool] = {}
+        self._last_seen_own: dict[str, bool] = {}
+        self._signal_own_entities: set[str] = set()
         # entity_id -> device_id, the reverse index the intake uses.
         self._battery_entity_reverse: dict[str, str] = {}
         self._pending_unavailable: dict[str, tuple[float, str]] = {}
@@ -1666,6 +1671,14 @@ class DeviceSentinelCoordinator(
         refused_signals: list[str] = []
         signal_devices: set[str] = set()
         battery_entity: dict[str, tuple[str, bool]] = {}
+        # Which readings came from the device's own integration
+        # (ruling #404). An entity another integration added is a
+        # second-hand reading: it took the original and did something
+        # to it, and we cannot know what, so it is used only where
+        # the device publishes nothing of its own.
+        battery_own: dict[str, bool] = {}
+        last_seen_own: dict[str, bool] = {}
+        signal_own_entities: set[str] = set()
         deviceless = 0
         with_entities: set[str] = set()
         for ent in ent_reg.entities.values():
@@ -1687,14 +1700,26 @@ class DeviceSentinelCoordinator(
                 # removed as residue from
                 # the entity-level Entity Sentinel blueprint.
                 muted_entities[ent.entity_id] = "label"
+            # The device's own integration published this entity, as
+            # opposed to an integration that enriches somebody else's
+            # devices (ruling #404). The registry records the author,
+            # so no list of such integrations is maintained and the
+            # rule holds for ones that do not exist yet.
+            own = ent.platform == watched.get(ent.device_id)
             if self._is_last_seen(ent):
-                last_seen_entity[ent.device_id] = ent.entity_id
+                if last_seen_entity.get(ent.device_id) is None or (
+                    own and not last_seen_own.get(ent.device_id, False)
+                ):
+                    last_seen_entity[ent.device_id] = ent.entity_id
+                    last_seen_own[ent.device_id] = own
             if self._is_signal(ent):
                 if ent.disabled_by is None:
                     signal_entities.add(ent.entity_id)
                     signal_devices.add(ent.device_id)
                     signal_units[_entity_unit(ent) or "(none)"] += 1
                     per_device_signals[ent.device_id] += 1
+                    if own:
+                        signal_own_entities.add(ent.entity_id)
             elif ent.disabled_by is None and _is_percentage(ent):
                 # Refused by #283, and counted rather than dropped in
                 # silence: a refusal nobody can see is the same
@@ -1704,12 +1729,29 @@ class DeviceSentinelCoordinator(
             if ent.disabled_by is None and self._is_battery(ent):
                 is_binary = ent.entity_id.startswith("binary_sensor.")
                 current = battery_entity.get(ent.device_id)
-                # Percentage beats binary; among equals, first wins.
-                if current is None or (current[1] and not is_binary):
+                # Percentage beats binary, then the device's own
+                # beats one another integration added, then the
+                # lower entity id wins (ruling #404). Every rung is
+                # a comparison rather than an arrival order: the old
+                # rule kept whichever the registry walk reached
+                # first, so a device carrying two percentages could
+                # read a different sensor after a restart and its
+                # discharge series would not say so. Battery Notes
+                # gives 76 of the second fleet's devices a second
+                # percentage, which is how this surfaced.
+                if current is None:
+                    better = True
+                else:
+                    was_own = battery_own.get(ent.device_id, False)
+                    better = (current[1], not was_own, current[0]) > (
+                        is_binary, not own, ent.entity_id
+                    )
+                if better:
                     battery_entity[ent.device_id] = (
                         ent.entity_id,
                         is_binary,
                     )
+                    battery_own[ent.device_id] = own
 
         in_grace = dt_util.utcnow().timestamp() < self._grace_until
         for device_id in [d for d in watched if d not in with_entities]:
@@ -1792,6 +1834,14 @@ class DeviceSentinelCoordinator(
         )
         self._signal_devices = signal_devices
         self._battery_entity = battery_entity
+        # Kept so the diagnostics can say which reading each device
+        # is using and whether it is the device's own (ruling #404).
+        # The previous election was invisible, which is why a series
+        # that changed source could not be told from a cell that had
+        # been changed.
+        self._battery_own = battery_own
+        self._last_seen_own = last_seen_own
+        self._signal_own_entities = signal_own_entities
         self._battery_entity_reverse = {
             entity_id: device_id
             for device_id, (entity_id, _) in battery_entity.items()
