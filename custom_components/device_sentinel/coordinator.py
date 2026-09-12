@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.20.19 (2026-09-12)
+# File: coordinator.py, Version: 0.20.20 (2026-09-12)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -43,6 +43,7 @@ Core rules implemented here, all ruled in the project document:
 from __future__ import annotations
 
 import copy
+import math
 from collections import Counter, deque
 from collections.abc import Callable
 from datetime import timedelta
@@ -129,6 +130,7 @@ from .const import (
     DATA_INCIDENTS,
     DATA_SERIES_STAMPS,
     DATA_SETUP_COUNT,
+    DATA_SAVED_AT,
     DATA_SIGNAL_DAY_REPAIR,
     DATA_SIGNAL_WEIGHTING,
     DATA_LAST_VERSION,
@@ -374,6 +376,11 @@ class DeviceSentinelCoordinator(
         # without a reader.
         self._maintenance_until: float | None = None
         self._maintenance_opened_at: float | None = None
+        # The saved-at stamp the file carried at load (ruling #406).
+        self._loaded_saved_at: float | None = None
+        # Whether the statistics epoch wiped every rhythm at this
+        # load, which suppresses the missed-day fold (#406, #204).
+        self._epoch_wiped: bool = False
         self._storm_feed_q: dict[str, deque[tuple[float, str]]] = {}
         self._storm_active: dict[str, dict[str, Any]] = {}
         # The day's closed storms per domain, memory only, folded
@@ -986,6 +993,12 @@ class DeviceSentinelCoordinator(
                                 record[field] = value
                         wiped += 1
                     loaded[DATA_STATS_EPOCH] = STATS_EPOCH
+                    # A wiped fleet has no missed day to fold: the
+                    # banked maximum the fold would append belongs to
+                    # the rhythm this wipe just declared invalid, and
+                    # appending it hands back what the wipe removed
+                    # (ruling #406, bounded by #204).
+                    self._epoch_wiped = True
                     # The wipe destroys the series themselves, and the
                     # depth is read from the series (ruling #258), so the
                     # stamps an older version left behind are pruned here
@@ -1222,6 +1235,13 @@ class DeviceSentinelCoordinator(
         # merge restored, and after the epoch wipe, because a wipe
         # that has just emptied the statistics leaves nothing to
         # protect.
+        # The on-disk stamp, captured before anything can move it: a
+        # save during setup rewrites DATA_SAVED_AT to now, and #406
+        # needs the moment the file was last current.
+        stamp = loaded.get(DATA_SAVED_AT)
+        self._loaded_saved_at = (
+            float(stamp) if isinstance(stamp, (int, float)) else None
+        )
         clean_stop = bool(loaded.pop(DATA_CLEAN_STOP, False))
         if not clean_stop:
             self._handle_unclean_restart(loaded)
@@ -1302,6 +1322,7 @@ class DeviceSentinelCoordinator(
         )
 
         self._rebuild_registry_view(audit=True)
+        await self._fold_if_a_midnight_was_missed()
 
         self._unsubs.append(
             self.hass.bus.async_listen(
@@ -2157,6 +2178,23 @@ class DeviceSentinelCoordinator(
                 value = float(state)
             except ValueError:
                 value = None
+            if value is not None and not math.isfinite(value):
+                # float() accepts nan, inf, -inf, infinity and 1e999
+                # and raises on none of them, and ESPHome and MQTT
+                # sensors publish nan for a reading that failed. One
+                # such value reached signal_value, both of the day's
+                # extremes and the P2 estimator, and every statistic
+                # computed from them afterwards is nan. A reading
+                # that is not a finite number is not a reading
+                # (ruling #407, the rule #347 already applies to a
+                # battery level).
+                LOGGER.info(
+                    "device_sentinel: %s reported %s, which is not a "
+                    "signal reading; ignored",
+                    entity_id,
+                    state,
+                )
+                value = None
             if value is not None:
                 self._feed_signal(record, value, now)
 
@@ -2856,6 +2894,52 @@ class DeviceSentinelCoordinator(
                 shed_episodes,
                 shed_incidents,
             )
+
+    async def _fold_if_a_midnight_was_missed(self) -> None:
+        """Run the fold once for a midnight that passed while down.
+
+        The fold is scheduled with a local-time tracker, so a restart
+        that spans 00:00 means it never fires and nothing notices.
+        Yesterday's accumulated maximum then merges into today and
+        the next fold records one sample spanning both days, no
+        battery level is sampled for the missed day, and the whole
+        fleet loses a day of learning silently. A person who reboots
+        nightly at midnight loses it every night (ruling #406).
+
+        Judged on the local date of the last save against today's,
+        because the fold is a local-midnight event and the saved-at
+        stamp is the only record of when the file was last current.
+        Run once however many midnights were missed: the day's
+        accumulators hold one day's worth whether the gap was one
+        night or a week, so folding twice would append a second
+        sample that no day produced.
+
+        Silent when nothing was missed, which is every ordinary
+        start.
+        """
+        if self._epoch_wiped:
+            # The statistics epoch changed at this load and every
+            # rhythm was wiped (#204). There is nothing to fold into
+            # and the day's banked maximum is pre-wipe evidence.
+            return
+        saved_at = self._loaded_saved_at
+        if saved_at is None:
+            return
+        last = dt_util.as_local(
+            dt_util.utc_from_timestamp(float(saved_at))
+        ).date()
+        today = dt_util.now().date()
+        if last >= today:
+            return
+        LOGGER.info(
+            "Storage was last saved on %s and today is %s, so a "
+            "midnight passed while Device Sentinel was not running; "
+            "folding the missed day once before resuming "
+            "(ruling #406)",
+            last.isoformat(),
+            today.isoformat(),
+        )
+        await self._on_midnight(None)
 
     async def _on_midnight(self, _now: Any) -> None:
         """Roll today's maxima into the bounded daily set."""
