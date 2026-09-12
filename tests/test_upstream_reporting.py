@@ -1,7 +1,7 @@
 """Reporting an upstream outage as one fault, not seventy-six.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_upstream_reporting.py, Version: 0.20.2 (2026-09-04)
+# File: test_upstream_reporting.py, Version: 0.20.18 (2026-09-12)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -177,7 +177,10 @@ async def test_the_upstream_row_reads_like_a_sentence(
         "z2m", {"upstream": 1500.0}, 74
     )
 
-    assert summary == "Zigbee2MQTT down: 74 devices unavailable"
+    # Ruling #401: casualties against membership. One watched
+    # device behind the stack in this house, so membership reads as
+    # the larger of the two rather than below the count.
+    assert summary == "Zigbee2MQTT down: 74 of 74 devices unavailable"
     assert "stopped reporting at" in description
     assert "listed on its own" in description
 
@@ -189,7 +192,7 @@ async def test_one_casualty_reads_in_the_singular(hass: HomeAssistant):
 
     summary, _ = coord._upstream_item_text("z2m", {"upstream": 1500.0}, 1)
 
-    assert summary == "Zigbee2MQTT down: 1 device unavailable"
+    assert summary == "Zigbee2MQTT down: 1 of 1 devices unavailable"
 
 
 async def test_the_count_changes_and_the_stamp_does_not(
@@ -225,7 +228,7 @@ async def test_the_count_changes_and_the_stamp_does_not(
     )
 
     assert first_summary != row["summary"]
-    assert "2 devices" in row["summary"]
+    assert "2 of " in row["summary"]
     assert row["kinds"]["upstream"] == first_since
 
 
