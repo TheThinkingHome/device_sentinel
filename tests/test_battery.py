@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery.py, Version: 0.18.3 (2026-08-26)
+# File: tests/test_battery.py, Version: 0.20.19 (2026-09-12)
 
 """Battery detection: the low verdict and the discharge recorder.
 
@@ -30,6 +30,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.device_sentinel.const import (
     DEV_BATTERY_DAILY_PREVIOUS,
     DEV_BATTERY_REPLACED_AT,
+    DEV_BATTERY_REPLACED_PENDING,
     SYS_BATTERY_REPLACED,
     DATA_SYSTEM_EVENTS,
     CONF_LOW_THRESHOLD,
@@ -636,9 +637,13 @@ async def test_a_large_rise_is_a_replacement(hass: HomeAssistant):
     """A cell does not climb thirty points overnight."""
     coord = await setup_coordinator(hass)
     record = _record()
-    _roll_levels(coord, record, [40.0, 38.0, 36.0, 100.0])
+    _roll_levels(coord, record, [40.0, 38.0, 36.0, 100.0, 100.0])
 
-    assert record[DEV_BATTERY_DAILY] == [100.0]
+    # Ruling #405: the rise is confirmed by a second sample, and the
+    # day it appeared is the new cell's first day, so it moves into
+    # the fresh series rather than staying with a history it does not
+    # belong to.
+    assert record[DEV_BATTERY_DAILY] == [100.0, 100.0]
     assert record[DEV_BATTERY_DAILY_PREVIOUS] == [40.0, 38.0, 36.0]
     assert record[DEV_BATTERY_REPLACED_AT] is not None
     kinds = [e["kind"] for e in coord.data[DATA_SYSTEM_EVENTS]]
@@ -652,9 +657,9 @@ async def test_a_smaller_rise_that_lands_full_is_a_replacement(
     which the large-rise test alone would miss."""
     coord = await setup_coordinator(hass)
     record = _record()
-    _roll_levels(coord, record, [82.0, 81.0, 80.0, 100.0])
+    _roll_levels(coord, record, [82.0, 81.0, 80.0, 100.0, 100.0])
 
-    assert record[DEV_BATTERY_DAILY] == [100.0]
+    assert record[DEV_BATTERY_DAILY] == [100.0, 100.0]
     assert record[DEV_BATTERY_DAILY_PREVIOUS] == [82.0, 81.0, 80.0]
 
 
@@ -689,12 +694,58 @@ async def test_the_crossing_boundaries_are_inclusive(hass: HomeAssistant):
     """Exactly 90 to exactly 95 is a replacement; 91 to 95 is not."""
     coord = await setup_coordinator(hass)
     crossing = _record()
-    _roll_levels(coord, crossing, [90.0, 95.0])
-    assert crossing[DEV_BATTERY_DAILY] == [95.0]
+    _roll_levels(coord, crossing, [90.0, 95.0, 95.0])
+    assert crossing[DEV_BATTERY_DAILY] == [95.0, 95.0]
 
     drifting = _record()
-    _roll_levels(coord, drifting, [91.0, 95.0])
-    assert drifting[DEV_BATTERY_DAILY] == [91.0, 95.0]
+    _roll_levels(coord, drifting, [91.0, 95.0, 95.0])
+    assert drifting[DEV_BATTERY_DAILY] == [91.0, 95.0, 95.0]
+
+
+async def test_a_lone_spike_does_not_erase_a_history(hass: HomeAssistant):
+    """Ruling #405. The second fleet's own brief records the shape:
+    "S68 Soil Moisture Sensor battery fell to 100% and recovered 0s
+    later, revived by a restart". One transient sample taken at the
+    rollover must not wipe weeks of learning."""
+    coord = await setup_coordinator(hass)
+    record = _record()
+    _roll_levels(coord, record, [40.0, 38.0, 36.0, 100.0, 34.0])
+
+    assert record[DEV_BATTERY_DAILY] == [40.0, 38.0, 36.0, 100.0, 34.0]
+    assert record[DEV_BATTERY_DAILY_PREVIOUS] == []
+    assert record[DEV_BATTERY_REPLACED_AT] is None
+    assert record[DEV_BATTERY_REPLACED_PENDING] is None
+
+
+async def test_the_pending_rise_is_cleared_after_it_resolves(
+    hass: HomeAssistant,
+):
+    """Either way it resolves, nothing is left armed: a second spike
+    a week later must be judged on its own."""
+    coord = await setup_coordinator(hass)
+    record = _record()
+    _roll_levels(coord, record, [40.0, 100.0, 38.0])
+    assert record[DEV_BATTERY_REPLACED_PENDING] is None
+    _roll_levels(coord, record, [100.0, 100.0])
+    assert record[DEV_BATTERY_REPLACED_PENDING] is None
+    assert record[DEV_BATTERY_REPLACED_AT] is not None
+
+
+async def test_the_confirmation_measures_against_the_pre_rise_reading(
+    hass: HomeAssistant,
+):
+    """Not against the rise itself. A cell that jumps and then reads
+    a little differently the next day is still a new cell: 60 to 88
+    to 92 is a gain of thirty-two points, which no cell does. The
+    second sample confirms the rise rather than having to repeat it
+    exactly."""
+    coord = await setup_coordinator(hass)
+    record = _record()
+    _roll_levels(coord, record, [60.0, 88.0, 92.0])
+
+    assert record[DEV_BATTERY_REPLACED_AT] is not None
+    assert record[DEV_BATTERY_DAILY] == [88.0, 92.0]
+    assert record[DEV_BATTERY_DAILY_PREVIOUS] == [60.0]
 
 
 async def test_a_replacement_clears_a_standing_low(hass: HomeAssistant):
@@ -703,7 +754,7 @@ async def test_a_replacement_clears_a_standing_low(hass: HomeAssistant):
     record = _record()
     record[DEV_BATTERY_LOW] = True
     record[DEV_BATTERY_SINCE] = "2026-09-01T00:00:00+00:00"
-    _roll_levels(coord, record, [12.0, 100.0])
+    _roll_levels(coord, record, [12.0, 100.0, 100.0])
 
     assert record[DEV_BATTERY_LOW] is False
     assert record[DEV_BATTERY_SINCE] is None
