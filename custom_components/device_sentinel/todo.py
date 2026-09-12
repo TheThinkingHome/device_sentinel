@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: todo.py, Version: 0.20.11 (2026-09-08)
+# File: todo.py, Version: 0.20.18 (2026-09-12)
 
 """Todo platform for the Device Sentinel integration.
 
@@ -16,7 +16,8 @@ The list also carries what is wrong above the devices. When a
 coordinator, the broker, the Wi-Fi network or a whole integration
 goes down, the devices behind it do not each take a line: one row
 names the cause and counts them, reading like `Zigbee2MQTT down: 74
-devices unavailable`, and it clears itself when the cause returns.
+of 77 devices unavailable` (ruling #401), and it clears itself when
+the cause returns.
 Two devices keep their own row through such an outage, the one
 already broken before it began and the one still down after it
 clears, because those are the two the outage does not explain. One item per device, keyed by its

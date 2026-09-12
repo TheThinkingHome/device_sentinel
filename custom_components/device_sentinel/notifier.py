@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.20.11 (2026-09-08)
+# File: notifier.py, Version: 0.20.18 (2026-09-12)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -165,9 +165,13 @@ class NotifierMixin:
             # reading.
             for name, count in self.suppressed_down_counts.items():
                 display = STACK_DISPLAY_NAMES.get(name, name)
-                plural = "" if count == 1 else "s"
+                behind = max(self.upstream_membership(name), count)
+                # Casualties against membership (ruling #401): the
+                # count drains as devices return, and printed alone
+                # it read as one figure that would not hold still.
                 parts.append(
-                    f"{display} down, {count} device{plural} unavailable"
+                    f"{display} down, {count} of {behind} devices "
+                    "unavailable"
                 )
         if family == NOTIFY_FAMILY_BATTERY:
             # Two sources, because low and falling are two questions

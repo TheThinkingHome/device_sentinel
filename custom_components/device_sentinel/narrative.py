@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.19.12 (2026-09-02)
+# File: narrative.py, Version: 0.20.18 (2026-09-12)
 
 """How to say what happened: the composer.
 
@@ -88,9 +88,13 @@ class NarrativeMixin:
         if not device_id:
             return stored or "unknown device"
         current = self._trim_name(device_id)
-        if current == device_id and stored:
+        if current != device_id:
+            return current
+        if stored:
             return stored
-        return current
+        # Nothing knows it and nothing recorded it, so the ladder
+        # answers rather than the raw id (ruling #402).
+        return self._device_name(device_id)
 
     # How bad a problem is, worst first. A device with several
     # problems is described by its worst one, because a phone line

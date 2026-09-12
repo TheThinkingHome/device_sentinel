@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.20.14 (2026-09-10)
+# File: normalise.py, Version: 0.20.18 (2026-09-12)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -129,6 +129,7 @@ INTEGER = "integer"
 STRING = "string or None"
 BOOLEAN = "boolean"
 FLOAT_SERIES = "list of numbers"
+GAP_SERIES = "gap series"
 # A daily statistic that a rail-only day legitimately cannot supply:
 # the row is written to keep the eight series aligned, and the value
 # is null because no reading existed to compute one (ruling #305).
@@ -162,7 +163,7 @@ NULLABLE_MAPPING = "None or a mapping"
 # table absent from a record is reported as missing.
 EXPECTED: dict[str, str] = {
     DEV_LAST_ACTIVITY: NUMBER,
-    DEV_DAILY_MAX: FLOAT_SERIES,
+    DEV_DAILY_MAX: GAP_SERIES,
     DEV_TODAY_MAX: NUMBER,
     DEV_FIRST_OBSERVED: STRING,
     DEV_EVENT_COUNT: INTEGER,
@@ -246,7 +247,25 @@ def _fault(kind: str, value: Any) -> str | None:
         if not isinstance(value, list):
             return _describe(value)
         bad = [x for x in value if not _is_number(x)]
-        return None if not bad else f"{len(bad)} bad element(s), first {_describe(bad[0])}"
+        if bad:
+            return f"{len(bad)} bad element(s), first {_describe(bad[0])}"
+        return None
+    if kind == GAP_SERIES:
+        # A learned gap series: every element is a number of seconds a
+        # device stayed silent, so a negative element is a writer
+        # fault, not a reading (ruling #403). A series that reached
+        # disk carrying one is reset with the rest of the shape
+        # faults; the magnitude ceiling needs the record's own
+        # first-observed stamp and is applied by the repair pass.
+        if not isinstance(value, list):
+            return _describe(value)
+        bad = [x for x in value if not _is_number(x)]
+        if bad:
+            return f"{len(bad)} bad element(s), first {_describe(bad[0])}"
+        negative = [x for x in value if x < 0]
+        if negative:
+            return f"{len(negative)} negative element(s), first {_describe(negative[0])}"
+        return None
     if kind == NULLABLE_FLOAT_SERIES:
         if not isinstance(value, list):
             return _describe(value)

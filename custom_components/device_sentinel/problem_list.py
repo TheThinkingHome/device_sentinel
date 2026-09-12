@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.20.11 (2026-09-08)
+# File: problem_list.py, Version: 0.20.18 (2026-09-12)
 
 """The problem list: the single memory every channel renders.
 
@@ -447,8 +447,15 @@ class ProblemListMixin:
         """
         display = STACK_DISPLAY_NAMES.get(name, name)
         devices = int(count or 0)
-        plural = "" if devices == 1 else "s"
-        summary = f"{display} down: {devices} device{plural} unavailable"
+        # Membership cannot honestly read below the casualties it is
+        # measured against; where it does, the resolver has no
+        # answer for this name and the count stands alone.
+        behind = max(self.upstream_membership(name), devices)
+        # Casualties against membership (ruling #401). The count
+        # climbs as devices are judged and drains as they return,
+        # and printed alone it read as one number wandering; beside
+        # the membership the drain reads as the recovery it is.
+        summary = f"{display} down: {devices} of {behind} devices unavailable"
         since = kinds.get(UPSTREAM_KIND)
         when = (
             self._format_report_time(
@@ -462,12 +469,14 @@ class ProblemListMixin:
             if when
             else f"{display} is not reporting."
         )
+        plural = "" if behind == 1 else "s"
         return summary, (
-            f"{opening} The {devices} device{plural} behind it are "
-            f"unavailable because of it rather than on their own, so "
-            f"they are counted here instead of listed. Their verdicts "
-            f"are recorded and clear when it returns; anything still "
-            f"down afterward is listed on its own."
+            f"{opening} {behind} device{plural} sit behind it, and "
+            f"{devices} of them are unavailable because of it rather "
+            f"than on their own, so they are counted here instead of "
+            f"listed. Their verdicts are recorded and clear when it "
+            f"returns; anything still down afterward is listed on its "
+            f"own."
         )
 
     def _problem_item_text(

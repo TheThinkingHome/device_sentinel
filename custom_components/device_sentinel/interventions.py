@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.20.13 (2026-09-10)
+# File: interventions.py, Version: 0.20.18 (2026-09-12)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -685,6 +685,29 @@ class InterventionMixin:
         if since is None:
             return None
         return stack, since
+
+    def upstream_membership(self, name: str) -> int:
+        """Return how many watched devices sit behind a named upstream.
+
+        Membership rather than casualties (ruling #401): the figure
+        the card and the problem list print beside the casualty count,
+        so a reader sees "74 of 77" and knows both what has fallen
+        and what could. The name is what a row carries, the same four
+        kinds `upstream_down_since_for` resolves: the broker, which
+        carries every device on a stack with a reader; a stack; the
+        Wi-Fi key, which carries every tied tracker; or an
+        integration domain, which carries its watched devices.
+        """
+        if name == BROKER_LABEL:
+            return self._upstream_devices(None)
+        if name == WIFI_KEY:
+            return len(getattr(self, "_wifi_ties", {}) or {})
+        if name in self._stacks:
+            return self._upstream_devices(name)
+        return sum(
+            1 for device_id, domain in self._watched.items()
+            if domain == name and not self._freeze_muted(device_id)
+        )
 
     def upstream_down_since_for(self, name: str) -> float | None:
         """Return when a named upstream went down, or None if it is up.

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.20.17 (2026-09-11)
+# File: coordinator.py, Version: 0.20.18 (2026-09-12)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -209,6 +209,7 @@ from .detect_freeze import FreezeMixin
 from .detect_signal import SignalMixin, _entity_unit, _is_percentage
 from .events import EventMixin
 from .interventions import InterventionMixin
+from .naming import display_name
 from .router_ties import RouterTiesMixin
 from .study import StudyMixin
 from .wifi import WifiScanMixin
@@ -221,7 +222,7 @@ from .records import BAD_STATES, _new_device_record, _reset_signal_day, _span
 from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
 from .stacks import device_key, is_plumbing
-from .store import StorageMixin
+from .store import StorageMixin, _watched_seconds
 
 
 class DeviceSentinelCoordinator(
@@ -1219,6 +1220,17 @@ class DeviceSentinelCoordinator(
         clean_stop = bool(loaded.pop(DATA_CLEAN_STOP, False))
         if not clean_stop:
             self._handle_unclean_restart(loaded)
+        # Every load, not only a repair: a gap wider than the watch is
+        # a finite number and passes the shape check, so the shape
+        # repair never sees it (ruling #403).
+        capped = self._cap_gap_series(loaded.get(DATA_DEVICES) or {}, loaded)
+        if capped[0]:
+            LOGGER.info(
+                "%d learned gap(s) on %d device(s) exceeded the time the "
+                "device has been watched and were bounded to it "
+                "(ruling #403)",
+                capped[0], capped[1],
+            )
         self._orphan_episodes = self._count_orphan_episodes(loaded)
         converted = self._coerce_taint_reasons(loaded[DATA_DEVICES])
         if converted:
@@ -1582,7 +1594,7 @@ class DeviceSentinelCoordinator(
             entry_id = self._primary_entry(device)
             if entry_id is not None:
                 entry_of[device.id] = entry_id
-            name = device.name_by_user or device.name or device.id
+            name = display_name(device, domain, device.id)
             # Which coordinator stacks the house runs, read from the
             # same walk (ruling #143). Which device proves which stack
             # is each stack file's own question and is asked through
@@ -1795,6 +1807,7 @@ class DeviceSentinelCoordinator(
                 )
                 self._mark_cold_dirty()
         now_stamp = dt_util.utcnow().timestamp()
+        departed = 0
         for device_id in list(devices):
             if device_id in watched:
                 continue
@@ -1809,7 +1822,20 @@ class DeviceSentinelCoordinator(
                     self._mark_cold_dirty()
                 continue
             del devices[device_id]
+            departed += 1
             self._mark_cold_dirty()
+        if departed:
+            # Said once rather than silently. On an ordinary restart
+            # this is a device a person removed. On a restore to a
+            # fresh Home Assistant install it is every record the
+            # house ever learned, because registry ids are minted per
+            # install, and a person reading "watching 0 of 0" with no
+            # explanation has no way to know which happened.
+            LOGGER.info(
+                "%d stored record(s) belonged to device ids this registry "
+                "does not know and were dropped",
+                departed,
+            )
 
         if audit and set_aside:
             # Named by reason: service devices are furniture, but a
@@ -2490,6 +2516,41 @@ class DeviceSentinelCoordinator(
             reset.append((device_id, field))
         return dropped, reset
 
+    def _cap_gap_series(
+        self, devices: dict[str, Any], loaded: dict[str, Any]
+    ) -> tuple[int, int]:
+        """Bound every learned gap at the device's observation window.
+
+        The #399 bound, applied at load rather than only at banking
+        (ruling #403). A daily maximum larger than the time the device
+        has been watched cannot be a silence anybody observed, and
+        left in the series it becomes a freeze window no silence can
+        ever close. Bounded rather than dropped, for the same reason
+        #399 bounds: a lower bound on silence is still information.
+        Returns how many elements were bounded and on how many devices.
+        """
+        installed = loaded.get(DATA_FIRST_INSTALLED)
+        now = dt_util.utcnow().timestamp()
+        elements = 0
+        touched = 0
+        for record in devices.values():
+            if not isinstance(record, dict):
+                continue
+            series = record.get(DEV_DAILY_MAX)
+            if not isinstance(series, list) or not series:
+                continue
+            watched = _watched_seconds(record, now, installed)
+            if watched is None:
+                continue
+            over = [i for i, gap in enumerate(series) if gap > watched]
+            if not over:
+                continue
+            for i in over:
+                series[i] = watched
+            elements += len(over)
+            touched += 1
+        return elements, touched
+
     def _note_writer_fault(self, table: str, why: str) -> None:
         """Record that a writer produced a row the seam refused.
 
@@ -2848,11 +2909,8 @@ class DeviceSentinelCoordinator(
         """Return a device's display name for logging and the report."""
         registry = dr.async_get(self.hass)
         device = registry.async_get(device_id)
-        if device is not None:
-            named = device.name_by_user or device.name
-            if named:
-                return named
-        return device_id
+        domain = self._primary_domain(device) if device is not None else None
+        return display_name(device, domain, device_id)
 
     @property
     def episode_share(self) -> float:
@@ -3246,9 +3304,11 @@ class DeviceSentinelCoordinator(
         aside = self._set_aside.get(device_id)
         if aside:
             return aside[0]
-        device = dr.async_get(self.hass).async_get(device_id)
-        if device is not None:
-            return device.name_by_user or device.name or device_id
+        # Returns the id when nothing knows this device, which is the
+        # signal a caller needs to prefer a historically stored name
+        # over anything derived (ruling #373). The naming ladder of
+        # #402 is applied by the caller, after that check, so a
+        # device that departed still reads as what it was called.
         return device_id
 
     async def _apply_trim_selection(
@@ -3299,7 +3359,13 @@ class DeviceSentinelCoordinator(
                 ) in self._set_aside.items()
                 if domain in wanted
             }
-        names = [self._trim_name(device_id) for device_id in targets]
+        names = [
+            name if name != device_id else self._device_name(device_id)
+            for device_id, name in (
+                (device_id, self._trim_name(device_id))
+                for device_id in targets
+            )
+        ]
 
         try:
             stamp = await self.hass.async_add_executor_job(

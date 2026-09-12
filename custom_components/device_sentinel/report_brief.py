@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.20.14 (2026-09-10)
+# File: report_brief.py, Version: 0.20.18 (2026-09-12)
 
 """The daily brief: the one report written for a person.
 
@@ -1546,9 +1546,11 @@ class BriefMixin:
         if not device_id:
             return stored or "unknown device"
         current = self._trim_name(device_id)
-        if current == device_id and stored:
+        if current != device_id:
+            return current
+        if stored:
             return stored
-        return current
+        return self._device_name(device_id)
 
     @staticmethod
     def _repeat_verb(kind: str) -> str:
