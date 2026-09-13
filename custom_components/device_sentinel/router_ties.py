@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.21.0 (2026-09-13)
+# File: router_ties.py, Version: 0.21.1 (2026-09-13)
 
 """Router ties: which watched devices a router says have left.
 
@@ -92,6 +92,8 @@ from .const import (
     ROUTER_INTEGRATIONS,
     WIFI_BURST_FLOOR,
     WIFI_BURST_SHARE,
+    WIFI_RECOVERY_SHARE,
+    WIFI_SETTLE_TICKS,
     WIFI_BURST_WINDOW_SECONDS,
     WIFI_HOLD_SECONDS,
     WIFI_KEY,
@@ -344,14 +346,20 @@ class RouterTiesMixin:
             return
         seen = set(self.data.get(DATA_ROUTERS_SEEN) or [])
         fresh = present - seen
+
+        # Recorded whether or not anything is added, and before the
+        # options are touched. Whether or not: a router already on
+        # the person's list must still stop being new, or the day
+        # they unexclude it the next restart excludes it again, which
+        # is the reasserting default this rule exists to avoid.
+        # Before: updating options reloads the entry, and a reload
+        # that reads these as unseen would add them again on the way
+        # back up, forever.
+        if fresh:
+            self.data[DATA_ROUTERS_SEEN] = sorted(seen | present)
+            await self._save_now()
         if not fresh:
             return
-
-        # Recorded before the options are touched. Updating options
-        # reloads the entry, and a reload that reads these as unseen
-        # would add them again on the way back up, forever.
-        self.data[DATA_ROUTERS_SEEN] = sorted(seen | present)
-        await self._save_now()
 
         stored = self.entry.options.get(CONF_EXCLUDED_INTEGRATIONS)
         current = list(
@@ -374,6 +382,24 @@ class RouterTiesMixin:
                 CONF_EXCLUDED_INTEGRATIONS: current + adding,
             },
         )
+
+    @property
+    def wifi_fallen_set(self) -> set[str]:
+        """The trackers that fell during the standing outage."""
+        return set(self._wifi_fallen)
+
+    def _wifi_recovery_needed(self, fell: int) -> int:
+        """How many of the fallen set must return to announce a
+        recovery (ruling #423).
+
+        A bare share with no floor. A floor of three was measured
+        against churn and rejected here: on a three device outage it
+        requires all three back, which is the hours-long hold this
+        rule exists to remove. Closing early is the cheap error,
+        because whatever is still away goes back to per-device
+        detection rather than being forgotten (ruling #426).
+        """
+        return math.ceil(WIFI_RECOVERY_SHARE * fell) if fell else 0
 
     def _wifi_burst_needed(self) -> int:
         """Return how many tied trackers must fall together to declare
@@ -443,6 +469,24 @@ class RouterTiesMixin:
                 return
             now = dt_util.utcnow().timestamp()
             self._wifi_not_home.setdefault(entity_id, now)
+            # A tracker that falls while the outage stands joins the
+            # fallen set unless it has already returned once: a
+            # returned member never rejoins (ruling #422), or the set
+            # can never empty and the shipped defect returns wearing
+            # a different hat.
+            if (
+                self._wifi_down_at is not None
+                and entity_id not in self._wifi_returned
+            ):
+                self._wifi_fallen.setdefault(entity_id, now)
+            # A member that returned and has gone away again during
+            # the settle is a loss (ruling #425). Membership of the
+            # returned set stays permanent (#422), so losses are
+            # counted in their own right rather than by subtracting
+            # from the return count: the two rulings would otherwise
+            # cancel and no loss could ever be seen.
+            elif self._wifi_announced and entity_id in self._wifi_returned:
+                self._wifi_settle_losses += 1
             self._wifi_burst.append(now)
             self._prune_wifi_burst(now)
             if (
@@ -468,6 +512,10 @@ class RouterTiesMixin:
             # it no longer counts toward the floor and its device is
             # no longer claimed.
             self._wifi_not_home.pop(entity_id, None)
+            # And if it was a casualty of the standing outage, it has
+            # returned, permanently (ruling #422).
+            if entity_id in self._wifi_fallen:
+                self._wifi_returned.add(entity_id)
 
     def _wired_can_rejoin(self) -> bool:
         """Whether any skipped tracker has come back as wireless.
@@ -539,15 +587,18 @@ class RouterTiesMixin:
         if not self._wifi_ties:
             return
         if self._wifi_down_at is not None:
-            if len(self._wifi_not_home) < WIFI_BURST_FLOOR:
-                self._wifi_restore(now)
+            self._sample_wifi_recovery(now)
             return
         if self._wifi_hold_since is None:
             return
         if now - self._wifi_hold_since < WIFI_HOLD_SECONDS:
             return
+        # The same threshold the burst used (ruling #421). These
+        # disagreed in 0.21.0: the burst scaled with the fleet and
+        # the hold did not, so a burst of seven decaying to three
+        # still declared on a fleet where three is ordinary churn.
         still_gone = len(self._wifi_not_home)
-        if still_gone >= WIFI_BURST_FLOOR:
+        if still_gone >= self._wifi_burst_needed():
             self._wifi_declare(now, still_gone)
         else:
             LOGGER.info(
@@ -599,11 +650,78 @@ class RouterTiesMixin:
             return
         self._wifi_restore(now)
 
+    def _sample_wifi_recovery(self, now: float) -> None:
+        """Judge the recovery of a standing outage on the tick.
+
+        Announced when a share of the fallen set has returned
+        (#423), then settled: the settle extends while returns keep
+        arriving and closes after two consecutive quiet ticks (#424),
+        which rides the burst out rather than cutting it at a fixed
+        delay. Three losses during the settle withdraw the announce
+        (#425), reusing the declaration floor because three trackers
+        falling together is what declared the outage in the first
+        place.
+        """
+        fell = len(self._wifi_fallen)
+        if not fell:
+            return
+        back = len(self._wifi_returned)
+
+        if not self._wifi_announced:
+            if back >= self._wifi_recovery_needed(fell):
+                self._wifi_announced = True
+                self._wifi_peak_back = back
+                self._wifi_quiet_ticks = 0
+                self._wifi_settle_losses = 0
+                LOGGER.info(
+                    "device_sentinel: wifi recovery announced, %d of "
+                    "%d returned, settling",
+                    back,
+                    fell,
+                )
+            return
+
+        if self._wifi_settle_losses >= WIFI_BURST_FLOOR:
+            LOGGER.info(
+                "device_sentinel: wifi recovery withdrawn, %d of the "
+                "returned went away again during the settle",
+                self._wifi_settle_losses,
+            )
+            self._wifi_announced = False
+            self._wifi_settle_losses = 0
+            self._wifi_peak_back = back
+            self._wifi_quiet_ticks = 0
+            return
+        if back > self._wifi_peak_back:
+            self._wifi_peak_back = back
+            self._wifi_quiet_ticks = 0
+            return
+
+        self._wifi_quiet_ticks += 1
+        if self._wifi_quiet_ticks >= WIFI_SETTLE_TICKS:
+            self._wifi_restore(now)
+
     def _wifi_declare(self, now: float, still_gone: int) -> None:
         """Declare the outage, dated from the first fall."""
         since = self._wifi_first_fall or self._wifi_hold_since or now
         self._wifi_down_at = since
         self._wifi_hold_since = None
+        # The fallen set, seeded from the trackers that went away at
+        # or after this outage's first fall. A device already away
+        # before it began is not a casualty of it and does not vote
+        # against recovery (ruling #409): on the second fleet a
+        # tablet that left forty-nine minutes early was one of three
+        # holding an outage open for five and a half hours.
+        self._wifi_fallen = {
+            entity_id: when
+            for entity_id, when in self._wifi_not_home.items()
+            if when >= since
+        }
+        self._wifi_returned = set()
+        self._wifi_announced = False
+        self._wifi_peak_back = 0
+        self._wifi_quiet_ticks = 0
+        self._wifi_settle_losses = 0
         confirmed = self._wifi_confirmed_count()
         LOGGER.info(
             "device_sentinel: wifi outage declared, %d tied "
@@ -626,9 +744,18 @@ class RouterTiesMixin:
         self._wifi_down_at = None
         self._wifi_first_fall = None
         self._wifi_burst = []
+        left = len(self._wifi_fallen) - len(self._wifi_returned)
+        self._wifi_fallen = {}
+        self._wifi_returned = set()
+        self._wifi_announced = False
+        self._wifi_peak_back = 0
+        self._wifi_quiet_ticks = 0
         LOGGER.info(
-            "device_sentinel: wifi outage over after %.0fs",
+            "device_sentinel: wifi outage over after %.0fs, %d "
+            "device(s) still away and handed back to per-device "
+            "detection",
             max(0.0, now - (since or now)),
+            left,
         )
         self._record_system_event(
             SYS_WIFI_UP,

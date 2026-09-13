@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.21.0 (2026-09-13)
+# File: coordinator.py, Version: 0.21.1 (2026-09-13)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -475,6 +475,19 @@ class DeviceSentinelCoordinator(
         self._wifi_burst: list[float] = []
         self._wifi_hold_since: float | None = None
         self._wifi_first_fall: float | None = None
+        # The recovery state (rulings #408, #409, #422 to #426). The
+        # fallen set is the trackers that went away during this
+        # outage, so anything already away when it began is absent
+        # and never votes against recovery. A member that returns
+        # joins _wifi_returned and stays there: coming home ends the
+        # outage for that device, and leaving again later is a new
+        # event rather than the old one continuing.
+        self._wifi_fallen: dict[str, float] = {}
+        self._wifi_returned: set[str] = set()
+        self._wifi_announced = False
+        self._wifi_peak_back = 0
+        self._wifi_quiet_ticks = 0
+        self._wifi_settle_losses = 0
         self._wifi_down_at: float | None = None
         self._wifi_unsub = None
         self._wifi_retry_pending = False
@@ -1325,6 +1338,12 @@ class DeviceSentinelCoordinator(
         )
 
         self._rebuild_registry_view(audit=True)
+        # A router integration seen for the first time is excluded
+        # once, ever (ruling #420). After the registry view, because
+        # the sighting reads the registry, and before the readers
+        # start, so the exclusion is in force for this session rather
+        # than only the next one.
+        await self._sight_router_integrations()
         await self._fold_if_a_midnight_was_missed()
 
         self._unsubs.append(

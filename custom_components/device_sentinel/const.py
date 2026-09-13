@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.21.0 (2026-09-13)
+# File: const.py, Version: 0.21.1 (2026-09-13)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1923,6 +1923,35 @@ WIFI_BURST_SHARE = 0.10
 WIFI_BURST_WINDOW_SECONDS = 60.0
 WIFI_HOLD_SECONDS = 60.0
 
+# How an outage ends (rulings #408, #409, #422 to #426). The shipped
+# rule restored while fewer than WIFI_BURST_FLOOR tied trackers read
+# not_home, which answers a different question from the one that
+# declared the outage: three falling together is a fair threshold for
+# declaring one, three still away is not a fair threshold for ending
+# one, because a house with three devices switched off can never
+# recover. Measured on the second fleet at 3.0, 4.3 and 5.5 hours
+# against real events of minutes.
+#
+# Recovery is judged against the set that fell instead. A share and
+# no floor: a floor was measured and rejected, because on a three
+# device outage it requires all three back, which is the hold this
+# work exists to remove. Closing early is the cheap error, since
+# whatever is still away goes back to per-device detection.
+#
+# The settle rides the burst out rather than cutting it at a fixed
+# delay. A quiet period was tried and fails: it reads the tail of a
+# recovery, where the variance is, and the largest pause measured
+# inside a real recovery is 375 seconds. Every long pause on both
+# fleets falls after the 40 percent mark, so a share reads the burst
+# and never meets them.
+#
+# Reopening reuses WIFI_BURST_FLOOR rather than taking a number of
+# its own: three trackers falling together is what declares an outage
+# in the first place, so three falling during a settle is a new event
+# by the same evidence. Never observed on either fleet.
+WIFI_RECOVERY_SHARE = 0.4
+WIFI_SETTLE_TICKS = 2
+
 # WiFi detection from the host's own radio (#391, #392). Independent
 # of every router integration: the host scans for access points and
 # the network is up while any of them broadcasts a chosen name.
@@ -2241,7 +2270,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 421
+HIGHEST_RULING = 426
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
