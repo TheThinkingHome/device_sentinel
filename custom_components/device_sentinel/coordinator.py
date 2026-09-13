@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.20.20 (2026-09-12)
+# File: coordinator.py, Version: 0.21.0 (2026-09-13)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -120,6 +120,7 @@ from .const import (
     CONF_SIGNAL_MUTED_DEVICES,
     DAILY_MAX_KEEP,
     DATA_BRIDGE_SEEN,
+    DATA_ROUTERS_SEEN,
     DATA_BROKER_SEEN,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
@@ -801,6 +802,7 @@ class DeviceSentinelCoordinator(
             loaded.setdefault(DATA_SYSTEM_EVENTS, [])
             loaded.setdefault(DATA_BRIDGE_SEEN, {})
             loaded.setdefault(DATA_BROKER_SEEN, {})
+            loaded.setdefault(DATA_ROUTERS_SEEN, [])
             loaded.setdefault(DATA_STORMS, [])
             loaded.setdefault(DATA_STORM_DAYS, [])
             # The dry-run outbox was retired once the
@@ -1203,6 +1205,7 @@ class DeviceSentinelCoordinator(
                     loaded.setdefault(DATA_SYSTEM_EVENTS, [])
                     loaded.setdefault(DATA_BRIDGE_SEEN, {})
                     loaded.setdefault(DATA_BROKER_SEEN, {})
+                    loaded.setdefault(DATA_ROUTERS_SEEN, [])
                     loaded.setdefault(DATA_STORMS, [])
                     loaded.setdefault(DATA_STORM_DAYS, [])
                     malformed = {}

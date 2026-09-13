@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.20.20 (2026-09-12)
+# File: const.py, Version: 0.21.0 (2026-09-13)
 
 """Constants for the Device Sentinel integration."""
 
@@ -531,7 +531,29 @@ DEFAULT_EXCLUDED_INTEGRATIONS = (
     "fully_kiosk",
     "spook",
     "ping",
+    "tplink_router",
+    "unifi",
 )
+
+# The integrations that publish a tracker per client on the network
+# (ruling #420). A router integration registers every client as its
+# own registry device, which duplicates hardware another integration
+# already watches and, worse, lets a device be tied to its own
+# tracker. Seen for the first time on a system that already exists,
+# one is added to the person's exclusion list once, and after that it
+# is theirs.
+ROUTER_INTEGRATIONS = (
+    "tplink_router",
+    "unifi",
+    "asuswrt",
+    "fritz",
+    "keenetic_ndms2",
+    "mikrotik",
+    "netgear",
+    "ubus",
+    "upc_connect",
+)
+DATA_ROUTERS_SEEN = "routers_seen"
 
 AREA_FREEZE = "freeze"
 AREA_BATTERY = "battery"
@@ -1883,7 +1905,21 @@ UPSTREAM_WIFI = "wifi"
 # the hold absorbed.
 WIFI_KEY = "wifi"
 WIFI_SENSOR_NAME = "Bridge: WiFi"
+# How many tied trackers falling together declares an outage
+# (ruling #421). A bare count was set against churn on a twelve
+# tracker fleet, where three is a quarter of the house; on a hundred
+# device fleet the same three is three percent, which is a hair
+# trigger. The threshold is the greater of the floor and a share of
+# the tied set. Measured: the second fleet's churn tops out at three
+# falls in a minute, 4.8 percent of its 62 tied trackers, against a
+# staged outage peaking at 44 percent, and the smallest real event
+# measured anywhere is 25 percent. Ten percent sits in that gap and
+# anything from six to twenty behaves the same on the data held. The
+# floor governs up to thirty tied trackers and the share above it.
+# Extrapolation, recorded as such: neither fleet is the hundred
+# device case, and this wants revisiting when a larger one reports.
 WIFI_BURST_FLOOR = 3
+WIFI_BURST_SHARE = 0.10
 WIFI_BURST_WINDOW_SECONDS = 60.0
 WIFI_HOLD_SECONDS = 60.0
 
@@ -2205,7 +2241,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 407
+HIGHEST_RULING = 421
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

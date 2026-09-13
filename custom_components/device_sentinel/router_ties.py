@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.20.9 (2026-09-06)
+# File: router_ties.py, Version: 0.21.0 (2026-09-13)
 
 """Router ties: which watched devices a router says have left.
 
@@ -69,6 +69,8 @@ trackers reading home, a fault this detector cannot see.
 
 from __future__ import annotations
 
+import math
+
 import re
 from typing import Any
 
@@ -84,7 +86,12 @@ from .const import (
     SYS_WIFI_DOWN,
     SYS_WIFI_UP,
     UPSTREAM_WIFI,
+    CONF_EXCLUDED_INTEGRATIONS,
+    DATA_ROUTERS_SEEN,
+    DEFAULT_EXCLUDED_INTEGRATIONS,
+    ROUTER_INTEGRATIONS,
     WIFI_BURST_FLOOR,
+    WIFI_BURST_SHARE,
     WIFI_BURST_WINDOW_SECONDS,
     WIFI_HOLD_SECONDS,
     WIFI_KEY,
@@ -182,7 +189,7 @@ class RouterTiesMixin:
         # Every router tracker's MAC, from its state attribute first
         # (the router's own report), then from its registry device's
         # connections.
-        tracker_by_mac: dict[str, str] = {}
+        tracker_by_mac: dict[str, tuple[str, str]] = {}
         census: dict[str, int] = {}
         wired: list[str] = []
         for entry in registry.entities.values():
@@ -231,28 +238,39 @@ class RouterTiesMixin:
                 wired.append(entry.entity_id)
                 continue
             if mac is not None and mac not in tracker_by_mac:
-                tracker_by_mac[mac] = entry.entity_id
+                tracker_by_mac[mac] = (entry.entity_id, entry.platform)
 
         ties: dict[str, str] = {}
         for device_id in self._watched:
             device = devices.async_get(device_id)
             if device is None:
                 continue
+            # The self-tie bar (ruling #419). A router integration
+            # registers every client on the network as its own
+            # registry device, so without this a client is tied to
+            # its own tracker: the device and the witness are the
+            # same object, the tie cannot fail to agree with itself,
+            # and three computers powering down inside a minute
+            # declare a network outage. Measured on the second fleet,
+            # where 126 of 205 tied devices were this and sixteen of
+            # nineteen declared outages came from it.
+            owner = self._watched.get(device_id)
             tracker = None
             # Rung 1: a normalized MAC in the device's connections.
             for kind, value in device.connections:
                 if kind != dr.CONNECTION_NETWORK_MAC:
                     continue
-                tracker = tracker_by_mac.get(normalize_mac(value) or "")
-                if tracker:
+                found = tracker_by_mac.get(normalize_mac(value) or "")
+                if found and found[1] != owner:
+                    tracker = found[0]
                     break
             # Rung 2: the full twelve-hex MAC inside an identifier.
             if tracker is None:
                 for _domain, ident in device.identifiers:
                     bare = _HEX_ONLY.sub("", str(ident).lower())
-                    for mac, entity_id in tracker_by_mac.items():
-                        if mac in bare:
-                            tracker = entity_id
+                    for mac, found in tracker_by_mac.items():
+                        if mac in bare and found[1] != owner:
+                            tracker = found[0]
                             break
                     if tracker:
                         break
@@ -288,6 +306,91 @@ class RouterTiesMixin:
                 len(ties),
             )
             self._resubscribe_wifi_trackers()
+
+    def _router_integrations_present(self) -> set[str]:
+        """Return the router integrations this house actually has.
+
+        Read from the entity registry rather than from the config
+        entries, because what matters is that the integration
+        publishes router trackers, which is the thing that duplicates
+        hardware and lets a device be tied to its own tracker.
+        """
+        registry = er.async_get(self.hass)
+        return {
+            entry.platform
+            for entry in registry.entities.values()
+            if entry.domain == "device_tracker"
+            and entry.platform in ROUTER_INTEGRATIONS
+        }
+
+    async def _sight_router_integrations(self) -> None:
+        """Exclude a router integration the first time it is seen
+        (ruling #420).
+
+        Fires once per integration, ever. A new install gets these
+        from the default list and never reaches here; an install that
+        already exists gets one added the first time it appears. After
+        that the integration is recorded and never new again, so a
+        person who unexcludes it keeps that choice, which is what
+        keeps this from being a default that reasserts itself.
+
+        The write is grow-only. Updating options reloads the entry, so
+        a sighting that adds nothing must not write at all, or every
+        upgrade on every system with an already-excluded router does a
+        pointless reload and re-runs this on the way back up.
+        """
+        present = self._router_integrations_present()
+        if not present:
+            return
+        seen = set(self.data.get(DATA_ROUTERS_SEEN) or [])
+        fresh = present - seen
+        if not fresh:
+            return
+
+        # Recorded before the options are touched. Updating options
+        # reloads the entry, and a reload that reads these as unseen
+        # would add them again on the way back up, forever.
+        self.data[DATA_ROUTERS_SEEN] = sorted(seen | present)
+        await self._save_now()
+
+        stored = self.entry.options.get(CONF_EXCLUDED_INTEGRATIONS)
+        current = list(
+            stored if stored is not None else DEFAULT_EXCLUDED_INTEGRATIONS
+        )
+        adding = [name for name in sorted(fresh) if name not in current]
+        if not adding:
+            return
+
+        LOGGER.info(
+            "device_sentinel: router integration(s) %s seen for the "
+            "first time and excluded from watching; unexclude on the "
+            "Configure screen to watch them",
+            ", ".join(adding),
+        )
+        self.hass.config_entries.async_update_entry(
+            self.entry,
+            options={
+                **self.entry.options,
+                CONF_EXCLUDED_INTEGRATIONS: current + adding,
+            },
+        )
+
+    def _wifi_burst_needed(self) -> int:
+        """Return how many tied trackers must fall together to declare
+        an outage (ruling #421).
+
+        The greater of the floor and a share of the tied set. Three
+        was measured against churn on a twelve tracker fleet, where
+        three is a quarter of the house and a share cannot
+        discriminate at all; on a hundred device fleet the same three
+        is three percent. The floor protects the small fleet and the
+        share protects the large one, and they meet at thirty tied
+        trackers.
+        """
+        return max(
+            WIFI_BURST_FLOOR,
+            math.ceil(WIFI_BURST_SHARE * len(self._wifi_ties)),
+        )
 
     def _resubscribe_wifi_trackers(self) -> None:
         """Listen to exactly the tied tracker set, and nothing else."""
@@ -346,16 +449,18 @@ class RouterTiesMixin:
                 self._wifi_down_at is None
                 and self._wifi_hold_since is None
                 and not self.wifi_scan_configured
-                and len(self._wifi_burst) >= WIFI_BURST_FLOOR
+                and len(self._wifi_burst) >= self._wifi_burst_needed()
             ):
                 self._wifi_hold_since = now
                 self._wifi_first_fall = self._wifi_burst[0]
                 LOGGER.info(
                     "device_sentinel: wifi burst, %d tied tracker(s) "
-                    "not_home inside %ds, holding %ds before any "
-                    "verdict",
+                    "not_home inside %ds against a threshold of %d "
+                    "on %d tied, holding %ds before any verdict",
                     len(self._wifi_burst),
                     int(WIFI_BURST_WINDOW_SECONDS),
+                    self._wifi_burst_needed(),
+                    len(self._wifi_ties),
                     int(WIFI_HOLD_SECONDS),
                 )
         else:
