@@ -1,4 +1,5 @@
-# File: tests/test_wifi_declaration.py
+# File: tests/test_wifi_declaration.py, Version: 0.21.1 (2026-09-13)
+# 
 """Who is tied, and what declares an outage. Rulings #419 to #421.
 
 Written before the change, and every case here fails against 0.20.20.
@@ -116,6 +117,11 @@ async def test_a_router_integration_is_excluded_on_first_sighting(
 
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
+    # An install that predates this feature: the router is on
+    # the system and has never been recorded, which is the only
+    # state in which a sighting has anything to do. Setup records
+    # it for a fresh install, so it is cleared here deliberately.
+    coord.data["routers_seen"] = []
     hass.config_entries.async_update_entry(
         coord.entry,
         options={
@@ -142,6 +148,11 @@ async def test_it_is_not_excluded_a_second_time(hass: HomeAssistant):
 
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
+    # An install that predates this feature: the router is on
+    # the system and has never been recorded, which is the only
+    # state in which a sighting has anything to do. Setup records
+    # it for a fresh install, so it is cleared here deliberately.
+    coord.data["routers_seen"] = []
     hass.config_entries.async_update_entry(
         coord.entry,
         options={
@@ -270,3 +281,50 @@ async def test_seven_falls_do_declare_on_that_fleet(
         await _fall(hass, tracker)
 
     assert coord._wifi_hold_since is not None
+
+
+# ---------------------------------------- the call site itself
+
+
+async def test_setup_itself_performs_the_sighting(hass: HomeAssistant):
+    """The hole this file had. Every other case above calls
+    `_sight_router_integrations` by hand, so all of them passed while
+    the call site was missing from `async_setup` and the feature
+    shipped dead in 0.21.0. Found on the reference system, where
+    `routers_seen` came back empty after the upgrade. A unit test
+    that invokes the thing under test cannot tell you whether
+    anything invokes it in production.
+    """
+    router_entry = MockConfigEntry(domain=ROUTER, title="router")
+    router_entry.add_to_hass(hass)
+    _tracker(hass, "client30", "AA-BB-CC-00-00-30")
+
+    coord = await setup_coordinator(hass)
+
+    assert ROUTER in coord.data["routers_seen"]
+
+
+async def test_the_hold_uses_the_same_threshold_as_the_burst(
+    hass: HomeAssistant,
+):
+    """A 0.21.0 defect. The burst scaled with the fleet and the hold
+    did not, so a burst that decayed during the hold still declared
+    at the bare floor of three. Found while replaying both fleets for
+    0.21.1, not by any test."""
+    coord, trackers, _devices, _untied = await _house(hass, 62)
+    coord._grace_until = 0.0
+    assert coord._wifi_burst_needed() == 7
+
+    for tracker in trackers[:7]:
+        await _fall(hass, tracker)
+    assert coord._wifi_hold_since is not None
+
+    # Four come back inside the hold, leaving three away.
+    for tracker in trackers[:4]:
+        state = hass.states.get(tracker)
+        hass.states.async_set(tracker, "home", dict(state.attributes))
+    await hass.async_block_till_done()
+    coord._sample_wifi(coord._wifi_hold_since + 65.0)
+    await hass.async_block_till_done()
+
+    assert coord.wifi_down_at is None

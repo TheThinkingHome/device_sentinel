@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage_fleet.py, Version: 0.20.3 (2026-09-04)
+# File: tests/test_wifi_outage_fleet.py, Version: 0.21.1 (2026-09-13)
 
 """The Wi-Fi outage, driven against both reference fleets.
 
@@ -106,13 +106,18 @@ async def test_the_measured_outage_on_the_reference_fleet(
     for device, _record in behind["mqtt"][:20]:
         assert coord.upstream_down_since(device.id) is None
 
-    # Recovery pairs once the floor is no longer met.
+    # Recovery pairs once the set that fell has come back. Eight of
+    # the nine returning is well past forty percent, so the first
+    # sweep announces and the settle then wants two consecutive ticks
+    # with no further return before it closes (#423, #424). Three
+    # sweeps rather than the one this case used before 0.21.1.
     for _device, tracker in tied[:8]:
         state = hass.states.get(tracker)
         hass.states.async_set(tracker, "home", dict(state.attributes))
     await hass.async_block_till_done()
-    coord._sample_wifi(hold_since + WIFI_HOLD_SECONDS + 120)
-    await hass.async_block_till_done()
+    for sweep in range(3):
+        coord._sample_wifi(hold_since + WIFI_HOLD_SECONDS + 120 + sweep * 60)
+        await hass.async_block_till_done()
     assert [word for word, _ in seen] == ["down", "restored"]
     assert seen[1][1]["devices"] == 13
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.20.8 (2026-09-06)
+# File: tests/test_wifi_outage.py, Version: 0.21.1 (2026-09-13)
 
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim.
 
@@ -393,17 +393,27 @@ async def test_wifi_outranks_the_integration_rung(
 async def test_recovery_pairs_and_releases_the_claims(
     hass: HomeAssistant, freezer
 ):
-    """Below the floor the outage closes: the restored half fires with
-    the same membership, and every claim drops."""
+    """The outage closes once the set that fell has returned: the
+    restored half fires with the same membership, and every claim
+    drops.
+
+    Rewritten for 0.21.1. It used to close on a single sweep, when
+    the rule was "fewer than the floor still away". Recovery is now
+    judged against the fallen set (#408): two of the three back is
+    forty percent, which announces, and the settle then takes two
+    consecutive ticks with no further return before it closes (#424).
+    Three sweeps, not one.
+    """
     coord, trackers, devices, _ = await _house(hass, 4)
     seen = _heard(hass)
     await _declared(hass, coord, trackers, freezer, count=3)
 
     for tracker in trackers[:2]:
         await _rise(hass, tracker)
-    freezer.tick(timedelta(seconds=30))
-    coord._sample_wifi(dt_util.utcnow().timestamp())
-    await hass.async_block_till_done()
+    for _sweep in range(3):
+        freezer.tick(timedelta(seconds=30))
+        coord._sample_wifi(dt_util.utcnow().timestamp())
+        await hass.async_block_till_done()
 
     assert [word for word, _ in seen] == ["down", "restored"], seen
     assert seen[1][1]["devices"] == seen[0][1]["devices"] == 4
