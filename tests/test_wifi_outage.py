@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.21.1 (2026-09-13)
+# File: tests/test_wifi_outage.py, Version: 0.21.4 (2026-09-14)
 
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim.
 
@@ -567,7 +567,10 @@ def test_the_medium_reader_knows_both_published_markers():
     assert tracker_medium({"connection_type": "LAN"}) == "wired"
     # TP-Link's wireless value is the network's own name, never
     # "wifi", which is why this is an exclusion and not an allow list.
-    assert tracker_medium({"connection": "IoT"}) == "unknown"
+    # Until 0.21.4 a named network read as unknown, because only the
+    # UniFi spellings were positive wireless evidence. TP-Link states
+    # the medium as plainly by naming the network (#417).
+    assert tracker_medium({"connection": "IoT"}) == "wireless"
     assert tracker_medium({"essid": "Home"}) == "wireless"
     assert tracker_medium({"ssid": "Home"}) == "wireless"
     # Wired wins, because it is the marker the ladder acts on.
