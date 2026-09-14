@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_medium.py, Version: 0.21.4 (2026-09-14)
+# File: tests/test_wifi_medium.py, Version: 0.21.6 (2026-09-14)
 
 """What a tracker's medium is, and how it is remembered.
 Rulings #415, #417, #418, #427 and #428.
@@ -138,16 +138,21 @@ async def test_a_wired_device_stays_wired_across_many_readings(
 
 
 async def test_a_real_contradiction_goes_to_unknown(hass: HomeAssistant):
-    """Six wireless, four wired. That is not a router restart, it is
-    a device that cannot be told, and unknown keeps the tie."""
+    """Eighteen wireless, twelve wired. That is not a router restart,
+    it is a device that cannot be told, and unknown keeps the tie.
+
+    Widened for 0.21.6: a minority overrules nothing until there are
+    MEDIUM_MINORITY_FLOOR samples behind it, so six against four no
+    longer reaches the line.
+    """
     coord, trackers, _devices, _untied = await _house(hass, 3)
     tracker = trackers[0]
 
-    for _ in range(6):
+    for _ in range(18):
         _home(hass, tracker, connection="IoT", band="2G")
         await hass.async_block_till_done()
         coord._rebuild_wifi_ties()
-    for _ in range(4):
+    for _ in range(12):
         _home(hass, tracker, connection="wired", band="None")
         await hass.async_block_till_done()
         coord._rebuild_wifi_ties()
@@ -215,3 +220,47 @@ async def test_rejected_readings_are_counted(hass: HomeAssistant):
     published = coord.wifi_attributes
     assert published["medium_rejected"] == 2
     assert coord.wifi_medium_rejected[tracker] == 2
+
+
+# ------------------------------------------ the two medium fixes, 0.21.6
+
+
+def test_a_stripped_reading_cannot_be_told_from_a_wired_one():
+    """Found on hardware, 14 September, and recorded because the
+    obvious fix does not work.
+
+    Three known-wireless devices each took one `wired` reading and
+    went to unknown. When a client leaves, TP-Link strips its network
+    name and band and reports it as wired; a tie rebuild landing
+    between the attribute update and the state update reads `home`
+    carrying that shape. But it is byte for byte what the router
+    publishes for a genuine wired client, so refusing the shape turns
+    every real wired device on the fleet into unknown. They are told
+    apart by how often each occurs, not by what a single reading
+    says.
+    """
+    lost = {"source_type": "router", "connection": "wired", "band": "None"}
+    cabled = {"source_type": "router", "connection": "wired", "band": "None"}
+    assert lost == cabled
+    assert tracker_medium(lost) == "wired"
+
+
+def test_a_minority_needs_evidence_behind_it():
+    """The tenth was measured over ten days, where the tightest
+    contradiction was 2 against 22. On six samples one bad reading is
+    sixteen percent, which sent three known-wireless devices to
+    unknown on 14 September. A minority overrules nothing until there
+    is enough evidence for a share to mean anything."""
+    from custom_components.device_sentinel.router_ties import (
+        MEDIUM_MINORITY_FLOOR,
+        medium_from_score,
+    )
+
+    assert MEDIUM_MINORITY_FLOOR == 20
+    # The reference fleet's three, as they actually read.
+    assert medium_from_score({"wired": 1, "wireless": 5}) == "wireless"
+    assert medium_from_score({"wired": 1, "wireless": 7}) == "wireless"
+    # Enough evidence, and a minority that still reaches a tenth.
+    assert medium_from_score({"wired": 4, "wireless": 20}) == "unknown"
+    # Enough evidence, minority below the tenth: the majority holds.
+    assert medium_from_score({"wired": 2, "wireless": 60}) == "wireless"

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_row.py, Version: 0.21.3 (2026-09-14)
+# File: tests/test_wifi_row.py, Version: 0.21.6 (2026-09-14)
 
 """The row a Wi-Fi outage writes. Rulings #411 to #414.
 
@@ -51,7 +51,13 @@ from custom_components.device_sentinel.const import (
     WIFI_KEY,
 )
 
-from tests.test_wifi_outage import _declared, _house, _rise, _wifi_device
+from tests.test_wifi_outage import (
+    _declared,
+    _fall,
+    _house,
+    _rise,
+    _wifi_device,
+)
 
 
 def _judge(coord, devices, when: float) -> None:
@@ -444,3 +450,93 @@ async def test_the_scan_route_builds_a_fallen_set_too(
     assert coord.wifi_casualties == 10
     assert coord.suppressed_down_counts == {WIFI_KEY: 10}
     assert coord.wifi_attributes["fallen"] == 10
+
+
+# ----------------------------------------- the recovering row, 0.21.6
+
+
+async def test_the_row_says_recovering_once_the_network_is_back(
+    hass: HomeAssistant, freezer
+):
+    """Three states rather than two.
+
+    Until 0.21.6 the announce fired inside the recovery rule and
+    changed nothing a person could see: the row went on saying the
+    network was unavailable until the settle finished. On the staged
+    outage of 14 September the network returned at 16:47 and the row
+    did not move until 16:49, so from the outside there was no
+    difference between recovering and still down.
+    """
+    coord, trackers, devices, _untied = await _house(hass, 12)
+    hass.config_entries.async_update_entry(
+        coord.entry,
+        options={**coord.entry.options, "wifi_networks": ["IKS_Rotarran-IoT"]},
+    )
+    await hass.async_block_till_done()
+    first = await _declared(hass, coord, trackers[:11], freezer, count=11)
+
+    for tracker in trackers[:8]:
+        await _rise(hass, tracker)
+    coord.on_wifi_scan_restored(first, first + 60.0)
+    await hass.async_block_till_done()
+
+    assert coord.wifi_recovering_at is not None
+    summary, body = coord._upstream_item_text(
+        WIFI_KEY, {UPSTREAM_KIND: first}, 11
+    )
+    assert summary == "WiFi network recovering: 3 of 11 devices remain unavailable"
+    assert "'IKS_Rotarran-IoT' WiFi network came back at" in body
+    assert "8 of the 11 devices have already recovered" in body
+    assert "Device Sentinel is monitoring the recovery" in body
+    assert "reported as its own problem" in body
+
+
+async def test_the_row_still_says_unavailable_before_any_return(
+    hass: HomeAssistant, freezer
+):
+    """The control. Nothing has come back, so nothing is recovering."""
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    first = await _declared(hass, coord, trackers[:11], freezer, count=11)
+
+    assert coord.wifi_recovering_at is None
+    summary, _body = coord._upstream_item_text(
+        WIFI_KEY, {UPSTREAM_KIND: first}, 11
+    )
+    assert summary.startswith("WiFi network unavailable:")
+
+
+async def test_forty_percent_starts_recovering_without_a_scan(
+    hass: HomeAssistant, freezer
+):
+    """A house with no radio to hear its own network still gets the
+    recovering state, at forty percent returned."""
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    first = await _declared(hass, coord, trackers[:10], freezer, count=10)
+
+    for tracker in trackers[:4]:
+        await _rise(hass, tracker)
+    coord._sample_wifi(first + 60.0)
+    await hass.async_block_till_done()
+
+    assert coord.wifi_recovering_at is not None
+
+
+async def test_a_reopen_puts_the_row_back_to_unavailable(
+    hass: HomeAssistant, freezer
+):
+    """Losing ground withdraws the recovery, and the row says so."""
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    first = await _declared(hass, coord, trackers[:11], freezer, count=11)
+
+    for tracker in trackers[:8]:
+        await _rise(hass, tracker)
+    coord._sample_wifi(first + 60.0)
+    await hass.async_block_till_done()
+    assert coord.wifi_recovering_at is not None
+
+    for tracker in trackers[:3]:
+        await _fall(hass, tracker)
+    coord._sample_wifi(first + 120.0)
+    await hass.async_block_till_done()
+
+    assert coord.wifi_recovering_at is None
