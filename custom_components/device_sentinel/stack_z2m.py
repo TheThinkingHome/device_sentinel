@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.20.18 (2026-09-12)
+# File: stack_z2m.py, Version: 0.21.2 (2026-09-14)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -65,6 +65,14 @@ from .const import (
 )
 
 STACK = STACK_Z2M
+
+# This stack shares its domain (ruling #412). Z2M's devices arrive
+# through MQTT discovery and carry the mqtt domain, which anything
+# else publishing its own discovery carries too: on the reference
+# fleet two NSPanel Pros are MQTT and Wi-Fi. Owning the domain is
+# therefore not enough to own a device, and `device_key` is asked as
+# well. The other three stacks own their domain outright.
+SHARED_DOMAIN = True
 
 
 def owns_domain(domain: str) -> bool:

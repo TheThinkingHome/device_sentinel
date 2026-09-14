@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.21.1 (2026-09-13)
+# File: router_ties.py, Version: 0.21.2 (2026-09-14)
 
 """Router ties: which watched devices a router says have left.
 
@@ -87,7 +87,9 @@ from .const import (
     SYS_WIFI_UP,
     UPSTREAM_WIFI,
     CONF_EXCLUDED_INTEGRATIONS,
+    DATA_DEVICES,
     DATA_ROUTERS_SEEN,
+    DEV_FROZEN_SINCE,
     DEFAULT_EXCLUDED_INTEGRATIONS,
     ROUTER_INTEGRATIONS,
     WIFI_BURST_FLOOR,
@@ -797,19 +799,53 @@ class RouterTiesMixin:
     def wifi_down_since(self, device_id: str) -> tuple[str, float] | None:
         """Return the Wi-Fi outage claiming this device, if any.
 
-        A device is claimed only while its own tracker reads
-        not_home: the outage explains what the router saw leave, and
-        nothing else. A tied device whose tracker still reads home
-        during a declared outage is reported on its own, which is
-        what it deserves.
+        Claimed for the life of the outage rather than while its own
+        tracker happens to be away (ruling #411).
+
+        The two are not the same and the difference is the fault the
+        second fleet reported. Trackers lead and verdicts trail: on
+        12 September the trackers were home 76 seconds after the peak
+        while the entities behind them were still going unavailable on
+        their own timers, 41 seconds to four minutes on the measured
+        3 September outage. A claim tied to the live tracker state had
+        expired by the time its casualties reached the problem list,
+        so forty-odd devices were listed individually and nothing
+        named the cause.
+
+        Not a device a radio stack owns (ruling #412): Zigbee, Z-Wave
+        and Matter hardware has its own bridge rung and its own
+        medium, and a Wi-Fi outage does not explain it. Everything
+        else is either Wi-Fi or wired, and a wired device is counted
+        among the casualties even though a wired tracker is never
+        counted toward declaring an outage (ruling #413): declaring
+        wants precision, attributing wants coverage.
+
+        The claim ends when the outage does (ruling #426). Whatever is
+        still down then is its own problem, with its own timing.
         """
         since = self._wifi_down_at
         if since is None:
             return None
-        tracker = self._wifi_ties.get(device_id)
-        if tracker is None or tracker not in self._wifi_not_home:
+        if device_id in self._radio_owned:
             return None
-        return WIFI_KEY, since
+        # A tied device whose tracker fell in this outage is claimed
+        # on that evidence, whether or not a verdict has landed yet.
+        tracker = self._wifi_ties.get(device_id)
+        if tracker is not None and (
+            tracker in self._wifi_fallen or tracker in self._wifi_not_home
+        ):
+            return WIFI_KEY, since
+        # And so is anything else that failed inside the window, tie
+        # or no tie. Without this the claim reaches only hardware the
+        # router happens to track, and the devices that most need
+        # explaining are the ones it does not: the reference fleet's
+        # three presence sensors carry no tracker at all and were
+        # listed individually through every outage it has had.
+        record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
+        began = record.get(DEV_FROZEN_SINCE)
+        if began is not None and began >= since:
+            return WIFI_KEY, since
+        return None
 
     @property
     def wifi_down_at(self) -> float | None:
@@ -841,7 +877,15 @@ class RouterTiesMixin:
 
     @property
     def wifi_attributes(self) -> dict[str, Any]:
-        """What the Wi-Fi sensor publishes beside its state."""
+        """What the Wi-Fi sensor publishes beside its state.
+
+        The recovery is published as well as the outage, because the
+        probe can only record what the integration says. Without
+        these a staged outage shows the declare and the clear with
+        nothing in between, which is exactly where the settle is
+        being decided.
+        """
+        fell = len(self._wifi_fallen)
         return {
             "tied_devices": len(self._wifi_ties),
             "trackers_not_home": len(self._wifi_not_home),
@@ -850,4 +894,12 @@ class RouterTiesMixin:
                 if self._wifi_down_at is not None
                 else None
             ),
+            "threshold": self._wifi_burst_needed(),
+            "fallen": fell,
+            "returned": len(self._wifi_returned),
+            "recovery_needed": self._wifi_recovery_needed(fell),
+            "announced": self._wifi_announced,
+            "quiet_ticks": self._wifi_quiet_ticks,
+            "settle_losses": self._wifi_settle_losses,
+            "networks": list(self.wifi_networks) or None,
         }

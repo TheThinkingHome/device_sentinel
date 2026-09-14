@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.21.1 (2026-09-13)
+# File: coordinator.py, Version: 0.21.2 (2026-09-14)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -224,7 +224,7 @@ from .problem_list import ProblemListMixin
 from .records import BAD_STATES, _new_device_record, _reset_signal_day, _span
 from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
-from .stacks import device_key, is_plumbing
+from .stacks import device_key, is_plumbing, radio_owner
 from .store import StorageMixin, _watched_seconds
 
 
@@ -488,6 +488,10 @@ class DeviceSentinelCoordinator(
         self._wifi_peak_back = 0
         self._wifi_quiet_ticks = 0
         self._wifi_settle_losses = 0
+        # Devices a radio stack owns (ruling #412), rebuilt with the
+        # registry view. Empty until the first rebuild, which is the
+        # same moment `_watched` is populated.
+        self._radio_owned: set[str] = set()
         self._wifi_down_at: float | None = None
         self._wifi_unsub = None
         self._wifi_retry_pending = False
@@ -1626,6 +1630,7 @@ class DeviceSentinelCoordinator(
         excluded_integrations = self.excluded_integrations
 
         watched: dict[str, str] = {}
+        radio_owned: set[str] = set()
         device_names: dict[str, str] = {}
         device_labels: dict[str, frozenset[str]] = {}
         # Name, domain and reason: the reason joined the tuple when
@@ -1691,6 +1696,14 @@ class DeviceSentinelCoordinator(
             owner = device_key(domain, device)
             if owner is not None:
                 stack_keys[device.id] = owner
+            # Whether a radio stack owns this device (ruling #412). A
+            # Wi-Fi outage does not explain Zigbee, Z-Wave or Matter
+            # hardware: it has its own bridge rung and its own medium.
+            # Asked on the same walk, and deliberately not read from
+            # `stack_keys`, which ZHA, Z-Wave and Matter leave empty
+            # because their identifiers are unverified.
+            if radio_owner(domain, device) is not None:
+                radio_owned.add(device.id)
             device_names[device.id] = name
             device_labels[device.id] = frozenset(device.labels or ())
             # Device-level muting reasons, named broadest first
@@ -1862,6 +1875,7 @@ class DeviceSentinelCoordinator(
         self._clear_verdicts_for_set_aside(set_aside)
         self._stacks = stacks
         self._stack_keys = stack_keys
+        self._radio_owned = radio_owned
         self._entry_of_device = entry_of
         self._device_names = device_names
         self._device_labels = device_labels

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.20.17 (2026-09-11)
+# File: stack_zha.py, Version: 0.21.2 (2026-09-14)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -69,6 +69,9 @@ from .const import (
 )
 
 STACK = STACK_ZHA
+
+# Nothing but ZHA publishes on the zha domain (ruling #412).
+SHARED_DOMAIN = False
 
 
 def owns_domain(domain: str) -> bool:

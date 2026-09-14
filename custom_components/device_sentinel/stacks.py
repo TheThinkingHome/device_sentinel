@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stacks.py, Version: 0.20.17 (2026-09-11)
+# File: stacks.py, Version: 0.21.2 (2026-09-14)
 
 """The one place a coordinator stack is registered.
 
@@ -80,6 +80,30 @@ def device_key(domain: str, device: dr.DeviceEntry) -> tuple[str, str] | None:
         if key is None:
             return None
         return module.STACK, key
+    return None
+
+
+def radio_owner(domain: str, device: dr.DeviceEntry) -> str | None:
+    """Return the radio stack owning this device, if any (ruling #412).
+
+    A Wi-Fi outage does not explain a Zigbee, Z-Wave or Matter device:
+    that hardware has its own bridge rung and its own medium. Owning
+    the domain is the test for the three stacks that own theirs
+    outright. Z2M shares the mqtt domain with anything else publishing
+    its own discovery, so it is asked to name the device as well, and
+    an MQTT device it cannot name is not Zigbee's.
+
+    Deliberately not `device_key`, which ZHA, Z-Wave and Matter all
+    answer with None because their identifiers are unverified
+    (rulings #218 and #219). A device they own is owned whether or not
+    they can name it.
+    """
+    for module in STACK_MODULES:
+        if not module.owns_domain(domain):
+            continue
+        if getattr(module, "SHARED_DOMAIN", False):
+            return module.STACK if module.device_key(device) else None
+        return module.STACK
     return None
 
 

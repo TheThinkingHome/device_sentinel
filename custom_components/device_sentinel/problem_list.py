@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.20.18 (2026-09-12)
+# File: problem_list.py, Version: 0.21.2 (2026-09-14)
 
 """The problem list: the single memory every channel renders.
 
@@ -81,6 +81,7 @@ from .const import (
     TODO_SUMMARY,
     TODO_UID,
     UPSTREAM_KIND,
+    WIFI_KEY,
     UPSTREAM_SETTLE_SECONDS,
     WITHDRAWN_REASON_SET_ASIDE,
 )
@@ -455,7 +456,6 @@ class ProblemListMixin:
         # climbs as devices are judged and drains as they return,
         # and printed alone it read as one number wandering; beside
         # the membership the drain reads as the recovery it is.
-        summary = f"{display} down: {devices} of {behind} devices unavailable"
         since = kinds.get(UPSTREAM_KIND)
         when = (
             self._format_report_time(
@@ -464,6 +464,9 @@ class ProblemListMixin:
             if since is not None
             else None
         )
+        if name == WIFI_KEY:
+            return self._wifi_item_text(devices, behind, when)
+        summary = f"{display} down: {devices} of {behind} devices unavailable"
         opening = (
             f"{display} stopped reporting at {when}."
             if when
@@ -477,6 +480,51 @@ class ProblemListMixin:
             f"listed. Their verdicts are recorded and clear when it "
             f"returns; anything still down afterward is listed on its "
             f"own."
+        )
+
+    def _wifi_item_text(
+        self, devices: int, behind: int, when: str | None
+    ) -> tuple[str, str]:
+        """Return the row a Wi-Fi outage writes (ruling #414).
+
+        The stack grammar above belongs to a bridge, which is a
+        component that stopped reporting. A network is not a
+        component and does not report, so it gets its own wording:
+        the network became unavailable, and it is named, because the
+        person reads the row rather than the tie table.
+
+        A house with no network configured is named for the house,
+        and a house with several names them all. Neither fleet has
+        more than one configured, so the plural form is unmeasured.
+        """
+        names = list(self.wifi_networks)
+        if not names:
+            subject = "Home Assistant's WiFi network"
+        elif len(names) == 1:
+            subject = f"The '{names[0]}' WiFi network"
+        else:
+            quoted = [f"'{one}'" for one in names]
+            subject = (
+                f"The {', '.join(quoted[:-1])} and {quoted[-1]} "
+                f"WiFi networks"
+            )
+        many = len(names) > 1
+        verb = "networks" if many else "network"
+        # "its" has no referent once two networks are named. Changed
+        # for the plural only: no fleet has ever had two configured,
+        # and the singular wording is the one that was ruled.
+        whose = "their" if many else "its"
+        opening = (
+            f"{subject} became unavailable at {when}."
+            if when
+            else f"{subject} is unavailable."
+        )
+        return (
+            f"WiFi {verb} unavailable: {devices} of {behind} devices down",
+            f"{opening} Currently, {devices} of {whose} {behind} managed "
+            f"devices became unavailable. Device Sentinel is tracking "
+            f"these devices independently and this total will change "
+            f"as this outage develops."
         )
 
     def _problem_item_text(

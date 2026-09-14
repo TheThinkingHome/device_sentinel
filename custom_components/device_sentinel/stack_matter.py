@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_matter.py, Version: 0.20.17 (2026-09-11)
+# File: stack_matter.py, Version: 0.21.2 (2026-09-14)
 
 """Matter: everything Device Sentinel knows about this stack.
 
@@ -49,6 +49,9 @@ from homeassistant.helpers import device_registry as dr
 from .const import STACK_MATTER
 
 STACK = STACK_MATTER
+
+# Nothing but Matter publishes on the matter domain (ruling #412).
+SHARED_DOMAIN = False
 
 
 def owns_domain(domain: str) -> bool:

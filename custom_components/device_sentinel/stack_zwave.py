@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zwave.py, Version: 0.20.17 (2026-09-11)
+# File: stack_zwave.py, Version: 0.21.2 (2026-09-14)
 
 """Z-Wave JS: everything Device Sentinel knows about this stack.
 
@@ -62,6 +62,9 @@ from homeassistant.helpers import device_registry as dr
 from .const import STACK_ZWAVE
 
 STACK = STACK_ZWAVE
+
+# Nothing but Z-Wave publishes on the zwave_js domain (ruling #412).
+SHARED_DOMAIN = False
 
 
 def owns_domain(domain: str) -> bool:
