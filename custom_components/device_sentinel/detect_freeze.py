@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.20.11 (2026-09-08)
+# File: detect_freeze.py, Version: 0.21.3 (2026-09-14)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -87,6 +87,7 @@ from .const import (
     TAINT_UNAVAILABLE,
     TRIM_MIN_SAMPLES,
     TRIM_TOP_K,
+    WIFI_KEY,
 )
 
 
@@ -675,6 +676,21 @@ class FreezeMixin:
             if since is not None and since < down_since:
                 continue
             counts[name] = counts.get(name, 0) + 1
+        # A Wi-Fi outage counts the devices it took, not the devices
+        # Home Assistant has finished marking down. The two are the
+        # same for a bridge, whose casualties are unavailable the
+        # moment it goes; they are not the same for a network, where
+        # each device goes unavailable on its own timer. On the
+        # staged outage of 14 September the row read 1 of 12 four
+        # minutes in and 10 at thirteen minutes, while the network
+        # had been down and ten devices on it from the first minute.
+        # The row exists for the life of the outage on that count,
+        # so it appears when the outage is declared rather than when
+        # the verdicts catch up.
+        if self.wifi_down_at is not None:
+            counts[WIFI_KEY] = max(
+                counts.get(WIFI_KEY, 0), self.wifi_casualties
+            )
         return counts
 
     @property

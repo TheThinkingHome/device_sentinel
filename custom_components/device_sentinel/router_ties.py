@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.21.2 (2026-09-14)
+# File: router_ties.py, Version: 0.21.3 (2026-09-14)
 
 """Router ties: which watched devices a router says have left.
 
@@ -386,6 +386,19 @@ class RouterTiesMixin:
         )
 
     @property
+    def wifi_casualties(self) -> int:
+        """How many watched devices this outage took.
+
+        The trackers that fell in it, counted as the devices they are
+        tied to. A tracker with no watched device behind it is not a
+        casualty of anything.
+        """
+        return sum(
+            1 for tracker in self._wifi_fallen
+            if tracker in self._wifi_device_of
+        )
+
+    @property
     def wifi_fallen_set(self) -> set[str]:
         """The trackers that fell during the standing outage."""
         return set(self._wifi_fallen)
@@ -624,6 +637,7 @@ class RouterTiesMixin:
             return
         self._wifi_down_at = since
         self._wifi_hold_since = None
+        self._seed_wifi_fallen(since)
         confirmed = self._wifi_confirmed_count()
         seen = self.wifi_confirmation()
         LOGGER.info(
@@ -703,27 +717,42 @@ class RouterTiesMixin:
         if self._wifi_quiet_ticks >= WIFI_SETTLE_TICKS:
             self._wifi_restore(now)
 
-    def _wifi_declare(self, now: float, still_gone: int) -> None:
-        """Declare the outage, dated from the first fall."""
-        since = self._wifi_first_fall or self._wifi_hold_since or now
-        self._wifi_down_at = since
-        self._wifi_hold_since = None
-        # The fallen set, seeded from the trackers that went away at
-        # or after this outage's first fall. A device already away
-        # before it began is not a casualty of it and does not vote
-        # against recovery (ruling #409): on the second fleet a
-        # tablet that left forty-nine minutes early was one of three
-        # holding an outage open for five and a half hours.
+    def _seed_wifi_fallen(self, since: float) -> None:
+        """Open the fallen set for an outage starting at `since`.
+
+        Called by both routes that declare one. The ties declare from
+        a burst of trackers; a house that can hear its own radio
+        declares from the scan instead (#391) and the burst branch is
+        switched off entirely. 0.21.1 built the fallen set in the tie
+        route alone, so on any house with a network configured there
+        was never a fallen set at all and the recovery ran against an
+        empty one. Found by a staged outage on 14 September; neither
+        fleet file configures a network and no harness case did
+        either, so nothing covered the scan route.
+
+        A tracker already away before the outage began is left out
+        (ruling #409): it is not a casualty and must not vote against
+        recovery. Anything the scan route cannot date is taken as
+        part of the outage, because the scan knows the network went
+        and knows nothing about when each tracker followed.
+        """
         self._wifi_fallen = {
             entity_id: when
             for entity_id, when in self._wifi_not_home.items()
-            if when >= since
+            if when >= since - WIFI_BURST_WINDOW_SECONDS
         }
         self._wifi_returned = set()
         self._wifi_announced = False
         self._wifi_peak_back = 0
         self._wifi_quiet_ticks = 0
         self._wifi_settle_losses = 0
+
+    def _wifi_declare(self, now: float, still_gone: int) -> None:
+        """Declare the outage, dated from the first fall."""
+        since = self._wifi_first_fall or self._wifi_hold_since or now
+        self._wifi_down_at = since
+        self._wifi_hold_since = None
+        self._seed_wifi_fallen(since)
         confirmed = self._wifi_confirmed_count()
         LOGGER.info(
             "device_sentinel: wifi outage declared, %d tied "
