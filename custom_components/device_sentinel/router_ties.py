@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.21.3 (2026-09-14)
+# File: router_ties.py, Version: 0.21.4 (2026-09-14)
 
 """Router ties: which watched devices a router says have left.
 
@@ -89,6 +89,7 @@ from .const import (
     CONF_EXCLUDED_INTEGRATIONS,
     DATA_DEVICES,
     DATA_ROUTERS_SEEN,
+    DATA_WIFI_MEDIUM,
     DEV_FROZEN_SINCE,
     DEFAULT_EXCLUDED_INTEGRATIONS,
     ROUTER_INTEGRATIONS,
@@ -132,12 +133,37 @@ WIRED_MARKERS = (
 # exclusion already kept does not need a second reason to stay.
 SSID_KEYS = ("essid", "ssid")
 
+# What a router states outright about a client's medium, read as
+# stated (ruling #417). UniFi carries `essid`, `radio` and `ap_mac`
+# on a wireless client. TP-Link carries none of those and instead
+# spells the network's own name into `connection` and the band into
+# `band`, so a client reading `connection=IoT band=2G` is the router
+# saying it is wireless as plainly as UniFi does. Measured on the
+# reference fleet: 8,815 tracker lines, zero occurrences of the UniFi
+# spellings, and 29 of 40 trackers left unknown by reading only
+# those. Every one of the 29 is wireless by TP-Link's own account.
+WIRELESS_KEYS = ("essid", "ssid", "radio", "radio_proto", "ap_mac")
+
+# The medium is scored rather than fixed by one reading (ruling
+# #415), and a minority that reaches this share of the evidence
+# sends the tracker to unknown rather than to its majority (ruling
+# #427). Measured, not chosen: the tightest contradiction on either
+# fleet is 2 against 22, the next 1 against 52, and the thirteen
+# plainly false readings on the reference fleet are all one or two
+# samples against 45 to 184. A tenth discards every one of them and
+# is reached by none. Unknown is the safe state because unknown keeps
+# the tie.
+MEDIUM_MINORITY_SHARE = 0.10
+
 
 def tracker_medium(attributes: Any) -> str:
-    """Return wired, wireless or unknown for a tracker's attributes.
+    """Return wired, wireless or unknown for one reading.
 
     Wired wins, because it is the exclusion the tie ladder acts on.
-    Wireless is only ever a recorded observation.
+    A named network or a band is the router stating wireless outright
+    (ruling #417); `band=None` and `connection=wired` together are
+    what TP-Link publishes for a wired client and, for one sample at
+    every router restart, for every client at once.
     """
     if not isinstance(attributes, dict):
         return "unknown"
@@ -145,11 +171,36 @@ def tracker_medium(attributes: Any) -> str:
         value = attributes.get(key)
         if isinstance(value, str) and value.strip().lower() == wired_value:
             return "wired"
-    for key in SSID_KEYS:
+    for key in WIRELESS_KEYS:
         value = attributes.get(key)
         if isinstance(value, str) and value.strip():
             return "wireless"
+    band = attributes.get("band")
+    if isinstance(band, str) and band.strip() and band.strip().lower() != "none":
+        return "wireless"
+    connection = attributes.get("connection")
+    if isinstance(connection, str) and connection.strip():
+        return "wireless"
     return "unknown"
+
+
+def medium_from_score(score: dict[str, int]) -> str:
+    """Judge a tracker's medium from its accumulated evidence.
+
+    Majority wins. A minority below MEDIUM_MINORITY_SHARE of the
+    whole is a router restart or a stale entry and is ignored (#415).
+    A minority at or above it is a device that cannot be told, and
+    that is unknown (#427).
+    """
+    wired = int(score.get("wired", 0))
+    wireless = int(score.get("wireless", 0))
+    total = wired + wireless
+    if total == 0:
+        return "unknown"
+    minority = min(wired, wireless)
+    if minority and minority >= MEDIUM_MINORITY_SHARE * total:
+        return "unknown"
+    return "wired" if wired > wireless else "wireless"
 
 
 def normalize_mac(value: Any) -> str | None:
@@ -174,6 +225,59 @@ class RouterTiesMixin:
     the declared outage. Nothing persists across a restart, which is
     the recorded restart-mid-outage limitation.
     """
+
+    # ---------------------------------------------------------- medium
+
+    def _wifi_medium_score(self, tracker: str) -> dict[str, int]:
+        """The persisted evidence for one tracker, or empty."""
+        table = self.data.setdefault(DATA_WIFI_MEDIUM, {})
+        return table.get(tracker) or {}
+
+    def _score_wifi_medium(
+        self, tracker: str, reading: str, stamp: float
+    ) -> str:
+        """Fold one home reading into the score and return the
+        judgment (rulings #415, #418, #428).
+
+        A sample is one state update, not one look at the state. The
+        tie rebuild runs on every registry change and on every rejoin
+        sweep, and scoring on each run counted one unchanged reading
+        ten times over during setup alone, which buried the next real
+        reading below the minority line. The state's own last_updated
+        is the stamp, and a reading is counted once per stamp.
+
+        A reading of unknown carries no evidence and is not counted,
+        which is what a router that has not polled yet publishes. A
+        reading that the judgment then discards as a minority is
+        counted separately: that count is what makes the case for a
+        source-restart grace measurable. Thirteen such readings were
+        found on the reference fleet, all one or two samples against
+        45 to 184, and the grace was set aside on that measurement.
+        """
+        table = self.data.setdefault(DATA_WIFI_MEDIUM, {})
+        score = table.setdefault(tracker, {"wired": 0, "wireless": 0})
+        fresh = self._wifi_medium_stamp.get(tracker) != stamp
+        if fresh and reading in ("wired", "wireless"):
+            self._wifi_medium_stamp[tracker] = stamp
+            score[reading] = int(score.get(reading, 0)) + 1
+            self._dirty = True
+        judged = medium_from_score(score)
+        if fresh and reading in ("wired", "wireless") and reading != judged:
+            if judged != "unknown":
+                self._wifi_medium_rejected[tracker] = (
+                    self._wifi_medium_rejected.get(tracker, 0) + 1
+                )
+        return judged
+
+    def wifi_medium_of(self, tracker: str) -> str:
+        """What the evidence says this tracker is."""
+        return medium_from_score(self._wifi_medium_score(tracker))
+
+    @property
+    def wifi_medium_rejected(self) -> dict[str, int]:
+        """Readings the scoring has discarded, per tracker, this
+        session (ruling #428)."""
+        return dict(self._wifi_medium_rejected)
 
     # ------------------------------------------------------------ ties
 
@@ -223,10 +327,17 @@ class RouterTiesMixin:
             # reading confirms or doubts a classification and never
             # decides one on its own.
             if state.state == STATE_HOME:
-                medium = tracker_medium(state.attributes)
-                self._wifi_medium_seen[entry.entity_id] = medium
+                medium = self._score_wifi_medium(
+                    entry.entity_id,
+                    tracker_medium(state.attributes),
+                    state.last_updated.timestamp(),
+                )
             else:
-                medium = self._wifi_medium_seen.get(entry.entity_id)
+                medium = self.wifi_medium_of(entry.entity_id)
+                if medium == "unknown" and not self._wifi_medium_score(
+                    entry.entity_id
+                ):
+                    medium = None
                 if medium is None:
                     # Never seen home, so nothing is known about it.
                     # Unknown keeps the tie, because the exclusion
@@ -893,7 +1004,17 @@ class RouterTiesMixin:
             "ties": len(self._wifi_ties),
             "tied": dict(sorted(self._wifi_ties.items())),
             "medium_census": dict(sorted(self._wifi_medium_census.items())),
-            "medium_seen": dict(sorted(self._wifi_medium_seen.items())),
+            "medium_seen": {
+                tracker: self.wifi_medium_of(tracker)
+                for tracker in sorted(self.data.get(DATA_WIFI_MEDIUM, {}))
+            },
+            "medium_scores": {
+                tracker: dict(score)
+                for tracker, score in sorted(
+                    self.data.get(DATA_WIFI_MEDIUM, {}).items()
+                )
+            },
+            "medium_rejected": dict(sorted(self._wifi_medium_rejected.items())),
             "wired_skipped": list(self._wifi_wired_skipped),
             "trackers_not_home": len(self._wifi_not_home),
             "retry_pending": self._wifi_retry_pending,
@@ -931,4 +1052,5 @@ class RouterTiesMixin:
             "quiet_ticks": self._wifi_quiet_ticks,
             "settle_losses": self._wifi_settle_losses,
             "networks": list(self.wifi_networks) or None,
+            "medium_rejected": sum(self._wifi_medium_rejected.values()),
         }

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.21.3 (2026-09-14)
+# File: coordinator.py, Version: 0.21.4 (2026-09-14)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -121,6 +121,7 @@ from .const import (
     DAILY_MAX_KEEP,
     DATA_BRIDGE_SEEN,
     DATA_ROUTERS_SEEN,
+    DATA_WIFI_MEDIUM,
     DATA_BROKER_SEEN,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
@@ -500,7 +501,14 @@ class DeviceSentinelCoordinator(
         # What each tracker was last judged to be while it was home.
         # Survives a rebuild that happens mid outage, which a live
         # reading does not.
-        self._wifi_medium_seen: dict[str, str] = {}
+        # Readings the medium scoring discarded this session, per
+        # tracker (ruling #428). The scores themselves live in storage
+        # under DATA_WIFI_MEDIUM (ruling #418).
+        self._wifi_medium_rejected: dict[str, int] = {}
+        # The last_updated stamp last counted per tracker, so a
+        # reading is scored once per state update rather than once
+        # per look at the state.
+        self._wifi_medium_stamp: dict[str, float] = {}
         # WiFi detection from the host's own radio (#391, #392).
         # Absent until a network is chosen and an adapter is found.
         self._wifi_scan_interface: str | None = None
@@ -820,6 +828,7 @@ class DeviceSentinelCoordinator(
             loaded.setdefault(DATA_BRIDGE_SEEN, {})
             loaded.setdefault(DATA_BROKER_SEEN, {})
             loaded.setdefault(DATA_ROUTERS_SEEN, [])
+            loaded.setdefault(DATA_WIFI_MEDIUM, {})
             loaded.setdefault(DATA_STORMS, [])
             loaded.setdefault(DATA_STORM_DAYS, [])
             # The dry-run outbox was retired once the
@@ -1223,6 +1232,7 @@ class DeviceSentinelCoordinator(
                     loaded.setdefault(DATA_BRIDGE_SEEN, {})
                     loaded.setdefault(DATA_BROKER_SEEN, {})
                     loaded.setdefault(DATA_ROUTERS_SEEN, [])
+                    loaded.setdefault(DATA_WIFI_MEDIUM, {})
                     loaded.setdefault(DATA_STORMS, [])
                     loaded.setdefault(DATA_STORM_DAYS, [])
                     malformed = {}

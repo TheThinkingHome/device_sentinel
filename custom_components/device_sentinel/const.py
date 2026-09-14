@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.21.3 (2026-09-14)
+# File: const.py, Version: 0.21.4 (2026-09-14)
 
 """Constants for the Device Sentinel integration."""
 
@@ -554,6 +554,14 @@ ROUTER_INTEGRATIONS = (
     "upc_connect",
 )
 DATA_ROUTERS_SEEN = "routers_seen"
+
+# The learned medium of every router tracker, persisted (ruling #418).
+# Keyed by tracker entity id, each value a dict of wired and wireless
+# sample counts. Until 0.21.4 this lived in a plain dictionary that
+# was empty again after every restart, so on a house that restarts
+# often the census was a snapshot of whatever had been seen home
+# since the last boot rather than what the fleet is.
+DATA_WIFI_MEDIUM = "wifi_medium"
 
 AREA_FREEZE = "freeze"
 AREA_BATTERY = "battery"
@@ -2270,7 +2278,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 426
+HIGHEST_RULING = 428
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
