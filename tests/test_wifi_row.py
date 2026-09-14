@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_row.py, Version: 0.21.2 (2026-09-14)
+# File: tests/test_wifi_row.py, Version: 0.21.3 (2026-09-14)
 
 """The row a Wi-Fi outage writes. Rulings #411 to #414.
 
@@ -41,6 +41,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
@@ -91,7 +92,15 @@ async def test_the_row_is_written_rather_than_each_device(
     hass: HomeAssistant, freezer
 ):
     """One row naming the outage, and the casualties counted rather
-    than listed. This is what the second fleet did not get."""
+    than listed. This is what the second fleet did not get.
+
+    Ten fell and seven have been judged down so far. The row counts
+    ten: the devices the outage took, not the verdicts that have
+    caught up. Asserted the other way round until the staged outage
+    of 14 September showed what that reads like on a screen, where
+    the row crawled from 1 to 10 over thirteen minutes while the
+    network had been down the whole time.
+    """
     coord, trackers, devices, _untied = await _house(hass, 14)
     first = await _declared(hass, coord, trackers[:10], freezer, count=10)
 
@@ -100,7 +109,7 @@ async def test_the_row_is_written_rather_than_each_device(
     _judge(coord, devices[:7], first + 90.0)
     freezer.tick(timedelta(seconds=120))
 
-    assert coord.suppressed_down_counts == {WIFI_KEY: 7}
+    assert coord.suppressed_down_counts == {WIFI_KEY: 10}
 
 
 async def test_a_device_whose_tracker_stayed_home_is_still_claimed(
@@ -329,3 +338,109 @@ async def test_the_sensor_publishes_the_recovery(
     assert published["returned"] == 6
     assert published["announced"] is True
     assert published["quiet_ticks"] == 0
+
+
+# ------------------------------------- the staged outage of 14 September
+
+
+async def test_the_fallen_set_holds_every_tracker_that_is_away(
+    hass: HomeAssistant, freezer
+):
+    """Found by a staged outage on hardware, not by this suite.
+
+    The trackers do not fall in one instant. On 14 September they
+    fell across several minutes, and the burst window is pruned to
+    sixty seconds on every fall, so the outage's start time kept
+    moving forward. The fallen set was seeded from the trackers whose
+    fall time was at or after that start, and by the time the
+    threshold was reached the start had moved past all of them: the
+    set was empty at declaration with eleven trackers away.
+
+    Every case in this file until now landed its falls in the same
+    instant, so the prune never moved and the defect could not
+    appear.
+    """
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    coord._grace_until = 0.0
+
+    # Five fall, then a gap longer than the burst window, then five
+    # more. The shape of a real outage rather than a test's.
+    for tracker in trackers[:5]:
+        state = hass.states.get(tracker)
+        hass.states.async_set(tracker, "not_home", dict(state.attributes))
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=90))
+    for tracker in trackers[5:10]:
+        state = hass.states.get(tracker)
+        hass.states.async_set(tracker, "not_home", dict(state.attributes))
+    await hass.async_block_till_done()
+
+    assert coord._wifi_hold_since is not None
+    coord._sample_wifi(coord._wifi_hold_since + 65.0)
+    await hass.async_block_till_done()
+
+    assert coord.wifi_down_at is not None
+    assert len(coord.wifi_fallen_set) == 10, coord.wifi_fallen_set
+
+
+async def test_the_count_is_the_devices_the_outage_took(
+    hass: HomeAssistant, freezer
+):
+    """The row counts devices the outage took, not devices Home
+    Assistant has finished marking down.
+
+    On 14 September the row read 1 of 12 four minutes in, then 3, then
+    4, then 10 at thirteen minutes, because it was counting freeze
+    verdicts landing one at a time. The network was down and ten
+    devices were on it from the first minute.
+    """
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    first = await _declared(hass, coord, trackers[:10], freezer, count=10)
+
+    # Not one verdict has landed yet.
+    assert coord.suppressed_down_counts == {WIFI_KEY: 10}
+    summary, _body = coord._upstream_item_text(
+        WIFI_KEY, {UPSTREAM_KIND: first}, 10
+    )
+    assert summary == "WiFi network unavailable: 10 of 12 devices down"
+
+
+async def test_the_scan_route_builds_a_fallen_set_too(
+    hass: HomeAssistant, freezer
+):
+    """The route nothing covered, found by hardware.
+
+    A house that can hear its own radio declares from the scan (#391)
+    and the tie burst is switched off entirely. 0.21.1 built the
+    fallen set in the tie route alone, so on the reference system,
+    which has a network configured, there was never a fallen set at
+    all: the sensor published `fallen=0` with eleven trackers away,
+    the claim had nothing to work from, and the recovery closed on
+    two returns against a threshold of one.
+
+    Neither fleet file configures a network and no constructed house
+    did either, which is why two fleet replays and a full gate all
+    passed over it.
+    """
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    coord._grace_until = 0.0
+    hass.config_entries.async_update_entry(
+        coord.entry,
+        options={**coord.entry.options, "wifi_networks": ["IKS_Rotarran-IoT"]},
+    )
+    await hass.async_block_till_done()
+
+    for tracker in trackers[:10]:
+        state = hass.states.get(tracker)
+        hass.states.async_set(tracker, "not_home", dict(state.attributes))
+    await hass.async_block_till_done()
+
+    since = dt_util.utcnow().timestamp()
+    coord.on_wifi_scan_down(since, ["IKS_Rotarran-IoT"])
+    await hass.async_block_till_done()
+
+    assert coord.wifi_down_at is not None
+    assert len(coord.wifi_fallen_set) == 10
+    assert coord.wifi_casualties == 10
+    assert coord.suppressed_down_counts == {WIFI_KEY: 10}
+    assert coord.wifi_attributes["fallen"] == 10
