@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.21.4 (2026-09-14)
+# File: router_ties.py, Version: 0.21.5 (2026-09-14)
 
 """Router ties: which watched devices a router says have left.
 
@@ -772,10 +772,36 @@ class RouterTiesMixin:
     def on_wifi_scan_restored(
         self, since: float | None, now: float
     ) -> None:
-        """The scan hears every chosen network again."""
+        """The scan hears every chosen network again.
+
+        It reports the return; it does not end the outage. Hearing
+        the network is not the same as the devices on it being back,
+        and the recovery rule is what knows the difference
+        (ruling #429).
+
+        Until 0.21.5 this called the restore directly, so on any
+        house with a network configured the whole recovery rule was
+        dead: the fallen set, the announce, the settle and the
+        reopen never ran. Measured on 14 September, the trackers came
+        home at 15:13:38, the scan closed the outage at 15:13:58, and
+        the five Motion Blinds devices behind it finished
+        reconnecting between 15:14:16 and 15:14:18. Every one was
+        handed back under #426 inside that twenty second window,
+        wrote its own row and announced itself, and twenty seconds
+        later they were all fine. The same half-applied shape as the
+        fallen set: a rule built for the tie route and never given to
+        the scan.
+        """
         if self._wifi_down_at is None:
             return
-        self._wifi_restore(now)
+        LOGGER.info(
+            "device_sentinel: wifi scan hears the network again, "
+            "%d of %d fallen tracker(s) home; the settle decides "
+            "when the outage ends",
+            len(self._wifi_returned),
+            len(self._wifi_fallen),
+        )
+        self._sample_wifi_recovery(now)
 
     def _sample_wifi_recovery(self, now: float) -> None:
         """Judge the recovery of a standing outage on the tick.
@@ -794,6 +820,16 @@ class RouterTiesMixin:
             return
         back = len(self._wifi_returned)
 
+        if back >= fell:
+            # Every member of the fallen set is home, so there is
+            # provably nothing left to wait for (ruling #430).
+            # Checked before the
+            # announce, because a recovery that is already complete
+            # has nothing to settle: announcing and then serving out
+            # two quiet ticks would hold the outage open for two
+            # minutes over devices that are all back.
+            self._wifi_restore(now)
+            return
         if not self._wifi_announced:
             if back >= self._wifi_recovery_needed(fell):
                 self._wifi_announced = True
