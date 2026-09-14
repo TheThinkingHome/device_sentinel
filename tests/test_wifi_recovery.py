@@ -1,4 +1,4 @@
-# File: tests/test_wifi_recovery.py, Version: 0.21.1 (2026-09-13)
+# File: tests/test_wifi_recovery.py, Version: 0.21.5 (2026-09-14)
 """When an outage ends. Rulings #408, #409, #422 to #426.
 
 Written before the change, and every case here fails against 0.21.0.
@@ -273,3 +273,76 @@ async def test_the_remainder_is_handed_back(hass: HomeAssistant, freezer):
 
     for device in devices[6:]:
         assert coord.upstream_down_since(device.id) is None
+
+
+# ------------------------------- the staged outage of 14 September, 15:13
+
+
+async def test_the_scan_does_not_close_the_outage_itself(
+    hass: HomeAssistant, freezer
+):
+    """Found on hardware, not by this suite.
+
+    A house that can hear its own radio declares from the scan (#391)
+    and, until 0.21.5, closed from it too: `on_wifi_scan_restored`
+    called the restore directly and the recovery rule never ran. On
+    14 September the trackers came home at 15:13:38, the scan closed
+    the outage at 15:13:58, and the five Motion Blinds devices behind
+    it finished reconnecting at 15:14:16 to 15:14:18. In that twenty
+    second window every one of them was handed back under #426, wrote
+    its own row and announced itself, and twenty seconds later they
+    were all fine.
+
+    Hearing the network is not the same as the devices on it being
+    back. The scan now reports the return and the recovery rule
+    decides when the outage ends.
+    """
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    first = await _declared(hass, coord, trackers[:10], freezer, count=10)
+
+    for tracker in trackers[:9]:
+        await _rise(hass, tracker)
+    coord.on_wifi_scan_restored(first, first + 120.0)
+    await hass.async_block_till_done()
+
+    # The network is back and the outage is not over: the settle has
+    # not run, so nothing has been handed back yet.
+    assert coord.wifi_down_at is not None
+
+
+async def test_the_settle_ends_early_when_everyone_is_back(
+    hass: HomeAssistant, freezer
+):
+    """Two quiet ticks, or the whole fallen set returned, whichever
+    comes first. A clean outage where everything returns at once
+    closes at once rather than waiting out a debounce for devices
+    that are provably already home."""
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    first = await _declared(hass, coord, trackers[:10], freezer, count=10)
+
+    for tracker in trackers[:10]:
+        await _rise(hass, tracker)
+    coord._sample_wifi(first + 120.0)
+    await hass.async_block_till_done()
+
+    assert coord.wifi_down_at is None
+
+
+async def test_the_settle_still_waits_when_some_are_missing(
+    hass: HomeAssistant, freezer
+):
+    """The control. The early exit fires only when there is provably
+    nothing left to wait for."""
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    first = await _declared(hass, coord, trackers[:10], freezer, count=10)
+
+    for tracker in trackers[:9]:
+        await _rise(hass, tracker)
+    coord._sample_wifi(first + 120.0)
+    await hass.async_block_till_done()
+    assert coord.wifi_down_at is not None
+
+    coord._sample_wifi(first + 180.0)
+    coord._sample_wifi(first + 240.0)
+    await hass.async_block_till_done()
+    assert coord.wifi_down_at is None
