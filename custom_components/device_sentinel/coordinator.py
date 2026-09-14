@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.21.4 (2026-09-14)
+# File: coordinator.py, Version: 0.21.6 (2026-09-14)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -489,6 +489,12 @@ class DeviceSentinelCoordinator(
         self._wifi_peak_back = 0
         self._wifi_quiet_ticks = 0
         self._wifi_settle_losses = 0
+        # When the recovery began: the network was heard again, or a
+        # share of the fallen set returned (ruling #431). Separate
+        # from the close, because a person watching the problem list
+        # should be told the network is back while the settle is
+        # still holding its casualties off the list.
+        self._wifi_recovering_at: float | None = None
         # Devices a radio stack owns (ruling #412), rebuilt with the
         # registry view. Empty until the first rebuild, which is the
         # same moment `_watched` is populated.

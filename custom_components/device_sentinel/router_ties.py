@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.21.5 (2026-09-14)
+# File: router_ties.py, Version: 0.21.6 (2026-09-14)
 
 """Router ties: which watched devices a router says have left.
 
@@ -155,6 +155,25 @@ WIRELESS_KEYS = ("essid", "ssid", "radio", "radio_proto", "ap_mac")
 # the tie.
 MEDIUM_MINORITY_SHARE = 0.10
 
+# And a minority overrules nothing until there is this much evidence
+# behind it (ruling #432).
+#
+# This is the whole of the answer to the stripped reading found on
+# 14 September, and the only one available. When a client leaves,
+# TP-Link strips its network name and band and reports it as wired,
+# which is byte for byte what it publishes for a genuine wired
+# client. A tie rebuild landing between the attribute update and the
+# state update reads `home` carrying that shape. Refusing the shape
+# was tried and reverted: it turns every real wired device on the
+# fleet into unknown. The two cases cannot be told apart from one
+# reading, so they are told apart by how often each occurs. The share was measured over ten days,
+# where the tightest contradiction on either fleet was 2 against 22.
+# On six samples one bad reading is sixteen percent: on 14 September
+# three known-wireless devices went to unknown on a single stripped
+# reading each, hours after a fresh install. A share means nothing
+# until there are enough samples for it to be a share of anything.
+MEDIUM_MINORITY_FLOOR = 20
+
 
 def tracker_medium(attributes: Any) -> str:
     """Return wired, wireless or unknown for one reading.
@@ -198,7 +217,11 @@ def medium_from_score(score: dict[str, int]) -> str:
     if total == 0:
         return "unknown"
     minority = min(wired, wireless)
-    if minority and minority >= MEDIUM_MINORITY_SHARE * total:
+    if (
+        minority
+        and total >= MEDIUM_MINORITY_FLOOR
+        and minority >= MEDIUM_MINORITY_SHARE * total
+    ):
         return "unknown"
     return "wired" if wired > wireless else "wireless"
 
@@ -495,6 +518,16 @@ class RouterTiesMixin:
                 CONF_EXCLUDED_INTEGRATIONS: current + adding,
             },
         )
+
+    @property
+    def wifi_recovering_at(self) -> float | None:
+        """When this outage's recovery began, or None."""
+        return self._wifi_recovering_at
+
+    @property
+    def wifi_returned_count(self) -> int:
+        """How many of the fallen set are home again."""
+        return len(self._wifi_returned)
 
     @property
     def wifi_casualties(self) -> int:
@@ -801,6 +834,9 @@ class RouterTiesMixin:
             len(self._wifi_returned),
             len(self._wifi_fallen),
         )
+        if self._wifi_recovering_at is None:
+            self._wifi_recovering_at = now
+            self._notify()
         self._sample_wifi_recovery(now)
 
     def _sample_wifi_recovery(self, now: float) -> None:
@@ -836,6 +872,9 @@ class RouterTiesMixin:
                 self._wifi_peak_back = back
                 self._wifi_quiet_ticks = 0
                 self._wifi_settle_losses = 0
+                if self._wifi_recovering_at is None:
+                    self._wifi_recovering_at = now
+                    self._notify()
                 LOGGER.info(
                     "device_sentinel: wifi recovery announced, %d of "
                     "%d returned, settling",
@@ -854,6 +893,8 @@ class RouterTiesMixin:
             self._wifi_settle_losses = 0
             self._wifi_peak_back = back
             self._wifi_quiet_ticks = 0
+            self._wifi_recovering_at = None
+            self._notify()
             return
         if back > self._wifi_peak_back:
             self._wifi_peak_back = back
@@ -893,6 +934,7 @@ class RouterTiesMixin:
         self._wifi_peak_back = 0
         self._wifi_quiet_ticks = 0
         self._wifi_settle_losses = 0
+        self._wifi_recovering_at = None
 
     def _wifi_declare(self, now: float, still_gone: int) -> None:
         """Declare the outage, dated from the first fall."""

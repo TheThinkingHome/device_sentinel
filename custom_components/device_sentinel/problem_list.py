@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.21.3 (2026-09-14)
+# File: problem_list.py, Version: 0.21.6 (2026-09-14)
 
 """The problem list: the single memory every channel renders.
 
@@ -482,6 +482,50 @@ class ProblemListMixin:
             f"own."
         )
 
+    def _wifi_recovering_text(self, devices: int) -> tuple[str, str]:
+        """The row while a recovery is being watched (ruling #431).
+
+        Three states rather than two. Until 0.21.6 the announce fired
+        inside the recovery rule and changed nothing a person could
+        see: the row went on saying the network was unavailable until
+        the settle finished, so from the outside there was no
+        difference between recovering and still down. On the staged
+        outage of 14 September the network returned at 16:47 and the
+        row did not move until 16:49.
+
+        The count is what has not come back, because that is the
+        number falling toward zero and the one a person watches.
+        """
+        back = self.wifi_returned_count
+        fell = max(devices, back)
+        left = max(fell - back, 0)
+        names = list(self.wifi_networks)
+        if not names:
+            subject = "Home Assistant's WiFi network"
+        elif len(names) == 1:
+            subject = f"The '{names[0]}' WiFi network"
+        else:
+            quoted = [f"'{one}'" for one in names]
+            subject = (
+                f"The {', '.join(quoted[:-1])} and {quoted[-1]} "
+                f"WiFi networks"
+            )
+        when = self._format_report_time(
+            dt_util.as_local(
+                dt_util.utc_from_timestamp(self.wifi_recovering_at)
+            )
+        )
+        verb = "networks came" if len(names) > 1 else "network came"
+        opening = f"{subject.rsplit(' WiFi network', 1)[0]} WiFi {verb} back"
+        return (
+            f"WiFi network recovering: {left} of {fell} devices remain "
+            f"unavailable",
+            f"{opening} at {when}. {back} of the {fell} devices have "
+            f"already recovered. Device Sentinel is monitoring the "
+            f"recovery. Any device that does not recover will be "
+            f"reported as its own problem."
+        )
+
     def _wifi_item_text(
         self, devices: int, behind: int, when: str | None
     ) -> tuple[str, str]:
@@ -497,6 +541,8 @@ class ProblemListMixin:
         and a house with several names them all. Neither fleet has
         more than one configured, so the plural form is unmeasured.
         """
+        if self.wifi_recovering_at is not None:
+            return self._wifi_recovering_text(devices)
         names = list(self.wifi_networks)
         if not names:
             subject = "Home Assistant's WiFi network"
