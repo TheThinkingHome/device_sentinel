@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.21.6 (2026-09-14)
+# File: coordinator.py, Version: 0.21.7 (2026-09-15)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -122,6 +122,7 @@ from .const import (
     DATA_BRIDGE_SEEN,
     DATA_ROUTERS_SEEN,
     DATA_WIFI_MEDIUM,
+    DATA_WIFI_MEDIUM_REJECTED,
     DATA_BROKER_SEEN,
     DATA_CLEAN_STOP,
     DATA_DEVICES,
@@ -495,6 +496,11 @@ class DeviceSentinelCoordinator(
         # should be told the network is back while the settle is
         # still holding its casualties off the list.
         self._wifi_recovering_at: float | None = None
+        # Whether each claimed device read down on the last sweep, so
+        # a device coming back can reset the settle (ruling #433).
+        # device_id -> (outage start, when it was handed back), for
+        # devices still down when an outage closed (ruling #433).
+        self._wifi_handback: dict[str, tuple[float, float]] = {}
         # Devices a radio stack owns (ruling #412), rebuilt with the
         # registry view. Empty until the first rebuild, which is the
         # same moment `_watched` is populated.
@@ -510,7 +516,7 @@ class DeviceSentinelCoordinator(
         # Readings the medium scoring discarded this session, per
         # tracker (ruling #428). The scores themselves live in storage
         # under DATA_WIFI_MEDIUM (ruling #418).
-        self._wifi_medium_rejected: dict[str, int] = {}
+
         # The last_updated stamp last counted per tracker, so a
         # reading is scored once per state update rather than once
         # per look at the state.
@@ -835,6 +841,7 @@ class DeviceSentinelCoordinator(
             loaded.setdefault(DATA_BROKER_SEEN, {})
             loaded.setdefault(DATA_ROUTERS_SEEN, [])
             loaded.setdefault(DATA_WIFI_MEDIUM, {})
+            loaded.setdefault(DATA_WIFI_MEDIUM_REJECTED, {})
             loaded.setdefault(DATA_STORMS, [])
             loaded.setdefault(DATA_STORM_DAYS, [])
             # The dry-run outbox was retired once the
@@ -1239,6 +1246,7 @@ class DeviceSentinelCoordinator(
                     loaded.setdefault(DATA_BROKER_SEEN, {})
                     loaded.setdefault(DATA_ROUTERS_SEEN, [])
                     loaded.setdefault(DATA_WIFI_MEDIUM, {})
+                    loaded.setdefault(DATA_WIFI_MEDIUM_REJECTED, {})
                     loaded.setdefault(DATA_STORMS, [])
                     loaded.setdefault(DATA_STORM_DAYS, [])
                     malformed = {}

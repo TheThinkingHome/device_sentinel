@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.21.6 (2026-09-14)
+# File: const.py, Version: 0.21.7 (2026-09-15)
 
 """Constants for the Device Sentinel integration."""
 
@@ -562,6 +562,24 @@ DATA_ROUTERS_SEEN = "routers_seen"
 # often the census was a snapshot of whatever had been seen home
 # since the last boot rather than what the fleet is.
 DATA_WIFI_MEDIUM = "wifi_medium"
+
+# Readings the medium scoring discarded, per tracker, persisted
+# (ruling #434). Held in memory until 0.21.7 and wiped at every
+# restart, which made it read empty forever and defeated the whole
+# point: the count exists so the case for a general source-restart
+# grace can be judged over weeks rather than felt.
+DATA_WIFI_MEDIUM_REJECTED = "wifi_medium_rejected"
+
+# How long a device the outage claimed is given to come back before
+# it becomes its own problem (ruling #433). The outage closes when it
+# closes; this only delays the hand-back. Measured on the recorded
+# outage of 14 September 13:56: five Motion Blinds devices needed 20
+# seconds after the close and a PoE switch needed 149. Three minutes
+# covers both with room, and is short enough that a device that is
+# genuinely gone is still reported promptly. The row it eventually
+# writes is dated from the outage, not from the end of this window,
+# or the timeline would lie about when the device went.
+WIFI_HANDBACK_SECONDS = 180.0
 
 AREA_FREEZE = "freeze"
 AREA_BATTERY = "battery"
@@ -2278,7 +2296,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 432
+HIGHEST_RULING = 434
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.21.6 (2026-09-14)
+# File: router_ties.py, Version: 0.21.7 (2026-09-15)
 
 """Router ties: which watched devices a router says have left.
 
@@ -90,10 +90,12 @@ from .const import (
     DATA_DEVICES,
     DATA_ROUTERS_SEEN,
     DATA_WIFI_MEDIUM,
+    DATA_WIFI_MEDIUM_REJECTED,
     DEV_FROZEN_SINCE,
     DEFAULT_EXCLUDED_INTEGRATIONS,
     ROUTER_INTEGRATIONS,
     WIFI_BURST_FLOOR,
+    WIFI_HANDBACK_SECONDS,
     WIFI_BURST_SHARE,
     WIFI_RECOVERY_SHARE,
     WIFI_SETTLE_TICKS,
@@ -287,9 +289,16 @@ class RouterTiesMixin:
         judged = medium_from_score(score)
         if fresh and reading in ("wired", "wireless") and reading != judged:
             if judged != "unknown":
-                self._wifi_medium_rejected[tracker] = (
-                    self._wifi_medium_rejected.get(tracker, 0) + 1
-                )
+                # Persisted (ruling #434). Held in memory until
+                # 0.21.7 and wiped at every restart, which made it
+                # read empty forever: on the reference fleet four
+                # trackers carried a discarded reading each and the
+                # published count read nothing at all. The count
+                # exists so the case for a general source-restart
+                # grace can be judged over weeks.
+                table = self.data.setdefault(DATA_WIFI_MEDIUM_REJECTED, {})
+                table[tracker] = int(table.get(tracker, 0)) + 1
+                self._dirty = True
         return judged
 
     def wifi_medium_of(self, tracker: str) -> str:
@@ -298,9 +307,9 @@ class RouterTiesMixin:
 
     @property
     def wifi_medium_rejected(self) -> dict[str, int]:
-        """Readings the scoring has discarded, per tracker, this
-        session (ruling #428)."""
-        return dict(self._wifi_medium_rejected)
+        """Readings the scoring has discarded, per tracker, for the
+        life of the install (rulings #428 and #434)."""
+        return dict(self.data.get(DATA_WIFI_MEDIUM_REJECTED) or {})
 
     # ------------------------------------------------------------ ties
 
@@ -839,6 +848,17 @@ class RouterTiesMixin:
             self._notify()
         self._sample_wifi_recovery(now)
 
+    def _wifi_handback_now(self) -> float:
+        return dt_util.utcnow().timestamp()
+
+    def _wifi_claimed_now(self) -> set[str]:
+        """Every watched device this outage is currently claiming."""
+        return {
+            device_id
+            for device_id in self.data.get(DATA_DEVICES, {})
+            if self.upstream_down_since(device_id) is not None
+        }
+
     def _sample_wifi_recovery(self, now: float) -> None:
         """Judge the recovery of a standing outage on the tick.
 
@@ -935,6 +955,7 @@ class RouterTiesMixin:
         self._wifi_quiet_ticks = 0
         self._wifi_settle_losses = 0
         self._wifi_recovering_at = None
+        self._wifi_recovered_seen = {}
 
     def _wifi_declare(self, now: float, still_gone: int) -> None:
         """Declare the outage, dated from the first fall."""
@@ -961,6 +982,20 @@ class RouterTiesMixin:
     def _wifi_restore(self, now: float) -> None:
         """Close the outage once fewer than the floor remain gone."""
         since = self._wifi_down_at
+        # Read before the outage is cleared, or there is nothing left
+        # to ask: whatever it was claiming keeps that claim for a
+        # short while (ruling #433), dated from the outage rather
+        # than from now, so a device that never comes back still
+        # shows as down since the network went.
+        # The second stamp is wall clock, not the sample's own time.
+        # `upstream_down_since` takes no clock and cannot be given
+        # one, so a stamp from the sample would be compared against a
+        # different clock and the window would never expire.
+        closed_at = self._wifi_handback_now()
+        self._wifi_handback = {
+            device_id: (since or now, closed_at)
+            for device_id in self._wifi_claimed_now()
+        }
         self._wifi_down_at = None
         self._wifi_first_fall = None
         self._wifi_burst = []
@@ -1043,6 +1078,18 @@ class RouterTiesMixin:
         """
         since = self._wifi_down_at
         if since is None:
+            # The outage is over, and a device it claimed is given a
+            # short window to come back before it becomes its own
+            # problem (ruling #433). Hearing the network is not the
+            # same as the devices on it being back, and neither is
+            # the settle ending: on 14 September the settle closed
+            # 120 seconds before the last tracker came home, and six
+            # devices wrote their own rows inside that gap.
+            held = self._wifi_handback.get(device_id)
+            if held is not None:
+                if self._wifi_handback_now() - held[1] < WIFI_HANDBACK_SECONDS:
+                    return WIFI_KEY, held[0]
+                self._wifi_handback.pop(device_id, None)
             return None
         if device_id in self._radio_owned:
             return None
@@ -1092,7 +1139,7 @@ class RouterTiesMixin:
                     self.data.get(DATA_WIFI_MEDIUM, {}).items()
                 )
             },
-            "medium_rejected": dict(sorted(self._wifi_medium_rejected.items())),
+            "medium_rejected": dict(sorted(self.wifi_medium_rejected.items())),
             "wired_skipped": list(self._wifi_wired_skipped),
             "trackers_not_home": len(self._wifi_not_home),
             "retry_pending": self._wifi_retry_pending,
@@ -1130,5 +1177,5 @@ class RouterTiesMixin:
             "quiet_ticks": self._wifi_quiet_ticks,
             "settle_losses": self._wifi_settle_losses,
             "networks": list(self.wifi_networks) or None,
-            "medium_rejected": sum(self._wifi_medium_rejected.values()),
+            "medium_rejected": sum(self.wifi_medium_rejected.values()),
         }
