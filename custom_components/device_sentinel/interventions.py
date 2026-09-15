@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.20.18 (2026-09-12)
+# File: interventions.py, Version: 0.21.8 (2026-09-15)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -64,6 +64,9 @@ from .const import (
     SYS_BROKER_DOWN,
     SYS_BROKER_UP,
     BRIDGE_DOWN,
+    BRIDGE_HANDBACK_SECONDS,
+    DATA_DEVICES,
+    DEV_FROZEN_CATEGORY,
     BROKER_LABEL,
     BRIDGE_SEEN_SINCE,
     BRIDGE_SEEN_STATE,
@@ -683,8 +686,43 @@ class InterventionMixin:
             return self.integration_down_since(device_id)
         since = self._bridge_down_at.get(stack)
         if since is None:
+            # The bridge is back, and a device it was carrying is
+            # given a window to rejoin before it becomes its own
+            # problem (ruling #436). The claim is dated from the
+            # outage, not from the end of the window.
+            held = self._bridge_handback.get(stack)
+            if held is not None:
+                if dt_util.utcnow().timestamp() - held[1] < (
+                    BRIDGE_HANDBACK_SECONDS
+                ):
+                    return stack, held[0]
+                self._bridge_handback.pop(stack, None)
+                self._bridge_recovering_at.pop(stack, None)
+                self._bridge_fell.pop(stack, None)
             return None
         return stack, since
+
+    def _stack_casualties(self, stack: str) -> int:
+        """How many devices on this stack are currently down."""
+        return sum(
+            1 for device_id in self.data.get(DATA_DEVICES, {})
+            if self._stack_for_device(device_id) == stack
+            and (self.data[DATA_DEVICES][device_id] or {}).get(
+                DEV_FROZEN_CATEGORY
+            )
+            is not None
+        )
+
+    def bridge_recovering_at(self, stack: str) -> float | None:
+        """When this bridge's recovery began, or None."""
+        return self._bridge_recovering_at.get(stack)
+
+    def bridge_recovery_counts(self, stack: str) -> tuple[int, int]:
+        """How many of this bridge's casualties are still down, and
+        how many it took."""
+        fell = self._bridge_fell.get(stack, 0)
+        left = self._stack_casualties(stack)
+        return left, max(fell, left)
 
     def upstream_membership(self, name: str) -> int:
         """Return how many watched devices sit behind a named upstream.
@@ -946,6 +984,17 @@ class InterventionMixin:
                     )
                 elif was == BRIDGE_DOWN:
                     since = self._bridge_down_at.pop(stack, None)
+                    # Whatever it was carrying keeps that claim for a
+                    # short while (ruling #436), and the recovery is
+                    # watched rather than declared over (ruling
+                    # #431). Read before the claim is asked for
+                    # again, because by then the bridge is up.
+                    if since is not None:
+                        self._bridge_handback[stack] = (since, now)
+                        self._bridge_recovering_at[stack] = now
+                        self._bridge_fell[stack] = self._stack_casualties(
+                            stack
+                        )
                     self._record_system_event(
                         SYS_BRIDGE_UP,
                         scope=stack,

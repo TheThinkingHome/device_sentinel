@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.21.7 (2026-09-15)
+# File: const.py, Version: 0.21.8 (2026-09-15)
 
 """Constants for the Device Sentinel integration."""
 
@@ -580,6 +580,16 @@ DATA_WIFI_MEDIUM_REJECTED = "wifi_medium_rejected"
 # writes is dated from the outage, not from the end of this window,
 # or the timeline would lie about when the device went.
 WIFI_HANDBACK_SECONDS = 180.0
+
+# The same window for a bridge (ruling #436). A bridge claim ended
+# the instant the bridge came back, which is the fault #433 fixed for
+# the network: devices still rejoining the mesh are orphaned exactly
+# as five Motion Blinds were on 14 September. Three minutes to start,
+# taken from the Wi-Fi measurement because no Zigbee equivalent has
+# been taken. A device can take longer to rejoin a mesh than to
+# reassociate with an access point, so this number is a starting
+# point and the outage probe is already recording what it should be.
+BRIDGE_HANDBACK_SECONDS = 180.0
 
 AREA_FREEZE = "freeze"
 AREA_BATTERY = "battery"
@@ -2296,7 +2306,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 434
+HIGHEST_RULING = 436
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

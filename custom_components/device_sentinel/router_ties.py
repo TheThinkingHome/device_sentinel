@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.21.7 (2026-09-15)
+# File: router_ties.py, Version: 0.21.8 (2026-09-15)
 
 """Router ties: which watched devices a router says have left.
 
@@ -683,7 +683,22 @@ class RouterTiesMixin:
             # And if it was a casualty of the standing outage, it has
             # returned, permanently (ruling #422).
             if entity_id in self._wifi_fallen:
+                was = len(self._wifi_returned)
                 self._wifi_returned.add(entity_id)
+                # The recovering row counts what has not come back
+                # (ruling #431), and that number is what a person
+                # watches. It is not the casualty count, which does
+                # not move during a recovery, so nothing else marks
+                # the list for rewriting and the row would sit at its
+                # opening number until the outage closed. Observed on
+                # the staged outage of 15 September 10:03: the row
+                # read 11 of 11 throughout while the returns climbed
+                # from nought to nine.
+                if (
+                    self._wifi_recovering_at is not None
+                    and len(self._wifi_returned) != was
+                ):
+                    self._notify()
 
     def _wired_can_rejoin(self) -> bool:
         """Whether any skipped tracker has come back as wireless.

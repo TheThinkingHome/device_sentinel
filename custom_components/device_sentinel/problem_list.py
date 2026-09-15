@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.21.6 (2026-09-14)
+# File: problem_list.py, Version: 0.21.8 (2026-09-15)
 
 """The problem list: the single memory every channel renders.
 
@@ -466,6 +466,8 @@ class ProblemListMixin:
         )
         if name == WIFI_KEY:
             return self._wifi_item_text(devices, behind, when)
+        if self.bridge_recovering_at(name) is not None:
+            return self._bridge_recovering_text(name, display, behind)
         summary = f"{display} down: {devices} of {behind} devices unavailable"
         opening = (
             f"{display} stopped reporting at {when}."
@@ -480,6 +482,34 @@ class ProblemListMixin:
             f"listed. Their verdicts are recorded and clear when it "
             f"returns; anything still down afterward is listed on its "
             f"own."
+        )
+
+    def _bridge_recovering_text(
+        self, stack: str, display: str, behind: int
+    ) -> tuple[str, str]:
+        """The row while a bridge's recovery is watched (#431, #436).
+
+        The same shape the network gets, for the same reason: a
+        bridge coming back is not the devices behind it being back,
+        and a Zigbee device can take longer to rejoin a mesh than a
+        Wi-Fi device takes to reassociate. The count here is simply
+        how many of its devices are still down, which needs no fallen
+        set to track and falls on its own as they return.
+        """
+        left, fell = self.bridge_recovery_counts(stack)
+        back = max(fell - left, 0)
+        when = self._format_report_time(
+            dt_util.as_local(
+                dt_util.utc_from_timestamp(self.bridge_recovering_at(stack))
+            )
+        )
+        return (
+            f"{display} recovering: {left} of {fell} devices remain "
+            f"unavailable",
+            f"{display} came back at {when}. {back} of the {fell} "
+            f"devices have already recovered. Device Sentinel is "
+            f"monitoring the recovery. Any device that does not "
+            f"recover will be reported as its own problem."
         )
 
     def _wifi_recovering_text(self, devices: int) -> tuple[str, str]:
@@ -834,6 +864,29 @@ class ProblemListMixin:
             self._run_dispatch(events, self._upstream_messages())
         )
 
+    def _upstream_phases(self) -> dict[str, str]:
+        """What phase each downed upstream is in (ruling #435).
+
+        Three phases rather than a number: "down", "recovering" and,
+        by absence, over. The push was keyed on the casualty count
+        and silent after the first of a run, which worked while the
+        count only ever grew. Once the recovering row counts down
+        live (#431) the key moves on every device that returns, and a
+        recovery would announce itself once per device. Keyed on the
+        phase, a recovery announces once and a tracker flapping
+        inside the settle cannot announce at all, because the phase
+        has not changed.
+        """
+        phases: dict[str, str] = {}
+        for name in self.suppressed_down_counts:
+            recovering = (
+                self.wifi_recovering_at is not None
+                if name == WIFI_KEY
+                else self.bridge_recovering_at(name) is not None
+            )
+            phases[name] = "recovering" if recovering else "down"
+        return phases
+
     def _upstream_messages(self) -> list[tuple[str, int, bool]]:
         """Return the upstream pushes this sync owes, if any.
 
@@ -847,16 +900,20 @@ class ProblemListMixin:
         """
         now = dt_util.utcnow().timestamp()
         counts = self.suppressed_down_counts
+        phases = self._upstream_phases()
         messages: list[tuple[str, int, bool]] = []
         for name, count in counts.items():
             since = self.upstream_down_since_for(name)
             if since is None or now - since < UPSTREAM_SETTLE_SECONDS:
                 continue
-            if self._upstream_announced.get(name) == count:
+            # Keyed on the phase, not the count (ruling #435).
+            if self._upstream_phase.get(name) == phases.get(name):
                 continue
+            self._upstream_phase[name] = phases.get(name)
             messages.append((name, count, False))
         for name, count in list(self._upstream_announced.items()):
             if name not in counts and self.upstream_down_since_for(name) is None:
+                self._upstream_phase.pop(name, None)
                 messages.append((name, count, True))
         return messages
 

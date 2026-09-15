@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.21.7 (2026-09-15)
+# File: coordinator.py, Version: 0.21.8 (2026-09-15)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -501,6 +501,14 @@ class DeviceSentinelCoordinator(
         # device_id -> (outage start, when it was handed back), for
         # devices still down when an outage closed (ruling #433).
         self._wifi_handback: dict[str, tuple[float, float]] = {}
+        # The phase each upstream was last announced in (ruling
+        # #435): "down", "recovering", or absent once it is over.
+        self._upstream_phase: dict[str, str] = {}
+        # stack -> (outage start, when the bridge came back), and the
+        # recovery being watched behind it (rulings #431 and #436).
+        self._bridge_handback: dict[str, tuple[float, float]] = {}
+        self._bridge_recovering_at: dict[str, float] = {}
+        self._bridge_fell: dict[str, int] = {}
         # Devices a radio stack owns (ruling #412), rebuilt with the
         # registry view. Empty until the first rebuild, which is the
         # same moment `_watched` is populated.
