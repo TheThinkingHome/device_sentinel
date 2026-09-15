@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_row.py, Version: 0.21.6 (2026-09-14)
+# File: tests/test_wifi_row.py, Version: 0.21.7 (2026-09-15)
 
 """The row a Wi-Fi outage writes. Rulings #411 to #414.
 
@@ -48,6 +48,7 @@ from custom_components.device_sentinel.const import (
     UPSTREAM_KIND,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
+    WIFI_HANDBACK_SECONDS,
     WIFI_KEY,
 )
 
@@ -163,8 +164,16 @@ async def test_a_device_that_failed_before_the_outage_is_not_claimed(
 async def test_the_claim_ends_with_the_outage(
     hass: HomeAssistant, freezer
 ):
-    """For the life of the outage and no longer (#426). Once it
-    closes, whatever is still down is its own problem."""
+    """For the life of the outage, plus a short hand-back window.
+
+    Rewritten for 0.21.7. It asserted the claim ended the instant the
+    outage did, which is #426 as written and is what put six devices
+    on the problem list mid-recovery on 14 September. A device the
+    outage claimed now keeps that claim for WIFI_HANDBACK_SECONDS
+    (#433), so it has a chance to come back before becoming its own
+    problem, and the row it eventually writes is dated from the
+    outage rather than from the end of the window.
+    """
     coord, trackers, devices, _untied = await _house(hass, 10)
     first = await _declared(hass, coord, trackers, freezer, count=10)
 
@@ -176,6 +185,12 @@ async def test_the_claim_ends_with_the_outage(
         await hass.async_block_till_done()
     assert coord.wifi_down_at is None
 
+    # Still claimed inside the window.
+    for device in devices[:4]:
+        found = coord.upstream_down_since(device.id)
+        assert found is not None and found[1] == first
+
+    freezer.tick(timedelta(seconds=WIFI_HANDBACK_SECONDS + 5))
     for device in devices[:4]:
         assert coord.upstream_down_since(device.id) is None
 

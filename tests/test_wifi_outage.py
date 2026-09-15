@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.21.4 (2026-09-14)
+# File: tests/test_wifi_outage.py, Version: 0.21.7 (2026-09-15)
 
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim.
 
@@ -30,6 +30,7 @@ from custom_components.device_sentinel.const import (
     EVENT_UPSTREAM_DOWN,
     EVENT_UPSTREAM_RESTORED,
     WIFI_BURST_FLOOR,
+    WIFI_HANDBACK_SECONDS,
     WIFI_HOLD_SECONDS,
     WIFI_KEY,
 )
@@ -403,6 +404,10 @@ async def test_recovery_pairs_and_releases_the_claims(
     forty percent, which announces, and the settle then takes two
     consecutive ticks with no further return before it closes (#424).
     Three sweeps, not one.
+
+    And again for 0.21.7: a device still down at the close keeps its
+    claim for WIFI_HANDBACK_SECONDS (#433), so the claims drop after
+    that window rather than the instant the outage ends.
     """
     coord, trackers, devices, _ = await _house(hass, 4)
     seen = _heard(hass)
@@ -415,7 +420,8 @@ async def test_recovery_pairs_and_releases_the_claims(
         coord._sample_wifi(dt_util.utcnow().timestamp())
         await hass.async_block_till_done()
 
-    assert [word for word, _ in seen] == ["down", "restored"], seen
+    assert [word for word, _ in seen] == ["down", "restored"]
+    freezer.tick(timedelta(seconds=WIFI_HANDBACK_SECONDS + 5)), seen
     assert seen[1][1]["devices"] == seen[0][1]["devices"] == 4
     assert seen[1][1]["for_seconds"] > 0.0
     assert coord.wifi_down_at is None

@@ -1,4 +1,4 @@
-# File: tests/test_wifi_recovery.py, Version: 0.21.5 (2026-09-14)
+# File: tests/test_wifi_recovery.py, Version: 0.21.7 (2026-09-15)
 """When an outage ends. Rulings #408, #409, #422 to #426.
 
 Written before the change, and every case here fails against 0.21.0.
@@ -42,6 +42,7 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
     WIFI_BURST_FLOOR,
+    WIFI_HANDBACK_SECONDS,
     WIFI_RECOVERY_SHARE,
     WIFI_SETTLE_TICKS,
 )
@@ -260,7 +261,13 @@ async def test_two_losses_do_not_reopen_it(hass: HomeAssistant, freezer):
 
 async def test_the_remainder_is_handed_back(hass: HomeAssistant, freezer):
     """What is still away at close stops being the network's problem
-    and becomes its own. The claim ends with the outage."""
+    and becomes its own, once it has had a chance to come back.
+
+    Rewritten for 0.21.7. It asserted the claim ended the instant the
+    outage did, which is what put six devices on the problem list
+    mid-recovery on 14 September. The hand-back now waits
+    WIFI_HANDBACK_SECONDS (#433).
+    """
     coord, trackers, devices, _untied = await _house(hass, 10)
     first = await _declared(hass, coord, trackers, freezer, count=10)
 
@@ -271,6 +278,7 @@ async def test_the_remainder_is_handed_back(hass: HomeAssistant, freezer):
     await _tick(coord, first + 180.0)
     assert coord.wifi_down_at is None
 
+    freezer.tick(timedelta(seconds=WIFI_HANDBACK_SECONDS + 5))
     for device in devices[6:]:
         assert coord.upstream_down_since(device.id) is None
 

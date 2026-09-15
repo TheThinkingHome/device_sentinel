@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_medium.py, Version: 0.21.6 (2026-09-14)
+# File: tests/test_wifi_medium.py, Version: 0.21.7 (2026-09-15)
 
 """What a tracker's medium is, and how it is remembered.
 Rulings #415, #417, #418, #427 and #428.
