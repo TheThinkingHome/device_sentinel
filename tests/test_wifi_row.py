@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_row.py, Version: 0.21.7 (2026-09-15)
+# File: tests/test_wifi_row.py, Version: 0.21.8 (2026-09-15)
 
 """The row a Wi-Fi outage writes. Rulings #411 to #414.
 
@@ -555,3 +555,78 @@ async def test_a_reopen_puts_the_row_back_to_unavailable(
     await hass.async_block_till_done()
 
     assert coord.wifi_recovering_at is None
+
+
+# ------------------------------------ the announcement phase, 0.21.8
+
+
+async def test_a_live_count_does_not_announce_again(
+    hass: HomeAssistant, freezer
+):
+    """One announcement per phase, not per number.
+
+    The push was keyed on the count, and silent after the first of a
+    run. Once the recovering row counts down live (#431) that key
+    moves on every device that returns, so a recovery would announce
+    itself again and again. Keyed on the phase instead: declared,
+    recovering, over. A tracker flapping inside the settle cannot
+    double-announce, because the phase has not changed.
+    """
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    first = await _declared(hass, coord, trackers[:11], freezer, count=11)
+    freezer.tick(timedelta(seconds=90))
+
+    spoken = []
+    coord._upstream_phase = {}
+
+    def _phases():
+        return [
+            (name, phase)
+            for name, phase in coord._upstream_phases().items()
+        ]
+
+    # Declared. One phase, one announcement owed.
+    spoken.append(_phases())
+    # The recovery begins and the count falls on every return.
+    for index, tracker in enumerate(trackers[:11]):
+        await _rise(hass, tracker)
+        coord._sample_wifi(first + 120.0 + index)
+        await hass.async_block_till_done()
+        spoken.append(_phases())
+
+    seen = [dict(entry).get(WIFI_KEY) for entry in spoken]
+    changes = sum(
+        1 for before, after in zip(seen, seen[1:]) if before != after
+    )
+    assert changes <= 2, f"phase moved {changes} times: {seen}"
+
+
+async def test_the_recovering_row_counts_down_live(
+    hass: HomeAssistant, freezer
+):
+    """Found on hardware, 15 September.
+
+    The row appeared saying 11 of 11 remain unavailable and stayed
+    there while nine devices came back, because the casualty count
+    does not move during a recovery and nothing else marked the
+    problem list for rewriting.
+    """
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    first = await _declared(hass, coord, trackers[:11], freezer, count=11)
+
+    for tracker in trackers[:5]:
+        await _rise(hass, tracker)
+    coord.on_wifi_scan_restored(first, first + 60.0)
+    await hass.async_block_till_done()
+    summary, _body = coord._upstream_item_text(
+        WIFI_KEY, {UPSTREAM_KIND: first}, 11
+    )
+    assert summary == "WiFi network recovering: 6 of 11 devices remain unavailable"
+
+    for tracker in trackers[5:9]:
+        await _rise(hass, tracker)
+    await hass.async_block_till_done()
+    summary, _body = coord._upstream_item_text(
+        WIFI_KEY, {UPSTREAM_KIND: first}, 11
+    )
+    assert summary == "WiFi network recovering: 2 of 11 devices remain unavailable"

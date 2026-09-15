@@ -41,6 +41,9 @@ from custom_components.device_sentinel.stack_z2m import Z2MBridgeReader
 from custom_components.device_sentinel.const import (
     BRIDGE_BINDING,
     BRIDGE_DOWN,
+    DEV_FROZEN_SINCE,
+    DEV_FROZEN_CATEGORY,
+    BRIDGE_HANDBACK_SECONDS,
     BRIDGE_RUNNING,
     BRIDGE_UNKNOWN,
     DATA_DEVICES,
@@ -742,3 +745,46 @@ async def test_a_pairing_window_is_recorded_with_its_span(
     closed = _kinds(coord, SYS_PAIRING_CLOSED)
     assert len(closed) == 1
     assert closed[0]["duration"] >= 60
+
+
+# ------------------------------- the bridge hand-back and recovery, 0.21.8
+
+
+async def test_a_bridge_gives_its_devices_time_to_rejoin(
+    hass: HomeAssistant, freezer
+):
+    """The fault #433 fixed for the network, applied to a bridge.
+
+    A bridge claim ended the instant the bridge came back, so a
+    device still rejoining the mesh became its own problem, exactly
+    as five Motion Blinds did on 14 September when the network
+    returned twenty seconds ahead of them. A Zigbee device can take
+    longer to rejoin than a Wi-Fi device takes to reassociate, so if
+    anything the window matters more here (ruling #436).
+    """
+    device = _device(hass, "mqtt", "bulb", "Bulb")
+    coord = await setup_coordinator(hass)
+    coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_RUNNING)
+    await coord._on_render_tick(None)
+    coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_DOWN)
+    await coord._on_render_tick(None)
+
+    device_id = device.id
+    assert coord._stack_for_device(device_id) == STACK_Z2M
+    record = coord.data[DATA_DEVICES].setdefault(device_id, {})
+    record[DEV_FROZEN_CATEGORY] = "unavailable"
+    record[DEV_FROZEN_SINCE] = dt_util.utcnow().timestamp()
+    assert coord.upstream_down_since(device_id) is not None
+
+    freezer.tick(120)
+    coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_RUNNING)
+    await coord._on_render_tick(None)
+
+    # The bridge is back and the device is not. It is still the
+    # bridge's problem for now.
+    found = coord.upstream_down_since(device_id)
+    assert found is not None and found[0] == STACK_Z2M
+    assert coord.bridge_recovering_at(STACK_Z2M) is not None
+
+    freezer.tick(BRIDGE_HANDBACK_SECONDS + 10)
+    assert coord.upstream_down_since(device_id) is None
