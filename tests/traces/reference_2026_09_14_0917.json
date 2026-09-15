@@ -1,0 +1,1921 @@
+{
+"source": "reference fleet, 14 September 2026, 0917",
+"base": "2026-09-14 09:17:17",
+"events": [
+{
+"t": "2026-09-14 09:17:17",
+"kind": "entity",
+"entity": "media_player.fire_tv_stick",
+"device": "Fire TV Stick",
+"to": "unavailable",
+"offset": 0
+},
+{
+"t": "2026-09-14 09:17:24",
+"kind": "entity",
+"entity": "switch.stove_vent_relays_exhaust_high_interlock",
+"device": "Stove Vent Relays",
+"to": "unavailable",
+"offset": 7
+},
+{
+"t": "2026-09-14 09:17:24",
+"kind": "entity",
+"entity": "sensor.stove_vent_relays_ssid",
+"device": "Stove Vent Relays",
+"to": "unavailable",
+"offset": 7
+},
+{
+"t": "2026-09-14 09:17:24",
+"kind": "entity",
+"entity": "sensor.stove_vent_relays_signal",
+"device": "Stove Vent Relays",
+"to": "unavailable",
+"offset": 7
+},
+{
+"t": "2026-09-14 09:17:24",
+"kind": "entity",
+"entity": "switch.kitchen_counter_relay",
+"device": "Stove Vent Relays",
+"to": "unavailable",
+"offset": 7
+},
+{
+"t": "2026-09-14 09:17:24",
+"kind": "entity",
+"entity": "sensor.stove_vent_relays_mqtt_connect_count",
+"device": "Stove Vent Relays",
+"to": "unavailable",
+"offset": 7
+},
+{
+"t": "2026-09-14 09:17:24",
+"kind": "entity",
+"entity": "switch.stove_vent_relays_gate",
+"device": "Stove Vent Relays",
+"to": "unavailable",
+"offset": 7
+},
+{
+"t": "2026-09-14 09:17:24",
+"kind": "entity",
+"entity": "sensor.stove_vent_relays_last_restart_time",
+"device": "Stove Vent Relays",
+"to": "unavailable",
+"offset": 7
+},
+{
+"t": "2026-09-14 09:17:24",
+"kind": "entity",
+"entity": "sensor.stove_vent_relays_wifi_connect_count",
+"device": "Stove Vent Relays",
+"to": "unavailable",
+"offset": 7
+},
+{
+"t": "2026-09-14 09:17:24",
+"kind": "entity",
+"entity": "switch.stove_vent_relays_exhaust_low_interlock",
+"device": "Stove Vent Relays",
+"to": "unavailable",
+"offset": 7
+},
+{
+"t": "2026-09-14 09:17:24",
+"kind": "entity",
+"entity": "sensor.stove_vent_relays_restart_reason",
+"device": "Stove Vent Relays",
+"to": "unavailable",
+"offset": 7
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "binary_sensor.fireos_living_room_kiosk_mode",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "binary_sensor.fireos_living_room_plugged_in",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "binary_sensor.fireos_living_room_device_admin",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "button.fireos_living_room_restart_browser",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "button.fireos_living_room_restart_device",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "button.fireos_living_room_bring_to_foreground",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "button.fireos_living_room_send_to_background",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "button.fireos_living_room_load_start_url",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "button.fireos_living_room_clear_browser_cache",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "button.fireos_living_room_trigger_motion_activity",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "camera.fireos_living_room",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "image.fireos_living_room_screenshot",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "media_player.fireos_living_room",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "number.fireos_living_room_screensaver_timer",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "number.fireos_living_room_screensaver_brightness",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "number.fireos_living_room_screen_off_timer",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "number.fireos_living_room_screen_brightness",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_battery",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_battery_temperature",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_current_page",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_screen_orientation",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_foreground_app",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_internal_storage_free_space",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_internal_storage_total_space",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_free_memory",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_total_memory",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "switch.fireos_living_room_screensaver",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "switch.fireos_living_room_maintenance_mode",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "switch.fireos_living_room_kiosk_lock",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "switch.fireos_living_room_motion_detection",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:28",
+"kind": "entity",
+"entity": "switch.fireos_living_room_screen",
+"device": "FireOS Living Room",
+"to": "unavailable",
+"offset": 11
+},
+{
+"t": "2026-09-14 09:17:34",
+"kind": "tracker",
+"entity": "device_tracker.presence_sensor_living_room",
+"to": "not_home",
+"offset": 17
+},
+{
+"t": "2026-09-14 09:17:34",
+"kind": "tracker",
+"entity": "device_tracker.tasmota_519243_4675",
+"to": "not_home",
+"offset": 17
+},
+{
+"t": "2026-09-14 09:17:34",
+"kind": "tracker",
+"entity": "device_tracker.living_room_blinds",
+"to": "not_home",
+"offset": 17
+},
+{
+"t": "2026-09-14 09:17:34",
+"kind": "tracker",
+"entity": "device_tracker.esp32_bluetooth_proxy_2d8900",
+"to": "not_home",
+"offset": 17
+},
+{
+"t": "2026-09-14 09:17:34",
+"kind": "tracker",
+"entity": "device_tracker.fireos_dashboard_lr",
+"to": "not_home",
+"offset": 17
+},
+{
+"t": "2026-09-14 09:17:34",
+"kind": "tracker",
+"entity": "device_tracker.dining_room_shades",
+"to": "not_home",
+"offset": 17
+},
+{
+"t": "2026-09-14 09:17:34",
+"kind": "tracker",
+"entity": "device_tracker.fire_tv_4k",
+"to": "not_home",
+"offset": 17
+},
+{
+"t": "2026-09-14 09:17:34",
+"kind": "tracker",
+"entity": "device_tracker.voice_assistant_kitchen",
+"to": "not_home",
+"offset": 17
+},
+{
+"t": "2026-09-14 09:17:34",
+"kind": "tracker",
+"entity": "device_tracker.presence_sensor_guest",
+"to": "not_home",
+"offset": 17
+},
+{
+"t": "2026-09-14 09:17:34",
+"kind": "tracker",
+"entity": "device_tracker.ty_wr",
+"to": "not_home",
+"offset": 17
+},
+{
+"t": "2026-09-14 09:18:09",
+"kind": "tracker",
+"entity": "device_tracker.master_park_blinds",
+"to": "not_home",
+"offset": 52
+},
+{
+"t": "2026-09-14 09:18:09",
+"kind": "tracker",
+"entity": "device_tracker.nspanel_pro_james_2",
+"to": "not_home",
+"offset": 52
+},
+{
+"t": "2026-09-14 09:18:09",
+"kind": "tracker",
+"entity": "device_tracker.master_city_blinds",
+"to": "not_home",
+"offset": 52
+},
+{
+"t": "2026-09-14 09:18:09",
+"kind": "tracker",
+"entity": "device_tracker.home_assistant_voice_09bc45",
+"to": "not_home",
+"offset": 52
+},
+{
+"t": "2026-09-14 09:18:09",
+"kind": "tracker",
+"entity": "device_tracker.homeassistant",
+"to": "not_home",
+"offset": 52
+},
+{
+"t": "2026-09-14 09:18:44",
+"kind": "tracker",
+"entity": "device_tracker.master_park_shades",
+"to": "not_home",
+"offset": 87
+},
+{
+"t": "2026-09-14 09:18:44",
+"kind": "tracker",
+"entity": "device_tracker.master_city_shades",
+"to": "not_home",
+"offset": 87
+},
+{
+"t": "2026-09-14 09:18:44",
+"kind": "tracker",
+"entity": "device_tracker.presence_sensor_master",
+"to": "not_home",
+"offset": 87
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "media_player.voice_assistant_kitchen_media_player",
+"device": "Voice Assistant - Kitchen",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "switch.voice_assistant_kitchen_mute",
+"device": "Voice Assistant - Kitchen",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "select.voice_assistant_kitchen_wake_word_sensitivity",
+"device": "Voice Assistant - Kitchen",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "update.voice_assistant_kitchen",
+"device": "Voice Assistant - Kitchen",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "event.voice_assistant_kitchen_button_press",
+"device": "Voice Assistant - Kitchen",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "light.voice_assistant_kitchen_led_ring",
+"device": "Voice Assistant - Kitchen",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "switch.voice_assistant_kitchen_wake_sound",
+"device": "Voice Assistant - Kitchen",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "assist_satellite.voice_assistant_kitchen_assist_satellite",
+"device": "Voice Assistant - Kitchen",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "update.home_assistant_voice_09bc45",
+"device": "Voice Assistant - Master",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "light.home_assistant_voice_09bc45_led_ring",
+"device": "Voice Assistant - Master",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "switch.home_assistant_voice_09bc45_wake_sound",
+"device": "Voice Assistant - Master",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "event.home_assistant_voice_09bc45_button_press",
+"device": "Voice Assistant - Master",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "switch.home_assistant_voice_09bc45_mute",
+"device": "Voice Assistant - Master",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "media_player.voice_assistant_master_media_player",
+"device": "Voice Assistant - Master",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "select.home_assistant_voice_09bc45_wake_word_sensitivity",
+"device": "Voice Assistant - Master",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "assist_satellite.voice_assistant_master_assist_satellite",
+"device": "Voice Assistant - Master",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "button.esp32_bluetooth_proxy_2d8900_factory_reset",
+"device": "Bluetooth Proxy 2d8900",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:04",
+"kind": "entity",
+"entity": "button.esp32_bluetooth_proxy_2d8900_safe_mode_boot",
+"device": "Bluetooth Proxy 2d8900",
+"to": "unavailable",
+"offset": 107
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.presence_guest_presence_sensor_2",
+"device": "Presence Guest",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.presence_guest_total",
+"device": "Presence Guest",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.presence_guest_bedroom",
+"device": "Presence Guest",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "button.presence_guest_identify",
+"device": "Presence Guest",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "sensor.lux_presence_guest",
+"device": "Presence Guest",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_closet",
+"device": "Presence Master",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_hall",
+"device": "Presence Master",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "sensor.lux_sensor_master",
+"device": "Presence Master",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "button.presence_sensor_fp2_13be_identify",
+"device": "Presence Master",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_chair",
+"device": "Presence Master",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_terrace_door",
+"device": "Presence Master",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_randy_bedside",
+"device": "Presence Master",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_james_bedside",
+"device": "Presence Master",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_bed",
+"device": "Presence Master",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.master_presence_all",
+"device": "Presence Master",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "sensor.lux_sensor_living_room",
+"device": "Presence Living Dining Kitchen",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.laundry_door_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.living_room_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.dining_room_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.kitchen_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.entryway_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.island_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.hall_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:19:55",
+"kind": "entity",
+"entity": "binary_sensor.living_dining_kitchen_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "unavailable",
+"offset": 158
+},
+{
+"t": "2026-09-14 09:22:32",
+"kind": "entity",
+"entity": "sensor.wi_tek_poe_switch_jitter",
+"device": "Wi-Tek Poe Switch",
+"to": "unavailable",
+"offset": 315
+},
+{
+"t": "2026-09-14 09:22:32",
+"kind": "entity",
+"entity": "sensor.wi_tek_poe_switch_packet_loss",
+"device": "Wi-Tek Poe Switch",
+"to": "unavailable",
+"offset": 315
+},
+{
+"t": "2026-09-14 09:23:11",
+"kind": "entity",
+"entity": "sensor.wi_tek_poe_switch_jitter",
+"device": "Wi-Tek Poe Switch",
+"to": "recovered",
+"offset": 354
+},
+{
+"t": "2026-09-14 09:23:11",
+"kind": "entity",
+"entity": "sensor.wi_tek_poe_switch_packet_loss",
+"device": "Wi-Tek Poe Switch",
+"to": "recovered",
+"offset": 354
+},
+{
+"t": "2026-09-14 09:25:50",
+"kind": "entity",
+"entity": "cover.master_city_blinds",
+"device": "Master City Blinds",
+"to": "unavailable",
+"offset": 513
+},
+{
+"t": "2026-09-14 09:25:50",
+"kind": "entity",
+"entity": "sensor.master_city_blinds_signal_strength",
+"device": "Master City Blinds",
+"to": "unavailable",
+"offset": 513
+},
+{
+"t": "2026-09-14 09:25:50",
+"kind": "entity",
+"entity": "cover.dining_shades",
+"device": "Dining Shades",
+"to": "unavailable",
+"offset": 513
+},
+{
+"t": "2026-09-14 09:25:50",
+"kind": "entity",
+"entity": "sensor.rollerblind_signal_strength",
+"device": "Dining Shades",
+"to": "unavailable",
+"offset": 513
+},
+{
+"t": "2026-09-14 09:25:50",
+"kind": "entity",
+"entity": "cover.master_city_shades",
+"device": "Master City Shades",
+"to": "unavailable",
+"offset": 513
+},
+{
+"t": "2026-09-14 09:25:50",
+"kind": "entity",
+"entity": "sensor.master_city_shades_signal_strength_2",
+"device": "Master City Shades",
+"to": "unavailable",
+"offset": 513
+},
+{
+"t": "2026-09-14 09:25:50",
+"kind": "entity",
+"entity": "cover.living_shades",
+"device": "Living Shades",
+"to": "unavailable",
+"offset": 513
+},
+{
+"t": "2026-09-14 09:25:50",
+"kind": "entity",
+"entity": "sensor.living_shades_signal_strength_2",
+"device": "Living Shades",
+"to": "unavailable",
+"offset": 513
+},
+{
+"t": "2026-09-14 09:25:50",
+"kind": "entity",
+"entity": "cover.master_park_shades",
+"device": "Master Park Shades",
+"to": "unavailable",
+"offset": 513
+},
+{
+"t": "2026-09-14 09:25:50",
+"kind": "entity",
+"entity": "sensor.master_park_shades_signal_strength_2",
+"device": "Master Park Shades",
+"to": "unavailable",
+"offset": 513
+},
+{
+"t": "2026-09-14 09:25:54",
+"kind": "entity",
+"entity": "cover.master_park_blinds",
+"device": "Master Park Blinds",
+"to": "unavailable",
+"offset": 517
+},
+{
+"t": "2026-09-14 09:25:54",
+"kind": "entity",
+"entity": "sensor.master_park_blinds_signal_strength_2",
+"device": "Master Park Blinds",
+"to": "unavailable",
+"offset": 517
+},
+{
+"t": "2026-09-14 09:27:17",
+"kind": "entity",
+"entity": "sensor.wi_tek_poe_switch_jitter",
+"device": "Wi-Tek Poe Switch",
+"to": "unavailable",
+"offset": 600
+},
+{
+"t": "2026-09-14 09:27:17",
+"kind": "entity",
+"entity": "sensor.wi_tek_poe_switch_packet_loss",
+"device": "Wi-Tek Poe Switch",
+"to": "unavailable",
+"offset": 600
+},
+{
+"t": "2026-09-14 09:27:29",
+"kind": "tracker",
+"entity": "device_tracker.jamie_s_oneplus_pad",
+"to": "not_home",
+"offset": 612
+},
+{
+"t": "2026-09-14 09:27:29",
+"kind": "tracker",
+"entity": "device_tracker.wi_tek_poe_switch",
+"to": "not_home",
+"offset": 612
+},
+{
+"t": "2026-09-14 09:27:56",
+"kind": "entity",
+"entity": "sensor.wi_tek_poe_switch_jitter",
+"device": "Wi-Tek Poe Switch",
+"to": "recovered",
+"offset": 639
+},
+{
+"t": "2026-09-14 09:27:56",
+"kind": "entity",
+"entity": "sensor.wi_tek_poe_switch_packet_loss",
+"device": "Wi-Tek Poe Switch",
+"to": "recovered",
+"offset": 639
+},
+{
+"t": "2026-09-14 09:28:04",
+"kind": "tracker",
+"entity": "device_tracker.jamie_s_oneplus_pad",
+"to": "home",
+"offset": 647
+},
+{
+"t": "2026-09-14 09:28:04",
+"kind": "tracker",
+"entity": "device_tracker.wi_tek_poe_switch",
+"to": "home",
+"offset": 647
+},
+{
+"t": "2026-09-14 09:32:09",
+"kind": "tracker",
+"entity": "device_tracker.wi_tek_poe_switch",
+"to": "not_home",
+"offset": 892
+},
+{
+"t": "2026-09-14 09:32:44",
+"kind": "tracker",
+"entity": "device_tracker.wi_tek_poe_switch",
+"to": "home",
+"offset": 927
+},
+{
+"t": "2026-09-14 09:37:10",
+"kind": "entity",
+"entity": "switch.stove_vent_relays_exhaust_high_interlock",
+"device": "Stove Vent Relays",
+"to": "recovered",
+"offset": 1193
+},
+{
+"t": "2026-09-14 09:37:10",
+"kind": "entity",
+"entity": "sensor.stove_vent_relays_ssid",
+"device": "Stove Vent Relays",
+"to": "recovered",
+"offset": 1193
+},
+{
+"t": "2026-09-14 09:37:10",
+"kind": "entity",
+"entity": "sensor.stove_vent_relays_signal",
+"device": "Stove Vent Relays",
+"to": "recovered",
+"offset": 1193
+},
+{
+"t": "2026-09-14 09:37:10",
+"kind": "entity",
+"entity": "switch.kitchen_counter_relay",
+"device": "Stove Vent Relays",
+"to": "recovered",
+"offset": 1193
+},
+{
+"t": "2026-09-14 09:37:10",
+"kind": "entity",
+"entity": "sensor.stove_vent_relays_mqtt_connect_count",
+"device": "Stove Vent Relays",
+"to": "recovered",
+"offset": 1193
+},
+{
+"t": "2026-09-14 09:37:10",
+"kind": "entity",
+"entity": "switch.stove_vent_relays_gate",
+"device": "Stove Vent Relays",
+"to": "recovered",
+"offset": 1193
+},
+{
+"t": "2026-09-14 09:37:10",
+"kind": "entity",
+"entity": "sensor.stove_vent_relays_last_restart_time",
+"device": "Stove Vent Relays",
+"to": "recovered",
+"offset": 1193
+},
+{
+"t": "2026-09-14 09:37:10",
+"kind": "entity",
+"entity": "sensor.stove_vent_relays_wifi_connect_count",
+"device": "Stove Vent Relays",
+"to": "recovered",
+"offset": 1193
+},
+{
+"t": "2026-09-14 09:37:10",
+"kind": "entity",
+"entity": "switch.stove_vent_relays_exhaust_low_interlock",
+"device": "Stove Vent Relays",
+"to": "recovered",
+"offset": 1193
+},
+{
+"t": "2026-09-14 09:37:10",
+"kind": "entity",
+"entity": "sensor.stove_vent_relays_restart_reason",
+"device": "Stove Vent Relays",
+"to": "recovered",
+"offset": 1193
+},
+{
+"t": "2026-09-14 09:37:12",
+"kind": "entity",
+"entity": "binary_sensor.presence_guest_presence_sensor_2",
+"device": "Presence Guest",
+"to": "recovered",
+"offset": 1195
+},
+{
+"t": "2026-09-14 09:37:12",
+"kind": "entity",
+"entity": "binary_sensor.presence_guest_total",
+"device": "Presence Guest",
+"to": "recovered",
+"offset": 1195
+},
+{
+"t": "2026-09-14 09:37:12",
+"kind": "entity",
+"entity": "binary_sensor.presence_guest_bedroom",
+"device": "Presence Guest",
+"to": "recovered",
+"offset": 1195
+},
+{
+"t": "2026-09-14 09:37:12",
+"kind": "entity",
+"entity": "button.presence_guest_identify",
+"device": "Presence Guest",
+"to": "recovered",
+"offset": 1195
+},
+{
+"t": "2026-09-14 09:37:12",
+"kind": "entity",
+"entity": "sensor.lux_presence_guest",
+"device": "Presence Guest",
+"to": "recovered",
+"offset": 1195
+},
+{
+"t": "2026-09-14 09:37:13",
+"kind": "entity",
+"entity": "sensor.lux_sensor_living_room",
+"device": "Presence Living Dining Kitchen",
+"to": "recovered",
+"offset": 1196
+},
+{
+"t": "2026-09-14 09:37:13",
+"kind": "entity",
+"entity": "binary_sensor.laundry_door_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "recovered",
+"offset": 1196
+},
+{
+"t": "2026-09-14 09:37:13",
+"kind": "entity",
+"entity": "binary_sensor.living_room_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "recovered",
+"offset": 1196
+},
+{
+"t": "2026-09-14 09:37:13",
+"kind": "entity",
+"entity": "binary_sensor.dining_room_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "recovered",
+"offset": 1196
+},
+{
+"t": "2026-09-14 09:37:13",
+"kind": "entity",
+"entity": "binary_sensor.kitchen_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "recovered",
+"offset": 1196
+},
+{
+"t": "2026-09-14 09:37:13",
+"kind": "entity",
+"entity": "binary_sensor.entryway_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "recovered",
+"offset": 1196
+},
+{
+"t": "2026-09-14 09:37:13",
+"kind": "entity",
+"entity": "binary_sensor.island_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "recovered",
+"offset": 1196
+},
+{
+"t": "2026-09-14 09:37:13",
+"kind": "entity",
+"entity": "binary_sensor.hall_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "recovered",
+"offset": 1196
+},
+{
+"t": "2026-09-14 09:37:13",
+"kind": "entity",
+"entity": "binary_sensor.living_dining_kitchen_presence",
+"device": "Presence Living Dining Kitchen",
+"to": "recovered",
+"offset": 1196
+},
+{
+"t": "2026-09-14 09:37:15",
+"kind": "entity",
+"entity": "button.esp32_bluetooth_proxy_2d8900_factory_reset",
+"device": "Bluetooth Proxy 2d8900",
+"to": "recovered",
+"offset": 1198
+},
+{
+"t": "2026-09-14 09:37:15",
+"kind": "entity",
+"entity": "button.esp32_bluetooth_proxy_2d8900_safe_mode_boot",
+"device": "Bluetooth Proxy 2d8900",
+"to": "recovered",
+"offset": 1198
+},
+{
+"t": "2026-09-14 09:37:20",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_closet",
+"device": "Presence Master",
+"to": "recovered",
+"offset": 1203
+},
+{
+"t": "2026-09-14 09:37:20",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_hall",
+"device": "Presence Master",
+"to": "recovered",
+"offset": 1203
+},
+{
+"t": "2026-09-14 09:37:20",
+"kind": "entity",
+"entity": "sensor.lux_sensor_master",
+"device": "Presence Master",
+"to": "recovered",
+"offset": 1203
+},
+{
+"t": "2026-09-14 09:37:20",
+"kind": "entity",
+"entity": "button.presence_sensor_fp2_13be_identify",
+"device": "Presence Master",
+"to": "recovered",
+"offset": 1203
+},
+{
+"t": "2026-09-14 09:37:20",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_chair",
+"device": "Presence Master",
+"to": "recovered",
+"offset": 1203
+},
+{
+"t": "2026-09-14 09:37:20",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_terrace_door",
+"device": "Presence Master",
+"to": "recovered",
+"offset": 1203
+},
+{
+"t": "2026-09-14 09:37:20",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_randy_bedside",
+"device": "Presence Master",
+"to": "recovered",
+"offset": 1203
+},
+{
+"t": "2026-09-14 09:37:20",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_james_bedside",
+"device": "Presence Master",
+"to": "recovered",
+"offset": 1203
+},
+{
+"t": "2026-09-14 09:37:20",
+"kind": "entity",
+"entity": "binary_sensor.master_presense_bed",
+"device": "Presence Master",
+"to": "recovered",
+"offset": 1203
+},
+{
+"t": "2026-09-14 09:37:20",
+"kind": "entity",
+"entity": "binary_sensor.master_presence_all",
+"device": "Presence Master",
+"to": "recovered",
+"offset": 1203
+},
+{
+"t": "2026-09-14 09:37:23",
+"kind": "entity",
+"entity": "cover.master_city_blinds",
+"device": "Master City Blinds",
+"to": "recovered",
+"offset": 1206
+},
+{
+"t": "2026-09-14 09:37:23",
+"kind": "entity",
+"entity": "sensor.master_city_blinds_signal_strength",
+"device": "Master City Blinds",
+"to": "recovered",
+"offset": 1206
+},
+{
+"t": "2026-09-14 09:37:23",
+"kind": "entity",
+"entity": "cover.living_shades",
+"device": "Living Shades",
+"to": "recovered",
+"offset": 1206
+},
+{
+"t": "2026-09-14 09:37:23",
+"kind": "entity",
+"entity": "sensor.living_shades_signal_strength_2",
+"device": "Living Shades",
+"to": "recovered",
+"offset": 1206
+},
+{
+"t": "2026-09-14 09:37:23",
+"kind": "entity",
+"entity": "cover.dining_shades",
+"device": "Dining Shades",
+"to": "recovered",
+"offset": 1206
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "sensor.rollerblind_signal_strength",
+"device": "Dining Shades",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "cover.master_park_shades",
+"device": "Master Park Shades",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "sensor.master_park_shades_signal_strength_2",
+"device": "Master Park Shades",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "cover.master_city_shades",
+"device": "Master City Shades",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "sensor.master_city_shades_signal_strength_2",
+"device": "Master City Shades",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "binary_sensor.fireos_living_room_kiosk_mode",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "binary_sensor.fireos_living_room_plugged_in",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "binary_sensor.fireos_living_room_device_admin",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "button.fireos_living_room_restart_browser",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "button.fireos_living_room_restart_device",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "button.fireos_living_room_bring_to_foreground",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "button.fireos_living_room_send_to_background",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "button.fireos_living_room_load_start_url",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "button.fireos_living_room_clear_browser_cache",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "button.fireos_living_room_trigger_motion_activity",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "camera.fireos_living_room",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "image.fireos_living_room_screenshot",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "media_player.fireos_living_room",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "number.fireos_living_room_screensaver_timer",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "number.fireos_living_room_screensaver_brightness",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "number.fireos_living_room_screen_off_timer",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "number.fireos_living_room_screen_brightness",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_battery",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_battery_temperature",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_current_page",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_screen_orientation",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_foreground_app",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_internal_storage_free_space",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_internal_storage_total_space",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_free_memory",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "sensor.fireos_living_room_total_memory",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "switch.fireos_living_room_screensaver",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "switch.fireos_living_room_maintenance_mode",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "switch.fireos_living_room_kiosk_lock",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "switch.fireos_living_room_motion_detection",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:24",
+"kind": "entity",
+"entity": "switch.fireos_living_room_screen",
+"device": "FireOS Living Room",
+"to": "recovered",
+"offset": 1207
+},
+{
+"t": "2026-09-14 09:37:26",
+"kind": "tracker",
+"entity": "device_tracker.presence_sensor_living_room",
+"to": "home",
+"offset": 1209
+},
+{
+"t": "2026-09-14 09:37:26",
+"kind": "tracker",
+"entity": "device_tracker.master_park_blinds",
+"to": "home",
+"offset": 1209
+},
+{
+"t": "2026-09-14 09:37:26",
+"kind": "tracker",
+"entity": "device_tracker.tasmota_519243_4675",
+"to": "home",
+"offset": 1209
+},
+{
+"t": "2026-09-14 09:37:26",
+"kind": "tracker",
+"entity": "device_tracker.living_room_blinds",
+"to": "home",
+"offset": 1209
+},
+{
+"t": "2026-09-14 09:37:26",
+"kind": "tracker",
+"entity": "device_tracker.fireos_dashboard_lr",
+"to": "home",
+"offset": 1209
+},
+{
+"t": "2026-09-14 09:37:26",
+"kind": "tracker",
+"entity": "device_tracker.dining_room_shades",
+"to": "home",
+"offset": 1209
+},
+{
+"t": "2026-09-14 09:37:26",
+"kind": "tracker",
+"entity": "device_tracker.master_park_shades",
+"to": "home",
+"offset": 1209
+},
+{
+"t": "2026-09-14 09:37:26",
+"kind": "tracker",
+"entity": "device_tracker.nspanel_pro_james_2",
+"to": "home",
+"offset": 1209
+},
+{
+"t": "2026-09-14 09:37:26",
+"kind": "tracker",
+"entity": "device_tracker.master_city_shades",
+"to": "home",
+"offset": 1209
+},
+{
+"t": "2026-09-14 09:37:26",
+"kind": "tracker",
+"entity": "device_tracker.presence_sensor_master",
+"to": "home",
+"offset": 1209
+},
+{
+"t": "2026-09-14 09:37:27",
+"kind": "tracker",
+"entity": "device_tracker.master_city_blinds",
+"to": "home",
+"offset": 1210
+},
+{
+"t": "2026-09-14 09:37:27",
+"kind": "tracker",
+"entity": "device_tracker.presence_sensor_guest",
+"to": "home",
+"offset": 1210
+},
+{
+"t": "2026-09-14 09:37:29",
+"kind": "entity",
+"entity": "event.voice_assistant_kitchen_button_press",
+"device": "Voice Assistant - Kitchen",
+"to": "recovered",
+"offset": 1212
+},
+{
+"t": "2026-09-14 09:37:29",
+"kind": "entity",
+"entity": "assist_satellite.voice_assistant_kitchen_assist_satellite",
+"device": "Voice Assistant - Kitchen",
+"to": "recovered",
+"offset": 1212
+},
+{
+"t": "2026-09-14 09:37:29",
+"kind": "entity",
+"entity": "update.voice_assistant_kitchen",
+"device": "Voice Assistant - Kitchen",
+"to": "recovered",
+"offset": 1212
+},
+{
+"t": "2026-09-14 09:37:29",
+"kind": "entity",
+"entity": "light.voice_assistant_kitchen_led_ring",
+"device": "Voice Assistant - Kitchen",
+"to": "recovered",
+"offset": 1212
+},
+{
+"t": "2026-09-14 09:37:29",
+"kind": "entity",
+"entity": "switch.voice_assistant_kitchen_mute",
+"device": "Voice Assistant - Kitchen",
+"to": "recovered",
+"offset": 1212
+},
+{
+"t": "2026-09-14 09:37:29",
+"kind": "entity",
+"entity": "switch.voice_assistant_kitchen_wake_sound",
+"device": "Voice Assistant - Kitchen",
+"to": "recovered",
+"offset": 1212
+},
+{
+"t": "2026-09-14 09:37:29",
+"kind": "entity",
+"entity": "select.voice_assistant_kitchen_wake_word_sensitivity",
+"device": "Voice Assistant - Kitchen",
+"to": "recovered",
+"offset": 1212
+},
+{
+"t": "2026-09-14 09:37:29",
+"kind": "entity",
+"entity": "media_player.voice_assistant_kitchen_media_player",
+"device": "Voice Assistant - Kitchen",
+"to": "recovered",
+"offset": 1212
+},
+{
+"t": "2026-09-14 09:37:34",
+"kind": "entity",
+"entity": "event.home_assistant_voice_09bc45_button_press",
+"device": "Voice Assistant - Master",
+"to": "recovered",
+"offset": 1217
+},
+{
+"t": "2026-09-14 09:37:34",
+"kind": "entity",
+"entity": "assist_satellite.voice_assistant_master_assist_satellite",
+"device": "Voice Assistant - Master",
+"to": "recovered",
+"offset": 1217
+},
+{
+"t": "2026-09-14 09:37:34",
+"kind": "entity",
+"entity": "update.home_assistant_voice_09bc45",
+"device": "Voice Assistant - Master",
+"to": "recovered",
+"offset": 1217
+},
+{
+"t": "2026-09-14 09:37:34",
+"kind": "entity",
+"entity": "light.home_assistant_voice_09bc45_led_ring",
+"device": "Voice Assistant - Master",
+"to": "recovered",
+"offset": 1217
+},
+{
+"t": "2026-09-14 09:37:34",
+"kind": "entity",
+"entity": "switch.home_assistant_voice_09bc45_mute",
+"device": "Voice Assistant - Master",
+"to": "recovered",
+"offset": 1217
+},
+{
+"t": "2026-09-14 09:37:34",
+"kind": "entity",
+"entity": "switch.home_assistant_voice_09bc45_wake_sound",
+"device": "Voice Assistant - Master",
+"to": "recovered",
+"offset": 1217
+},
+{
+"t": "2026-09-14 09:37:34",
+"kind": "entity",
+"entity": "select.home_assistant_voice_09bc45_wake_word_sensitivity",
+"device": "Voice Assistant - Master",
+"to": "recovered",
+"offset": 1217
+},
+{
+"t": "2026-09-14 09:37:34",
+"kind": "entity",
+"entity": "media_player.voice_assistant_master_media_player",
+"device": "Voice Assistant - Master",
+"to": "recovered",
+"offset": 1217
+},
+{
+"t": "2026-09-14 09:37:34",
+"kind": "entity",
+"entity": "cover.master_park_blinds",
+"device": "Master Park Blinds",
+"to": "recovered",
+"offset": 1217
+},
+{
+"t": "2026-09-14 09:37:35",
+"kind": "entity",
+"entity": "sensor.master_park_blinds_signal_strength_2",
+"device": "Master Park Blinds",
+"to": "recovered",
+"offset": 1218
+},
+{
+"t": "2026-09-14 09:38:01",
+"kind": "tracker",
+"entity": "device_tracker.homeassistant",
+"to": "home",
+"offset": 1244
+},
+{
+"t": "2026-09-14 09:38:01",
+"kind": "tracker",
+"entity": "device_tracker.ty_wr",
+"to": "home",
+"offset": 1244
+},
+{
+"t": "2026-09-14 09:39:11",
+"kind": "tracker",
+"entity": "device_tracker.home_assistant_voice_09bc45",
+"to": "home",
+"offset": 1314
+},
+{
+"t": "2026-09-14 09:39:20",
+"kind": "entity",
+"entity": "media_player.fire_tv_stick",
+"device": "Fire TV Stick",
+"to": "recovered",
+"offset": 1323
+},
+{
+"t": "2026-09-14 09:39:46",
+"kind": "tracker",
+"entity": "device_tracker.esp32_bluetooth_proxy_2d8900",
+"to": "home",
+"offset": 1349
+},
+{
+"t": "2026-09-14 09:39:46",
+"kind": "tracker",
+"entity": "device_tracker.fire_tv_4k",
+"to": "home",
+"offset": 1349
+},
+{
+"t": "2026-09-14 09:39:46",
+"kind": "tracker",
+"entity": "device_tracker.voice_assistant_kitchen",
+"to": "home",
+"offset": 1349
+},
+{
+"t": "2026-09-14 09:40:56",
+"kind": "tracker",
+"entity": "device_tracker.esp32_bluetooth_proxy_2d8900",
+"to": "not_home",
+"offset": 1419
+},
+{
+"t": "2026-09-14 09:41:31",
+"kind": "tracker",
+"entity": "device_tracker.esp32_bluetooth_proxy_2d8900",
+"to": "home",
+"offset": 1454
+},
+{
+"t": "2026-09-14 09:44:26",
+"kind": "tracker",
+"entity": "device_tracker.wi_tek_poe_switch",
+"to": "not_home",
+"offset": 1629
+}
+]
+}
