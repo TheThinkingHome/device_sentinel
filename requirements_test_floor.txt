@@ -1,0 +1,8 @@
+# The second test harness, at the minimum Home Assistant version
+# hacs.json declares: 2026.5.0 under Python 3.14.6. It is the only
+# harness on which a device can belong to two config entries, which
+# Home Assistant stopped allowing in 2026.8. It retires, with the two
+# tests that need it, when the minimum reaches 2026.8.0.
+pytest-homeassistant-custom-component==0.13.329
+#
+# Serial only, for the reason requirements_test.txt gives.

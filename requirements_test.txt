@@ -1,7 +1,8 @@
-# The test harness, pinned to the exact versions the suite was
-# proven against (HA 2025.1.4 under Python 3.12; the 2026-era API
-# delta is hand-audited, and the Panorama proof gate is final).
-pytest-homeassistant-custom-component==0.13.205
+# The test harness at the Home Assistant release the fleets run:
+# 2026.9.2 under Python 3.14.6. requirements_test_floor.txt pins the
+# second harness, at the minimum version hacs.json declares. The suite
+# runs on both until that minimum reaches 2026.8.0.
+pytest-homeassistant-custom-component==0.13.365
 #
 # The suite must run serially (no pytest -n). The harness shares one
 # testing_config/www/ across xdist workers, so parallel runs race the
