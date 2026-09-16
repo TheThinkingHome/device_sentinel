@@ -22,6 +22,7 @@ discard. This file holds the stack detection, the bridge reader, the
 taint debounce, and the full-path pairing override.
 """
 
+import time
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -788,3 +789,31 @@ async def test_a_bridge_gives_its_devices_time_to_rejoin(
 
     freezer.tick(BRIDGE_HANDBACK_SECONDS + 10)
     assert coord.upstream_down_since(device_id) is None
+
+
+# ------------------------------------------------ the MQTT wait, 0.21.9
+
+
+async def test_the_z2m_reader_does_not_wait_for_absent_mqtt(
+    hass: HomeAssistant,
+):
+    """Found through a third fleet's diagnostics on 15 September.
+
+    The bridge reader called mqtt.async_wait_for_mqtt_client without
+    first asking whether the MQTT integration was loaded at all, and
+    Home Assistant answers that call by waiting its full timeout
+    before giving up. So any house with a Zigbee2MQTT bridge device in
+    its registry blocked Device Sentinel's setup for fifty seconds
+    whenever MQTT was not yet up, and this suite paid the same fifty
+    seconds on every bridge test without anyone noticing: the runs
+    passed, they were just slow.
+
+    The broker transport already guards against exactly this. The
+    reader now does the same.
+    """
+    _device(hass, "mqtt", "b1", "SLZB-06M Zigbee2MQTT Bridge")
+    started = time.monotonic()
+    coord = await setup_coordinator(hass)
+    elapsed = time.monotonic() - started
+    assert STACK_Z2M in coord._stacks
+    assert elapsed < 10.0, f"setup took {elapsed:.1f}s waiting for MQTT"
