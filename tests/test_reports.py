@@ -1042,3 +1042,33 @@ async def test_a_brief_that_cannot_be_written_is_not_sent(
     coord._write_reports = boom
     await coord._on_brief_time(None)
     assert sent == []
+
+
+async def test_the_learned_statistics_table_has_matching_columns(
+    hass: HomeAssistant,
+):
+    """Issue reported 15 September against 0.19.14, still present.
+
+    The Dwell column was removed from the header and from every data
+    row when the dwell chart went (0.19.x) and left in the separator,
+    so the header carried nine columns and the separator ten. Markdown
+    renderers treat that as a malformed table and print it as text.
+    Counting the pipes on all three lines is the whole test.
+    """
+    coord = await setup_coordinator(hass)
+    await hass.async_add_executor_job(coord._write_reports)
+    with open(
+        hass.config.path("device_sentinel/device_telemetry.md"),
+        encoding="utf-8",
+    ) as handle:
+        text = handle.read()
+    lines = text.split("\n")
+    start = lines.index("## Learned Statistics")
+    header = lines[start + 2]
+    separator = lines[start + 3]
+    assert header.startswith("| DEVICE")
+    assert separator.startswith("|---")
+    assert header.count("|") == separator.count("|"), (
+        f"header has {header.count('|') - 1} columns, "
+        f"separator has {separator.count('---')}"
+    )
