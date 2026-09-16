@@ -19,13 +19,28 @@ on:
 
 jobs:
   pytest:
+    # Two harnesses until the minimum Home Assistant version reaches
+    # 2026.8.0: the minimum hacs.json declares, and the release the
+    # fleets run. A test that passes on only one of them proves only
+    # half the range a user can install on.
+    name: Tests (Home Assistant ${{ matrix.home-assistant }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - home-assistant: "2026.5.0"
+            requirements: requirements_test_floor.txt
+          - home-assistant: "2026.9.2"
+            requirements: requirements_test.txt
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14.6"
       - name: Install test harness
-        run: pip install -r requirements_test.txt
+        run: pip install -r ${{ matrix.requirements }}
+      # A test that hangs fails by name after two minutes rather than
+      # holding the job until GitHub's own six-hour limit.
       - name: Run the suite
-        run: python -m pytest tests/ -q
+        run: python -m pytest tests/ -q --timeout=120
