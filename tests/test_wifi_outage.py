@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.21.7 (2026-09-15)
+# File: tests/test_wifi_outage.py, Version: 0.21.11 (2026-09-16)
 
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim.
 
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -39,7 +40,7 @@ from custom_components.device_sentinel.router_ties import (
     tracker_medium,
 )
 
-from tests.helpers import setup_coordinator
+from tests.helpers import record_labelled, setup_coordinator
 
 
 def _tracker(hass, uid: str, mac: str, state: str = "home"):
@@ -100,16 +101,10 @@ async def _house(hass, count: int = 4):
 
 
 def _heard(hass):
-    seen: list[tuple[str, dict]] = []
-    hass.bus.async_listen(
-        EVENT_UPSTREAM_DOWN,
-        lambda e: seen.append(("down", dict(e.data))),
-    )
-    hass.bus.async_listen(
-        EVENT_UPSTREAM_RESTORED,
-        lambda e: seen.append(("restored", dict(e.data))),
-    )
-    return seen
+    return record_labelled(hass, {
+        EVENT_UPSTREAM_DOWN: "down",
+        EVENT_UPSTREAM_RESTORED: "restored",
+    })
 
 
 async def _fall(hass, tracker: str):
@@ -524,6 +519,15 @@ async def test_the_sensor_arrives_when_the_capability_does(
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
     coord._rebuild_registry_view()
+    # The platform set up with the entry has already registered an
+    # adder of its own. Keeping only the one this test drives fixes the
+    # refresh order; with both present, which of them sits next to the
+    # other depends on how platform setup interleaved, and the skip in
+    # the test below made this one fail in 2 runs of 20.
+    coord._listeners[:] = [
+        listener for listener in coord._listeners
+        if getattr(listener, "__name__", "") != "_add_wifi_sensor_when_capable"
+    ]
 
     added: list = []
 
@@ -549,6 +553,58 @@ async def test_the_sensor_arrives_when_the_capability_does(
     coord._notify()
     names = [type(e).__name__ for e in added]
     assert names.count("DeviceSentinelWifiSensor") == 1
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "_notify walks the listener list while the Wi-Fi sensor's "
+        "one-shot adder removes itself from it, so the listener after "
+        "the adder misses that refresh. Found 16 September; this test "
+        "turns red the day the fix lands, so the marker comes off with it."
+    ),
+)
+async def test_the_adder_removing_itself_does_not_cost_the_next_listener(
+    hass: HomeAssistant,
+):
+    """Every listener hears the refresh on which the sensor arrives.
+
+    On a live system the listener after the adder is the problem list,
+    which misses one refresh on the first tick a Wi-Fi tie appears.
+    """
+    from custom_components.device_sentinel import sensor as sensor_mod
+
+    source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
+    source.add_to_hass(hass)
+    _wifi_device(
+        hass, source, "skip0", "WiFi Device Skip", "aa:bb:cc:00:00:02",
+    )
+    tracker = er.async_get(hass).async_get_or_create(
+        "device_tracker", "tplink_router", "skip_t0"
+    )
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+    coord._listeners.clear()
+
+    class _Entry:
+        runtime_data = coord
+
+    await sensor_mod.async_setup_entry(
+        hass, _Entry(), lambda ents, **kw: None
+    )
+    heard: list[str] = []
+    coord.async_add_listener(lambda: heard.append("next"))
+
+    hass.states.async_set(
+        tracker.entity_id, "home",
+        {"source_type": "router", "mac": "AA-BB-CC-00-00-02"},
+    )
+    await hass.async_block_till_done()
+    coord._sample_wifi(dt_util.utcnow().timestamp())
+    assert coord.wifi_capable
+    coord._notify()
+    assert heard == ["next"]
 
 
 async def test_diagnostics_carry_the_tie_table(hass: HomeAssistant):

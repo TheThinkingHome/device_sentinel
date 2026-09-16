@@ -55,7 +55,7 @@ from custom_components.device_sentinel.const import (
 )
 
 from tests.conftest import FLEET_ABSENT, fleet_path
-from tests.helpers import setup_coordinator
+from tests.helpers import record_events, setup_coordinator
 
 JAMES = fleet_path("james", "2026-08-29", "device_sentinel.storage")
 TIM = fleet_path("tim", "2026-08-29", "device_sentinel_storage.json")
@@ -82,11 +82,8 @@ class _House:
         self.rng = rng
         self.registry = dr.async_get(hass)
         self.entities = er.async_get(hass)
-        self.recoveries: list[dict] = []
         self.pushes: list[tuple] = []
-        hass.bus.async_listen(
-            EVENT_RECOVERED, lambda e: self.recoveries.append(e.data)
-        )
+        self.recoveries: list[dict] = record_events(hass, EVENT_RECOVERED)
         real_collect = coord._collect_event
 
         def spy(kind, name, recovery, device_id, **kw):

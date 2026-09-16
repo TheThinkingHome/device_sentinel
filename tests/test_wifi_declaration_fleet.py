@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_declaration_fleet.py, Version: 0.21.0 (2026-09-13)
+# File: tests/test_wifi_declaration_fleet.py, Version: 0.21.11 (2026-09-16)
 
 """Rulings #419 and #421, driven through the shipped code on both fleets.
 
@@ -48,6 +48,7 @@ from custom_components.device_sentinel.const import (
 
 from tests.conftest import FLEET_ABSENT
 from tests.fleet_house import JAMES, JAMES_SHAPE, TIM, TIM_SHAPE, _fleet
+from tests.helpers import add_mac
 
 ROUTER = "tplink_router"
 
@@ -75,10 +76,7 @@ def _tracker_for(hass, index: int, platform: str = ROUTER) -> tuple[str, str]:
 def _tie(hass, device, index: int) -> str:
     """Give one real fleet device a MAC and a tracker carrying it."""
     tracker, mac = _tracker_for(hass, index)
-    dr.async_get(hass).async_update_device(
-        device.id,
-        merge_connections={(dr.CONNECTION_NETWORK_MAC, mac)},
-    )
+    add_mac(hass, device, mac)
     return tracker
 
 

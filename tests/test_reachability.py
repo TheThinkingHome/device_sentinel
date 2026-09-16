@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_reachability.py, Version: 0.20.1 (2026-09-04)
+# File: tests/test_reachability.py, Version: 0.21.11 (2026-09-16)
 
 """Zigbee2MQTT reachability, replayed against a captured fleet.
 
@@ -46,7 +46,7 @@ from custom_components.device_sentinel.const import (
     SYS_BRIDGE_UP,
     SYS_KIND,
 )
-from tests.helpers import setup_coordinator
+from tests.helpers import record_events, setup_coordinator
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 DEVICES = json.loads((FIXTURES / "z2m_bridge_devices.json").read_text())
@@ -339,9 +339,7 @@ async def test_the_registry_walk_records_the_key(hass: HomeAssistant):
 
 def _heard(hass, kind):
     """Collect one event kind off the bus."""
-    seen: list = []
-    hass.bus.async_listen(kind, lambda event: seen.append(event.data))
-    return seen
+    return record_events(hass, kind)
 
 
 def _past_grace(coord):

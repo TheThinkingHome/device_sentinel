@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_exclusions.py, Version: 0.20.9 (2026-09-06)
+# File: test_exclusions.py, Version: 0.21.11 (2026-09-16)
 
 """Exclusion: watched and recorded, but not judged or reported.
 
@@ -24,6 +24,7 @@ dead option keys that no code reads.
 
 from datetime import timedelta
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -66,7 +67,13 @@ from custom_components.device_sentinel.const import (
 )
 from custom_components.device_sentinel.coordinator import _new_device_record
 
-from tests.helpers import flat_schema, setup_coordinator, setup_entry
+from tests.helpers import (
+    MULTI_OWNER_GONE,
+    MULTI_OWNER_POSSIBLE,
+    flat_schema,
+    setup_coordinator,
+    setup_entry,
+)
 
 DOMAIN = "device_sentinel"
 
@@ -155,6 +162,7 @@ async def test_excluded_device_keeps_learning_never_reported(
     assert coord._muted_devices[device.id] == "device"
 
 
+@pytest.mark.skipif(not MULTI_OWNER_POSSIBLE, reason=MULTI_OWNER_GONE)
 async def test_integration_exclude_respects_primary_owner(
     hass: HomeAssistant,
 ):

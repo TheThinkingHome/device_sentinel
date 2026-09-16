@@ -45,7 +45,7 @@ from custom_components.device_sentinel.const import (
     STORAGE_KEY,
 )
 
-from tests.helpers import register_device, setup_coordinator
+from tests.helpers import record_events, register_device, setup_coordinator
 
 OBSERVED = "2026-07-08T00:00:00+00:00"
 
@@ -286,8 +286,7 @@ async def test_an_upstream_outage_and_a_set_aside_do_not_fight(
     device, _ = register_device(hass, "up_dev")
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
-    heard = []
-    hass.bus.async_listen(EVENT_RECOVERED, lambda e: heard.append(e.data))
+    heard = record_events(hass, EVENT_RECOVERED)
     _silent(coord, device.id)
     with patch.object(
         type(coord), "upstream_down_since",
@@ -311,8 +310,7 @@ async def test_an_upstream_outage_and_a_set_aside_do_not_fight(
 async def test_a_person_acted_item_whose_device_leaves(
     hass: HomeAssistant, action
 ):
-    heard = []
-    hass.bus.async_listen(EVENT_RECOVERED, lambda e: heard.append(e.data))
+    heard = record_events(hass, EVENT_RECOVERED)
     device, _ = register_device(hass, f"acted_{action}")
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0

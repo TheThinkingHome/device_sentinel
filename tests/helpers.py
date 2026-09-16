@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: helpers.py, Version: 0.9.9 (2026-07-26)
+# File: helpers.py, Version: 0.21.11 (2026-09-16)
 
 """Shared test helpers, one canonical version of each.
 
@@ -24,14 +24,27 @@ conftest.py; these are the building blocks a test calls directly.
 
 from __future__ import annotations
 
+from awesomeversion import AwesomeVersion
+
 from custom_components.device_sentinel.const import OPTIONS_MINOR_VERSION
-from homeassistant.core import HomeAssistant
+from homeassistant.const import __version__ as HA_VERSION
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 DOMAIN = "device_sentinel"
+
+# From Home Assistant 2026.8 a device belongs to exactly one config
+# entry, and asking for a second one is refused. The suite runs on two
+# harnesses until the minimum version reaches 2026.8, and a test that
+# needs a device with two owners can only be built on the older one.
+MULTI_OWNER_POSSIBLE = AwesomeVersion(HA_VERSION) < AwesomeVersion("2026.8.0")
+MULTI_OWNER_GONE = (
+    "a device can belong to only one config entry from Home Assistant "
+    "2026.8; this case is proven on the 2026.5 harness"
+)
 
 
 async def setup_entry(
@@ -209,3 +222,68 @@ def nest_for(step: str, payload: dict) -> dict:
             loose[key] = value
     loose[name] = nested
     return loose
+
+
+def add_mac(hass: HomeAssistant, device, mac: str):
+    """Give a registry device one more MAC connection.
+
+    Home Assistant 2026.9 deprecated `merge_connections`, and from code
+    it cannot tie to an integration a deprecated call raises. Passing
+    the whole set as `new_connections` is the replacement it names, and
+    it behaves the same on every harness the suite runs on.
+    """
+    registry = dr.async_get(hass)
+    current = registry.async_get(device.id)
+    connections = set(current.connections) if current else set()
+    connections.add((dr.CONNECTION_NETWORK_MAC, mac))
+    return registry.async_update_device(
+        device.id, new_connections=connections
+    )
+
+
+def devices_of_entry(hass: HomeAssistant, entry_id: str) -> list:
+    """Return the registry devices a config entry owns.
+
+    Reading `registry.devices` as a mapping is deprecated from 2026.9,
+    and iterating it yields entries only from 2026.9. The lookup by
+    config entry reads the same on every harness.
+    """
+    return dr.async_entries_for_config_entry(dr.async_get(hass), entry_id)
+
+
+def record_events(hass: HomeAssistant, event_type: str) -> list:
+    """Record the data of every event of one type, in firing order.
+
+    A plain function or lambda passed to `hass.bus.async_listen` is not
+    a callback, so Home Assistant runs it as a job off the event loop,
+    and a burst of events can be recorded out of order. Measured on 16
+    September: fifty down and up pairs arrived interleaved in up to
+    eleven runs of twenty. A callback runs in the loop, in firing
+    order, which is the order a test about events needs.
+    """
+    seen: list = []
+
+    @callback
+    def _record(event: Event) -> None:
+        seen.append(dict(event.data))
+
+    hass.bus.async_listen(event_type, _record)
+    return seen
+
+
+def record_labelled(hass: HomeAssistant, labels: dict[str, str]) -> list:
+    """Record several event types into one list, in firing order.
+
+    `labels` maps each event type to the word stored beside its data,
+    so a test about pairing reads `("down", {...})` then
+    `("restored", {...})`. Ordered for the reason `record_events` gives.
+    """
+    seen: list = []
+    for event_type, label in labels.items():
+
+        @callback
+        def _record(event: Event, _label: str = label) -> None:
+            seen.append((_label, dict(event.data)))
+
+        hass.bus.async_listen(event_type, _record)
+    return seen

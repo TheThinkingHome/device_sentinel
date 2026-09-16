@@ -28,15 +28,13 @@ from custom_components.device_sentinel.const import (
     EVENT_RECOVERED,
 )
 
-from tests.helpers import register_device, setup_coordinator
+from tests.helpers import record_events, register_device, setup_coordinator
 
 OBSERVED = "2026-07-08T00:00:00+00:00"
 
 
 def _catch_recoveries(hass):
-    seen = []
-    hass.bus.async_listen(EVENT_RECOVERED, lambda event: seen.append(event.data))
-    return seen
+    return record_events(hass, EVENT_RECOVERED)
 
 
 async def _never_reporting_device(hass, name: str):
@@ -212,10 +210,7 @@ async def test_the_cause_is_bounded_to_the_incident_that_closed(
         }
     )
 
-    causes = []
-    hass.bus.async_listen(
-        EVENT_RECOVERED, lambda event: causes.append(event.data)
-    )
+    causes = record_events(hass, EVENT_RECOVERED)
     # The device speaks again, watched throughout, so the recovery
     # is a real one and does announce (ruling #368).
     record[DEV_EVENT_COUNT] = 1

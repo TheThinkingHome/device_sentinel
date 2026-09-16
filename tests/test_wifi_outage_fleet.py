@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage_fleet.py, Version: 0.21.1 (2026-09-13)
+# File: tests/test_wifi_outage_fleet.py, Version: 0.21.11 (2026-09-16)
 
 """The Wi-Fi outage, driven against both reference fleets.
 
@@ -23,7 +23,6 @@ from __future__ import annotations
 import pytest
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.device_sentinel.const import (
@@ -33,6 +32,7 @@ from custom_components.device_sentinel.const import (
 
 from tests.conftest import FLEET_ABSENT
 from tests.fleet_house import JAMES, JAMES_SHAPE, TIM, TIM_SHAPE, _fleet
+from tests.helpers import add_mac
 from tests.test_upstream_events_fleet import _heard
 
 
@@ -40,10 +40,7 @@ def _give_tracker(hass, device, index: int) -> str:
     """Give one fleet device a MAC connection and a router tracker
     carrying the same MAC in the router's own spelling."""
     mac = f"aa:bb:cc:dd:{index // 256:02x}:{index % 256:02x}"
-    dr.async_get(hass).async_update_device(
-        device.id,
-        merge_connections={(dr.CONNECTION_NETWORK_MAC, mac)},
-    )
+    add_mac(hass, device, mac)
     entry = er.async_get(hass).async_get_or_create(
         "device_tracker", "tplink_router", f"wt{index}"
     )

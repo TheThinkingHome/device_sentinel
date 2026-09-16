@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.15.9 (2026-08-18)
+# File: test_todo.py, Version: 0.21.11 (2026-09-16)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -64,7 +64,7 @@ from custom_components.device_sentinel.const import (
     TODO_KIND_FALLING_BATTERY,
 )
 
-from tests.helpers import setup_coordinator, setup_entry
+from tests.helpers import record_events, setup_coordinator, setup_entry
 
 DOMAIN = "device_sentinel"
 LIST_ENTITY = "todo.device_sentinel_problem_list"
@@ -726,9 +726,7 @@ async def test_the_falling_line_says_what_is_empty(
 
 def _listen(hass, event_type):
     """Collect every event of one type, in order."""
-    seen: list[dict] = []
-    hass.bus.async_listen(event_type, lambda event: seen.append(event.data))
-    return seen
+    return record_events(hass, event_type)
 
 
 async def test_a_fault_fires_once_on_the_transition(hass: HomeAssistant):

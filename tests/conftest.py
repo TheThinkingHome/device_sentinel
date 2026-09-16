@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: conftest.py, Version: 0.19.11 (2026-08-31)
+# File: conftest.py, Version: 0.21.11 (2026-09-16)
 
 """Shared test fixtures.
 
@@ -18,6 +18,7 @@ directory.
 
 import glob
 import importlib.util
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -45,6 +46,80 @@ def clean_report_directory():
     yield
     shutil.rmtree(REPORT_DIRECTORY, ignore_errors=True)
     shutil.rmtree(WWW_DIRECTORY, ignore_errors=True)
+
+
+# --------------------------------------------- the deprecation guard
+
+# Home Assistant logs this when a custom integration uses something it
+# has deprecated. Issue #10 arrived from a user's log on 15 September
+# because nothing here was looking; from 16 September any such line
+# fails the test that caused it.
+DEPRECATION_PREFIX = "Detected that custom integration 'device_sentinel'"
+
+# Deprecations already known and scheduled, each matched by every
+# fragment it lists so a second use of the same API elsewhere is still
+# caught. Remove an entry in the release that fixes it.
+KNOWN_DEPRECATIONS: tuple[tuple[str, ...], ...] = (
+    # Issue #10: the device registry read as a mapping.
+    (
+        "uses `device_registry.devices` as a mapping",
+        "custom_components/device_sentinel/coordinator.py",
+        "for device in dev_reg.devices.values()",
+    ),
+)
+
+
+def deprecation_findings(
+    messages: list[str],
+    known: tuple[tuple[str, ...], ...] = KNOWN_DEPRECATIONS,
+) -> list[str]:
+    """Return the deprecation warnings about this integration not yet known."""
+    return [
+        message for message in messages
+        if message.startswith(DEPRECATION_PREFIX)
+        and not any(
+            all(fragment in message for fragment in fragments)
+            for fragments in known
+        )
+    ]
+
+
+class FrameLog(logging.Handler):
+    """Collect what Home Assistant's frame helper logs during one test.
+
+    A handler of its own rather than `caplog`, which tests clear and
+    re-level for their own purposes and which would then hide a
+    finding.
+    """
+
+    LOGGER = "homeassistant.helpers.frame"
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+    def __enter__(self) -> "FrameLog":
+        logging.getLogger(self.LOGGER).addHandler(self)
+        return self
+
+    def __exit__(self, *exc) -> None:
+        logging.getLogger(self.LOGGER).removeHandler(self)
+
+
+@pytest.fixture(autouse=True)
+def no_new_deprecations():
+    """Fail any test during which this integration used a deprecated API."""
+    with FrameLog() as frame_log:
+        yield frame_log
+    found = deprecation_findings(frame_log.messages)
+    if found:
+        pytest.fail(
+            "Home Assistant reported a deprecated use:\n" + "\n".join(found),
+            pytrace=False,
+        )
 
 
 @pytest.fixture

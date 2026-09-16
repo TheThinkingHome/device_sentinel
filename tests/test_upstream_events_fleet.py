@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_events_fleet.py, Version: 0.20.0 (2026-09-03)
+# File: tests/test_upstream_events_fleet.py, Version: 0.21.11 (2026-09-16)
 
 """The upstream event pair, driven against both reference fleets.
 
@@ -50,7 +50,7 @@ from custom_components.device_sentinel.const import (
 )
 
 from tests.conftest import FLEET_ABSENT, fleet_path
-from tests.helpers import setup_coordinator
+from tests.helpers import record_labelled, setup_coordinator
 
 JAMES = fleet_path("james", "device_sentinel.storage")
 TIM = fleet_path("tim", "device_sentinel_storage.json")
@@ -89,16 +89,10 @@ def _broker_stub(state, started=1.0):
 
 def _heard(hass):
     """Collect both halves of the pair, in order."""
-    seen: list = []
-    hass.bus.async_listen(
-        EVENT_UPSTREAM_DOWN,
-        lambda event: seen.append(("down", dict(event.data))),
-    )
-    hass.bus.async_listen(
-        EVENT_UPSTREAM_RESTORED,
-        lambda event: seen.append(("restored", dict(event.data))),
-    )
-    return seen
+    return record_labelled(hass, {
+        EVENT_UPSTREAM_DOWN: "down",
+        EVENT_UPSTREAM_RESTORED: "restored",
+    })
 
 
 async def _fleet(hass, path, stack="z2m"):

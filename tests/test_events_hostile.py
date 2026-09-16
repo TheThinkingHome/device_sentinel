@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_events_hostile.py, Version: 0.15.9 (2026-08-18)
+# File: tests/test_events_hostile.py, Version: 0.21.11 (2026-09-16)
 
 """The bus events under conditions that should not happen.
 
@@ -33,7 +33,7 @@ from custom_components.device_sentinel.const import (
     FREEZE_CATEGORY_FROZEN,
     UNASSIGNED_AREA,
 )
-from tests.helpers import setup_entry
+from tests.helpers import record_events, setup_entry
 
 
 def _register(hass, uid, name):
@@ -106,8 +106,7 @@ async def test_a_device_gone_from_the_registry_still_fires(
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     coord._grace_until = 0.0
-    seen: list[dict] = []
-    hass.bus.async_listen(EVENT_FAULT, lambda e: seen.append(e.data))
+    seen: list[dict] = record_events(hass, EVENT_FAULT)
 
     hass.states.async_set(entity_id, "21.5")
     _freeze(coord, device.id)
@@ -130,8 +129,7 @@ async def test_the_area_reads_the_registry_when_there_is_one(
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     coord._grace_until = 0.0
-    seen: list[dict] = []
-    hass.bus.async_listen(EVENT_FAULT, lambda e: seen.append(e.data))
+    seen: list[dict] = record_events(hass, EVENT_FAULT)
 
     hass.states.async_set(entity_id, "21.5")
     _freeze(coord, device.id)
@@ -149,8 +147,7 @@ async def test_a_masked_cascade_fires_nothing(hass: HomeAssistant):
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     coord._grace_until = 0.0
-    seen: list[dict] = []
-    hass.bus.async_listen(EVENT_FAULT, lambda e: seen.append(e.data))
+    seen: list[dict] = record_events(hass, EVENT_FAULT)
 
     problems = coord._current_problems()
     upstream = [key for key in problems if key.startswith("upstream:")]

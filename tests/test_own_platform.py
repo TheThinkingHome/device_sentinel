@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_own_platform.py, Version: 0.20.19 (2026-09-12)
+# File: tests/test_own_platform.py, Version: 0.21.11 (2026-09-16)
 
 """A reading is preferred from the device's own integration (#404)."""
 
@@ -41,6 +41,10 @@ async def _house(hass, extras):
                 domain, platform, object_id,
                 device_id=device.id, config_entry=entry,
                 original_device_class=device_class,
+                # From 2026.5 an unnamed entity is named after its
+                # device, so the ids below would depend on creation
+                # order. The suggested id reads the same everywhere.
+                suggested_object_id=f"{platform}_{object_id}",
             )
         )
     return device, made

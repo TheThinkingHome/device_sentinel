@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_classification.py, Version: 0.20.17 (2026-09-11)
+# File: test_classification.py, Version: 0.21.11 (2026-09-16)
 
 """How devices are counted and attributed to integrations.
 
@@ -19,6 +19,7 @@ file holds that classification behaviour, the combined table, and the
 coverage sensors.
 """
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -32,11 +33,18 @@ from custom_components.device_sentinel.const import (
     DATA_DEVICES,
 )
 
-from tests.helpers import setup_coordinator, setup_entry
+from tests.helpers import (
+    MULTI_OWNER_GONE,
+    MULTI_OWNER_POSSIBLE,
+    devices_of_entry,
+    setup_coordinator,
+    setup_entry,
+)
 
 DOMAIN = "device_sentinel"
 
 
+@pytest.mark.skipif(not MULTI_OWNER_POSSIBLE, reason=MULTI_OWNER_GONE)
 async def test_attribution_uses_primary_config_entry(hass: HomeAssistant):
     """A multi-homed device attributes to its primary entry's domain."""
     owner = MockConfigEntry(domain="camera_brand")
@@ -181,7 +189,13 @@ async def test_classification_sets_service_devices_aside(
     assert svc.id not in coord.data[DATA_DEVICES]
     assert coord.set_aside_count >= 1
     # The integration's own device is service-type: it sets itself aside.
-    own = dr.async_get(hass).async_get_device({(DOMAIN, entry.entry_id)})
+    own = next(
+        (
+            device for device in devices_of_entry(hass, entry.entry_id)
+            if (DOMAIN, entry.entry_id) in device.identifiers
+        ),
+        None,
+    )
     assert own is not None
     assert own.id not in coord.data[DATA_DEVICES]
 

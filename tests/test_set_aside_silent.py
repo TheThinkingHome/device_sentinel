@@ -41,16 +41,15 @@ from custom_components.device_sentinel.const import (
 from homeassistant.helpers import device_registry as dr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from tests.helpers import register_device, setup_coordinator
+from tests.conftest import fleet_path
+from tests.helpers import record_events, register_device, setup_coordinator
 
 # The fleet files live outside the repository. When they are absent
 # the fleet-scale runs are skipped and the behavioural tests below
 # still run, so the suite is honest about what it checked rather
 # than silently proving less.
-JAMES = Path("/home/claude/fleets/james/2026-08-29/device_sentinel.storage")
-TIM = Path(
-    "/home/claude/fleets/tim/2026-08-29/device_sentinel_storage.json"
-)
+JAMES = fleet_path("james", "2026-08-29", "device_sentinel.storage")
+TIM = fleet_path("tim", "2026-08-29", "device_sentinel_storage.json")
 
 # What each fleet actually did. James's coordinator has no entities
 # and is watched for the length of the startup grace at every
@@ -79,8 +78,7 @@ async def _run_restart_cycle(
     them changed in the house.
     """
     records = _fleet_records(path)
-    heard: list[dict] = []
-    hass.bus.async_listen(EVENT_RECOVERED, lambda e: heard.append(e.data))
+    heard: list[dict] = record_events(hass, EVENT_RECOVERED)
 
     # The leavers as they really are on both fleets: a registry
     # device with no entity of any kind, owned by an integration that
@@ -180,8 +178,7 @@ async def test_simulate_tim_fleet_restart(hass: HomeAssistant) -> None:
 async def test_a_real_recovery_still_announces(hass: HomeAssistant) -> None:
     """The other half, and the one that must not be broken by any
     fix: a device whose problem genuinely ends still says so."""
-    heard: list[dict] = []
-    hass.bus.async_listen(EVENT_RECOVERED, lambda e: heard.append(e.data))
+    heard: list[dict] = record_events(hass, EVENT_RECOVERED)
     device, _eids = register_device(hass, "real_recovery")
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
@@ -251,8 +248,7 @@ async def test_a_problem_clearing_while_watched_still_announces(
 ):
     """The fix keys on the watched set, so a device that is watched
     throughout must be unaffected however its problem ends."""
-    heard: list[dict] = []
-    hass.bus.async_listen(EVENT_RECOVERED, lambda e: heard.append(e.data))
+    heard: list[dict] = record_events(hass, EVENT_RECOVERED)
     device, _eids = register_device(hass, "still_watched")
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
@@ -394,10 +390,8 @@ async def test_a_set_aside_fires_a_withdrawal_not_a_recovery(
     withdrawal instead. Exactly one, carrying the kinds and why."""
     from custom_components.device_sentinel.const import EVENT_WITHDRAWN
 
-    withdrawn: list[dict] = []
-    recovered: list[dict] = []
-    hass.bus.async_listen(EVENT_WITHDRAWN, lambda e: withdrawn.append(e.data))
-    hass.bus.async_listen(EVENT_RECOVERED, lambda e: recovered.append(e.data))
+    withdrawn: list[dict] = record_events(hass, EVENT_WITHDRAWN)
+    recovered: list[dict] = record_events(hass, EVENT_RECOVERED)
     device, _ = register_device(hass, "withdraw_dev")
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0

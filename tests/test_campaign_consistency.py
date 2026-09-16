@@ -30,7 +30,7 @@ import re
 from pathlib import Path
 
 import pytest
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
@@ -75,7 +75,7 @@ from custom_components.device_sentinel.const import (
 )
 
 from tests.conftest import FLEET_ABSENT, fleet_path
-from tests.helpers import register_device, setup_coordinator
+from tests.helpers import devices_of_entry, register_device, setup_coordinator
 
 JAMES = fleet_path("james", "2026-08-29", "device_sentinel.storage")
 TIM = fleet_path("tim", "2026-08-29", "device_sentinel_storage.json")
@@ -188,6 +188,10 @@ async def _round(hass: HomeAssistant, path: Path, seed: int) -> dict:
 
     recoveries: list[dict] = []
 
+    # A callback, so it runs as the event fires and "_watched_at_fire"
+    # reads the watch set at that moment rather than whenever a job
+    # scheduled off the loop gets round to it.
+    @callback
     def _catch(event):
         data = dict(event.data)
         data["_watched_at_fire"] = data.get("device_id") in coord._watched
@@ -325,7 +329,7 @@ async def _render_fleet(hass, path):
     # record is keyed onto the device planted under the fleet's own id.
     live_for = {
         ident: device.id
-        for device in registry.devices.values()
+        for device in devices_of_entry(hass, source.entry_id)
         for domain, ident in device.identifiers
         if domain == "test"
     }
