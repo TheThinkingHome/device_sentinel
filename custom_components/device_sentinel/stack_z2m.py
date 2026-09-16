@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.21.3 (2026-09-14)
+# File: stack_z2m.py, Version: 0.21.9 (2026-09-15)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -41,6 +41,7 @@ import json
 from typing import Any
 
 from homeassistant.components import mqtt
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
@@ -365,6 +366,26 @@ class Z2MBridgeReader:
         swallowed: the reader simply stays at unknown, and every
         consumer treats unknown as "cannot tell", which is safe.
         """
+        # Ask before waiting (ruling #437). async_wait_for_mqtt_client
+        # answers an absent MQTT integration by waiting its full
+        # timeout, fifty seconds, before giving up, and this reader
+        # called it unconditionally. So any house with a Zigbee2MQTT
+        # bridge device in its registry blocked Device Sentinel's setup
+        # for fifty seconds whenever MQTT was not yet loaded, and the
+        # test suite paid the same fifty seconds on every bridge case
+        # without anyone noticing, because the runs passed. The broker
+        # transport has guarded against exactly this since it was
+        # written; this is the same guard. Found through a third
+        # fleet's diagnostics on 15 September.
+        if not any(
+            entry.state is ConfigEntryState.LOADED
+            for entry in self._hass.config_entries.async_entries("mqtt")
+        ):
+            LOGGER.debug(
+                "Device Sentinel: no MQTT integration loaded, so the "
+                "Z2M bridge state will read unknown"
+            )
+            return False
         try:
             await mqtt.async_wait_for_mqtt_client(self._hass)
         except Exception as err:  # noqa: BLE001 - any failure means no MQTT
