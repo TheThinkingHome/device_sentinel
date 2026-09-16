@@ -9,16 +9,15 @@
 
 A guard that has never been seen to fail proves nothing. These check
 both halves: the matching, against the exact text Home Assistant
-writes, and the collection, against a warning the real registry emits
-when this integration's own code reads it.
+writes, and the collection, against a warning Home Assistant's own
+reporter emits for this integration. And the one use that raised a
+warning, issue #10, raises none.
 """
 
 from __future__ import annotations
 
-import pytest
-from awesomeversion import AwesomeVersion
-from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import frame
 
 from tests.conftest import (
     DEPRECATION_PREFIX,
@@ -26,7 +25,7 @@ from tests.conftest import (
     FrameLog,
     deprecation_findings,
 )
-from tests.helpers import register_device, setup_coordinator
+from tests.helpers import DOMAIN, register_device, setup_coordinator
 
 # The text Home Assistant 2026.9.2 logged for issue #10, as captured on
 # 16 September.
@@ -39,29 +38,36 @@ ISSUE_10 = (
     "line 1677: for device in dev_reg.devices.values(). This will stop "
     "working in Home Assistant 2027.9.0"
 )
+ISSUE_10_FRAGMENTS = (
+    "uses `device_registry.devices` as a mapping",
+    "custom_components/device_sentinel/coordinator.py",
+    "for device in dev_reg.devices.values()",
+)
 
-VIEW_ARRIVED = AwesomeVersion(HA_VERSION) >= AwesomeVersion("2026.9.0")
+
+def test_a_deprecation_is_a_finding():
+    assert deprecation_findings([ISSUE_10]) == [ISSUE_10]
 
 
-def test_a_new_deprecation_is_a_finding():
-    new = ISSUE_10.replace(
+def test_a_listed_exception_is_not():
+    assert deprecation_findings(
+        [ISSUE_10], known=(ISSUE_10_FRAGMENTS,)
+    ) == []
+
+
+def test_an_exception_does_not_cover_the_same_api_elsewhere():
+    elsewhere = ISSUE_10.replace(
         "coordinator.py", "router_ties.py"
     ).replace("dev_reg.devices.values()", "registry.devices.values()")
-    assert deprecation_findings([new]) == [new]
-
-
-def test_the_known_deprecation_is_not():
-    assert deprecation_findings([ISSUE_10]) == []
-
-
-def test_without_the_exception_it_would_be():
-    assert deprecation_findings([ISSUE_10], known=()) == [ISSUE_10]
+    assert deprecation_findings(
+        [elsewhere], known=(ISSUE_10_FRAGMENTS,)
+    ) == [elsewhere]
 
 
 def test_another_integrations_warning_is_not_ours():
     other = ISSUE_10.replace("'device_sentinel'", "'someone_else'")
     assert not other.startswith(DEPRECATION_PREFIX)
-    assert deprecation_findings([other], known=()) == []
+    assert deprecation_findings([other]) == []
 
 
 def test_the_exception_list_stays_short():
@@ -69,25 +75,47 @@ def test_the_exception_list_stays_short():
     assert len(KNOWN_DEPRECATIONS) <= 1
 
 
-@pytest.mark.skipif(
-    not VIEW_ARRIVED,
-    reason="the device registry view that warns arrives in 2026.9",
-)
-async def test_the_guard_hears_the_real_registry(
+async def test_the_guard_hears_home_assistant(
     hass: HomeAssistant, no_new_deprecations: FrameLog
 ):
-    """The guard's own collector receives what the registry emits.
+    """The guard's collector receives what Home Assistant writes.
 
-    Home Assistant reports a call site once per run, and setting the
-    integration up walks the registry, so the collector the guard
-    opened for this test is the one that must have heard it.
+    Reported through Home Assistant's own function, naming this
+    integration, so the text is the real one on whichever harness runs
+    this rather than a copy that could drift from it. The guard would
+    then fail this test at teardown, which is the point; once the
+    finding is confirmed, the one message this test caused is taken
+    back so the test can pass.
     """
-    register_device(hass, "guard0", "Guard Device")
     await setup_coordinator(hass)
+    frame.report_usage(
+        "is exercising the deprecation guard",
+        integration_domain=DOMAIN,
+    )
     ours = [
         message for message in no_new_deprecations.messages
         if message.startswith(DEPRECATION_PREFIX)
     ]
-    assert ours, "the registry walk logged nothing"
-    assert deprecation_findings(ours) == []
-    assert deprecation_findings(ours, known=()) == ours
+    assert len(ours) == 1, no_new_deprecations.messages
+    assert "is exercising the deprecation guard" in ours[0]
+    assert deprecation_findings(ours) == ours
+    no_new_deprecations.messages.remove(ours[0])
+
+
+async def test_the_registry_walk_raises_no_deprecation(
+    hass: HomeAssistant, no_new_deprecations: FrameLog
+):
+    """Issue #10: setting up and walking the registry says nothing.
+
+    On 2026.9.2 this walk logged the warning once per run before the
+    fix. On 2026.5.0 there was nothing to log, so there this holds
+    trivially and the 2026.9.2 run is the proof.
+    """
+    register_device(hass, "guard0", "Guard Device")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    ours = [
+        message for message in no_new_deprecations.messages
+        if message.startswith(DEPRECATION_PREFIX)
+    ]
+    assert ours == []

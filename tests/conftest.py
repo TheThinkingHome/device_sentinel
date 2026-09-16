@@ -92,15 +92,10 @@ DEPRECATION_PREFIX = "Detected that custom integration 'device_sentinel'"
 
 # Deprecations already known and scheduled, each matched by every
 # fragment it lists so a second use of the same API elsewhere is still
-# caught. Remove an entry in the release that fixes it.
-KNOWN_DEPRECATIONS: tuple[tuple[str, ...], ...] = (
-    # Issue #10: the device registry read as a mapping.
-    (
-        "uses `device_registry.devices` as a mapping",
-        "custom_components/device_sentinel/coordinator.py",
-        "for device in dev_reg.devices.values()",
-    ),
-)
+# caught. Remove an entry in the release that fixes it. Empty since the
+# release that fixed issue #10, the one entry this list has held
+# (ruling #439).
+KNOWN_DEPRECATIONS: tuple[tuple[str, ...], ...] = ()
 
 
 def deprecation_findings(

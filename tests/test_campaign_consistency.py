@@ -68,6 +68,7 @@ from custom_components.device_sentinel.const import (
     DEV_BATTERY_SINCE,
     DEV_BATTERY_LOW,
     DEV_BATTERY_DAILY,
+    REPORT_DIR,
     REPORT_WWW_DIR,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
@@ -295,6 +296,11 @@ def _fleet_names(path):
     The record holds statistics and no name. The name lives in the
     registry, and the diagnostics dump beside the fleet file is the
     only copy of that registry available here.
+
+    A device the registry holds with no name keeps no name here. The
+    second fleet has six, and this used to hand each its id as a name,
+    which no ladder can see past: a name the registry holds is a name
+    (ruling #402).
     """
     found = sorted(path.parent.glob("config_entry*.json"))
     if not found:
@@ -303,7 +309,7 @@ def _fleet_names(path):
         dump = json.load(handle)
     devices = (dump.get("data") or {}).get("devices") or {}
     return {
-        device_id: (record or {}).get("name") or device_id
+        device_id: (record or {}).get("name") or ""
         for device_id, record in devices.items()
     }
 
@@ -316,7 +322,10 @@ async def _render_fleet(hass, path):
     records = data.get("devices") or {}
     names = _fleet_names(path)
 
-    source = MockConfigEntry(domain="test", title="Fleet")
+    # No title: Home Assistant names a new device after its entry when
+    # it is given an empty name, which would name every nameless
+    # device here "Fleet" rather than leave it nameless.
+    source = MockConfigEntry(domain="test", title="")
     source.add_to_hass(hass)
     registry = dr.async_get(hass)
     entities = er.async_get(hass)
@@ -324,7 +333,7 @@ async def _render_fleet(hass, path):
         device = registry.async_get_or_create(
             config_entry_id=source.entry_id,
             identifiers={("test", device_id)},
-            name=names.get(device_id) or device_id,
+            name=names.get(device_id, ""),
         )
         entities.async_get_or_create(
             "sensor", "test", device_id,
@@ -353,14 +362,17 @@ async def _render_fleet(hass, path):
     coord._rebuild_registry_view()
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
-    directory = hass.config.path(REPORT_WWW_DIR)
+    # What a person reads is under www; the maintainer files sit in the
+    # reports folder, and a person reads those too.
     pages = {}
-    for name in os.listdir(directory):
-        if name.endswith((".html", ".md")):
-            with open(
-                os.path.join(directory, name), encoding="utf-8"
-            ) as handle:
-                pages[name] = handle.read()
+    for directory in (
+        hass.config.path(REPORT_WWW_DIR), hass.config.path(REPORT_DIR)
+    ):
+        for name in os.listdir(directory):
+            path = os.path.join(directory, name)
+            if os.path.isfile(path) and name.endswith((".html", ".md")):
+                with open(path, encoding="utf-8") as handle:
+                    pages[name] = handle.read()
     return carried, pages
 
 
@@ -415,6 +427,12 @@ def _check_pages(pages):
     for name, page in pages.items():
         body = re.sub(r"<svg.*?</svg>", "", page, flags=re.S)
         assert not re.findall(r">\s*[0-9a-f]{32}\s*<", body), name
+    # The Markdown files carry no tags to bracket an id, so there an id
+    # is any free-standing run of 32 hex digits.
+    for name, page in pages.items():
+        if name.endswith(".md"):
+            found = re.findall(r"(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])", page)
+            assert not found, (name, found[:3])
 
 
 @pytest.mark.skipif(not JAMES_LIVE.exists(), reason=FLEET_ABSENT)
