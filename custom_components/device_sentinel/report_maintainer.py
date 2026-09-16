@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.20.11 (2026-09-08)
+# File: report_maintainer.py, Version: 0.21.9 (2026-09-15)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -396,7 +396,13 @@ class MaintainerReportMixin:
             f"CLOCK | EVENTS | SIGNAL | "
             f"FLOOR/WK | MEAN\u00b1SD | "
             f"BAT LEVEL (floor {self.low_threshold:g}%) |",
-            "|---|---|---|---|---|---|---|---|---|---|",
+            # Nine cells, matching the header and every data row. The
+            # Dwell column left all three when the dwell chart went,
+            # except this line, which kept its tenth cell and made
+            # every renderer print the table as plain text. Reported
+            # against 0.19.14 on 15 September; the fault reached
+            # 0.21.9 unnoticed because nothing counted the pipes.
+            "|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
         for device_id, record in self.watched_records():
