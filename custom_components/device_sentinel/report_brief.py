@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.20.18 (2026-09-12)
+# File: report_brief.py, Version: 0.21.10 (2026-09-16)
 
 """The daily brief: the one report written for a person.
 
@@ -239,9 +239,19 @@ class BriefMixin:
         kind = row[INC_KIND]
         event = row[INC_EVENT]
         if event == INCIDENT_RESOLVED:
-            span = self._human_span(row.get(INC_DURATION))
+            # No duration means the opening is gone and nothing could
+            # measure the gap, which the retention rule makes rare and
+            # a storage repair can still cause (ruling #438). Say what
+            # is known rather than printing the question mark that
+            # `_human_span` gives a table column where every other row
+            # carries a number.
+            seconds = row.get(INC_DURATION)
             cause = row.get(INC_CAUSE)
-            base = f"recovered after {span}"
+            base = (
+                f"recovered after {self._human_span(seconds)}"
+                if seconds is not None
+                else "recovered"
+            )
             return f"{base}, {cause}" if cause else base
         if event == INCIDENT_ACTION:
             return {

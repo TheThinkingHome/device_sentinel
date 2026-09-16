@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.20.11 (2026-09-08)
+# File: journal.py, Version: 0.21.10 (2026-09-16)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -67,6 +67,8 @@ from .const import (
     INC_KIND,
     INC_NAME,
     INC_WHEN,
+    TODO_KINDS,
+    DATA_TODO_ITEMS,
     INCIDENT_KEEP_DAYS,
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
@@ -481,12 +483,51 @@ class JournalMixin:
         cutoff = (
             dt_util.utcnow().timestamp() - INCIDENT_KEEP_DAYS * 86400.0
         )
+        # An opening whose problem is still on the to-do list is not
+        # history, it is current state that happens to be old, and
+        # trimming it leaves its eventual resolve with nothing to
+        # measure against (ruling #438). On 26 August a vibration
+        # sensor went unavailable and came back twenty days later;
+        # the brief said "recovered after ?" because the opening had
+        # aged out on 9 September while the fault was live and listed.
+        #
+        # The trim runs only when a row is written, so the row that
+        # deleted it belonged to some other device: a busy house
+        # trims a quiet device's opening as collateral.
+        #
+        # Released by a permanent removal, not a reversible one. A
+        # recovery, a deletion, or a device set aside or excluded
+        # takes the problem off the list for good and the opening
+        # ages normally from then. An acknowledgment can be undone
+        # and a mute can be lifted, and either would leave a resolve
+        # with no opening behind it.
+        listed = self._listed_openings()
         # Walked without guards (ruling #370): the gate and the seam
         # vouch for every row this pruner dates.
         self.data[DATA_INCIDENTS] = [
-            row for row in incidents if row[INC_WHEN] >= cutoff
+            row
+            for row in incidents
+            if row[INC_WHEN] >= cutoff
+            or (row[INC_DEVICE_ID], row[INC_KIND]) in listed
         ]
         self._mark_cold_dirty()
+
+    def _listed_openings(self) -> set[tuple[str, str]]:
+        """Return (device_id, kind) for every problem on the list.
+
+        Read from the stored rows rather than from `todo_items`,
+        because the trim runs inside a write and must not depend on
+        the display filter. A kind still named here is a problem a
+        person can still see, so its opening is protected (#438).
+        """
+        listed: set[tuple[str, str]] = set()
+        for item in self.data.get(DATA_TODO_ITEMS) or []:
+            device_id = item.get(TODO_DEVICE_ID)
+            if not device_id:
+                continue
+            for kind in item.get(TODO_KINDS) or {}:
+                listed.add((device_id, kind))
+        return listed
 
     def _reopens_a_closing_episode(
         self, incidents: list[dict[str, Any]], entry: dict[str, Any]
@@ -649,7 +690,12 @@ class JournalMixin:
         return None
 
     def _resolve_incident(
-        self, device_id: str, name: str, kind: str, now: float
+        self,
+        device_id: str,
+        name: str,
+        kind: str,
+        now: float,
+        opened_at: float | None = None,
     ) -> None:
         """Close one problem on the incident timeline.
 
@@ -658,7 +704,14 @@ class JournalMixin:
         with no opening behind it (a problem that predates the log)
         is still recorded, simply without a duration.
         """
+        # The log first, then whatever the caller already worked out
+        # from the to-do row. #367 designed that fallback and it was
+        # written into the caller and never handed over, so a resolve
+        # whose opening had been trimmed carried no duration at all
+        # even where the start time was sitting in a local variable.
         opened = self._incident_opened_at(device_id, kind)
+        if opened is None:
+            opened = opened_at
         duration = (now - opened) if opened is not None else None
         cause = (
             self._recovery_cause(device_id, opened or now)

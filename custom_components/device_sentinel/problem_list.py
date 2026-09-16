@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.21.8 (2026-09-15)
+# File: problem_list.py, Version: 0.21.10 (2026-09-16)
 
 """The problem list: the single memory every channel renders.
 
@@ -1012,7 +1012,9 @@ class ProblemListMixin:
                 # through; the recovery still fires, with no duration
                 # rather than with a crash (ruling #369).
                 opened = None
-            self._resolve_incident(device_id, name, kind, now)
+            self._resolve_incident(
+                device_id, name, kind, now, opened_at=opened
+            )
             self._collect_event(
                 kind, name, recovery=True, device_id=device_id
             )
@@ -1079,8 +1081,17 @@ class ProblemListMixin:
             [k for k in stored_kinds if k not in new_kinds]
         ):
             top = sort_kinds(standing)[0] if standing else None
+            # The same fallback the site above uses: the stored start
+            # time for this kind, where the log no longer has the
+            # opening (#367, #438).
             opened = standing.pop(kind, None)
-            self._resolve_incident(device_id, problem["name"], kind, now)
+            if isinstance(opened, bool) or not isinstance(
+                opened, (int, float)
+            ):
+                opened = None
+            self._resolve_incident(
+                device_id, problem["name"], kind, now, opened_at=opened
+            )
             self._collect_event(
                 kind, problem["name"], recovery=True,
                 device_id=device_id,
