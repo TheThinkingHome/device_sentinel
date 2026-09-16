@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.21.8 (2026-09-15)
+# File: coordinator.py, Version: 0.21.11 (2026-09-16)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -1645,6 +1645,31 @@ class DeviceSentinelCoordinator(
                 return entry.domain
         return "unknown"
 
+    def _registry_devices(
+        self, dev_reg: dr.DeviceRegistry
+    ) -> list[dr.DeviceEntry]:
+        """Return every registry device once, walked by config entry.
+
+        Home Assistant 2026.9 deprecated reading `devices` as a mapping
+        (issue #10, ruling #439), and iterating it yields device entries only from
+        2026.9; on 2026.5 to 2026.8 it yields ids. The lookup by config
+        entry reads the same on every supported release and never
+        warns. Below 2026.8 a device can belong to several entries, so
+        a device already reached is skipped. A device whose config
+        entry no longer exists is not reached; Home Assistant removes
+        such a device at startup, and none was found on either
+        reference fleet.
+        """
+        seen: set[str] = set()
+        devices: list[dr.DeviceEntry] = []
+        for entry in self.hass.config_entries.async_entries():
+            for device in dr.async_entries_for_config_entry(
+                dev_reg, entry.entry_id
+            ):
+                if device.id not in seen:
+                    seen.add(device.id)
+                    devices.append(device)
+        return devices
 
     def _rebuild_registry_view(self, audit: bool = False) -> None:
         """Classify devices and rebuild the entity-to-device map."""
@@ -1674,7 +1699,7 @@ class DeviceSentinelCoordinator(
         stacks: set[str] = set()
         stack_keys: dict[str, tuple[str, str]] = {}
         entry_of: dict[str, str] = {}
-        for device in dev_reg.devices.values():
+        for device in self._registry_devices(dev_reg):
             domain = self._primary_domain(device)
             entry_id = self._primary_entry(device)
             if entry_id is not None:

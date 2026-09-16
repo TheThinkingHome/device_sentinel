@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.21.9 (2026-09-15)
+# File: report_maintainer.py, Version: 0.21.11 (2026-09-16)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import os
 
-from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -333,7 +332,6 @@ class MaintainerReportMixin:
         numbers. The trim shown here is display-only during the soak;
         the detection engine adopts the same rule at Step 4.
         """
-        dev_reg = dr.async_get(self.hass)
         sample_note = (
             f"k={TRIM_TOP_K} once a device has {TRIM_MIN_SAMPLES} "
             f"daily maxima; below that nothing is trimmed and the "
@@ -406,12 +404,9 @@ class MaintainerReportMixin:
         ]
         rows = []
         for device_id, record in self.watched_records():
-            device = dev_reg.async_get(device_id)
-            device_name = (
-                (device.name_by_user or device.name or device_id)
-                if device
-                else device_id
-            )
+            # Named by the ladder every surface asks (ruling #402); the
+            # registry name alone left a nameless device as its id.
+            device_name = self._device_name(device_id)
             integration = self._watched.get(device_id, "?")
             device_label = f"{self._report_cell(device_name)} ({integration})"
             daily_maximum_gaps = record.get(DEV_DAILY_MAX) or []
@@ -495,28 +490,18 @@ class MaintainerReportMixin:
         telemetry STATUS column, because a section-muted device is
         still judged for everything else and is not muted wholesale.
         """
-        dev_reg = dr.async_get(self.hass)
 
         name_copy_counts: dict[str, int] = {}
         for device_id, integration_domain in self._watched.items():
-            device = dev_reg.async_get(device_id)
-            name = (
-                (device.name_by_user or device.name or device_id)
-                if device
-                else device_id
-            )
+            name = self._device_name(device_id)
             name_copy_counts[name] = name_copy_counts.get(name, 0) + 1
 
         # Build one row per device, watched and set-aside together, so
         # the table reads as a single audit.
         rows: list[tuple[str, str, str, str, str, str]] = []
         for device_id, integration_domain in self._watched.items():
-            device = dev_reg.async_get(device_id)
-            name = (
-                (device.name_by_user or device.name or device_id)
-                if device
-                else device_id
-            )
+            # The same ladder as the copy count above (ruling #402).
+            name = self._device_name(device_id)
             reason = self._muted_devices.get(device_id)
             muted_cell = f"Global ({reason})" if reason else ""
             copies = name_copy_counts.get(name, 1)

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.20.11 (2026-09-08)
+# File: config_flow.py, Version: 0.21.11 (2026-09-16)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -63,6 +63,7 @@ from homeassistant.data_entry_flow import section
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import selector
 
+from .naming import display_name
 from .wifi import scan_networks, wireless_interfaces
 
 from .const import (
@@ -200,6 +201,7 @@ def _device_options(
     covered: set[str],
     label_for: Callable[[dict[str, Any]], str],
     dev_reg: dr.DeviceRegistry,
+    name_for: Callable[[str], str] | None = None,
 ) -> list[selector.SelectOptionDict]:
     """Return a picker's options, including any pick the rows lack.
 
@@ -227,6 +229,10 @@ def _device_options(
     does not fall to the end of the list, and it is done here rather
     than left to the selector alone, so the order holds whatever a
     future frontend does with the flag.
+
+    A held pick is named by `name_for`, the coordinator's resolver, so
+    a nameless device reads as the ladder names it everywhere else
+    (ruling #402). Without one, the ladder is asked without a domain.
     """
     options = [
         selector.SelectOptionDict(
@@ -242,7 +248,11 @@ def _device_options(
         device = dev_reg.async_get(device_id)
         if device is None:
             continue
-        name = device.name_by_user or device.name or device_id
+        name = (
+            name_for(device_id)
+            if name_for is not None
+            else display_name(device, None, device_id)
+        )
         options.append(
             selector.SelectOptionDict(
                 value=device_id, label=f"{name} (not currently listed)"
@@ -616,6 +626,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             covered,
             lambda row: f"{row['name']} ({row['entity_id']})",
             dev_reg,
+            self.config_entry.runtime_data._device_name,
         )
         integration_options = sorted(
             {
@@ -810,6 +821,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             covered,
             lambda row: f"{row['name']} ({row['integration']})",
             dev_reg,
+            self.config_entry.runtime_data._device_name,
         )
         integration_options = sorted(
             {
@@ -1040,6 +1052,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             covered,
             lambda row: f"{row['name']} ({row['integration']})",
             dev_reg,
+            self.config_entry.runtime_data._device_name,
         )
         integration_options = sorted(
             {
@@ -1277,6 +1290,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             covered_devices,
             lambda row: f"{row['name']} ({row['integration']})",
             dev_reg,
+            self.config_entry.runtime_data._device_name,
         )
         return self.async_show_form(
             step_id="exclusions",
