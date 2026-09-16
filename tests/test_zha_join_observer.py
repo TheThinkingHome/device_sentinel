@@ -1,3 +1,10 @@
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: tests/test_zha_join_observer.py, Version: 0.21.11 (2026-09-16)
+
 # Tests for 0.19.2, the ZHA join observer (ruling #360).
 #
 # It is an instrument, so what the tests hold is mostly what it must

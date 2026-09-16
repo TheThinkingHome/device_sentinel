@@ -1,3 +1,10 @@
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: tests/test_campaign_writer_checker.py, Version: 0.21.11 (2026-09-16)
+
 """Pre-stable campaign: the writer and the checker agree, always.
 
 Tim's false repair card came from a row the journal writes by design

@@ -48,6 +48,40 @@ def clean_report_directory():
     shutil.rmtree(WWW_DIRECTORY, ignore_errors=True)
 
 
+# ------------------------------------------ entries only mocked loaded
+
+@pytest.fixture(autouse=True)
+def unmark_mocked_entries(request):
+    """Leave no entry marked loaded for an integration never set up.
+
+    A fleet case marks a real domain's entry, mqtt among them, as
+    loaded so the house looks up before anything falls. The harness
+    unloads every loaded entry after the test, and for an integration
+    that was never set up Home Assistant 2026.5 and later log an error
+    for each one: seventeen per run on 16 September. Marking those
+    entries not loaded first leaves the harness nothing to unload. An
+    integration that really loaded, this one included, is untouched,
+    so its own unload is still exercised.
+    """
+    if "hass" not in request.fixturenames:
+        yield
+        return
+    hass = request.getfixturevalue("hass")
+    yield
+    from homeassistant.config_entries import ConfigEntryState
+    from pytest_homeassistant_custom_component.common import (
+        MockConfigEntry,
+    )
+
+    for entry in hass.config_entries.async_entries():
+        if (
+            isinstance(entry, MockConfigEntry)
+            and entry.state is ConfigEntryState.LOADED
+            and entry.domain not in hass.config.components
+        ):
+            entry.mock_state(hass, ConfigEntryState.NOT_LOADED)
+
+
 # --------------------------------------------- the deprecation guard
 
 # Home Assistant logs this when a custom integration uses something it

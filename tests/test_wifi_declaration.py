@@ -1,5 +1,10 @@
-# File: tests/test_wifi_declaration.py, Version: 0.21.1 (2026-09-13)
-# 
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: tests/test_wifi_declaration.py, Version: 0.21.11 (2026-09-16)
+
 """Who is tied, and what declares an outage. Rulings #419 to #421.
 
 Written before the change, and every case here fails against 0.20.20.
