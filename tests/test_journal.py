@@ -17,6 +17,8 @@ pooled, so each file reads on its own.
 
 
 
+from datetime import timedelta
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -57,6 +59,8 @@ from custom_components.device_sentinel.const import (
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
     INC_CAUSE,
+    INC_WHEN,
+    INC_DEVICE_ID,
     INC_DURATION,
     INC_EVENT,
     INC_KIND,
@@ -601,3 +605,116 @@ async def test_diagnostics_carry_the_support_fields(
     assert battery_rows and battery_rows[0]["entity_id"] == entity_id
     assert battery_rows[0]["disabled_by"] is None
     assert battery_rows[0]["state"] == "77"
+
+
+# --------------------------------- the opening and its resolve, 0.21.10
+
+
+async def test_an_opening_survives_while_its_problem_is_listed(
+    hass: HomeAssistant, freezer
+):
+    """Ruling #438. Found on hardware, 15 September.
+
+    A vibration sensor went unavailable on 26 August and came back
+    twenty days later. The brief said "recovered after ?" because the
+    incident log trims every row older than fourteen days, and it
+    trims by each row's own timestamp rather than by the life of the
+    problem: the opening aged out on 9 September while the fault was
+    still live and still on the to-do list.
+
+    An opening whose problem is still listed is not history, it is
+    current state that happens to be old. It ages normally once the
+    problem leaves the list for good.
+    """
+    device, entity_id, _ = _register(hass, "v1", "Vibration FJ40")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "1")
+    device_id = device.id
+    _freeze(coord, device_id)
+    coord._sync_problem_list()
+    opened = [
+        r for r in coord.data[DATA_INCIDENTS]
+        if r[INC_DEVICE_ID] == device_id and r[INC_EVENT] == INCIDENT_OPENED
+    ]
+    assert len(opened) == 1
+
+    # Twenty days pass with the problem still on the list, and some
+    # other device writes an incident. That write is what runs the
+    # trim, which is why the reference fleet lost this opening: a
+    # busy house trims a quiet device's row as collateral.
+    other, other_entity, _ = _register(hass, "v9", "Another Sensor")
+    freezer.tick(timedelta(days=20))
+    hass.states.async_set(other_entity, "1")
+    _freeze(coord, other.id)
+    coord._sync_problem_list()
+    opened = [
+        r for r in coord.data[DATA_INCIDENTS]
+        if r[INC_DEVICE_ID] == device_id and r[INC_EVENT] == INCIDENT_OPENED
+    ]
+    assert len(opened) == 1, (
+        "the opening was trimmed while its problem was still listed"
+    )
+
+
+async def test_the_resolve_carries_the_duration_it_was_given(
+    hass: HomeAssistant, freezer
+):
+    """The caller computes a fallback start time from the to-do row
+    and then does not hand it over, so the resolve recomputes from
+    the log and finds nothing. Ruling #367 exists because that
+    fallback was needed; it was written and never wired through.
+    """
+    device, entity_id, _ = _register(hass, "v2", "Vibration FJ40")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity_id, "1")
+    device_id = device.id
+    _freeze(coord, device_id)
+    coord._sync_problem_list()
+
+    # Another device's incident, twenty days on, trims this opening.
+    other, other_entity, _ = _register(hass, "v8", "Another Sensor")
+    freezer.tick(timedelta(days=20))
+    hass.states.async_set(other_entity, "1")
+    _freeze(coord, other.id)
+    coord._sync_problem_list()
+
+    _unfreeze(coord, device_id)
+    coord._sync_problem_list()
+
+    resolved = [
+        r for r in coord.data[DATA_INCIDENTS]
+        if r[INC_DEVICE_ID] == device_id
+        and r[INC_EVENT] == INCIDENT_RESOLVED
+    ]
+    assert len(resolved) == 1
+    assert resolved[0][INC_DURATION] is not None, (
+        "the caller computed a fallback start time and did not pass it"
+    )
+    assert resolved[0][INC_DURATION] > 19 * 86400
+
+
+async def test_a_recovery_with_no_duration_says_so_plainly(
+    hass: HomeAssistant,
+):
+    """Ruling #438's companion. Where nothing can measure the gap,
+    the brief said "recovered after ?", which is what the reference
+    rig printed on 15 September for a sensor down twenty days.
+    `_human_span` is right to answer a bare column with a question
+    mark; a sentence is not a column."""
+    coord = await setup_coordinator(hass)
+    row = {
+        INC_DEVICE_ID: "d1",
+        INC_NAME: "Vibration FJ40",
+        INC_KIND: "unavailable",
+        INC_EVENT: INCIDENT_RESOLVED,
+        INC_WHEN: dt_util.utcnow().timestamp(),
+        INC_CAUSE: None,
+        INC_DURATION: None,
+    }
+    assert coord._brief_phrase(row) == "recovered"
+
+    row[INC_DURATION] = 20.2 * 86400
+    assert coord._brief_phrase(row) == "recovered after 20.2d"
+
+    row[INC_CAUSE] = "reboot"
+    assert coord._brief_phrase(row) == "recovered after 20.2d, reboot"
