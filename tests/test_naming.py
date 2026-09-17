@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_naming.py, Version: 0.20.18 (2026-09-12)
+# File: tests/test_naming.py, Version: 0.21.12 (2026-09-17)
 
 """A device with no registry name is never shown as its id (ruling #402)."""
 
@@ -53,12 +53,12 @@ def test_make_model_and_mac_when_nameless():
 
 def test_integration_and_mac_when_no_make_or_model():
     dev = Dev(connections=_mac())
-    assert display_name(dev, "unifi", DEVICE_ID) == f"unifi {MAC}"
+    assert display_name(dev, "unifi", DEVICE_ID) == f"UniFi Network {MAC}"
 
 
 def test_integration_and_id_tail_as_the_last_resort():
     dev = Dev()
-    assert display_name(dev, "unifi", DEVICE_ID) == "unifi-ad5675f9"
+    assert display_name(dev, "unifi", DEVICE_ID) == "UniFi Network-ad5675f9"
 
 
 def test_no_registry_entry_at_all():
@@ -78,7 +78,7 @@ def test_blank_and_whitespace_names_are_not_names():
 
 def test_partial_make_or_model_falls_to_the_mac_rung():
     dev = Dev(manufacturer="Ubiquiti", connections=_mac())
-    assert display_name(dev, "unifi", DEVICE_ID) == f"unifi {MAC}"
+    assert display_name(dev, "unifi", DEVICE_ID) == f"UniFi Network {MAC}"
 
 
 def test_never_a_bare_hash():

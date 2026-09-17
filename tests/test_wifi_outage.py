@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_wifi_outage.py, Version: 0.21.12 (2026-09-17)
 
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim.
 
@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -555,15 +554,6 @@ async def test_the_sensor_arrives_when_the_capability_does(
     assert names.count("DeviceSentinelWifiSensor") == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "_notify walks the listener list while the Wi-Fi sensor's "
-        "one-shot adder removes itself from it, so the listener after "
-        "the adder misses that refresh. Found 16 September; this test "
-        "turns red the day the fix lands, so the marker comes off with it."
-    ),
-)
 async def test_the_adder_removing_itself_does_not_cost_the_next_listener(
     hass: HomeAssistant,
 ):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_nameless_surfaces.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_nameless_surfaces.py, Version: 0.21.12 (2026-09-17)
 
 """A nameless device is named by the ladder on every surface (#402).
 
@@ -165,3 +165,11 @@ def test_the_picker_still_names_a_pick_without_a_resolver():
     assert options == [
         {"value": "orphan", "label": "Motion Hall (not currently listed)"}
     ]
+
+
+def test_a_nameless_unifi_client_is_named_for_unifi():
+    """UniFi registers every client it has not been told about with no
+    name, so its label is what those clients read as."""
+    from custom_components.device_sentinel.naming import integration_label
+
+    assert integration_label("unifi") == "UniFi Network"

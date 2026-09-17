@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.19.14 (2026-09-03)
+# File: test_brief_wording.py, Version: 0.21.12 (2026-09-17)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -864,6 +864,7 @@ async def test_every_system_event_kind_has_a_sentence(
             "SYS_DETAIL",
             "SYS_DURATION",
             "SYS_DEVICES",
+            "SYS_WORST",
         )
     )
     assert len(kinds) >= 15, "the kind list did not build"

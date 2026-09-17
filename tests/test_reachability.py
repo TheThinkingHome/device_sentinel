@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_reachability.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_reachability.py, Version: 0.21.12 (2026-09-17)
 
 """Zigbee2MQTT reachability, replayed against a captured fleet.
 
@@ -34,6 +34,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel import stack_z2m
 from custom_components.device_sentinel.const import (
+    BRIDGE_HANDBACK_SECONDS,
     EVENT_UPSTREAM_DOWN,
     EVENT_UPSTREAM_RESTORED,
     INTEGRATION_DOWN_DWELL_SECONDS,
@@ -664,8 +665,11 @@ async def test_a_reload_is_not_an_outage(hass: HomeAssistant):
     assert down == []
 
 
-async def test_an_integration_coming_back_pairs(hass: HomeAssistant):
-    """The restored half, and the devices are theirs again."""
+async def test_an_integration_coming_back_pairs(
+    hass: HomeAssistant, freezer
+):
+    """The restored half, and the devices are theirs again once the
+    window a returning integration gives them has passed (#441)."""
     source, made = _plant(hass, 5, "controller_hub", "zw")
     coord = await setup_coordinator(hass)
     _past_grace(coord)
@@ -692,6 +696,8 @@ async def test_an_integration_coming_back_pairs(hass: HomeAssistant):
     assert back[0]["kind"] == "integration"
     assert back[0]["name"] == "controller_hub"
     assert back[0]["for_seconds"] > 500.0
+    assert coord.upstream_down_since(made[0].id) == ("controller_hub", now)
+    freezer.tick(BRIDGE_HANDBACK_SECONDS + 10)
     assert coord.upstream_down_since(made[0].id) is None
 
 
@@ -793,13 +799,13 @@ async def test_the_broker_still_outranks_an_integration(
 async def test_an_entry_never_seen_loaded_is_not_an_outage(
     hass: HomeAssistant,
 ):
-    """Nothing that was never up can have gone down.
+    """An entry nobody has started is not an outage.
 
     Found by the suite: the rung claimed every device whose entry had
     not been observed loaded, which suppressed a real freeze because
-    the integration behind it was read as down. An entry that has
-    never been seen loaded is either still starting or was broken
-    before the house came up, and neither is an outage this can date.
+    the integration behind it was read as down. Home Assistant has not
+    started this entry and says nothing about why, so its devices are
+    still their own story (ruling #445 keeps this case).
     """
     source, made = _plant(hass, 3, "controller_hub", "zw")
     coord = await setup_coordinator(hass)
@@ -808,7 +814,7 @@ async def test_an_entry_never_seen_loaded_is_not_an_outage(
     down = _heard(hass, EVENT_UPSTREAM_DOWN)
 
     now = dt_util.utcnow().timestamp()
-    source.mock_state(hass, ConfigEntryState.SETUP_ERROR)
+    source.mock_state(hass, ConfigEntryState.NOT_LOADED)
     coord._sample_integrations(now)
     coord._sample_integrations(now + INTEGRATION_DOWN_DWELL_SECONDS + 1)
     coord._sample_integrations(now + 3600.0)
@@ -819,3 +825,31 @@ async def test_an_entry_never_seen_loaded_is_not_an_outage(
     # a freeze behind such an entry reach the list.
     for device in made:
         assert coord.upstream_down_since(device.id) is None
+
+
+async def test_an_entry_that_failed_from_the_start_is_down_from_the_start(
+    hass: HomeAssistant,
+):
+    """Ruling #445. Until 0.21.12 an entry that failed before the house
+    came up was never judged, so each device behind it was reported
+    on its own. Once the startup grace is over it is one outage,
+    dated from when this run began."""
+    source, made = _plant(hass, 3, "controller_hub", "zw")
+    coord = await setup_coordinator(hass)
+    _past_grace(coord)
+    coord._rebuild_registry_view()
+    down = _heard(hass, EVENT_UPSTREAM_DOWN)
+
+    now = dt_util.utcnow().timestamp()
+    source.mock_state(hass, ConfigEntryState.SETUP_ERROR)
+    # A real run is past the dwell by the time its grace ends; the
+    # helper above ends the grace without moving the run's start.
+    coord._sample_integrations(now + INTEGRATION_DOWN_DWELL_SECONDS + 1)
+    await hass.async_block_till_done()
+
+    assert len(down) == 1
+    assert down[0]["name"] == "controller_hub"
+    for device in made:
+        assert coord.upstream_down_since(device.id) == (
+            "controller_hub", coord._started_at
+        )

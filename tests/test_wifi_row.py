@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_row.py, Version: 0.21.8 (2026-09-15)
+# File: tests/test_wifi_row.py, Version: 0.21.12 (2026-09-17)
 
 """The row a Wi-Fi outage writes. Rulings #411 to #414.
 
@@ -280,9 +280,9 @@ async def test_the_row_names_the_network(hass: HomeAssistant, freezer):
     summary, description = coord._upstream_item_text(
         WIFI_KEY, {UPSTREAM_KIND: first}, 7
     )
-    assert summary == "WiFi network unavailable: 7 of 14 devices down"
+    assert summary == "WiFi network unavailable: 7 of 14 total devices down"
     assert "'IKS_Rotarran-IoT' WiFi network became unavailable" in description
-    assert "7 of its 14 managed devices" in description
+    assert "7 of its 14 total devices" in description
 
 
 async def test_the_wording_without_a_network(hass: HomeAssistant, freezer):
@@ -323,7 +323,7 @@ async def test_the_wording_with_two_networks(hass: HomeAssistant, freezer):
         "unavailable" in description
     )
     # "its" has no referent with two named.
-    assert "of their 14 managed devices" in description
+    assert "of their 14 total devices" in description
     assert " of its " not in description
 
 
@@ -423,7 +423,7 @@ async def test_the_count_is_the_devices_the_outage_took(
     summary, _body = coord._upstream_item_text(
         WIFI_KEY, {UPSTREAM_KIND: first}, 10
     )
-    assert summary == "WiFi network unavailable: 10 of 12 devices down"
+    assert summary == "WiFi network unavailable: 10 of 12 total devices down"
 
 
 async def test_the_scan_route_builds_a_fallen_set_too(
@@ -499,9 +499,12 @@ async def test_the_row_says_recovering_once_the_network_is_back(
     summary, body = coord._upstream_item_text(
         WIFI_KEY, {UPSTREAM_KIND: first}, 11
     )
-    assert summary == "WiFi network recovering: 3 of 11 devices remain unavailable"
+    assert summary == (
+        "WiFi network recovering: 3 of the 11 devices that went down "
+        "remain unavailable"
+    )
     assert "'IKS_Rotarran-IoT' WiFi network came back at" in body
-    assert "8 of the 11 devices have already recovered" in body
+    assert "8 of the 11 devices that went down have already recovered" in body
     assert "Device Sentinel is monitoring the recovery" in body
     assert "reported as its own problem" in body
 
@@ -621,7 +624,10 @@ async def test_the_recovering_row_counts_down_live(
     summary, _body = coord._upstream_item_text(
         WIFI_KEY, {UPSTREAM_KIND: first}, 11
     )
-    assert summary == "WiFi network recovering: 6 of 11 devices remain unavailable"
+    assert summary == (
+        "WiFi network recovering: 6 of the 11 devices that went down "
+        "remain unavailable"
+    )
 
     for tracker in trackers[5:9]:
         await _rise(hass, tracker)
@@ -629,4 +635,65 @@ async def test_the_recovering_row_counts_down_live(
     summary, _body = coord._upstream_item_text(
         WIFI_KEY, {UPSTREAM_KIND: first}, 11
     )
-    assert summary == "WiFi network recovering: 2 of 11 devices remain unavailable"
+    assert summary == (
+        "WiFi network recovering: 2 of the 11 devices that went down "
+        "remain unavailable"
+    )
+
+
+async def test_a_recovery_with_nothing_back_yet_says_so(
+    hass: HomeAssistant, freezer
+):
+    """Ruling #443. The network is heard before a single device has
+    returned. "11 of 11 remain" beside "0 have already recovered" said
+    the same thing twice and read as a contradiction, so the row says
+    the network is back and what it is waiting for."""
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    hass.config_entries.async_update_entry(
+        coord.entry,
+        options={**coord.entry.options, "wifi_networks": ["IKS_Rotarran-IoT"]},
+    )
+    await hass.async_block_till_done()
+    first = await _declared(hass, coord, trackers[:11], freezer, count=11)
+    coord.on_wifi_scan_restored(first, first + 60.0)
+    await hass.async_block_till_done()
+
+    assert coord.wifi_recovering_at is not None
+    summary, body = coord._upstream_item_text(
+        WIFI_KEY, {UPSTREAM_KIND: first}, 11
+    )
+    assert summary == "WiFi network is back: waiting for 11 devices to reconnect"
+    assert "'IKS_Rotarran-IoT' WiFi network came back at" in body
+    assert "waiting for the 11 devices that went down to reconnect" in body
+    assert "already recovered" not in body
+    assert "reported as its own problem" in body
+
+    await _rise(hass, trackers[0])
+    summary, _body = coord._upstream_item_text(
+        WIFI_KEY, {UPSTREAM_KIND: first}, 11
+    )
+    assert summary == (
+        "WiFi network recovering: 10 of the 11 devices that went down "
+        "remain unavailable"
+    )
+
+
+async def test_one_device_left_reads_in_the_singular(
+    hass: HomeAssistant, freezer
+):
+    """Ruling #442. "1 of the 11 devices remain" is the kind of detail
+    that makes a person doubt the rest of the row."""
+    coord, trackers, _devices, _untied = await _house(hass, 12)
+    first = await _declared(hass, coord, trackers[:11], freezer, count=11)
+    for tracker in trackers[:10]:
+        await _rise(hass, tracker)
+    coord.on_wifi_scan_restored(first, first + 60.0)
+    await hass.async_block_till_done()
+    summary, body = coord._upstream_item_text(
+        WIFI_KEY, {UPSTREAM_KIND: first}, 11
+    )
+    assert summary == (
+        "WiFi network recovering: 1 of the 11 devices that went down "
+        "remains unavailable"
+    )
+    assert "10 of the 11 devices that went down have already recovered" in body

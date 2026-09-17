@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integration_outage_fleet_tim.py, Version: 0.20.1 (2026-09-04)
+# File: tests/test_integration_outage_fleet_tim.py, Version: 0.21.12 (2026-09-17)
 
 """The integration outage, driven against the second fleet.
 
@@ -28,6 +28,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
+    BRIDGE_HANDBACK_SECONDS,
     INTEGRATION_DOWN_DWELL_SECONDS,
 )
 
@@ -38,7 +39,7 @@ from tests.test_upstream_events_fleet import _heard
 
 @pytest.mark.skipif(not TIM.exists(), reason=FLEET_ABSENT)
 async def test_a_controller_falls_on_the_second_fleet(
-    hass: HomeAssistant,
+    hass: HomeAssistant, freezer
 ):
     """The case this was built for, on the fleet that has it.
 
@@ -69,6 +70,11 @@ async def test_a_controller_falls_on_the_second_fleet(
     assert [word for word, _ in seen] == ["down", "restored"]
     assert seen[1][1]["for_seconds"] > 800.0
     assert seen[1][1]["devices"] == seen[0][1]["devices"]
+    # Theirs again once the returning controller's window has passed,
+    # and not before (ruling #441).
+    for device, _ in behind["controller_hub"]:
+        assert coord.upstream_down_since(device.id) is not None
+    freezer.tick(BRIDGE_HANDBACK_SECONDS + 10)
     for device, _ in behind["controller_hub"]:
         assert coord.upstream_down_since(device.id) is None
 
