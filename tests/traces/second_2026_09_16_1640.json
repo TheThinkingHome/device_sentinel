@@ -1,0 +1,8422 @@
+{
+"source": "second fleet, 16 September 2026, staged Wi-Fi outage, probe 1.8; names replaced",
+"base": "2026-09-16 16:40:00",
+"events": [
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e001",
+"device": "Device 53",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e002",
+"device": "Device 53",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e003",
+"device": "Device 53",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e004",
+"device": "Device 53",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e005",
+"device": "Device 53",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e006",
+"device": "Device 53",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e007",
+"device": "Device 53",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e008",
+"device": "Device 53",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e009",
+"device": "Device 53",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e010",
+"device": "Device 53",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e011",
+"device": "Device 52",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e012",
+"device": "Device 52",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e013",
+"device": "Device 52",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e014",
+"device": "Device 52",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e015",
+"device": "Device 52",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e016",
+"device": "Device 52",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e017",
+"device": "Device 52",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e018",
+"device": "Device 52",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e019",
+"device": "Device 52",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e020",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e021",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e022",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e023",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e024",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e025",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e026",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e027",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e028",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e029",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e030",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e031",
+"device": "Device 04",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e032",
+"device": "Device 04",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e033",
+"device": "Device 04",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e034",
+"device": "Device 04",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e035",
+"device": "Device 04",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e036",
+"device": "Device 04",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e037",
+"device": "Device 04",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e038",
+"device": "Device 04",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e039",
+"device": "Device 04",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e040",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e041",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e042",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e043",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e044",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e045",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e046",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:38",
+"kind": "entity",
+"entity": "sensor.second_e047",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 38
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e048",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e049",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e050",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e051",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e052",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e053",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e054",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e055",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e056",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e057",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e058",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e059",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e060",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e061",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:39",
+"kind": "entity",
+"entity": "sensor.second_e062",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 39
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e063",
+"device": "Device 45",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e064",
+"device": "Device 45",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e065",
+"device": "Device 45",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e066",
+"device": "Device 45",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e067",
+"device": "Device 41",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e068",
+"device": "Device 41",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e069",
+"device": "Device 41",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e070",
+"device": "Device 41",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e071",
+"device": "Device 41",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e072",
+"device": "Device 39",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e073",
+"device": "Device 39",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e074",
+"device": "Device 39",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e075",
+"device": "Device 39",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e076",
+"device": "Device 46",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e077",
+"device": "Device 46",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e078",
+"device": "Device 46",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e079",
+"device": "Device 46",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e080",
+"device": "Device 43",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e081",
+"device": "Device 43",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e082",
+"device": "Device 43",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e083",
+"device": "Device 43",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e084",
+"device": "Device 43",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e085",
+"device": "Device 15",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e086",
+"device": "Device 15",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e087",
+"device": "Device 15",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e088",
+"device": "Device 15",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e089",
+"device": "Device 15",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e090",
+"device": "Device 15",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e091",
+"device": "Device 15",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e092",
+"device": "Device 15",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e093",
+"device": "Device 15",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e094",
+"device": "Device 15",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e095",
+"device": "Device 40",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e096",
+"device": "Device 40",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:44",
+"kind": "entity",
+"entity": "sensor.second_e097",
+"device": "Device 40",
+"to": "unavailable",
+"offset": 44
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e098",
+"device": "Device 40",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e099",
+"device": "Device 40",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e100",
+"device": "Device 51",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e101",
+"device": "Device 51",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e102",
+"device": "Device 51",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e103",
+"device": "Device 51",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e104",
+"device": "Device 51",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e105",
+"device": "Device 50",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e106",
+"device": "Device 50",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e107",
+"device": "Device 50",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e108",
+"device": "Device 50",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e109",
+"device": "Device 20",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e110",
+"device": "Device 20",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e111",
+"device": "Device 20",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e112",
+"device": "Device 20",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e113",
+"device": "Device 20",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e114",
+"device": "Device 20",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e115",
+"device": "Device 20",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e116",
+"device": "Device 20",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e117",
+"device": "Device 44",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e118",
+"device": "Device 44",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e119",
+"device": "Device 44",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e120",
+"device": "Device 42",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e121",
+"device": "Device 42",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e122",
+"device": "Device 42",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e123",
+"device": "Device 42",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e124",
+"device": "Device 42",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e125",
+"device": "Device 42",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e126",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e127",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e128",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e129",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e130",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e131",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e132",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e133",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e134",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e135",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e136",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e137",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e138",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e139",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e140",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:45",
+"kind": "entity",
+"entity": "sensor.second_e141",
+"device": "Device 13",
+"to": "unavailable",
+"offset": 45
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e142",
+"device": "Device 36",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e143",
+"device": "Device 36",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e144",
+"device": "Device 36",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e145",
+"device": "Device 36",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e146",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e147",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e148",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e149",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e150",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e151",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e152",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e153",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e154",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e155",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e156",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e157",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e158",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e159",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e160",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e161",
+"device": "Device 10",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e162",
+"device": "Device 37",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e163",
+"device": "Device 37",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e164",
+"device": "Device 37",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e165",
+"device": "Device 37",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:46",
+"kind": "entity",
+"entity": "sensor.second_e166",
+"device": "Device 37",
+"to": "unavailable",
+"offset": 46
+},
+{
+"t": "2026-09-16 16:40:49",
+"kind": "entity",
+"entity": "sensor.second_e167",
+"device": "Device 14",
+"to": "unavailable",
+"offset": 49
+},
+{
+"t": "2026-09-16 16:40:49",
+"kind": "entity",
+"entity": "sensor.second_e168",
+"device": "Device 14",
+"to": "unavailable",
+"offset": 49
+},
+{
+"t": "2026-09-16 16:40:49",
+"kind": "entity",
+"entity": "sensor.second_e169",
+"device": "Device 14",
+"to": "unavailable",
+"offset": 49
+},
+{
+"t": "2026-09-16 16:40:49",
+"kind": "entity",
+"entity": "sensor.second_e170",
+"device": "Device 14",
+"to": "unavailable",
+"offset": 49
+},
+{
+"t": "2026-09-16 16:40:49",
+"kind": "entity",
+"entity": "sensor.second_e171",
+"device": "Device 14",
+"to": "unavailable",
+"offset": 49
+},
+{
+"t": "2026-09-16 16:40:49",
+"kind": "entity",
+"entity": "sensor.second_e172",
+"device": "Device 38",
+"to": "unavailable",
+"offset": 49
+},
+{
+"t": "2026-09-16 16:40:49",
+"kind": "entity",
+"entity": "sensor.second_e173",
+"device": "Device 38",
+"to": "unavailable",
+"offset": 49
+},
+{
+"t": "2026-09-16 16:40:49",
+"kind": "entity",
+"entity": "sensor.second_e174",
+"device": "Device 38",
+"to": "unavailable",
+"offset": 49
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e175",
+"device": "Device 38",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e176",
+"device": "Device 38",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e177",
+"device": "Device 07",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e178",
+"device": "Device 07",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e179",
+"device": "Device 07",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e180",
+"device": "Device 07",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e181",
+"device": "Device 07",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e182",
+"device": "Device 07",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e183",
+"device": "Device 07",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e184",
+"device": "Device 07",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e185",
+"device": "Device 07",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e186",
+"device": "Device 21",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e187",
+"device": "Device 21",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e188",
+"device": "Device 21",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e189",
+"device": "Device 21",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e190",
+"device": "Device 21",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e191",
+"device": "Device 21",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:50",
+"kind": "entity",
+"entity": "sensor.second_e192",
+"device": "Device 21",
+"to": "unavailable",
+"offset": 50
+},
+{
+"t": "2026-09-16 16:40:51",
+"kind": "entity",
+"entity": "sensor.second_e193",
+"device": "Device 16",
+"to": "unavailable",
+"offset": 51
+},
+{
+"t": "2026-09-16 16:40:51",
+"kind": "entity",
+"entity": "sensor.second_e194",
+"device": "Device 16",
+"to": "unavailable",
+"offset": 51
+},
+{
+"t": "2026-09-16 16:40:51",
+"kind": "entity",
+"entity": "sensor.second_e195",
+"device": "Device 16",
+"to": "unavailable",
+"offset": 51
+},
+{
+"t": "2026-09-16 16:40:51",
+"kind": "entity",
+"entity": "sensor.second_e196",
+"device": "Device 16",
+"to": "unavailable",
+"offset": 51
+},
+{
+"t": "2026-09-16 16:40:51",
+"kind": "entity",
+"entity": "sensor.second_e197",
+"device": "Device 16",
+"to": "unavailable",
+"offset": 51
+},
+{
+"t": "2026-09-16 16:40:51",
+"kind": "entity",
+"entity": "sensor.second_e198",
+"device": "Device 16",
+"to": "unavailable",
+"offset": 51
+},
+{
+"t": "2026-09-16 16:40:51",
+"kind": "entity",
+"entity": "sensor.second_e199",
+"device": "Device 16",
+"to": "unavailable",
+"offset": 51
+},
+{
+"t": "2026-09-16 16:40:51",
+"kind": "entity",
+"entity": "sensor.second_e200",
+"device": "Device 16",
+"to": "unavailable",
+"offset": 51
+},
+{
+"t": "2026-09-16 16:40:51",
+"kind": "entity",
+"entity": "sensor.second_e201",
+"device": "Device 16",
+"to": "unavailable",
+"offset": 51
+},
+{
+"t": "2026-09-16 16:40:51",
+"kind": "entity",
+"entity": "sensor.second_e202",
+"device": "Device 16",
+"to": "unavailable",
+"offset": 51
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e203",
+"device": "Device 19",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e204",
+"device": "Device 19",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e205",
+"device": "Device 19",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e206",
+"device": "Device 19",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e207",
+"device": "Device 19",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e208",
+"device": "Device 19",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e209",
+"device": "Device 19",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e210",
+"device": "Device 18",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e211",
+"device": "Device 18",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e212",
+"device": "Device 18",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e213",
+"device": "Device 18",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e214",
+"device": "Device 18",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e215",
+"device": "Device 18",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e216",
+"device": "Device 18",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e217",
+"device": "Device 18",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e218",
+"device": "Device 17",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e219",
+"device": "Device 17",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e220",
+"device": "Device 17",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e221",
+"device": "Device 17",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e222",
+"device": "Device 17",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e223",
+"device": "Device 17",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e224",
+"device": "Device 17",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e225",
+"device": "Device 17",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e226",
+"device": "Device 17",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:56",
+"kind": "entity",
+"entity": "sensor.second_e227",
+"device": "Device 17",
+"to": "unavailable",
+"offset": 56
+},
+{
+"t": "2026-09-16 16:40:58",
+"kind": "entity",
+"entity": "sensor.second_e228",
+"device": "Device 08",
+"to": "unavailable",
+"offset": 58
+},
+{
+"t": "2026-09-16 16:40:58",
+"kind": "entity",
+"entity": "sensor.second_e229",
+"device": "Device 08",
+"to": "unavailable",
+"offset": 58
+},
+{
+"t": "2026-09-16 16:40:58",
+"kind": "entity",
+"entity": "sensor.second_e230",
+"device": "Device 08",
+"to": "unavailable",
+"offset": 58
+},
+{
+"t": "2026-09-16 16:40:58",
+"kind": "entity",
+"entity": "sensor.second_e231",
+"device": "Device 08",
+"to": "unavailable",
+"offset": 58
+},
+{
+"t": "2026-09-16 16:40:58",
+"kind": "entity",
+"entity": "sensor.second_e232",
+"device": "Device 08",
+"to": "unavailable",
+"offset": 58
+},
+{
+"t": "2026-09-16 16:40:58",
+"kind": "entity",
+"entity": "sensor.second_e233",
+"device": "Device 08",
+"to": "unavailable",
+"offset": 58
+},
+{
+"t": "2026-09-16 16:40:58",
+"kind": "entity",
+"entity": "sensor.second_e234",
+"device": "Device 08",
+"to": "unavailable",
+"offset": 58
+},
+{
+"t": "2026-09-16 16:41:02",
+"kind": "entity",
+"entity": "sensor.second_e235",
+"device": "Device 11",
+"to": "unavailable",
+"offset": 62
+},
+{
+"t": "2026-09-16 16:41:02",
+"kind": "entity",
+"entity": "sensor.second_e236",
+"device": "Device 11",
+"to": "unavailable",
+"offset": 62
+},
+{
+"t": "2026-09-16 16:41:02",
+"kind": "entity",
+"entity": "sensor.second_e237",
+"device": "Device 11",
+"to": "unavailable",
+"offset": 62
+},
+{
+"t": "2026-09-16 16:41:02",
+"kind": "entity",
+"entity": "sensor.second_e238",
+"device": "Device 11",
+"to": "unavailable",
+"offset": 62
+},
+{
+"t": "2026-09-16 16:41:02",
+"kind": "entity",
+"entity": "sensor.second_e239",
+"device": "Device 11",
+"to": "unavailable",
+"offset": 62
+},
+{
+"t": "2026-09-16 16:41:02",
+"kind": "entity",
+"entity": "sensor.second_e240",
+"device": "Device 11",
+"to": "unavailable",
+"offset": 62
+},
+{
+"t": "2026-09-16 16:41:02",
+"kind": "entity",
+"entity": "sensor.second_e241",
+"device": "Device 11",
+"to": "unavailable",
+"offset": 62
+},
+{
+"t": "2026-09-16 16:41:02",
+"kind": "entity",
+"entity": "sensor.second_e242",
+"device": "Device 11",
+"to": "unavailable",
+"offset": 62
+},
+{
+"t": "2026-09-16 16:41:02",
+"kind": "entity",
+"entity": "sensor.second_e243",
+"device": "Device 11",
+"to": "unavailable",
+"offset": 62
+},
+{
+"t": "2026-09-16 16:41:09",
+"kind": "entity",
+"entity": "sensor.second_e244",
+"device": "Device 30",
+"to": "unavailable",
+"offset": 69
+},
+{
+"t": "2026-09-16 16:41:09",
+"kind": "entity",
+"entity": "sensor.second_e245",
+"device": "Device 30",
+"to": "unavailable",
+"offset": 69
+},
+{
+"t": "2026-09-16 16:41:09",
+"kind": "entity",
+"entity": "sensor.second_e246",
+"device": "Device 30",
+"to": "unavailable",
+"offset": 69
+},
+{
+"t": "2026-09-16 16:41:09",
+"kind": "entity",
+"entity": "sensor.second_e247",
+"device": "Device 30",
+"to": "unavailable",
+"offset": 69
+},
+{
+"t": "2026-09-16 16:41:09",
+"kind": "entity",
+"entity": "sensor.second_e248",
+"device": "Device 30",
+"to": "unavailable",
+"offset": 69
+},
+{
+"t": "2026-09-16 16:41:09",
+"kind": "entity",
+"entity": "sensor.second_e249",
+"device": "Device 30",
+"to": "unavailable",
+"offset": 69
+},
+{
+"t": "2026-09-16 16:41:09",
+"kind": "entity",
+"entity": "sensor.second_e250",
+"device": "Device 26",
+"to": "unavailable",
+"offset": 69
+},
+{
+"t": "2026-09-16 16:41:09",
+"kind": "entity",
+"entity": "sensor.second_e251",
+"device": "Device 26",
+"to": "unavailable",
+"offset": 69
+},
+{
+"t": "2026-09-16 16:41:09",
+"kind": "entity",
+"entity": "sensor.second_e252",
+"device": "Device 26",
+"to": "unavailable",
+"offset": 69
+},
+{
+"t": "2026-09-16 16:41:09",
+"kind": "entity",
+"entity": "sensor.second_e253",
+"device": "Device 26",
+"to": "unavailable",
+"offset": 69
+},
+{
+"t": "2026-09-16 16:41:10",
+"kind": "entity",
+"entity": "sensor.second_e254",
+"device": "Device 26",
+"to": "unavailable",
+"offset": 70
+},
+{
+"t": "2026-09-16 16:41:10",
+"kind": "entity",
+"entity": "sensor.second_e255",
+"device": "Device 26",
+"to": "unavailable",
+"offset": 70
+},
+{
+"t": "2026-09-16 16:41:32",
+"kind": "entity",
+"entity": "sensor.second_e256",
+"device": "Device 33",
+"to": "unavailable",
+"offset": 92
+},
+{
+"t": "2026-09-16 16:41:32",
+"kind": "entity",
+"entity": "sensor.second_e257",
+"device": "Device 33",
+"to": "unavailable",
+"offset": 92
+},
+{
+"t": "2026-09-16 16:41:32",
+"kind": "entity",
+"entity": "sensor.second_e258",
+"device": "Device 33",
+"to": "unavailable",
+"offset": 92
+},
+{
+"t": "2026-09-16 16:41:32",
+"kind": "entity",
+"entity": "sensor.second_e259",
+"device": "Device 33",
+"to": "unavailable",
+"offset": 92
+},
+{
+"t": "2026-09-16 16:41:32",
+"kind": "entity",
+"entity": "sensor.second_e260",
+"device": "Device 33",
+"to": "unavailable",
+"offset": 92
+},
+{
+"t": "2026-09-16 16:41:32",
+"kind": "entity",
+"entity": "sensor.second_e261",
+"device": "Device 33",
+"to": "unavailable",
+"offset": 92
+},
+{
+"t": "2026-09-16 16:41:33",
+"kind": "entity",
+"entity": "sensor.second_e262",
+"device": "Device 27",
+"to": "unavailable",
+"offset": 93
+},
+{
+"t": "2026-09-16 16:41:33",
+"kind": "entity",
+"entity": "sensor.second_e263",
+"device": "Device 27",
+"to": "unavailable",
+"offset": 93
+},
+{
+"t": "2026-09-16 16:41:33",
+"kind": "entity",
+"entity": "sensor.second_e264",
+"device": "Device 27",
+"to": "unavailable",
+"offset": 93
+},
+{
+"t": "2026-09-16 16:41:33",
+"kind": "entity",
+"entity": "sensor.second_e265",
+"device": "Device 27",
+"to": "unavailable",
+"offset": 93
+},
+{
+"t": "2026-09-16 16:41:33",
+"kind": "entity",
+"entity": "sensor.second_e266",
+"device": "Device 27",
+"to": "unavailable",
+"offset": 93
+},
+{
+"t": "2026-09-16 16:41:33",
+"kind": "entity",
+"entity": "sensor.second_e267",
+"device": "Device 27",
+"to": "unavailable",
+"offset": 93
+},
+{
+"t": "2026-09-16 16:41:55",
+"kind": "entity",
+"entity": "sensor.second_e268",
+"device": "Device 32",
+"to": "unavailable",
+"offset": 115
+},
+{
+"t": "2026-09-16 16:41:55",
+"kind": "entity",
+"entity": "sensor.second_e269",
+"device": "Device 32",
+"to": "unavailable",
+"offset": 115
+},
+{
+"t": "2026-09-16 16:41:55",
+"kind": "entity",
+"entity": "sensor.second_e270",
+"device": "Device 32",
+"to": "unavailable",
+"offset": 115
+},
+{
+"t": "2026-09-16 16:41:55",
+"kind": "entity",
+"entity": "sensor.second_e271",
+"device": "Device 32",
+"to": "unavailable",
+"offset": 115
+},
+{
+"t": "2026-09-16 16:41:55",
+"kind": "entity",
+"entity": "sensor.second_e272",
+"device": "Device 32",
+"to": "unavailable",
+"offset": 115
+},
+{
+"t": "2026-09-16 16:41:55",
+"kind": "entity",
+"entity": "sensor.second_e273",
+"device": "Device 32",
+"to": "unavailable",
+"offset": 115
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e274",
+"device": "Device 29",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e275",
+"device": "Device 29",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e276",
+"device": "Device 29",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e277",
+"device": "Device 29",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e278",
+"device": "Device 29",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e279",
+"device": "Device 29",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e280",
+"device": "Device 47",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e281",
+"device": "Device 47",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e282",
+"device": "Device 47",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e283",
+"device": "Device 47",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e284",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e285",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e286",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e287",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e288",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e289",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e290",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e291",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e292",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e293",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e294",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e295",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e296",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e297",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e298",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e299",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:56",
+"kind": "entity",
+"entity": "sensor.second_e300",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 116
+},
+{
+"t": "2026-09-16 16:41:57",
+"kind": "entity",
+"entity": "sensor.second_e301",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 117
+},
+{
+"t": "2026-09-16 16:41:57",
+"kind": "entity",
+"entity": "sensor.second_e302",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 117
+},
+{
+"t": "2026-09-16 16:41:57",
+"kind": "entity",
+"entity": "sensor.second_e303",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 117
+},
+{
+"t": "2026-09-16 16:41:57",
+"kind": "entity",
+"entity": "sensor.second_e304",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 117
+},
+{
+"t": "2026-09-16 16:41:57",
+"kind": "entity",
+"entity": "sensor.second_e305",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 117
+},
+{
+"t": "2026-09-16 16:41:57",
+"kind": "entity",
+"entity": "sensor.second_e306",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 117
+},
+{
+"t": "2026-09-16 16:41:57",
+"kind": "entity",
+"entity": "sensor.second_e307",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 117
+},
+{
+"t": "2026-09-16 16:41:57",
+"kind": "entity",
+"entity": "sensor.second_e308",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 117
+},
+{
+"t": "2026-09-16 16:41:57",
+"kind": "entity",
+"entity": "sensor.second_e309",
+"device": "Device 02",
+"to": "unavailable",
+"offset": 117
+},
+{
+"t": "2026-09-16 16:42:16",
+"kind": "entity",
+"entity": "sensor.second_e310",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 136
+},
+{
+"t": "2026-09-16 16:42:16",
+"kind": "entity",
+"entity": "sensor.second_e311",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 136
+},
+{
+"t": "2026-09-16 16:42:16",
+"kind": "entity",
+"entity": "sensor.second_e312",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 136
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e313",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e314",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e315",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e316",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e317",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e318",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e319",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e320",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e321",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e322",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e323",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e324",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e325",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e326",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e327",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e328",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e329",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e330",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e331",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e332",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e333",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e334",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e335",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e336",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e337",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e338",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e339",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e340",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e341",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e342",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e343",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e344",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e345",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e346",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e347",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e348",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e349",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e350",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e351",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e352",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e353",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e354",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e355",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e356",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e357",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e358",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e359",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:17",
+"kind": "entity",
+"entity": "sensor.second_e360",
+"device": "Device 03",
+"to": "unavailable",
+"offset": 137
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e361",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e362",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e363",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e364",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e365",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e366",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e367",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e368",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e369",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e370",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e371",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e372",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e373",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e374",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e375",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e376",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e377",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e378",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e379",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e380",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e381",
+"device": "Device 01",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e382",
+"device": "Device 34",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e383",
+"device": "Device 34",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e384",
+"device": "Device 34",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e385",
+"device": "Device 34",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:19",
+"kind": "entity",
+"entity": "sensor.second_e386",
+"device": "Device 34",
+"to": "unavailable",
+"offset": 139
+},
+{
+"t": "2026-09-16 16:42:20",
+"kind": "entity",
+"entity": "sensor.second_e387",
+"device": "Device 34",
+"to": "unavailable",
+"offset": 140
+},
+{
+"t": "2026-09-16 16:42:20",
+"kind": "entity",
+"entity": "sensor.second_e388",
+"device": "Device 24",
+"to": "unavailable",
+"offset": 140
+},
+{
+"t": "2026-09-16 16:42:20",
+"kind": "entity",
+"entity": "sensor.second_e389",
+"device": "Device 24",
+"to": "unavailable",
+"offset": 140
+},
+{
+"t": "2026-09-16 16:42:20",
+"kind": "entity",
+"entity": "sensor.second_e390",
+"device": "Device 24",
+"to": "unavailable",
+"offset": 140
+},
+{
+"t": "2026-09-16 16:42:20",
+"kind": "entity",
+"entity": "sensor.second_e391",
+"device": "Device 24",
+"to": "unavailable",
+"offset": 140
+},
+{
+"t": "2026-09-16 16:42:20",
+"kind": "entity",
+"entity": "sensor.second_e392",
+"device": "Device 24",
+"to": "unavailable",
+"offset": 140
+},
+{
+"t": "2026-09-16 16:42:20",
+"kind": "entity",
+"entity": "sensor.second_e393",
+"device": "Device 24",
+"to": "unavailable",
+"offset": 140
+},
+{
+"t": "2026-09-16 16:42:43",
+"kind": "entity",
+"entity": "sensor.second_e394",
+"device": "Device 31",
+"to": "unavailable",
+"offset": 163
+},
+{
+"t": "2026-09-16 16:42:43",
+"kind": "entity",
+"entity": "sensor.second_e395",
+"device": "Device 31",
+"to": "unavailable",
+"offset": 163
+},
+{
+"t": "2026-09-16 16:42:43",
+"kind": "entity",
+"entity": "sensor.second_e396",
+"device": "Device 31",
+"to": "unavailable",
+"offset": 163
+},
+{
+"t": "2026-09-16 16:42:43",
+"kind": "entity",
+"entity": "sensor.second_e397",
+"device": "Device 31",
+"to": "unavailable",
+"offset": 163
+},
+{
+"t": "2026-09-16 16:42:43",
+"kind": "entity",
+"entity": "sensor.second_e398",
+"device": "Device 31",
+"to": "unavailable",
+"offset": 163
+},
+{
+"t": "2026-09-16 16:42:43",
+"kind": "entity",
+"entity": "sensor.second_e399",
+"device": "Device 31",
+"to": "unavailable",
+"offset": 163
+},
+{
+"t": "2026-09-16 16:42:43",
+"kind": "entity",
+"entity": "sensor.second_e400",
+"device": "Device 28",
+"to": "unavailable",
+"offset": 163
+},
+{
+"t": "2026-09-16 16:42:43",
+"kind": "entity",
+"entity": "sensor.second_e401",
+"device": "Device 28",
+"to": "unavailable",
+"offset": 163
+},
+{
+"t": "2026-09-16 16:42:43",
+"kind": "entity",
+"entity": "sensor.second_e402",
+"device": "Device 28",
+"to": "unavailable",
+"offset": 163
+},
+{
+"t": "2026-09-16 16:42:43",
+"kind": "entity",
+"entity": "sensor.second_e403",
+"device": "Device 28",
+"to": "unavailable",
+"offset": 163
+},
+{
+"t": "2026-09-16 16:42:43",
+"kind": "entity",
+"entity": "sensor.second_e404",
+"device": "Device 28",
+"to": "unavailable",
+"offset": 163
+},
+{
+"t": "2026-09-16 16:42:43",
+"kind": "entity",
+"entity": "sensor.second_e405",
+"device": "Device 28",
+"to": "unavailable",
+"offset": 163
+},
+{
+"t": "2026-09-16 16:43:06",
+"kind": "entity",
+"entity": "sensor.second_e406",
+"device": "Device 35",
+"to": "unavailable",
+"offset": 186
+},
+{
+"t": "2026-09-16 16:43:06",
+"kind": "entity",
+"entity": "sensor.second_e407",
+"device": "Device 35",
+"to": "unavailable",
+"offset": 186
+},
+{
+"t": "2026-09-16 16:43:06",
+"kind": "entity",
+"entity": "sensor.second_e408",
+"device": "Device 35",
+"to": "unavailable",
+"offset": 186
+},
+{
+"t": "2026-09-16 16:43:06",
+"kind": "entity",
+"entity": "sensor.second_e409",
+"device": "Device 35",
+"to": "unavailable",
+"offset": 186
+},
+{
+"t": "2026-09-16 16:43:06",
+"kind": "entity",
+"entity": "sensor.second_e410",
+"device": "Device 35",
+"to": "unavailable",
+"offset": 186
+},
+{
+"t": "2026-09-16 16:43:06",
+"kind": "entity",
+"entity": "sensor.second_e411",
+"device": "Device 35",
+"to": "unavailable",
+"offset": 186
+},
+{
+"t": "2026-09-16 16:43:06",
+"kind": "entity",
+"entity": "sensor.second_e412",
+"device": "Device 25",
+"to": "unavailable",
+"offset": 186
+},
+{
+"t": "2026-09-16 16:43:06",
+"kind": "entity",
+"entity": "sensor.second_e413",
+"device": "Device 25",
+"to": "unavailable",
+"offset": 186
+},
+{
+"t": "2026-09-16 16:43:06",
+"kind": "entity",
+"entity": "sensor.second_e414",
+"device": "Device 25",
+"to": "unavailable",
+"offset": 186
+},
+{
+"t": "2026-09-16 16:43:06",
+"kind": "entity",
+"entity": "sensor.second_e415",
+"device": "Device 25",
+"to": "unavailable",
+"offset": 186
+},
+{
+"t": "2026-09-16 16:43:06",
+"kind": "entity",
+"entity": "sensor.second_e416",
+"device": "Device 25",
+"to": "unavailable",
+"offset": 186
+},
+{
+"t": "2026-09-16 16:43:06",
+"kind": "entity",
+"entity": "sensor.second_e417",
+"device": "Device 25",
+"to": "unavailable",
+"offset": 186
+},
+{
+"t": "2026-09-16 16:44:19",
+"kind": "entity",
+"entity": "sensor.second_e418",
+"device": "Device 06",
+"to": "unavailable",
+"offset": 259
+},
+{
+"t": "2026-09-16 16:44:19",
+"kind": "entity",
+"entity": "sensor.second_e419",
+"device": "Device 06",
+"to": "unavailable",
+"offset": 259
+},
+{
+"t": "2026-09-16 16:44:19",
+"kind": "entity",
+"entity": "sensor.second_e420",
+"device": "Device 06",
+"to": "unavailable",
+"offset": 259
+},
+{
+"t": "2026-09-16 16:44:19",
+"kind": "entity",
+"entity": "sensor.second_e421",
+"device": "Device 06",
+"to": "unavailable",
+"offset": 259
+},
+{
+"t": "2026-09-16 16:44:19",
+"kind": "entity",
+"entity": "sensor.second_e422",
+"device": "Device 06",
+"to": "unavailable",
+"offset": 259
+},
+{
+"t": "2026-09-16 16:44:32",
+"kind": "entity",
+"entity": "sensor.second_e423",
+"device": "Device 05",
+"to": "unavailable",
+"offset": 272
+},
+{
+"t": "2026-09-16 16:44:32",
+"kind": "entity",
+"entity": "sensor.second_e424",
+"device": "Device 05",
+"to": "unavailable",
+"offset": 272
+},
+{
+"t": "2026-09-16 16:44:32",
+"kind": "entity",
+"entity": "sensor.second_e425",
+"device": "Device 05",
+"to": "unavailable",
+"offset": 272
+},
+{
+"t": "2026-09-16 16:44:32",
+"kind": "entity",
+"entity": "sensor.second_e426",
+"device": "Device 05",
+"to": "unavailable",
+"offset": 272
+},
+{
+"t": "2026-09-16 16:44:32",
+"kind": "entity",
+"entity": "sensor.second_e427",
+"device": "Device 05",
+"to": "unavailable",
+"offset": 272
+},
+{
+"t": "2026-09-16 16:44:35",
+"kind": "tracker",
+"entity": "device_tracker.second_t01",
+"from": "home",
+"to": "not_home",
+"offset": 275
+},
+{
+"t": "2026-09-16 16:44:36",
+"kind": "tracker",
+"entity": "device_tracker.second_t15",
+"from": "home",
+"to": "not_home",
+"offset": 276
+},
+{
+"t": "2026-09-16 16:44:36",
+"kind": "tracker",
+"entity": "device_tracker.second_t27",
+"from": "home",
+"to": "not_home",
+"offset": 276
+},
+{
+"t": "2026-09-16 16:44:36",
+"kind": "tracker",
+"entity": "device_tracker.second_t12",
+"from": "home",
+"to": "not_home",
+"offset": 276
+},
+{
+"t": "2026-09-16 16:44:40",
+"kind": "tracker",
+"entity": "device_tracker.second_t06",
+"from": "home",
+"to": "not_home",
+"offset": 280
+},
+{
+"t": "2026-09-16 16:44:40",
+"kind": "tracker",
+"entity": "device_tracker.second_t28",
+"from": "home",
+"to": "not_home",
+"offset": 280
+},
+{
+"t": "2026-09-16 16:44:41",
+"kind": "tracker",
+"entity": "device_tracker.second_t17",
+"from": "home",
+"to": "not_home",
+"offset": 281
+},
+{
+"t": "2026-09-16 16:44:41",
+"kind": "tracker",
+"entity": "device_tracker.second_t20",
+"from": "home",
+"to": "not_home",
+"offset": 281
+},
+{
+"t": "2026-09-16 16:44:41",
+"kind": "tracker",
+"entity": "device_tracker.second_t07",
+"from": "home",
+"to": "not_home",
+"offset": 281
+},
+{
+"t": "2026-09-16 16:44:41",
+"kind": "tracker",
+"entity": "device_tracker.second_t16",
+"from": "home",
+"to": "not_home",
+"offset": 281
+},
+{
+"t": "2026-09-16 16:44:41",
+"kind": "tracker",
+"entity": "device_tracker.second_t18",
+"from": "home",
+"to": "not_home",
+"offset": 281
+},
+{
+"t": "2026-09-16 16:44:41",
+"kind": "tracker",
+"entity": "device_tracker.second_t13",
+"from": "home",
+"to": "not_home",
+"offset": 281
+},
+{
+"t": "2026-09-16 16:44:50",
+"kind": "tracker",
+"entity": "device_tracker.second_t10",
+"from": "home",
+"to": "not_home",
+"offset": 290
+},
+{
+"t": "2026-09-16 16:44:50",
+"kind": "tracker",
+"entity": "device_tracker.second_t08",
+"from": "home",
+"to": "not_home",
+"offset": 290
+},
+{
+"t": "2026-09-16 16:44:50",
+"kind": "tracker",
+"entity": "device_tracker.second_t14",
+"from": "home",
+"to": "not_home",
+"offset": 290
+},
+{
+"t": "2026-09-16 16:44:50",
+"kind": "tracker",
+"entity": "device_tracker.second_t25",
+"from": "home",
+"to": "not_home",
+"offset": 290
+},
+{
+"t": "2026-09-16 16:44:50",
+"kind": "tracker",
+"entity": "device_tracker.second_t09",
+"from": "home",
+"to": "not_home",
+"offset": 290
+},
+{
+"t": "2026-09-16 16:44:50",
+"kind": "tracker",
+"entity": "device_tracker.second_t04",
+"from": "home",
+"to": "not_home",
+"offset": 290
+},
+{
+"t": "2026-09-16 16:44:55",
+"kind": "entity",
+"entity": "sensor.second_e428",
+"device": "Device 12",
+"to": "unavailable",
+"offset": 295
+},
+{
+"t": "2026-09-16 16:44:55",
+"kind": "entity",
+"entity": "sensor.second_e429",
+"device": "Device 12",
+"to": "unavailable",
+"offset": 295
+},
+{
+"t": "2026-09-16 16:45:05",
+"kind": "tracker",
+"entity": "device_tracker.second_t35",
+"from": "home",
+"to": "not_home",
+"offset": 305
+},
+{
+"t": "2026-09-16 16:45:06",
+"kind": "tracker",
+"entity": "device_tracker.second_t03",
+"from": "home",
+"to": "not_home",
+"offset": 306
+},
+{
+"t": "2026-09-16 16:45:07",
+"kind": "tracker",
+"entity": "device_tracker.second_t19",
+"from": "home",
+"to": "not_home",
+"offset": 307
+},
+{
+"t": "2026-09-16 16:45:08",
+"kind": "tracker",
+"entity": "device_tracker.second_t29",
+"from": "home",
+"to": "not_home",
+"offset": 308
+},
+{
+"t": "2026-09-16 16:45:08",
+"kind": "tracker",
+"entity": "device_tracker.second_t30",
+"from": "home",
+"to": "not_home",
+"offset": 308
+},
+{
+"t": "2026-09-16 16:45:08",
+"kind": "tracker",
+"entity": "device_tracker.second_t33",
+"from": "home",
+"to": "not_home",
+"offset": 308
+},
+{
+"t": "2026-09-16 16:45:08",
+"kind": "tracker",
+"entity": "device_tracker.second_t32",
+"from": "home",
+"to": "not_home",
+"offset": 308
+},
+{
+"t": "2026-09-16 16:45:08",
+"kind": "tracker",
+"entity": "device_tracker.second_t31",
+"from": "home",
+"to": "not_home",
+"offset": 308
+},
+{
+"t": "2026-09-16 16:45:39",
+"kind": "tracker",
+"entity": "device_tracker.second_t36",
+"from": "home",
+"to": "not_home",
+"offset": 339
+},
+{
+"t": "2026-09-16 16:48:35",
+"kind": "tracker",
+"entity": "device_tracker.second_t26",
+"from": "home",
+"to": "not_home",
+"offset": 515
+},
+{
+"t": "2026-09-16 16:49:34",
+"kind": "tracker",
+"entity": "device_tracker.second_t24",
+"from": "home",
+"to": "not_home",
+"offset": 574
+},
+{
+"t": "2026-09-16 16:49:34",
+"kind": "tracker",
+"entity": "device_tracker.second_t22",
+"from": "home",
+"to": "not_home",
+"offset": 574
+},
+{
+"t": "2026-09-16 16:49:34",
+"kind": "tracker",
+"entity": "device_tracker.second_t02",
+"from": "home",
+"to": "not_home",
+"offset": 574
+},
+{
+"t": "2026-09-16 16:49:34",
+"kind": "tracker",
+"entity": "device_tracker.second_t34",
+"from": "home",
+"to": "not_home",
+"offset": 574
+},
+{
+"t": "2026-09-16 16:49:34",
+"kind": "tracker",
+"entity": "device_tracker.second_t11",
+"from": "home",
+"to": "not_home",
+"offset": 574
+},
+{
+"t": "2026-09-16 16:49:34",
+"kind": "tracker",
+"entity": "device_tracker.second_t38",
+"from": "home",
+"to": "not_home",
+"offset": 574
+},
+{
+"t": "2026-09-16 16:49:34",
+"kind": "tracker",
+"entity": "device_tracker.second_t23",
+"from": "home",
+"to": "not_home",
+"offset": 574
+},
+{
+"t": "2026-09-16 16:49:34",
+"kind": "tracker",
+"entity": "device_tracker.second_t21",
+"from": "home",
+"to": "not_home",
+"offset": 574
+},
+{
+"t": "2026-09-16 16:49:35",
+"kind": "tracker",
+"entity": "device_tracker.second_t05",
+"from": "home",
+"to": "not_home",
+"offset": 575
+},
+{
+"t": "2026-09-16 16:49:35",
+"kind": "tracker",
+"entity": "device_tracker.second_t37",
+"from": "home",
+"to": "not_home",
+"offset": 575
+},
+{
+"t": "2026-09-16 16:51:50",
+"kind": "entity",
+"entity": "sensor.second_e162",
+"device": "Device 37",
+"to": "available",
+"offset": 710
+},
+{
+"t": "2026-09-16 16:51:50",
+"kind": "entity",
+"entity": "sensor.second_e163",
+"device": "Device 37",
+"to": "available",
+"offset": 710
+},
+{
+"t": "2026-09-16 16:51:50",
+"kind": "entity",
+"entity": "sensor.second_e164",
+"device": "Device 37",
+"to": "available",
+"offset": 710
+},
+{
+"t": "2026-09-16 16:51:50",
+"kind": "entity",
+"entity": "sensor.second_e165",
+"device": "Device 37",
+"to": "available",
+"offset": 710
+},
+{
+"t": "2026-09-16 16:51:50",
+"kind": "entity",
+"entity": "sensor.second_e166",
+"device": "Device 37",
+"to": "available",
+"offset": 710
+},
+{
+"t": "2026-09-16 16:51:51",
+"kind": "entity",
+"entity": "sensor.second_e020",
+"device": "Device 22",
+"to": "available",
+"offset": 711
+},
+{
+"t": "2026-09-16 16:51:51",
+"kind": "entity",
+"entity": "sensor.second_e021",
+"device": "Device 22",
+"to": "available",
+"offset": 711
+},
+{
+"t": "2026-09-16 16:51:51",
+"kind": "entity",
+"entity": "sensor.second_e022",
+"device": "Device 22",
+"to": "available",
+"offset": 711
+},
+{
+"t": "2026-09-16 16:51:51",
+"kind": "entity",
+"entity": "sensor.second_e023",
+"device": "Device 22",
+"to": "available",
+"offset": 711
+},
+{
+"t": "2026-09-16 16:51:51",
+"kind": "entity",
+"entity": "sensor.second_e024",
+"device": "Device 22",
+"to": "available",
+"offset": 711
+},
+{
+"t": "2026-09-16 16:51:51",
+"kind": "entity",
+"entity": "sensor.second_e025",
+"device": "Device 22",
+"to": "available",
+"offset": 711
+},
+{
+"t": "2026-09-16 16:51:51",
+"kind": "entity",
+"entity": "sensor.second_e026",
+"device": "Device 22",
+"to": "available",
+"offset": 711
+},
+{
+"t": "2026-09-16 16:51:51",
+"kind": "entity",
+"entity": "sensor.second_e027",
+"device": "Device 22",
+"to": "available",
+"offset": 711
+},
+{
+"t": "2026-09-16 16:51:51",
+"kind": "entity",
+"entity": "sensor.second_e028",
+"device": "Device 22",
+"to": "available",
+"offset": 711
+},
+{
+"t": "2026-09-16 16:51:51",
+"kind": "entity",
+"entity": "sensor.second_e029",
+"device": "Device 22",
+"to": "available",
+"offset": 711
+},
+{
+"t": "2026-09-16 16:51:51",
+"kind": "entity",
+"entity": "sensor.second_e030",
+"device": "Device 22",
+"to": "available",
+"offset": 711
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e040",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e041",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e042",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e043",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e044",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e045",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e046",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e047",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e048",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e049",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e050",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e051",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e052",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e053",
+"device": "Device 23",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e054",
+"device": "Device 48",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e055",
+"device": "Device 48",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e056",
+"device": "Device 48",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e057",
+"device": "Device 48",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e058",
+"device": "Device 48",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e059",
+"device": "Device 48",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e060",
+"device": "Device 48",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e061",
+"device": "Device 48",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:52",
+"kind": "entity",
+"entity": "sensor.second_e062",
+"device": "Device 48",
+"to": "available",
+"offset": 712
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e418",
+"device": "Device 06",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e419",
+"device": "Device 06",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e420",
+"device": "Device 06",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e421",
+"device": "Device 06",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e422",
+"device": "Device 06",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e423",
+"device": "Device 05",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e424",
+"device": "Device 05",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e425",
+"device": "Device 05",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e426",
+"device": "Device 05",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e427",
+"device": "Device 05",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e109",
+"device": "Device 20",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e110",
+"device": "Device 20",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e111",
+"device": "Device 20",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e112",
+"device": "Device 20",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e113",
+"device": "Device 20",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e114",
+"device": "Device 20",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e115",
+"device": "Device 20",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e116",
+"device": "Device 20",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e366",
+"device": "Device 01",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e368",
+"device": "Device 01",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e378",
+"device": "Device 01",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e379",
+"device": "Device 01",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:55",
+"kind": "entity",
+"entity": "sensor.second_e380",
+"device": "Device 01",
+"to": "available",
+"offset": 715
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e117",
+"device": "Device 44",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e118",
+"device": "Device 44",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e119",
+"device": "Device 44",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e377",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e373",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e365",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e370",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e371",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e363",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e364",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e367",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e369",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e361",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e381",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e372",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e374",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e375",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e376",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e362",
+"device": "Device 01",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:56",
+"kind": "entity",
+"entity": "sensor.second_e193",
+"device": "Device 16",
+"to": "available",
+"offset": 716
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e194",
+"device": "Device 16",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e195",
+"device": "Device 16",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e196",
+"device": "Device 16",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e197",
+"device": "Device 16",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e198",
+"device": "Device 16",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e199",
+"device": "Device 16",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e200",
+"device": "Device 16",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e201",
+"device": "Device 16",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e202",
+"device": "Device 16",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e210",
+"device": "Device 18",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e211",
+"device": "Device 18",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e212",
+"device": "Device 18",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e213",
+"device": "Device 18",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e214",
+"device": "Device 18",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e215",
+"device": "Device 18",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e216",
+"device": "Device 18",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e217",
+"device": "Device 18",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e428",
+"device": "Device 12",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e429",
+"device": "Device 12",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e120",
+"device": "Device 42",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e121",
+"device": "Device 42",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e122",
+"device": "Device 42",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e123",
+"device": "Device 42",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e124",
+"device": "Device 42",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e125",
+"device": "Device 42",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:57",
+"kind": "entity",
+"entity": "sensor.second_e218",
+"device": "Device 17",
+"to": "available",
+"offset": 717
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e219",
+"device": "Device 17",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e220",
+"device": "Device 17",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e221",
+"device": "Device 17",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e222",
+"device": "Device 17",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e223",
+"device": "Device 17",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e224",
+"device": "Device 17",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e225",
+"device": "Device 17",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e226",
+"device": "Device 17",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e227",
+"device": "Device 17",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e186",
+"device": "Device 21",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e187",
+"device": "Device 21",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e188",
+"device": "Device 21",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e189",
+"device": "Device 21",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e190",
+"device": "Device 21",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e191",
+"device": "Device 21",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e192",
+"device": "Device 21",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e319",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e315",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e310",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e311",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e318",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e320",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e322",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e316",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e314",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e317",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e321",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e312",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e313",
+"device": "Device 49",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e177",
+"device": "Device 07",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e178",
+"device": "Device 07",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e179",
+"device": "Device 07",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e180",
+"device": "Device 07",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e181",
+"device": "Device 07",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e182",
+"device": "Device 07",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e183",
+"device": "Device 07",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:58",
+"kind": "entity",
+"entity": "sensor.second_e184",
+"device": "Device 07",
+"to": "available",
+"offset": 718
+},
+{
+"t": "2026-09-16 16:51:59",
+"kind": "entity",
+"entity": "sensor.second_e185",
+"device": "Device 07",
+"to": "available",
+"offset": 719
+},
+{
+"t": "2026-09-16 16:52:00",
+"kind": "entity",
+"entity": "sensor.second_e167",
+"device": "Device 14",
+"to": "available",
+"offset": 720
+},
+{
+"t": "2026-09-16 16:52:00",
+"kind": "entity",
+"entity": "sensor.second_e168",
+"device": "Device 14",
+"to": "available",
+"offset": 720
+},
+{
+"t": "2026-09-16 16:52:00",
+"kind": "entity",
+"entity": "sensor.second_e169",
+"device": "Device 14",
+"to": "available",
+"offset": 720
+},
+{
+"t": "2026-09-16 16:52:00",
+"kind": "entity",
+"entity": "sensor.second_e170",
+"device": "Device 14",
+"to": "available",
+"offset": 720
+},
+{
+"t": "2026-09-16 16:52:00",
+"kind": "entity",
+"entity": "sensor.second_e171",
+"device": "Device 14",
+"to": "available",
+"offset": 720
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e328",
+"device": "Device 09",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e324",
+"device": "Device 09",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e329",
+"device": "Device 09",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e332",
+"device": "Device 09",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e330",
+"device": "Device 09",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e334",
+"device": "Device 09",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e327",
+"device": "Device 09",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e331",
+"device": "Device 09",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e323",
+"device": "Device 09",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e105",
+"device": "Device 50",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e106",
+"device": "Device 50",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e107",
+"device": "Device 50",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e108",
+"device": "Device 50",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e333",
+"device": "Device 09",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e325",
+"device": "Device 09",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:01",
+"kind": "entity",
+"entity": "sensor.second_e326",
+"device": "Device 09",
+"to": "available",
+"offset": 721
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e203",
+"device": "Device 19",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e204",
+"device": "Device 19",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e205",
+"device": "Device 19",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e206",
+"device": "Device 19",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e207",
+"device": "Device 19",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e208",
+"device": "Device 19",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e209",
+"device": "Device 19",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e235",
+"device": "Device 11",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e236",
+"device": "Device 11",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e237",
+"device": "Device 11",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e238",
+"device": "Device 11",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e239",
+"device": "Device 11",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e240",
+"device": "Device 11",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e241",
+"device": "Device 11",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:03",
+"kind": "entity",
+"entity": "sensor.second_e242",
+"device": "Device 11",
+"to": "available",
+"offset": 723
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e243",
+"device": "Device 11",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e031",
+"device": "Device 04",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e032",
+"device": "Device 04",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e033",
+"device": "Device 04",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e034",
+"device": "Device 04",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e035",
+"device": "Device 04",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e036",
+"device": "Device 04",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e037",
+"device": "Device 04",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e038",
+"device": "Device 04",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e039",
+"device": "Device 04",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e076",
+"device": "Device 46",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e077",
+"device": "Device 46",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e078",
+"device": "Device 46",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e079",
+"device": "Device 46",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e063",
+"device": "Device 45",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e064",
+"device": "Device 45",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e065",
+"device": "Device 45",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:04",
+"kind": "entity",
+"entity": "sensor.second_e066",
+"device": "Device 45",
+"to": "available",
+"offset": 724
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "tracker",
+"entity": "device_tracker.second_t36",
+"from": "not_home",
+"to": "home",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "tracker",
+"entity": "device_tracker.second_t35",
+"from": "not_home",
+"to": "home",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "tracker",
+"entity": "device_tracker.second_t06",
+"from": "not_home",
+"to": "home",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "tracker",
+"entity": "device_tracker.second_t27",
+"from": "not_home",
+"to": "home",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "tracker",
+"entity": "device_tracker.second_t05",
+"from": "not_home",
+"to": "home",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "tracker",
+"entity": "device_tracker.second_t21",
+"from": "not_home",
+"to": "home",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e347",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e349",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e350",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e358",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e359",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e360",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e335",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e336",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e344",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e353",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e345",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e348",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e354",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e337",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e351",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e340",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e357",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e341",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e338",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e356",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e342",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e352",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e343",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e355",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e346",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:05",
+"kind": "entity",
+"entity": "sensor.second_e339",
+"device": "Device 03",
+"to": "available",
+"offset": 725
+},
+{
+"t": "2026-09-16 16:52:06",
+"kind": "tracker",
+"entity": "device_tracker.second_t04",
+"from": "not_home",
+"to": "home",
+"offset": 726
+},
+{
+"t": "2026-09-16 16:52:06",
+"kind": "tracker",
+"entity": "device_tracker.second_t09",
+"from": "not_home",
+"to": "home",
+"offset": 726
+},
+{
+"t": "2026-09-16 16:52:06",
+"kind": "tracker",
+"entity": "device_tracker.second_t34",
+"from": "not_home",
+"to": "home",
+"offset": 726
+},
+{
+"t": "2026-09-16 16:52:06",
+"kind": "tracker",
+"entity": "device_tracker.second_t32",
+"from": "not_home",
+"to": "home",
+"offset": 726
+},
+{
+"t": "2026-09-16 16:52:06",
+"kind": "tracker",
+"entity": "device_tracker.second_t19",
+"from": "not_home",
+"to": "home",
+"offset": 726
+},
+{
+"t": "2026-09-16 16:52:06",
+"kind": "tracker",
+"entity": "device_tracker.second_t02",
+"from": "not_home",
+"to": "home",
+"offset": 726
+},
+{
+"t": "2026-09-16 16:52:07",
+"kind": "entity",
+"entity": "sensor.second_e072",
+"device": "Device 39",
+"to": "available",
+"offset": 727
+},
+{
+"t": "2026-09-16 16:52:07",
+"kind": "entity",
+"entity": "sensor.second_e073",
+"device": "Device 39",
+"to": "available",
+"offset": 727
+},
+{
+"t": "2026-09-16 16:52:07",
+"kind": "entity",
+"entity": "sensor.second_e074",
+"device": "Device 39",
+"to": "available",
+"offset": 727
+},
+{
+"t": "2026-09-16 16:52:07",
+"kind": "entity",
+"entity": "sensor.second_e075",
+"device": "Device 39",
+"to": "available",
+"offset": 727
+},
+{
+"t": "2026-09-16 16:52:08",
+"kind": "entity",
+"entity": "sensor.second_e095",
+"device": "Device 40",
+"to": "available",
+"offset": 728
+},
+{
+"t": "2026-09-16 16:52:09",
+"kind": "entity",
+"entity": "sensor.second_e096",
+"device": "Device 40",
+"to": "available",
+"offset": 729
+},
+{
+"t": "2026-09-16 16:52:09",
+"kind": "entity",
+"entity": "sensor.second_e097",
+"device": "Device 40",
+"to": "available",
+"offset": 729
+},
+{
+"t": "2026-09-16 16:52:09",
+"kind": "entity",
+"entity": "sensor.second_e098",
+"device": "Device 40",
+"to": "available",
+"offset": 729
+},
+{
+"t": "2026-09-16 16:52:09",
+"kind": "entity",
+"entity": "sensor.second_e099",
+"device": "Device 40",
+"to": "available",
+"offset": 729
+},
+{
+"t": "2026-09-16 16:52:10",
+"kind": "entity",
+"entity": "sensor.second_e142",
+"device": "Device 36",
+"to": "available",
+"offset": 730
+},
+{
+"t": "2026-09-16 16:52:10",
+"kind": "entity",
+"entity": "sensor.second_e143",
+"device": "Device 36",
+"to": "available",
+"offset": 730
+},
+{
+"t": "2026-09-16 16:52:10",
+"kind": "entity",
+"entity": "sensor.second_e144",
+"device": "Device 36",
+"to": "available",
+"offset": 730
+},
+{
+"t": "2026-09-16 16:52:10",
+"kind": "entity",
+"entity": "sensor.second_e145",
+"device": "Device 36",
+"to": "available",
+"offset": 730
+},
+{
+"t": "2026-09-16 16:52:12",
+"kind": "entity",
+"entity": "sensor.second_e100",
+"device": "Device 51",
+"to": "available",
+"offset": 732
+},
+{
+"t": "2026-09-16 16:52:12",
+"kind": "entity",
+"entity": "sensor.second_e101",
+"device": "Device 51",
+"to": "available",
+"offset": 732
+},
+{
+"t": "2026-09-16 16:52:12",
+"kind": "entity",
+"entity": "sensor.second_e102",
+"device": "Device 51",
+"to": "available",
+"offset": 732
+},
+{
+"t": "2026-09-16 16:52:12",
+"kind": "entity",
+"entity": "sensor.second_e103",
+"device": "Device 51",
+"to": "available",
+"offset": 732
+},
+{
+"t": "2026-09-16 16:52:12",
+"kind": "entity",
+"entity": "sensor.second_e104",
+"device": "Device 51",
+"to": "available",
+"offset": 732
+},
+{
+"t": "2026-09-16 16:52:13",
+"kind": "tracker",
+"entity": "device_tracker.second_t08",
+"from": "not_home",
+"to": "home",
+"offset": 733
+},
+{
+"t": "2026-09-16 16:52:13",
+"kind": "tracker",
+"entity": "device_tracker.second_t25",
+"from": "not_home",
+"to": "home",
+"offset": 733
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e054",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e055",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e056",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e057",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e058",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e059",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e060",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e061",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e062",
+"device": "Device 48",
+"to": "unavailable",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e054",
+"device": "Device 48",
+"to": "available",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e055",
+"device": "Device 48",
+"to": "available",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e056",
+"device": "Device 48",
+"to": "available",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e057",
+"device": "Device 48",
+"to": "available",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e058",
+"device": "Device 48",
+"to": "available",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e059",
+"device": "Device 48",
+"to": "available",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e060",
+"device": "Device 48",
+"to": "available",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e061",
+"device": "Device 48",
+"to": "available",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:15",
+"kind": "entity",
+"entity": "sensor.second_e062",
+"device": "Device 48",
+"to": "available",
+"offset": 735
+},
+{
+"t": "2026-09-16 16:52:17",
+"kind": "entity",
+"entity": "sensor.second_e020",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 737
+},
+{
+"t": "2026-09-16 16:52:17",
+"kind": "entity",
+"entity": "sensor.second_e021",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 737
+},
+{
+"t": "2026-09-16 16:52:17",
+"kind": "entity",
+"entity": "sensor.second_e022",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 737
+},
+{
+"t": "2026-09-16 16:52:17",
+"kind": "entity",
+"entity": "sensor.second_e023",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 737
+},
+{
+"t": "2026-09-16 16:52:17",
+"kind": "entity",
+"entity": "sensor.second_e024",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 737
+},
+{
+"t": "2026-09-16 16:52:17",
+"kind": "entity",
+"entity": "sensor.second_e025",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 737
+},
+{
+"t": "2026-09-16 16:52:17",
+"kind": "entity",
+"entity": "sensor.second_e026",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 737
+},
+{
+"t": "2026-09-16 16:52:17",
+"kind": "entity",
+"entity": "sensor.second_e027",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 737
+},
+{
+"t": "2026-09-16 16:52:18",
+"kind": "tracker",
+"entity": "device_tracker.second_t07",
+"from": "not_home",
+"to": "home",
+"offset": 738
+},
+{
+"t": "2026-09-16 16:52:18",
+"kind": "entity",
+"entity": "sensor.second_e028",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 738
+},
+{
+"t": "2026-09-16 16:52:18",
+"kind": "entity",
+"entity": "sensor.second_e029",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 738
+},
+{
+"t": "2026-09-16 16:52:18",
+"kind": "entity",
+"entity": "sensor.second_e030",
+"device": "Device 22",
+"to": "unavailable",
+"offset": 738
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e020",
+"device": "Device 22",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e021",
+"device": "Device 22",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e022",
+"device": "Device 22",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e023",
+"device": "Device 22",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e024",
+"device": "Device 22",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e025",
+"device": "Device 22",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e026",
+"device": "Device 22",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e027",
+"device": "Device 22",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e028",
+"device": "Device 22",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e029",
+"device": "Device 22",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e030",
+"device": "Device 22",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e228",
+"device": "Device 08",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e229",
+"device": "Device 08",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e230",
+"device": "Device 08",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e231",
+"device": "Device 08",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e232",
+"device": "Device 08",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e233",
+"device": "Device 08",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:19",
+"kind": "entity",
+"entity": "sensor.second_e234",
+"device": "Device 08",
+"to": "available",
+"offset": 739
+},
+{
+"t": "2026-09-16 16:52:22",
+"kind": "entity",
+"entity": "sensor.second_e283",
+"device": "Device 47",
+"to": "available",
+"offset": 742
+},
+{
+"t": "2026-09-16 16:52:22",
+"kind": "entity",
+"entity": "sensor.second_e281",
+"device": "Device 47",
+"to": "available",
+"offset": 742
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e280",
+"device": "Device 47",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e282",
+"device": "Device 47",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e085",
+"device": "Device 15",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e086",
+"device": "Device 15",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e087",
+"device": "Device 15",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e088",
+"device": "Device 15",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e089",
+"device": "Device 15",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e090",
+"device": "Device 15",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e091",
+"device": "Device 15",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e092",
+"device": "Device 15",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e093",
+"device": "Device 15",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e094",
+"device": "Device 15",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e262",
+"device": "Device 27",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e263",
+"device": "Device 27",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e264",
+"device": "Device 27",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e265",
+"device": "Device 27",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e266",
+"device": "Device 27",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e267",
+"device": "Device 27",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e146",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e147",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e148",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e149",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e150",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e151",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e152",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e153",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e154",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e155",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e156",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e157",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e158",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e159",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e160",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:23",
+"kind": "entity",
+"entity": "sensor.second_e161",
+"device": "Device 10",
+"to": "available",
+"offset": 743
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e080",
+"device": "Device 43",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e081",
+"device": "Device 43",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e082",
+"device": "Device 43",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e083",
+"device": "Device 43",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e084",
+"device": "Device 43",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e274",
+"device": "Device 29",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e275",
+"device": "Device 29",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e276",
+"device": "Device 29",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e277",
+"device": "Device 29",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e278",
+"device": "Device 29",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e279",
+"device": "Device 29",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e388",
+"device": "Device 24",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e389",
+"device": "Device 24",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e390",
+"device": "Device 24",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e391",
+"device": "Device 24",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e392",
+"device": "Device 24",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:24",
+"kind": "entity",
+"entity": "sensor.second_e393",
+"device": "Device 24",
+"to": "available",
+"offset": 744
+},
+{
+"t": "2026-09-16 16:52:26",
+"kind": "entity",
+"entity": "sensor.second_e256",
+"device": "Device 33",
+"to": "available",
+"offset": 746
+},
+{
+"t": "2026-09-16 16:52:26",
+"kind": "entity",
+"entity": "sensor.second_e257",
+"device": "Device 33",
+"to": "available",
+"offset": 746
+},
+{
+"t": "2026-09-16 16:52:26",
+"kind": "entity",
+"entity": "sensor.second_e258",
+"device": "Device 33",
+"to": "available",
+"offset": 746
+},
+{
+"t": "2026-09-16 16:52:26",
+"kind": "entity",
+"entity": "sensor.second_e259",
+"device": "Device 33",
+"to": "available",
+"offset": 746
+},
+{
+"t": "2026-09-16 16:52:26",
+"kind": "entity",
+"entity": "sensor.second_e260",
+"device": "Device 33",
+"to": "available",
+"offset": 746
+},
+{
+"t": "2026-09-16 16:52:26",
+"kind": "entity",
+"entity": "sensor.second_e261",
+"device": "Device 33",
+"to": "available",
+"offset": 746
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e067",
+"device": "Device 41",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e068",
+"device": "Device 41",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e069",
+"device": "Device 41",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e070",
+"device": "Device 41",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e071",
+"device": "Device 41",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e126",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e127",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e128",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e129",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e130",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e131",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e132",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e133",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e134",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e135",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e136",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e137",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e138",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e139",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e140",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e141",
+"device": "Device 13",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e268",
+"device": "Device 32",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e269",
+"device": "Device 32",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e270",
+"device": "Device 32",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e271",
+"device": "Device 32",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e272",
+"device": "Device 32",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:27",
+"kind": "entity",
+"entity": "sensor.second_e273",
+"device": "Device 32",
+"to": "available",
+"offset": 747
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "tracker",
+"entity": "device_tracker.second_t10",
+"from": "not_home",
+"to": "home",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "tracker",
+"entity": "device_tracker.second_t14",
+"from": "not_home",
+"to": "home",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e382",
+"device": "Device 34",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e383",
+"device": "Device 34",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e384",
+"device": "Device 34",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e385",
+"device": "Device 34",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e386",
+"device": "Device 34",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e387",
+"device": "Device 34",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e172",
+"device": "Device 38",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e173",
+"device": "Device 38",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e174",
+"device": "Device 38",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e175",
+"device": "Device 38",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e176",
+"device": "Device 38",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e040",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e041",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e042",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e043",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e044",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e045",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e046",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e047",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e048",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e049",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e050",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e051",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e052",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e053",
+"device": "Device 23",
+"to": "unavailable",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e040",
+"device": "Device 23",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e041",
+"device": "Device 23",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e042",
+"device": "Device 23",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e043",
+"device": "Device 23",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e044",
+"device": "Device 23",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e045",
+"device": "Device 23",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e046",
+"device": "Device 23",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e047",
+"device": "Device 23",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e048",
+"device": "Device 23",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e049",
+"device": "Device 23",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e050",
+"device": "Device 23",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:28",
+"kind": "entity",
+"entity": "sensor.second_e051",
+"device": "Device 23",
+"to": "available",
+"offset": 748
+},
+{
+"t": "2026-09-16 16:52:29",
+"kind": "tracker",
+"entity": "device_tracker.second_t31",
+"from": "not_home",
+"to": "home",
+"offset": 749
+},
+{
+"t": "2026-09-16 16:52:29",
+"kind": "tracker",
+"entity": "device_tracker.second_t26",
+"from": "not_home",
+"to": "home",
+"offset": 749
+},
+{
+"t": "2026-09-16 16:52:29",
+"kind": "tracker",
+"entity": "device_tracker.second_t30",
+"from": "not_home",
+"to": "home",
+"offset": 749
+},
+{
+"t": "2026-09-16 16:52:29",
+"kind": "tracker",
+"entity": "device_tracker.second_t33",
+"from": "not_home",
+"to": "home",
+"offset": 749
+},
+{
+"t": "2026-09-16 16:52:29",
+"kind": "tracker",
+"entity": "device_tracker.second_t29",
+"from": "not_home",
+"to": "home",
+"offset": 749
+},
+{
+"t": "2026-09-16 16:52:29",
+"kind": "entity",
+"entity": "sensor.second_e052",
+"device": "Device 23",
+"to": "available",
+"offset": 749
+},
+{
+"t": "2026-09-16 16:52:29",
+"kind": "entity",
+"entity": "sensor.second_e053",
+"device": "Device 23",
+"to": "available",
+"offset": 749
+},
+{
+"t": "2026-09-16 16:52:31",
+"kind": "tracker",
+"entity": "device_tracker.second_t12",
+"from": "not_home",
+"to": "home",
+"offset": 751
+},
+{
+"t": "2026-09-16 16:52:31",
+"kind": "tracker",
+"entity": "device_tracker.second_t24",
+"from": "not_home",
+"to": "home",
+"offset": 751
+},
+{
+"t": "2026-09-16 16:52:31",
+"kind": "tracker",
+"entity": "device_tracker.second_t15",
+"from": "not_home",
+"to": "home",
+"offset": 751
+},
+{
+"t": "2026-09-16 16:52:31",
+"kind": "tracker",
+"entity": "device_tracker.second_t13",
+"from": "not_home",
+"to": "home",
+"offset": 751
+},
+{
+"t": "2026-09-16 16:52:31",
+"kind": "tracker",
+"entity": "device_tracker.second_t23",
+"from": "not_home",
+"to": "home",
+"offset": 751
+},
+{
+"t": "2026-09-16 16:52:31",
+"kind": "tracker",
+"entity": "device_tracker.second_t22",
+"from": "not_home",
+"to": "home",
+"offset": 751
+},
+{
+"t": "2026-09-16 16:52:31",
+"kind": "tracker",
+"entity": "device_tracker.second_t01",
+"from": "not_home",
+"to": "home",
+"offset": 751
+},
+{
+"t": "2026-09-16 16:52:31",
+"kind": "tracker",
+"entity": "device_tracker.second_t11",
+"from": "not_home",
+"to": "home",
+"offset": 751
+},
+{
+"t": "2026-09-16 16:52:32",
+"kind": "entity",
+"entity": "sensor.second_e400",
+"device": "Device 28",
+"to": "available",
+"offset": 752
+},
+{
+"t": "2026-09-16 16:52:32",
+"kind": "entity",
+"entity": "sensor.second_e401",
+"device": "Device 28",
+"to": "available",
+"offset": 752
+},
+{
+"t": "2026-09-16 16:52:32",
+"kind": "entity",
+"entity": "sensor.second_e402",
+"device": "Device 28",
+"to": "available",
+"offset": 752
+},
+{
+"t": "2026-09-16 16:52:32",
+"kind": "entity",
+"entity": "sensor.second_e403",
+"device": "Device 28",
+"to": "available",
+"offset": 752
+},
+{
+"t": "2026-09-16 16:52:32",
+"kind": "entity",
+"entity": "sensor.second_e404",
+"device": "Device 28",
+"to": "available",
+"offset": 752
+},
+{
+"t": "2026-09-16 16:52:32",
+"kind": "entity",
+"entity": "sensor.second_e405",
+"device": "Device 28",
+"to": "available",
+"offset": 752
+},
+{
+"t": "2026-09-16 16:52:32",
+"kind": "entity",
+"entity": "sensor.second_e394",
+"device": "Device 31",
+"to": "available",
+"offset": 752
+},
+{
+"t": "2026-09-16 16:52:32",
+"kind": "entity",
+"entity": "sensor.second_e395",
+"device": "Device 31",
+"to": "available",
+"offset": 752
+},
+{
+"t": "2026-09-16 16:52:32",
+"kind": "entity",
+"entity": "sensor.second_e396",
+"device": "Device 31",
+"to": "available",
+"offset": 752
+},
+{
+"t": "2026-09-16 16:52:32",
+"kind": "entity",
+"entity": "sensor.second_e397",
+"device": "Device 31",
+"to": "available",
+"offset": 752
+},
+{
+"t": "2026-09-16 16:52:32",
+"kind": "entity",
+"entity": "sensor.second_e398",
+"device": "Device 31",
+"to": "available",
+"offset": 752
+},
+{
+"t": "2026-09-16 16:52:32",
+"kind": "entity",
+"entity": "sensor.second_e399",
+"device": "Device 31",
+"to": "available",
+"offset": 752
+},
+{
+"t": "2026-09-16 16:52:36",
+"kind": "entity",
+"entity": "sensor.second_e290",
+"device": "Device 02",
+"to": "available",
+"offset": 756
+},
+{
+"t": "2026-09-16 16:52:36",
+"kind": "entity",
+"entity": "sensor.second_e294",
+"device": "Device 02",
+"to": "available",
+"offset": 756
+},
+{
+"t": "2026-09-16 16:52:36",
+"kind": "entity",
+"entity": "sensor.second_e299",
+"device": "Device 02",
+"to": "available",
+"offset": 756
+},
+{
+"t": "2026-09-16 16:52:36",
+"kind": "entity",
+"entity": "sensor.second_e300",
+"device": "Device 02",
+"to": "available",
+"offset": 756
+},
+{
+"t": "2026-09-16 16:52:36",
+"kind": "entity",
+"entity": "sensor.second_e306",
+"device": "Device 02",
+"to": "available",
+"offset": 756
+},
+{
+"t": "2026-09-16 16:52:36",
+"kind": "entity",
+"entity": "sensor.second_e307",
+"device": "Device 02",
+"to": "available",
+"offset": 756
+},
+{
+"t": "2026-09-16 16:52:36",
+"kind": "entity",
+"entity": "sensor.second_e303",
+"device": "Device 02",
+"to": "available",
+"offset": 756
+},
+{
+"t": "2026-09-16 16:52:36",
+"kind": "entity",
+"entity": "sensor.second_e286",
+"device": "Device 02",
+"to": "available",
+"offset": 756
+},
+{
+"t": "2026-09-16 16:52:36",
+"kind": "entity",
+"entity": "sensor.second_e304",
+"device": "Device 02",
+"to": "available",
+"offset": 756
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e309",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e292",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e285",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e291",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e301",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e293",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e297",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e302",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e289",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e295",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e296",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e298",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e308",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e305",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e284",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e288",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:37",
+"kind": "entity",
+"entity": "sensor.second_e287",
+"device": "Device 02",
+"to": "available",
+"offset": 757
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e310",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e311",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e312",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e313",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e314",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e315",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e316",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e317",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e318",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e319",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e320",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e321",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e322",
+"device": "Device 49",
+"to": "unavailable",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e319",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e315",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e310",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e311",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e318",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e320",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e322",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e316",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e314",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e317",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e321",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e312",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:38",
+"kind": "entity",
+"entity": "sensor.second_e313",
+"device": "Device 49",
+"to": "available",
+"offset": 758
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e323",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e324",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e325",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e326",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e327",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e328",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e329",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e330",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e331",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e332",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e333",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e334",
+"device": "Device 09",
+"to": "unavailable",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e328",
+"device": "Device 09",
+"to": "available",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e324",
+"device": "Device 09",
+"to": "available",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:40",
+"kind": "entity",
+"entity": "sensor.second_e329",
+"device": "Device 09",
+"to": "available",
+"offset": 760
+},
+{
+"t": "2026-09-16 16:52:41",
+"kind": "entity",
+"entity": "sensor.second_e332",
+"device": "Device 09",
+"to": "available",
+"offset": 761
+},
+{
+"t": "2026-09-16 16:52:41",
+"kind": "entity",
+"entity": "sensor.second_e330",
+"device": "Device 09",
+"to": "available",
+"offset": 761
+},
+{
+"t": "2026-09-16 16:52:41",
+"kind": "entity",
+"entity": "sensor.second_e334",
+"device": "Device 09",
+"to": "available",
+"offset": 761
+},
+{
+"t": "2026-09-16 16:52:41",
+"kind": "entity",
+"entity": "sensor.second_e327",
+"device": "Device 09",
+"to": "available",
+"offset": 761
+},
+{
+"t": "2026-09-16 16:52:41",
+"kind": "entity",
+"entity": "sensor.second_e331",
+"device": "Device 09",
+"to": "available",
+"offset": 761
+},
+{
+"t": "2026-09-16 16:52:41",
+"kind": "entity",
+"entity": "sensor.second_e323",
+"device": "Device 09",
+"to": "available",
+"offset": 761
+},
+{
+"t": "2026-09-16 16:52:41",
+"kind": "entity",
+"entity": "sensor.second_e333",
+"device": "Device 09",
+"to": "available",
+"offset": 761
+},
+{
+"t": "2026-09-16 16:52:41",
+"kind": "entity",
+"entity": "sensor.second_e325",
+"device": "Device 09",
+"to": "available",
+"offset": 761
+},
+{
+"t": "2026-09-16 16:52:41",
+"kind": "entity",
+"entity": "sensor.second_e326",
+"device": "Device 09",
+"to": "available",
+"offset": 761
+},
+{
+"t": "2026-09-16 16:52:56",
+"kind": "entity",
+"entity": "sensor.second_e412",
+"device": "Device 25",
+"to": "available",
+"offset": 776
+},
+{
+"t": "2026-09-16 16:52:56",
+"kind": "entity",
+"entity": "sensor.second_e413",
+"device": "Device 25",
+"to": "available",
+"offset": 776
+},
+{
+"t": "2026-09-16 16:52:56",
+"kind": "entity",
+"entity": "sensor.second_e414",
+"device": "Device 25",
+"to": "available",
+"offset": 776
+},
+{
+"t": "2026-09-16 16:52:56",
+"kind": "entity",
+"entity": "sensor.second_e415",
+"device": "Device 25",
+"to": "available",
+"offset": 776
+},
+{
+"t": "2026-09-16 16:52:56",
+"kind": "entity",
+"entity": "sensor.second_e416",
+"device": "Device 25",
+"to": "available",
+"offset": 776
+},
+{
+"t": "2026-09-16 16:52:56",
+"kind": "entity",
+"entity": "sensor.second_e417",
+"device": "Device 25",
+"to": "available",
+"offset": 776
+},
+{
+"t": "2026-09-16 16:52:56",
+"kind": "entity",
+"entity": "sensor.second_e406",
+"device": "Device 35",
+"to": "available",
+"offset": 776
+},
+{
+"t": "2026-09-16 16:52:56",
+"kind": "entity",
+"entity": "sensor.second_e407",
+"device": "Device 35",
+"to": "available",
+"offset": 776
+},
+{
+"t": "2026-09-16 16:52:56",
+"kind": "entity",
+"entity": "sensor.second_e408",
+"device": "Device 35",
+"to": "available",
+"offset": 776
+},
+{
+"t": "2026-09-16 16:52:56",
+"kind": "entity",
+"entity": "sensor.second_e409",
+"device": "Device 35",
+"to": "available",
+"offset": 776
+},
+{
+"t": "2026-09-16 16:52:56",
+"kind": "entity",
+"entity": "sensor.second_e410",
+"device": "Device 35",
+"to": "available",
+"offset": 776
+},
+{
+"t": "2026-09-16 16:52:56",
+"kind": "entity",
+"entity": "sensor.second_e411",
+"device": "Device 35",
+"to": "available",
+"offset": 776
+},
+{
+"t": "2026-09-16 16:53:01",
+"kind": "tracker",
+"entity": "device_tracker.second_t16",
+"from": "not_home",
+"to": "home",
+"offset": 781
+},
+{
+"t": "2026-09-16 16:53:01",
+"kind": "tracker",
+"entity": "device_tracker.second_t18",
+"from": "not_home",
+"to": "home",
+"offset": 781
+},
+{
+"t": "2026-09-16 16:53:01",
+"kind": "tracker",
+"entity": "device_tracker.second_t20",
+"from": "not_home",
+"to": "home",
+"offset": 781
+},
+{
+"t": "2026-09-16 16:53:01",
+"kind": "tracker",
+"entity": "device_tracker.second_t17",
+"from": "not_home",
+"to": "home",
+"offset": 781
+},
+{
+"t": "2026-09-16 16:53:02",
+"kind": "tracker",
+"entity": "device_tracker.second_t28",
+"from": "not_home",
+"to": "home",
+"offset": 782
+},
+{
+"t": "2026-09-16 16:53:20",
+"kind": "entity",
+"entity": "sensor.second_e250",
+"device": "Device 26",
+"to": "available",
+"offset": 800
+},
+{
+"t": "2026-09-16 16:53:20",
+"kind": "entity",
+"entity": "sensor.second_e251",
+"device": "Device 26",
+"to": "available",
+"offset": 800
+},
+{
+"t": "2026-09-16 16:53:20",
+"kind": "entity",
+"entity": "sensor.second_e252",
+"device": "Device 26",
+"to": "available",
+"offset": 800
+},
+{
+"t": "2026-09-16 16:53:20",
+"kind": "entity",
+"entity": "sensor.second_e253",
+"device": "Device 26",
+"to": "available",
+"offset": 800
+},
+{
+"t": "2026-09-16 16:53:20",
+"kind": "entity",
+"entity": "sensor.second_e254",
+"device": "Device 26",
+"to": "available",
+"offset": 800
+},
+{
+"t": "2026-09-16 16:53:20",
+"kind": "entity",
+"entity": "sensor.second_e255",
+"device": "Device 26",
+"to": "available",
+"offset": 800
+},
+{
+"t": "2026-09-16 16:53:20",
+"kind": "entity",
+"entity": "sensor.second_e244",
+"device": "Device 30",
+"to": "available",
+"offset": 800
+},
+{
+"t": "2026-09-16 16:53:20",
+"kind": "entity",
+"entity": "sensor.second_e245",
+"device": "Device 30",
+"to": "available",
+"offset": 800
+},
+{
+"t": "2026-09-16 16:53:20",
+"kind": "entity",
+"entity": "sensor.second_e246",
+"device": "Device 30",
+"to": "available",
+"offset": 800
+},
+{
+"t": "2026-09-16 16:53:20",
+"kind": "entity",
+"entity": "sensor.second_e247",
+"device": "Device 30",
+"to": "available",
+"offset": 800
+},
+{
+"t": "2026-09-16 16:53:20",
+"kind": "entity",
+"entity": "sensor.second_e248",
+"device": "Device 30",
+"to": "available",
+"offset": 800
+},
+{
+"t": "2026-09-16 16:53:20",
+"kind": "entity",
+"entity": "sensor.second_e249",
+"device": "Device 30",
+"to": "available",
+"offset": 800
+},
+{
+"t": "2026-09-16 16:53:27",
+"kind": "tracker",
+"entity": "device_tracker.second_t03",
+"from": "not_home",
+"to": "home",
+"offset": 807
+},
+{
+"t": "2026-09-16 16:53:55",
+"kind": "entity",
+"entity": "sensor.second_e011",
+"device": "Device 52",
+"to": "available",
+"offset": 835
+},
+{
+"t": "2026-09-16 16:53:55",
+"kind": "entity",
+"entity": "sensor.second_e012",
+"device": "Device 52",
+"to": "available",
+"offset": 835
+},
+{
+"t": "2026-09-16 16:53:55",
+"kind": "entity",
+"entity": "sensor.second_e013",
+"device": "Device 52",
+"to": "available",
+"offset": 835
+},
+{
+"t": "2026-09-16 16:53:55",
+"kind": "entity",
+"entity": "sensor.second_e014",
+"device": "Device 52",
+"to": "available",
+"offset": 835
+},
+{
+"t": "2026-09-16 16:53:55",
+"kind": "entity",
+"entity": "sensor.second_e015",
+"device": "Device 52",
+"to": "available",
+"offset": 835
+},
+{
+"t": "2026-09-16 16:53:55",
+"kind": "entity",
+"entity": "sensor.second_e016",
+"device": "Device 52",
+"to": "available",
+"offset": 835
+},
+{
+"t": "2026-09-16 16:53:55",
+"kind": "entity",
+"entity": "sensor.second_e017",
+"device": "Device 52",
+"to": "available",
+"offset": 835
+},
+{
+"t": "2026-09-16 16:53:55",
+"kind": "entity",
+"entity": "sensor.second_e018",
+"device": "Device 52",
+"to": "available",
+"offset": 835
+},
+{
+"t": "2026-09-16 16:53:55",
+"kind": "entity",
+"entity": "sensor.second_e019",
+"device": "Device 52",
+"to": "available",
+"offset": 835
+},
+{
+"t": "2026-09-16 16:53:58",
+"kind": "tracker",
+"entity": "device_tracker.second_t37",
+"from": "not_home",
+"to": "home",
+"offset": 838
+},
+{
+"t": "2026-09-16 16:54:11",
+"kind": "entity",
+"entity": "sensor.second_e001",
+"device": "Device 53",
+"to": "available",
+"offset": 851
+},
+{
+"t": "2026-09-16 16:54:11",
+"kind": "entity",
+"entity": "sensor.second_e002",
+"device": "Device 53",
+"to": "available",
+"offset": 851
+},
+{
+"t": "2026-09-16 16:54:11",
+"kind": "entity",
+"entity": "sensor.second_e003",
+"device": "Device 53",
+"to": "available",
+"offset": 851
+},
+{
+"t": "2026-09-16 16:54:11",
+"kind": "entity",
+"entity": "sensor.second_e004",
+"device": "Device 53",
+"to": "available",
+"offset": 851
+},
+{
+"t": "2026-09-16 16:54:11",
+"kind": "entity",
+"entity": "sensor.second_e005",
+"device": "Device 53",
+"to": "available",
+"offset": 851
+},
+{
+"t": "2026-09-16 16:54:11",
+"kind": "entity",
+"entity": "sensor.second_e006",
+"device": "Device 53",
+"to": "available",
+"offset": 851
+},
+{
+"t": "2026-09-16 16:54:11",
+"kind": "entity",
+"entity": "sensor.second_e007",
+"device": "Device 53",
+"to": "available",
+"offset": 851
+},
+{
+"t": "2026-09-16 16:54:11",
+"kind": "entity",
+"entity": "sensor.second_e008",
+"device": "Device 53",
+"to": "available",
+"offset": 851
+},
+{
+"t": "2026-09-16 16:54:11",
+"kind": "entity",
+"entity": "sensor.second_e009",
+"device": "Device 53",
+"to": "available",
+"offset": 851
+},
+{
+"t": "2026-09-16 16:54:11",
+"kind": "entity",
+"entity": "sensor.second_e010",
+"device": "Device 53",
+"to": "available",
+"offset": 851
+},
+{
+"t": "2026-09-16 16:54:12",
+"kind": "tracker",
+"entity": "device_tracker.second_t38",
+"from": "not_home",
+"to": "home",
+"offset": 852
+}
+]
+}
