@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.21.12 (2026-09-17)
+# File: coordinator.py, Version: 0.21.13 (2026-09-17)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -518,6 +518,10 @@ class DeviceSentinelCoordinator(
         # The most devices each standing outage has had down at once,
         # by the name its problem list row carries (ruling #442).
         self._upstream_peak: dict[str, int] = {}
+        # Upstreams whose standing outage is dated from the start of
+        # this run, because they never loaded in it (rulings #445,
+        # #449). Nothing in the run happened before such an outage.
+        self._upstream_from_start: set[str] = set()
         # Seconds from this run's start to each upstream's first load
         # (ruling #445), for the diagnostics download.
         self.upstreams_loaded_after: dict[str, float] = {}
@@ -1459,8 +1463,9 @@ class DeviceSentinelCoordinator(
         # sees the same problems it saw before the reboot and a
         # still-present problem keeps its item (and its checkbox). A
         # sync against not-yet-judged lists would read as a fleet-wide
-        # recovery and mass-delete the list at every boot.
-        self._sync_problem_list()
+        # recovery and mass-delete the list at every boot. The write
+        # itself waits a few lines, until the readers are up and the
+        # remembered upstream state is back (ruling #447).
 
         # Start a bridge reader for each detected stack that can report
         # its own state. This is separate from the sensors that display
@@ -1473,6 +1478,15 @@ class DeviceSentinelCoordinator(
         # and came back across this restart still closes
         # (ruling #222).
         self._restore_bridge_state()
+
+        # The first write of the problem list, now that a device can
+        # be matched to its bridge and a remembered outage is back
+        # (ruling #447). Written before this, it listed every device
+        # behind a bridge that was already down as its own problem:
+        # 75 rows on the reference rig on 17 September, one per
+        # Zigbee device, replaced by the single bridge row a tick
+        # later.
+        self._sync_problem_list()
 
         # A maintenance window that was open when the process stopped
         # died with it, correctly, since the window is deliberately

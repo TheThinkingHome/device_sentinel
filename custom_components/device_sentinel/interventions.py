@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.21.12 (2026-09-17)
+# File: interventions.py, Version: 0.21.13 (2026-09-17)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -380,8 +380,19 @@ class InterventionMixin:
         except Exception as err:  # noqa: BLE001 - never break the tick
             LOGGER.debug("Broker watch faulted, not sampled: %s", err)
             return BROKER_UNKNOWN
-        if state == BROKER_UNKNOWN:
+        if state == BROKER_UNKNOWN and not self._broker_silent_run(now):
             return BROKER_UNKNOWN
+        if state == BROKER_UNKNOWN:
+            # Heard in an earlier run and silent through the whole of
+            # this one, past the grace: this broker publishes, so the
+            # silence is an outage rather than a broker that has
+            # nothing to say (ruling #451). On the reference rig, 17
+            # September, Home Assistant loaded the MQTT entry a
+            # second after the restart while the broker itself was
+            # stopped, so nothing else in the house would have said
+            # so, and every device behind it would have been listed
+            # on its own once the grace ended.
+            state = BROKER_DOWN
         # The same rule as every bridge (ruling #445). The reader also
         # reads unknown until it first hears the broker, so a broker
         # this run has never heard cannot read down; the rule is kept
@@ -420,6 +431,8 @@ class InterventionMixin:
         elif was is not None and was != state:
             if state == BROKER_DOWN:
                 began = from_start if from_start is not None else now
+                if from_start is not None:
+                    self._upstream_from_start.add(BROKER_LABEL)
                 stored[BRIDGE_SEEN_SINCE] = began
                 # The moment the reporting layer measures from
                 # (ruling #264), kept beside the bridges' own stamps.
@@ -432,6 +445,7 @@ class InterventionMixin:
                     UPSTREAM_BROKER, BROKER_LABEL, None, began
                 )
             elif was == BROKER_DOWN:
+                self._upstream_from_start.discard(BROKER_LABEL)
                 # Read while the broker still claims its devices.
                 ended = self._upstream_ended(BROKER_LABEL)
                 self._broker_down_at = None
@@ -652,6 +666,7 @@ class InterventionMixin:
                 if entry is None or entry.state not in _FAILED_SETUP:
                     continue
                 self._entry_down_at.setdefault(entry_id, self._run_start())
+                self._upstream_from_start.add(entry.domain)
             first = self._entry_down_at.get(entry_id)
             if first is None:
                 self._entry_down_at[entry_id] = now
@@ -687,6 +702,7 @@ class InterventionMixin:
         if entry.entry_id not in self._integration_told:
             return
         domain = entry.domain
+        self._upstream_from_start.discard(domain)
         # The window closes on the wall clock, for the reason the
         # Wi-Fi hand-back gives: the claim is asked without a clock,
         # so a sample's own time would be compared against another.
@@ -864,6 +880,92 @@ class InterventionMixin:
             return
         start = self._run_start()
         self.upstreams_loaded_after[name] = round(max(0.0, now - start), 1)
+
+    def loading_held(self) -> set[str]:
+        """Devices whose upstream is down and has not loaded (#449).
+
+        Inside the startup grace an upstream that reads down and has
+        not loaded in this run is still starting as far as anything
+        here knows (ruling #445), so nothing is reported for it. Its
+        devices wait with it, the way a Wi-Fi burst waits for the
+        router (ruling #446): on the reference rig, 17 September, a
+        restart taken with the broker stopped came up holding a row
+        for each of 75 Zigbee devices, replaced by the single bridge
+        row a tick later. Ruling #447 answered the case where the
+        outage was remembered; this answers the case where it was not.
+
+        Only an upstream that reads down or that Home Assistant says
+        failed to set up holds anything. One that has simply not been
+        sampled yet says nothing about its devices, and a device whose
+        integration is running is nobody's business but its own.
+        """
+        if not self._in_startup_grace():
+            return set()
+        waiting = self._upstreams_still_starting()
+        if not waiting:
+            return set()
+        held: set[str] = set()
+        for device_id in self._watched:
+            stack = self._stack_for_device(device_id)
+            if stack is not None and stack in waiting:
+                held.add(device_id)
+                continue
+            if stack is not None and BROKER_LABEL in waiting:
+                held.add(device_id)
+                continue
+            entry_id = self._entry_of_device.get(device_id)
+            if entry_id is not None and entry_id in waiting:
+                held.add(device_id)
+        return held
+
+    def _broker_silent_run(self, now: float) -> bool:
+        """Whether a broker known to publish has said nothing all run.
+
+        Ruling #451. Evidence that it publishes is a state remembered
+        from an earlier run: a broker that never published an uptime
+        topic would have none, and is left alone.
+        """
+        if BROKER_LABEL in self.upstreams_loaded_after:
+            return False
+        if self._in_startup_grace():
+            return False
+        stored = self.data.get(DATA_BROKER_SEEN) or {}
+        if stored.get(BRIDGE_SEEN_STATE) not in (
+            BROKER_RUNNING, BROKER_DOWN
+        ):
+            return False
+        return self._broker_reader is not None
+
+    def _upstreams_still_starting(self) -> set[str]:
+        """Upstreams reading down that have not loaded in this run."""
+        waiting: set[str] = set()
+        for stack, reader in self._bridge_readers.items():
+            if stack in self.upstreams_loaded_after:
+                continue
+            sample = self._read_bridge(stack, reader)
+            if sample is not None and sample[0] == BRIDGE_DOWN:
+                waiting.add(stack)
+        if BROKER_LABEL not in self.upstreams_loaded_after:
+            reader = self._broker_reader
+            stored = self.data.get(DATA_BROKER_SEEN) or {}
+            heard_before = stored.get(BRIDGE_SEEN_STATE) in (
+                BROKER_RUNNING, BROKER_DOWN
+            )
+            # Down, or silent all run while the house knows it
+            # publishes: either way its devices wait with it
+            # (rulings #449, #451).
+            if reader is not None and (
+                self.broker_state == BROKER_DOWN or heard_before
+            ):
+                waiting.add(BROKER_LABEL)
+        for device_id in self._watched:
+            entry_id = self._entry_of_device.get(device_id)
+            if entry_id is None or entry_id in self._entry_seen_loaded:
+                continue
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is not None and entry.state in _FAILED_SETUP:
+                waiting.add(entry_id)
+        return waiting
 
     def _loading(
         self, name: str, loaded: bool, down: bool, now: float
@@ -1196,6 +1298,7 @@ class InterventionMixin:
                     onset = getattr(reader, "down_since", None)
                     if from_start is not None:
                         began = from_start
+                        self._upstream_from_start.add(stack)
                     elif (
                         isinstance(onset, (int, float))
                         and not isinstance(onset, bool)
@@ -1212,6 +1315,7 @@ class InterventionMixin:
                         UPSTREAM_BRIDGE, stack, stack, began
                     )
                 elif was == BRIDGE_DOWN:
+                    self._upstream_from_start.discard(stack)
                     since = self._bridge_down_at.pop(stack, None)
                     # Whatever it was carrying keeps that claim for a
                     # short while (ruling #436), and the recovery is

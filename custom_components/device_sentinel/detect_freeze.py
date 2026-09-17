@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.21.12 (2026-09-17)
+# File: detect_freeze.py, Version: 0.21.13 (2026-09-17)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -633,6 +633,25 @@ class FreezeMixin:
         rows.sort(key=lambda row: (row["category"], row["name"]))
         return rows
 
+    def _broken_before(
+        self, name: str, since: float | None, down_since: float
+    ) -> bool:
+        """Whether a device was already broken when its upstream went.
+
+        Such a device keeps its own row (ruling #264): the upstream is
+        not the reason for it. An outage dated from the start of this
+        run is the exception, because nothing inside the run happened
+        before it, and every device behind it failed either with it or
+        while it stood. Left unqualified, a restart taken during an
+        integration outage listed each device behind it on its own,
+        which is the fault ruling #440 closed for Wi-Fi.
+        """
+        if since is None:
+            return False
+        if name in self._upstream_from_start:
+            return False
+        return since < down_since
+
     @property
     def reportable_down_rows(self) -> list[dict[str, Any]]:
         """Return the down devices worth reporting on their own.
@@ -653,17 +672,18 @@ class FreezeMixin:
         """
         rows: list[dict[str, Any]] = []
         # A burst of tied devices waits for the router before it is
-        # reported (ruling #446).
-        held = self.wifi_burst_held()
+        # reported (ruling #446), and a device whose upstream has not
+        # loaded yet waits for it (ruling #449).
+        held = self.wifi_burst_held() | self.loading_held()
         for row in self.frozen_devices_list:
             upstream = self.upstream_down_since(row["device_id"])
             if upstream is None:
                 if row["device_id"] not in held:
                     rows.append(row)
                 continue
-            _name, down_since = upstream
+            name, down_since = upstream
             since = row.get("since")
-            if since is not None and since < down_since:
+            if self._broken_before(name, since, down_since):
                 rows.append(row)
         return rows
 
@@ -677,7 +697,7 @@ class FreezeMixin:
                 continue
             name, down_since = upstream
             since = row.get("since")
-            if since is not None and since < down_since:
+            if self._broken_before(name, since, down_since):
                 continue
             counts[name] = counts.get(name, 0) + 1
         # A Wi-Fi outage counts the devices it took, not the devices

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.21.12 (2026-09-17)
+# File: problem_list.py, Version: 0.21.13 (2026-09-17)
 
 """The problem list: the single memory every channel renders.
 
@@ -479,14 +479,34 @@ class ProblemListMixin:
             if when
             else f"{display} is not reporting."
         )
-        plural = "" if behind == 1 else "s"
         return summary, (
-            f"{opening} {behind} device{plural} sit behind it, and "
-            f"{devices} of them are unavailable because of it rather "
-            f"than on their own, so they are counted here instead of "
-            f"listed. Their verdicts are recorded and clear when it "
-            f"returns; anything still down afterward is listed on its "
-            f"own."
+            f"{opening} {self._took_words(devices, behind)}, because of "
+            f"it rather than on their own, so they are counted here "
+            f"instead of listed. Their verdicts are recorded and clear "
+            f"when it returns; anything still down afterward is listed "
+            f"on its own."
+        )
+
+    @staticmethod
+    def _took_words(devices: int, behind: int) -> str:
+        """What the outage took, in the number the count deserves.
+
+        Ruling #448. The sentence read "1 device sit behind it, and 1
+        of them are unavailable": a plural verb on one device, and it
+        led with how many sit behind the upstream where a person wants
+        to know what went down with it.
+        """
+        if devices <= 0:
+            noun = "device" if behind == 1 else "devices"
+            has = "has" if behind == 1 else "have"
+            return f"None of its {behind} {noun} {has} gone down yet"
+        if behind <= 1:
+            return "Its one device went down with it"
+        if devices >= behind:
+            return f"All {behind} devices behind it went down with it"
+        return (
+            f"{devices} of the {behind} devices behind it went down "
+            f"with it"
         )
 
     @staticmethod
