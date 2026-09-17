@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.20.19 (2026-09-12)
+# File: normalise.py, Version: 0.21.12 (2026-09-17)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -436,6 +436,8 @@ SYSTEM_EVENT_SHAPE: dict[str, str] = {
     "detail": STRING,
     "duration": NUMBER,
     "devices": INTEGER,
+    # The most devices an ended outage had down at once (ruling #442).
+    "worst": INTEGER,
 }
 
 TODO_ITEM_SHAPE: dict[str, str] = {
@@ -479,8 +481,11 @@ TABLES: dict[str, tuple[dict[str, str], frozenset[str]]] = {
     DATA_EPISODES: (EPISODE_SHAPE, frozenset()),
     DATA_SIGNAL_STRESS: (STRESS_SHAPE, frozenset()),
     # A row carries a device count only where the event has one to
-    # carry, so this key is absent far more often than present.
-    DATA_SYSTEM_EVENTS: (SYSTEM_EVENT_SHAPE, frozenset({"devices"})),
+    # carry, so this key is absent far more often than present, and a
+    # worst moment only where an outage has ended.
+    DATA_SYSTEM_EVENTS: (
+        SYSTEM_EVENT_SHAPE, frozenset({"devices", "worst"})
+    ),
     DATA_TODO_ITEMS: (TODO_ITEM_SHAPE, frozenset()),
     DATA_TODO_JOURNAL: (JOURNAL_SHAPE, frozenset()),
     DATA_STORMS: (STORM_SHAPE, frozenset()),

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.21.10 (2026-09-16)
+# File: report_brief.py, Version: 0.21.12 (2026-09-17)
 
 """The daily brief: the one report written for a person.
 
@@ -71,8 +71,11 @@ from .const import (
     SYS_BRIDGE_UP,
     SYS_WIFI_DOWN,
     SYS_WIFI_UP,
+    SYS_WIFI_RECOVERING,
+    SYS_WIFI_RECOVERY_WITHDRAWN,
     SYS_BROKER_DOWN,
     SYS_DEVICES,
+    SYS_WORST,
     SYS_STORM_CLOSED,
     SYS_STORM_OPEN,
     SYS_BROKER_UP,
@@ -151,6 +154,7 @@ _REPEAT_PARAGRAPH = (
 )
 
 
+
 class BriefMixin:
     """The daily brief: the one report written for a person."""
 
@@ -160,6 +164,19 @@ class BriefMixin:
         return dt_util.as_local(
             dt_util.utc_from_timestamp(epoch)
         ).strftime("%b %-d, %-I:%M %p")
+
+    @staticmethod
+    def _brief_log_moment(epoch: float) -> str:
+        """A time to the second, for the Last 24 Hours table.
+
+        The table is the record a tester reads back after a staged
+        outage (ruling #444), where a minute is too coarse to order
+        what happened. The summary above it keeps minutes, because a
+        person reading it wants the story, not the stopwatch.
+        """
+        return dt_util.as_local(
+            dt_util.utc_from_timestamp(epoch)
+        ).strftime("%b %-d, %-I:%M:%S %p")
 
     def _brief_hour_minute(self) -> tuple[int, int]:
         """Return the configured brief time, as hour and minute."""
@@ -338,6 +355,32 @@ class BriefMixin:
         rows.sort(key=lambda row: row[2])
         return rows
 
+    @staticmethod
+    def _worst_words(row: dict[str, Any], sentence: bool) -> str | None:
+        """How many devices an ended outage took, or None.
+
+        The worst moment beside the total (ruling #442), never a count
+        taken partway through. A row written before 0.21.12 carries no
+        worst figure and keeps its old wording.
+        """
+        if SYS_WORST not in row:
+            return None
+        # The storage check vouches for both as whole numbers, and for
+        # the total as present or absent (ruling #370).
+        worst = row[SYS_WORST]
+        total = row.get(SYS_DEVICES)
+        noun = "device" if total == 1 else "devices"
+        if total is None:
+            count = "No" if worst == 0 else str(worst)
+            plain = "device" if worst == 1 else "devices"
+            text = f"{count} {plain} went down"
+            return f"{text}." if sentence else text.lower()
+        if sentence:
+            count = "None" if worst == 0 else str(worst)
+            return f"{count} of its {total} {noun} went down."
+        count = "none" if worst == 0 else str(worst)
+        return f"{count} of {total} {noun} went down"
+
     def _system_event_sentence(self, row: dict[str, Any]) -> str:
         """One thing that happened to the house, as a sentence.
 
@@ -360,22 +403,24 @@ class BriefMixin:
             return f"The system restarted at {when}."
         if kind == SYS_INTEGRATION_DOWN:
             return f"The {scope} integration went down at {when}."
+        worst = self._worst_words(row, sentence=True)
         if kind == SYS_INTEGRATION_UP:
-            return (
+            said = (
                 f"The {scope} integration came back at {when} after "
                 f"{held}."
                 if held
                 else f"The {scope} integration came back at {when}."
             )
+            return f"{said} {worst}" if worst else said
         if kind == SYS_BRIDGE_DOWN:
             return f"The {scope} bridge went down at {when}."
         if kind == SYS_BRIDGE_UP:
-            if held:
-                return (
-                    f"The {scope} bridge came back at {when} after "
-                    f"{held}."
-                )
-            return f"The {scope} bridge came back at {when}."
+            said = (
+                f"The {scope} bridge came back at {when} after {held}."
+                if held
+                else f"The {scope} bridge came back at {when}."
+            )
+            return f"{said} {worst}" if worst else said
         # The broker names itself rather than its scope, because a
         # house has one and "the mqtt broker" reads as a stack name
         # to somebody who does not know the difference.
@@ -397,6 +442,25 @@ class BriefMixin:
                     f"{_plural(count)} behind it."
                 )
             return f"The WiFi network went down at {when}."
+        if kind == SYS_WIFI_RECOVERING:
+            return (
+                f"The WiFi network came back at {when}, and its devices "
+                f"began reconnecting."
+            )
+        if kind == SYS_WIFI_RECOVERY_WITHDRAWN:
+            return (
+                f"The WiFi recovery stalled at {when} as devices dropped "
+                f"again, so the outage continues."
+            )
+        if kind == SYS_WIFI_UP and worst:
+            # The network came back when the recovery began, which has
+            # its own line now; this one is the outage ending.
+            said = (
+                f"The WiFi outage ended at {when} after {held}."
+                if held
+                else f"The WiFi outage ended at {when}."
+            )
+            return f"{said} {worst}"
         if kind == SYS_WIFI_UP:
             count = row.get(SYS_DEVICES)
             tail = f", {_plural(count)} behind it" if count else ""
@@ -409,11 +473,12 @@ class BriefMixin:
         if kind == SYS_BROKER_DOWN:
             return f"The MQTT broker went down at {when}."
         if kind == SYS_BROKER_UP:
-            if held:
-                return (
-                    f"The MQTT broker came back at {when} after {held}."
-                )
-            return f"The MQTT broker came back at {when}."
+            said = (
+                f"The MQTT broker came back at {when} after {held}."
+                if held
+                else f"The MQTT broker came back at {when}."
+            )
+            return f"{said} {worst}" if worst else said
         if kind == SYS_DEVICE_HANDLED:
             # The device's own name rather than its id, and the plain
             # fact rather than the mechanism: somebody was at it
@@ -563,6 +628,8 @@ class BriefMixin:
         span = row.get(SYS_DURATION)
         held = self._human_span(span) if span else None
         kind = row.get(SYS_KIND)
+        worst = self._worst_words(row, sentence=False)
+        tail = f", {worst}" if worst else ""
         if kind == SYS_RESTART:
             return (
                 f"system restarted, {held} unwatched"
@@ -576,7 +643,7 @@ class BriefMixin:
                 f"{scope} integration came back after {held}"
                 if held
                 else f"{scope} integration came back"
-            )
+            ) + tail
         if kind == SYS_BRIDGE_DOWN:
             return f"{scope} bridge went down"
         if kind == SYS_BRIDGE_UP:
@@ -584,7 +651,7 @@ class BriefMixin:
                 f"{scope} bridge came back after {held}"
                 if held
                 else f"{scope} bridge came back"
-            )
+            ) + tail
         if kind == SYS_STORM_OPEN:
             return f"{scope} integration reloaded"
         if kind == SYS_STORM_CLOSED:
@@ -597,6 +664,16 @@ class BriefMixin:
             )
         if kind == SYS_WIFI_DOWN:
             return "WiFi network went down"
+        if kind == SYS_WIFI_RECOVERING:
+            return "WiFi network came back, devices reconnecting"
+        if kind == SYS_WIFI_RECOVERY_WITHDRAWN:
+            return "WiFi recovery stalled, outage continues"
+        if kind == SYS_WIFI_UP and worst:
+            return (
+                f"WiFi outage ended after {held}"
+                if held
+                else "WiFi outage ended"
+            ) + tail
         if kind == SYS_WIFI_UP:
             return (
                 f"WiFi network came back after {held}"
@@ -610,7 +687,7 @@ class BriefMixin:
                 f"MQTT broker came back after {held}"
                 if held
                 else "MQTT broker came back"
-            )
+            ) + tail
         if kind == SYS_PAIRING_OPEN:
             return f"{scope} pairing window opened"
         if kind == SYS_PAIRING_CLOSED:
@@ -1059,6 +1136,10 @@ class BriefMixin:
             SYS_BROKER_UP,
             SYS_WIFI_DOWN,
             SYS_WIFI_UP,
+            # The recovery's own moments belong to the table, which is
+            # the log (ruling #444); the summary tells the outage once.
+            SYS_WIFI_RECOVERING,
+            SYS_WIFI_RECOVERY_WITHDRAWN,
             SYS_STORM_OPEN,
             SYS_STORM_CLOSED,
             SYS_OPTIONS_CHANGED,
@@ -1981,7 +2062,8 @@ class BriefMixin:
             merged.sort(key=lambda item: item[0], reverse=True)
             for moment, who, what in merged:
                 lines.append(
-                    f"| {self._brief_moment(moment)} | {who} | {what} |"
+                    f"| {self._brief_log_moment(moment)} | {who} | "
+                    f"{what} |"
                 )
             lines.append("")
         # Named for the day the window opened, not the moment of

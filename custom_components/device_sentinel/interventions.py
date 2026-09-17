@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.21.8 (2026-09-15)
+# File: interventions.py, Version: 0.21.12 (2026-09-17)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -131,6 +131,31 @@ def _median(values: list[float]) -> float:
     if len(ordered) % 2:
         return float(ordered[middle])
     return (ordered[middle - 1] + ordered[middle]) / 2.0
+
+# The states in which Home Assistant says an entry tried to start and
+# failed (ruling #445). An entry in any other unloaded state has not
+# been started, and that is not an outage.
+_FAILED_SETUP = frozenset(
+    {
+        ConfigEntryState.SETUP_ERROR,
+        ConfigEntryState.SETUP_RETRY,
+        ConfigEntryState.MIGRATION_ERROR,
+    }
+)
+
+
+def _reader_loaded(reader: Any) -> bool:
+    """Whether a reader says its upstream has loaded (ruling #445).
+
+    A reader that cannot say is taken as established, which is what
+    every reader was before 0.21.12. One that faults while saying is
+    taken the same way, so the tick goes on for every other upstream.
+    """
+    try:
+        return bool(getattr(reader, "loaded", True))
+    except Exception as err:  # noqa: BLE001 - never break the tick
+        LOGGER.debug("A reader could not say whether it loaded: %s", err)
+        return True
 
 class InterventionMixin:
     """Interventions: bridge state, pairing windows, and storms."""
@@ -357,6 +382,15 @@ class InterventionMixin:
             return BROKER_UNKNOWN
         if state == BROKER_UNKNOWN:
             return BROKER_UNKNOWN
+        # The same rule as every bridge (ruling #445). The reader also
+        # reads unknown until it first hears the broker, so a broker
+        # this run has never heard cannot read down; the rule is kept
+        # for a reader that can.
+        loading, from_start = self._loading(
+            BROKER_LABEL, _reader_loaded(reader), state == BROKER_DOWN, now
+        )
+        if loading:
+            return BROKER_UNKNOWN
 
         stored = self.data.setdefault(DATA_BROKER_SEEN, {})
         was = stored.get(BRIDGE_SEEN_STATE)
@@ -385,17 +419,21 @@ class InterventionMixin:
             )
         elif was is not None and was != state:
             if state == BROKER_DOWN:
-                stored[BRIDGE_SEEN_SINCE] = now
+                began = from_start if from_start is not None else now
+                stored[BRIDGE_SEEN_SINCE] = began
                 # The moment the reporting layer measures from
                 # (ruling #264), kept beside the bridges' own stamps.
-                self._broker_down_at = now
+                self._broker_down_at = began
+                self._begin_upstream_peak(BROKER_LABEL)
                 self._record_system_event(
                     SYS_BROKER_DOWN, scope=BROKER_SCOPE
                 )
                 self._say_upstream_down(
-                    UPSTREAM_BROKER, BROKER_LABEL, None, now
+                    UPSTREAM_BROKER, BROKER_LABEL, None, began
                 )
             elif was == BROKER_DOWN:
+                # Read while the broker still claims its devices.
+                ended = self._upstream_ended(BROKER_LABEL)
                 self._broker_down_at = None
                 since = stored.pop(BRIDGE_SEEN_SINCE, None)
                 self._record_system_event(
@@ -404,6 +442,7 @@ class InterventionMixin:
                     duration=(
                         now - since if since is not None else None
                     ),
+                    **ended,
                 )
                 self._say_upstream_restored(
                     UPSTREAM_BROKER, BROKER_LABEL, None, since, now
@@ -590,6 +629,7 @@ class InterventionMixin:
             )
             if loaded:
                 self._entry_seen_loaded.add(entry_id)
+                self._note_loaded(entry.domain, now)
                 since = self._entry_down_at.pop(entry_id, None)
                 if since is not None and now - since >= (
                     INTEGRATION_DOWN_DWELL_SECONDS
@@ -597,13 +637,21 @@ class InterventionMixin:
                     self._integration_back(entry, since, now)
                 continue
             if entry_id not in self._entry_seen_loaded:
-                # Nothing that was never up can have gone down. An
-                # entry Device Sentinel has never observed loaded is
-                # either still starting or was already broken when
-                # the house came up, and neither is an outage this
-                # can date. The devices behind it are reported on
-                # their own, which is what they were before.
-                continue
+                # Not loaded since Home Assistant started. While the
+                # grace lasts it is still starting (ruling #445). Once
+                # the grace is over, one that Home Assistant says has
+                # failed is down, dated from the start, because it
+                # never came up in this run; until 0.21.12 it was
+                # never judged, and the devices behind it were
+                # reported one by one. One Home Assistant has simply
+                # not set up says nothing either way and is still left
+                # alone: reading it as down claimed every device of an
+                # entry nobody had started and hid a real freeze.
+                if self._in_startup_grace():
+                    continue
+                if entry is None or entry.state not in _FAILED_SETUP:
+                    continue
+                self._entry_down_at.setdefault(entry_id, self._run_start())
             first = self._entry_down_at.get(entry_id)
             if first is None:
                 self._entry_down_at[entry_id] = now
@@ -620,6 +668,7 @@ class InterventionMixin:
     def _integration_gone(self, entry, since: float, behind: int) -> None:
         """Record and announce an integration that has gone."""
         self._integration_told.add(entry.entry_id)
+        self._begin_upstream_peak(entry.domain)
         self._record_system_event(
             SYS_INTEGRATION_DOWN, scope=entry.domain
         )
@@ -628,14 +677,34 @@ class InterventionMixin:
         )
 
     def _integration_back(self, entry, since: float, now: float) -> None:
-        """Record and announce an integration that has come back."""
+        """Record and announce an integration that has come back.
+
+        What it was carrying keeps the claim for the same window a
+        bridge gives (ruling #441), and the recovery is watched, so a
+        Z-Wave or Matter device still rejoining is not reported the
+        moment the entry loads.
+        """
         if entry.entry_id not in self._integration_told:
             return
+        domain = entry.domain
+        # The window closes on the wall clock, for the reason the
+        # Wi-Fi hand-back gives: the claim is asked without a clock,
+        # so a sample's own time would be compared against another.
+        self._integration_handback[entry.entry_id] = (
+            since, dt_util.utcnow().timestamp()
+        )
+        self._integration_recovering_at[domain] = now
+        self._integration_fell[domain] = self._integration_casualties(
+            domain
+        )
+        # Read while the window holds the claim.
+        ended = self._upstream_ended(domain)
         self._integration_told.discard(entry.entry_id)
         self._record_system_event(
             SYS_INTEGRATION_UP,
-            scope=entry.domain,
+            scope=domain,
             duration=now - since,
+            **ended,
         )
         self._say_upstream_restored(
             UPSTREAM_INTEGRATION, entry.domain, None, since, now
@@ -648,11 +717,87 @@ class InterventionMixin:
             return None
         since = self._entry_down_at.get(entry_id)
         if since is None or entry_id not in self._integration_told:
+            held = self._integration_handback.get(entry_id)
+            if held is None:
+                return None
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is None:
+                return None
+            if self._integration_window_open(held):
+                return entry.domain, held[0]
+            self._integration_handback.pop(entry_id, None)
+            self._integration_recovery_over(entry.domain)
             return None
         entry = self.hass.config_entries.async_get_entry(entry_id)
         if entry is None:
             return None
         return entry.domain, since
+
+    @staticmethod
+    def _integration_window_open(held: tuple[float, float]) -> bool:
+        """Whether a returned integration still holds its devices."""
+        return dt_util.utcnow().timestamp() - held[1] < (
+            BRIDGE_HANDBACK_SECONDS
+        )
+
+    def _integration_recovery_over(self, domain: str) -> None:
+        """Forget a domain's recovery once no entry of it holds one."""
+        still = any(
+            (self.hass.config_entries.async_get_entry(entry_id) or None)
+            is not None
+            and self.hass.config_entries.async_get_entry(entry_id).domain
+            == domain
+            and self._integration_window_open(held)
+            for entry_id, held in self._integration_handback.items()
+        )
+        if not still:
+            self._integration_recovering_at.pop(domain, None)
+            self._integration_fell.pop(domain, None)
+
+    def _integration_casualties(self, domain: str) -> int:
+        """How many watched devices of this integration are down.
+
+        Only devices no stack reader carries, which are the ones the
+        integration rung speaks for.
+        """
+        count = 0
+        for device_id in self._watched:
+            if self._stack_for_device(device_id) is not None:
+                continue
+            record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
+            if record.get(DEV_FROZEN_CATEGORY) is None:
+                continue
+            entry_id = self._entry_of_device.get(device_id)
+            entry = (
+                self.hass.config_entries.async_get_entry(entry_id)
+                if entry_id is not None
+                else None
+            )
+            if entry is not None and entry.domain == domain:
+                count += 1
+        return count
+
+    def upstream_recovering_at(self, name: str) -> float | None:
+        """When a bridge's or an integration's recovery began, or None.
+
+        One question for the problem list, whichever rung carried the
+        outage (ruling #441).
+        """
+        if name in self._bridge_recovering_at:
+            return self._bridge_recovering_at[name]
+        if name not in self._integration_recovering_at:
+            return None
+        self._integration_recovery_over(name)
+        return self._integration_recovering_at.get(name)
+
+    def upstream_recovery_counts(self, name: str) -> tuple[int, int]:
+        """How many of a recovering upstream's devices are still down,
+        and how many it took."""
+        if name in self._bridge_recovering_at:
+            return self.bridge_recovery_counts(name)
+        fell = self._integration_fell.get(name, 0)
+        left = self._integration_casualties(name)
+        return left, max(fell, left)
 
     def upstream_down_since(self, device_id: str) -> tuple[str, float] | None:
         """Return the upstream that is down for this device, and when.
@@ -712,6 +857,80 @@ class InterventionMixin:
             )
             is not None
         )
+
+    def _note_loaded(self, name: str, now: float) -> None:
+        """Record the first time an upstream is seen loaded this run."""
+        if name in self.upstreams_loaded_after:
+            return
+        start = self._run_start()
+        self.upstreams_loaded_after[name] = round(max(0.0, now - start), 1)
+
+    def _loading(
+        self, name: str, loaded: bool, down: bool, now: float
+    ) -> tuple[bool, float | None]:
+        """Loading is not down (ruling #445).
+
+        One rule for the broker and every bridge. An upstream that has
+        not loaded since Home Assistant started is still starting
+        while the grace lasts, and nothing is recorded for it. Once
+        the grace is over, one that never loaded and reads down is
+        down from the start of the run, because it never came up in
+        it. Returns whether to treat this reading as loading, and the
+        moment a down that never loaded is dated from.
+        """
+        if loaded:
+            self._note_loaded(name, now)
+        if not down or name in self.upstreams_loaded_after:
+            return False, None
+        if self._in_startup_grace():
+            return True, None
+        return False, self._run_start()
+
+    def _run_start(self) -> float:
+        """When this run began listening."""
+        if self._started_at is not None:
+            return float(self._started_at)
+        return self._grace_until - STARTUP_GRACE_SECONDS
+
+    def _note_upstream_peaks(self) -> None:
+        """Remember the most devices each standing outage has down.
+
+        Read from the same counts the problem list rows print, once a
+        tick after every device is judged, so the worst moment is the
+        highest figure a person could have seen on the row (ruling
+        #442).
+        """
+        for name, count in self.suppressed_down_counts.items():
+            if count > self._upstream_peak.get(name, 0):
+                self._upstream_peak[name] = count
+
+    def _begin_upstream_peak(self, name: str) -> None:
+        """Start a new outage's count from nothing."""
+        self._upstream_peak[name] = 0
+
+    def _upstream_ended(self, name: str) -> dict[str, int]:
+        """The total and the worst moment an ended outage records.
+
+        Read while the outage still claims its devices. The total is
+        never printed below the worst, for the reason the row gives:
+        where membership reads lower, the resolver has no answer for
+        this name.
+        """
+        worst = self._upstream_worst(name)
+        return {
+            "devices": max(self.upstream_membership(name), worst),
+            "worst": worst,
+        }
+
+    def _upstream_worst(self, name: str) -> int:
+        """The most devices this outage had down, read as it ends.
+
+        The current count is included because an outage can end on
+        the same tick its last devices were judged, before the tick's
+        note was taken. Clears the count, which belongs to the outage.
+        """
+        current = self.suppressed_down_counts.get(name, 0)
+        return max(self._upstream_peak.pop(name, 0), current)
 
     def bridge_recovering_at(self, stack: str) -> float | None:
         """When this bridge's recovery began, or None."""
@@ -940,6 +1159,13 @@ class InterventionMixin:
             state, pairing = sample
             if state == BRIDGE_UNKNOWN:
                 continue
+            # A reader that cannot say whether it loaded is taken as
+            # established.
+            loading, from_start = self._loading(
+                stack, _reader_loaded(reader), state == BRIDGE_DOWN, now
+            )
+            if loading:
+                continue
             was = self._bridge_seen.get(stack)
             self._bridge_seen[stack] = state
             self._remember_bridge_state(stack, state)
@@ -968,7 +1194,9 @@ class InterventionMixin:
                     # must never fail in.
                     began = now
                     onset = getattr(reader, "down_since", None)
-                    if (
+                    if from_start is not None:
+                        began = from_start
+                    elif (
                         isinstance(onset, (int, float))
                         and not isinstance(onset, bool)
                         and 0.0 < onset <= now
@@ -976,6 +1204,7 @@ class InterventionMixin:
                         began = float(onset)
                     self._bridge_down_at[stack] = began
                     self._remember_bridge_state(stack, state, since=began)
+                    self._begin_upstream_peak(stack)
                     self._record_system_event(
                         SYS_BRIDGE_DOWN, scope=stack
                     )
@@ -1001,6 +1230,7 @@ class InterventionMixin:
                         duration=(
                             now - since if since is not None else None
                         ),
+                        **self._upstream_ended(stack),
                     )
                     self._say_upstream_restored(
                         UPSTREAM_BRIDGE, stack, stack, since, now

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.21.10 (2026-09-16)
+# File: problem_list.py, Version: 0.21.12 (2026-09-17)
 
 """The problem list: the single memory every channel renders.
 
@@ -466,9 +466,14 @@ class ProblemListMixin:
         )
         if name == WIFI_KEY:
             return self._wifi_item_text(devices, behind, when)
-        if self.bridge_recovering_at(name) is not None:
+        if self.upstream_recovering_at(name) is not None:
             return self._bridge_recovering_text(name, display, behind)
-        summary = f"{display} down: {devices} of {behind} devices unavailable"
+        # The total named as the total (ruling #442), so it cannot be
+        # read as the size of the recovery that follows.
+        summary = (
+            f"{display} down: {devices} of {behind} total devices "
+            f"unavailable"
+        )
         opening = (
             f"{display} stopped reporting at {when}."
             if when
@@ -484,6 +489,46 @@ class ProblemListMixin:
             f"own."
         )
 
+    @staticmethod
+    def _recovering_words(
+        subject: str, came_back: str, left: int, fell: int
+    ) -> tuple[str, str]:
+        """The row while an upstream's recovery is watched.
+
+        Two totals exist during an outage, and each row names the one
+        it counts against (ruling #442): a down row counts against
+        every device behind the upstream, a recovering row against the
+        devices that went down. And a recovery with nothing back yet
+        says what it is waiting for (ruling #443): on 16 September the
+        second fleet's row read "14 of 14 devices remain unavailable"
+        beside "0 of the 14 devices have already recovered", which said
+        the same thing twice and read as a contradiction.
+
+        `subject` names the upstream in the summary, and `came_back`
+        is the opening of the description up to its time.
+        """
+        back = max(fell - left, 0)
+        closing = (
+            "Any device that does not recover will be reported as its "
+            "own problem."
+        )
+        if back == 0:
+            noun = "device" if left == 1 else "devices"
+            return (
+                f"{subject} is back: waiting for {left} {noun} to "
+                f"reconnect",
+                f"{came_back}. Device Sentinel is waiting for the "
+                f"{left} {noun} that went down to reconnect. {closing}",
+            )
+        verb = "remains" if left == 1 else "remain"
+        return (
+            f"{subject} recovering: {left} of the {fell} devices that "
+            f"went down {verb} unavailable",
+            f"{came_back}. {back} of the {fell} devices that went down "
+            f"have already recovered. Device Sentinel is monitoring the "
+            f"recovery. {closing}",
+        )
+
     def _bridge_recovering_text(
         self, stack: str, display: str, behind: int
     ) -> tuple[str, str]:
@@ -496,20 +541,14 @@ class ProblemListMixin:
         how many of its devices are still down, which needs no fallen
         set to track and falls on its own as they return.
         """
-        left, fell = self.bridge_recovery_counts(stack)
-        back = max(fell - left, 0)
+        left, fell = self.upstream_recovery_counts(stack)
         when = self._format_report_time(
             dt_util.as_local(
-                dt_util.utc_from_timestamp(self.bridge_recovering_at(stack))
+                dt_util.utc_from_timestamp(self.upstream_recovering_at(stack))
             )
         )
-        return (
-            f"{display} recovering: {left} of {fell} devices remain "
-            f"unavailable",
-            f"{display} came back at {when}. {back} of the {fell} "
-            f"devices have already recovered. Device Sentinel is "
-            f"monitoring the recovery. Any device that does not "
-            f"recover will be reported as its own problem."
+        return self._recovering_words(
+            display, f"{display} came back at {when}", left, fell
         )
 
     def _wifi_recovering_text(self, devices: int) -> tuple[str, str]:
@@ -547,13 +586,8 @@ class ProblemListMixin:
         )
         verb = "networks came" if len(names) > 1 else "network came"
         opening = f"{subject.rsplit(' WiFi network', 1)[0]} WiFi {verb} back"
-        return (
-            f"WiFi network recovering: {left} of {fell} devices remain "
-            f"unavailable",
-            f"{opening} at {when}. {back} of the {fell} devices have "
-            f"already recovered. Device Sentinel is monitoring the "
-            f"recovery. Any device that does not recover will be "
-            f"reported as its own problem."
+        return self._recovering_words(
+            "WiFi network", f"{opening} at {when}", left, fell
         )
 
     def _wifi_item_text(
@@ -596,8 +630,9 @@ class ProblemListMixin:
             else f"{subject} is unavailable."
         )
         return (
-            f"WiFi {verb} unavailable: {devices} of {behind} devices down",
-            f"{opening} Currently, {devices} of {whose} {behind} managed "
+            f"WiFi {verb} unavailable: {devices} of {behind} total "
+            f"devices down",
+            f"{opening} Currently, {devices} of {whose} {behind} total "
             f"devices became unavailable. Device Sentinel is tracking "
             f"these devices independently and this total will change "
             f"as this outage develops."
@@ -882,7 +917,7 @@ class ProblemListMixin:
             recovering = (
                 self.wifi_recovering_at is not None
                 if name == WIFI_KEY
-                else self.bridge_recovering_at(name) is not None
+                else self.upstream_recovering_at(name) is not None
             )
             phases[name] = "recovering" if recovering else "down"
         return phases

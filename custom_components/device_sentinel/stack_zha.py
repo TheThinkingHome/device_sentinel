@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.21.3 (2026-09-14)
+# File: stack_zha.py, Version: 0.21.12 (2026-09-17)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -206,6 +206,16 @@ class ZhaCoordinatorReader:
         reload takes.
         """
         return self._sample()
+
+    @property
+    def loaded(self) -> bool:
+        """Whether ZHA's entry is loaded right now (ruling #445).
+
+        The state reads running through a reload's dwell, so it cannot
+        say whether ZHA has actually come up since Home Assistant
+        started; this can.
+        """
+        return self._entry_loaded() is True
 
     def _entry_loaded(self) -> bool | None:
         """Return whether ZHA's entry is loaded, or None if absent."""

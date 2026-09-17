@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.21.10 (2026-09-16)
+# File: journal.py, Version: 0.21.12 (2026-09-17)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -76,6 +76,7 @@ from .const import (
     RECOVERY_CAUSE_UNOBSERVED,
     SYS_DETAIL,
     SYS_DEVICES,
+    SYS_WORST,
     SYS_DURATION,
     SYS_KIND,
     SYS_SCOPE,
@@ -589,6 +590,7 @@ class JournalMixin:
         duration: float | None = None,
         when: float | None = None,
         devices: int | None = None,
+        worst: int | None = None,
     ) -> None:
         """Append one thing that happened to the house, not a device.
 
@@ -624,9 +626,11 @@ class JournalMixin:
                 SYS_SCOPE: scope,
                 SYS_DETAIL: detail,
                 SYS_DURATION: duration,
-                # Only a storm carries a count: it is the one event
-                # whose size a person wants in the sentence.
+                # A storm carries its count, and an outage that has
+                # ended carries its total and its worst moment
+                # (ruling #442).
                 **({SYS_DEVICES: devices} if devices is not None else {}),
+                **({SYS_WORST: worst} if worst is not None else {}),
             },
         )
         events = self.data.setdefault(DATA_SYSTEM_EVENTS, [])

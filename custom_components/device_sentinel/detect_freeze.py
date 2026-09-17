@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.21.3 (2026-09-14)
+# File: detect_freeze.py, Version: 0.21.12 (2026-09-17)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -652,10 +652,14 @@ class FreezeMixin:
         week: everything else came back and this did not.
         """
         rows: list[dict[str, Any]] = []
+        # A burst of tied devices waits for the router before it is
+        # reported (ruling #446).
+        held = self.wifi_burst_held()
         for row in self.frozen_devices_list:
             upstream = self.upstream_down_since(row["device_id"])
             if upstream is None:
-                rows.append(row)
+                if row["device_id"] not in held:
+                    rows.append(row)
                 continue
             _name, down_since = upstream
             since = row.get("since")

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.21.11 (2026-09-16)
+# File: coordinator.py, Version: 0.21.12 (2026-09-17)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -509,11 +509,26 @@ class DeviceSentinelCoordinator(
         self._bridge_handback: dict[str, tuple[float, float]] = {}
         self._bridge_recovering_at: dict[str, float] = {}
         self._bridge_fell: dict[str, int] = {}
+        # The same three for an integration that came back (ruling
+        # #441): the window is held per config entry, the recovery
+        # per domain, which is the name its row carries.
+        self._integration_handback: dict[str, tuple[float, float]] = {}
+        self._integration_recovering_at: dict[str, float] = {}
+        self._integration_fell: dict[str, int] = {}
+        # The most devices each standing outage has had down at once,
+        # by the name its problem list row carries (ruling #442).
+        self._upstream_peak: dict[str, int] = {}
+        # Seconds from this run's start to each upstream's first load
+        # (ruling #445), for the diagnostics download.
+        self.upstreams_loaded_after: dict[str, float] = {}
         # Devices a radio stack owns (ruling #412), rebuilt with the
         # registry view. Empty until the first rebuild, which is the
         # same moment `_watched` is populated.
         self._radio_owned: set[str] = set()
         self._wifi_down_at: float | None = None
+        # When the outage was first dated, before any device that
+        # noticed earlier moved it back (ruling #440).
+        self._wifi_declared_from: float | None = None
         self._wifi_unsub = None
         self._wifi_retry_pending = False
         self._wifi_medium_census: dict[str, int] = {}
@@ -3203,6 +3218,8 @@ class DeviceSentinelCoordinator(
         self._expire_maintenance(dt_util.utcnow().timestamp())
         self._sample_bridges()
         self._judge_all_devices()
+        self._wifi_backdate()
+        self._note_upstream_peaks()
         # The sync follows the sweep every tick, so a freeze the
         # sweep just fired, a battery level that drifted, or a rail
         # the midnight roll confirmed reaches the list within the
@@ -3234,8 +3251,14 @@ class DeviceSentinelCoordinator(
 
     @callback
     def _notify(self) -> None:
-        """Refresh all registered sensors."""
-        for update_callback in self._listeners:
+        """Refresh all registered sensors.
+
+        Walks a copy of the list. The Wi-Fi sensor's adder removes
+        itself from the list the moment it runs, and removing from the
+        list being walked skipped the listener after it, which on a
+        live system is the problem list, for that one refresh.
+        """
+        for update_callback in list(self._listeners):
             update_callback()
 
     # -------------------------------------------------------- properties

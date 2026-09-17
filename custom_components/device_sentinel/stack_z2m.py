@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.21.9 (2026-09-15)
+# File: stack_z2m.py, Version: 0.21.12 (2026-09-17)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -308,6 +308,11 @@ class Z2MBridgeReader:
         if self.state == BRIDGE_BINDING:
             return self._permit_join_end
         return None
+
+    @property
+    def loaded(self) -> bool:
+        """Whether the bridge has said it is online (ruling #445)."""
+        return self._online is True
 
     @property
     def state(self) -> str:

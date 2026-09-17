@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.21.11 (2026-09-16)
+# File: const.py, Version: 0.21.12 (2026-09-17)
 
 """Constants for the Device Sentinel integration."""
 
@@ -114,6 +114,10 @@ STACK_DISPLAY_NAMES = {
     "zha": "ZHA",
     "zwave_js": "Z-Wave",
     "matter": "Matter",
+    # Not a stack either, but a nameless UniFi client is named after
+    # its integration (ruling #402), and "unifi" is not a name a
+    # person recognizes on a report.
+    "unifi": "UniFi Network",
     # Not a stack, but the problem list resolves every upstream's
     # display name through this map, and the Wi-Fi row must read the
     # way the sensor does.
@@ -580,6 +584,13 @@ DATA_WIFI_MEDIUM_REJECTED = "wifi_medium_rejected"
 # writes is dated from the outage, not from the end of this window,
 # or the timeline would lie about when the device went.
 WIFI_HANDBACK_SECONDS = 180.0
+# How far before its first tracker a Wi-Fi outage may reach for its
+# start (ruling #440). A router marks a client away only after its own
+# detection time, five minutes by default for UniFi and three for Home
+# Assistant's device trackers, while a device's own integration often
+# notices at once. On the second fleet, 16 September, the first client
+# left 264 seconds after the network did.
+WIFI_LOOKBACK_SECONDS = 300.0
 
 # The same window for a bridge (ruling #436). A bridge claim ended
 # the instant the bridge came back, which is the fault #433 fixed for
@@ -1958,6 +1969,12 @@ WIFI_BURST_FLOOR = 3
 WIFI_BURST_SHARE = 0.10
 WIFI_BURST_WINDOW_SECONDS = 60.0
 WIFI_HOLD_SECONDS = 60.0
+# How long a burst of tied devices' rows wait for the router before
+# they are shown (ruling #446): the router's detection time, the
+# outage's own hold, and one tick for the sampler to see it. On the
+# second fleet, 16 September, the outage was declared 5 minutes 35
+# seconds after its first device failed.
+WIFI_BURST_HOLD_SECONDS = WIFI_LOOKBACK_SECONDS + WIFI_HOLD_SECONDS + 60.0
 
 # How an outage ends (rulings #408, #409, #422 to #426). The shipped
 # rule restored while fewer than WIFI_BURST_FLOOR tied trackers read
@@ -2275,6 +2292,12 @@ SYS_INTEGRATION_UP = "integration_up"
 SYS_BRIDGE_DOWN = "bridge_down"
 SYS_WIFI_DOWN = "wifi_down"
 SYS_WIFI_UP = "wifi_up"
+# When a Wi-Fi outage starts recovering, and when a recovery stalls
+# and the outage stands again (ruling #444). The problem list row
+# showed both; nothing recorded them, so a tester had to catch them
+# in a screenshot.
+SYS_WIFI_RECOVERING = "wifi_recovering"
+SYS_WIFI_RECOVERY_WITHDRAWN = "wifi_recovery_withdrawn"
 SYS_BRIDGE_UP = "bridge_up"
 # The broker going and returning. Its own pair rather than a bridge
 # event, because a bridge reader is blind to it: when the broker dies
@@ -2294,6 +2317,12 @@ SYS_STORM_OPEN = "storm_open"
 SYS_STORM_CLOSED = "storm_closed"
 # Fields the storm rows carry beyond the shared ones.
 SYS_DEVICES = "devices"
+# The most devices an outage had down at once, written when it ends
+# beside SYS_DEVICES, which then holds every device behind the
+# upstream (ruling #442). The figure the outage's problem list row
+# reached at its peak, so the brief tells an outage by its worst
+# moment rather than by a count taken partway through.
+SYS_WORST = "worst"
 
 # The per-integration storm series, kept on the person's retention
 # rather than the judgment window, because its purpose is to be
@@ -2306,7 +2335,7 @@ SYS_DEVICES = "devices"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 439
+HIGHEST_RULING = 446
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
