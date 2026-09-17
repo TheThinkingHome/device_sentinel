@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: helpers.py, Version: 0.21.11 (2026-09-16)
+# File: helpers.py, Version: 0.21.13 (2026-09-17)
 
 """Shared test helpers, one canonical version of each.
 
@@ -27,6 +27,7 @@ from __future__ import annotations
 from awesomeversion import AwesomeVersion
 
 from custom_components.device_sentinel.const import OPTIONS_MINOR_VERSION
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
@@ -109,6 +110,11 @@ def register_device(
     """
     source = MockConfigEntry(domain="test", title="Source")
     source.add_to_hass(hass)
+    # A device in a running house sits behind an integration that has
+    # loaded, and ruling #449 asks the entry for that. Left unloaded,
+    # every fixture device would read as one whose integration is
+    # still starting.
+    source.mock_state(hass, ConfigEntryState.LOADED)
     device = dr.async_get(hass).async_get_or_create(
         config_entry_id=source.entry_id,
         identifiers={("test", uid)},

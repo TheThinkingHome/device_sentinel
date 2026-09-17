@@ -1,7 +1,7 @@
 """Reporting an upstream outage as one fault, not seventy-six.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_upstream_reporting.py, Version: 0.21.12 (2026-09-17)
+# File: test_upstream_reporting.py, Version: 0.21.13 (2026-09-17)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -389,3 +389,47 @@ async def test_an_integration_outage_stamps_its_row_and_pushes(
 
     # And the push leaves once the outage has settled.
     assert coord._upstream_messages() == [("controller_hub", 2, False)]
+
+
+async def test_the_sentence_says_what_went_down_with_it(
+    hass: HomeAssistant,
+):
+    """Ruling #448. The second fleet's Brother row read "1 device sit
+    behind it, and 1 of them are unavailable": a plural verb on a
+    singular device, and a membership count where a person wants to
+    know what the outage took."""
+    coord = await setup_coordinator(hass)
+
+    _summary, description = coord._upstream_item_text(
+        "brother", {"upstream": 1500.0}, 1
+    )
+    assert "Its one device went down with it" in description
+    assert "sit behind it" not in description
+
+    _summary, description = coord._upstream_item_text(
+        "z2m", {"upstream": 1500.0}, 77
+    )
+    assert "All 77 devices behind it went down with it" in description
+
+    # A partial outage: more devices behind it than have gone down.
+    # Membership comes from the live bridge readers, which this
+    # fixture has none of, so it is stated here.
+    coord.upstream_membership = lambda _name: 77
+    _summary, description = coord._upstream_item_text(
+        "z2m", {"upstream": 1500.0}, 60
+    )
+    assert "60 of the 77 devices behind it went down with it" in description
+
+
+async def test_a_row_before_any_device_is_judged_says_none_yet(
+    hass: HomeAssistant,
+):
+    """An upstream can be known down before a single device behind it
+    has been judged."""
+    coord = await setup_coordinator(hass)
+    coord.upstream_membership = lambda _name: 4
+
+    _summary, description = coord._upstream_item_text(
+        "z2m", {"upstream": 1500.0}, 0
+    )
+    assert "None of its 4 devices have gone down yet" in description
