@@ -527,7 +527,8 @@ class DeviceSentinelCoordinator(
         self.upstreams_loaded_after: dict[str, float] = {}
         # Which device each name in the brief belongs to, kept while
         # one brief is composed so its page can link them (issue #13).
-        self._brief_devices: dict[str, str | None] = {}
+        self._brief_devices: dict[str, list[str | None]] = {}
+        self._brief_cursor: dict[str, int] = {}
         # Devices a radio stack owns (ruling #412), rebuilt with the
         # registry view. Empty until the first rebuild, which is the
         # same moment `_watched` is populated.

@@ -1920,7 +1920,7 @@ class BriefMixin:
         )
         # One brief, one map: names pair with devices while this
         # brief is composed, and nothing carries over to the next one.
-        self._brief_devices: dict[str, str | None] = {}
+        self._brief_devices: dict[str, list[str | None]] = {}
         lines = [
             "# Device Sentinel Daily Brief",
             "",
@@ -2153,7 +2153,17 @@ class BriefMixin:
         cells = []
         for cell in line.strip("|").split("|"):
             text = cell.strip()
-            device_id = self._brief_devices.get(text)
+            seen = self._brief_devices.get(text)
+            if not seen:
+                cells.append(escape(text))
+                continue
+            # In composition order, so two devices of one name each
+            # link to themselves: the reference rig has two called
+            # "Dining Shades", and a row naming one of them is where
+            # a person finds out which it was.
+            at = self._brief_cursor.get(text, 0)
+            self._brief_cursor[text] = at + 1
+            device_id = seen[at] if at < len(seen) else None
             if device_id is None:
                 cells.append(escape(text))
             else:
@@ -2165,15 +2175,11 @@ class BriefMixin:
 
         The tables are composed as Markdown, so the page is rendered
         from text that has lost the device by then. This keeps the
-        pairing for the render, and drops a name two devices share:
-        an ambiguous link is worse than none.
+        pairing for the render, in the order the rows were composed,
+        so a name two devices share still links each row to its own.
         """
         shown = self._report_cell(name)
-        if device_id:
-            known = self._brief_devices.get(shown, device_id)
-            self._brief_devices[shown] = (
-                device_id if known == device_id else None
-            )
+        self._brief_devices.setdefault(shown, []).append(device_id)
         return shown
 
     def _render_brief_html(self, markdown: str) -> str:
@@ -2206,6 +2212,10 @@ class BriefMixin:
         address where Home Assistant knows one, so it works from a
         mail client as well as a dashboard card.
         """
+        # Each render walks the same composed text, so the pairing is
+        # read rather than consumed: the page and the emailed body
+        # must come out the same.
+        self._brief_cursor: dict[str, int] = {}
         html_lines: list[str] = []
         table: list[list[str]] = []
 
