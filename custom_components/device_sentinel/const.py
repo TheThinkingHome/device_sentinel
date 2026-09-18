@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.21.13 (2026-09-17)
+# File: const.py, Version: 0.21.14 (2026-09-18)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1674,6 +1674,18 @@ CONF_QUIET_END = "quiet_hours_end"
 # Sentinel Notify's reminder, but renaming a stored key costs a
 # migration for a cosmetic gain, so only the visible labels changed.
 CONF_BRIEF_TARGETS = "brief_document_targets"
+# Which address the reports put in a link, if any. A report is a file
+# a person shares: attached to an issue, mailed to whoever helps them
+# with their house. Putting the address of that house in it is their
+# decision to make, so nothing is linked until they make it, and the
+# screen shows the address each choice would publish before they
+# choose it.
+# Ruling #453.
+CONF_REPORT_LINKS = "report_link_address"
+REPORT_LINKS_NONE = "none"
+REPORT_LINKS_EXTERNAL = "external"
+REPORT_LINKS_INTERNAL = "internal"
+DEFAULT_REPORT_LINKS = REPORT_LINKS_NONE
 # Where a target name is parsed rather than merely stored. Both moved
 # here from config_flow: the sending engine has to read a
 # stored target and turn it back into a service call, and a module
@@ -2335,7 +2347,7 @@ SYS_WORST = "worst"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 451
+HIGHEST_RULING = 453
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

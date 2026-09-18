@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.21.11 (2026-09-16)
+# File: config_flow.py, Version: 0.21.14 (2026-09-18)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -67,6 +67,11 @@ from .naming import display_name
 from .wifi import scan_networks, wireless_interfaces
 
 from .const import (
+    CONF_REPORT_LINKS,
+    DEFAULT_REPORT_LINKS,
+    REPORT_LINKS_EXTERNAL,
+    REPORT_LINKS_INTERNAL,
+    REPORT_LINKS_NONE,
     CONF_STUDY_HARDWARE,
     STUDIABLE,
     CONF_WIFI_CONFIRM_SECONDS,
@@ -323,6 +328,55 @@ def _globally_muted(
     return covered | set(options.get(CONF_MUTED_DEVICES, []))
 
 
+
+
+def _link_choices(hass) -> list[selector.SelectOptionDict]:
+    """The three choices, each showing the address it would publish.
+
+    Ruling #453. Home Assistant's own names for its two addresses,
+    with the address itself beside each one, so nobody picks blind or
+    picks one that is not set. The labels are built here rather than translated, because
+    what makes them useful is an address this house holds right now.
+    """
+    return [
+        selector.SelectOptionDict(
+            value=REPORT_LINKS_NONE, label="None"
+        ),
+        selector.SelectOptionDict(
+            value=REPORT_LINKS_INTERNAL,
+            label=(
+                "Internal URL "
+                f"({_house_url(hass, REPORT_LINKS_INTERNAL) or 'not yet set'})"
+            ),
+        ),
+        selector.SelectOptionDict(
+            value=REPORT_LINKS_EXTERNAL,
+            label=(
+                "External URL "
+                f"({_house_url(hass, REPORT_LINKS_EXTERNAL) or 'not yet set'})"
+            ),
+        ),
+    ]
+
+
+def _house_url(hass, choice: str) -> str | None:
+    """The address Home Assistant holds for one of its two URLs.
+
+    Asked for by name rather than by preference: the person picked
+    which of the two goes into their reports, so the other one is not
+    a fallback (issue #13, and the privacy that goes with it).
+    """
+    from homeassistant.helpers.network import get_url
+
+    try:
+        return get_url(
+            hass,
+            allow_internal=choice == REPORT_LINKS_INTERNAL,
+            allow_external=choice == REPORT_LINKS_EXTERNAL,
+            prefer_external=choice == REPORT_LINKS_EXTERNAL,
+        )
+    except Exception:  # noqa: BLE001 - that address is not set
+        return None
 
 class DeviceSentinelConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the Device Sentinel config flow."""
@@ -1433,6 +1487,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         dropped rather than queued and the morning brief carries it
         instead (ruling #111).
         """
+        errors: dict[str, str] = {}
         if user_input is not None:
             flat: dict[str, Any] = {}
             for key, value in user_input.items():
@@ -1446,7 +1501,16 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 for target in flat.get(CONF_NORMAL_PRIORITY_TARGETS, [])
                 if target not in high
             ]
-            return await self._save_and_return(flat)
+            wanted = flat.get(CONF_REPORT_LINKS, DEFAULT_REPORT_LINKS)
+            if wanted != REPORT_LINKS_NONE and not _house_url(
+                self.hass, wanted
+            ):
+                # Saving a choice Home Assistant cannot serve would
+                # leave a person thinking the links are on while every
+                # report prints plain names (ruling #453).
+                errors["base"] = f"{wanted}_url_not_set"
+            else:
+                return await self._save_and_return(flat)
         options = self.config_entry.options
         discovered = _discover_notify_targets(self.hass)
 
@@ -1530,10 +1594,22 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                     CONF_BRIEF_TARGETS,
                     default=options.get(CONF_BRIEF_TARGETS, []),
                 ): target_selector(),
+                vol.Required(
+                    CONF_REPORT_LINKS,
+                    default=options.get(
+                        CONF_REPORT_LINKS, DEFAULT_REPORT_LINKS
+                    ),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=_link_choices(self.hass),
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
             }
         )
         return self.async_show_form(
             step_id="notifications",
+            errors=errors,
             description_placeholders={"wiki_link": WIKI_LINK_NOTIFICATIONS},
             data_schema=vol.Schema(
                 {

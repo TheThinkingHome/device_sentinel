@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.21.13 (2026-09-17)
+# File: coordinator.py, Version: 0.21.14 (2026-09-18)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -525,6 +525,9 @@ class DeviceSentinelCoordinator(
         # Seconds from this run's start to each upstream's first load
         # (ruling #445), for the diagnostics download.
         self.upstreams_loaded_after: dict[str, float] = {}
+        # Which device each name in the brief belongs to, kept while
+        # one brief is composed so its page can link them (issue #13).
+        self._brief_devices: dict[str, str | None] = {}
         # Devices a radio stack owns (ruling #412), rebuilt with the
         # registry view. Empty until the first rebuild, which is the
         # same moment `_watched` is populated.

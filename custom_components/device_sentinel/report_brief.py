@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.21.12 (2026-09-17)
+# File: report_brief.py, Version: 0.21.14 (2026-09-18)
 
 """The daily brief: the one report written for a person.
 
@@ -375,6 +375,13 @@ class BriefMixin:
             plain = "device" if worst == 1 else "devices"
             text = f"{count} {plain} went down"
             return f"{text}." if sentence else text.lower()
+        if total == 1 and worst == 1:
+            # "1 of its 1 device went down" reads as arithmetic where
+            # a sentence would do (ruling #452), and matches the row's
+            # own wording.
+            return "Its one device went down." if sentence else (
+                "its one device went down"
+            )
         if sentence:
             count = "None" if worst == 0 else str(worst)
             return f"{count} of its {total} {noun} went down."
@@ -1753,7 +1760,7 @@ class BriefMixin:
         ]
         for row in table:
             lines.append(
-                f"| {self._report_cell(row['name'])} "
+                f"| {self._note_brief_device(row.get('device_id'), row['name'])} "
                 f"| {row['what']} | {row['n']} | {row['when']} "
                 f"| {row['typical']} | {row['with']} |"
             )
@@ -1911,6 +1918,9 @@ class BriefMixin:
             else f"From {self._brief_moment(window_start)} to "
             f"{self._brief_moment(window_end)} (in progress)."
         )
+        # One brief, one map: names pair with devices while this
+        # brief is composed, and nothing carries over to the next one.
+        self._brief_devices: dict[str, str | None] = {}
         lines = [
             "# Device Sentinel Daily Brief",
             "",
@@ -1937,7 +1947,7 @@ class BriefMixin:
                 "| DEVICE | PROBLEM | SINCE | FOR |",
                 "|---|---|---|---|",
             ]
-            for name, problem, since, kind, _device_id in now_rows:
+            for name, problem, since, kind, device_id in now_rows:
                 # A device that has never reported has no last-seen
                 # time; the stamp is when it was discovered in the
                 # registry, and saying so stops a reader taking it
@@ -1948,7 +1958,8 @@ class BriefMixin:
                     else self._brief_moment(since)
                 )
                 lines.append(
-                    f"| {self._report_cell(name)} | {problem} "
+                    f"| {self._note_brief_device(device_id, name)} "
+                    f"| {problem} "
                     f"| {when} "
                     f"| {self._human_span(now - since)} |"
                 )
@@ -2051,7 +2062,10 @@ class BriefMixin:
                 "|---|---|---|",
             ]
             merged: list[tuple[float, str, str]] = [
-                (row[INC_WHEN], self._report_cell(self._told_name(row)),
+                (row[INC_WHEN],
+                 self._note_brief_device(
+                     row.get(INC_DEVICE_ID), self._told_name(row)
+                 ),
                  self._brief_phrase(row))
                 for row in shown
             ] + [
@@ -2128,10 +2142,39 @@ class BriefMixin:
             return False
         return set(body) <= set("|-: ")
 
-    @staticmethod
-    def _brief_cells(line: str) -> list[str]:
-        """Return one pipe row's cells, stripped and escaped."""
-        return [escape(cell.strip()) for cell in line.strip("|").split("|")]
+    def _brief_cells(self, line: str) -> list[str]:
+        """Return one pipe row's cells, stripped and escaped.
+
+        A cell naming a device becomes that device's cell: linked
+        where a person has chosen an address, and carrying its area
+        (issue #13). The Markdown itself keeps plain names, because
+        the same text is what a notification carries.
+        """
+        cells = []
+        for cell in line.strip("|").split("|"):
+            text = cell.strip()
+            device_id = self._brief_devices.get(text)
+            if device_id is None:
+                cells.append(escape(text))
+            else:
+                cells.append(self._device_cell(device_id, text))
+        return cells
+
+    def _note_brief_device(self, device_id: str | None, name: str) -> str:
+        """Remember which device a name in the brief belongs to.
+
+        The tables are composed as Markdown, so the page is rendered
+        from text that has lost the device by then. This keeps the
+        pairing for the render, and drops a name two devices share:
+        an ambiguous link is worse than none.
+        """
+        shown = self._report_cell(name)
+        if device_id:
+            known = self._brief_devices.get(shown, device_id)
+            self._brief_devices[shown] = (
+                device_id if known == device_id else None
+            )
+        return shown
 
     def _render_brief_html(self, markdown: str) -> str:
         """Return the brief rendered as a styled page (ruling #178).

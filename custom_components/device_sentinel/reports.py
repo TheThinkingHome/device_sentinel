@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.16.11 (2026-08-21)
+# File: reports.py, Version: 0.21.14 (2026-09-18)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -35,6 +35,8 @@ so moving a method between them changes nothing about how it runs.
 
 from __future__ import annotations
 
+from html import escape
+
 import contextlib
 import os
 from datetime import datetime
@@ -44,6 +46,10 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_REPORT_LINKS,
+    DEFAULT_REPORT_LINKS,
+    REPORT_LINKS_EXTERNAL,
+    REPORT_LINKS_INTERNAL,
     BRIEF_KEEP_DAYS,
     BRIEF_LIVE_WINDOW_SECONDS,
     BRIEF_TRIGGER,
@@ -153,6 +159,86 @@ class ReportWritingMixin(
         area = ar.async_get(self.hass).async_get_area(device.area_id)
         return area.name if area else ""
 
+
+    def _report_link(self, path: str) -> str | None:
+        """The address a report links to, or None for no link.
+
+        Ruling #453. A report is a file that gets shared, so the
+        house's address goes into one only when its owner says which
+        address to use.
+        The setting is off until then, and off means the name prints
+        as text.
+        """
+        choice = self.entry.options.get(
+            CONF_REPORT_LINKS, DEFAULT_REPORT_LINKS
+        )
+        if choice not in (REPORT_LINKS_EXTERNAL, REPORT_LINKS_INTERNAL):
+            return None
+        base = self._configured_url(choice)
+        return base + path if base else None
+
+    def _configured_url(self, choice: str) -> str | None:
+        """The external or internal address, as Home Assistant knows
+        it, or None where that one is not configured."""
+        from homeassistant.helpers.network import get_url
+
+        try:
+            return get_url(
+                self.hass,
+                allow_internal=choice == REPORT_LINKS_INTERNAL,
+                allow_external=choice == REPORT_LINKS_EXTERNAL,
+                prefer_external=choice == REPORT_LINKS_EXTERNAL,
+            )
+        except Exception:  # noqa: BLE001 - that address is not set
+            return None
+
+    def _device_cell(
+        self, device_id: str | None, name: str, *, area: bool = True
+    ) -> str:
+        """A device's name for an HTML report: linked, with its area.
+
+        Issue #13. On a large house a name alone means nothing: every
+        temperature sensor can be called "Temperature & Humidity", and
+        the person reading the report has to go and find out which one
+        it is. The name links to its device page and carries its area
+        in square brackets.
+
+        The link is absolute with the external URL preferred (ruling
+        #183), because the brief is emailed and read away from the
+        house. The area sits outside the link, so what is clickable is
+        the name itself.
+
+        Two things are left plain. A row that belongs to the house
+        rather than to a device, which has no id to link to. And a
+        name that already ends in a bracket, "Soil Moisture
+        (Monstera)", where the name is doing the same work the area
+        would and two brackets in a row read as afterthoughts.
+        """
+        text = escape(name or "")
+        cell = text
+        url = (
+            self._report_link(f"/config/devices/device/{device_id}")
+            if device_id
+            else None
+        )
+        if url:
+            cell = f'<a href="{escape(url, True)}">{text}</a>'
+        if not device_id:
+            return cell
+        if not area:
+            # The name grids list devices that are behaving. A room is
+            # worth a column's width when something is wrong, not when
+            # a list is there to be skimmed past.
+            return cell
+        if (name or "").rstrip().endswith(")"):
+            # The name is already doing the work the area would, and
+            # two brackets in a row read as afterthoughts.
+            return cell
+        room = self._device_area(device_id)
+        # A device in no area says so, briefly: a reader who sees an
+        # area beside every other name should not be left wondering
+        # whether this one was looked up at all.
+        return f"{cell} [{escape(room) if room else 'None'}]"
 
     def _device_status(self, device_id: str) -> str:
         """Return a device's muting status for the report column.

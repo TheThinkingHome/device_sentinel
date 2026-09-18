@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_signal.py, Version: 0.19.14 (2026-09-02)
+# File: report_signal.py, Version: 0.21.14 (2026-09-18)
 
 """The signal report and the signal cells of the telemetry.
 
@@ -424,13 +424,17 @@ class SignalReportMixin:
             return "slightly below"
         return "below"
 
-    @staticmethod
-    def _signal_name_grid(names: list[str], columns: int) -> str:
+    def _signal_name_grid(
+        self, names: list[tuple[str | None, str]], columns: int
+    ) -> str:
         """Return a multi-column table of device names.
 
         The same shape the battery report uses for the devices with
         no cell, so a person meeting one page has already read the
-        other (ruling #380).
+        other (ruling #380). Each name links to its device (issue
+        #13), and carries no area: this list is the devices that are
+        behaving, and a room is worth a column's width when something
+        is wrong.
         """
         if not names:
             return ""
@@ -443,7 +447,7 @@ class SignalReportMixin:
         out = [f"<table><tr>{header}</tr>"]
         for index in range(len(blocks[0])):
             body = [
-                f"<td>{escape(block[index])}</td>"
+                f"<td>{self._device_cell(block[index][0], block[index][1], area=False)}</td>"
                 if index < len(block)
                 else "<td></td>"
                 for block in blocks
@@ -464,7 +468,11 @@ class SignalReportMixin:
             f"<h2>Steady Signals</h2>\n<p>{len(quiet)} device(s) "
             "stayed within their own normal.</p>\n"
             + self._signal_name_grid(
-                sorted(row["name"] for row in quiet), 3
+                [
+                    (row.get("device_id"), row["name"])
+                    for row in sorted(quiet, key=lambda r: r["name"])
+                ],
+                3,
             )
             if quiet
             else ""
@@ -518,7 +526,8 @@ class SignalReportMixin:
                         "link retrying."
                     )
             biographies.append(
-                f"<h3>{escape(row['name'])}</h3>\n"
+                f"<h3>{self._device_cell(row.get('device_id'), row['name'])}"
+                f"</h3>\n"
                 f"<p>Worst day {when.strftime('%b %-d')}: signal fell from "
                 f"{worst['baseline']:.0f} to {worst['today']:.0f}, a drop "
                 f"of {worst['fall']:.0f} points, "

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.20.12 (2026-09-10)
+# File: report_battery.py, Version: 0.21.14 (2026-09-18)
 
 """The battery report: which cells are going to be low.
 
@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from html import escape
 from statistics import median
 from typing import Any
 
@@ -586,7 +585,7 @@ class BatteryReportMixin:
                 for start, end, slope in (row.get("blocks") or [])
             }
             cells = [
-                f"<tr><td>{escape(row['name'] or '')}</td>",
+                f"<tr><td>{self._device_cell(row.get('device_id'), row['name'] or '')}</td>",
                 f"<td>{row['level']:.0f}%</td>",
             ]
             cells += [self._battery_rate(blocks.get(p)) for p in periods]
@@ -627,7 +626,7 @@ class BatteryReportMixin:
         for row in charted:
             chart = self._battery_history_chart(row.get("series") or [])
             html.append(
-                f"<tr><td>{escape(row['name'] or '')}</td>"
+                f"<tr><td>{self._device_cell(row.get('device_id'), row['name'] or '')}</td>"
                 f"<td>{row['level']:.0f}%</td><td>{chart}</td></tr>"
             )
         html.append("</table>")
@@ -637,7 +636,14 @@ class BatteryReportMixin:
             )
             html.append(
                 self._battery_grid(
-                    [(r["name"] or "", f"{r['level']:.0f}%") for r in gridded],
+                    [
+                        (
+                            r.get("device_id"),
+                            r["name"] or "",
+                            f"{r['level']:.0f}%",
+                        )
+                        for r in gridded
+                    ],
                     2,
                 )
             )
@@ -694,8 +700,8 @@ class BatteryReportMixin:
 
     @staticmethod
     def _battery_columns(
-        items: list[str], columns: int
-    ) -> list[list[str]]:
+        items: list[Any], columns: int
+    ) -> list[list[Any]]:
         """Return items dealt into columns of equal length.
 
         Split by count rather than by value, so the columns are the
@@ -715,9 +721,12 @@ class BatteryReportMixin:
         ]
 
     def _battery_grid(
-        self, cells: list[tuple[str, str]], columns: int
+        self, cells: list[tuple[str | None, str, str]], columns: int
     ) -> str:
         """Return a multi-column table of name and value pairs.
+
+        Each cell carries its device id so the name can link (issue
+        #13). No area here: these lists are there to be skimmed past.
 
         The steady list was a paragraph of forty-seven names and
         levels, which is a wall nobody reads. The same names in two
@@ -735,9 +744,10 @@ class BatteryReportMixin:
             body: list[str] = []
             for block in blocks:
                 if index < len(block):
-                    name, value = block[index]
+                    device_id, name, value = block[index]
                     body.append(
-                        f"<td>{escape(name)}</td><td>{value}</td>"
+                        f"<td>{self._device_cell(device_id, name, area=False)}"
+                        f"</td><td>{value}</td>"
                     )
                 else:
                     body.append("<td></td><td></td>")
@@ -746,7 +756,7 @@ class BatteryReportMixin:
         return "".join(rows)
 
     def _battery_name_grid(
-        self, names: list[str], columns: int
+        self, names: list[tuple[str | None, str]], columns: int
     ) -> str:
         """Return a multi-column table of names with no value."""
         blocks = self._battery_columns(names, columns)
@@ -756,7 +766,7 @@ class BatteryReportMixin:
         rows: list[str] = [f"<table><tr>{header}</tr>"]
         for index in range(len(blocks[0])):
             body = [
-                f"<td>{escape(block[index])}</td>"
+                f"<td>{self._device_cell(block[index][0], block[index][1], area=False)}</td>"
                 if index < len(block)
                 else "<td></td>"
                 for block in blocks
@@ -794,7 +804,7 @@ class BatteryReportMixin:
                         "<th>SINCE</th></tr>"]
             for row in groups["low"]:
                 low_html.append(
-                    f"<tr><td>{escape(row['name'] or '')}</td>"
+                    f"<tr><td>{self._device_cell(row.get('device_id'), row['name'] or '')}</td>"
                     f"<td>{row['level']:.0f}%</td>"
                     f"<td>{self._battery_when(row['since'])}</td></tr>"
                 )
@@ -817,7 +827,11 @@ class BatteryReportMixin:
         unreadable_block = (
             self._battery_grid(
                 [
-                    (r["name"] or "", f"{r['level']:.0f}%")
+                    (
+                        r.get("device_id"),
+                        r["name"] or "",
+                        f"{r['level']:.0f}%",
+                    )
                     for r in groups["unreadable"]
                 ],
                 1,
@@ -835,7 +849,11 @@ class BatteryReportMixin:
             f"<p>{len(groups['absent'])} watched device(s) report no "
             "battery.</p>"
             + self._battery_name_grid(
-                [r["name"] or "" for r in groups["absent"]], 3
+                [
+                    (r.get("device_id"), r["name"] or "")
+                    for r in groups["absent"]
+                ],
+                3,
             )
             + "<p>These devices report no battery level. Most are "
             "mains powered. If one of these runs on batteries, turn "

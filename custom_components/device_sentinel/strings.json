@@ -60,11 +60,13 @@
             "data": {
               "daily_reminder_time": "When to Send It",
               "daily_reminder_mode": "How Often",
-              "brief_document_targets": "Send the Full Brief To"
+              "brief_document_targets": "Send the Full Brief To",
+              "report_link_address": "Links in Reports"
             },
             "data_description": {
               "daily_reminder_mode": "The brief file is written either way; this decides whether it is sent.",
-              "brief_document_targets": "Email or other services that can carry the whole document."
+              "brief_document_targets": "Email or other services that can carry the whole document.",
+              "report_link_address": "Device names in the HTML reports can become links to that device's device page. This is a very convenient feature, but a report is a file you might share. Enable this after considering your security and how you will use these reports. If the internal or external URLs are not set, they can be configured in Home Assistant's [Network Settings](/config/network)."
             }
           }
         }
@@ -241,6 +243,10 @@
           "study_hardware": "Only hardware found on your system appears here, and only where support is still being built. Choosing something changes nothing about how Device Sentinel behaves."
         }
       }
+    },
+    "error": {
+      "internal_url_not_set": "Home Assistant has no internal URL, so nothing would be linked. Set one under Settings, System, Network, or choose None.",
+      "external_url_not_set": "Home Assistant has no external URL, so nothing would be linked. Set one under Settings, System, Network, or choose None."
     }
   },
   "selector": {
