@@ -206,18 +206,68 @@ async def test_the_brief_tables_carry_the_area_and_the_link(
     assert ">Motion Laundry</a> [Laundry]" in html
 
 
-async def test_a_name_two_devices_share_is_not_linked(
+async def test_two_devices_sharing_a_name_link_to_the_right_one(
     hass: HomeAssistant, freezer
 ):
-    """An ambiguous link is worse than none: on the reference rig,
-    "Dining Shades" is two registry devices."""
+    """The reference rig has two devices called "Dining Shades". When
+    one of them is the reason for a row, that row is exactly where a
+    person finds out which one it was, so it links to that one."""
     first, _ = register_device(hass, "twin1", name="Dining Shades")
     second, _ = register_device(hass, "twin2", name="Dining Shades")
     coord = await setup_coordinator(hass)
     await _linking(hass, coord, REPORT_LINKS_INTERNAL)
+    hass.config.internal_url = "http://10.10.10.10:8123"
 
     coord._brief_devices = {}
-    coord._note_brief_device(first.id, "Dining Shades")
-    coord._note_brief_device(second.id, "Dining Shades")
-    assert coord._brief_devices["Dining Shades"] is None
-    assert coord._brief_cells("| Dining Shades |") == ["Dining Shades"]
+    line = (
+        f"| {coord._note_brief_device(second.id, 'Dining Shades')} "
+        "| frozen |"
+    )
+    cells = coord._brief_cells(line)
+    assert f"/config/devices/device/{second.id}" in cells[0]
+    assert first.id not in cells[0]
+
+
+async def test_a_name_that_repeats_keeps_its_own_device(
+    hass: HomeAssistant, freezer
+):
+    """The same name can open one table and close another, on two
+    different devices."""
+    first, _ = register_device(hass, "twin3", name="Dining Shades")
+    second, _ = register_device(hass, "twin4", name="Dining Shades")
+    coord = await setup_coordinator(hass)
+    await _linking(hass, coord, REPORT_LINKS_INTERNAL)
+    hass.config.internal_url = "http://10.10.10.10:8123"
+
+    coord._brief_devices = {}
+    lines = [
+        f"| {coord._note_brief_device(first.id, 'Dining Shades')} | a |",
+        f"| {coord._note_brief_device(second.id, 'Dining Shades')} | b |",
+    ]
+    rendered = [coord._brief_cells(line)[0] for line in lines]
+    assert f"/config/devices/device/{first.id}" in rendered[0]
+    assert f"/config/devices/device/{second.id}" in rendered[1]
+
+
+async def test_a_brief_rendered_twice_reads_the_same(
+    hass: HomeAssistant, freezer
+):
+    """The page and the emailed body are two renders of one text."""
+    first, _ = register_device(hass, "twin5", name="Dining Shades")
+    second, _ = register_device(hass, "twin6", name="Dining Shades")
+    coord = await setup_coordinator(hass)
+    await _linking(hass, coord, REPORT_LINKS_INTERNAL)
+    hass.config.internal_url = "http://10.10.10.10:8123"
+
+    coord._brief_devices = {}
+    markdown = "\n".join([
+        "| DEVICE | PROBLEM |",
+        "|---|---|",
+        f"| {coord._note_brief_device(first.id, 'Dining Shades')} | a |",
+        f"| {coord._note_brief_device(second.id, 'Dining Shades')} | b |",
+    ])
+    once = coord._render_brief_html(markdown)
+    twice = coord._render_brief_html(markdown)
+    assert once == twice
+    assert f"/config/devices/device/{first.id}" in once
+    assert f"/config/devices/device/{second.id}" in once
