@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_worst.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_outage_worst.py, Version: 0.21.14 (2026-09-18)
 
 """The daily brief tells an outage by its worst moment (ruling #442).
 
@@ -170,3 +170,30 @@ def test_the_storage_check_knows_the_worst_field():
     # An old row is not given a worst figure it never had.
     assert SYS_WORST not in old
 
+
+
+async def test_a_single_device_reads_in_the_singular(hass: HomeAssistant):
+    """Ruling #452. "1 of its 1 device went down" reads as arithmetic
+    where a sentence would do. Seen on the reference rig's brief of 18
+    September, from the Brother outage staged the day before."""
+    coord = await setup_coordinator(hass)
+    row = {SYS_WHEN: 1789595686.0, SYS_DURATION: 300.0,
+           SYS_KIND: SYS_INTEGRATION_UP, SYS_SCOPE: "brother",
+           SYS_DEVICES: 1, SYS_WORST: 1}
+
+    assert coord._system_event_sentence(row).endswith(
+        "after 5m. Its one device went down."
+    )
+    assert coord._system_event_phrase(row) == (
+        "brother integration came back after 5m, its one device went down"
+    )
+
+
+async def test_one_of_several_still_counts(hass: HomeAssistant):
+    coord = await setup_coordinator(hass)
+    row = {SYS_WHEN: 1789595686.0, SYS_DURATION: 300.0,
+           SYS_KIND: SYS_INTEGRATION_UP, SYS_SCOPE: "zwave_js",
+           SYS_DEVICES: 17, SYS_WORST: 1}
+    assert coord._system_event_sentence(row).endswith(
+        "1 of its 17 devices went down."
+    )

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_settings.py, Version: 0.9.9 (2026-07-26)
+# File: test_settings.py, Version: 0.21.14 (2026-09-18)
 
 """The reorganized settings screen and the brief wording it governs.
 
@@ -30,6 +30,10 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
+    CONF_REPORT_LINKS,
+    REPORT_LINKS_EXTERNAL,
+    REPORT_LINKS_INTERNAL,
+    REPORT_LINKS_NONE,
     CONF_BRIEF_TARGETS,
     CONF_COALESCE_MINUTES,
     CONF_HIGH_PRIORITY_TARGETS,
@@ -214,3 +218,114 @@ async def test_counts_line_reads_naturally(hass: HomeAssistant):
     # count is of what the reader still needs to act on.
     assert "1 device needs attention." in text
     assert "acknowledged" not in text
+
+
+# ==================================================================
+# Links in reports (issue #13).
+# ==================================================================
+
+async def _open_notifications(hass, entry):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "notifications"}
+    )
+
+
+def _submit(links: str) -> dict:
+    return {
+        "instant": {
+            CONF_HIGH_PRIORITY_TARGETS: [],
+            CONF_NORMAL_PRIORITY_TARGETS: [],
+            CONF_PERSISTENT_ENABLED: True,
+        },
+        "quiet": {
+            CONF_QUIET_ENABLED: True,
+            CONF_QUIET_START: "22:00:00",
+            CONF_QUIET_END: "07:00:00",
+        },
+        "brief": {
+            CONF_REMINDER_MODE: "daily",
+            CONF_REMINDER_TIME: "07:00:00",
+            CONF_BRIEF_TARGETS: [],
+            CONF_REPORT_LINKS: links,
+        },
+    }
+
+
+def _link_labels(result) -> list[str]:
+    """The labels on the links choice, as the screen renders them."""
+    for key, validator in result["data_schema"].schema.items():
+        if str(key) != "brief":
+            continue
+        for field, inner in validator.schema.schema.items():
+            if str(field) == CONF_REPORT_LINKS:
+                return [
+                    option["label"]
+                    for option in inner.config["options"]
+                ]
+    raise AssertionError("the links choice is not on the screen")
+
+
+async def test_each_choice_names_its_own_address(hass: HomeAssistant):
+    """Nobody should pick an address without seeing which one it is,
+    and an address Home Assistant lacks says so on the choice."""
+    hass.config.internal_url = "http://10.10.10.10:8123"
+    hass.config.external_url = None
+    entry = await setup_entry(hass)
+
+    result = await _open_notifications(hass, entry)
+    assert _link_labels(result) == [
+        "None",
+        "Internal URL (http://10.10.10.10:8123)",
+        "External URL (not yet set)",
+    ]
+
+
+async def test_an_external_address_shows_when_it_is_set(
+    hass: HomeAssistant,
+):
+    hass.config.internal_url = "http://10.10.10.10:8123"
+    hass.config.external_url = "https://house.example.com"
+    entry = await setup_entry(hass)
+
+    result = await _open_notifications(hass, entry)
+    assert _link_labels(result)[2] == (
+        "External URL (https://house.example.com)"
+    )
+
+
+async def test_links_are_off_until_chosen(hass: HomeAssistant):
+    entry = await setup_entry(hass)
+    assert entry.options.get(CONF_REPORT_LINKS, REPORT_LINKS_NONE) == (
+        REPORT_LINKS_NONE
+    )
+
+
+async def test_choosing_an_address_stores_it(hass: HomeAssistant):
+    hass.config.internal_url = "http://10.10.10.10:8123"
+    entry = await setup_entry(hass)
+
+    result = await _open_notifications(hass, entry)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], _submit(REPORT_LINKS_INTERNAL)
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert entry.options[CONF_REPORT_LINKS] == REPORT_LINKS_INTERNAL
+
+
+async def test_an_address_home_assistant_lacks_is_refused(
+    hass: HomeAssistant,
+):
+    """Saving it would leave a person believing the links are on while
+    every report prints plain names."""
+    hass.config.internal_url = "http://10.10.10.10:8123"
+    hass.config.external_url = None
+    entry = await setup_entry(hass)
+
+    result = await _open_notifications(hass, entry)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], _submit(REPORT_LINKS_EXTERNAL)
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "external_url_not_set"}
+    assert CONF_REPORT_LINKS not in entry.options

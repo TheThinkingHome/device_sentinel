@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.19.14 (2026-09-03)
+# File: test_battery_report.py, Version: 0.21.14 (2026-09-18)
 
 """The battery report (ruling #194).
 
@@ -142,8 +142,9 @@ async def test_a_steady_cell_is_not_projected(
 
     assert "holding steady" in page
     # The names sit in a two-column table now rather than a wall of
-    # prose (ruling #379), so the cell and its level are separate.
-    assert "<td>Motion Hall</td><td>100%</td>" in page
+    # prose (ruling #379), so the cell and its level are separate. The
+    # name carries its area, and a device in none says so (issue #13).
+    assert "<td>Motion Hall [None]</td><td>100%</td>" in page
 
 
 async def test_a_reading_above_100_is_called_unreadable(
