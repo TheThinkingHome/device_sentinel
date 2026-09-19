@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.22.0 (2026-09-18)
+# File: report_brief.py, Version: 0.22.1 (2026-09-19)
 
 """The daily brief: the one report written for a person.
 
@@ -283,10 +283,12 @@ class BriefMixin:
             # carries a number.
             seconds = row.get(INC_DURATION)
             cause = row.get(INC_CAUSE)
+            # A closed signal problem says so, as the sentence does.
+            what = "signal recovered" if kind == TODO_KIND_RAILED_SIGNAL else "recovered"
             base = (
-                f"recovered after {self._human_span(seconds)}"
+                f"{what} after {self._human_span(seconds)}"
                 if seconds is not None
-                else "recovered"
+                else what
             )
             return f"{base}, {cause}" if cause else base
         if event == INCIDENT_ACTION:
@@ -1105,7 +1107,8 @@ class BriefMixin:
                 said.append(
                     f"{title}: You will not get any {warnings} because "
                     f"{why}. To receive {family} reports on the devices "
-                    f"you wish to monitor, unmute or unexclude them on the "
+                    f"you wish to monitor, unmute or unexclude "
+                    f"{'it' if len(judged) == 1 else 'them'} on the "
                     f"Exclusions and Muting, and the {screen} settings "
                     f"screen."
                 )

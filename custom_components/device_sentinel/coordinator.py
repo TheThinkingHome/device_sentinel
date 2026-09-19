@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.22.0 (2026-09-18)
+# File: coordinator.py, Version: 0.22.1 (2026-09-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -218,6 +218,7 @@ from .naming import display_name
 from .router_ties import RouterTiesMixin
 from .study import StudyMixin
 from .wifi import WifiScanMixin
+from .dashboard import DashboardMixin
 from .journal import JournalMixin
 from .messenger import MessengerMixin
 from .narrative import NarrativeMixin
@@ -246,6 +247,7 @@ class DeviceSentinelCoordinator(
     RouterTiesMixin,
     WifiScanMixin,
     StudyMixin,
+    DashboardMixin,
 ):
     """Owns Device Sentinel's storage, registry view, and telemetry."""
 
@@ -428,6 +430,9 @@ class DeviceSentinelCoordinator(
         # The persistent card's last message, so an unchanged one is
         # not written again. Memory only: every setup writes once.
         self._card_written: str | None = None
+        # The dashboard's change marker and whoever is subscribed to it.
+        self._change_marker = 0
+        self._change_listeners: list[Any] = []
         self._brief_unsub: Any | None = None
         # One bridge reader per detected coordinator stack that can
         # report its own liveness and pairing state (ruling #145). Populated in
@@ -3111,6 +3116,8 @@ class DeviceSentinelCoordinator(
             dt_util.utcnow() - timedelta(minutes=1)
         ).date()
         self._fold_storm_days(ended.isoformat())
+        # A new day's figures are something the dashboard should offer.
+        self._mark_changed()
         # The roll is what confirms a rail (three consecutive days
         # of nothing but the fill value), so the sync runs here and
         # the item appears with the rollover rather than a minute
@@ -4074,7 +4081,9 @@ class DeviceSentinelCoordinator(
             MAINTENANCE_MINUTES_MIN, min(MAINTENANCE_MINUTES_MAX, minutes)
         )
 
-    async def async_toggle_maintenance(self) -> dict[str, Any]:
+    async def async_toggle_maintenance(
+        self, minutes: int | None = None
+    ) -> dict[str, Any]:
         """Open the maintenance window, or close it early (rulings #225
         and #238).
 
@@ -4092,7 +4101,9 @@ class DeviceSentinelCoordinator(
             self._close_maintenance(now, "ended by hand", opened)
             self._notify()
             return {"maintenance": "closed"}
-        minutes = self.maintenance_minutes
+        # The dashboard chooses a length per press; the device page's
+        # button and a press with none use the setting.
+        minutes = minutes or self.maintenance_minutes
         self._maintenance_until = now + minutes * 60.0
         self._maintenance_opened_at = now
         self._record_system_event(

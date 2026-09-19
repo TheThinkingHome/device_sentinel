@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.20.18 (2026-09-12)
+# File: narrative.py, Version: 0.22.1 (2026-09-19)
 
 """How to say what happened: the composer.
 
@@ -248,9 +248,12 @@ class NarrativeMixin:
         if event == INCIDENT_RESOLVED:
             span = self._human_span(row.get(INC_DURATION))
             tail = self._recovery_tail(row)
+            # A closed signal problem says so: the device never stopped
+            # reporting, and "recovered" alone reads as if it had.
+            what = "signal recovered" if kind == TODO_KIND_RAILED_SIGNAL else "recovered"
             if row.get(INC_DURATION) is None:
-                return f"{name} recovered at {when}{tail}."
-            return f"{name} recovered at {when} after {span}{tail}."
+                return f"{name} {what} at {when}{tail}."
+            return f"{name} {what} at {when} after {span}{tail}."
         if kind == TODO_KIND_NEVER_REPORTED:
             return f"{name} has never reported since it was discovered."
         return f"{self._opening_clause(row)}."

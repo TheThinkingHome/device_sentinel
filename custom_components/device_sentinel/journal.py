@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.21.12 (2026-09-17)
+# File: journal.py, Version: 0.22.1 (2026-09-19)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -642,6 +642,12 @@ class JournalMixin:
             row for row in events if row[SYS_WHEN] >= cutoff
         ]
         self._mark_cold_dirty()
+        # Something happened to the house: the dashboard's Refresh has
+        # something new to show. Guarded, because some tests build this
+        # mixin without the dashboard's.
+        mark = getattr(self, "_mark_changed", None)
+        if mark is not None:
+            mark()
 
     def _incident_opened_at(
         self, device_id: str, kind: str

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.21.11 (2026-09-16)
+# File: report_maintainer.py, Version: 0.22.1 (2026-09-19)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -22,6 +22,7 @@ is the coordinator throughout and nothing here stands alone.
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from homeassistant.util import dt as dt_util
 
@@ -473,6 +474,46 @@ class MaintainerReportMixin:
         self._write_file(path, "\n".join(lines) + "\n")
         LOGGER.debug("Telemetry report written to %s", path)
 
+    def classification_rows(self) -> list[dict[str, Any]]:
+        """Return one row per device, watched and set aside together.
+
+        The one builder behind classification.md and the dashboard's
+        Classification tab, so the two can never disagree. A watched
+        device carries the global mute's reason if it has one; a
+        set-aside device carries why it was set aside (ruling #257).
+        COPIES counts watched devices sharing a name, by the naming
+        ladder (ruling #402). Sorted by name, case-insensitively.
+        """
+        name_copy_counts: dict[str, int] = {}
+        for device_id in self._watched:
+            name = self._device_name(device_id)
+            name_copy_counts[name] = name_copy_counts.get(name, 0) + 1
+        rows: list[dict[str, Any]] = []
+        for device_id, integration_domain in self._watched.items():
+            name = self._device_name(device_id)
+            reason = self._muted_devices.get(device_id)
+            rows.append({
+                "device_id": device_id,
+                "name": name,
+                "integration": integration_domain,
+                "watched": True,
+                "muted": f"Global ({reason})" if reason else "",
+                "set_aside": "",
+                "copies": name_copy_counts.get(name, 1),
+            })
+        for device_id, (name, integration_domain, reason) in self._set_aside.items():
+            rows.append({
+                "device_id": device_id,
+                "name": name,
+                "integration": integration_domain,
+                "watched": False,
+                "muted": "",
+                "set_aside": reason or "",
+                "copies": 1,
+            })
+        rows.sort(key=lambda row: row["name"].lower())
+        return rows
+
     def _write_classification(
         self, report_directory: str, trigger: str
     ) -> None:
@@ -491,38 +532,17 @@ class MaintainerReportMixin:
         still judged for everything else and is not muted wholesale.
         """
 
-        name_copy_counts: dict[str, int] = {}
-        for device_id, integration_domain in self._watched.items():
-            name = self._device_name(device_id)
-            name_copy_counts[name] = name_copy_counts.get(name, 0) + 1
-
-        # Build one row per device, watched and set-aside together, so
-        # the table reads as a single audit.
-        rows: list[tuple[str, str, str, str, str, str]] = []
-        for device_id, integration_domain in self._watched.items():
-            # The same ladder as the copy count above (ruling #402).
-            name = self._device_name(device_id)
-            reason = self._muted_devices.get(device_id)
-            muted_cell = f"Global ({reason})" if reason else ""
-            copies = name_copy_counts.get(name, 1)
-            rows.append(
-                (
-                    name,
-                    integration_domain,
-                    "yes",  # watched
-                    muted_cell,
-                    "",  # set aside
-                    str(copies) if copies > 1 else "",
-                )
+        rows = [
+            (
+                row["name"],
+                row["integration"],
+                "yes" if row["watched"] else "",
+                row["muted"],
+                row["set_aside"],
+                str(row["copies"]) if row["copies"] > 1 else "",
             )
-        for name, integration_domain, reason in self._set_aside.values():
-            # The reason is named rather than left to be guessed: a
-            # disabled device looks identical to a service device in
-            # a column that only says yes (ruling #257).
-            rows.append(
-                (name, integration_domain, "", "", reason, "")
-            )
-        rows.sort(key=lambda row: row[0].lower())
+            for row in self.classification_rows()
+        ]
 
         total = len(self._watched) + len(self._set_aside)
         lines = [

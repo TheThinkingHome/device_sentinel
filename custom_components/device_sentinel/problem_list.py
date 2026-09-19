@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.21.13 (2026-09-17)
+# File: problem_list.py, Version: 0.22.1 (2026-09-19)
 
 """The problem list: the single memory every channel renders.
 
@@ -1424,6 +1424,11 @@ class ProblemListMixin:
             self._dirty = True
             self._critical = True
             self._notify()
+            # A problem opened, closed or changed: the dashboard's
+            # Refresh has something new to show.
+            mark = getattr(self, "_mark_changed", None)
+            if mark is not None:
+                mark()
         # Now that the list and its summaries are settled, fire the
         # collected family events and refresh the persistent card. The
         # card always updates; the events respect quiet hours and the

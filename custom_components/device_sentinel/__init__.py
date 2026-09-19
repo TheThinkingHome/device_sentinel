@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.20.11 (2026-09-08)
+# File: __init__.py, Version: 0.22.1 (2026-09-19)
 
 """The Device Sentinel integration.
 
@@ -21,11 +21,13 @@ and inert.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 from typing import Any
 from pathlib import Path
 
+from homeassistant.components import frontend
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -34,6 +36,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import STORAGE_DIR
 from homeassistant.loader import async_get_integration
 
+from .dashboard_api import async_register_dashboard_api
 from .const import (
     DEAD_ENTITY_SENTINEL_TYPES,
     DEAD_OPTION_KEYS,
@@ -327,6 +330,8 @@ async def async_setup_entry(
 
     coordinator = DeviceSentinelCoordinator(hass, entry, version)
     await coordinator.async_setup()
+    async_register_dashboard_api(hass)
+    await _async_register_panel(hass)
 
     entry.runtime_data = coordinator
     # Options changes (the battery threshold today) apply live: the
@@ -336,6 +341,59 @@ async def async_setup_entry(
     )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+PANEL_URL_PATH = "device-sentinel"
+PANEL_ELEMENT = "device-sentinel-panel"
+PANEL_STATIC_ROOT = "/device_sentinel_panel"
+_PANEL_SERVED = f"{DOMAIN}_panel_served"
+
+
+async def _async_register_panel(hass: HomeAssistant) -> None:
+    """Put the dashboard in the sidebar, for admins only.
+
+    The module's address carries a hash of its contents: the frontend's
+    service worker serves a stale copy of an address it has seen before,
+    whatever query string is added, so a changed file needs a new name.
+    A static path cannot be removed once registered, so each address is
+    registered once per run and a reload reuses it. Registration writes
+    to Home Assistant's panel table and needs nothing else loaded, which
+    is why `frontend` is an after-dependency rather than a requirement.
+    """
+    module = Path(__file__).parent / "frontend" / "panel.js"
+    digest = await hass.async_add_executor_job(
+        lambda: hashlib.sha256(module.read_bytes()).hexdigest()[:12]
+    )
+    url = f"{PANEL_STATIC_ROOT}/panel.{digest}.js"
+    served: set[str] = hass.data.setdefault(_PANEL_SERVED, set())
+    try:
+        if url not in served:
+            await hass.http.async_register_static_paths(
+                [StaticPathConfig(url, str(module), True)]
+            )
+            served.add(url)
+    except Exception as err:  # noqa: BLE001 - the dashboard never stops setup
+        # A dashboard that cannot be served is a missing page, not a
+        # broken integration: detection, reports and alerts carry on.
+        LOGGER.warning("Device Sentinel could not serve its dashboard: %s", err)
+        return
+    frontend.async_register_built_in_panel(
+        hass,
+        component_name="custom",
+        sidebar_title="Device Sentinel",
+        sidebar_icon="mdi:shield-check-outline",
+        frontend_url_path=PANEL_URL_PATH,
+        config={
+            "_panel_custom": {
+                "name": PANEL_ELEMENT,
+                "module_url": url,
+                "embed_iframe": False,
+                "trust_external": False,
+            }
+        },
+        require_admin=True,
+        update=True,
+    )
 
 
 async def _async_options_updated(
@@ -356,6 +414,7 @@ async def async_unload_entry(
     # there is no restart to do it and a badge would otherwise stay
     # lit over an integration that is no longer running.
     async_clear_all(hass)
+    frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
     await entry.runtime_data.async_shutdown()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
