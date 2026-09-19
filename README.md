@@ -11,9 +11,10 @@
 
 **Your dashboard cannot tell a quiet device from a dead one. Device Sentinel can, and it catches failing batteries and dropping radio links before they take your smart home down.**
 
-## > **Pre-Release.** This integration is under rapid development. Check the table below to see what is stable today.
+> **Pre-Release.** This integration is under rapid development. Check the table below to see what is stable today.
 
 \
+
 \
 <figure>
   <img src="https://xeazy.com/wp-content/uploads/Dashboard-Mockup-scaled.png" alt="Dashboard Mock-Up">
@@ -21,6 +22,7 @@
 </figure>
 
 \
+
 \
 ## The Blind Spot
 
