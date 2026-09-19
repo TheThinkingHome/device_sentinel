@@ -13,7 +13,8 @@
 
 > **Pre-Release.** This integration is under rapid development. Check the table below to see what is stable today.
 
-![Dashboard Mock-Up](https://xeazy.com/wp-content/uploads/Dashboard-Mockup-scaled.png)
+> ![Dashboard Mock-Up](https://xeazy.com/wp-content/uploads/Dashboard-Mockup-scaled.png)
+> *Concept of the Device Sentinel dashboard currently in development.*
 
 <figure>
   <img src="https://xeazy.com/wp-content/uploads/Dashboard-Mockup-scaled.png" alt="Dashboard Mock-Up">
