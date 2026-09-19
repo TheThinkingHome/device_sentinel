@@ -13,6 +13,13 @@
 
 > **Pre-Release.** This integration is under rapid development. Check the table below to see what is stable today.
 
+![Dashboard Mock-Up](https://xeazy.com/wp-content/uploads/Dashboard-Mockup-scaled.png)
+
+<figure>
+  <img src="https://xeazy.com/wp-content/uploads/Dashboard-Mockup-scaled.png" alt="Dashboard Mock-Up">
+  <figcaption><em>Concept of the dashboard currently in development.</em></figcaption>
+</figure>
+
 ## The Blind Spot
 
 Home Assistant only reacts to what your devices tell it. When a device quietly dies, Home Assistant doesn't blink. The last value reported stays on your dashboard forever. Nothing turns red. Nothing throws an error.
