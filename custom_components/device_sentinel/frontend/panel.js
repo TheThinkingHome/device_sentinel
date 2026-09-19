@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.2 (2026-09-19)
+// File: frontend/panel.js, Version: 0.22.3 (2026-09-19)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -23,7 +23,7 @@ const TABS = [
   "Devices",
   "Recommendations",
 ];
-const BUILT = new Set(["Problem List", "Classification", "Recommendations"]);
+const BUILT = new Set(["Problem List", "Classification", "Integrations", "Recommendations"]);
 const FILTERS = [
   ["all", "All"],
   ["watched", "Watched"],
@@ -36,6 +36,19 @@ const PROBLEM_FILTERS = [
   ["acknowledged", "Acknowledged"],
 ];
 const SETTINGS_PATH = "/config/integrations/integration/device_sentinel";
+const INTEGRATION_FILTERS = [
+  ["all", "All"],
+  ["watched", "Watched"],
+  ["excluded", "Excluded"],
+  ["muted", "Muted"],
+  ["service", "Service only"],
+];
+const STANDING = {
+  watched: "Watched",
+  excluded: "Excluded",
+  muted: "Muted",
+  service: "Service only",
+};
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 function checkIcon(label) {
@@ -141,6 +154,15 @@ const STYLE = `
     flex-direction: column; gap: 6px; }
   .rec h3 { margin: 0; font-size: 15px; font-weight: 500; color: var(--primary-color); }
   .rec p { margin: 0; line-height: 1.5; }
+  .small { font-size: 12px; color: var(--secondary-text-color); }
+  .num { text-align: right; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .stat { border: 1px solid var(--divider-color); border-radius: 10px; padding: 12px 14px; }
+  .stat .v { font-size: 22px; font-weight: 500; }
+  .pagehead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .pagehead h2 { margin: 0; font-size: 22px; font-weight: 500; }
+  .links { display: flex; gap: 16px; flex-wrap: wrap; }
+  h3.section { margin: 8px 0 0; font-size: 16px; font-weight: 500; }
 `;
 
 class DeviceSentinelPanel extends HTMLElement {
@@ -151,6 +173,11 @@ class DeviceSentinelPanel extends HTMLElement {
     this._filter = "all";
     this._problemFilter = "all";
     this._problemSort = null;
+    this._integrationFilter = "watched";
+    this._integrationSort = null;
+    this._base = "/device-sentinel";
+    this._view = null;
+    this._page = null;
     this._started = false;
     this._snapshot = null;
     this._shownMarker = null;
@@ -168,6 +195,38 @@ class DeviceSentinelPanel extends HTMLElement {
       this._refresh();
       this._subscribe();
     }
+  }
+
+  set route(route) {
+    if (route && route.prefix) this._base = route.prefix;
+    const match = /^\/integration\/([^/]+)/.exec((route && route.path) || "");
+    const next = match ? { kind: "integration", domain: decodeURIComponent(match[1]) } : null;
+    const changed = JSON.stringify(next) !== JSON.stringify(this._view);
+    this._view = next;
+    if (next) this._tab = "Integrations";
+    if (this._started && changed) {
+      this._paintTabs();
+      this._openView();
+    }
+  }
+
+  _integrationPath(domain) {
+    return `${this._base}/integration/${encodeURIComponent(domain)}`;
+  }
+
+  async _openView() {
+    if (!this._view) {
+      this._page = null;
+      this._paintPane();
+      return;
+    }
+    this._pane.replaceChildren(el("p", { class: "muted" }, "Loading."));
+    try {
+      this._page = await this._call({ type: "device_sentinel/integration", domain: this._view.domain });
+    } catch (err) {
+      this._page = { error: err.code === "not_found" ? "No device belongs to that integration." : String(err.message || err) };
+    }
+    this._paintPane();
   }
 
   set narrow(narrow) {
@@ -257,13 +316,21 @@ class DeviceSentinelPanel extends HTMLElement {
   async _refresh() {
     this._refreshButton.disabled = true;
     try {
-      const [status, classification, problems, recommendations] = await Promise.all([
+      const [status, classification, problems, recommendations, integrations] = await Promise.all([
         this._call({ type: "device_sentinel/status" }),
         this._call({ type: "device_sentinel/classification" }),
         this._call({ type: "device_sentinel/problem_list" }),
         this._call({ type: "device_sentinel/recommendations" }),
+        this._call({ type: "device_sentinel/integrations" }),
       ]);
-      this._snapshot = { status, classification, problems, recommendations, at: new Date() };
+      this._snapshot = { status, classification, problems, recommendations, integrations, at: new Date() };
+      if (this._view) {
+        try {
+          this._page = await this._call({ type: "device_sentinel/integration", domain: this._view.domain });
+        } catch (err) {
+          this._page = { error: "No device belongs to that integration." };
+        }
+      }
       this._shownMarker = status.marker;
       if (this._latestMarker === null || this._latestMarker < status.marker) this._latestMarker = status.marker;
       this._paintStatus();
@@ -313,6 +380,10 @@ class DeviceSentinelPanel extends HTMLElement {
         class: "tab", type: "button", role: "tab", "aria-selected": String(name === this._tab),
         onclick: () => {
           this._tab = name;
+          if (this._view) {
+            this._navigate(this._base);
+            return;
+          }
           this._paintTabs();
           this._paintPane();
         },
@@ -328,7 +399,9 @@ class DeviceSentinelPanel extends HTMLElement {
       this._pane.replaceChildren(el("p", { class: "muted" }, "Loading."));
       return;
     }
-    if (this._tab === "Problem List") this._paintProblems();
+    if (this._view && this._view.kind === "integration") this._paintIntegrationPage();
+    else if (this._tab === "Integrations") this._paintIntegrations();
+    else if (this._tab === "Problem List") this._paintProblems();
     else if (this._tab === "Recommendations") this._paintRecommendations();
     else this._paintClassification();
   }
@@ -407,7 +480,7 @@ class DeviceSentinelPanel extends HTMLElement {
           }))),
         el("td", {}, this._link(row.name, `/config/devices/device/${encodeURIComponent(row.device_id)}`)),
         el("td", {}, row.integration
-          ? this._link(row.integration, `/config/integrations/integration/${encodeURIComponent(row.integration)}`)
+          ? this._link(row.integration, this._integrationPath(row.integration))
           : ""),
         el("td", {}, row.problem),
         el("td", {}, row.since ? moment(row.since) : ""),
@@ -449,6 +522,132 @@ class DeviceSentinelPanel extends HTMLElement {
       el("p", { class: "muted", style: "margin:0;font-size:13px;line-height:1.5" }, closing));
   }
 
+  _standingText(row) {
+    return row.standing === "excluded" && row.first_seen ? "Excluded when first seen" : STANDING[row.standing];
+  }
+
+  _outageDevices(outage) {
+    if (outage.open) return "still down";
+    if (outage.devices === null || outage.devices === undefined) return "";
+    if (!outage.worst) return `none of ${outage.devices}`;
+    return `${outage.worst} of ${outage.devices}`;
+  }
+
+  _paintIntegrations() {
+    const all = this._snapshot.integrations.rows;
+    const counts = Object.fromEntries(INTEGRATION_FILTERS.map(([key]) =>
+      [key, key === "all" ? all.length : all.filter((row) => row.standing === key).length]));
+    let rows = all.filter((row) => this._integrationFilter === "all" || row.standing === this._integrationFilter);
+    const sort = this._integrationSort;
+    if (sort) {
+      const value = {
+        name: (row) => row.name.toLowerCase(),
+        watched: (row) => row.watched,
+        problems: (row) => row.problems,
+        outages: (row) => row.outages,
+      }[sort.key];
+      rows = [...rows].sort((a, b) => (value(a) < value(b) ? -1 : value(a) > value(b) ? 1 : 0) * sort.dir);
+    }
+    const header = (label, key) => {
+      const direction = sort && sort.key === key ? sort.dir : null;
+      return el("button", {
+        class: "sort", type: "button",
+        "aria-sort": direction === 1 ? "ascending" : direction === -1 ? "descending" : "none",
+        onclick: () => {
+          this._integrationSort = { key, dir: direction === 1 ? -1 : 1 };
+          this._paintIntegrations();
+        },
+      }, label);
+    };
+    const watched = all.filter((row) => row.standing === "watched").length;
+    const summary = el("p", { style: "margin:0;line-height:1.5" },
+      `${all.length} integrations own devices in your house. ${watched} are watched, `
+      + `${counts.excluded} are excluded, ${counts.muted} are muted, and ${counts.service} own only service devices, which have nothing to watch.`);
+    const chips = el("div", { class: "chips" }, ...INTEGRATION_FILTERS.map(([key, label]) =>
+      el("button", {
+        class: "chip", type: "button", "aria-pressed": String(key === this._integrationFilter),
+        onclick: () => {
+          this._integrationFilter = key;
+          this._paintIntegrations();
+        },
+      }, `${label} ${counts[key]}`)));
+    const table = el("table", {},
+      el("thead", {}, el("tr", {},
+        el("th", {}, header("INTEGRATION", "name")),
+        el("th", {}, "STANDING"),
+        el("th", { class: "num" }, header("WATCHED", "watched")),
+        el("th", { class: "num" }, "MUTED"),
+        el("th", { class: "num" }, "SET ASIDE"),
+        el("th", { class: "num" }, header("PROBLEMS", "problems")),
+        el("th", { class: "num" }, header("OUTAGES, 14 DAYS", "outages")))),
+      el("tbody", {}, ...rows.map((row) => el("tr", {},
+        el("td", {}, this._link(row.name, this._integrationPath(row.domain)), " ", el("span", { class: "small" }, row.domain)),
+        el("td", {}, this._standingText(row)),
+        el("td", { class: "num" }, row.watched ? String(row.watched) : ""),
+        el("td", { class: "num" }, row.muted ? String(row.muted) : ""),
+        el("td", { class: "num" }, row.set_aside ? String(row.set_aside) : ""),
+        el("td", { class: "num" }, row.problems ? String(row.problems) : "",
+          row.acknowledged ? el("span", { class: "small" }, ` +${row.acknowledged} ack`) : null),
+        el("td", { class: "num" }, row.outages ? String(row.outages) : "")))));
+    this._pane.replaceChildren(summary, chips, el("div", { class: "scroll" }, table));
+  }
+
+  _paintIntegrationPage() {
+    const page = this._page;
+    const back = el("p", { style: "margin:0" }, this._link("\u2039 Integrations", this._base));
+    if (!page) {
+      this._pane.replaceChildren(back, el("p", { class: "muted" }, "Loading."));
+      return;
+    }
+    if (page.error) {
+      this._pane.replaceChildren(back, el("p", {}, page.error));
+      return;
+    }
+    const watched = page.devices.filter((d) => d.watched).length;
+    const muted = page.devices.filter((d) => d.muted).length;
+    const aside = page.devices.length - watched;
+    const open = page.devices.filter((d) => d.problem && !d.acknowledged).length;
+    const acked = page.devices.filter((d) => d.acknowledged).length;
+    const standingLine = `${this._standingText(page)}. ${watched} watched`
+      + `${muted ? `, ${muted} of them muted` : ""}${aside ? `, ${aside} set aside` : ""}.`;
+    const head = el("div", { class: "pagehead" },
+      el("div", {},
+        el("h2", {}, page.name, " ", el("span", { class: "small" }, page.domain)),
+        el("div", { class: "muted" }, standingLine)),
+      el("div", { class: "links" },
+        this._link("Open in Home Assistant", `/config/integrations/integration/${encodeURIComponent(page.domain)}`),
+        this._link("Device Sentinel settings", SETTINGS_PATH)));
+    const stat = (label, value, note) => el("div", { class: "stat" },
+      el("div", { class: "small" }, label), el("div", { class: "v" }, value, note ? el("span", { class: "small" }, ` ${note}`) : null));
+    const stats = el("div", { class: "stats" },
+      stat("Watched", String(watched)),
+      stat("Problems", String(open + acked), acked ? `${acked} acknowledged` : ""),
+      stat("Outages, 14 days", String(page.outages.length)),
+      stat("Bursts of updates, 7 days", String(page.bursts)));
+    const recs = page.recommendations.length
+      ? page.recommendations.map((line) => el("p", { style: "margin:0;line-height:1.5" }, line))
+      : [el("p", { class: "muted", style: "margin:0" }, "None for this integration.")];
+    const outages = page.outages.length
+      ? el("div", { class: "scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, ...["WENT DOWN", "WHAT", "FOR", "DEVICES THAT WENT DOWN"].map((h) => el("th", {}, h)))),
+        el("tbody", {}, ...page.outages.map((o) => el("tr", {},
+          el("td", {}, moment(o.went_down)),
+          el("td", {}, o.what),
+          el("td", {}, o.open ? "still down" : o.duration === null ? "not recorded" : span(o.duration)),
+          el("td", {}, this._outageDevices(o)))))))
+      : el("p", { class: "muted", style: "margin:0" }, "None in the last 14 days.");
+    const devices = el("div", { class: "scroll" }, el("table", {},
+      el("thead", {}, el("tr", {}, ...["DEVICE", "STANDING", "PROBLEM"].map((h) => el("th", {}, h)))),
+      el("tbody", {}, ...page.devices.map((d) => el("tr", {},
+        el("td", {}, this._link(d.name, `/config/devices/device/${encodeURIComponent(d.device_id)}`)),
+        el("td", {}, d.watched ? (d.muted ? `Watched, muted ${d.muted.replace(/^Global /, "")}` : "Watched") : `Set aside: ${d.set_aside}`),
+        el("td", {}, d.problem ? `${d.problem}${d.acknowledged ? ", acknowledged" : ""}` : ""))))));
+    this._pane.replaceChildren(back, head, stats,
+      el("h3", { class: "section" }, "Recommendations"), ...recs,
+      el("h3", { class: "section" }, "Outages, last 14 days"), outages,
+      el("h3", { class: "section" }, `Devices `, el("span", { class: "small" }, `${page.devices.length}, problems first`)), devices);
+  }
+
   _paintClassification() {
     const data = this._snapshot.classification;
     const counts = {
@@ -482,7 +681,7 @@ class DeviceSentinelPanel extends HTMLElement {
       el("thead", {}, el("tr", {}, ...head.map((h) => el("th", {}, h)))),
       el("tbody", {}, ...rows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, `/config/devices/device/${encodeURIComponent(row.device_id)}`)),
-        el("td", {}, this._link(row.integration, `/config/integrations/integration/${encodeURIComponent(row.integration)}`)),
+        el("td", {}, this._link(row.integration, this._integrationPath(row.integration))),
         el("td", {}, row.watched ? "\u2713" : ""),
         el("td", {}, row.muted),
         el("td", {}, row.set_aside),
