@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.20.9 (2026-09-06)
+# File: test_notifications.py, Version: 0.22.0 (2026-09-18)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -982,3 +982,69 @@ async def test_the_earliest_stamp_survives_a_missing_one(
         T0 + 900.0,
     )
     assert fired, "a kind with a stamp must still announce"
+
+
+# ==================================================================
+# The card is written when its message changes, and only then.
+# ==================================================================
+# Two testers saw the card rewrite itself every thirty seconds with
+# the same "All devices reporting", which Home Assistant shows as a
+# fresh notification each time. What a person sees can only change
+# when the message does, so a write that repeats it is noise.
+
+
+def _creates(h):
+    return [s for s in h.sent if s[1] == "create"]
+
+
+async def test_card_unchanged_message_is_written_once():
+    h = _Harness(["notify.phone"])
+    await h.async_update_card()
+    await h.async_update_card()
+    await h.async_update_card()
+    assert len(_creates(h)) == 1
+
+
+async def test_card_changed_message_is_written_again():
+    h = _Harness(["notify.phone"])
+    await h.async_update_card()
+    h._freeze = [{"name": "Door X", "device_id": "d1", "category": "unavailable"}]
+    await h.async_update_card()
+    await h.async_update_card()
+    h._freeze = []
+    await h.async_update_card()
+    messages = [s[2]["message"] for s in _creates(h)]
+    assert len(messages) == 3
+    assert "Door X unavailable" in messages[1]
+    assert messages[0] == messages[2] == "All devices reporting."
+
+
+async def test_card_toggled_off_and_on_is_written_again():
+    """A dismiss removes the card, so the same message must come back."""
+    from custom_components.device_sentinel.const import CONF_PERSISTENT_ENABLED
+
+    h = _Harness(["notify.phone"])
+    await h.async_update_card()
+    h.entry.options = {CONF_PERSISTENT_ENABLED: False}
+    await h.async_update_card()
+    h.entry.options = {CONF_PERSISTENT_ENABLED: True}
+    await h.async_update_card()
+    assert [s[1] for s in h.sent] == ["create", "dismiss", "create"]
+
+
+async def test_card_failed_write_is_tried_again():
+    """A write that raised put nothing on screen, so it is not remembered."""
+    h = _Harness(["notify.phone"])
+    calls = []
+
+    async def failing(domain, service, payload, blocking=False):
+        calls.append(service)
+        if len(calls) == 1:
+            raise RuntimeError("service not ready")
+        h.sent.append((domain, service, payload))
+
+    h.hass.services.async_call = failing
+    await h.async_update_card()
+    await h.async_update_card()
+    assert calls == ["create", "create"]
+    assert len(_creates(h)) == 1

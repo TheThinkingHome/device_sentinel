@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_campaign_hostile.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_campaign_hostile.py, Version: 0.22.0 (2026-09-18)
 
 """Pre-stable campaign: hostile inputs at the paths 0.19.7 touched.
 
@@ -47,8 +47,8 @@ from custom_components.device_sentinel.const import (
 from tests.conftest import fleet_path
 from tests.helpers import register_device, setup_coordinator
 
-JAMES = fleet_path("james", "2026-08-29", "device_sentinel.storage")
-TIM = fleet_path("tim", "2026-08-29", "device_sentinel_storage.json")
+JAMES = fleet_path("james", "device_sentinel.storage")
+TIM = fleet_path("tim", "2026-08-26", "device_sentinel_storage.json")
 CLOCKS_FOR = {
     "device_sentinel.storage": "device_sentinel.clocks",
     "device_sentinel_storage.json": "device_sentinel_clocks.json",

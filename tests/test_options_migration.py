@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_options_migration.py, Version: 0.16.18 (2026-08-22)
+# File: tests/test_options_migration.py, Version: 0.22.0 (2026-09-18)
 
 """The options migration, entry shape by entry shape (ruling #316).
 
@@ -24,7 +24,8 @@ integration actually wrote.
 from __future__ import annotations
 
 import json
-import pathlib
+
+import pytest
 
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -55,6 +56,7 @@ from custom_components.device_sentinel.const import (
     SYS_TRIMMED,
     SYS_WHEN,
 )
+from tests.conftest import FLEET_ABSENT, fleet_path
 from tests.helpers import setup_coordinator
 
 # The spellings a 0.16.3 entry carries, which is the release the
@@ -242,10 +244,12 @@ async def test_the_reference_fleet_s_own_entry_survives(
     holds what the integration actually wrote on a live system, which
     is the difference that has caught two releases already.
     """
-    uploads = pathlib.Path("/mnt/user-data/uploads")
-    files = sorted(uploads.glob("config_entry-device_sentinel-*.json"))
+    # Read from the reference fleet's folder, like every other fleet
+    # case. It used to read the chat's upload folder, whose contents
+    # are whatever was sent last, from any house.
+    files = sorted(fleet_path("james").glob("config_entry-device_sentinel-*.json"))
     if not files:
-        return
+        pytest.skip(FLEET_ABSENT)
     stored = json.loads(files[0].read_text(encoding="utf-8"))
     options = dict(stored["data"]["entry_options"])
     # The muting lists as the live system holds them, before the move.
@@ -259,7 +263,8 @@ async def test_the_reference_fleet_s_own_entry_survives(
         old: list(options[old]) for old in retired if old in options
     }
     if not before:
-        return
+        # A passing test here would claim a migration it never ran.
+        pytest.skip("the entry holds no retired option key to migrate")
 
     entry = await _migrated(hass, options)
 

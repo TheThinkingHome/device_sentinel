@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_loading.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_upstream_loading.py, Version: 0.22.0 (2026-09-18)
 
 """An upstream that has not loaded yet is loading, not down (#445).
 
@@ -247,7 +247,7 @@ async def test_a_reader_that_faults_saying_is_taken_as_established(
         def loaded(self):
             raise RuntimeError("radio gone")
 
-        async def async_stop(self):
+        def async_stop(self):
             return None
 
     coord = await setup_coordinator(hass)

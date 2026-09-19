@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_boot_claim.py, Version: 0.21.13 (2026-09-17)
+# File: tests/test_boot_claim.py, Version: 0.22.0 (2026-09-18)
 
 """A restart during an outage lists nothing on its own (#447).
 
@@ -313,7 +313,7 @@ async def test_a_silent_broker_owns_its_devices_after_the_grace(
         def regressed_since(self, _known):
             return False
 
-        async def async_stop(self):
+        def async_stop(self):
             return None
 
     down_at = dt_util.utcnow().timestamp() - 1800
