@@ -21,9 +21,9 @@
   <figcaption><h2><em>Concept of the Device Sentinel dashboard currently in development.</em></h2></figcaption>
 </figure>
 
-\
+&nbsp;
+&nbsp;
 
-\
 ## The Blind Spot
 
 Home Assistant only reacts to what your devices tell it. When a device quietly dies, Home Assistant doesn't blink. The last value reported stays on your dashboard forever. Nothing turns red. Nothing throws an error.
