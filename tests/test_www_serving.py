@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_www_serving.py, Version: 0.10.21 (2026-08-03)
+# File: test_www_serving.py, Version: 0.22.1 (2026-09-19)
 
 """Serving the www folder on the boot that creates it (ruling #186).
 
@@ -59,7 +59,9 @@ async def test_the_folder_is_served_when_no_www_existed(
     calls: list = []
 
     async def _capture(configs):
-        calls.extend(configs)
+        # The www folder is this file's subject; the dashboard's module
+        # registers an address of its own, which is not counted here.
+        calls.extend(c for c in configs if c.url_path == REPORT_WWW_URL)
 
     with patch.object(
         hass.http, "async_register_static_paths", _capture
@@ -94,7 +96,9 @@ async def test_nothing_is_registered_when_www_already_existed(
     calls: list = []
 
     async def _capture(configs):
-        calls.extend(configs)
+        # The www folder is this file's subject; the dashboard's module
+        # registers an address of its own, which is not counted here.
+        calls.extend(c for c in configs if c.url_path == REPORT_WWW_URL)
 
     with patch.object(
         hass.http, "async_register_static_paths", _capture

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendations.py, Version: 0.22.0 (2026-09-18)
+# File: tests/test_recommendations.py, Version: 0.22.1 (2026-09-19)
 
 """The brief's Recommendations section (ruling #458).
 
@@ -369,3 +369,16 @@ async def test_a_links_address_that_is_held_says_nothing(hass: HomeAssistant):
         line.startswith("Your Home Assistant")
         for line in coord._recommendation_items()
     )
+
+
+async def test_a_single_muted_device_is_it_not_them(hass: HomeAssistant):
+    only, _ = register_device(hass, "b1", name="Only Door")
+    coord = await setup_coordinator(hass, {CONF_BATTERY_MUTED_DEVICES: [only.id]})
+    coord.data[DATA_DEVICES][only.id][DEV_BATTERY_VALUE] = 80.0
+    line = next(
+        line for line in coord._recommendation_items()
+        if line.startswith("All battery devices")
+    )
+    assert "your only battery device is muted" in line
+    assert "unmute or unexclude it on" in line
+    assert "unexclude them" not in line
