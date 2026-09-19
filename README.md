@@ -13,12 +13,11 @@
 
 > **Pre-Release.** This integration is under rapid development. Check the table below to see what is stable today.
 
-> ![Dashboard Mock-Up](https://xeazy.com/wp-content/uploads/Dashboard-Mockup-scaled.png)
-> *Concept of the Device Sentinel dashboard currently in development.*
+
 
 <figure>
   <img src="https://xeazy.com/wp-content/uploads/Dashboard-Mockup-scaled.png" alt="Dashboard Mock-Up">
-  <figcaption><em>Concept of the dashboard currently in development.</em></figcaption>
+  <figcaption><h4><em>Concept of the Device Sentinel dashboard currently in development.</em></h4></figcaption>
 </figure>
 
 ## The Blind Spot
