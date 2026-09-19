@@ -18,7 +18,7 @@
 
 <figure>
   <img src="https://xeazy.com/wp-content/uploads/Dashboard-Mockup-scaled.png" alt="Dashboard Mock-Up">
-  <figcaption><h2><center><em>Concept of the Device Sentinel dashboard currently in development.</em></center>center></h2></figcaption>
+  <figcaption><h3><em>Concept of the Device Sentinel dashboard currently in development.</em></h3></figcaption>
 </figure>
 
 &nbsp;
