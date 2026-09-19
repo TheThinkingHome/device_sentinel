@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.22.2 (2026-09-19)
+# File: dashboard_api.py, Version: 0.22.3 (2026-09-19)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -76,6 +76,8 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_problem_list)
     websocket_api.async_register_command(hass, ws_acknowledge)
     websocket_api.async_register_command(hass, ws_recommendations)
+    websocket_api.async_register_command(hass, ws_integrations)
+    websocket_api.async_register_command(hass, ws_integration)
 
 
 def _coordinator(hass: HomeAssistant) -> Any | None:
@@ -295,3 +297,41 @@ async def ws_recommendations(
         msg["id"],
         {"lines": coordinator._recommendation_items(), "closing": RECOMMENDATIONS_CLOSING},
     )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): "device_sentinel/integrations"})
+@callback
+def ws_integrations(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the Integrations tab: one row per integration with a device."""
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    connection.send_result(msg["id"], {"rows": coordinator.dashboard_integrations()})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): "device_sentinel/integration", vol.Required("domain"): str}
+)
+@callback
+def ws_integration(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return one integration's page."""
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    page = coordinator.dashboard_integration(msg["domain"])
+    if page is None:
+        connection.send_error(msg["id"], "not_found", "No device belongs to that integration")
+        return
+    connection.send_result(msg["id"], page)
