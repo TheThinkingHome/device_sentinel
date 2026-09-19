@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.22.1 (2026-09-19)
+# File: problem_list.py, Version: 0.22.2 (2026-09-19)
 
 """The problem list: the single memory every channel renders.
 
@@ -226,6 +226,11 @@ class ProblemListMixin:
                     if status == "completed"
                     else None
                 )
+                # What the Problem List shows has changed, from
+                # whichever surface the tick came.
+                mark = getattr(self, "_mark_changed", None)
+                if mark is not None:
+                    mark()
                 # The checkbox lands on the timeline in both
                 # directions. Recording only the check left a brief
                 # saying a device was acknowledged and never saying

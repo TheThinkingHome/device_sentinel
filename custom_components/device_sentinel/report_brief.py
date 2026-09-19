@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.22.1 (2026-09-19)
+# File: report_brief.py, Version: 0.22.2 (2026-09-19)
 
 """The daily brief: the one report written for a person.
 
@@ -173,6 +173,19 @@ _REPEAT_PARAGRAPH = (
 )
 
 
+
+
+# The words under the recommendations, the owner's of 18 September.
+# One constant, because the brief and the dashboard's tab both print it.
+RECOMMENDATIONS_CLOSING = (
+    "These are suggestions based on observations that the integration "
+    "has made. Device Sentinel is meant to monitor physical devices. Not "
+    "all integrations own physical devices and therefore should not be "
+    "monitored. When a setting that the integration depends on is not "
+    "properly configured, Device Sentinel will notify you here. Making "
+    "these changes will make the integration more efficient, and record "
+    "and interpret data that is meaningful."
+)
 
 class BriefMixin:
     """The daily brief: the one report written for a person."""
@@ -1160,17 +1173,7 @@ class BriefMixin:
         lines = ["## Recommendations", ""]
         for item in items:
             lines += [item, ""]
-        lines += [
-            "These are suggestions based on observations that the "
-            "integration has made. Device Sentinel is meant to monitor "
-            "physical devices. Not all integrations own physical devices "
-            "and therefore should not be monitored. When a setting that "
-            "the integration depends on is not properly configured, "
-            "Device Sentinel will notify you here. Making these changes "
-            "will make the integration more efficient, and record and "
-            "interpret data that is meaningful.",
-            "",
-        ]
+        lines += [RECOMMENDATIONS_CLOSING, ""]
         return lines
 
     def _longest(
