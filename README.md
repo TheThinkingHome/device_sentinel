@@ -17,7 +17,7 @@
 
 <figure>
   <img src="https://xeazy.com/wp-content/uploads/Dashboard-Mockup-scaled.png" alt="Dashboard Mock-Up">
-  <figcaption><h4><em>Concept of the Device Sentinel dashboard currently in development.</em></h4></figcaption>
+  <figcaption><h2><em>Concept of the Device Sentinel dashboard currently in development.</em></h2></figcaption>
 </figure>
 
 ## The Blind Spot
