@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.21.14 (2026-09-18)
+# File: coordinator.py, Version: 0.22.0 (2026-09-18)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -425,6 +425,9 @@ class DeviceSentinelCoordinator(
         # whole house rather than one per stack, because there is one
         # broker and a bridge reader cannot see it fail (ruling #224).
         self._broker_reader: Any | None = None
+        # The persistent card's last message, so an unchanged one is
+        # not written again. Memory only: every setup writes once.
+        self._card_written: str | None = None
         self._brief_unsub: Any | None = None
         # One bridge reader per detected coordinator stack that can
         # report its own liveness and pairing state (ruling #145). Populated in
@@ -472,6 +475,9 @@ class DeviceSentinelCoordinator(
         # nothing here persists, which is the recorded
         # restart-mid-outage limitation.
         self._wifi_ties: dict[str, str] = {}
+        # A wireless adapter nothing is watching with, read before
+        # each report write for the brief's recommendations.
+        self._wifi_adapter_unused: str | None = None
         self._wifi_device_of: dict[str, str] = {}
         self._wifi_not_home: dict[str, float] = {}
         self._wifi_burst: list[float] = []
@@ -1565,6 +1571,7 @@ class DeviceSentinelCoordinator(
         midnight rollover, where an unguarded raise abandons the rest
         of the job.
         """
+        await self.async_check_unused_adapter()
         try:
             if trigger is None:
                 return await self.hass.async_add_executor_job(
@@ -2885,6 +2892,7 @@ class DeviceSentinelCoordinator(
             repair_notice=self._repair_notice,
             container_notice=self._container_notice,
             awaiting=self.awaiting_enable_counts(),
+            awaiting_devices=self.awaiting_enable_devices(),
             days_installed=days_installed,
             version_changed=self._version_changed,
             namer=self._device_name,
@@ -3093,8 +3101,16 @@ class DeviceSentinelCoordinator(
             self._roll_dwell(record, now)
             self._roll_battery(record, device_id)
         # The day's storm tally, one row per domain (ruling #320),
-        # written before the save that carries it.
-        self._fold_storm_days(dt_util.now().date().isoformat())
+        # written before the save that carries it. Dated by the day
+        # that just ended: the roll runs at local midnight, when today
+        # is already the next day, and dating by today filed every
+        # storm a day late. The catch-up fold after a missed midnight
+        # has nothing to date, since the day's storms live in memory
+        # and a restart empties them.
+        ended = dt_util.as_local(
+            dt_util.utcnow() - timedelta(minutes=1)
+        ).date()
+        self._fold_storm_days(ended.isoformat())
         # The roll is what confirms a rail (three consecutive days
         # of nothing but the fill value), so the sync runs here and
         # the item appears with the rollover rather than a minute
@@ -4011,6 +4027,31 @@ class DeviceSentinelCoordinator(
             "last_seen": last_seen,
             "battery": battery,
         }
+
+    def awaiting_enable_devices(self) -> dict[str, list[str]]:
+        """Return, for each enable button, the devices it would change.
+
+        The same filter as the counts beside it, so the names and the
+        numbers can never disagree about which devices are meant. A
+        device with two disabled entities of one kind is listed once:
+        a person fixes a device, not an entity (ruling #456).
+        """
+        ent_reg = er.async_get(self.hass)
+        found: dict[str, set[str]] = {
+            "signal": set(), "last_seen": set(), "battery": set()
+        }
+        for ent in list(ent_reg.entities.values()):
+            if ent.device_id not in self._watched:
+                continue
+            if ent.disabled_by is None:
+                continue
+            if self._is_signal(ent):
+                found["signal"].add(ent.device_id)
+            if self._is_last_seen(ent):
+                found["last_seen"].add(ent.device_id)
+            if self._is_battery_percentage(ent):
+                found["battery"].add(ent.device_id)
+        return {kind: sorted(ids) for kind, ids in found.items()}
 
     # ----------------------------------------------- maintenance mode
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: wifi.py, Version: 0.20.9 (2026-09-06)
+# File: wifi.py, Version: 0.22.0 (2026-09-18)
 
 """Is the WiFi network up? Asked of the host's own radio.
 
@@ -130,6 +130,23 @@ class WifiScanMixin:
         trigger.
         """
         return bool(self.wifi_networks and self._wifi_scan_interface)
+
+    async def async_check_unused_adapter(self) -> None:
+        """Note a wireless adapter that no chosen network puts to use.
+
+        Asked before each report is written, because the brief is
+        composed in the executor and the Supervisor answers on the
+        loop. Only where no network is chosen: once one is, the sweep
+        finds the adapter itself and the question has been answered.
+        Held in memory, since the adapter is read again at every
+        write (ruling #458).
+        """
+        self._wifi_adapter_unused = None
+        if self.wifi_networks:
+            return
+        found = await wireless_interfaces(self.hass)
+        if found:
+            self._wifi_adapter_unused = found[0].get("interface") or "wireless"
 
     @property
     def wifi_scan_down_at(self) -> float | None:

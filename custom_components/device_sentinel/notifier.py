@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.20.18 (2026-09-12)
+# File: notifier.py, Version: 0.22.0 (2026-09-18)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -379,6 +379,15 @@ class NotifierMixin:
         toggle is off, no card is written, and any card already showing
         is dismissed so turning the setting off removes it rather than
         leaving a stale one behind.
+
+        Written only when its message changes. Home Assistant shows
+        every write as a fresh notification, so repeating the same
+        words every thirty seconds was noise two testers reported. The
+        last message written is held in memory and nowhere else: it
+        starts empty at every setup, so the first call after a restart
+        always writes, and it is forgotten by a dismiss or a failed
+        write, since neither leaves those words on screen (ruling
+        #454).
         """
         if not self.entry.options.get(
             CONF_PERSISTENT_ENABLED, DEFAULT_PERSISTENT_ENABLED
@@ -395,6 +404,7 @@ class NotifierMixin:
                     "Device Sentinel could not dismiss the state card: %s",
                     err,
                 )
+            self._card_written = None
             return
         lines: list[str] = []
         for family in ("freeze", "battery", "signal"):
@@ -403,6 +413,8 @@ class NotifierMixin:
                 title = NOTIFY_FAMILY_TITLES[family]
                 lines.append(f"{title}: {summary}")
         message = "\n".join(lines) if lines else "All devices reporting."
+        if message == getattr(self, "_card_written", None):
+            return
         try:
             await self.hass.services.async_call(
                 PERSISTENT_TARGET,
@@ -415,6 +427,9 @@ class NotifierMixin:
                 blocking=True,
             )
         except Exception as err:  # noqa: BLE001 - card write must never raise
+            self._card_written = None
             LOGGER.warning(
                 "Device Sentinel could not update the state card: %s", err
             )
+            return
+        self._card_written = message

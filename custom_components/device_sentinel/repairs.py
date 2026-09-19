@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.19.10 (2026-08-31)
+# File: repairs.py, Version: 0.22.0 (2026-09-18)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -72,6 +72,7 @@ from .const import (
     PERSISTENT_TARGET,
     REPAIRS_ALL,
     REPAIR_DETAIL_MAX,
+    REPAIR_NAMED_PER_KIND,
     REPAIR_ENTITIES_DISABLED,
     REPAIR_MOMENT_BRIEF,
     REPAIR_MOMENT_GRACE,
@@ -298,9 +299,45 @@ def _evaluate_storage_repaired(
     )
 
 
+def entities_disabled_detail(
+    counts: dict[str, int],
+    devices: dict[str, list[str]] | None,
+    namer: Any,
+) -> str:
+    """Return what is switched off, by kind, naming the devices.
+
+    Shared by the Repairs card and the brief's recommendations, so
+    the two can never word the same condition differently. Ten names
+    per kind in alphabetical order, the rest counted (ruling #456).
+    Kinds part on semicolons, because the names inside each carry
+    commas of their own.
+    """
+    named = []
+    for key, kind in (
+        ("signal", "signal"),
+        ("last_seen", "last seen"),
+        ("battery", "battery"),
+    ):
+        count = counts.get(key, 0)
+        if not count:
+            continue
+        ids = (devices or {}).get(key) or []
+        names = sorted(
+            (namer(device_id) if namer else device_id for device_id in ids),
+            key=str.casefold,
+        )
+        where = _english_list(names, limit=REPAIR_NAMED_PER_KIND)
+        named.append(f"{count} {kind} on {where}" if where else f"{count} {kind}")
+    return "; ".join(named)
+
+
 @callback
 def _evaluate_entities_disabled(
-    hass: HomeAssistant, counts: dict[str, int], entry_id: str
+    hass: HomeAssistant,
+    counts: dict[str, int],
+    entry_id: str,
+    devices: dict[str, list[str]] | None = None,
+    namer: Any = None,
 ) -> None:
     """Raise or clear the disabled-entities issue.
 
@@ -318,20 +355,15 @@ def _evaluate_entities_disabled(
     they meant is a question with one answer. A person who wants only
     one kind has three buttons on the device page that do exactly
     that.
+
+    Each kind names the devices it would change, ten of them in
+    alphabetical order and a count of the rest, because a number says
+    something is off and a name says where (ruling #456, issue #13).
     """
     total = sum(counts.values())
     if not total:
         _clear(hass, REPAIR_ENTITIES_DISABLED)
         return
-    named = [
-        f"{count} {kind}"
-        for kind, count in (
-            ("signal", counts.get("signal", 0)),
-            ("last seen", counts.get("last_seen", 0)),
-            ("battery", counts.get("battery", 0)),
-        )
-        if count
-    ]
     _raise(
         hass,
         REPAIR_ENTITIES_DISABLED,
@@ -341,7 +373,7 @@ def _evaluate_entities_disabled(
         placeholders={
             "count": str(total),
             "entities": "entity" if total == 1 else "entities",
-            "detail": _english_list(named, limit=3),
+            "detail": entities_disabled_detail(counts, devices, namer),
         },
         data={"entry_id": entry_id},
     )
@@ -427,6 +459,7 @@ def async_evaluate(
     repair_notice: dict[str, str] | None,
     container_notice: dict[str, str] | None,
     awaiting: dict[str, int],
+    awaiting_devices: dict[str, list[str]] | None = None,
     days_installed: float | None,
     version_changed: bool,
     namer: Any,
@@ -456,7 +489,6 @@ def async_evaluate(
     likely to reach a person. The brief hour is the hour a person
     looks, and the two arrive together.
     """
-    _ = namer
     _evaluate_storage_repaired(hass, repair_notice, entry.entry_id)
     _evaluate_containers_repaired(hass, container_notice, entry.entry_id)
     # The identifier the retired three-option card used. Cleared
@@ -467,7 +499,9 @@ def async_evaluate(
         hass, missing_targets(hass, entry), entry.entry_id
     )
     if moment == REPAIR_MOMENT_BRIEF or version_changed:
-        _evaluate_entities_disabled(hass, awaiting, entry.entry_id)
+        _evaluate_entities_disabled(
+            hass, awaiting, entry.entry_id, awaiting_devices, namer
+        )
     if moment == REPAIR_MOMENT_BRIEF:
         _evaluate_no_delivery(
             hass, delivery_is_configured(entry), days_installed

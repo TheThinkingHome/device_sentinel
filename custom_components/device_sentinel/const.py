@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.21.14 (2026-09-18)
+# File: const.py, Version: 0.22.0 (2026-09-18)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2347,7 +2347,7 @@ SYS_WORST = "worst"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 453
+HIGHEST_RULING = 461
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -2361,6 +2361,40 @@ DATA_STORMS = "storms"
 # 64 percent of the reference fleet's storage file. The daily
 # record lives in DATA_STORM_DAYS instead.
 STORM_KEEP_SECONDS = 3600.0
+# A storm is explained, and stays out of the day's tally, when it
+# began inside an upstream outage or a maintenance window, or within
+# this long after one closed or Home Assistant restarted. On the
+# second fleet every whole-fleet republish by zha and battery_notes
+# began while the coordinator was pulled or within seconds of its
+# return, and the old tally advised excluding the house's own Zigbee
+# stack on the strength of them (ruling #457).
+STORM_EXPLAINED_SECONDS = 300.0
+# The noisy-integration advice: at least this many unexplained storms
+# in a day, on at least this many days within the window. A person
+# testing hardware produces a bad day; a poller produces a bad week
+# (ruling #457).
+FLOOD_MIN_STORMS = 3
+FLOOD_MIN_DAYS = 2
+FLOOD_WINDOW_DAYS = 7
+# The library: integrations whose devices come and go for reasons that
+# are not faults, grouped by that reason, because a category travels
+# further than a list of names. Shipped as data so the brief can say
+# something useful on the first day, before anything is learned
+# (ruling #459). Router trackers are not here: they are excluded when
+# first seen (ruling #420) and have a line of their own.
+LIBRARY_FALSE_ALERTS = "false_alerts"
+LIBRARY_NO_DEVICES = "no_devices"
+RECOMMENDATION_LIBRARY: dict[str, tuple[str, ...]] = {
+    # Devices that go offline by design: phones and computers leave
+    # the house, televisions are switched off.
+    LIBRARY_FALSE_ALERTS: (
+        "ping", "mobile_app",
+        "webostv", "androidtv", "samsungtv", "apple_tv",
+        "dlna_dmr", "samsung_infrared",
+    ),
+    # Integrations that add tools rather than hardware.
+    LIBRARY_NO_DEVICES: ("spook",),
+}
 
 # The daily storm tally (ruling #320): one row per domain per day,
 # written at the fold from the day's storms, kept on the retention
@@ -2492,6 +2526,12 @@ REPAIR_MOMENT_BRIEF = "brief"
 # A card is read in a dialog rather than scrolled, and the full list
 # is already in the log and the diagnostics.
 REPAIR_DETAIL_MAX = 3
+# How many devices the disabled-entities card names for each kind
+# before it counts the rest. A fresh install of the second fleet would
+# list 157 under signal alone; ten is enough for a person to recognise
+# their own house without burying the sentence that says what to do
+# (ruling #456).
+REPAIR_NAMED_PER_KIND = 10
 
 # How long an install may go with nowhere to send anything before it
 # is worth saying so (ruling #301). Seven days rather than

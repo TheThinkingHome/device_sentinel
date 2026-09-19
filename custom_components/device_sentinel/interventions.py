@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.21.13 (2026-09-17)
+# File: interventions.py, Version: 0.22.0 (2026-09-18)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -39,6 +39,16 @@ from .stacks import (
 from .transport_mqtt import MQTTBrokerReader
 
 from .const import (
+    DATA_SYSTEM_EVENTS,
+    STORM_EXPLAINED_SECONDS,
+    SYS_KIND,
+    SYS_MAINTENANCE_CLOSED,
+    SYS_MAINTENANCE_OPEN,
+    SYS_RESTART,
+    SYS_SCOPE,
+    SYS_WHEN,
+    SYS_WIFI_DOWN,
+    SYS_WIFI_UP,
     SYS_DEVICE_HANDLED,
     ZHA_HANDLED_TAIL_SECONDS,
     REPAIR_MOMENT_GRACE,
@@ -1657,6 +1667,45 @@ class InterventionMixin:
         rows = self.data.setdefault(DATA_STORM_DAYS, [])
         del rows[:-keep]
 
+    def _storm_explained(self, start: float) -> bool:
+        """Return whether a storm that began at `start` has a cause.
+
+        Read from the system events log, which already holds every
+        outage, maintenance window and restart with its time. A storm
+        is explained when, at its start, an upstream outage or a
+        maintenance window was open, or one had closed or Home
+        Assistant had restarted within STORM_EXPLAINED_SECONDS. Each
+        opener is paired with its own closer by kind and scope, so a
+        bridge that came back does not close a broker outage that is
+        still open (ruling #457).
+        """
+        opens = {
+            SYS_BRIDGE_DOWN: SYS_BRIDGE_UP,
+            SYS_BROKER_DOWN: SYS_BROKER_UP,
+            SYS_INTEGRATION_DOWN: SYS_INTEGRATION_UP,
+            SYS_WIFI_DOWN: SYS_WIFI_UP,
+            SYS_MAINTENANCE_OPEN: SYS_MAINTENANCE_CLOSED,
+        }
+        closes = {closer: opener for opener, closer in opens.items()}
+        open_now: dict[tuple[str, Any], bool] = {}
+        for row in self.data.get(DATA_SYSTEM_EVENTS) or []:
+            if not isinstance(row, dict):
+                continue
+            when = row.get(SYS_WHEN)
+            if not isinstance(when, (int, float)) or when > start:
+                continue
+            kind = row.get(SYS_KIND)
+            scope = row.get(SYS_SCOPE)
+            if kind in opens:
+                open_now[(kind, scope)] = True
+            elif kind in closes:
+                open_now[(closes[kind], scope)] = False
+                if start - when <= STORM_EXPLAINED_SECONDS:
+                    return True
+            elif kind == SYS_RESTART and start - when <= STORM_EXPLAINED_SECONDS:
+                return True
+        return any(open_now.values())
+
     def _end_storm(
         self, entry_id: str, storm: dict[str, Any], now: float
     ) -> None:
@@ -1676,9 +1725,15 @@ class InterventionMixin:
             # a restart loses the pre-restart part of one day's
             # tally, and the reference fleet's nightly restart runs
             # after the fold, so an ordinary day is complete.
-            self._storm_day.setdefault(
-                self._entry_domain(entry_id), []
-            ).append((now, len(storm["devices"]), duration))
+            # Only a storm nothing explains is tallied: one inside an
+            # outage, a maintenance window or a restart is the house
+            # recovering, and the tally is what the noisy-integration
+            # advice reads (ruling #457). The raw row above is kept
+            # either way, since the polling verdict needs every burst.
+            if not self._storm_explained(storm["start"]):
+                self._storm_day.setdefault(
+                    self._entry_domain(entry_id), []
+                ).append((now, len(storm["devices"]), duration))
         if announce:
             self._record_system_event(
                 SYS_STORM_CLOSED,

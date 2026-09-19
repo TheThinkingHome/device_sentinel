@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.21.14 (2026-09-18)
+# File: report_brief.py, Version: 0.22.0 (2026-09-18)
 
 """The daily brief: the one report written for a person.
 
@@ -27,10 +27,29 @@ from datetime import timedelta
 from html import escape
 from typing import Any
 
+from homeassistant.helpers import entity_registry as er
+from homeassistant.loader import async_get_loaded_integration
 from homeassistant.util import dt as dt_util
 
 from . import attribution
+from .repairs import (
+    _english_list,
+    delivery_is_configured,
+    missing_targets,
+)
 from .const import (
+    DEV_SIGNAL_VALUE,
+    FLOOD_MIN_DAYS,
+    FLOOD_MIN_STORMS,
+    FLOOD_WINDOW_DAYS,
+    RECOMMENDATION_LIBRARY,
+    LIBRARY_FALSE_ALERTS,
+    LIBRARY_NO_DEVICES,
+    CONF_REPORT_LINKS,
+    DEFAULT_REPORT_LINKS,
+    REPORT_LINKS_EXTERNAL,
+    REPORT_LINKS_INTERNAL,
+    CONF_MUTED_INTEGRATIONS,
     CONF_REPEAT_FLOOR,
     DEFAULT_REPEAT_FLOOR,
     REPEAT_FLOOR_MAX,
@@ -499,16 +518,18 @@ class BriefMixin:
             )
         if kind == SYS_BATTERY_REPLACED:
             # "<registry id> <from> <to>": the name, and the two levels
-            # that made it a replacement rather than a recovery
-            # (ruling #397).
+            # that made it a new cell rather than a recovery (ruling
+            # #397). One reading a day cannot tell a new cell from a
+            # charge, so the sentence names both and claims neither
+            # (ruling #455, issue #11).
             parts = str(detail or "").split(" ")
             who = self._device_name(parts[0]) if parts and parts[0] else "A device"
             levels = (
                 f", {parts[1]}% to {parts[2]}%" if len(parts) >= 3 else ""
             )
             return (
-                f"{who} had its battery replaced at {when}{levels}. "
-                f"Its history starts again from that day."
+                f"{who} had its battery replaced or recharged at "
+                f"{when}{levels}. Its history starts again from that day."
             )
         if kind == SYS_PAIRING_OPEN:
             return f"A {scope} pairing window opened at {when}."
@@ -566,25 +587,6 @@ class BriefMixin:
                 f"Home Assistant did not shut down cleanly at "
                 f"{stopped}."
             )
-        if kind == SYS_DEVICE_HANDLED:
-            # The table row is per event and already sits beside the
-            # device's own rows, so it says what happened without
-            # repeating the id, which is no use to a person.
-            action = str(detail or "").split(" ", 1)
-            what = action[1] if len(action) > 1 else ""
-            plain = {
-                "device_joined": "re-paired",
-                "raw_device_initialized": "reconfigured",
-                "device_fully_initialized": "re-paired or reconfigured",
-                "device_removed": "removed",
-            }.get(what, "handled")
-            return f"a device was {plain} by hand"
-        if kind == SYS_BATTERY_REPLACED:
-            parts = str(detail or "").split(" ")
-            levels = (
-                f" ({parts[1]}% to {parts[2]}%)" if len(parts) >= 3 else ""
-            )
-            return f"battery replaced{levels}"
         if kind == SYS_EPOCH_RESET:
             extra = f" for {detail}" if detail else ""
             return f"Learned statistics were reset at {when}{extra}."
@@ -736,7 +738,7 @@ class BriefMixin:
             levels = (
                 f" ({parts[1]}% to {parts[2]}%)" if len(parts) >= 3 else ""
             )
-            return f"battery replaced{levels}"
+            return f"battery replaced or recharged{levels}"
         if kind == SYS_EPOCH_RESET:
             return f"learned statistics reset ({detail})" if detail else "learned statistics reset"
         if kind == SYS_OPTIONS_CHANGED:
@@ -833,56 +835,340 @@ class BriefMixin:
         said: list[str] = []
         said += self._quiet_run_sentences(rows)
         said += self._storm_sentences(rows)
-        said += self._flood_sentences()
         said += self._options_sentence(rows)
         said += self._other_house_sentences(rows)
         return said
 
-    def _flood_sentences(self) -> list[str]:
-        """Return one sentence per flooding domain (ruling #321).
+    @staticmethod
+    def _plain_interval(seconds: float | None) -> str:
+        """Return an interval in whole words, for the advice lines."""
+        if not seconds:
+            return ""
+        if seconds < 90:
+            count, unit = round(seconds), "second"
+        elif seconds < 5400:
+            count, unit = round(seconds / 60), "minute"
+        else:
+            count, unit = round(seconds / 3600), "hour"
+        return f"{count} {unit}{'' if count == 1 else 's'}"
 
-        Read from the newest day of the storm tally (ruling #320),
-        present while the domain keeps storming and gone when it
-        quiets or is excluded. The sentence teaches the one thing a
-        person at a flood needs: muting does not reduce what is
-        recorded, excluding removes the noise at the source. It
-        recommends considering, never instructs, because on another
-        fleet the flooding integration may be the only thing
-        watching those devices.
+    def _integration_title(self, domain: str) -> str:
+        """The integration's name as Home Assistant shows it."""
+        try:
+            return async_get_loaded_integration(self.hass, domain).name
+        except Exception:  # noqa: BLE001 - a name is never worth a failure
+            return domain
+
+    def _noisy_integration_advice(self) -> list[str]:
+        """Return one line per integration worth excluding for noise.
+
+        Read from the storm tally, which since ruling #457 holds only
+        storms nothing explains. An integration qualifies with at
+        least FLOOD_MIN_STORMS such storms in a day on at least
+        FLOOD_MIN_DAYS days of the last FLOOD_WINDOW_DAYS: a person
+        testing hardware has a bad day, a poller has a bad week. The
+        line recommends and never instructs (ruling #321), and it is
+        gone the day the person excludes it or the noise stops.
         """
         rows = self.data.get(DATA_STORM_DAYS) or []
-        if not rows:
-            return []
-        newest = max(
-            (row.get(STORM_DAY_DATE) or "" for row in rows), default=""
-        )
-        if not newest:
-            return []
+        today = dt_util.now().date()
+        earliest = (today - timedelta(days=FLOOD_WINDOW_DAYS)).isoformat()
         excluded = self.excluded_integrations
-        said: list[str] = []
+        bad_days: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
-            if row.get(STORM_DAY_DATE) != newest:
+            if not isinstance(row, dict):
                 continue
             domain = row.get(STORM_DAY_DOMAIN)
-            count = int(row.get(STORM_DAY_COUNT) or 0)
-            if not domain or domain in excluded or count < 2:
+            day = str(row.get(STORM_DAY_DATE) or "")
+            if not domain or domain in excluded or day < earliest:
                 continue
-            interval = row.get(STORM_DAY_INTERVAL)
-            cadence = (
-                f", about every {self._human_span(float(interval))}"
-                if interval
-                else ""
-            )
+            if int(row.get(STORM_DAY_COUNT) or 0) >= FLOOD_MIN_STORMS:
+                bad_days.setdefault(domain, []).append(row)
+        said: list[str] = []
+        for domain, days in sorted(bad_days.items()):
+            if len(days) < FLOOD_MIN_DAYS:
+                continue
+            worst = max(days, key=lambda row: int(row.get(STORM_DAY_COUNT) or 0))
+            every = self._plain_interval(worst.get(STORM_DAY_INTERVAL))
+            cadence = f"every {every}" if every else "over and over"
             said.append(
-                f"{domain} republished its whole fleet {count} "
-                f"time(s) on {newest}{cadence}. Its devices are "
-                f"watched and learn the polling rhythm, and muting "
-                f"does not reduce what is recorded; if these devices "
-                f"are covered elsewhere, excluding the integration "
-                f"on the Exclusions and Muting screen removes the "
-                f"noise at the source."
+                f"One of the integrations being monitored by Device "
+                f"Sentinel is a polling integration and consuming "
+                f"resources: the {domain} integration is a poller and is "
+                f"publishing its fleet data {cadence}. Device Sentinel "
+                f"can learn nothing useful from a poller integration and "
+                f"it should be excluded from the Exclusions and Muting "
+                f"settings screen."
             )
         return said
+
+    def _recommendation_items(self) -> list[str]:
+        """Return every recommendation line, worst first.
+
+        The order is what failing to act costs. A message that goes
+        nowhere is lost the day it matters; a family muted for every
+        device is switched off without saying so; a disabled entity
+        blinds one reading; a router integration and a noisy one only
+        make the rest harder to read (ruling #458). The words are the
+        project owner's, approved 18 September.
+        """
+        items: list[str] = []
+        screen = "the Notifications and Daily Brief settings screen"
+        for target in missing_targets(self.hass, self.entry):
+            items.append(
+                f"Notifications Recipient Not Valid: {target} no longer "
+                f"exists. Anything sent there is lost. Choose another "
+                f"notification target from {screen}."
+            )
+        if not delivery_is_configured(self.entry):
+            items.append(
+                f"Notifications Recipient Not Set: no phone or brief "
+                f"notification target is set. A problem reaches only the "
+                f"persistent card and this page. Targets are set from "
+                f"{screen}."
+            )
+        choice = self.entry.options.get(CONF_REPORT_LINKS, DEFAULT_REPORT_LINKS)
+        if (
+            choice in (REPORT_LINKS_EXTERNAL, REPORT_LINKS_INTERNAL)
+            and self._configured_url(choice) is None
+        ):
+            which = "external" if choice == REPORT_LINKS_EXTERNAL else "internal"
+            items.append(
+                f"Your Home Assistant {which.title()} URL, which you have "
+                f"chosen, is missing or invalid: Device names in reports "
+                f"are set to be links with your {which} URL, and that URL "
+                f"is misconfigured or not set. Set that address in Home "
+                f"Assistant's network settings, or choose another under "
+                f"Links in Reports on {screen}."
+            )
+        items += self._family_muted_items()
+        adapter = getattr(self, "_wifi_adapter_unused", None)
+        if adapter and not self.wifi_capable:
+            items.append(
+                f"Wi-Fi network not set in Device Sentinel's WiFi "
+                f"settings: this machine is equipped with a wireless "
+                f"adapter ({adapter}) and no network is chosen for it to "
+                f"listen for. Naming your network on the WiFi screen "
+                f"enables Device Sentinel to detect a wireless network "
+                f"outage."
+            )
+        counts = self.awaiting_enable_counts()
+        total = sum(counts.values())
+        if total:
+            kinds = [
+                label for key, label in (
+                    ("battery", "battery"),
+                    ("signal", "signal"),
+                    ("last_seen", "last seen"),
+                )
+                if counts.get(key)
+            ]
+            one = total == 1
+            items.append(
+                f"{'One' if one else 'Several'} of your devices' "
+                f"{_english_list(kinds, limit=len(kinds))} entities "
+                f"{'is' if one else 'are'} disabled: Device Sentinel "
+                f"requires {'this entity' if one else 'these entities'} "
+                f"to be enabled when {'it is' if one else 'they are'} "
+                f"available. Press Fix on the Repairs card to turn "
+                f"{'it on' if one else 'them all on'}, or use the Enable "
+                f"buttons on the Device Sentinel device page to turn "
+                f"{'it' if one else 'them'} on by kind."
+            )
+        for reader in list(getattr(self, "_bridge_readers", {}).values()):
+            # Off, not unknown: a reader that has not heard yet says
+            # nothing rather than guessing (ruling #236 surfaces this
+            # setting and never writes it).
+            if getattr(reader, "availability_enabled", None) is False:
+                items.append(
+                    "Zigbee2MQTT availability is disabled: Device Sentinel "
+                    "uses Z2M availability as a confirmation for outage "
+                    "detection. Turning on Availability in Zigbee2MQTT's "
+                    "settings gives Device Sentinel that second opinion."
+                )
+                break
+        items += self._router_watched_items()
+        items += self._noisy_integration_advice()
+        items += self._library_items()
+        return items
+
+    def _library_items(self) -> list[str]:
+        """Name watched integrations the library knows to be noise.
+
+        Known rather than measured, so last in the order. An
+        integration the person muted is left alone, since muting is
+        already a view expressed about it (ruling #459).
+        """
+        excluded = self.excluded_integrations
+        muted = set(self.entry.options.get(CONF_MUTED_INTEGRATIONS, []))
+        per_domain: dict[str, int] = {}
+        for domain in self._watched.values():
+            per_domain[domain] = per_domain.get(domain, 0) + 1
+
+        def present(domains: tuple[str, ...]) -> list[str]:
+            return sorted(
+                domain for domain in domains
+                if per_domain.get(domain)
+                and domain not in excluded
+                and domain not in muted
+            )
+
+        said: list[str] = []
+        false_alerts = present(RECOMMENDATION_LIBRARY[LIBRARY_FALSE_ALERTS])
+        if false_alerts:
+            names = sorted(
+                (self._integration_title(domain) for domain in false_alerts),
+                key=str.casefold,
+            )
+            plural = "s" if len(names) > 1 else ""
+            said.append(
+                f"Some integrations create false alerts: Exclude the "
+                f"{_english_list(names, limit=len(names))} "
+                f"integration{plural} to stop false alarms. Some "
+                f"integrations are not beneficial to monitor because they "
+                f"contain entities that become unavailable when the device "
+                f"is turned off, leave the house WiFi, or contain "
+                f"batteries that are recharged daily. Exclude these in "
+                f"the Exclusions and Muting settings screen."
+            )
+        no_devices = present(RECOMMENDATION_LIBRARY[LIBRARY_NO_DEVICES])
+        if no_devices:
+            named = [
+                f"{domain} ({per_domain[domain]} device"
+                f"{'' if per_domain[domain] == 1 else 's'})"
+                for domain in no_devices
+            ]
+            one = len(no_devices) == 1
+            said.append(
+                f"Some integrations own no devices and are not worth "
+                f"monitoring: {_english_list(named, limit=len(named))} "
+                f"{'is' if one else 'are'} watched. Integrations of this "
+                f"kind add tools to Home Assistant rather than hardware, "
+                f"so their devices go quiet for reasons that are not "
+                f"faults. Exclude {'it' if one else 'them'} in the "
+                f"Exclusions and Muting settings screen."
+            )
+        return said
+
+    def _family_muted_items(self) -> list[str]:
+        """Name a detection family muted for every device it judges.
+
+        Muting every battery device is switching battery warnings off
+        without the word off appearing anywhere, and a person who did
+        it one device at a time may never have noticed the total.
+        """
+        records = self.data.get(DATA_DEVICES) or {}
+        watched = [device_id for device_id in self._watched if device_id in records]
+        families = (
+            (
+                "All devices are muted or excluded for freeze reporting",
+                "frozen-device warnings", "devices", "device",
+                "freeze", "Freeze Detection",
+                watched, self._freeze_muted,
+            ),
+            (
+                "All battery devices are muted or excluded for battery "
+                "reporting",
+                "low-battery warnings", "battery devices", "battery device",
+                "battery", "Low Battery",
+                [
+                    device_id for device_id in watched
+                    if records[device_id].get(DEV_BATTERY_VALUE) is not None
+                ],
+                self._battery_muted,
+            ),
+            (
+                "All signal devices are muted or excluded for signal "
+                "reporting",
+                "weak-signal warnings", "signal devices", "signal device",
+                "signal", "Signal Strength",
+                [
+                    device_id for device_id in watched
+                    if records[device_id].get(DEV_SIGNAL_VALUE) is not None
+                ],
+                self._signal_muted,
+            ),
+        )
+        said: list[str] = []
+        for title, warnings, nouns, noun, family, screen, judged, muted in families:
+            if not judged:
+                continue
+            if all(
+                device_id in self._muted_devices or muted(device_id)
+                for device_id in judged
+            ):
+                why = (
+                    f"your only {noun} is muted"
+                    if len(judged) == 1
+                    else f"all {len(judged)} of your {nouns} are muted"
+                )
+                said.append(
+                    f"{title}: You will not get any {warnings} because "
+                    f"{why}. To receive {family} reports on the devices "
+                    f"you wish to monitor, unmute or unexclude them on the "
+                    f"Exclusions and Muting, and the {screen} settings "
+                    f"screen."
+                )
+        return said
+
+    def _router_watched_items(self) -> list[str]:
+        """Name a router integration the person has chosen to watch.
+
+        Excluded once, when first seen (ruling #420); from then on the
+        list is the person's, so this advises and never acts. The line
+        carries how many devices the integration has registered.
+        """
+        excluded = self.excluded_integrations
+        registry = er.async_get(self.hass)
+        clients: dict[str, set[str]] = {}
+        for entity in registry.entities.values():
+            if (
+                entity.domain == "device_tracker"
+                and entity.platform in self._router_integrations_present()
+                and entity.platform not in excluded
+                and entity.device_id
+            ):
+                clients.setdefault(entity.platform, set()).add(entity.device_id)
+        return [
+            f"Eliminate noise from integrations that own no actual "
+            f"devices: Device Sentinel is monitoring the {domain} "
+            f"integration, and it has registered {len(devices)} virtual "
+            f"device{'' if len(devices) == 1 else 's'} that duplicate "
+            f"hardware other integrations own and that are already being "
+            f"watched. It is recommended that the {domain} integration be "
+            f"excluded from the Exclusions and Muting settings screen."
+            for domain, devices in sorted(clients.items())
+        ]
+
+    def _recommendations_section(self) -> list[str]:
+        """Return the Recommendations section, or nothing.
+
+        What the person could change about their own setup, as
+        opposed to what is wrong with a device, which is why it is not
+        the problem list. Each line stands until its condition is gone
+        and nothing is stored or dismissed. Worst first, and every
+        line shown: with nothing to dismiss, a cap would hide the lines
+        below it for as long as the ones above it stood (ruling #461,
+        amending #458).
+        """
+        items = self._recommendation_items()
+        if not items:
+            return []
+        lines = ["## Recommendations", ""]
+        for item in items:
+            lines += [item, ""]
+        lines += [
+            "These are suggestions based on observations that the "
+            "integration has made. Device Sentinel is meant to monitor "
+            "physical devices. Not all integrations own physical devices "
+            "and therefore should not be monitored. When a setting that "
+            "the integration depends on is not properly configured, "
+            "Device Sentinel will notify you here. Making these changes "
+            "will make the integration more efficient, and record and "
+            "interpret data that is meaningful.",
+            "",
+        ]
+        return lines
 
     def _longest(
         self, rows: list[dict[str, Any]], kind: str, scope: str | None = None
@@ -2023,6 +2309,7 @@ class BriefMixin:
                 f"report: {REPORT_BATTERY_URL}",
                 "",
             ]
+        lines += self._recommendations_section()
         lines += ["## Last 24 Hours", ""]
         # The rows behind a stitched sentence are dropped here
         # (ruling #308): each says a dead device recovered or broke
