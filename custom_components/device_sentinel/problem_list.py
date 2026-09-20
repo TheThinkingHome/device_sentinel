@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.22.2 (2026-09-19)
+# File: problem_list.py, Version: 0.22.4 (2026-09-19)
 
 """The problem list: the single memory every channel renders.
 
@@ -1311,6 +1311,14 @@ class ProblemListMixin:
         from any detection path without its own await.
         """
         problems = self._current_problems()
+        # A device held (its integration still loading after a restart,
+        # rulings #445 and #449, or a Wi-Fi burst waiting for the
+        # router, ruling #446) has its row taken out of the source until
+        # the hold ends. Held means undecided, not recovered: its
+        # standing freeze problem stays as it was. The fourth fleet's
+        # never-reported device was retired as recovered at each of
+        # three restarts and raised again five minutes later.
+        held = self.wifi_burst_held() | self.loading_held()
         items = self.data.get(DATA_TODO_ITEMS, [])
         now = dt_util.utcnow().timestamp()
         changed = False
@@ -1333,6 +1341,18 @@ class ProblemListMixin:
                 continue
             device_id = record.get(TODO_DEVICE_ID)
             problem = problems.pop(device_id, None)
+            if device_id in held:
+                standing = {
+                    kind: since
+                    for kind, since in (record.get(TODO_KINDS) or {}).items()
+                    if TODO_KIND_FAMILIES.get(kind) == "down"
+                }
+                if standing:
+                    if problem is None:
+                        kept.append(record)
+                        continue
+                    for kind, since in standing.items():
+                        problem["kinds"].setdefault(kind, since)
             if problem is None:
                 # Two different things arrive here as the same
                 # silence: a problem that ended, and a device nobody

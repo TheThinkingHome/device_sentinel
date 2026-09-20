@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.20.10 (2026-09-06)
+# File: study.py, Version: 0.22.4 (2026-09-19)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -251,13 +251,17 @@ class StudyMixin:
             })
 
         watched = []
-        for device_id in self._watched:
+        for device_id, integration in self._watched.items():
             device = devices.async_get(device_id)
             if device is None:
                 continue
             watched.append({
                 "name": device.name_by_user or device.name,
-                "integration": next(iter(device.identifiers), ("", ""))[0],
+                # The integration Device Sentinel assigned, not the first
+                # identifier's domain: a Bluetooth or address-linked
+                # device carries no identifier, and the fourth fleet's
+                # SwitchBot and ESPHome devices read empty.
+                "integration": integration,
                 "connections": sorted(
                     f"{kind}:{value}" for kind, value in device.connections
                 ),

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.22.2 (2026-09-19)
+# File: report_brief.py, Version: 0.22.4 (2026-09-19)
 
 """The daily brief: the one report written for a person.
 
@@ -1764,6 +1764,13 @@ class BriefMixin:
             return "went unavailable", "unavailable"
         if kind == TODO_KIND_RAILED_SIGNAL:
             return "signal railed", "railed"
+        # A battery crossing its line is not a silence: the device
+        # reported the whole time. The fourth fleet's brief told a
+        # phone's two overnight low readings as "went silent twice".
+        if kind == TODO_KIND_LOW_BATTERY:
+            return "battery read low", "low"
+        if kind == TODO_KIND_FALLING_BATTERY:
+            return "battery fell", "falling"
         return "went silent", "silent"
 
     def _compose_flood(

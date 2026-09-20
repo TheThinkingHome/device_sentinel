@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.21.12 (2026-09-17)
+# File: diagnostics.py, Version: 0.22.4 (2026-09-19)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -231,7 +231,10 @@ async def async_get_config_entry_diagnostics(
             "model": device.model if device else None,
             "sw_version": device.sw_version if device else None,
             "hw_version": device.hw_version if device else None,
-            "integration": coordinator._watched.get(device_id),
+            # A set-aside device's integration comes from why it was set
+            # aside: the fourth fleet's excluded Spook devices read None.
+            "integration": coordinator._watched.get(device_id)
+            or (coordinator._set_aside.get(device_id) or (None, None, None))[1],
             "clock_source": (
                 "last_seen"
                 if device_id in coordinator._last_seen_entity

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.22.1 (2026-09-19)
+# File: narrative.py, Version: 0.22.4 (2026-09-19)
 
 """How to say what happened: the composer.
 
@@ -61,6 +61,7 @@ from .const import (
     TODO_KIND_UNKNOWN,
     TODO_SORT_NAME,
     BATTERY_CLEAR_MARGIN,
+    BATTERY_REPLACED_LANDS,
 )
 
 
@@ -193,7 +194,14 @@ class NarrativeMixin:
                 return f"battery is at {shown}"
             if level <= self.low_threshold + BATTERY_CLEAR_MARGIN:
                 return f"battery fell to {shown}"
-            return f"battery read low, now {shown}"
+            # Back above the line. The level it fell to is not stored,
+            # so no number is given: "now 55%" read as if 55 were the
+            # low reading. A cell back at the level the replacement
+            # rule calls full (ruling #397) may be new or recharged,
+            # and the brief does not claim which (ruling #455).
+            if level >= BATTERY_REPLACED_LANDS:
+                return "battery read low, since replaced or recharged"
+            return "battery read low, since recovered"
         return "battery is low" if state else "battery read low"
 
     def _recovery_tail(self, row: dict[str, Any]) -> str:
