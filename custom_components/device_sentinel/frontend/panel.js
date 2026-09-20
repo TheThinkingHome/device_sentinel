@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.3 (2026-09-19)
+// File: frontend/panel.js, Version: 0.22.4 (2026-09-19)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -560,9 +560,13 @@ class DeviceSentinelPanel extends HTMLElement {
       }, label);
     };
     const watched = all.filter((row) => row.standing === "watched").length;
+    // Each count takes its own verb: "1 is muted", never "1 are muted".
+    const be = (n) => `${n} ${n === 1 ? "is" : "are"}`;
+    const owns = (n) => `${n} ${n === 1 ? "owns" : "own"}`;
     const summary = el("p", { style: "margin:0;line-height:1.5" },
-      `${all.length} integrations own devices in your house. ${watched} are watched, `
-      + `${counts.excluded} are excluded, ${counts.muted} are muted, and ${counts.service} own only service devices, which have nothing to watch.`);
+      `${all.length} ${all.length === 1 ? "integration owns" : "integrations own"} devices in your house. `
+      + `${be(watched)} watched, ${be(counts.excluded)} excluded, ${be(counts.muted)} muted, and `
+      + `${owns(counts.service)} only service devices, which have nothing to watch.`);
     const chips = el("div", { class: "chips" }, ...INTEGRATION_FILTERS.map(([key, label]) =>
       el("button", {
         class: "chip", type: "button", "aria-pressed": String(key === this._integrationFilter),
