@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.5 (2026-09-20)
+// File: frontend/panel.js, Version: 0.22.6 (2026-09-20)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -57,6 +57,30 @@ const STATUS_WORDS = {
   never_reported: ["Never reported", "var(--error-color, #db4437)"],
 };
 const LIVE_SECONDS = 60;
+// The print view: dark text on white whatever the theme, the same
+// colour names the page draws with, and nothing that only works on a
+// screen. A browser's print dialog offers "Save as PDF" as well as a
+// printer, so this is also how a page is saved.
+const PRINT_STYLE = `
+  :root { --primary-background-color: #ffffff; --card-background-color: #ffffff;
+    --secondary-background-color: #f2f2f2; --primary-text-color: #1a1a19; --secondary-text-color: #5f5e5a;
+    --divider-color: #d3d1c7; --primary-color: #1e6fb8; --text-primary-color: #ffffff;
+    --success-color: #2e7d32; --warning-color: #c77700; --error-color: #c62828; --info-color: #4f7cac;
+    --disabled-text-color: #9e9e9e; color-scheme: light; }
+  html, body { background: #ffffff; color: #1a1a19; margin: 0; }
+  body { font-family: Roboto, "Helvetica Neue", Arial, sans-serif; font-size: 12px; padding: 16px; }
+  .printhead { border-bottom: 1px solid #d3d1c7; margin-bottom: 12px; padding-bottom: 8px; }
+  .printhead h1 { margin: 0; font-size: 18px; font-weight: 500; }
+  .printhead p { margin: 4px 0 0; color: #5f5e5a; }
+  button.chip[aria-expanded], .sort::after { display: none; }
+  button { border: 0; background: none; color: inherit; font: inherit; padding: 0; }
+  button.chip { border: 1px solid #d3d1c7; border-radius: 12px; padding: 2px 8px; }
+  button.chip[aria-pressed="true"] { border-color: #1e6fb8; color: #1e6fb8; }
+  a { color: #1e6fb8; text-decoration: none; }
+  table, .chart, .stat, .devstatus, .rec { break-inside: avoid; }
+  .scroll { overflow: visible; }
+  @page { margin: 12mm; }
+`;
 
 function svg(tag, attrs = {}, ...children) {
   const node = document.createElementNS(SVG_NS, tag);
@@ -187,7 +211,7 @@ const STYLE = `
     flex-direction: column; gap: 6px; }
   .rec h3 { margin: 0; font-size: 15px; font-weight: 500; color: var(--primary-color); }
   .rec p { margin: 0; line-height: 1.5; }
-  .status { border: 1px solid var(--divider-color); border-radius: 10px; padding: 14px 16px; display: flex;
+  .devstatus { border: 1px solid var(--divider-color); border-radius: 10px; padding: 14px 16px; display: flex;
     flex-direction: column; gap: 8px; }
   .statusline { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; }
   .bar { height: 10px; border-radius: 5px; background: var(--divider-color); overflow: hidden; }
@@ -205,6 +229,10 @@ const STYLE = `
   .chart svg { width: 100%; height: auto; }
   .chart .axis { fill: var(--secondary-text-color); font-size: 11px; }
   .chip[aria-disabled="true"] { opacity: 0.4; cursor: default; border-style: dashed; }
+  .figures th, .figures td { padding: 6px 8px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--secondary-text-color); align-items: center; }
+  .legend .swatch { display: inline-block; width: 18px; vertical-align: middle; margin-right: 6px; }
+  .readout { background: var(--secondary-background-color, rgba(127,127,127,0.1)); border-radius: 8px; padding: 10px 12px; min-height: 22px; }
   .small { font-size: 12px; color: var(--secondary-text-color); }
   .num { text-align: right; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
@@ -234,6 +262,7 @@ class DeviceSentinelPanel extends HTMLElement {
     // The graphs' range carries from one device page to the next.
     this._range = "all";
     this._hover = null;
+    this._tableOpen = false;
     this._liveTimer = null;
     this._started = false;
     this._snapshot = null;
@@ -404,6 +433,7 @@ class DeviceSentinelPanel extends HTMLElement {
       enable("Enable Signals", "enable_signals"),
       enable("Enable Last Seen", "enable_last_seen"),
       enable("Enable Battery", "enable_battery"),
+      el("button", { class: "pill", type: "button", onclick: () => this._print() }, "Print"),
       this._asOf,
     );
 
@@ -414,6 +444,44 @@ class DeviceSentinelPanel extends HTMLElement {
         el("div", { class: "card" }, this._tabRow, this._pane)),
     );
     this._paintTabs();
+  }
+
+  _print() {
+    // The current tab or page, copied into a hidden frame and printed
+    // from there, so the printout holds only what is on screen and not
+    // Home Assistant's sidebar and bars. Built with DOM calls, as the
+    // rest of the page is: nothing is written as markup.
+    const view = this._view && this._view.kind === "device" && this._page && this._page.identity
+      ? this._page.identity.name
+      : this._view && this._view.kind === "integration" && this._page && this._page.name
+        ? this._page.name
+        : this._tab;
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.setAttribute("tabindex", "-1");
+    frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+    // On the page's own body, where every browser gives a frame a
+    // document of its own; it is hidden, and removed after printing.
+    document.body.append(frame);
+    const doc = frame.contentDocument;
+    doc.title = `Device Sentinel: ${view}`;
+    const style = doc.createElement("style");
+    style.textContent = STYLE + PRINT_STYLE;
+    doc.head.append(style);
+    const head = doc.createElement("div");
+    head.className = "printhead";
+    const title = doc.createElement("h1");
+    title.textContent = `Device Sentinel: ${view}`;
+    const when = doc.createElement("p");
+    const taken = this._snapshot ? this._snapshot.at.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
+    when.textContent = `${taken ? `Data as of ${taken}. ` : ""}Printed ${new Date().toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.`;
+    head.append(title, when);
+    doc.body.append(head, doc.importNode(this._pane, true));
+    const done = () => frame.remove();
+    frame.contentWindow.addEventListener("afterprint", done);
+    setTimeout(done, 60000);
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
   }
 
   async _refresh() {
@@ -868,7 +936,7 @@ class DeviceSentinelPanel extends HTMLElement {
       el("div", { class: "links" },
         el("span", { class: "small" }, "Live, updates every minute"),
         this._link("Open in Home Assistant", `/config/devices/device/${encodeURIComponent(who.device_id)}`)));
-    const statusBox = el("div", { class: "status" },
+    const statusBox = el("div", { class: "devstatus" },
       el("div", { class: "statusline" },
         el("div", { style: "font-size:18px;font-weight:500;display:flex;align-items:center;gap:8px" },
           el("span", { class: "dot", style: `background:${colour}` }), word),
@@ -941,18 +1009,42 @@ class DeviceSentinelPanel extends HTMLElement {
     const p5 = page.signal.p5;
     const p50 = page.signal.p50;
     const rail = page.signal.railed_days;
-    const recorded = Math.max(battery.length, p50.length, 1);
+    const judged = page.signal.judged || [];
+    const gaps = page.rhythm.daily || [];
+    const wins = page.rhythm.windows || [];
+    const outages = page.outages || [];
+    const recorded = Math.max(battery.length, p50.length, gaps.length, 1);
     const days = this._range === "all" ? recorded : Math.min(this._range, recorded);
     const end = new Date(`${page.series_end}T12:00:00`);
     const dayOf = (back) => new Date(end.getFullYear(), end.getMonth(), end.getDate() - back);
     const fmt = (d) => d.toLocaleDateString([], { month: "short", day: "numeric" });
     const x = (back) => 44 + (days <= 1 ? 0 : ((days - 1 - back) * 1046) / (days - 1));
-    const ticks = [[days - 1, dayOf(days - 1)]];
+    const step = days <= 1 ? 1046 : 1046 / (days - 1);
+    const at = (arr, back) => {
+      const i = arr.length - 1 - back;
+      return i >= 0 && i < arr.length ? arr[i] : null;
+    };
+    const hours = (s) => (s == null ? "" : `${(s / 3600).toFixed(1)}h`);
+    // Ticks: the first reads from the left edge and the last from the
+    // right, so neither is cut off.
+    const ticks = [[days - 1, dayOf(days - 1), "start"]];
     for (let b = days - 2; b > 0; b -= 1) {
       const d = dayOf(b);
-      if (d.getDate() === 1 && b > 3 && b < days - 4) ticks.push([b, d]);
+      if (d.getDate() === 1 && b > 3 && b < days - 4) ticks.push([b, d, "middle"]);
     }
-    ticks.push([0, end]);
+    ticks.push([0, end, "end"]);
+    // Outages on this device's path, placed at their hour of the day.
+    const bands = outages.map((o) => {
+      const start = new Date(o.start);
+      const noon = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 12, 0);
+      const back = Math.round((end - noon) / 86400000);
+      if (back < 0 || back >= days) return null;
+      const centre = x(back) + ((start.getHours() + start.getMinutes() / 60) / 24 - 0.5) * step;
+      return { back, o, x: centre, w: Math.max(3, (o.minutes / 1440) * step) };
+    }).filter(Boolean);
+    const outagesOn = (back) => bands.filter((b) => b.back === back).map((b) =>
+      `${b.o.what} down ${b.o.minutes < 90 ? `${b.o.minutes}m` : span(b.o.minutes * 60)}${b.o.worst != null ? `, ${b.o.worst} of ${b.o.devices} devices went down` : ""}${b.o.maintenance ? " (during maintenance)" : ""}`);
+
     const buttons = el("div", { class: "chips", role: "group", "aria-label": "Time range for the graphs" },
       el("span", { class: "muted", style: "align-self:center" }, "Show"),
       ...RANGES.map(([key, label]) => {
@@ -971,7 +1063,7 @@ class DeviceSentinelPanel extends HTMLElement {
       }),
       el("span", { class: "small", style: "align-self:center" },
         `${recorded} days recorded; your history setting keeps up to ${page.history_days}.`));
-    const readout = el("div", { "aria-live": "polite", style: "min-height:22px" }, "Point at a day for its values.");
+    const readout = el("div", { class: "readout", "aria-live": "polite" }, "Point at a day for its values.");
     const lines = [];
     const setHover = (back) => {
       this._hover = back;
@@ -980,25 +1072,32 @@ class DeviceSentinelPanel extends HTMLElement {
         line.setAttribute("x2", x(back));
         line.setAttribute("opacity", "0.8");
       }
-      const bi = battery.length - 1 - back;
-      const si = p50.length - 1 - back;
-      const bat = bi >= 0 && bi < battery.length ? `battery ${battery[bi]}%` : "battery not recorded";
-      const sig = si >= 0 && si < p50.length
-        ? `signal median ${Math.round(p50[si])}, low ${Math.round(p5[si])}` : "signal not recorded";
-      const ri = rail.length - 1 - back;
-      const railed = ri >= 0 && rail[ri] > 0 ? ", railed readings that day" : "";
-      readout.textContent = `${fmt(dayOf(back))}: ${bat}; ${sig}${railed}`;
+      const parts = [];
+      const bat = at(battery, back);
+      parts.push(bat != null ? `battery ${bat}%` : "battery not recorded");
+      const med = at(p50, back);
+      parts.push(med != null ? `signal median ${Math.round(med)}, low ${Math.round(at(p5, back))}` : "signal not recorded");
+      const day = at(judged, back);
+      if (day && day.bad) parts.push("a bad day");
+      if ((at(rail, back) || 0) > 0) parts.push("railed readings");
+      const gap = at(gaps, back);
+      if (gap != null) parts.push(`longest gap ${hours(gap)}${at(wins, back) ? `, window ${hours(at(wins, back))}` : ""}`);
+      readout.textContent = `${fmt(dayOf(back))}: ${parts.concat(outagesOn(back)).join("; ")}`;
     };
-    const frame = (low, high, labels) => {
-      const y = (v) => 170 - ((v - low) / (high - low)) * 150;
-      const g = svg("svg", { viewBox: "0 0 1100 210", role: "img" });
+    const frame = (low, high, labels, label) => {
+      const y = (v) => 190 - ((v - low) / (high - low)) * 170;
+      const g = svg("svg", { viewBox: "0 0 1100 220", role: "img", "aria-label": label });
+      for (const b of bands) {
+        g.append(svg("rect", { x: b.x, y: 20, width: b.w, height: 170,
+          fill: "var(--info-color, #4f7cac)", "fill-opacity": b.o.maintenance ? 0.2 : 0.45 }));
+      }
       for (const [v, text] of labels) {
         g.append(svg("line", { x1: 44, y1: y(v), x2: 1090, y2: y(v), stroke: "var(--divider-color)" }),
           svg("text", { x: 38, y: y(v) + 4, class: "axis", "text-anchor": "end" }, text));
       }
-      for (const [b, d] of ticks) {
-        g.append(svg("line", { x1: x(b), y1: 20, x2: x(b), y2: 170, stroke: "var(--divider-color)", "stroke-opacity": 0.5 }),
-          svg("text", { x: x(b), y: 190, class: "axis", "text-anchor": "middle" }, fmt(d)));
+      for (const [b, d, anchor] of ticks) {
+        g.append(svg("line", { x1: x(b), y1: 20, x2: x(b), y2: 190, stroke: "var(--divider-color)", "stroke-opacity": 0.5 }),
+          svg("text", { x: x(b), y: 210, class: "axis", "text-anchor": anchor }, fmt(d)));
       }
       return { g, y };
     };
@@ -1007,58 +1106,216 @@ class DeviceSentinelPanel extends HTMLElement {
       .filter((p) => p.back < days && p.v !== null && p.v !== undefined)
       .map((p) => `${x(p.back).toFixed(1)},${y(p.v).toFixed(1)}`);
     const addHover = (g) => {
-      const line = svg("line", { x1: 44, y1: 16, x2: 44, y2: 172, stroke: "var(--primary-text-color)", opacity: 0 });
+      const line = svg("line", { x1: 44, y1: 16, x2: 44, y2: 194, stroke: "var(--primary-text-color)", opacity: 0 });
       lines.push(line);
       g.append(line);
-      const step = days <= 1 ? 1046 : 1046 / (days - 1);
       for (let b = days - 1; b >= 0; b -= 1) {
-        g.append(svg("rect", { x: x(b) - step / 2, y: 16, width: step, height: 156, fill: "transparent",
+        g.append(svg("rect", { x: x(b) - step / 2, y: 16, width: step, height: 178, fill: "transparent",
           onmouseenter: () => setHover(b), onclick: () => setHover(b) }));
       }
     };
-    const threshold = page.battery.threshold;
-    const bat = frame(0, 100, [[100, "100"], [50, "50"], [0, "0"]]);
-    bat.g.setAttribute("aria-label", `Battery level each day for ${days} days, with your low battery threshold of ${threshold}%`);
-    bat.g.append(svg("line", { x1: 44, y1: bat.y(threshold), x2: 1090, y2: bat.y(threshold),
-      stroke: "var(--error-color, #db4437)", "stroke-dasharray": "4 4" }),
-    svg("text", { x: 1086, y: bat.y(threshold) - 5, class: "axis", "text-anchor": "end", fill: "var(--error-color, #db4437)" },
-      `your threshold, ${threshold}%`));
-    const batPts = pts(battery, bat.y);
-    if (batPts.length) bat.g.append(svg("polyline", { points: batPts.join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 2.5 }));
-    addHover(bat.g);
-    const values = p5.concat(p50).filter((v) => v !== null && v !== undefined);
-    const lowV = values.length ? Math.floor(Math.min(...values) - 5) : 0;
-    const highV = values.length ? Math.ceil(Math.max(...values) + 5) : 1;
-    const sig = frame(lowV, highV, [[highV, String(highV)], [Math.round((lowV + highV) / 2), String(Math.round((lowV + highV) / 2))], [lowV, String(lowV)]]);
-    sig.g.setAttribute("aria-label", `Daily ${page.signal.scale || "signal"} for ${days} days, median and low end`);
-    const med = pts(p50, sig.y);
-    const low = pts(p5, sig.y);
-    if (med.length) {
-      sig.g.append(svg("polygon", { points: med.concat(low.slice().reverse()).join(" "), fill: "var(--primary-color)", "fill-opacity": 0.18 }),
-        svg("polyline", { points: med.join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 2.5 }),
+    const key = (colour, text, dashed, dot) => el("span", {},
+      dot ? el("span", { class: "swatch", style: `width:10px;height:10px;border-radius:5px;background:${colour}` })
+        : el("span", { class: "swatch", style: `border-top:2px ${dashed ? "dashed" : "solid"} ${colour}` }), text);
+    const card = (title, note, ...body) => el("div", { class: "chart" },
+      el("div", { class: "statusline" }, el("strong", {}, title), el("span", { class: "small" }, note)), ...body);
+
+    // ---------------------------------------------------------------- battery
+    const b = page.battery;
+    let batteryCard;
+    if (!battery.length) {
+      batteryCard = el("p", { class: "muted", style: "margin:0" }, "No battery history for this device.");
+    } else {
+      const shown = battery.filter((v, i) => battery.length - 1 - i < days && v != null);
+      const lowB = Math.max(0, Math.floor(Math.min(...shown)) - 1);
+      const highB = Math.min(100, Math.ceil(Math.max(...shown)) + 1);
+      // The threshold is drawn once the battery comes within ten points of it.
+      const showThreshold = lowB <= b.threshold + 10;
+      const lowAxis = showThreshold ? Math.max(0, Math.min(lowB, Math.floor(b.threshold) - 1)) : lowB;
+      const mid = Math.round((lowAxis + highB) / 2);
+      const bat = frame(lowAxis, highB, [[highB, `${highB}%`], [mid, `${mid}%`], [lowAxis, `${lowAxis}%`]],
+        `Battery level for ${days} days, between ${lowAxis} and ${highB} percent`);
+      if (showThreshold) {
+        bat.g.append(svg("line", { x1: 44, y1: bat.y(b.threshold), x2: 1090, y2: bat.y(b.threshold),
+          stroke: "var(--error-color, #db4437)", "stroke-dasharray": "4 4" }),
+        svg("text", { x: 1086, y: bat.y(b.threshold) - 5, class: "axis", "text-anchor": "end", fill: "var(--error-color, #db4437)" },
+          `your threshold, ${b.threshold}%`));
+      }
+      bat.g.append(svg("polyline", { points: pts(battery, bat.y).join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 2.2 }));
+      // The report's trend lines, ending at the latest reading.
+      const trendSet = this._range === 30 ? [[30, "#8E7CC3"], [14, "#E8A33D"], [7, "#D03B3B"]]
+        : this._range === 14 ? [[14, "#E8A33D"], [7, "#D03B3B"]] : [];
+      const last = battery[battery.length - 1];
+      const legend = [el("span", {}, "Daily level (solid).")];
+      for (const [window, colour] of trendSet) {
+        const slope = b.windows ? b.windows[String(window)] : null;
+        if (slope == null || last == null || window > days) continue;
+        bat.g.append(svg("line", { x1: x(window - 1), y1: bat.y(last - slope * (window - 1)), x2: x(0), y2: bat.y(last),
+          stroke: colour, "stroke-width": 2, "stroke-dasharray": "6 4" }));
+        legend.push(key(colour, `${window}-day rate, ${slope >= 0 ? "+" : ""}${slope.toFixed(3)}/day`, true));
+      }
+      if (!showThreshold) legend.push(el("span", {}, `Your threshold, ${b.threshold}%, is far below this range, so it is not drawn.`));
+      addHover(bat.g);
+      const rate = (v) => (v == null ? "\u2013" : `${v >= 0 ? "+" : ""}${v.toFixed(3)}/day`);
+      let figures = null;
+      if (b.windows) {
+        const blocks = (b.blocks || []).slice().sort((p, q) => q[0] - p[0]);
+        const head = ["LEVEL", ...blocks.map(([start, stop]) => `DAY ${start}\u2013${stop}`), "30 DAY", "14 DAY", "7 DAY", "READING", "LEFT"];
+        const cells = [`${Math.round(b.now)}%`, ...blocks.map((block) => rate(block[2])),
+          rate(b.windows["30"]), rate(b.windows["14"]), rate(b.windows["7"]), b.reading || "", b.left || "\u2013"];
+        figures = el("div", { class: "scroll" }, el("table", { class: "figures" },
+          el("thead", {}, el("tr", {}, ...head.map((h) => el("th", {}, h)))),
+          el("tbody", {}, el("tr", {}, ...cells.map((c, i) => el("td",
+            i === cells.length - 1 && b.left_soon ? { style: "color:var(--error-color, #db4437)" } : {}, c))))));
+      }
+      const meaning = b.reading_meaning
+        ? el("p", { class: "small", style: "margin:0;line-height:1.5" }, `${b.reading[0].toUpperCase()}${b.reading.slice(1)}: ${b.reading_meaning}`)
+        : null;
+      batteryCard = card("Battery", b.now != null ? `${b.now}% now` : "", figures, meaning, bat.g, el("div", { class: "legend" }, ...legend));
+    }
+
+    // ----------------------------------------------------------------- signal
+    let signalCard;
+    if (!p50.length) {
+      signalCard = el("p", { class: "muted", style: "margin:0" }, "No signal history for this device.");
+    } else {
+      const values = [];
+      p5.forEach((v, i) => { if (p5.length - 1 - i < days) values.push(v, p50[i]); });
+      const clean = values.filter((v) => v != null);
+      let lowS = Math.min(...clean);
+      let highS = Math.max(...clean);
+      const pad = Math.max(4, (highS - lowS) * 0.15);
+      lowS = Math.floor(lowS - pad);
+      highS = Math.ceil(highS + pad);
+      const midS = Math.round((lowS + highS) / 2);
+      const sig = frame(lowS, highS, [[highS, String(highS)], [midS, String(midS)], [lowS, String(lowS)]],
+        `Daily ${page.signal.scale || "signal"} for ${days} days: median, low end, its normal and its bad-day line`);
+      const med = pts(p50, sig.y);
+      const low = pts(p5, sig.y);
+      sig.g.append(svg("polygon", { points: med.concat(low.slice().reverse()).join(" "), fill: "var(--primary-color)", "fill-opacity": 0.16 }),
+        svg("polyline", { points: med.join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 2.2 }),
         svg("polyline", { points: low.join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 1.2, "stroke-dasharray": "3 3" }));
+      const normal = judged.map((j) => (j ? j.normal : null));
+      sig.g.append(svg("polyline", { points: pts(normal, sig.y).join(" "), fill: "none", stroke: "var(--secondary-text-color)", "stroke-width": 1.4 }));
+      // The bad-day line only where it falls inside the chart.
+      let run = [];
+      const flush = () => {
+        if (run.length > 1) sig.g.append(svg("polyline", { points: run.join(" "), fill: "none", stroke: "var(--error-color, #db4437)", "stroke-width": 1.4, "stroke-dasharray": "5 4" }));
+        run = [];
+      };
+      judged.forEach((j, i) => {
+        const back = judged.length - 1 - i;
+        if (j && back < days && j.line >= lowS) run.push(`${x(back).toFixed(1)},${sig.y(j.line).toFixed(1)}`);
+        else flush();
+      });
+      flush();
+      const badDays = [];
+      judged.forEach((j, i) => {
+        const back = judged.length - 1 - i;
+        if (j && j.bad && back < days) {
+          badDays.push({ back, low: p5[i], line: j.line });
+          sig.g.append(svg("circle", { cx: x(back), cy: sig.y(p5[i]), r: 5, fill: "var(--error-color, #db4437)" }));
+        }
+      });
+      rail.forEach((n, i) => {
+        const back = rail.length - 1 - i;
+        if (n > 0 && back < days) sig.g.append(svg("circle", { cx: x(back), cy: 30, r: 4, fill: "none", stroke: "var(--error-color, #db4437)" }));
+      });
+      if (p50.length < days) {
+        sig.g.append(svg("text", { x: x(p50.length - 1) - 8, y: 105, class: "axis", "text-anchor": "end" }, `recording began ${fmt(dayOf(p50.length - 1))} \u203a`));
+      }
+      addHover(sig.g);
+      const lastJudged = [...judged].reverse().find(Boolean);
+      const inRange = p5.map((v, i) => ({ v, back: p5.length - 1 - i })).filter((o) => o.back < days && o.v != null);
+      const lowest = inRange.reduce((a, o) => (a === null || o.v < a.v ? o : a), null);
+      const figures = el("div", { class: "scroll" }, el("table", { class: "figures" },
+        el("thead", {}, el("tr", {}, ...["NOW", "ITS NORMAL", "BAD-DAY LINE", "BAD DAYS", "LOWEST DAY", "READINGS A DAY"].map((h) => el("th", {}, h)))),
+        el("tbody", {}, el("tr", {},
+          el("td", {}, page.signal.now != null ? String(Math.round(page.signal.now)) : "\u2013"),
+          el("td", {}, lastJudged ? String(Math.round(lastJudged.normal)) : "\u2013"),
+          el("td", { style: "color:var(--error-color, #db4437)" }, lastJudged ? String(Math.round(lastJudged.line)) : "\u2013"),
+          el("td", {}, badDays.length ? `${badDays.length} in this range` : "none in this range"),
+          el("td", {}, lowest ? `${Math.round(lowest.v)}, ${fmt(dayOf(lowest.back))}` : "\u2013"),
+          el("td", {}, page.signal.readings_a_day != null ? `about ${page.signal.readings_a_day}` : "\u2013")))));
+      const words = badDays.length
+        ? `Bad days in this range: ${badDays.slice().reverse().map((d) => `${fmt(dayOf(d.back))}, when its low end fell to ${Math.round(d.low)}, below that day's line of ${Math.round(d.line)}`).join("; ")}.`
+        : "No bad day in this range: its low end stayed above its bad-day line.";
+      signalCard = card("Signal", page.signal.scale === "lqi" ? "link quality" : "signal", figures,
+        el("p", { class: "small", style: "margin:0;line-height:1.5" }, words), sig.g,
+        el("div", { class: "legend" },
+          el("span", {}, "Daily median (solid), low end of each day (dashed)."),
+          key("var(--secondary-text-color)", "its normal"), key("var(--error-color, #db4437)", "bad-day line", true),
+          key("var(--error-color, #db4437)", "a bad day", false, true)));
     }
-    if (p50.length < days && p50.length) {
-      sig.g.append(svg("text", { x: x(p50.length - 1) - 8, y: 100, class: "axis", "text-anchor": "end" }, `recording began ${fmt(dayOf(p50.length - 1))} \u203a`));
+
+    // ----------------------------------------------------------------- rhythm
+    let rhythmCard;
+    if (!gaps.length) {
+      rhythmCard = el("p", { class: "muted", style: "margin:0" }, "No reporting history for this device.");
+    } else {
+      const inHours = [];
+      gaps.forEach((g, i) => { if (gaps.length - 1 - i < days) { inHours.push(g / 3600); if (wins[i]) inHours.push(wins[i] / 3600); } });
+      const highG = Math.ceil(Math.max(...inHours) + 1);
+      const rhy = frame(0, highG, [[highG, `${highG}h`], [Math.round(highG / 2), `${Math.round(highG / 2)}h`], [0, "0h"]],
+        `Longest gap between reports each day for ${days} days, with its window`);
+      rhy.g.append(svg("polyline", { points: pts(wins.map((w) => (w ? w / 3600 : null)), rhy.y).join(" "), fill: "none",
+        stroke: "var(--error-color, #db4437)", "stroke-width": 1.4, "stroke-dasharray": "5 4" }),
+      svg("polyline", { points: pts(gaps.map((g) => g / 3600), rhy.y).join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 1.4 }));
+      let over = 0;
+      gaps.forEach((g, i) => {
+        const back = gaps.length - 1 - i;
+        if (back >= days) return;
+        const late = wins[i] && g > wins[i];
+        if (late) over += 1;
+        rhy.g.append(svg("circle", { cx: x(back), cy: rhy.y(g / 3600), r: 3,
+          fill: late ? "var(--error-color, #db4437)" : "var(--primary-color)" }));
+      });
+      addHover(rhy.g);
+      rhythmCard = card("Rhythm", "longest gap between reports each day, in hours",
+        el("p", { class: "small", style: "margin:0;line-height:1.5" }, over
+          ? `${over} ${over === 1 ? "day" : "days"} in this range had a gap longer than its window.`
+          : "No day in this range had a gap longer than its window."),
+        rhy.g,
+        el("div", { class: "legend" }, el("span", {}, "Longest gap each day (dots)."),
+          key("var(--error-color, #db4437)", "its window that day", true),
+          key("var(--error-color, #db4437)", "a gap longer than its window", false, true)));
     }
-    rail.forEach((n, i) => {
-      const back = rail.length - 1 - i;
-      if (n > 0 && back < days) sig.g.append(svg("circle", { cx: x(back), cy: 30, r: 4.5, fill: "var(--error-color, #db4437)" }));
-    });
-    addHover(sig.g);
+
+    // ------------------------------------------------------------------ table
+    const tableOpen = Boolean(this._tableOpen);
+    const toggle = el("button", { class: "chip", type: "button", "aria-expanded": String(tableOpen), style: "align-self:flex-start",
+      onclick: () => {
+        this._tableOpen = !tableOpen;
+        this._paintDevicePage();
+      } }, tableOpen ? "Hide table" : "Show as table");
+    let table = null;
+    if (tableOpen) {
+      const rows = [];
+      for (let back = 0; back < days; back += 1) {
+        const day = at(judged, back);
+        rows.push(el("tr", {},
+          el("td", {}, fmt(dayOf(back))),
+          el("td", { class: "num" }, at(battery, back) != null ? `${at(battery, back)}%` : ""),
+          el("td", { class: "num" }, at(p50, back) != null ? String(Math.round(at(p50, back))) : ""),
+          el("td", { class: "num", style: day && day.bad ? "color:var(--error-color, #db4437)" : "" },
+            at(p5, back) != null ? String(Math.round(at(p5, back))) : ""),
+          el("td", { class: "num" }, hours(at(gaps, back))),
+          el("td", { class: "num" }, hours(at(wins, back))),
+          el("td", {}, outagesOn(back).join("; "))));
+      }
+      table = el("div", { class: "scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, ...["DATE", "BATTERY", "SIGNAL MEDIAN", "LOW END", "LONGEST GAP", "WINDOW", "OUTAGES"].map((h) => el("th", {}, h)))),
+        el("tbody", {}, ...rows)));
+    }
     if (this._hover !== null && this._hover < days) setHover(this._hover);
-    const card = (title, note, g, caption) => el("div", { class: "chart" },
-      el("div", { class: "statusline" }, el("strong", {}, title), el("span", { class: "small" }, note)), g,
-      caption ? el("p", { class: "small", style: "margin:0" }, caption) : null);
-    const batNow = page.battery.now;
-    const sigNow = page.signal.now;
     return el("div", { style: "display:flex;flex-direction:column;gap:16px" },
-      el("h3", { class: "section" }, "History"), buttons, readout,
-      battery.length ? card("Battery", batNow != null ? `${batNow}% now` : "", bat.g)
-        : el("p", { class: "muted", style: "margin:0" }, "No battery history for this device."),
-      p50.length ? card("Signal", sigNow != null ? `${page.signal.scale === "lqi" ? "link quality" : "signal"} ${sigNow} now` : "", sig.g,
-        "Daily median (solid) and the low end of each day's readings (dashed). Red dots mark days with railed readings.")
-        : el("p", { class: "muted", style: "margin:0" }, "No signal history for this device."));
+      el("h3", { class: "section" }, "History"), buttons, readout, batteryCard, signalCard, rhythmCard,
+      el("div", { class: "legend" },
+        el("span", {}, el("span", { class: "swatch", style: "height:12px;background:var(--info-color, #4f7cac);opacity:0.45" }),
+          "an outage on this device's path (its bridge, broker or integration), not caused by a restart"),
+        el("span", {}, el("span", { class: "swatch", style: "height:12px;background:var(--info-color, #4f7cac);opacity:0.2" }),
+          "the same, during maintenance")),
+      toggle, table);
   }
 
   _paintClassification() {
