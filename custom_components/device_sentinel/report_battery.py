@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.21.14 (2026-09-18)
+# File: report_battery.py, Version: 0.22.6 (2026-09-20)
 
 """The battery report: which cells are going to be low.
 
@@ -29,6 +29,7 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BATTERY_TREND_MEANINGS,
     BATTERY_ACCELERATING_GAP,
     BATTERY_BLOCK_DAYS,
     BATTERY_BLOCK_MIN_DAYS,
@@ -863,6 +864,10 @@ class BatteryReportMixin:
             else "<p class='empty'>None.</p>"
         )
 
+        meanings = "\n".join(
+            f"<li><b>{word[:1].upper()}{word[1:]}:</b> {meaning}</li>"
+            for word, meaning in BATTERY_TREND_MEANINGS.items()
+        )
         html = f"""<!DOCTYPE html>
 <html><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
@@ -901,18 +906,7 @@ data by comparing recent decay against the cells long-term trend. To
 interpret the history, observe how the drain rates shift from left to
 right:</p>
 <ul>
-<li><b>Accelerating:</b> Drain rates increase as you move right. For
-lithium coin cells, this indicates the steep voltage drop immediately
-preceding failure.</li>
-<li><b>Steady:</b> Drain rates remain consistent across all columns.
-The projected lifespan estimate is reliable.</li>
-<li><b>Slopes do not agree:</b> The 30, 14 and 7 day rates do not form
-a consistent progression, so the recent decline is not confirmed by
-the period between. Treat the estimate with caution.</li>
-<li><b>Stabilized:</b> High drain in older columns is followed by flat
-recent columns. This indicates a temporary voltage dip (e.g., cold
-weather, mesh storm) that has since recovered. Replacement is not yet
-required.</li>
+{meanings}
 </ul>
 <p>Times are deliberately vague, because a cell can hold its charge
 for weeks and then drop in days. A time shown in red falls inside

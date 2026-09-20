@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.22.5 (2026-09-20)
+# File: const.py, Version: 0.22.6 (2026-09-20)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1175,6 +1175,29 @@ TREND_DISAGREE = "slopes do not agree"
 TREND_JUST_STARTED = "just started falling"
 TREND_STABILIZED = "stabilized"
 TREND_STEADY = "steady"
+# What each reading means, the owner's words. One place, read by the
+# battery report's list and by the dashboard's device page, so the two
+# explain a reading the same way.
+BATTERY_TREND_MEANINGS = {
+    TREND_ACCELERATING: (
+        "Drain rates increase as you move right. For lithium coin cells, "
+        "this indicates the steep voltage drop immediately preceding failure."
+    ),
+    TREND_STEADY: (
+        "Drain rates remain consistent across all columns. The projected "
+        "lifespan estimate is reliable."
+    ),
+    TREND_DISAGREE: (
+        "The 30, 14 and 7 day rates do not form a consistent progression, so "
+        "the recent decline is not confirmed by the period between. Treat the "
+        "estimate with caution."
+    ),
+    TREND_STABILIZED: (
+        "High drain in older columns is followed by flat recent columns. This "
+        "indicates a temporary voltage dip (e.g., cold weather, mesh storm) "
+        "that has since recovered. Replacement is not yet required."
+    ),
+}
 
 # How near the end a cell has to be before the daily brief names it.
 # The report lists every cell that is measurably falling, which on a

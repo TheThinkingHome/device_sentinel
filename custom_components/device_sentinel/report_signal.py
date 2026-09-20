@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_signal.py, Version: 0.21.14 (2026-09-18)
+# File: report_signal.py, Version: 0.22.6 (2026-09-20)
 
 """The signal report and the signal cells of the telemetry.
 
@@ -96,6 +96,35 @@ class SignalReportMixin:
     """The signal report and the signal cells of the telemetry."""
 
     # ------------------------------------------------ reading the days
+
+    def _badday_line(self, reading: dict[str, Any]) -> float:
+        """Return the level a day must fall below to be a bad day.
+
+        Its normal less the larger of the fixed drop and the sensitivity
+        times its own spread. One formula, read by the report's chart
+        and by the dashboard, so the two cannot draw different lines.
+        """
+        return reading["baseline"] - max(
+            reading["drop_gate"],
+            self._badday_sensitivity() * reading["spread"],
+        )
+
+    def signal_day_judgment(
+        self, record: dict[str, Any], index: int
+    ) -> dict[str, Any] | None:
+        """Return one day's judgment: its normal, its line, and whether
+        it was a bad day. Recalculated from the daily history whenever
+        asked, so a past day always reads with today's settings and
+        nothing new is stored.
+        """
+        reading = self.signal_badday(record, index)
+        if reading is None:
+            return None
+        return {
+            "normal": reading["baseline"],
+            "line": self._badday_line(reading),
+            "bad": bool(reading["bad"]),
+        }
 
     def _signal_report_rows(self) -> list[dict[str, Any]]:
         """Return one row per device with enough history to judge.
@@ -348,10 +377,7 @@ class SignalReportMixin:
             (r for r in reversed(row["readings"]) if r is not None), None
         )
         if last is not None:
-            trigger = last["baseline"] - max(
-                last["drop_gate"],
-                self._badday_sensitivity() * last["spread"],
-            )
+            trigger = self._badday_line(last)
             for value, colour, dash, words in (
                 (last["baseline"], "#5F5E5A", "", "its normal"),
                 (trigger, "#D03B3B", " stroke-dasharray='4 3'", "bad-day line"),

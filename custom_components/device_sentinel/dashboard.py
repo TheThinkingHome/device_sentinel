@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.5 (2026-09-20)
+# File: dashboard.py, Version: 0.22.6 (2026-09-20)
 
 """What the dashboard reads from the coordinator.
 
@@ -31,6 +31,16 @@ from homeassistant.util import dt as dt_util
 from datetime import timedelta
 
 from .const import (
+    BATTERY_FALLING_SLOPE,
+    BATTERY_TREND_MEANINGS,
+    BATTERY_READABLE_MAX,
+    BATTERY_SLOPE_DAYS,
+    DEV_SIGNAL_DAILY_COUNT,
+    STARTUP_GRACE_SECONDS,
+    SYS_MAINTENANCE_CLOSED,
+    SYS_MAINTENANCE_OPEN,
+    SYS_RESTART,
+    SYS_UNCLEAN_RESTART,
     DAILY_MAX_KEEP,
     DATA_DEVICES,
     DATA_EPISODES,
@@ -493,22 +503,161 @@ class DeviceViewMixin:
             "rhythm": {
                 "gaps": list((record.get(DEV_DAILY_MAX) or [])[-DAILY_MAX_KEEP:]),
                 "set_aside": set_aside,
+                # The whole history, and the window each day had,
+                # worked out from the days before it as the detector
+                # worked it out then.
+                "daily": list(record.get(DEV_DAILY_MAX) or []),
+                "windows": [
+                    self._freeze_window({DEV_DAILY_MAX: (record.get(DEV_DAILY_MAX) or [])[:index]})
+                    if index else None
+                    for index in range(len(record.get(DEV_DAILY_MAX) or []))
+                ],
             },
             "silences": silences,
-            "battery": {
-                "daily": list(record.get(DEV_BATTERY_DAILY) or []),
-                "now": record.get(DEV_BATTERY_VALUE),
-                "threshold": self.low_threshold,
-            },
-            "signal": {
-                "p5": list(record.get(DEV_SIGNAL_DAILY_P5) or []),
-                "p50": list(record.get(DEV_SIGNAL_DAILY_P50) or []),
-                "railed_days": list(record.get(DEV_SIGNAL_DAILY_RAIL) or []),
-                "scale": record.get(DEV_SIGNAL_SCALE),
-                "now": record.get(DEV_SIGNAL_VALUE),
-            },
+            "battery": self._page_battery(record),
+            "signal": self._page_signal(record),
+            "outages": self.device_outages(domain),
             # Every daily series ends on the last day the midnight roll
             # folded, which is yesterday.
             "series_end": (dt_util.now().date() - timedelta(days=1)).isoformat(),
             "history_days": self.retention_days,
         }
+
+    def _page_battery(self, record: dict[str, Any]) -> dict[str, Any]:
+        """The battery history and the report's own figures for it.
+
+        The windows, the blocks, the reading and the time left are the
+        battery report's, from the report's own functions, so the page
+        and the report say the same thing about the same cell.
+        """
+        level = record.get(DEV_BATTERY_VALUE)
+        series = [
+            value for value in (record.get(DEV_BATTERY_DAILY) or [])
+            if isinstance(value, (int, float))
+        ]
+        readable = isinstance(level, (int, float)) and float(level) <= BATTERY_READABLE_MAX
+        page: dict[str, Any] = {
+            "daily": list(record.get(DEV_BATTERY_DAILY) or []),
+            "now": level,
+            "threshold": self.low_threshold,
+            "readable": readable,
+        }
+        if not isinstance(level, (int, float)) or not readable or not series:
+            return page
+        current = float(level)
+        windows = self._battery_windows(series)
+        slope = self._battery_slope(series[-BATTERY_SLOPE_DAYS:])
+        falling = slope < BATTERY_FALLING_SLOPE and current > 0
+        page.update({
+            "windows": {str(days): value for days, value in windows.items()},
+            "blocks": [[start, end, value] for start, end, value in self._battery_blocks(series)],
+            "reading": self._battery_reading(windows, len(series)),
+            "reading_meaning": BATTERY_TREND_MEANINGS.get(self._battery_reading(windows, len(series))),
+            "falling": falling,
+            "left": self.battery_time_left(current / -slope) if falling else None,
+            "left_soon": falling and current / -slope <= self._battery_days(),
+        })
+        return page
+
+    def _page_signal(self, record: dict[str, Any]) -> dict[str, Any]:
+        """The signal history and each day's judgment, as the report
+        makes it."""
+        p5 = list(record.get(DEV_SIGNAL_DAILY_P5) or [])
+        counts = [
+            value for value in (record.get(DEV_SIGNAL_DAILY_COUNT) or [])[-DAILY_MAX_KEEP:]
+            if isinstance(value, (int, float))
+        ]
+        middle = sorted(counts)[len(counts) // 2] if counts else None
+        if counts and len(counts) % 2 == 0:
+            ordered = sorted(counts)
+            middle = (ordered[len(counts) // 2 - 1] + ordered[len(counts) // 2]) / 2
+        return {
+            "p5": p5,
+            "p50": list(record.get(DEV_SIGNAL_DAILY_P50) or []),
+            "railed_days": list(record.get(DEV_SIGNAL_DAILY_RAIL) or []),
+            "scale": record.get(DEV_SIGNAL_SCALE),
+            "now": record.get(DEV_SIGNAL_VALUE),
+            "judged": [self.signal_day_judgment(record, index) for index in range(len(p5))],
+            "readings_a_day": round(middle) if middle is not None else None,
+        }
+
+    def device_outages(self, domain: str | None) -> list[dict[str, Any]]:
+        """Natural outages on this device's own path, oldest first.
+
+        Its path is its integration, its stack's bridge and, for MQTT,
+        the broker. An outage that began while Home Assistant was going
+        down for a restart, was down, or was inside the startup grace
+        after it was caused by the restart and is left out. One inside
+        a maintenance window is kept and marked, so a deliberate test
+        stays visible without reading as a surprise.
+        """
+        if not domain:
+            return []
+        stack = next((name for name, owner in _STACK_DOMAIN.items() if owner == domain), None)
+        rows = sorted(
+            (row for row in self.data.get(DATA_SYSTEM_EVENTS) or [] if isinstance(row, dict)),
+            key=lambda row: row.get(SYS_WHEN) or 0,
+        )
+        restarts = [
+            (row[SYS_WHEN], float(row.get(SYS_DURATION) or 0.0))
+            for row in rows
+            if row.get(SYS_KIND) in (SYS_RESTART, SYS_UNCLEAN_RESTART)
+            and isinstance(row.get(SYS_WHEN), (int, float))
+        ]
+        windows: list[tuple[float, float]] = []
+        opened: float | None = None
+        for row in rows:
+            if row.get(SYS_KIND) == SYS_MAINTENANCE_OPEN:
+                opened = row.get(SYS_WHEN)
+            elif row.get(SYS_KIND) == SYS_MAINTENANCE_CLOSED and opened is not None:
+                windows.append((opened, row[SYS_WHEN]))
+                opened = None
+        if opened is not None:
+            windows.append((opened, float("inf")))
+
+        def on_path(kind: str, scope: Any) -> bool:
+            if kind in (SYS_BRIDGE_DOWN, SYS_BRIDGE_UP):
+                return stack is not None and scope == stack
+            if kind in (SYS_BROKER_DOWN, SYS_BROKER_UP):
+                return domain == BROKER_SCOPE
+            if kind in (SYS_INTEGRATION_DOWN, SYS_INTEGRATION_UP):
+                return scope == domain
+            return False
+
+        def caused_by_restart(start: float) -> bool:
+            # From going down (its downtime, plus a margin for the
+            # shutdown itself) to the end of the grace after it.
+            return any(
+                at - downtime - 120.0 <= start <= at + STARTUP_GRACE_SECONDS
+                for at, downtime in restarts
+            )
+
+        found: list[dict[str, Any]] = []
+        open_rows: dict[tuple[str, Any], float] = {}
+        for row in rows:
+            kind, scope, when = row.get(SYS_KIND), row.get(SYS_SCOPE), row.get(SYS_WHEN)
+            if not isinstance(kind, str) or not isinstance(when, (int, float)):
+                continue
+            if not on_path(kind, scope):
+                continue
+            if kind in _OPENERS:
+                open_rows[(kind, scope)] = when
+                continue
+            started = open_rows.pop((_CLOSERS[kind], scope), None)
+            duration = row.get(SYS_DURATION)
+            if isinstance(duration, (int, float)) and duration > 0:
+                # The return knows how long it was down, which is truer
+                # than a down row that may belong to another episode.
+                started = when - duration
+            if started is None or caused_by_restart(started):
+                continue
+            found.append({
+                "start": dt_util.utc_from_timestamp(started).isoformat(),
+                "minutes": max(1, round((when - started) / 60)),
+                "what": self._outage_label(kind, scope),
+                "devices": row.get(SYS_DEVICES),
+                "worst": row.get(SYS_WORST),
+                "maintenance": any(a <= started <= b for a, b in windows),
+            })
+        found.sort(key=lambda item: item["start"])
+        return found
