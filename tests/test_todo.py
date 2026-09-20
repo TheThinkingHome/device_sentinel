@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.21.11 (2026-09-16)
+# File: test_todo.py, Version: 0.22.4 (2026-09-19)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -22,7 +22,7 @@ import pytest
 
 from datetime import timedelta
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -454,7 +454,16 @@ async def test_journal_and_dispatcher_on_addition(hass: HomeAssistant):
     coord = entry.runtime_data
     hass.states.async_set(eids["plain"], "on")
     heard = []
-    async_dispatcher_connect(hass, SIGNAL_PROBLEM_ADDITION, heard.append)
+
+    @callback
+    def _hear(payload):
+        # A callback, so it runs on the loop in the order the signals
+        # were sent. A bare heard.append is run in an executor thread,
+        # and two of those can land in either order: this test failed
+        # about once in thirty runs on that race alone.
+        heard.append(payload)
+
+    async_dispatcher_connect(hass, SIGNAL_PROBLEM_ADDITION, _hear)
 
     _freeze(coord, device.id)
     coord._sync_problem_list()

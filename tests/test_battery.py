@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery.py, Version: 0.20.19 (2026-09-12)
+# File: tests/test_battery.py, Version: 0.22.4 (2026-09-19)
 
 """Battery detection: the low verdict and the discharge recorder.
 
@@ -580,7 +580,9 @@ async def test_the_phrase_never_calls_a_recovery_a_fall(
 
     record[DEV_BATTERY_VALUE] = 100.0
     said = coord._battery_phrase(device.id, False)
-    assert said == "battery read low, now 100%"
+    # Near full reads as replaced or recharged, with no level that
+    # could be taken for the low reading (fourth fleet, 0.22.4).
+    assert said == "battery read low, since replaced or recharged"
     assert "fell" not in said
 
     record[DEV_BATTERY_VALUE] = 7.7
