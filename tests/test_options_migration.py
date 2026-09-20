@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_options_migration.py, Version: 0.22.0 (2026-09-18)
+# File: tests/test_options_migration.py, Version: 0.22.5 (2026-09-20)
 
 """The options migration, entry shape by entry shape (ruling #316).
 
@@ -157,7 +157,10 @@ async def test_an_untouched_install_gains_no_keys(hass: HomeAssistant):
 
     for new in MUTING_KEY_RENAMES.values():
         assert new not in entry.options, new
-    assert entry.options == {"low_threshold": 15}
+    # One key on purpose: step 5 writes down the persistent card's old
+    # default, so the new default of off reaches new installs only
+    # (ruling #462).
+    assert entry.options == {"low_threshold": 15, "persistent_enabled": True}
     assert entry.minor_version == OPTIONS_MINOR_VERSION
 
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_falling_surfaces.py, Version: 0.15.8 (2026-08-18)
+# File: tests/test_falling_surfaces.py, Version: 0.22.5 (2026-09-20)
 
 """The falling battery on the phone and the card, and the crossing.
 
@@ -225,7 +225,7 @@ async def test_the_crossing_announces_the_level_and_not_a_recovery(
 async def test_the_card_names_a_falling_cell(hass: HomeAssistant):
     """The card said all clear while the list said otherwise."""
     device, _ = _battery_device(hass, "Door 2nd Bedroom", 24.0)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0})
+    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0, "persistent_enabled": True})
     _seed(coord, device.id, 24.0)
     coord._sync_problem_list()
 
@@ -314,7 +314,7 @@ async def test_an_acknowledged_falling_cell_leaves_the_card(
 ):
     """Acknowledgment silences the phone for the new kind too (#109)."""
     device, _ = _battery_device(hass, "Door 2nd Bedroom", 24.0)
-    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0})
+    coord = await setup_coordinator(hass, {CONF_LOW_THRESHOLD: 18.0, "persistent_enabled": True})
     _seed(coord, device.id, 24.0)
     coord._sync_problem_list()
     assert TODO_KIND_FALLING_BATTERY in coord.data["todo_items"][0]["kinds"]

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.22.0 (2026-09-18)
+# File: test_notifications.py, Version: 0.22.5 (2026-09-20)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -327,7 +327,9 @@ class _Harness(NotifierMixin):
         self._acknowledged = set(acknowledged or [])
         self._suppressed = suppressed or {}
         self.sent = []
-        self.entry = type("E", (), {"options": {}})()
+        # The card is on here because these tests are about what it
+        # says; its default is off for a new install (ruling #462).
+        self.entry = type("E", (), {"options": {"persistent_enabled": True}})()
         self.hass = type(
             "H", (), {"services": type("S", (), {})()}
         )()
@@ -655,15 +657,16 @@ async def test_card_created_when_toggle_on():
     assert "Door X unavailable" in payload["message"]
 
 
-async def test_card_default_on_when_option_absent():
-    """With no option set, the card defaults on and is created."""
+async def test_card_default_off_when_option_absent():
+    """With no option set, the card is off: nothing is created, and a
+    card left over from before is dismissed (ruling #462)."""
     h = _Harness(
         ["notify.phone"],
         freeze=[{"name": "Door X", "device_id": "d1", "category": "unavailable"}],
     )
+    h.entry.options = {}
     await h.async_update_card()
-    domain, service, _ = h.sent[0]
-    assert (domain, service) == ("persistent_notification", "create")
+    assert [service for _, service, _ in h.sent] == ["dismiss"]
 
 
 # ==================================================================
