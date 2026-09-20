@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.10 (2026-09-20)
+// File: frontend/panel.js, Version: 0.22.11 (2026-09-20)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -241,6 +241,10 @@ const STYLE = `
   .kv td:first-child { color: var(--secondary-text-color); width: 42%; }
   .gaps { display: flex; align-items: flex-end; gap: 4px; height: 140px; border-bottom: 1px solid var(--divider-color); }
   .gaps > div { flex: 1; border-radius: 3px 3px 0 0; background: var(--primary-color); }
+  .bank { display: flex; align-items: flex-end; gap: 6px; height: 150px; border-bottom: 1px solid var(--divider-color); }
+  .bank .band { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+  .bank .band > div:last-child { background: var(--primary-color); border-radius: 3px 3px 0 0; }
+  .bank .count { text-align: center; font-size: 11px; color: var(--secondary-text-color); padding-bottom: 2px; }
   .gaps > div.aside { background: repeating-linear-gradient(45deg, var(--divider-color), var(--divider-color) 3px, transparent 3px, transparent 6px); }
   .chart { border: 1px solid var(--divider-color); border-radius: 10px; padding: 14px 16px; display: flex;
     flex-direction: column; gap: 8px; }
@@ -1001,11 +1005,14 @@ class DeviceSentinelPanel extends HTMLElement {
     // The bank.
     const top = Math.max(...page.bank, 1);
     const bank = el("div", {},
-      el("div", { class: "gaps", role: "img", "aria-label": "How many cells sit in each ten percent band" },
+      el("div", { class: "bank", role: "img", "aria-label": "How many cells sit in each ten percent band" },
         ...page.bank.map((count, index) => el("div", {
-          style: `height:${Math.max(2, (count / top) * 100)}%`,
+          class: "band",
           title: `${count} cell${count === 1 ? "" : "s"} between ${index * 10}% and ${index * 10 + 10}%`,
-        }))),
+        },
+        el("div", { class: "count" }, count ? String(count) : ""),
+        // An empty band draws nothing: a sliver reads as one cell.
+        el("div", { style: `height:${count ? Math.max(3, (count / top) * 100) : 0}%` })))),
       el("div", { class: "statusline small" }, el("span", {}, "0%"),
         el("span", {}, "cells by charge remaining"), el("span", {}, "100%")));
     // Every model.
@@ -1117,36 +1124,6 @@ class DeviceSentinelPanel extends HTMLElement {
       + "stayed within their own normal."
       + (scales.length > 1 ? " The scales are listed apart: a link quality of 180 and an RSSI of -60 cannot share an axis." : ""));
     // Where each link sits against its own normal.
-    const cap = 6;
-    const chart = svg("svg", { viewBox: "0 0 1100 170", role: "img",
-      "aria-label": "Every device's signal against its own normal, in its own spreads" });
-    chart.append(svg("line", { x1: 20, y1: 85, x2: 1080, y2: 85, stroke: "var(--divider-color)" }));
-    const width = 1060 / Math.max(1, page.devices.length);
-    page.devices.forEach((row, index) => {
-      const z = Math.max(-cap, Math.min(cap, row.spreads || 0));
-      const height = Math.abs(z) / cap * 70;
-      chart.append(svg("rect", {
-        x: 20 + index * width, y: z >= 0 ? 85 - height : 85,
-        width: Math.max(1, width - 1), height: Math.max(1, height),
-        fill: (row.spreads || 0) <= -2 ? "var(--error-color, #db4437)"
-          : (row.spreads || 0) >= 2 ? "var(--success-color, #43a047)" : "var(--secondary-text-color)",
-      }, svg("title", {}, `${row.name}: ${Math.round(row.now)} against a normal of ${Math.round(row.normal)}, `
-        + `${(row.spreads || 0) >= 0 ? "+" : ""}${(row.spreads || 0).toFixed(1)} of its own spreads`)));
-    });
-    const below = page.devices.filter((row) => (row.spreads || 0) <= -2).length;
-    const above = page.devices.filter((row) => (row.spreads || 0) >= 2).length;
-    const middleChange = page.devices.length
-      ? [...page.devices].map((row) => row.change).sort((a, b) => a - b)[Math.floor(page.devices.length / 2)]
-      : 0;
-    const chartNote = el("div", { class: "statusline small" },
-      el("span", {}, "weaker than its normal"),
-      el("span", {}, `${page.devices.length} devices. ${below} sit two spreads or more below their normal, ${above} the same above. `
-        + `The middle device is ${middleChange >= 0 ? "+" : ""}${Math.round(middleChange)} points.`),
-      el("span", {}, "stronger"));
-    // The two lists.
-    const sign = (v) => (v === null || v === undefined ? "" : `${v > 0 ? "+" : ""}${Math.round(v)}`);
-    const spreads = (v) => (v === null || v === undefined ? "" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}`);
-    const colour = (v) => ((v || 0) <= -2 ? "color:var(--error-color, #db4437)" : (v || 0) >= 2 ? "color:var(--success-color, #43a047)" : "");
     const filters = [["all", "All"], ...scales.map(([scale]) => [scale, named[scale] || scale])];
     const chips = el("div", { class: "chips" }, ...filters.map(([key, label]) => el("button", {
       class: "chip", type: "button", "aria-pressed": String(key === this._signalFilter),
@@ -1155,9 +1132,64 @@ class DeviceSentinelPanel extends HTMLElement {
         again();
       },
     }, `${label} ${key === "all" ? page.devices.length : page.scales[key]}`)));
+    const showing = page.devices.filter((row) => this._signalFilter === "all" || row.scale === this._signalFilter);
+    const mixed = this._signalFilter === "all" && scales.length > 1;
+    const cap = 6;
+    const chart = svg("svg", { viewBox: "0 0 1100 170", role: "img",
+      "aria-label": "Each device's signal against its own normal, in its own spreads" });
+    chart.append(svg("line", { x1: 20, y1: 85, x2: 1080, y2: 85, stroke: "var(--divider-color)" }));
+    const width = 1060 / Math.max(1, showing.length);
+    showing.forEach((row, index) => {
+      const z = Math.max(-cap, Math.min(cap, row.spreads || 0));
+      const height = Math.abs(z) / cap * 70;
+      const words = `${row.name}: ${Math.round(row.now)} against a normal of ${Math.round(row.normal)}, `
+        + `${(row.spreads || 0) >= 0 ? "+" : ""}${(row.spreads || 0).toFixed(1)} of its own spreads`;
+      const open = () => this._navigate(this._devicePath(row.device_id));
+      // A thin bar is a small target, so the whole column is clickable
+      // and the drawn bar sits on top of it.
+      const column = svg("rect", {
+        x: 20 + index * width, y: 15, width: Math.max(1, width), height: 140,
+        fill: "transparent", role: "link", tabindex: 0, "aria-label": `${words}. Open its page.`,
+        style: "cursor:pointer", onclick: open,
+        onkeydown: (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            open();
+          }
+        },
+      }, svg("title", {}, words));
+      chart.append(svg("rect", {
+        x: 20 + index * width, y: z >= 0 ? 85 - height : 85,
+        width: Math.max(1, width - 1), height: Math.max(1, height),
+        style: "pointer-events:none",
+        fill: (row.spreads || 0) <= -2 ? "var(--error-color, #db4437)"
+          : (row.spreads || 0) >= 2 ? "var(--success-color, #43a047)" : "var(--secondary-text-color)",
+      }), column);
+    });
+    const below = showing.filter((row) => (row.spreads || 0) <= -2).length;
+    const above = showing.filter((row) => (row.spreads || 0) >= 2).length;
+    const middleChange = showing.length
+      ? [...showing].map((row) => row.change).sort((a, b) => a - b)[Math.floor(showing.length / 2)]
+      : 0;
+    const chartNote = el("div", { class: "statusline small" },
+      el("span", {}, "weaker than its normal"),
+      el("span", {}, `${showing.length} devices. ${below} sit two spreads or more below their normal, ${above} the same above. `
+        + `The middle device is ${middleChange >= 0 ? "+" : ""}${Math.round(middleChange)} points.`),
+      el("span", {}, "stronger"));
+    // The two lists.
+    const sign = (v) => (v === null || v === undefined ? "" : `${v > 0 ? "+" : ""}${Math.round(v)}`);
+    const spreads = (v) => (v === null || v === undefined ? "" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}`);
+    // Link quality runs from 0 up, so a line below zero is off the
+    // bottom of the scale: that device cannot have a bad day at its
+    // present spread. RSSI is negative by nature and keeps its number.
+    const lineWords = (row) => {
+      if (row.line === null || row.line === undefined) return "";
+      if (row.scale !== "rssi" && row.line < 0) return "below the scale";
+      return String(Math.round(row.line));
+    };
+    const colour = (v) => ((v || 0) <= -2 ? "color:var(--error-color, #db4437)" : (v || 0) >= 2 ? "color:var(--success-color, #43a047)" : "");
     const pick = (wanted) => this._sortRows(
-      page.devices.filter((row) => (this._signalFilter === "all" || row.scale === this._signalFilter)
-        && (wanted === "unsteady" ? row.bad_days : !row.bad_days)),
+      showing.filter((row) => (wanted === "unsteady" ? row.bad_days : !row.bad_days)),
       this._signalSort,
       {
         name: (row) => row.name.toLowerCase(),
@@ -1170,6 +1202,7 @@ class DeviceSentinelPanel extends HTMLElement {
       if (!rows.length) return el("p", { class: "muted", style: "margin:0" }, "None.");
       const head = el("tr", {},
         this._sortHead(this._signalSort, "DEVICE", "name", again),
+        mixed ? el("th", {}, "SCALE") : null,
         this._sortHead(this._signalSort, "NOW", "now", again, "num"),
         el("th", { class: "num" }, "ITS NORMAL"),
         el("th", { class: "num" }, "BAD-DAY LINE"),
@@ -1179,10 +1212,10 @@ class DeviceSentinelPanel extends HTMLElement {
         el("th", { class: "num" }, "READINGS A DAY"));
       const body = rows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+        mixed ? el("td", {}, named[row.scale] || row.scale) : null,
         el("td", { class: "num" }, row.now === null ? "" : String(Math.round(row.now))),
         el("td", { class: "num" }, String(Math.round(row.normal))),
-        el("td", { class: "num", style: "color:var(--error-color, #db4437)" },
-          row.line === null ? "" : String(Math.round(row.line))),
+        el("td", { class: "num", style: "color:var(--error-color, #db4437)" }, lineWords(row)),
         withBad ? el("td", { class: "num" }, String(row.bad_days)) : null,
         el("td", { class: "num", style: colour(row.spreads) }, sign(row.change)),
         el("td", { class: "num", style: colour(row.spreads) }, spreads(row.spreads)),
@@ -1207,7 +1240,7 @@ class DeviceSentinelPanel extends HTMLElement {
       el("h3", { class: "section" }, "How Each Link Sits Against Its Own Normal"),
       el("p", { class: "small", style: "margin:0;line-height:1.5" },
         "Each device's last seven days against the middle of its whole history, in its own points and in its own spreads, so a steady link and a jumpy one are judged by their own standards. One bar per device, worst on the left."),
-      chart, chartNote, chips,
+      chips, chart, chartNote,
       el("h3", { class: "section" }, "Devices With Unsteady Signals ", el("span", { class: "small" }, `${unsteady.length} shown`)),
       table(unsteady, true),
       el("h3", { class: "section" }, "Devices With Steady Signals ", el("span", { class: "small" }, `${steady.length} shown`)),
