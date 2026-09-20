@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.9 (2026-09-20)
+// File: frontend/panel.js, Version: 0.22.10 (2026-09-20)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -23,7 +23,7 @@ const TABS = [
   "Devices",
   "Recommendations",
 ];
-const BUILT = new Set(["Daily Brief", "Problem List", "Classification", "Integrations", "Devices", "Recommendations"]);
+const BUILT = new Set(["Daily Brief", "Problem List", "Battery Trends", "Signal Trends", "Classification", "Integrations", "Devices", "Recommendations"]);
 const FILTERS = [
   ["all", "All"],
   ["watched", "Watched"],
@@ -521,7 +521,7 @@ class DeviceSentinelPanel extends HTMLElement {
   async _refresh() {
     this._refreshButton.disabled = true;
     try {
-      const [status, classification, problems, recommendations, integrations, devices, brief] = await Promise.all([
+      const [status, classification, problems, recommendations, integrations, devices, brief, battery, signal] = await Promise.all([
         this._call({ type: "device_sentinel/status" }),
         this._call({ type: "device_sentinel/classification" }),
         this._call({ type: "device_sentinel/problem_list" }),
@@ -529,8 +529,10 @@ class DeviceSentinelPanel extends HTMLElement {
         this._call({ type: "device_sentinel/integrations" }),
         this._call({ type: "device_sentinel/devices" }),
         this._call({ type: "device_sentinel/brief", ...(this._briefDay ? { day: this._briefDay } : {}) }),
+        this._call({ type: "device_sentinel/battery_trends" }),
+        this._call({ type: "device_sentinel/signal_trends" }),
       ]);
-      this._snapshot = { status, classification, problems, recommendations, integrations, devices, brief, at: new Date() };
+      this._snapshot = { status, classification, problems, recommendations, integrations, devices, brief, battery, signal, at: new Date() };
       if (this._view) this._page = await this._fetchView();
       this._shownMarker = status.marker;
       if (this._latestMarker === null || this._latestMarker < status.marker) this._latestMarker = status.marker;
@@ -604,6 +606,8 @@ class DeviceSentinelPanel extends HTMLElement {
     else if (this._view && this._view.kind === "device") this._paintDevicePage();
     else if (this._tab === "Devices") this._paintDevices();
     else if (this._tab === "Daily Brief") this._paintBrief();
+    else if (this._tab === "Battery Trends") this._paintBatteryTrends();
+    else if (this._tab === "Signal Trends") this._paintSignalTrends();
     else if (this._tab === "Integrations") this._paintIntegrations();
     else if (this._tab === "Problem List") this._paintProblems();
     else if (this._tab === "Recommendations") this._paintRecommendations();
@@ -951,6 +955,263 @@ class DeviceSentinelPanel extends HTMLElement {
       el("h3", { class: "section" }, "Repeat Offenders"), ...repeat,
       el("h3", { class: "section" }, "Last 24 Hours"),
       el("p", { style: "margin:0" }, eventsLine), eventsTable);
+  }
+
+  _sorter(state, key, repaint) {
+    // One sortable heading: first press sorts, second reverses.
+    const direction = state.key === key ? state.dir : null;
+    return el("button", {
+      class: "sort", type: "button",
+      "aria-sort": direction === 1 ? "ascending" : direction === -1 ? "descending" : "none",
+      onclick: () => {
+        state.key = key;
+        state.dir = direction === 1 ? -1 : 1;
+        repaint();
+      },
+    }, "");
+  }
+
+  _sortHead(state, label, key, repaint, cls) {
+    const button = this._sorter(state, key, repaint);
+    button.textContent = label;
+    return el("th", cls ? { class: cls } : {}, button);
+  }
+
+  _sortRows(rows, state, values) {
+    if (!state.key || !values[state.key]) return rows;
+    const value = values[state.key];
+    return [...rows].sort((a, b) => {
+      const x = value(a);
+      const y = value(b);
+      return (x < y ? -1 : x > y ? 1 : 0) * state.dir;
+    });
+  }
+
+  _paintBatteryTrends() {
+    const page = this._snapshot.battery;
+    const rate = (v) => (v === null || v === undefined ? "\u2013" : `${v >= 0 ? "+" : ""}${v.toFixed(3)}/day`);
+    const pct = (v) => (v === null || v === undefined ? "" : `${Math.round(v)}%`);
+    this._batterySort = this._batterySort || { key: null, dir: 1 };
+    this._modelSort = this._modelSort || { key: null, dir: 1 };
+    const again = () => this._paintBatteryTrends();
+    const summary = el("p", { style: "margin:0;line-height:1.5" },
+      `${page.cells} cells report a level. ${page.falling.length} falling, ${page.steady.length} steady, `
+      + `${page.low.length} at or under your threshold of ${page.threshold}%. ${page.no_battery} watched `
+      + `devices report no battery at all, and ${page.unreadable.length} report a reading that is not a percentage.`);
+    // The bank.
+    const top = Math.max(...page.bank, 1);
+    const bank = el("div", {},
+      el("div", { class: "gaps", role: "img", "aria-label": "How many cells sit in each ten percent band" },
+        ...page.bank.map((count, index) => el("div", {
+          style: `height:${Math.max(2, (count / top) * 100)}%`,
+          title: `${count} cell${count === 1 ? "" : "s"} between ${index * 10}% and ${index * 10 + 10}%`,
+        }))),
+      el("div", { class: "statusline small" }, el("span", {}, "0%"),
+        el("span", {}, "cells by charge remaining"), el("span", {}, "100%")));
+    // Every model.
+    const models = this._sortRows(page.models, this._modelSort, {
+      name: (row) => `${row.maker} ${row.model}`.toLowerCase(),
+      cells: (row) => row.cells,
+      rate: (row) => row.rate,
+      typical: (row) => row.typical,
+      lowest: (row) => row.lowest,
+    });
+    const modelTable = el("table", {},
+      el("thead", {}, el("tr", {},
+        this._sortHead(this._modelSort, "MAKER AND MODEL", "name", again),
+        this._sortHead(this._modelSort, "CELLS", "cells", again, "num"),
+        this._sortHead(this._modelSort, "TYPICAL RATE", "rate", again, "num"),
+        this._sortHead(this._modelSort, "TYPICAL LEVEL", "typical", again, "num"),
+        this._sortHead(this._modelSort, "LOWEST CELL", "lowest", again, "num"),
+        el("th", {}, "WHICH ONE"))),
+      el("tbody", {}, ...models.map((row) => el("tr", {},
+        el("td", {}, `${row.maker} ${row.model}`),
+        el("td", { class: "num" }, String(row.cells)),
+        el("td", { class: "num", style: row.rate <= -0.05 ? "color:var(--error-color, #db4437)" : "" }, rate(row.rate)),
+        el("td", { class: "num" }, pct(row.typical)),
+        el("td", { class: "num" }, pct(row.lowest)),
+        el("td", {}, this._link(row.lowest_name, this._devicePath(row.lowest_id)))))));
+    // The report's own groups.
+    const blocks = [];
+    for (const row of page.falling) {
+      for (const [start, stop] of row.blocks || []) {
+        const label = `DAY ${start}\u2013${stop}`;
+        if (!blocks.includes(label)) blocks.push(label);
+      }
+    }
+    const fallingRows = this._sortRows(page.falling, this._batterySort, {
+      name: (row) => row.name.toLowerCase(),
+      level: (row) => row.level,
+      rate: (row) => (row.windows ? row.windows["30"] : 0),
+      reading: (row) => row.reading || "",
+    });
+    const falling = page.falling.length
+      ? el("div", { class: "scroll" }, el("table", {},
+        el("thead", {}, el("tr", {},
+          this._sortHead(this._batterySort, "DEVICE", "name", again),
+          this._sortHead(this._batterySort, "LEVEL", "level", again, "num"),
+          ...blocks.map((label) => el("th", { class: "num" }, label)),
+          this._sortHead(this._batterySort, "30 DAY", "rate", again, "num"),
+          el("th", { class: "num" }, "14 DAY"), el("th", { class: "num" }, "7 DAY"),
+          this._sortHead(this._batterySort, "READING", "reading", again),
+          el("th", {}, "LEFT"))),
+        el("tbody", {}, ...fallingRows.map((row) => {
+          const byPeriod = Object.fromEntries((row.blocks || []).map(([start, stop, value]) => [`DAY ${start}\u2013${stop}`, value]));
+          return el("tr", {},
+            el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+            el("td", { class: "num" }, pct(row.level)),
+            ...blocks.map((label) => el("td", { class: "num" }, label in byPeriod ? rate(byPeriod[label]) : "\u2013")),
+            el("td", { class: "num" }, rate(row.windows["30"])),
+            el("td", { class: "num" }, rate(row.windows["14"])),
+            el("td", { class: "num" }, rate(row.windows["7"])),
+            el("td", {}, row.reading || ""),
+            el("td", row.left_soon ? { style: "color:var(--error-color, #db4437)" } : {}, row.left || ""));
+        }))))
+      : el("p", { class: "muted", style: "margin:0" }, "No cell is measurably falling.");
+    const plain = (rows, columns) => el("div", { class: "scroll" }, el("table", {},
+      el("thead", {}, el("tr", {}, ...columns.map(([label, cls]) => el("th", cls ? { class: cls } : {}, label)))),
+      el("tbody", {}, ...rows)));
+    const low = page.low.length
+      ? plain(page.low.map((row) => el("tr", {},
+        el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+        el("td", { class: "num" }, pct(row.level)),
+        el("td", {}, row.since ? moment(row.since) : ""))), [["DEVICE"], ["LEVEL", "num"], ["SINCE"]])
+      : el("p", { class: "muted", style: "margin:0" }, "No cell is at or under your threshold.");
+    const steady = plain(page.steady.map((row) => el("tr", {},
+      el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+      el("td", { class: "num" }, pct(row.level)),
+      el("td", { class: "num" }, rate(row.rate)),
+      el("td", { class: "num" }, String(row.days)))),
+    [["DEVICE"], ["LEVEL", "num"], ["30 DAY", "num"], ["DAYS RECORDED", "num"]]);
+    const unreadable = page.unreadable.length
+      ? el("div", {}, plain(page.unreadable.map((row) => el("tr", {},
+        el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+        el("td", { class: "num" }, pct(row.level)))), [["DEVICE"], ["READING", "num"]]),
+      el("p", { class: "small", style: "margin:6px 0 0" },
+        "These report a raw sensor value rather than a battery level, and are never called low. Turn Battery off for them on their device page."))
+      : null;
+    this._pane.replaceChildren(summary,
+      el("h3", { class: "section" }, "The Bank"), bank,
+      el("h3", { class: "section" }, "By Model ",
+        el("span", { class: "small" }, `${page.models.length} models, ${page.cells} cells, all of them`)),
+      el("p", { class: "small", style: "margin:0;line-height:1.5" },
+        "Which of your models eat batteries, and which do not. The rate is the middle of that model's cells over the last 30 days. Mains-powered devices are absent: they report no battery."),
+      el("div", { class: "scroll" }, modelTable),
+      el("h3", { class: "section" }, "At or Under the Threshold"), low,
+      el("h3", { class: "section" }, "Falling"), falling,
+      el("h3", { class: "section" }, "Steady ", el("span", { class: "small" }, `${page.steady.length} cells`)), steady,
+      unreadable ? el("h3", { class: "section" }, "Not a Percentage") : null, unreadable);
+  }
+
+  _paintSignalTrends() {
+    const page = this._snapshot.signal;
+    this._signalSort = this._signalSort || { key: null, dir: 1 };
+    this._signalFilter = this._signalFilter || "all";
+    const again = () => this._paintSignalTrends();
+    const scales = Object.entries(page.scales);
+    const named = { lqi: "link quality", rssi: "RSSI" };
+    const summary = el("p", { style: "margin:0;line-height:1.5" },
+      `${page.devices.length} devices report a signal`
+      + `${scales.length ? `: ${scales.map(([scale, count]) => `${count} as ${named[scale] || scale}`).join(", ")}` : ""}. `
+      + `Over the last 14 days, ${page.counts.unsteady} had at least one bad day and ${page.counts.steady} `
+      + "stayed within their own normal."
+      + (scales.length > 1 ? " The scales are listed apart: a link quality of 180 and an RSSI of -60 cannot share an axis." : ""));
+    // Where each link sits against its own normal.
+    const cap = 6;
+    const chart = svg("svg", { viewBox: "0 0 1100 170", role: "img",
+      "aria-label": "Every device's signal against its own normal, in its own spreads" });
+    chart.append(svg("line", { x1: 20, y1: 85, x2: 1080, y2: 85, stroke: "var(--divider-color)" }));
+    const width = 1060 / Math.max(1, page.devices.length);
+    page.devices.forEach((row, index) => {
+      const z = Math.max(-cap, Math.min(cap, row.spreads || 0));
+      const height = Math.abs(z) / cap * 70;
+      chart.append(svg("rect", {
+        x: 20 + index * width, y: z >= 0 ? 85 - height : 85,
+        width: Math.max(1, width - 1), height: Math.max(1, height),
+        fill: (row.spreads || 0) <= -2 ? "var(--error-color, #db4437)"
+          : (row.spreads || 0) >= 2 ? "var(--success-color, #43a047)" : "var(--secondary-text-color)",
+      }, svg("title", {}, `${row.name}: ${Math.round(row.now)} against a normal of ${Math.round(row.normal)}, `
+        + `${(row.spreads || 0) >= 0 ? "+" : ""}${(row.spreads || 0).toFixed(1)} of its own spreads`)));
+    });
+    const below = page.devices.filter((row) => (row.spreads || 0) <= -2).length;
+    const above = page.devices.filter((row) => (row.spreads || 0) >= 2).length;
+    const middleChange = page.devices.length
+      ? [...page.devices].map((row) => row.change).sort((a, b) => a - b)[Math.floor(page.devices.length / 2)]
+      : 0;
+    const chartNote = el("div", { class: "statusline small" },
+      el("span", {}, "weaker than its normal"),
+      el("span", {}, `${page.devices.length} devices. ${below} sit two spreads or more below their normal, ${above} the same above. `
+        + `The middle device is ${middleChange >= 0 ? "+" : ""}${Math.round(middleChange)} points.`),
+      el("span", {}, "stronger"));
+    // The two lists.
+    const sign = (v) => (v === null || v === undefined ? "" : `${v > 0 ? "+" : ""}${Math.round(v)}`);
+    const spreads = (v) => (v === null || v === undefined ? "" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}`);
+    const colour = (v) => ((v || 0) <= -2 ? "color:var(--error-color, #db4437)" : (v || 0) >= 2 ? "color:var(--success-color, #43a047)" : "");
+    const filters = [["all", "All"], ...scales.map(([scale]) => [scale, named[scale] || scale])];
+    const chips = el("div", { class: "chips" }, ...filters.map(([key, label]) => el("button", {
+      class: "chip", type: "button", "aria-pressed": String(key === this._signalFilter),
+      onclick: () => {
+        this._signalFilter = key;
+        again();
+      },
+    }, `${label} ${key === "all" ? page.devices.length : page.scales[key]}`)));
+    const pick = (wanted) => this._sortRows(
+      page.devices.filter((row) => (this._signalFilter === "all" || row.scale === this._signalFilter)
+        && (wanted === "unsteady" ? row.bad_days : !row.bad_days)),
+      this._signalSort,
+      {
+        name: (row) => row.name.toLowerCase(),
+        now: (row) => row.now || 0,
+        bad: (row) => row.bad_days,
+        change: (row) => row.spreads || 0,
+      },
+    );
+    const table = (rows, withBad) => {
+      if (!rows.length) return el("p", { class: "muted", style: "margin:0" }, "None.");
+      const head = el("tr", {},
+        this._sortHead(this._signalSort, "DEVICE", "name", again),
+        this._sortHead(this._signalSort, "NOW", "now", again, "num"),
+        el("th", { class: "num" }, "ITS NORMAL"),
+        el("th", { class: "num" }, "BAD-DAY LINE"),
+        withBad ? this._sortHead(this._signalSort, "BAD DAYS", "bad", again, "num") : null,
+        this._sortHead(this._signalSort, "CHANGE", "change", again, "num"),
+        el("th", { class: "num" }, "IN ITS OWN SPREADS"),
+        el("th", { class: "num" }, "READINGS A DAY"));
+      const body = rows.map((row) => el("tr", {},
+        el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+        el("td", { class: "num" }, row.now === null ? "" : String(Math.round(row.now))),
+        el("td", { class: "num" }, String(Math.round(row.normal))),
+        el("td", { class: "num", style: "color:var(--error-color, #db4437)" },
+          row.line === null ? "" : String(Math.round(row.line))),
+        withBad ? el("td", { class: "num" }, String(row.bad_days)) : null,
+        el("td", { class: "num", style: colour(row.spreads) }, sign(row.change)),
+        el("td", { class: "num", style: colour(row.spreads) }, spreads(row.spreads)),
+        el("td", { class: "num" }, row.readings_a_day === null ? "" : String(Math.round(row.readings_a_day)))));
+      return el("div", { class: "scroll" },
+        el("table", {}, el("thead", {}, head), el("tbody", {}, ...body)));
+    };
+    const badDays = page.bad_days.length
+      ? el("div", { class: "scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, el("th", {}, "DAY"), el("th", { class: "num" }, "DEVICES"))),
+        el("tbody", {}, ...page.bad_days.map((row) => el("tr", {},
+          el("td", {}, moment(`${row.day}T12:00:00`).replace(/,[^,]*$/, "")),
+          el("td", { class: "num" }, String(row.devices)))))))
+      : el("p", { class: "muted", style: "margin:0" }, "No day had more than one device fall below its line.");
+    const unsteady = pick("unsteady");
+    const steady = pick("steady");
+    this._pane.replaceChildren(summary,
+      el("h3", { class: "section" }, "Days Several Devices Had a Bad Day"),
+      el("p", { class: "small", style: "margin:0;line-height:1.5" },
+        "One device having a bad day is its own business. Several on the same day usually means something happened to the mesh or the house."),
+      badDays,
+      el("h3", { class: "section" }, "How Each Link Sits Against Its Own Normal"),
+      el("p", { class: "small", style: "margin:0;line-height:1.5" },
+        "Each device's last seven days against the middle of its whole history, in its own points and in its own spreads, so a steady link and a jumpy one are judged by their own standards. One bar per device, worst on the left."),
+      chart, chartNote, chips,
+      el("h3", { class: "section" }, "Devices With Unsteady Signals ", el("span", { class: "small" }, `${unsteady.length} shown`)),
+      table(unsteady, true),
+      el("h3", { class: "section" }, "Devices With Steady Signals ", el("span", { class: "small" }, `${steady.length} shown`)),
+      table(steady, false));
   }
 
   _paintDevices() {
