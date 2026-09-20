@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.10 (2026-09-20)
+# File: dashboard.py, Version: 0.22.12 (2026-09-20)
 
 """What the dashboard reads from the coordinator.
 
@@ -1009,7 +1009,12 @@ class TrendsViewMixin:
                 "name": self._device_name(device_id),
                 "scale": scale,
                 "now": record.get(DEV_SIGNAL_VALUE),
-                "normal": normal,
+                # Its normal is the judgment's baseline, the one the
+                # bad-day line beside it is built from, so the device
+                # page and this tab print the same number. The change
+                # below is measured against the middle of its whole
+                # history, which is a different question and says so.
+                "normal": last["normal"] if last else normal,
                 "line": last["line"] if last else None,
                 "change": now - normal,
                 # In the device's own spreads, so a steady link and a
