@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_trends.py, Version: 0.22.10 (2026-09-20)
+# File: tests/test_dashboard_trends.py, Version: 0.22.12 (2026-09-20)
 
 """The Battery Trends and Signal Trends tabs.
 
@@ -127,11 +127,20 @@ async def test_signal_trends_measure_each_link_against_its_own_normal(hass: Home
     page = reply["result"]
     rows = {row["device_id"]: row for row in page["devices"]}
     assert rows[holding.id]["change"] == 0.0
-    # Its last week reads 150 against a normal of 200.
+    # Its last week reads 150 against a history that sat at 200, so the
+    # change is -50. Its normal is the judgment's own baseline, the one
+    # the bad-day line beside it is built from, so the device page and
+    # this tab print the same number for the same device.
     assert rows[falling.id]["now"] == 150.0
-    assert rows[falling.id]["normal"] == 200.0
     assert rows[falling.id]["change"] == -50.0
     assert rows[falling.id]["spreads"] is not None
+    record = coord.data["devices"][falling.id]
+    last = [
+        coord.signal_day_judgment(record, index)
+        for index in range(len(record["signal_daily_p5"]))
+    ]
+    assert rows[falling.id]["normal"] == [day for day in last if day][-1]["normal"]
+    assert rows[falling.id]["line"] == [day for day in last if day][-1]["line"]
     assert page["scales"] == {"lqi": 2, "rssi": 1}
     assert rows[mains.id]["scale"] == "rssi"
 
