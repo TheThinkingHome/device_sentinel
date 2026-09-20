@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.22.5 (2026-09-20)
+# File: dashboard_api.py, Version: 0.22.9 (2026-09-20)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -17,6 +17,7 @@ command is added with its tab.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 import voluptuous as vol
@@ -80,6 +81,7 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_integration)
     websocket_api.async_register_command(hass, ws_devices)
     websocket_api.async_register_command(hass, ws_device)
+    websocket_api.async_register_command(hass, ws_brief)
 
 
 def _coordinator(hass: HomeAssistant) -> Any | None:
@@ -373,5 +375,36 @@ def ws_device(
     page = coordinator.dashboard_device(msg["device_id"])
     if page is None:
         connection.send_error(msg["id"], "not_found", "Device Sentinel has no record of that device")
+        return
+    connection.send_result(msg["id"], page)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): "device_sentinel/brief", vol.Optional("day"): str}
+)
+@callback
+def ws_brief(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return one day of the brief. Without a day, today."""
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    asked = msg.get("day")
+    if asked is None:
+        day = dt_util.now().date()
+    else:
+        try:
+            day = date.fromisoformat(asked)
+        except ValueError:
+            connection.send_error(msg["id"], "not_found", "That is not a day")
+            return
+    page = coordinator.dashboard_brief(day)
+    if page is None:
+        connection.send_error(msg["id"], "not_found", "That day is no longer kept")
         return
     connection.send_result(msg["id"], page)

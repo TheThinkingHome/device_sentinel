@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.6 (2026-09-20)
+# File: dashboard.py, Version: 0.22.9 (2026-09-20)
 
 """What the dashboard reads from the coordinator.
 
@@ -28,9 +28,21 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from .const import (
+    DATA_INCIDENTS,
+    INC_DEVICE_ID,
+    INC_EVENT,
+    INC_KIND,
+    INC_NAME,
+    INC_WHEN,
+    INCIDENT_KEEP_DAYS,
+    INCIDENT_OPENED,
+    INCIDENT_RESOLVED,
+    REPEAT_WINDOW_DAYS,
+    TODO_KINDS,
+    TODO_UID,
     BATTERY_FALLING_SLOPE,
     BATTERY_TREND_MEANINGS,
     BATTERY_READABLE_MAX,
@@ -661,3 +673,170 @@ class DeviceViewMixin:
             })
         found.sort(key=lambda item: item["start"])
         return found
+
+
+class BriefViewMixin:
+    """The Daily Brief tab, by calendar day.
+
+    A day that has finished runs midnight to midnight; today runs
+    midnight to now. The written brief keeps its own window, brief
+    time to brief time, because a file named for a day must not be
+    rewritten at midnight; a page a person steps through is easier to
+    read by the calendar. Everything shown comes from the records the
+    written brief reads, rendered with its own phrasing.
+    """
+
+    def _brief_day_bounds(self, day: date) -> tuple[float, float, bool]:
+        start = dt_util.as_utc(dt_util.start_of_local_day(day)).timestamp()
+        now = dt_util.utcnow().timestamp()
+        today = day == dt_util.now().date()
+        end = now if today else start + 86400.0
+        return start, end, today
+
+    def _brief_earliest_day(self) -> date:
+        """The oldest day the incidents still cover."""
+        return dt_util.now().date() - timedelta(days=INCIDENT_KEEP_DAYS - 1)
+
+    def _standing_at(self, moment: float) -> list[dict[str, Any]]:
+        """The problems that were open at that moment, from the incidents.
+
+        A problem is standing if it opened before the moment and
+        nothing closed it after. Rebuilt rather than stored, so a past
+        day reads with today's wording and nothing new is kept.
+        """
+        opened: dict[tuple[Any, Any], dict[str, Any]] = {}
+        for row in sorted(
+            (r for r in self.data.get(DATA_INCIDENTS) or [] if isinstance(r, dict)),
+            key=lambda r: r.get(INC_WHEN) or 0,
+        ):
+            when = row.get(INC_WHEN)
+            if not isinstance(when, (int, float)) or when > moment:
+                continue
+            key = (row.get(INC_DEVICE_ID), row.get(INC_KIND))
+            if row.get(INC_EVENT) == INCIDENT_OPENED:
+                opened[key] = row
+            elif row.get(INC_EVENT) == INCIDENT_RESOLVED:
+                opened.pop(key, None)
+        rows = []
+        for (device_id, kind), row in opened.items():
+            if device_id in self._muted_devices:
+                continue
+            rows.append({
+                "device_id": device_id,
+                "name": row.get(INC_NAME) or self._device_name(device_id),
+                # The words the brief used when it opened: a past day
+                # has no record of the level it read that night.
+                "problem": self._brief_phrase(row),
+                "since": _iso(row.get(INC_WHEN)),
+                "seconds": moment - row[INC_WHEN],
+                "acknowledged": False,
+                "uid": None,
+            })
+        rows.sort(key=lambda r: r["seconds"], reverse=True)
+        return rows
+
+    def _standing_now(self) -> list[dict[str, Any]]:
+        """Today's standing problems, from the list itself, acknowledged
+        ones included: the tab can tick them, which the written brief
+        cannot (ruling #123 keeps them out of the file)."""
+        now = dt_util.utcnow().timestamp()
+        rows = []
+        for item in self.todo_items:
+            device_id = item.get(TODO_DEVICE_ID)
+            if not device_id or device_id in self._muted_devices:
+                continue
+            name = item.get(TODO_SORT_NAME) or ""
+            summary = item[TODO_SUMMARY]
+            kinds = item[TODO_KINDS]
+            since = min((v for v in kinds.values() if isinstance(v, (int, float))), default=None)
+            rows.append({
+                "device_id": device_id,
+                "name": name,
+                "problem": summary[len(name) + 2:] if summary.startswith(f"{name}: ") else summary,
+                "since": _iso(since),
+                "seconds": now - since if since is not None else None,
+                "acknowledged": item.get(TODO_STATUS) == "completed",
+                "uid": item.get(TODO_UID),
+            })
+        rows.sort(key=lambda r: (r["acknowledged"], -(r["seconds"] or 0)))
+        return rows
+
+    def dashboard_brief(self, day: date) -> dict[str, Any] | None:
+        """One day of the brief, or None for a day no longer kept."""
+        today = dt_util.now().date()
+        earliest = self._brief_earliest_day()
+        if day > today or day < earliest:
+            return None
+        start, end, is_today = self._brief_day_bounds(day)
+        silenced = self._acknowledged_devices()
+        incidents = [
+            row
+            for row in self.incident_rows()
+            if start <= row[INC_WHEN] <= end
+            and row[INC_DEVICE_ID] not in self._muted_devices
+            and row[INC_DEVICE_ID] not in silenced
+        ]
+        system = [
+            row
+            for row in self.data.get(DATA_SYSTEM_EVENTS) or []
+            if isinstance(row, dict)
+            and isinstance(row.get(SYS_WHEN), (int, float))
+            and start <= row[SYS_WHEN] <= end
+        ]
+        events = [
+            {
+                "when": _iso(row[INC_WHEN]),
+                "who": self._told_name(row),
+                "device_id": row.get(INC_DEVICE_ID),
+                "what": self._brief_phrase(row),
+            }
+            for row in incidents
+        ] + [
+            {
+                "when": _iso(row[SYS_WHEN]),
+                "who": "The system",
+                "device_id": None,
+                "what": self._system_event_phrase(row),
+            }
+            for row in system
+        ]
+        events.sort(key=lambda row: row["when"] or "", reverse=True)
+        # Repeat offenders look back seven days from the day shown, so
+        # they can be told only while those days are still on record.
+        held_from = dt_util.utcnow().timestamp() - INCIDENT_KEEP_DAYS * 86400.0
+        covered = end - REPEAT_WINDOW_DAYS * 86400.0 >= held_from
+        repeat: dict[str, Any] = {"available": covered, "lines": [], "words": ""}
+        if covered:
+            # The brief's own section, lines and all, so the tab and
+            # the file say the same thing about the same devices.
+            lines = [
+                line for line in self._repeat_offenders_section(end)
+                if line and not line.startswith("## ")
+            ]
+            repeat["lines"] = lines
+            if not lines:
+                repeat["words"] = (
+                    "No device failed more than once in the seven days "
+                    "before this one for no obvious reason."
+                )
+        else:
+            repeat["words"] = (
+                "Repeat offenders are counted over the seven days before the "
+                "day shown, and those days are no longer on record."
+            )
+        return {
+            "day": day.isoformat(),
+            "is_today": is_today,
+            "window": {"start": _iso(start), "end": _iso(end)},
+            "earliest": earliest.isoformat(),
+            "back": (day - timedelta(days=1)).isoformat() if day - timedelta(days=1) >= earliest else None,
+            "forward": (day + timedelta(days=1)).isoformat() if day < today else None,
+            "now": self._standing_now() if is_today else self._standing_at(end),
+            "events": events,
+            "counts": {
+                "events": len(events),
+                "opened": sum(1 for row in incidents if row[INC_EVENT] == INCIDENT_OPENED),
+                "resolved": sum(1 for row in incidents if row[INC_EVENT] == INCIDENT_RESOLVED),
+            },
+            "repeat": repeat,
+        }
