@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.7 (2026-09-20)
+// File: frontend/panel.js, Version: 0.22.8 (2026-09-20)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -67,6 +67,10 @@ const PRINT_STYLE = `
     --divider-color: #d3d1c7; --primary-color: #1e6fb8; --text-primary-color: #ffffff;
     --success-color: #2e7d32; --warning-color: #c77700; --error-color: #c62828; --info-color: #4f7cac;
     --disabled-text-color: #9e9e9e; color-scheme: light; }
+  /* Backgrounds are dropped from a printout unless the page asks for
+     them, which would lose the rhythm bars, the status bar and the
+     chips. */
+  * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   html, body { background: #ffffff; color: #1a1a19; margin: 0; }
   body { font-family: Roboto, "Helvetica Neue", Arial, sans-serif; font-size: 12px; padding: 16px; }
   .printhead { border-bottom: 1px solid #d3d1c7; margin-bottom: 12px; padding-bottom: 8px; }
@@ -494,11 +498,23 @@ class DeviceSentinelPanel extends HTMLElement {
     when.textContent = `${taken ? `Data as of ${taken}. ` : ""}Printed ${new Date().toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.`;
     head.append(title, when);
     doc.body.append(head, doc.importNode(this._pane, true));
-    const done = () => frame.remove();
+    // A browser names the PDF after the tab's title, not the print
+    // view's, so the tab carries the name for the moment of printing.
+    const tabTitle = document.title;
+    const stamp = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    document.title = `Device Sentinel - ${view} - ${stamp.getFullYear()}-${pad(stamp.getMonth() + 1)}-${pad(stamp.getDate())} ${pad(stamp.getHours())}${pad(stamp.getMinutes())}`;
+    const done = () => {
+      document.title = tabTitle;
+      frame.remove();
+    };
     frame.contentWindow.addEventListener("afterprint", done);
     setTimeout(done, 60000);
     frame.contentWindow.focus();
     frame.contentWindow.print();
+    // The name is taken when printing starts, so the tab's own title
+    // goes back at once rather than waiting for the dialog to close.
+    document.title = tabTitle;
   }
 
   async _refresh() {
@@ -980,7 +996,8 @@ class DeviceSentinelPanel extends HTMLElement {
       ["Device ID", who.device_id],
       ["First seen", who.first_observed ? moment(who.first_observed) : "unknown"],
       ["Reports counted", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
-      ["Clock", who.clock === "last_seen" ? "its Last Seen entity" : "its entities' reports"],
+      // What Device Sentinel counts as this device speaking.
+      ["Heartbeat", who.clock === "last_seen" ? "its Last Seen entity" : "updates from its entities"],
     ];
     const idTable = el("table", { class: "kv" }, el("tbody", {}, ...identity.map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", {}, v)))));
     const gaps = page.rhythm.gaps;
@@ -1041,7 +1058,10 @@ class DeviceSentinelPanel extends HTMLElement {
       const i = arr.length - 1 - back;
       return i >= 0 && i < arr.length ? arr[i] : null;
     };
-    const hours = (s) => (s == null ? "" : `${(s / 3600).toFixed(1)}h`);
+    // Minutes while a span is short: a camera reporting every four
+    // minutes reads "4m", not "0.1h".
+    const gapText = (s) => (s == null ? "" : s < 5400 ? `${Math.round(s / 60)}m` : `${(s / 3600).toFixed(1)}h`);
+    const hours = gapText;
     // Ticks: the first reads from the left edge and the last from the
     // right, so neither is cut off.
     const ticks = [[days - 1, dayOf(days - 1), "start"]];
@@ -1272,8 +1292,14 @@ class DeviceSentinelPanel extends HTMLElement {
     } else {
       const inHours = [];
       gaps.forEach((g, i) => { if (gaps.length - 1 - i < days) { inHours.push(g / 3600); if (wins[i]) inHours.push(wins[i] / 3600); } });
-      const highG = Math.ceil(Math.max(...inHours) + 1);
-      const rhy = frame(0, highG, [[highG, `${highG}h`], [Math.round(highG / 2), `${Math.round(highG / 2)}h`], [0, "0h"]],
+      // The axis fits the gaps, and reads in minutes while they are short.
+      const top = Math.max(...inHours);
+      const inMinutes = top < 1.5;
+      // A little headroom, so the window line is never drawn on the
+      // chart's own top edge.
+      const highG = inMinutes ? Math.ceil((top * 60 + 5) / 5) * 5 / 60 : Math.ceil(top + 1);
+      const mark = (h) => (inMinutes ? `${Math.round(h * 60)}m` : `${Number(h.toFixed(1))}h`);
+      const rhy = frame(0, highG, [[highG, mark(highG)], [highG / 2, mark(highG / 2)], [0, inMinutes ? "0m" : "0h"]],
         `Longest gap between reports each day for ${days} days, with its window`);
       rhy.g.append(svg("polyline", { points: pts(wins.map((w) => (w ? w / 3600 : null)), rhy.y).join(" "), fill: "none",
         stroke: "var(--error-color, #db4437)", "stroke-width": 1.4, "stroke-dasharray": "5 4" }),
@@ -1288,7 +1314,7 @@ class DeviceSentinelPanel extends HTMLElement {
           fill: late ? "var(--error-color, #db4437)" : "var(--primary-color)" }));
       });
       addHover(rhy.g);
-      rhythmCard = card("Rhythm", "longest gap between reports each day, in hours",
+      rhythmCard = card("Rhythm", `longest gap between reports each day, in ${inMinutes ? "minutes" : "hours"}`,
         el("p", { class: "small", style: "margin:0;line-height:1.5" }, over
           ? `${over} ${over === 1 ? "day" : "days"} in this range had a gap longer than its window.`
           : "No day in this range had a gap longer than its window."),
