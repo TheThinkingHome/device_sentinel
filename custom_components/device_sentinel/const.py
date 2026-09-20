@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.22.6 (2026-09-20)
+# File: const.py, Version: 0.22.10 (2026-09-20)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1073,6 +1073,10 @@ BATTERY_READABLE_MAX = 100.0
 # answer that, and cost nothing to compute: the daily levels they
 # read have been kept since 0.9.0 (ruling #395).
 BATTERY_TREND_WINDOWS = (30, 14, 7)
+# A link needs three weeks before the Signal Trends tab compares its
+# last week against its own normal: fewer days and the normal is
+# mostly the week being judged.
+SIGNAL_TREND_MIN_DAYS = 21
 # Blocks of history before the nested windows, in days. A month at a
 # time for the first quarter, then a quarter at a time, so a year of
 # retention is five blocks rather than eleven.

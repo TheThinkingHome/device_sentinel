@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.22.9 (2026-09-20)
+# File: dashboard_api.py, Version: 0.22.10 (2026-09-20)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -82,6 +82,8 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_devices)
     websocket_api.async_register_command(hass, ws_device)
     websocket_api.async_register_command(hass, ws_brief)
+    websocket_api.async_register_command(hass, ws_battery_trends)
+    websocket_api.async_register_command(hass, ws_signal_trends)
 
 
 def _coordinator(hass: HomeAssistant) -> Any | None:
@@ -408,3 +410,35 @@ def ws_brief(
         connection.send_error(msg["id"], "not_found", "That day is no longer kept")
         return
     connection.send_result(msg["id"], page)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): "device_sentinel/battery_trends"})
+@callback
+def ws_battery_trends(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the Battery Trends tab."""
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    connection.send_result(msg["id"], coordinator.battery_trends())
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): "device_sentinel/signal_trends"})
+@callback
+def ws_signal_trends(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the Signal Trends tab."""
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    connection.send_result(msg["id"], coordinator.signal_trends())

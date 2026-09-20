@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.9 (2026-09-20)
+# File: dashboard.py, Version: 0.22.10 (2026-09-20)
 
 """What the dashboard reads from the coordinator.
 
@@ -31,6 +31,8 @@ from homeassistant.util import dt as dt_util
 from datetime import date, timedelta
 
 from .const import (
+    BATTERY_TREND_WINDOWS,
+    SIGNAL_TREND_MIN_DAYS,
     DATA_INCIDENTS,
     INC_DEVICE_ID,
     INC_EVENT,
@@ -378,6 +380,17 @@ class IntegrationViewMixin:
                 if f"the {domain} integration" in line or title in line
             ],
         }
+
+
+def _middle(values: list[float]) -> float:
+    """The median, the true one: an even count averages the two middles."""
+    ordered = sorted(values)
+    count = len(ordered)
+    if not count:
+        return 0.0
+    if count % 2:
+        return ordered[count // 2]
+    return (ordered[count // 2 - 1] + ordered[count // 2]) / 2.0
 
 
 def _iso(stamp: Any) -> str | None:
@@ -839,4 +852,182 @@ class BriefViewMixin:
                 "resolved": sum(1 for row in incidents if row[INC_EVENT] == INCIDENT_RESOLVED),
             },
             "repeat": repeat,
+        }
+
+
+class TrendsViewMixin:
+    """The Battery Trends and Signal Trends tabs.
+
+    Fleet views: which of a house's models eat cells, and which days
+    several devices had a bad signal at once. Neither question can be
+    answered from one device's page. Worked out when asked, from the
+    reports' own functions and the daily series already kept.
+    """
+
+    def _battery_cells(self) -> list[tuple[str, dict[str, Any], list[float]]]:
+        """Watched cells with a readable level and enough days to judge."""
+        cells = []
+        for device_id, record in self.watched_records():
+            if device_id in self._muted_devices or self._battery_muted(device_id):
+                continue
+            level = record.get(DEV_BATTERY_VALUE)
+            if not isinstance(level, (int, float)) or float(level) > BATTERY_READABLE_MAX:
+                continue
+            series = [
+                value for value in (record.get(DEV_BATTERY_DAILY) or [])
+                if isinstance(value, (int, float))
+            ]
+            if len(series) < BATTERY_TREND_WINDOWS[-1]:
+                continue
+            cells.append((device_id, record, series))
+        return cells
+
+    def battery_trends(self) -> dict[str, Any]:
+        """The battery fleet: the bank, every model, and the report's groups."""
+        registry = dr.async_get(self.hass)
+        groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        bank = [0] * 10
+        for device_id, record, series in self._battery_cells():
+            level = float(record[DEV_BATTERY_VALUE])
+            bank[min(9, int(level // 10))] += 1
+            device = registry.async_get(device_id)
+            key = (
+                getattr(device, "manufacturer", None) or "not reported",
+                getattr(device, "model", None) or "not reported",
+            )
+            groups.setdefault(key, []).append({
+                "device_id": device_id,
+                "name": self._device_name(device_id),
+                "level": level,
+                # The same rate the battery report's 30-day column shows.
+                "rate": self._battery_slope(series[-BATTERY_TREND_WINDOWS[0]:]),
+            })
+        models = []
+        for (maker, model), cells in groups.items():
+            lowest = min(cells, key=lambda cell: cell["level"])
+            models.append({
+                "maker": maker,
+                "model": model,
+                "cells": len(cells),
+                "rate": _middle([cell["rate"] for cell in cells]),
+                "typical": _middle([cell["level"] for cell in cells]),
+                "lowest": lowest["level"],
+                "lowest_name": lowest["name"],
+                "lowest_id": lowest["device_id"],
+            })
+        models.sort(key=lambda row: (row["rate"], -row["cells"]))
+        report = self._battery_rows()
+
+        def listed(rows: list[dict[str, Any]], falling: bool = False) -> list[dict[str, Any]]:
+            out = []
+            for row in rows:
+                item = {
+                    "device_id": row.get("device_id"),
+                    "name": row.get("name"),
+                    "level": row.get("level"),
+                    "since": row.get("since"),
+                }
+                if falling:
+                    windows = row.get("windows") or {}
+                    item.update({
+                        "windows": {str(days): value for days, value in windows.items()},
+                        "blocks": [[start, stop, value] for start, stop, value in (row.get("blocks") or [])],
+                        "reading": row.get("reading"),
+                        "left": self.battery_time_left(row["days"]),
+                        "left_soon": row["days"] <= self._battery_days(),
+                    })
+                else:
+                    item["days"] = len(row.get("series") or [])
+                    series = row.get("series") or []
+                    item["rate"] = (
+                        self._battery_slope(series[-BATTERY_TREND_WINDOWS[0]:]) if series else None
+                    )
+                out.append(item)
+            return out
+
+        return {
+            "cells": sum(model["cells"] for model in models),
+            "bank": bank,
+            "models": models,
+            "falling": listed(report["falling"], falling=True),
+            "low": listed(report["low"]),
+            "steady": listed(report["flat"]),
+            "unreadable": [
+                {"device_id": row.get("device_id"), "name": row.get("name"), "level": row.get("level")}
+                for row in report["unreadable"]
+            ],
+            "no_battery": len(report["absent"]),
+            "threshold": self.low_threshold,
+        }
+
+    def signal_trends(self) -> dict[str, Any]:
+        """The signal fleet: where each link sits against its own normal,
+        and the days several devices had a bad one together."""
+        devices = []
+        scales: dict[str, int] = {}
+        bad_by_day: dict[str, int] = {}
+        today = dt_util.now().date()
+        for device_id, record in self.watched_records():
+            if device_id in self._muted_devices or self._signal_muted(device_id):
+                continue
+            daily = [
+                value for value in (record.get(DEV_SIGNAL_DAILY_P50) or [])
+                if isinstance(value, (int, float))
+            ]
+            if len(daily) < SIGNAL_TREND_MIN_DAYS:
+                continue
+            older = daily[:-7] or daily[-7:]
+            now = _middle(daily[-7:])
+            normal = _middle(older)
+            # Its own spread, with a floor of one point: a link whose
+            # readings never varied has none, and nothing can be
+            # divided by nothing.
+            middle = max(_middle([abs(value - normal) for value in older]), 1.0)
+            judged = [
+                self.signal_day_judgment(record, index)
+                for index in range(len(record.get(DEV_SIGNAL_DAILY_P5) or []))
+            ]
+            bad = 0
+            for index, day in enumerate(judged):
+                if not day or not day["bad"]:
+                    continue
+                back = len(judged) - 1 - index
+                when = (today - timedelta(days=back + 1)).isoformat()
+                bad_by_day[when] = bad_by_day.get(when, 0) + 1
+                if back < DAILY_MAX_KEEP:
+                    bad += 1
+            counts = [
+                value for value in (record.get(DEV_SIGNAL_DAILY_COUNT) or [])[-DAILY_MAX_KEEP:]
+                if isinstance(value, (int, float))
+            ]
+
+            scale = record.get(DEV_SIGNAL_SCALE) or "unknown"
+            scales[scale] = scales.get(scale, 0) + 1
+            last = next((day for day in reversed(judged) if day), None)
+            devices.append({
+                "device_id": device_id,
+                "name": self._device_name(device_id),
+                "scale": scale,
+                "now": record.get(DEV_SIGNAL_VALUE),
+                "normal": normal,
+                "line": last["line"] if last else None,
+                "change": now - normal,
+                # In the device's own spreads, so a steady link and a
+                # jumpy one are judged by their own standards.
+                "spreads": (now - normal) / middle,
+                "bad_days": bad,
+                "readings_a_day": _middle(counts) if counts else None,
+                "days": len(daily),
+            })
+        devices.sort(key=lambda row: (row["spreads"] if row["spreads"] is not None else 0))
+        unsteady = sum(1 for row in devices if row["bad_days"])
+        return {
+            "devices": devices,
+            "scales": scales,
+            "bad_days": sorted(
+                ({"day": day, "devices": count} for day, count in bad_by_day.items() if count > 1),
+                key=lambda row: row["day"],
+                reverse=True,
+            ),
+            "counts": {"unsteady": unsteady, "steady": len(devices) - unsteady},
         }
