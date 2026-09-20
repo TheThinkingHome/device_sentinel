@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.22.0 (2026-09-18)
+# File: const.py, Version: 0.22.5 (2026-09-20)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1745,7 +1745,10 @@ BRIEF_TITLE = "Device Sentinel Daily Brief"
 CONF_REMINDER_MODE = "daily_reminder_mode"
 CONF_REMINDER_TIME = "daily_reminder_time"
 
-DEFAULT_PERSISTENT_ENABLED = True
+# Off for a new install (ruling #462): the dashboard shows what the
+# card showed. An install from before 0.22.5 that never saved the
+# setting keeps the card, through options migration step 5.
+DEFAULT_PERSISTENT_ENABLED = False
 DEFAULT_QUIET_ENABLED = False
 DEFAULT_QUIET_START = "22:00:00"
 DEFAULT_QUIET_END = "08:00:00"
@@ -2347,7 +2350,7 @@ SYS_WORST = "worst"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 461
+HIGHEST_RULING = 462
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -2741,7 +2744,10 @@ DEAD_OPTION_KEYS = (
 # Step 3 renames the ignore list to the word it vacated. Excluding
 # now means what it looks like, the record discarded, and muting
 # carries the gentler act (ruling #317).
-OPTIONS_MINOR_VERSION = 4
+# Step 5 writes the persistent card's old default into an install that
+# never saved it, so the new default of off reaches new installs only
+# (ruling #462).
+OPTIONS_MINOR_VERSION = 5
 
 # The muting keys, old spelling to new, in the order a person meets
 # them on the screens. Read by the migration and by the guard that

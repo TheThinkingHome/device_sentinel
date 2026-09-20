@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.3 (2026-09-19)
+# File: dashboard.py, Version: 0.22.5 (2026-09-20)
 
 """What the dashboard reads from the coordinator.
 
@@ -23,11 +23,37 @@ from collections.abc import Callable
 from typing import Any
 
 from homeassistant.core import callback
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from datetime import timedelta
 
 from .const import (
+    DAILY_MAX_KEEP,
+    DATA_DEVICES,
+    DATA_EPISODES,
+    DEV_BATTERY_DAILY,
+    DEV_BATTERY_VALUE,
+    DEV_DAILY_MAX,
+    DEV_EVENT_COUNT,
+    DEV_FIRST_OBSERVED,
+    DEV_FROZEN_CATEGORY,
+    DEV_LAST_ACTIVITY,
+    DEV_SIGNAL_DAILY_P5,
+    DEV_SIGNAL_DAILY_P50,
+    DEV_SIGNAL_DAILY_RAIL,
+    DEV_SIGNAL_SCALE,
+    DEV_SIGNAL_VALUE,
+    EP_AT,
+    EP_BASIS,
+    EP_DEVICE_ID,
+    EP_ENDED,
+    EP_LEARNED,
+    EP_SINCE,
+    EP_WINDOW,
+    EPISODE_KEEP_DAYS,
     CONF_MUTED_INTEGRATIONS,
     DATA_ROUTERS_SEEN,
     DATA_STORM_DAYS,
@@ -329,4 +355,160 @@ class IntegrationViewMixin:
                 line for line in self._recommendation_items()
                 if f"the {domain} integration" in line or title in line
             ],
+        }
+
+
+def _iso(stamp: Any) -> str | None:
+    """A stored timestamp as ISO text, or None."""
+    return dt_util.utc_from_timestamp(stamp).isoformat() if isinstance(stamp, (int, float)) else None
+
+
+class DeviceViewMixin:
+    """The Devices tab and each device's page."""
+
+    def _device_rhythm(self, record: dict[str, Any]) -> tuple[float | None, list[int]]:
+        gaps = (record.get(DEV_DAILY_MAX) or [])[-DAILY_MAX_KEEP:]
+        rhythm, set_aside = self._trimmed_maximum(gaps)
+        return rhythm, sorted(set_aside)
+
+    def _page_status(self, record: dict[str, Any]) -> str:
+        """The stored verdict the Problem List reads, or reporting."""
+        return record.get(DEV_FROZEN_CATEGORY) or "reporting"
+
+    def dashboard_devices(self) -> list[dict[str, Any]]:
+        """One row per watched device, by name."""
+        records = self.data.get(DATA_DEVICES) or {}
+        problems = self._problems_by_device()
+        rows = []
+        for device_id, domain in self._watched.items():
+            record = records.get(device_id) or {}
+            rhythm, _ = self._device_rhythm(record) if record.get(DEV_DAILY_MAX) else (None, [])
+            problem = problems.get(device_id)
+            rows.append({
+                "device_id": device_id,
+                "name": self._device_name(device_id),
+                "integration": domain,
+                "integration_name": self._integration_title(domain),
+                "muted": self._muted_devices.get(device_id) or "",
+                "status": self._page_status(record),
+                "problem": problem["problem"] if problem else "",
+                "acknowledged": bool(problem and problem["acknowledged"]),
+                "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
+                "rhythm": rhythm,
+                "window": self._freeze_window(record) if record.get(DEV_DAILY_MAX) else None,
+            })
+        rows.sort(key=lambda row: row["name"].lower())
+        return rows
+
+    def dashboard_device(self, device_id: str) -> dict[str, Any] | None:
+        """Everything known about one device, or None if it has no record.
+
+        Read live from the registry where the registry is the truth
+        (name, manufacturer, model, model id, hardware version, area,
+        connections), because nothing of it is stored. The model id and
+        hardware version are the fields a battery library matches on
+        beside manufacturer and model; the battery type itself arrives
+        with that lookup.
+        """
+        records = self.data.get(DATA_DEVICES) or {}
+        record = records.get(device_id)
+        if record is None:
+            return None
+        device = dr.async_get(self.hass).async_get(device_id)
+        area_name = None
+        if device is not None and device.area_id:
+            area = ar.async_get(self.hass).async_get_area(device.area_id)
+            area_name = area.name if area else None
+        domain = self._watched.get(device_id) or (
+            self._set_aside.get(device_id) or (None, None, None)
+        )[1]
+        readings = []
+        for entity in er.async_get(self.hass).entities.values():
+            if entity.device_id != device_id or entity.disabled_by is not None:
+                continue
+            for kind, test in (
+                ("battery", self._is_battery_percentage),
+                ("signal", self._is_signal),
+                ("last_seen", self._is_last_seen),
+            ):
+                if test(entity):
+                    readings.append({"kind": kind, "entity_id": entity.entity_id})
+        rhythm, set_aside = self._device_rhythm(record)
+        now = dt_util.utcnow().timestamp()
+        since = now - EPISODE_KEEP_DAYS * 86400.0
+        silences = [
+            {
+                "since": _iso(row.get(EP_SINCE)),
+                "silence": (
+                    row[EP_AT] - row[EP_SINCE]
+                    if isinstance(row.get(EP_AT), (int, float))
+                    and isinstance(row.get(EP_SINCE), (int, float))
+                    else None
+                ),
+                "basis": row.get(EP_BASIS),
+                "window": row.get(EP_WINDOW),
+                "ended": row.get(EP_ENDED),
+                "at": _iso(row.get(EP_AT)),
+                "learned": row.get(EP_LEARNED),
+            }
+            for row in self.data.get(DATA_EPISODES) or []
+            if isinstance(row, dict)
+            and row.get(EP_DEVICE_ID) == device_id
+            and isinstance(row.get(EP_SINCE), (int, float))
+            and row[EP_SINCE] >= since
+        ]
+        silences.sort(key=lambda row: row["since"] or "", reverse=True)
+        return {
+            "identity": {
+                "name": self._device_name(device_id),
+                "device_id": device_id,
+                # Read with getattr: the registry can also return a child
+                # device entry (2026.9), which carries none of these.
+                "manufacturer": getattr(device, "manufacturer", None),
+                "model": getattr(device, "model", None),
+                "model_id": getattr(device, "model_id", None),
+                "hw_version": getattr(device, "hw_version", None),
+                "area": area_name,
+                "integration": domain,
+                "integration_name": self._integration_title(domain) if domain else None,
+                "connections": sorted(
+                    [kind, value] for kind, value in getattr(device, "connections", None) or ()
+                ),
+                "first_observed": record.get(DEV_FIRST_OBSERVED),
+                "event_count": record.get(DEV_EVENT_COUNT),
+                "clock": "last_seen" if device_id in self._last_seen_entity else "recorded",
+                "watched": device_id in self._watched,
+                "set_aside": (self._set_aside.get(device_id) or (None, None, ""))[2],
+                "muted": self._muted_devices.get(device_id) or "",
+                # Filled by the battery library lookup, when it arrives.
+                "battery_type": None,
+            },
+            "readings": readings,
+            "status": {
+                "category": self._page_status(record),
+                "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
+                "rhythm": rhythm,
+                "window": self._freeze_window(record),
+            },
+            "rhythm": {
+                "gaps": list((record.get(DEV_DAILY_MAX) or [])[-DAILY_MAX_KEEP:]),
+                "set_aside": set_aside,
+            },
+            "silences": silences,
+            "battery": {
+                "daily": list(record.get(DEV_BATTERY_DAILY) or []),
+                "now": record.get(DEV_BATTERY_VALUE),
+                "threshold": self.low_threshold,
+            },
+            "signal": {
+                "p5": list(record.get(DEV_SIGNAL_DAILY_P5) or []),
+                "p50": list(record.get(DEV_SIGNAL_DAILY_P50) or []),
+                "railed_days": list(record.get(DEV_SIGNAL_DAILY_RAIL) or []),
+                "scale": record.get(DEV_SIGNAL_SCALE),
+                "now": record.get(DEV_SIGNAL_VALUE),
+            },
+            # Every daily series ends on the last day the midnight roll
+            # folded, which is yesterday.
+            "series_end": (dt_util.now().date() - timedelta(days=1)).isoformat(),
+            "history_days": self.retention_days,
         }

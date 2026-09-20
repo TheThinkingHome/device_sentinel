@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.22.1 (2026-09-19)
+# File: __init__.py, Version: 0.22.5 (2026-09-20)
 
 """The Device Sentinel integration.
 
@@ -47,6 +47,7 @@ from .const import (
     CONF_LOW_THRESHOLD,
     LEGACY_LOW_THRESHOLD,
     OPTIONS_MINOR_VERSION,
+    CONF_PERSISTENT_ENABLED,
     RETIRED_SLIDER_KEYS,
     REPORT_DIR,
     REPORT_WWW_DIR,
@@ -102,10 +103,26 @@ async def async_migrate_entry(
         options = _migrate_ignore_name(options)
     if entry.minor_version < 4:
         options = _migrate_retired_sliders(options)
+    if entry.minor_version < 5:
+        options = _migrate_persistent_default(options)
     hass.config_entries.async_update_entry(
         entry, options=options, minor_version=OPTIONS_MINOR_VERSION
     )
     return True
+
+
+def _migrate_persistent_default(options: dict[str, Any]) -> dict[str, Any]:
+    """Step 5: keep the persistent card for an install that never chose.
+
+    Until 0.22.5 the card defaulted to on, and an install that never
+    saved its Notifications screen was running with it on. The default
+    is now off for new installs (ruling #462), so this writes the old
+    default down where nothing was saved. A saved choice, either way,
+    is left exactly as it is.
+    """
+    migrated = dict(options)
+    migrated.setdefault(CONF_PERSISTENT_ENABLED, True)
+    return migrated
 
 
 def _migrate_muting_names(options: dict[str, Any]) -> dict[str, Any]:
