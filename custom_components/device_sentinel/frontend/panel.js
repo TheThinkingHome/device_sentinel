@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.6 (2026-09-20)
+// File: frontend/panel.js, Version: 0.22.7 (2026-09-20)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -77,7 +77,21 @@ const PRINT_STYLE = `
   button.chip { border: 1px solid #d3d1c7; border-radius: 12px; padding: 2px 8px; }
   button.chip[aria-pressed="true"] { border-color: #1e6fb8; color: #1e6fb8; }
   a { color: #1e6fb8; text-decoration: none; }
-  table, .chart, .stat, .devstatus, .rec { break-inside: avoid; }
+  /* The day table keeps its columns across a page break: a browser
+     sizes each page's columns from the rows on that page, and the
+     older days carry no battery or signal reading. */
+  table.days { table-layout: fixed; width: 100%; }
+  table.days th:nth-child(1), table.days td:nth-child(1) { width: 8%; }
+  table.days th:nth-child(2), table.days td:nth-child(2) { width: 8%; }
+  table.days th:nth-child(3), table.days td:nth-child(3) { width: 11%; }
+  table.days th:nth-child(4), table.days td:nth-child(4) { width: 9%; }
+  table.days th:nth-child(5), table.days td:nth-child(5) { width: 11%; }
+  table.days th:nth-child(6), table.days td:nth-child(6) { width: 9%; }
+  table.days th:nth-child(7), table.days td:nth-child(7) { width: 44%; }
+  th, td { overflow-wrap: anywhere; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  .chart, .stat, .devstatus, .rec { break-inside: avoid; }
   .scroll { overflow: visible; }
   @page { margin: 12mm; }
 `;
@@ -459,7 +473,10 @@ class DeviceSentinelPanel extends HTMLElement {
     const frame = document.createElement("iframe");
     frame.setAttribute("aria-hidden", "true");
     frame.setAttribute("tabindex", "-1");
-    frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+    // Off the side of the screen rather than hidden: a browser will
+    // not print a frame it treats as not rendered, and prints the
+    // whole page instead, sidebar and all.
+    frame.style.cssText = "position:fixed;left:-10000px;top:0;width:1100px;height:600px;border:0;opacity:0";
     // On the page's own body, where every browser gives a frame a
     // document of its own; it is hidden, and removed after printing.
     document.body.append(frame);
@@ -1303,7 +1320,7 @@ class DeviceSentinelPanel extends HTMLElement {
           el("td", { class: "num" }, hours(at(wins, back))),
           el("td", {}, outagesOn(back).join("; "))));
       }
-      table = el("div", { class: "scroll" }, el("table", {},
+      table = el("div", { class: "scroll" }, el("table", { class: "days" },
         el("thead", {}, el("tr", {}, ...["DATE", "BATTERY", "SIGNAL MEDIAN", "LOW END", "LONGEST GAP", "WINDOW", "OUTAGES"].map((h) => el("th", {}, h)))),
         el("tbody", {}, ...rows)));
     }
