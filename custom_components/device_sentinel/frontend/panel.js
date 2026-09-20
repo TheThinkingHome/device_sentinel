@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.11 (2026-09-20)
+// File: frontend/panel.js, Version: 0.22.12 (2026-09-20)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1071,7 +1071,7 @@ class DeviceSentinelPanel extends HTMLElement {
             el("td", { class: "num" }, rate(row.windows["30"])),
             el("td", { class: "num" }, rate(row.windows["14"])),
             el("td", { class: "num" }, rate(row.windows["7"])),
-            el("td", {}, row.reading || ""),
+            el("td", {}, row.reading || "not falling"),
             el("td", row.left_soon ? { style: "color:var(--error-color, #db4437)" } : {}, row.left || ""));
         }))))
       : el("p", { class: "muted", style: "margin:0" }, "No cell is measurably falling.");
@@ -1593,15 +1593,18 @@ class DeviceSentinelPanel extends HTMLElement {
         const blocks = (b.blocks || []).slice().sort((p, q) => q[0] - p[0]);
         const head = ["LEVEL", ...blocks.map(([start, stop]) => `DAY ${start}\u2013${stop}`), "30 DAY", "14 DAY", "7 DAY", "READING", "LEFT"];
         const cells = [`${Math.round(b.now)}%`, ...blocks.map((block) => rate(block[2])),
-          rate(b.windows["30"]), rate(b.windows["14"]), rate(b.windows["7"]), b.reading || "", b.left || "\u2013"];
+          rate(b.windows["30"]), rate(b.windows["14"]), rate(b.windows["7"]),
+          b.reading || "not falling", b.left || "\u2013"];
         figures = el("div", { class: "scroll" }, el("table", { class: "figures" },
           el("thead", {}, el("tr", {}, ...head.map((h) => el("th", {}, h)))),
           el("tbody", {}, el("tr", {}, ...cells.map((c, i) => el("td",
             i === cells.length - 1 && b.left_soon ? { style: "color:var(--error-color, #db4437)" } : {}, c))))));
       }
-      const meaning = b.reading_meaning
-        ? el("p", { class: "small", style: "margin:0;line-height:1.5" }, `${b.reading[0].toUpperCase()}${b.reading.slice(1)}: ${b.reading_meaning}`)
-        : null;
+      const meaning = b.reading && b.reading_meaning
+        ? el("p", { class: "small", style: "margin:0;line-height:1.5" },
+          `${b.reading[0].toUpperCase()}${b.reading.slice(1)}: ${b.reading_meaning}`)
+        : el("p", { class: "small", style: "margin:0;line-height:1.5" },
+          "Not falling: no window of this cell is dropping faster than the rounding of its own readings, so no time left is offered.");
       batteryCard = card("Battery", b.now != null ? `${b.now}% now` : "", figures, meaning, bat.g, el("div", { class: "legend" }, ...legend));
     }
 
