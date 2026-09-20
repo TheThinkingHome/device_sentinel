@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.8 (2026-09-20)
+// File: frontend/panel.js, Version: 0.22.9 (2026-09-20)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -16,14 +16,14 @@
 const TABS = [
   "Daily Brief",
   "Problem List",
-  "Battery",
-  "Signal",
+  "Battery Trends",
+  "Signal Trends",
   "Classification",
   "Integrations",
   "Devices",
   "Recommendations",
 ];
-const BUILT = new Set(["Problem List", "Classification", "Integrations", "Devices", "Recommendations"]);
+const BUILT = new Set(["Daily Brief", "Problem List", "Classification", "Integrations", "Devices", "Recommendations"]);
 const FILTERS = [
   ["all", "All"],
   ["watched", "Watched"],
@@ -281,6 +281,7 @@ class DeviceSentinelPanel extends HTMLElement {
     this._range = "all";
     this._hover = null;
     this._tableOpen = false;
+    this._briefDay = null;
     this._liveTimer = null;
     this._started = false;
     this._snapshot = null;
@@ -520,15 +521,16 @@ class DeviceSentinelPanel extends HTMLElement {
   async _refresh() {
     this._refreshButton.disabled = true;
     try {
-      const [status, classification, problems, recommendations, integrations, devices] = await Promise.all([
+      const [status, classification, problems, recommendations, integrations, devices, brief] = await Promise.all([
         this._call({ type: "device_sentinel/status" }),
         this._call({ type: "device_sentinel/classification" }),
         this._call({ type: "device_sentinel/problem_list" }),
         this._call({ type: "device_sentinel/recommendations" }),
         this._call({ type: "device_sentinel/integrations" }),
         this._call({ type: "device_sentinel/devices" }),
+        this._call({ type: "device_sentinel/brief", ...(this._briefDay ? { day: this._briefDay } : {}) }),
       ]);
-      this._snapshot = { status, classification, problems, recommendations, integrations, devices, at: new Date() };
+      this._snapshot = { status, classification, problems, recommendations, integrations, devices, brief, at: new Date() };
       if (this._view) this._page = await this._fetchView();
       this._shownMarker = status.marker;
       if (this._latestMarker === null || this._latestMarker < status.marker) this._latestMarker = status.marker;
@@ -601,6 +603,7 @@ class DeviceSentinelPanel extends HTMLElement {
     if (this._view && this._view.kind === "integration") this._paintIntegrationPage();
     else if (this._view && this._view.kind === "device") this._paintDevicePage();
     else if (this._tab === "Devices") this._paintDevices();
+    else if (this._tab === "Daily Brief") this._paintBrief();
     else if (this._tab === "Integrations") this._paintIntegrations();
     else if (this._tab === "Problem List") this._paintProblems();
     else if (this._tab === "Recommendations") this._paintRecommendations();
@@ -851,6 +854,103 @@ class DeviceSentinelPanel extends HTMLElement {
       el("h3", { class: "section" }, "Recommendations"), ...recs,
       el("h3", { class: "section" }, "Outages, last 14 days"), outages,
       el("h3", { class: "section" }, `Devices `, el("span", { class: "small" }, `${page.devices.length}, problems first`)), devices);
+  }
+
+  async _briefGo(day) {
+    // Stepping to another day asks for that day only; the rest of the
+    // snapshot stays as it was.
+    this._briefDay = day;
+    try {
+      const brief = await this._call({ type: "device_sentinel/brief", ...(day ? { day } : {}) });
+      this._snapshot.brief = brief;
+    } catch (err) {
+      this._snapshot.brief = { error: "That day is no longer kept." };
+    }
+    this._paintBrief();
+  }
+
+  _paintBrief() {
+    const brief = this._snapshot.brief;
+    if (!brief || brief.error) {
+      this._pane.replaceChildren(el("p", {}, (brief && brief.error) || "Loading."));
+      return;
+    }
+    const at = this._snapshot.at.getTime();
+    const dayDate = new Date(`${brief.day}T12:00:00`);
+    const label = brief.is_today
+      ? `Today, ${dayDate.toLocaleDateString([], { month: "short", day: "numeric" })}`
+      : dayDate.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+    const windowWords = brief.is_today
+      ? `Midnight to ${new Date(brief.window.end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}, still running.`
+      : "Midnight to midnight.";
+    const step = (text, day, ariaLabel) => el("button", {
+      class: "chip", type: "button", "aria-disabled": String(!day), "aria-label": ariaLabel,
+      onclick: () => {
+        if (day) this._briefGo(day);
+      },
+    }, text);
+    const nav = el("div", { class: "chips", style: "align-items:center" },
+      step("\u2039 Back", brief.back, "The day before"),
+      el("strong", { style: "min-width:190px;text-align:center" }, label),
+      step("Forward \u203a", brief.forward, "The day after"),
+      el("button", {
+        class: "chip", type: "button", "aria-pressed": String(brief.is_today),
+        onclick: () => this._briefGo(null),
+      }, "Today"),
+      el("span", { class: "small" }, windowWords));
+
+    const nowRows = brief.now;
+    const open = nowRows.filter((row) => !row.acknowledged).length;
+    const nowTable = nowRows.length
+      ? el("div", { class: "scroll" }, el("table", {},
+        el("thead", {}, el("tr", {},
+          brief.is_today ? el("th", { class: "ackcell" }, (() => {
+            const head = el("span", {});
+            head.append(checkIcon("Acknowledged"));
+            return head;
+          })()) : null,
+          ...["DEVICE", "PROBLEM", "SINCE", "FOR"].map((h) => el("th", {}, h)))),
+        el("tbody", {}, ...nowRows.map((row) => el("tr", { class: row.acknowledged ? "acked" : "" },
+          brief.is_today ? el("td", { class: "ackcell" }, el("label", { class: "ackbox" },
+            el("input", {
+              type: "checkbox", "aria-label": `Acknowledge ${row.name}`,
+              ...(row.acknowledged ? { checked: "" } : {}),
+              onchange: (ev) => this._acknowledge(row.uid, ev.target.checked),
+            }))) : null,
+          el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+          el("td", {}, row.problem),
+          el("td", {}, row.since ? moment(row.since) : ""),
+          el("td", {}, row.seconds ? span(row.seconds) : ""))))))
+      : el("p", { class: "muted", style: "margin:0" }, "Nothing needed attention.");
+    const nowLine = nowRows.length
+      ? `${open} ${open === 1 ? "device needs" : "devices need"} attention`
+        + `${nowRows.length - open ? `, and ${nowRows.length - open} acknowledged` : ""}.`
+      : "";
+
+    const repeat = brief.repeat.lines && brief.repeat.lines.length
+      ? brief.repeat.lines.map((line) => el("p", { style: "margin:0;line-height:1.5" }, line))
+      : [el("p", { class: "muted", style: "margin:0" }, brief.repeat.words)];
+
+    const counts = brief.counts;
+    const eventsLine = counts.events
+      ? `${counts.events} ${counts.events === 1 ? "event" : "events"}. ${counts.opened} `
+        + `${counts.opened === 1 ? "problem" : "problems"} started, ${counts.resolved} ended.`
+      : "Nothing happened.";
+    const eventsTable = brief.events.length
+      ? el("div", { class: "scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, ...["TIME", "DEVICE", "WHAT HAPPENED"].map((h) => el("th", {}, h)))),
+        el("tbody", {}, ...brief.events.map((row) => el("tr", {},
+          el("td", {}, new Date(row.when).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" })),
+          el("td", {}, row.device_id ? this._link(row.who, this._devicePath(row.device_id)) : row.who),
+          el("td", {}, row.what))))))
+      : null;
+
+    this._pane.replaceChildren(nav,
+      el("h3", { class: "section" }, "Now"),
+      nowLine ? el("p", { style: "margin:0" }, nowLine) : null, nowTable,
+      el("h3", { class: "section" }, "Repeat Offenders"), ...repeat,
+      el("h3", { class: "section" }, "Last 24 Hours"),
+      el("p", { style: "margin:0" }, eventsLine), eventsTable);
   }
 
   _paintDevices() {
