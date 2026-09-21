@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.21.12 (2026-09-17)
+# File: test_brief_wording.py, Version: 0.22.14 (2026-09-21)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -17,6 +17,7 @@ pooled, so each file reads on its own.
 
 
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -66,6 +67,22 @@ from custom_components.device_sentinel.const import (
 )
 
 from tests.helpers import register_device, setup_coordinator
+
+
+@pytest.fixture(autouse=True)
+def _away_from_the_brief_time(freezer):
+    """Run every test here at 1:00 PM Pacific, five hours after the brief.
+
+    The seeded incidents sit seconds after the brief window opens,
+    which is 8:00 AM in the harness's Pacific time zone. Run within a
+    few minutes of that, the window was only minutes long, the
+    harness's own startup restart sat beside the seeded recovery, and
+    the brief rightly credited it: "revived by a restart". Three tests
+    here failed for a few minutes each day, whichever release was on
+    trial (found by the 0.22.14 gate at 15:00 UTC). A fixed moment
+    makes the result independent of when the gate runs.
+    """
+    freezer.move_to("2026-09-21T20:00:00+00:00")
 
 DOMAIN = "device_sentinel"
 
