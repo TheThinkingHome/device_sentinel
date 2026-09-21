@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.13 (2026-09-21)
+// File: frontend/panel.js, Version: 0.22.14 (2026-09-21)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -23,6 +23,12 @@ const TABS = [
   "Devices",
   "Recommendations",
 ];
+// Each tab's own address under the panel, so the back button, a reload
+// and a bookmark all return to the tab that was on screen (0.22.14,
+// from the second fleet's review). The Daily Brief owns the bare
+// address, so opening the dashboard lands on it.
+const TAB_SLUG = Object.fromEntries(TABS.map((name) => [name, name.toLowerCase().replace(/ /g, "-")]));
+const TAB_BY_SLUG = Object.fromEntries(TABS.map((name) => [TAB_SLUG[name], name]));
 const BUILT = new Set(["Daily Brief", "Problem List", "Battery Trends", "Signal Trends", "Classification", "Integrations", "Devices", "Recommendations"]);
 const FILTERS = [
   ["all", "All"],
@@ -288,7 +294,7 @@ class DeviceSentinelPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this._tab = "Classification";
+    this._tab = "Daily Brief";
     this._filter = "all";
     this._problemFilter = "all";
     this._problemSort = null;
@@ -335,21 +341,35 @@ class DeviceSentinelPanel extends HTMLElement {
     const next = integration
       ? { kind: "integration", domain: decodeURIComponent(integration[1]) }
       : device ? { kind: "device", id: decodeURIComponent(device[1]) } : null;
-    const changed = JSON.stringify(next) !== JSON.stringify(this._view);
+    // A device or integration page carries the tab it was opened from
+    // in its address, so its back link and a reload both know where to
+    // return. Opened from anywhere else, it belongs to Devices or
+    // Integrations. A plain address names its tab; one that names
+    // nothing falls back to the Daily Brief.
+    const from = TAB_BY_SLUG[new URLSearchParams(window.location.search).get("from") || ""];
+    const tab = next
+      ? from || (next.kind === "device" ? "Devices" : "Integrations")
+      : TAB_BY_SLUG[path.replace(/^\/+|\/+$/g, "")] || "Daily Brief";
+    const changed = JSON.stringify(next) !== JSON.stringify(this._view) || tab !== this._tab;
     this._view = next;
-    if (next) this._tab = next.kind === "device" ? "Devices" : "Integrations";
+    this._tab = tab;
     if (this._started && changed) {
       this._paintTabs();
       this._openView();
     }
   }
 
+  _tabPath(name) {
+    return name === "Daily Brief" ? this._base : `${this._base}/${TAB_SLUG[name]}`;
+  }
+
+  // A page opened from a tab carries that tab, so it can lead back.
   _devicePath(id) {
-    return `${this._base}/device/${encodeURIComponent(id)}`;
+    return `${this._base}/device/${encodeURIComponent(id)}?from=${TAB_SLUG[this._tab]}`;
   }
 
   _integrationPath(domain) {
-    return `${this._base}/integration/${encodeURIComponent(domain)}`;
+    return `${this._base}/integration/${encodeURIComponent(domain)}?from=${TAB_SLUG[this._tab]}`;
   }
 
   async _fetchView() {
@@ -618,13 +638,10 @@ class DeviceSentinelPanel extends HTMLElement {
       el("button", {
         class: "tab", type: "button", role: "tab", "aria-selected": String(name === this._tab),
         onclick: () => {
-          this._tab = name;
-          if (this._view) {
-            this._navigate(this._base);
-            return;
-          }
-          this._paintTabs();
-          this._paintPane();
+          // The address moves, and the route that follows paints the
+          // tab, the same way a link or the back button does.
+          if (!this._view && name === this._tab) return;
+          this._navigate(this._tabPath(name));
         },
       }, name)));
   }
@@ -842,7 +859,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _paintIntegrationPage() {
     const page = this._page;
-    const back = el("p", { style: "margin:0" }, this._link("\u2039 Integrations", this._base));
+    const back = el("p", { style: "margin:0" }, this._link(`\u2039 ${this._tab}`, this._tabPath(this._tab)));
     if (!page) {
       this._pane.replaceChildren(back, el("p", { class: "muted" }, "Loading."));
       return;
@@ -1368,7 +1385,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _paintDevicePage() {
     const page = this._page;
-    const back = el("p", { style: "margin:0" }, this._link("\u2039 Devices", this._base));
+    const back = el("p", { style: "margin:0" }, this._link(`\u2039 ${this._tab}`, this._tabPath(this._tab)));
     this._readingsBox = null;
     if (!page) {
       this._pane.replaceChildren(back, el("p", { class: "muted" }, "Loading."));
