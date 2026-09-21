@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.22.1 (2026-09-19)
+# File: report_maintainer.py, Version: 0.22.13 (2026-09-21)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -27,7 +27,19 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_BATTERY_MUTED_DEVICES,
+    CONF_BATTERY_MUTED_INTEGRATIONS,
+    CONF_BATTERY_MUTED_LABELS,
+    CONF_FREEZE_MUTED_DEVICES,
+    CONF_FREEZE_MUTED_INTEGRATIONS,
+    CONF_FREEZE_MUTED_LABELS,
+    CONF_MUTED_LABELS,
+    CONF_SIGNAL_MUTED_DEVICES,
+    CONF_SIGNAL_MUTED_INTEGRATIONS,
+    CONF_SIGNAL_MUTED_LABELS,
     DAILY_MAX_KEEP,
+    SET_ASIDE_EXCLUDED,
+    SET_ASIDE_MEANINGS,
     TAINT_FLOOR_MINUTES,
     TAINT_SHARE_PCT,
     DEV_DAILY_MAX,
@@ -474,13 +486,94 @@ class MaintainerReportMixin:
         self._write_file(path, "\n".join(lines) + "\n")
         LOGGER.debug("Telemetry report written to %s", path)
 
+    def _mute_source(
+        self,
+        device_id: str,
+        integrations: list[str],
+        labels: list[str],
+        devices: list[str],
+    ) -> str | None:
+        """Name why one family's mute applies to a device, or None.
+
+        The ladder every mute uses, broadest first, so the source named
+        is the one that would survive a prune: the owning integration,
+        then the device's own labels, then the device itself. A label
+        is named by its name, not its id, since the name is what a
+        person set; several matching labels are named together.
+        """
+        domain = self._watched.get(device_id)
+        if domain in integrations:
+            return f"integration: {domain}"
+        hit = self._device_labels.get(device_id, frozenset()) & set(labels)
+        if hit:
+            names = sorted(
+                (self._label_names.get(label, label) for label in hit),
+                key=str.casefold,
+            )
+            return f"label: {', '.join(names)}"
+        if device_id in devices:
+            return "device"
+        return None
+
+    def _global_mute_text(self, device_id: str) -> str:
+        """The global mute, with its source, or an empty string.
+
+        The level comes from the registry walk, which already decided
+        it; only the name of the integration or label is added here,
+        so this cell cannot disagree with what the judge does.
+        """
+        level = self._muted_devices.get(device_id)
+        if not level:
+            return ""
+        if level == "integration":
+            return f"Global (integration: {self._watched.get(device_id)})"
+        if level == "label":
+            source = self._mute_source(
+                device_id, [], self.entry.options.get(CONF_MUTED_LABELS, []), []
+            )
+            return f"Global ({source})" if source else "Global (label)"
+        return f"Global ({level})"
+
+    def _family_mute_texts(self, device_id: str) -> list[str]:
+        """Battery, signal and freeze mutes, each with its source.
+
+        Invisible on Classification until 0.22.13, so a device muted
+        for battery alone read as if nothing were muted (from the
+        second fleet's review, ruled 21 September 2026).
+        """
+        options = self.entry.options
+        found = []
+        for family, integrations, labels, devices in (
+            ("battery", CONF_BATTERY_MUTED_INTEGRATIONS,
+             CONF_BATTERY_MUTED_LABELS, CONF_BATTERY_MUTED_DEVICES),
+            ("signal", CONF_SIGNAL_MUTED_INTEGRATIONS,
+             CONF_SIGNAL_MUTED_LABELS, CONF_SIGNAL_MUTED_DEVICES),
+            ("freeze", CONF_FREEZE_MUTED_INTEGRATIONS,
+             CONF_FREEZE_MUTED_LABELS, CONF_FREEZE_MUTED_DEVICES),
+        ):
+            source = self._mute_source(
+                device_id,
+                options.get(integrations, []),
+                options.get(labels, []),
+                options.get(devices, []),
+            )
+            if source is not None:
+                found.append(f"{family} ({source})")
+        return found
+
     def classification_rows(self) -> list[dict[str, Any]]:
         """Return one row per device, watched and set aside together.
 
         The one builder behind classification.md and the dashboard's
         Classification tab, so the two can never disagree. A watched
-        device carries the global mute's reason if it has one; a
-        set-aside device carries why it was set aside (ruling #257).
+        device's MUTED cell holds every mute that applies to it, the
+        global one first and then battery, signal and freeze, each
+        naming its source; a set-aside device carries why it was set
+        aside, and an exclusion names the integration excluded
+        (ruling #257; the sources from the second fleet's review,
+        0.22.13). `muted_global` keeps the global mute alone, for the
+        Integrations tab and the integration page, which count and
+        show a device as muted only when it is muted from everything.
         COPIES counts watched devices sharing a name, by the naming
         ladder (ruling #402). Sorted by name, case-insensitively.
         """
@@ -491,13 +584,17 @@ class MaintainerReportMixin:
         rows: list[dict[str, Any]] = []
         for device_id, integration_domain in self._watched.items():
             name = self._device_name(device_id)
-            reason = self._muted_devices.get(device_id)
+            global_mute = self._global_mute_text(device_id)
+            mutes = ([global_mute] if global_mute else []) + (
+                self._family_mute_texts(device_id)
+            )
             rows.append({
                 "device_id": device_id,
                 "name": name,
                 "integration": integration_domain,
                 "watched": True,
-                "muted": f"Global ({reason})" if reason else "",
+                "muted": "; ".join(mutes),
+                "muted_global": global_mute,
                 "set_aside": "",
                 "copies": name_copy_counts.get(name, 1),
             })
@@ -508,7 +605,12 @@ class MaintainerReportMixin:
                 "integration": integration_domain,
                 "watched": False,
                 "muted": "",
-                "set_aside": reason or "",
+                "muted_global": "",
+                "set_aside": (
+                    f"{reason} (integration: {integration_domain})"
+                    if reason == SET_ASIDE_EXCLUDED
+                    else reason or ""
+                ),
                 "copies": 1,
             })
         rows.sort(key=lambda row: row["name"].lower())
@@ -553,14 +655,17 @@ class MaintainerReportMixin:
             f"How to read this file: [The Diagnostic Reports]"
             f"({WIKI_LINK_REPORTS}) on the Device Sentinel wiki.",
             "",
+            # The count of entities with no device left this line in
+            # 0.22.13: Device Sentinel never watches them, and "visible
+            # only at entity level" said it did. The count stays in the
+            # diagnostics.
             f"One row per device. Watching {len(self._watched)} of "
-            f"{total}; {len(self._set_aside)} set aside (service "
-            f"devices, disabled devices, devices with no entities, "
-            f"and integrations you asked to exclude); "
-            f"{self.deviceless_count} "
-            f"deviceless entities visible only at entity level. Every "
-            f"device is watched and recorded; MUTED only suppresses "
-            f"judgment and reporting, and names why. COPIES above 1 is a "
+            f"{total}; {len(self._set_aside)} set aside (integrations "
+            f"you asked to exclude, service devices, disabled devices, "
+            f"duplicate coordinators, and devices with no entities). "
+            f"Every device is watched and recorded; MUTED only "
+            f"suppresses judgment and reporting, and names every mute "
+            f"and its source. COPIES above 1 is a "
             f"name shared by more than one registry device (a "
             f"network-tracker ghost or a multi-homed double).",
             "",
@@ -581,8 +686,15 @@ class MaintainerReportMixin:
             lines.append(
                 f"| {self._report_cell(name)} | {integration} | "
                 f"{watched_mark} | "
-                f"{muted} | {set_aside_mark} | {copies_cell} |"
+                f"{self._report_cell(muted)} | "
+                f"{self._report_cell(set_aside_mark)} | {copies_cell} |"
             )
+
+        # The key to SET ASIDE, the same words as the tab's (0.22.13).
+        lines += ["", "Set aside, by reason:", ""]
+        lines += [
+            f"- {reason}: {meaning}" for reason, meaning in SET_ASIDE_MEANINGS
+        ]
 
         if self._muted_entities:
             lines.append("")

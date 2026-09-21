@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.22.10 (2026-09-20)
+# File: dashboard_api.py, Version: 0.22.13 (2026-09-21)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -39,6 +39,7 @@ from .const import (
     MAINTENANCE_MINUTES_MAX,
     MAINTENANCE_MINUTES_MIN,
     MAINTENANCE_MINUTES_STEP,
+    SET_ASIDE_MEANINGS,
 )
 
 _REGISTERED = f"{DOMAIN}_dashboard_api"
@@ -202,6 +203,8 @@ def ws_classification(
             "watched": sum(1 for row in rows if row["watched"]),
             "set_aside": sum(1 for row in rows if not row["watched"]),
             "deviceless": coordinator.deviceless_count,
+            # The key under the table, the same words as the report's.
+            "set_aside_meanings": [list(pair) for pair in SET_ASIDE_MEANINGS],
             "muted_entities": [
                 {"entity_id": entity_id, "reason": reason}
                 for entity_id, reason in sorted(coordinator._muted_entities.items())

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.12 (2026-09-20)
+# File: dashboard.py, Version: 0.22.13 (2026-09-21)
 
 """What the dashboard reads from the coordinator.
 
@@ -323,7 +323,10 @@ class IntegrationViewMixin:
                 count["watched"] += 1
             else:
                 count["set_aside"] += 1
-            if row["muted"]:
+            # The global mute alone: the MUTED cell also carries the
+            # battery, signal and freeze mutes since 0.22.13, and a
+            # phone muted for battery only is not a muted device.
+            if row["muted_global"]:
                 count["muted"] += 1
             problem = problems.get(row["device_id"])
             if problem is not None:
@@ -355,7 +358,7 @@ class IntegrationViewMixin:
                 "device_id": row["device_id"],
                 "name": row["name"],
                 "watched": row["watched"],
-                "muted": row["muted"],
+                "muted": row["muted_global"],
                 "set_aside": row["set_aside"],
                 "problem": problem["problem"] if problem else "",
                 "acknowledged": bool(problem and problem["acknowledged"]),

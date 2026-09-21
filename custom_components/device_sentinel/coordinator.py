@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.22.10 (2026-09-20)
+# File: coordinator.py, Version: 0.22.13 (2026-09-21)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -59,6 +59,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryError, HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_time_change,
@@ -342,6 +343,10 @@ class DeviceSentinelCoordinator(
         # the integration where the plain name is not unique.
         self._display_names: dict[str, str] = {}
         self._device_labels: dict[str, frozenset[str]] = {}
+        # Label id to its name, read on the registry walk so the
+        # Classification rows can name a label without the report
+        # writer, which runs off the loop, opening a registry.
+        self._label_names: dict[str, str] = {}
         # Muting suppresses judgment, not observation: these sets
         # gate reporting only. Clocks, statistics, and vouching keep
         # running for everything in them, so undo is instant and the
@@ -1450,6 +1455,14 @@ class DeviceSentinelCoordinator(
                 er.EVENT_ENTITY_REGISTRY_UPDATED, self._on_registry_updated
             )
         )
+        # A renamed label changes what Classification says about every
+        # device it mutes, and nothing in the device or entity
+        # registry moves when it happens (0.22.13).
+        self._unsubs.append(
+            self.hass.bus.async_listen(
+                lr.EVENT_LABEL_REGISTRY_UPDATED, self._on_registry_updated
+            )
+        )
         self._unsubs.append(
             async_track_time_change(
                 self.hass, self._on_midnight, hour=0, minute=0, second=0
@@ -1730,6 +1743,10 @@ class DeviceSentinelCoordinator(
         """Classify devices and rebuild the entity-to-device map."""
         ent_reg = er.async_get(self.hass)
         dev_reg = dr.async_get(self.hass)
+        self._label_names = {
+            label.label_id: label.name
+            for label in lr.async_get(self.hass).async_list_labels()
+        }
 
         options = self.entry.options
         muted_device_ids = set(

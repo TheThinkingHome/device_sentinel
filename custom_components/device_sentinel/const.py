@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.22.10 (2026-09-20)
+# File: const.py, Version: 0.22.13 (2026-09-21)
 
 """Constants for the Device Sentinel integration."""
 
@@ -518,6 +518,38 @@ SET_ASIDE_EXCLUDED = "excluded"
 # Today that is the Zigbee2MQTT bridge and nothing else; each stack
 # answers for its own.
 SET_ASIDE_DUPLICATE_COORDINATOR = "duplicate coordinator"
+# What each reason means, in the order the classification ladder
+# tries them: a person's exclusion first, since a decision outranks a
+# fact about the device, then the facts, with no entities last. The
+# key under the Classification tab and under classification.md, so the
+# two say the same thing (0.22.13, from the second fleet's review:
+# which reasons are there, and did I miss any).
+SET_ASIDE_MEANINGS: tuple[tuple[str, str], ...] = (
+    (
+        SET_ASIDE_EXCLUDED,
+        "Its integration is on your exclusion list, in Exclusions and "
+        "Muting.",
+    ),
+    (
+        SET_ASIDE_SERVICE,
+        "Home Assistant marks it as a service rather than hardware, "
+        "such as an add-on or a HACS card.",
+    ),
+    (
+        SET_ASIDE_DISABLED,
+        "It is disabled, by you, by its integration or with its config "
+        "entry, so it cannot report.",
+    ),
+    (
+        SET_ASIDE_DUPLICATE_COORDINATOR,
+        "A coordinator already watched through its own bridge sensor, "
+        "appearing a second time as an ordinary device.",
+    ),
+    (
+        SET_ASIDE_NO_ENTITIES,
+        "It has no entities at all, so nothing could ever report.",
+    ),
+)
 
 # The integrations a person has asked never to watch. Muting in
 # every other place suppresses judgment and reporting and keeps the

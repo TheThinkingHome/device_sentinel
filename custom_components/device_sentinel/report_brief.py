@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.22.4 (2026-09-19)
+# File: report_brief.py, Version: 0.22.13 (2026-09-21)
 
 """The daily brief: the one report written for a person.
 
@@ -987,8 +987,8 @@ class BriefMixin:
                 f"to be enabled when {'it is' if one else 'they are'} "
                 f"available. Press Fix on the Repairs card to turn "
                 f"{'it on' if one else 'them all on'}, or use the Enable "
-                f"buttons on the Device Sentinel device page to turn "
-                f"{'it' if one else 'them'} on by kind."
+                f"buttons at the top of the Device Sentinel dashboard to "
+                f"turn {'it' if one else 'them'} on by kind."
             )
         for reader in list(getattr(self, "_bridge_readers", {}).values()):
             # Off, not unknown: a reader that has not heard yet says
