@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.20.11 (2026-09-08)
+# File: detect_signal.py, Version: 0.22.20 (2026-09-21)
 
 """Signal: the learned floor, the line, and the rails.
 
@@ -37,6 +37,7 @@ coordinator throughout and nothing here stands alone.
 
 from __future__ import annotations
 
+import math
 import statistics
 
 from typing import Any
@@ -117,6 +118,26 @@ from .psquare import (
     psquare_read,
 )
 from .records import _reset_signal_day
+
+
+def _spread(values: list[float]) -> float:
+    """Return the population standard deviation, in floating point.
+
+    `statistics.pstdev` works in exact fractions, and the Signal Trends
+    tab judges every stored day of every device through it: 3,122
+    judgments on the reference fleet and 3,763 on the second, where it
+    took 72 percent of the tab's time (0.22.20). The two-pass sum here
+    is the textbook stable form. Measured against the exact answer on
+    four storage files at every setting the screens allow, 1,292,967
+    judgments, it changed no verdict, no normal and no fall, and no
+    spread by more than one unit in the last binary place. It loses
+    precision only for values near a billion, which no signal reading
+    comes near, and a flat baseline that reads a trace above zero is
+    lifted to the spread floor as zero is.
+    """
+    count = len(values)
+    mean = sum(values) / count
+    return math.sqrt(sum((value - mean) ** 2 for value in values) / count)
 
 
 def _usable(entry: Any) -> float | None:
@@ -845,7 +866,7 @@ class SignalMixin:
         if (today < 0) is not (base[0] < 0):
             return None
         middle = statistics.median(base)
-        spread = statistics.pstdev(base)
+        spread = _spread(base)
         if spread < BADDAY_MIN_SPREAD:
             spread = BADDAY_MIN_SPREAD
         fall = middle - float(today)

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.22.13 (2026-09-21)
+# File: dashboard_api.py, Version: 0.22.20 (2026-09-21)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -433,15 +433,24 @@ def ws_battery_trends(
 
 @websocket_api.require_admin
 @websocket_api.websocket_command({vol.Required("type"): "device_sentinel/signal_trends"})
-@callback
-def ws_signal_trends(
+@websocket_api.async_response
+async def ws_signal_trends(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Return the Signal Trends tab."""
+    """Return the Signal Trends tab.
+
+    Built in the executor, as the reports are (0.22.20). The tab judges
+    every stored day of every device, about 100 ms on the fleets held,
+    and on the event loop all of Home Assistant waited while it did.
+    It reads the same records the report writer reads from the
+    executor, and its list of watched records is a copy taken when it
+    starts.
+    """
     coordinator = _coordinator(hass)
     if coordinator is None:
         _not_loaded(connection, msg["id"])
         return
-    connection.send_result(msg["id"], coordinator.signal_trends())
+    page = await hass.async_add_executor_job(coordinator.signal_trends)
+    connection.send_result(msg["id"], page)
