@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.22.13 (2026-09-21)
+# File: report_brief.py, Version: 0.22.19 (2026-09-21)
 
 """The daily brief: the one report written for a person.
 
@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import timedelta
 from html import escape
 from typing import Any
@@ -143,6 +144,18 @@ def _plural(count: int) -> str:
     is an evasion rather than a shorthand (ruling #233).
     """
     return f"{count} device" if count == 1 else f"{count} devices"
+
+
+# What `_report_cell` escapes with a backslash, and the pipe that
+# divides table cells as distinct from the one a name carries. The
+# page escapes for HTML itself, so the backslashes come off first.
+_UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
+_MARKDOWN_ESCAPED = re.compile(r"\\([|<>])")
+
+
+def _markdown_unescaped(text: str) -> str:
+    """Return report text with the report cell's escapes taken off."""
+    return _MARKDOWN_ESCAPED.sub(r"\1", text)
 
 
 # What a repeat-offender line calls one occurrence of each kind.
@@ -2451,11 +2464,15 @@ class BriefMixin:
         the same text is what a notification carries.
         """
         cells = []
-        for cell in line.strip("|").split("|"):
+        # Split on the pipes that divide cells, not on the one a
+        # device's name carries escaped: "A|B Sensor" arrives as
+        # "A\|B Sensor", and splitting on every pipe gave its row a
+        # cell too many and cost the name its link and area (0.22.19).
+        for cell in _UNESCAPED_PIPE.split(line.strip().strip("|")):
             text = cell.strip()
             seen = self._brief_devices.get(text)
             if not seen:
-                cells.append(escape(text))
+                cells.append(escape(_markdown_unescaped(text)))
                 continue
             # In composition order, so two devices of one name each
             # link to themselves: the reference rig has two called
@@ -2465,9 +2482,11 @@ class BriefMixin:
             self._brief_cursor[text] = at + 1
             device_id = seen[at] if at < len(seen) else None
             if device_id is None:
-                cells.append(escape(text))
+                cells.append(escape(_markdown_unescaped(text)))
             else:
-                cells.append(self._device_cell(device_id, text))
+                cells.append(
+                    self._device_cell(device_id, _markdown_unescaped(text))
+                )
         return cells
 
     def _note_brief_device(self, device_id: str | None, name: str) -> str:
@@ -2546,11 +2565,11 @@ class BriefMixin:
                 continue
             _flush_table()
             if line.startswith("# "):
-                html_lines.append(f"<h1>{escape(line[2:])}</h1>")
+                html_lines.append(f"<h1>{escape(_markdown_unescaped(line[2:]))}</h1>")
             elif line.startswith("## "):
-                html_lines.append(f"<h2>{escape(line[3:])}</h2>")
+                html_lines.append(f"<h2>{escape(_markdown_unescaped(line[3:]))}</h2>")
             elif line.strip():
-                text_line = escape(line)
+                text_line = escape(_markdown_unescaped(line))
                 for url, words in (
                     (REPORT_SIGNAL_URL, "the signal report"),
                     (REPORT_BATTERY_URL, "the battery report"),

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.21.14 (2026-09-18)
+# File: reports.py, Version: 0.22.19 (2026-09-21)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -111,11 +111,21 @@ class ReportWritingMixin(
         split its table row and a newline would break it entirely.
         Escaping here, at the single choke point every name passes on
         its way into a report, keeps the files intact whatever a
-        device is called. Cosmetic hardening, not a security fix; the
-        reports are local files.
+        device is called.
+
+        Angle brackets are escaped the same way, with a backslash
+        (0.22.19). A name holding markup reached the files as markup,
+        and a tester's report pasted into a page that renders Markdown
+        would draw it. The backslash is Markdown's own escape, reads
+        plainly in the raw file, and is taken back off by the brief's
+        page, which escapes for HTML itself.
         """
         return (
-            text.replace("\n", " ").replace("\r", " ").replace("|", "\\|")
+            text.replace("\n", " ")
+            .replace("\r", " ")
+            .replace("|", "\\|")
+            .replace("<", "\\<")
+            .replace(">", "\\>")
         )
 
     def _fmt_gap(self, seconds: Any) -> str:

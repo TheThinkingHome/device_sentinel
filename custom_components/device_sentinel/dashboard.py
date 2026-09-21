@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.18 (2026-09-21)
+# File: dashboard.py, Version: 0.22.19 (2026-09-21)
 
 """What the dashboard reads from the coordinator.
 
@@ -707,10 +707,25 @@ class BriefViewMixin:
     """
 
     def _brief_day_bounds(self, day: date) -> tuple[float, float, bool]:
+        """Return a day's start, its end, and whether it is today.
+
+        A finished day ends at the next local midnight rather than 24
+        hours after it began (0.22.19). The day the clocks go back runs
+        25 hours, and 24 lost its last hour to both pages; the day they
+        go forward runs 23, and 24 showed the next day's first hour on
+        both. The end belongs to the next day, so an event at the
+        stroke of midnight is told once.
+        """
         start = dt_util.as_utc(dt_util.start_of_local_day(day)).timestamp()
         now = dt_util.utcnow().timestamp()
         today = day == dt_util.now().date()
-        end = now if today else start + 86400.0
+        end = (
+            now
+            if today
+            else dt_util.as_utc(
+                dt_util.start_of_local_day(day + timedelta(days=1))
+            ).timestamp()
+        )
         return start, end, today
 
     def _brief_earliest_day(self) -> date:
@@ -792,7 +807,7 @@ class BriefViewMixin:
         incidents = [
             row
             for row in self.incident_rows()
-            if start <= row[INC_WHEN] <= end
+            if start <= row[INC_WHEN] < end
             and row[INC_DEVICE_ID] not in self._muted_devices
             and row[INC_DEVICE_ID] not in silenced
         ]
@@ -801,7 +816,7 @@ class BriefViewMixin:
             for row in self.data.get(DATA_SYSTEM_EVENTS) or []
             if isinstance(row, dict)
             and isinstance(row.get(SYS_WHEN), (int, float))
-            and start <= row[SYS_WHEN] <= end
+            and start <= row[SYS_WHEN] < end
         ]
         events = [
             {

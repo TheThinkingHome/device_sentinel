@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.22.18 (2026-09-21)
+# File: diagnostics.py, Version: 0.22.19 (2026-09-21)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -42,6 +42,7 @@ from .const import (
     DATA_STORMS,
     EP_LEARNED,
     BATTERY_CLEAR_MARGIN,
+    CONF_BRIEF_TARGETS,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_NORMAL_PRIORITY_TARGETS,
     DAILY_MAX_KEEP,
@@ -71,8 +72,15 @@ from .const import (
 from .device_fields import device_field
 
 # The notification targets are the user's own device names; they add
-# nothing to a diagnosis and are redacted by default.
-TO_REDACT = {CONF_HIGH_PRIORITY_TARGETS, CONF_NORMAL_PRIORITY_TARGETS}
+# nothing to a diagnosis and are redacted by default. The brief's
+# targets joined them in 0.22.19: a notify service is often named after
+# an email address, as notify.someone_gmail_com, and the diagnostics
+# are what testers attach to public issues.
+TO_REDACT = {
+    CONF_BRIEF_TARGETS,
+    CONF_HIGH_PRIORITY_TARGETS,
+    CONF_NORMAL_PRIORITY_TARGETS,
+}
 
 
 def _taint_reasons(episodes: list[dict[str, Any]]) -> dict[str, int]:
