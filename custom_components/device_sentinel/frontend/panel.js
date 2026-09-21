@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.16 (2026-09-21)
+// File: frontend/panel.js, Version: 0.22.17 (2026-09-21)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -91,6 +91,9 @@ const PRINT_STYLE = `
      sizes each page's columns from the rows on that page, and the
      older days carry no battery or signal reading. */
   table.days { table-layout: fixed; width: 100%; }
+  /* A pinned table keeps a minimum width on screen so a phone scrolls
+     it; on paper it fits the page instead. */
+  table.pinned { min-width: 0 !important; }
   table.days th:nth-child(1), table.days td:nth-child(1) { width: 8%; }
   table.days th:nth-child(2), table.days td:nth-child(2) { width: 8%; }
   table.days th:nth-child(3), table.days td:nth-child(3) { width: 11%; }
@@ -199,6 +202,53 @@ function rootTab(from) {
   return null;
 }
 
+// How much room a column needs, by its heading (0.22.17, from the
+// second fleet's review: the columns moved whenever a filter changed).
+// A table's widths depend only on its headings, never on the rows a
+// filter or a sort leaves, so its columns stay still, and two tables
+// with the same headings line up. Names and free text get more room
+// than numbers, and the first column always gets a name's share.
+const COLUMN_SHARE = {
+  "DEVICE": 3, "MAKER AND MODEL": 3, "WHAT HAPPENED": 3,
+  "MUTED": 2.5, "WHICH ONE": 2.5, "WHAT": 2.5,
+  "PROBLEM": 2.2, "SET ASIDE": 2.2, "STANDING": 2, "DEVICES THAT WENT DOWN": 2,
+  "INTEGRATION": 1.6, "SINCE": 1.4, "TIME": 1.4, "WENT DOWN": 1.4, "SILENT SINCE": 1.4,
+};
+// The history table's own widths, as its printout has always used.
+const HISTORY_WIDTHS = [8, 8, 11, 9, 11, 9, 44];
+
+function pinTable(table) {
+  if (table.classList.contains("pinned")) return;
+  const heads = table.tHead && table.tHead.rows[0]
+    ? [...table.tHead.rows[0].cells].map((cell) => cell.textContent.trim())
+    : null;
+  const count = heads ? heads.length : (table.rows[0] ? table.rows[0].cells.length : 0);
+  if (!count) return;
+  let shares;
+  if (table.classList.contains("days") && count === HISTORY_WIDTHS.length) shares = HISTORY_WIDTHS;
+  else if (!heads) shares = count === 2 ? [1, 2] : Array(count).fill(1);
+  else {
+    shares = heads.map((head, index) => {
+      const share = COLUMN_SHARE[head] || (head === "" ? 0.5 : 1);
+      return index === 0 && head !== "" ? Math.max(share, 2.5) : share;
+    });
+  }
+  const total = shares.reduce((sum, share) => sum + share, 0);
+  const group = document.createElement("colgroup");
+  for (const share of shares) {
+    const col = document.createElement("col");
+    col.style.width = `${((share / total) * 100).toFixed(3)}%`;
+    group.append(col);
+  }
+  table.prepend(group);
+  table.classList.add("pinned");
+  // Seventy pixels per share: on a phone the table scrolls sideways in
+  // its box rather than crushing its columns.
+  if (table.parentElement && table.parentElement.classList.contains("scroll")) {
+    table.style.minWidth = `${Math.round(total * 70)}px`;
+  }
+}
+
 function moment(iso) {
   return new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
@@ -265,6 +315,8 @@ const STYLE = `
   .chip[aria-pressed="true"] { color: var(--primary-color); border-color: var(--primary-color); }
   .scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.pinned { table-layout: fixed; }
+  table.pinned th, table.pinned td { overflow-wrap: anywhere; }
   th { text-align: left; font-size: 12px; font-weight: 500; letter-spacing: 0.04em; color: var(--secondary-text-color);
     padding: 8px 10px; border-bottom: 1px solid var(--divider-color); }
   td { padding: 9px 10px; border-bottom: 1px solid var(--divider-color); }
@@ -586,6 +638,17 @@ class DeviceSentinelPanel extends HTMLElement {
 
     this._tabRow = el("div", { class: "tabs", role: "tablist", "aria-label": "Reports" });
     this._pane = el("div", { class: "pane", role: "tabpanel" });
+    // Every table the pane gains is pinned as it arrives, whichever tab,
+    // page, filter or sort drew it, before the browser lays it out.
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          if (node.tagName === "TABLE") pinTable(node);
+          node.querySelectorAll("table").forEach(pinTable);
+        }
+      }
+    }).observe(this._pane, { childList: true, subtree: true });
     root.append(
       el("div", { class: "body" }, this._statusRow, actions,
         el("div", { class: "card" }, this._tabRow, this._pane)),
@@ -1256,7 +1319,10 @@ class DeviceSentinelPanel extends HTMLElement {
       },
     }, `${label} ${key === "all" ? page.devices.length : page.scales[key]}`)));
     const showing = page.devices.filter((row) => this._signalFilter === "all" || row.scale === this._signalFilter);
-    const mixed = this._signalFilter === "all" && scales.length > 1;
+    // The SCALE column belongs to the house, not to the chip: a filter to
+    // one scale keeps it, so the columns stay where the All view put them
+    // (0.22.17).
+    const mixed = scales.length > 1;
     const cap = 6;
     const chart = svg("svg", { viewBox: "0 0 1100 170", role: "img",
       "aria-label": "Each device's signal against its own normal, in its own spreads" });
@@ -1321,7 +1387,10 @@ class DeviceSentinelPanel extends HTMLElement {
         change: (row) => row.spreads || 0,
       },
     );
-    const table = (rows, withBad) => {
+    // Both tables carry BAD DAYS, so their columns line up and they read
+    // as one table split in two; in the steady one it reads 0, which is
+    // why each device is there (0.22.17, the owner's choice A).
+    const table = (rows) => {
       if (!rows.length) return el("p", { class: "muted", style: "margin:0" }, "None.");
       const head = el("tr", {},
         this._sortHead(this._signalSort, "DEVICE", "name", again),
@@ -1329,7 +1398,7 @@ class DeviceSentinelPanel extends HTMLElement {
         this._sortHead(this._signalSort, "NOW", "now", again, "num"),
         el("th", { class: "num" }, "ITS NORMAL"),
         el("th", { class: "num" }, "BAD-DAY LINE"),
-        withBad ? this._sortHead(this._signalSort, "BAD DAYS", "bad", again, "num") : null,
+        this._sortHead(this._signalSort, "BAD DAYS", "bad", again, "num"),
         this._sortHead(this._signalSort, "CHANGE", "change", again, "num"),
         el("th", { class: "num" }, "IN ITS OWN SPREADS"),
         el("th", { class: "num" }, "READINGS A DAY"));
@@ -1339,7 +1408,7 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", { class: "num" }, row.now === null ? "" : String(Math.round(row.now))),
         el("td", { class: "num" }, String(Math.round(row.normal))),
         el("td", { class: "num", style: "color:var(--error-color, #db4437)" }, lineWords(row)),
-        withBad ? el("td", { class: "num" }, String(row.bad_days)) : null,
+        el("td", { class: "num" }, String(row.bad_days)),
         el("td", { class: "num", style: colour(row.spreads) }, sign(row.change)),
         el("td", { class: "num", style: colour(row.spreads) }, spreads(row.spreads)),
         el("td", { class: "num" }, row.readings_a_day === null ? "" : String(Math.round(row.readings_a_day)))));
@@ -1365,9 +1434,9 @@ class DeviceSentinelPanel extends HTMLElement {
         "Each device's last seven days against the middle of its whole history, in its own points and in its own spreads, so a steady link and a jumpy one are judged by their own standards. One bar per device, worst on the left."),
       chips, chart, chartNote,
       el("h3", { class: "section" }, "Devices With Unsteady Signals ", el("span", { class: "small" }, `${unsteady.length} shown`)),
-      table(unsteady, true),
+      table(unsteady),
       el("h3", { class: "section" }, "Devices With Steady Signals ", el("span", { class: "small" }, `${steady.length} shown`)),
-      table(steady, false));
+      table(steady));
   }
 
   _paintDevices() {
