@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_api.py, Version: 0.22.1 (2026-09-19)
+# File: tests/test_dashboard_api.py, Version: 0.22.13 (2026-09-21)
 
 """The dashboard's data layer: status, actions and the change marker.
 
@@ -243,7 +243,10 @@ async def test_classification_names_the_mute_and_the_reason_set_aside(hass: Home
     muted = next(row for row in rows if row["name"] == "Muted Panel")
     assert muted["muted"] == "Global (device)"
     aside = next(row for row in rows if row["name"] == "Old Tracker")
+    # An exclusion names the integration excluded since 0.22.13, and
+    # every row carries the global mute on its own for the counts.
     assert aside == {
         "device_id": "x", "name": "Old Tracker", "integration": "tplink_router",
-        "watched": False, "muted": "", "set_aside": "excluded", "copies": 1,
+        "watched": False, "muted": "", "muted_global": "",
+        "set_aside": "excluded (integration: tplink_router)", "copies": 1,
     }

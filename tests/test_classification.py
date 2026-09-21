@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_classification.py, Version: 0.21.11 (2026-09-16)
+# File: test_classification.py, Version: 0.22.13 (2026-09-21)
 
 """How devices are counted and attributed to integrations.
 
@@ -125,7 +125,8 @@ async def test_one_table_three_states(hass: HomeAssistant):
     # Excluded device: watched check kept, reason named.
     excl_row = next(r for r in rows if "Alpha Excluded" in r)
     assert "\u2713" in excl_row
-    assert "Global (integration)" in excl_row
+    # The integration is named since 0.22.13, not only the level.
+    assert "Global (integration: test)" in excl_row
 
     # Watched device: watched check, no exclusion.
     w_row = next(r for r in rows if "Bravo Watched" in r)
