@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_campaign_hostile.py, Version: 0.22.0 (2026-09-18)
+# File: tests/test_campaign_hostile.py, Version: 0.22.12 (2026-09-21)
 
 """Pre-stable campaign: hostile inputs at the paths 0.19.7 touched.
 
@@ -56,6 +56,19 @@ CLOCKS_FOR = {
 POISONS = [None, "junk", [1, 2], {"x": 1}, True, -7, float("nan"), 4.1e18, ""]
 
 
+def _held(path: Path) -> bool:
+    """Whether this fleet is here, by both files `_fleet` opens.
+
+    The guard used to ask whether the reference fleet existed and then
+    open whichever fleet the seed chose, so a directory holding one of
+    them raised `FileNotFoundError` instead of falling back. A fleet
+    can go missing on its own: captures are replaced as houses move
+    forward, and the second fleet's 26 August set is already gone. The
+    clocks file is checked too, because `_fleet` merges it in.
+    """
+    return path.exists() and (path.parent / CLOCKS_FOR[path.name]).exists()
+
+
 def _fleet(path: Path) -> list[dict]:
     with open(path, encoding="utf-8") as handle:
         devices = json.load(handle)["data"]["devices"]
@@ -85,7 +98,8 @@ async def test_the_sweep_survives_hostile_records(hass: HomeAssistant, seed):
     never-reported verdict must still only land on a device that
     owns an entity."""
     rng = random.Random(seed)
-    records = _fleet(JAMES if seed % 2 else TIM) if JAMES.exists() else [{}]
+    chosen = JAMES if seed % 2 else TIM
+    records = _fleet(chosen) if _held(chosen) else [{}]
     devices = [register_device(hass, f"j{seed}_{i}")[0] for i in range(6)]
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
