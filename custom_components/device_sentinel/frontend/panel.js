@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.14 (2026-09-21)
+// File: frontend/panel.js, Version: 0.22.15 (2026-09-21)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -170,6 +170,35 @@ function longMoment(date) {
 // Settings.
 const COG_PATH = "M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z";
 
+// Home Assistant's printer, mdiPrinter from the same icon set.
+const PRINTER_PATH = "M18,3H6V7H18M19,12A1,1 0 0,1 18,11A1,1 0 0,1 19,10A1,1 0 0,1 20,11A1,1 0 0,1 19,12M16,19H8V14H16M19,8H5A3,3 0 0,0 2,11V17H6V21H18V17H22V11A3,3 0 0,0 19,8Z";
+
+// Where a page was opened from, read out of its address (0.22.15). A
+// tab is named by its slug. A device or integration page is named by
+// its own address, which may carry an origin of its own, so the chain
+// can be walked back to the tab it began on. Anything else names
+// nothing, and the page falls back to Devices or Integrations.
+function readOrigin(from) {
+  if (!from) return null;
+  if (TAB_BY_SLUG[from]) return { tab: TAB_BY_SLUG[from] };
+  const page = /^\/(device|integration)\/([^/?]+)(?:\?(.*))?$/.exec(from);
+  if (!page) return null;
+  return {
+    kind: page[1], id: decodeURIComponent(page[2]), path: from,
+    inner: new URLSearchParams(page[3] || "").get("from"),
+  };
+}
+
+function rootTab(from) {
+  let origin = readOrigin(from);
+  // Bounded, so an address built by hand cannot loop.
+  for (let depth = 0; origin && depth < 8; depth += 1) {
+    if (origin.tab) return origin.tab;
+    origin = readOrigin(origin.inner);
+  }
+  return null;
+}
+
 function moment(iso) {
   return new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
@@ -200,9 +229,10 @@ const STYLE = `
     color: var(--primary-text-color); font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif); }
   .toolbar { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px;
     border-bottom: 1px solid var(--divider-color); font-size: 20px; }
-  .gear { margin-left: auto; display: inline-flex; align-items: center; justify-content: center;
-    width: 44px; height: 44px; border-radius: 22px; color: var(--primary-text-color); }
-  .gear:hover { background: var(--secondary-background-color, rgba(127,127,127,0.1)); text-decoration: none; }
+  .gear, .print { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px;
+    border: 0; border-radius: 22px; padding: 0; background: transparent; color: var(--primary-text-color); cursor: pointer; }
+  .print { margin-left: auto; }
+  .gear:hover, .print:hover { background: var(--secondary-background-color, rgba(127,127,127,0.1)); text-decoration: none; }
   .body { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
   .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
   .card { background: var(--card-background-color, var(--ha-card-background)); border-radius: var(--ha-card-border-radius, 12px);
@@ -341,18 +371,23 @@ class DeviceSentinelPanel extends HTMLElement {
     const next = integration
       ? { kind: "integration", domain: decodeURIComponent(integration[1]) }
       : device ? { kind: "device", id: decodeURIComponent(device[1]) } : null;
-    // A device or integration page carries the tab it was opened from
-    // in its address, so its back link and a reload both know where to
-    // return. Opened from anywhere else, it belongs to Devices or
-    // Integrations. A plain address names its tab; one that names
-    // nothing falls back to the Daily Brief.
-    const from = TAB_BY_SLUG[new URLSearchParams(window.location.search).get("from") || ""];
+    // A device or integration page carries, in its address, the page
+    // it was opened from: a tab, or another page with an origin of its
+    // own. Its back link leads to that page, and its highlighted tab is
+    // the one the chain began on, so a reload keeps both. Opened from
+    // anywhere else, it belongs to Devices or Integrations. A plain
+    // address names its tab; one that names nothing falls back to the
+    // Daily Brief.
+    const from = next ? new URLSearchParams(window.location.search).get("from") || "" : "";
     const tab = next
-      ? from || (next.kind === "device" ? "Devices" : "Integrations")
+      ? rootTab(from) || (next.kind === "device" ? "Devices" : "Integrations")
       : TAB_BY_SLUG[path.replace(/^\/+|\/+$/g, "")] || "Daily Brief";
-    const changed = JSON.stringify(next) !== JSON.stringify(this._view) || tab !== this._tab;
+    const changed = JSON.stringify(next) !== JSON.stringify(this._view)
+      || tab !== this._tab || from !== this._from;
     this._view = next;
     this._tab = tab;
+    this._from = from;
+    this._origin = readOrigin(from);
     if (this._started && changed) {
       this._paintTabs();
       this._openView();
@@ -363,13 +398,45 @@ class DeviceSentinelPanel extends HTMLElement {
     return name === "Daily Brief" ? this._base : `${this._base}/${TAB_SLUG[name]}`;
   }
 
-  // A page opened from a tab carries that tab, so it can lead back.
+  // The address of the page on screen, as an origin for the next one:
+  // a tab's slug, or this page's own address with its own origin.
+  _here() {
+    if (!this._view) return TAB_SLUG[this._tab];
+    const id = this._view.kind === "device" ? this._view.id : this._view.domain;
+    const own = this._from ? `?from=${encodeURIComponent(this._from)}` : "";
+    return `/${this._view.kind}/${encodeURIComponent(id)}${own}`;
+  }
+
   _devicePath(id) {
-    return `${this._base}/device/${encodeURIComponent(id)}?from=${TAB_SLUG[this._tab]}`;
+    return `${this._base}/device/${encodeURIComponent(id)}?from=${encodeURIComponent(this._here())}`;
   }
 
   _integrationPath(domain) {
-    return `${this._base}/integration/${encodeURIComponent(domain)}?from=${TAB_SLUG[this._tab]}`;
+    return `${this._base}/integration/${encodeURIComponent(domain)}?from=${encodeURIComponent(this._here())}`;
+  }
+
+  // The link at the top of a device or integration page: the page it
+  // was opened from, by name, or its tab when it came from a tab or
+  // from nowhere the address can name.
+  _backLink() {
+    const origin = this._origin;
+    if (origin && origin.kind) {
+      const name = origin.kind === "integration" ? this._integrationName(origin.id) : this._deviceName(origin.id);
+      return this._link(`\u2039 ${name}`, `${this._base}${origin.path}`);
+    }
+    return this._link(`\u2039 ${this._tab}`, this._tabPath(this._tab));
+  }
+
+  _integrationName(domain) {
+    const rows = (this._snapshot && this._snapshot.integrations && this._snapshot.integrations.rows) || [];
+    const row = rows.find((r) => r.domain === domain);
+    return row ? row.name : domain;
+  }
+
+  _deviceName(id) {
+    const rows = (this._snapshot && this._snapshot.classification && this._snapshot.classification.rows) || [];
+    const row = rows.find((r) => r.device_id === id);
+    return row ? row.name : "Device";
   }
 
   async _fetchView() {
@@ -490,7 +557,14 @@ class DeviceSentinelPanel extends HTMLElement {
       },
     }, svg("svg", { width: "24", height: "24", viewBox: "0 0 24 24", "aria-hidden": "true" },
       svg("path", { d: COG_PATH, fill: "currentColor" })));
-    root.append(el("div", { class: "toolbar" }, this._menu, "Device Sentinel", gear));
+    // Print beside the gear: both act on the dashboard itself, not on
+    // the house (0.22.15). The toolbar is not part of a printout.
+    const printer = el("button", {
+      class: "print", type: "button", title: "Print this page", "aria-label": "Print this page",
+      onclick: () => this._print(),
+    }, svg("svg", { width: "24", height: "24", viewBox: "0 0 24 24", "aria-hidden": "true" },
+      svg("path", { d: PRINTER_PATH, fill: "currentColor" })));
+    root.append(el("div", { class: "toolbar" }, this._menu, "Device Sentinel", printer, gear));
 
     this._statusRow = el("section", { class: "status", "aria-label": "Status" });
     this._refreshButton = el("button", { class: "pill", type: "button", onclick: () => this._refresh() }, "Refresh");
@@ -507,7 +581,6 @@ class DeviceSentinelPanel extends HTMLElement {
       enable("Enable Signals", "enable_signals"),
       enable("Enable Last Seen", "enable_last_seen"),
       enable("Enable Battery", "enable_battery"),
-      el("button", { class: "pill", type: "button", onclick: () => this._print() }, "Print"),
       this._asOf,
     );
 
@@ -859,7 +932,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _paintIntegrationPage() {
     const page = this._page;
-    const back = el("p", { style: "margin:0" }, this._link(`\u2039 ${this._tab}`, this._tabPath(this._tab)));
+    const back = el("p", { style: "margin:0" }, this._backLink());
     if (!page) {
       this._pane.replaceChildren(back, el("p", { class: "muted" }, "Loading."));
       return;
@@ -1385,7 +1458,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _paintDevicePage() {
     const page = this._page;
-    const back = el("p", { style: "margin:0" }, this._link(`\u2039 ${this._tab}`, this._tabPath(this._tab)));
+    const back = el("p", { style: "margin:0" }, this._backLink());
     this._readingsBox = null;
     if (!page) {
       this._pane.replaceChildren(back, el("p", { class: "muted" }, "Loading."));
