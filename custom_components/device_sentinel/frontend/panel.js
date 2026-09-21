@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.12 (2026-09-20)
+// File: frontend/panel.js, Version: 0.22.13 (2026-09-21)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -149,6 +149,21 @@ function span(seconds) {
   return `${(seconds / 86400).toFixed(1)}d`;
 }
 
+// The header's and the printout's moment: the time, then the date in
+// long form, both in the browser's language, so a printout or a screen
+// capture says which day it shows (0.22.13, from the second fleet's
+// review). The language decides the order, the month's name and the
+// 12 or 24 hour clock.
+function longMoment(date) {
+  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return `${time}, ${date.toLocaleDateString([], { dateStyle: "long" })}`;
+}
+
+// Home Assistant's own cog, mdiCog from Material Design Icons
+// (@mdi/js 7.4.47, Apache-2.0), so the gear looks like the one in its
+// Settings.
+const COG_PATH = "M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z";
+
 function moment(iso) {
   return new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
@@ -179,6 +194,9 @@ const STYLE = `
     color: var(--primary-text-color); font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif); }
   .toolbar { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px;
     border-bottom: 1px solid var(--divider-color); font-size: 20px; }
+  .gear { margin-left: auto; display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border-radius: 22px; color: var(--primary-text-color); }
+  .gear:hover { background: var(--secondary-background-color, rgba(127,127,127,0.1)); text-decoration: none; }
   .body { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
   .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
   .card { background: var(--card-background-color, var(--ha-card-background)); border-radius: var(--ha-card-border-radius, 12px);
@@ -439,7 +457,20 @@ class DeviceSentinelPanel extends HTMLElement {
     this._menu = document.createElement("ha-menu-button");
     this._menu.hass = this._hass;
     this._menu.narrow = this._narrow;
-    root.append(el("div", { class: "toolbar" }, this._menu, "Device Sentinel"));
+    // The gear goes to the integration's own page, where Configure is
+    // one click away. Home Assistant gives a custom panel no supported
+    // way to open the options dialog itself (0.22.13).
+    const settings = "/config/integrations/integration/device_sentinel";
+    const gear = el("a", {
+      class: "gear", href: settings, title: "Device Sentinel settings",
+      "aria-label": "Device Sentinel settings",
+      onclick: (ev) => {
+        ev.preventDefault();
+        this._navigate(settings);
+      },
+    }, svg("svg", { width: "24", height: "24", viewBox: "0 0 24 24", "aria-hidden": "true" },
+      svg("path", { d: COG_PATH, fill: "currentColor" })));
+    root.append(el("div", { class: "toolbar" }, this._menu, "Device Sentinel", gear));
 
     this._statusRow = el("section", { class: "status", "aria-label": "Status" });
     this._refreshButton = el("button", { class: "pill", type: "button", onclick: () => this._refresh() }, "Refresh");
@@ -499,8 +530,9 @@ class DeviceSentinelPanel extends HTMLElement {
     const title = doc.createElement("h1");
     title.textContent = `Device Sentinel: ${view}`;
     const when = doc.createElement("p");
-    const taken = this._snapshot ? this._snapshot.at.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
-    when.textContent = `${taken ? `Data as of ${taken}. ` : ""}Printed ${new Date().toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.`;
+    // The same long form as the header, so screen and paper agree.
+    const taken = this._snapshot ? longMoment(this._snapshot.at) : "";
+    when.textContent = `${taken ? `Data as of ${taken}. ` : ""}Printed ${longMoment(new Date())}.`;
     head.append(title, when);
     doc.body.append(head, doc.importNode(this._pane, true));
     // A browser names the PDF after the tab's title, not the print
@@ -578,7 +610,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const chosen = this._minutes.value || String(maint.default_minutes);
     this._minutes.replaceChildren(...[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map((m) =>
       el("option", { value: String(m), ...(String(m) === chosen ? { selected: "" } : {}) }, `${m} min`)));
-    this._asOf.textContent = `As of ${at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+    this._asOf.textContent = `As of ${longMoment(at)}`;
   }
 
   _paintTabs() {
@@ -1773,10 +1805,13 @@ class DeviceSentinelPanel extends HTMLElement {
       set_aside: (row) => !row.watched,
     }[this._filter];
     const rows = data.rows.filter(keep);
+    // All five reasons, and no count of entities with no device: those
+    // are never watched, and "seen only as entities" said they were
+    // (0.22.13, from the second fleet's review).
     const summary = el("p", { style: "margin:0;line-height:1.5" },
-      `Watching ${data.watched} of ${data.rows.length} devices. ${data.set_aside} are set aside: service devices, `
-      + `disabled devices, devices with no entities, and integrations you excluded. ${data.deviceless} entities `
-      + "belong to no device and are seen only as entities.");
+      `Watching ${data.watched} of ${data.rows.length} devices. ${data.set_aside} are set aside: integrations you `
+      + "excluded, service devices, disabled devices, duplicate coordinators, and devices with no entities. MUTED "
+      + "names every mute on a device and its source.");
     const chips = el("div", { class: "chips" }, ...FILTERS.map(([key, label]) =>
       el("button", {
         class: "chip", type: "button", "aria-pressed": String(key === this._filter),
@@ -1796,8 +1831,13 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, row.muted),
         el("td", {}, row.set_aside),
         showCopies ? el("td", {}, row.copies > 1 ? String(row.copies) : "") : null))));
+    // The key to SET ASIDE, the same words as classification.md's.
+    const key = el("div", { class: "muted", style: "font-size:13px;line-height:1.5" },
+      el("p", { style: "margin:0 0 4px" }, "Set aside, by reason:"),
+      ...(data.set_aside_meanings || []).map(([reason, meaning]) =>
+        el("p", { style: "margin:0" }, el("strong", {}, reason), `: ${meaning}`)));
     this._pane.replaceChildren(summary, chips, el("div", { class: "scroll" }, table),
-      el("p", { class: "muted", style: "margin:0;font-size:13px" }, `${rows.length} shown.`));
+      el("p", { class: "muted", style: "margin:0;font-size:13px" }, `${rows.length} shown.`), key);
   }
 
   async _maintenance() {
