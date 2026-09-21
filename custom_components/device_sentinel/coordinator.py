@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.22.13 (2026-09-21)
+# File: coordinator.py, Version: 0.22.18 (2026-09-21)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -213,6 +213,7 @@ from .const import (
 from .detect_battery import BatteryMixin
 from .detect_freeze import FreezeMixin
 from .detect_signal import SignalMixin, _entity_unit, _is_percentage
+from .device_fields import child_devices, device_field
 from .events import EventMixin
 from .interventions import InterventionMixin
 from .naming import display_name
@@ -1715,8 +1716,15 @@ class DeviceSentinelCoordinator(
 
     def _registry_devices(
         self, dev_reg: dr.DeviceRegistry
-    ) -> list[dr.DeviceEntry]:
+    ) -> list[Any]:
         """Return every registry device once, walked by config entry.
+
+        Child devices (Home Assistant 2026.9) are asked for separately,
+        because the lookup by config entry returns ordinary devices
+        only: a boiler's pump filed under the boiler was never watched,
+        and a watched device an integration converted into a child after
+        a restart dropped out of watch with its history left unused. A
+        conversion keeps the id, so the device keeps its record.
 
         Home Assistant 2026.9 deprecated reading `devices` as a mapping
         (issue #10, ruling #439), and iterating it yields device entries only from
@@ -1731,9 +1739,10 @@ class DeviceSentinelCoordinator(
         seen: set[str] = set()
         devices: list[dr.DeviceEntry] = []
         for entry in self.hass.config_entries.async_entries():
-            for device in dr.async_entries_for_config_entry(
-                dev_reg, entry.entry_id
-            ):
+            for device in [
+                *dr.async_entries_for_config_entry(dev_reg, entry.entry_id),
+                *child_devices(dev_reg, entry.entry_id),
+            ]:
                 if device.id not in seen:
                     seen.add(device.id)
                     devices.append(device)
@@ -1793,7 +1802,7 @@ class DeviceSentinelCoordinator(
                 # when the question is why you cannot see something.
                 set_aside[device.id] = (name, domain, SET_ASIDE_EXCLUDED)
                 continue
-            if device.entry_type is dr.DeviceEntryType.SERVICE:
+            if device_field(device, "entry_type") is dr.DeviceEntryType.SERVICE:
                 set_aside[device.id] = (name, domain, SET_ASIDE_SERVICE)
                 continue
             if device.disabled_by is not None:

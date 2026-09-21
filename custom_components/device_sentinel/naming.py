@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: naming.py, Version: 0.20.18 (2026-09-12)
+# File: naming.py, Version: 0.22.18 (2026-09-21)
 
 """What a device is called, when the registry does not say.
 
@@ -39,13 +39,14 @@ from __future__ import annotations
 from homeassistant.helpers import device_registry as dr
 
 from .const import STACK_DISPLAY_NAMES
+from .device_fields import device_field
 
 ID_TAIL = 8
 
 
 def _first_mac(device: dr.DeviceEntry) -> str | None:
     """Return the device's first network MAC as the registry spells it."""
-    for kind, value in device.connections:
+    for kind, value in device_field(device, "connections", set()):
         if kind == dr.CONNECTION_NETWORK_MAC and isinstance(value, str):
             return value
     return None
@@ -75,8 +76,8 @@ def display_name(
         if named:
             return named
         mac = _first_mac(device)
-        make = _clean(device.manufacturer)
-        model = _clean(device.model)
+        make = _clean(device_field(device, "manufacturer"))
+        model = _clean(device_field(device, "model"))
         if mac and make and model:
             return f"{make} {model} {mac}"
         if mac:

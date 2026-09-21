@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.21.12 (2026-09-17)
+# File: stack_z2m.py, Version: 0.22.18 (2026-09-21)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -64,6 +64,7 @@ from .const import (
     Z2M_TOPIC_INFO,
     Z2M_TOPIC_STATE,
 )
+from .device_fields import device_field
 
 STACK = STACK_Z2M
 
@@ -162,8 +163,8 @@ def is_bridge_device(device: dr.DeviceEntry) -> bool:
     if isinstance(name, str) and Z2M_BRIDGE_NAME_MARK in name:
         return True
     return (
-        device.model == Z2M_BRIDGE_MODEL
-        and device.manufacturer == Z2M_BRIDGE_MANUFACTURER
+        device_field(device, "model") == Z2M_BRIDGE_MODEL
+        and device_field(device, "manufacturer") == Z2M_BRIDGE_MANUFACTURER
     )
 
 

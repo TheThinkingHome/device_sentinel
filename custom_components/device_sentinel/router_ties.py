@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.21.12 (2026-09-17)
+# File: router_ties.py, Version: 0.22.18 (2026-09-21)
 
 """Router ties: which watched devices a router says have left.
 
@@ -108,6 +108,7 @@ from .const import (
     WIFI_HOLD_SECONDS,
     WIFI_KEY,
 )
+from .device_fields import device_field
 
 STATE_NOT_HOME = "not_home"
 STATE_HOME = "home"
@@ -351,7 +352,7 @@ class RouterTiesMixin:
             if mac is None and entry.device_id:
                 owner = devices.async_get(entry.device_id)
                 if owner is not None:
-                    for kind, value in owner.connections:
+                    for kind, value in device_field(owner, "connections", set()):
                         if kind == dr.CONNECTION_NETWORK_MAC:
                             mac = normalize_mac(value)
                             break
@@ -413,7 +414,7 @@ class RouterTiesMixin:
             owner = self._watched.get(device_id)
             tracker = None
             # Rung 1: a normalized MAC in the device's connections.
-            for kind, value in device.connections:
+            for kind, value in device_field(device, "connections", set()):
                 if kind != dr.CONNECTION_NETWORK_MAC:
                     continue
                 found = tracker_by_mac.get(normalize_mac(value) or "")

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.16 (2026-09-21)
+# File: dashboard.py, Version: 0.22.18 (2026-09-21)
 
 """What the dashboard reads from the coordinator.
 
@@ -113,6 +113,7 @@ from .const import (
     WIFI_KEY,
     WIFI_SENSOR_NAME,
 )
+from .device_fields import device_field
 
 
 class DashboardMixin:
@@ -500,17 +501,20 @@ class DeviceViewMixin:
             "identity": {
                 "name": self._device_name(device_id),
                 "device_id": device_id,
-                # Read with getattr: the registry can also return a child
-                # device entry (2026.9), which carries none of these.
-                "manufacturer": getattr(device, "manufacturer", None),
-                "model": getattr(device, "model", None),
-                "model_id": getattr(device, "model_id", None),
-                "hw_version": getattr(device, "hw_version", None),
+                # A child device entry (2026.9) carries none of these.
+                # getattr alone does not spare it: the child answers the
+                # attribute with a deprecation line, so device_field
+                # asks what the entry is first.
+                "manufacturer": device_field(device, "manufacturer"),
+                "model": device_field(device, "model"),
+                "model_id": device_field(device, "model_id"),
+                "hw_version": device_field(device, "hw_version"),
                 "area": area_name,
                 "integration": domain,
                 "integration_name": self._integration_title(domain) if domain else None,
                 "connections": sorted(
-                    [kind, value] for kind, value in getattr(device, "connections", None) or ()
+                    [kind, value]
+                    for kind, value in device_field(device, "connections", set())
                 ),
                 "first_observed": record.get(DEV_FIRST_OBSERVED),
                 "event_count": record.get(DEV_EVENT_COUNT),
@@ -895,8 +899,8 @@ class TrendsViewMixin:
             bank[min(9, int(level // 10))] += 1
             device = registry.async_get(device_id)
             key = (
-                getattr(device, "manufacturer", None) or "not reported",
-                getattr(device, "model", None) or "not reported",
+                device_field(device, "manufacturer") or "not reported",
+                device_field(device, "model") or "not reported",
             )
             groups.setdefault(key, []).append({
                 "device_id": device_id,

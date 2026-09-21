@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.22.4 (2026-09-19)
+# File: diagnostics.py, Version: 0.22.18 (2026-09-21)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -68,6 +68,7 @@ from .const import (
     TRIM_MIN_SAMPLES,
     TRIM_TOP_K,
 )
+from .device_fields import device_field
 
 # The notification targets are the user's own device names; they add
 # nothing to a diagnosis and are redacted by default.
@@ -227,10 +228,12 @@ async def async_get_config_entry_diagnostics(
             # coordinator or router somebody runs when their stack
             # misbehaves, and whether a battery library would match
             # their fleet at all (ruling #398).
-            "manufacturer": device.manufacturer if device else None,
-            "model": device.model if device else None,
-            "sw_version": device.sw_version if device else None,
-            "hw_version": device.hw_version if device else None,
+            # A child device (2026.9) carries none of these, and reads
+            # None through device_field rather than a deprecation line.
+            "manufacturer": device_field(device, "manufacturer"),
+            "model": device_field(device, "model"),
+            "sw_version": device_field(device, "sw_version"),
+            "hw_version": device_field(device, "hw_version"),
             # A set-aside device's integration comes from why it was set
             # aside: the fourth fleet's excluded Spook devices read None.
             "integration": coordinator._watched.get(device_id)

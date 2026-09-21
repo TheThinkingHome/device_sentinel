@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.22.4 (2026-09-19)
+# File: study.py, Version: 0.22.18 (2026-09-21)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -58,6 +58,7 @@ from .const import (
     STUDIABLE,
     STUDY_SHAPE_CAP,
 )
+from .device_fields import device_field
 
 ROUTER = "router"
 IGNORED_KEYS = {"friendly_name", "icon", "device_class"}
@@ -263,7 +264,8 @@ class StudyMixin:
                 # SwitchBot and ESPHome devices read empty.
                 "integration": integration,
                 "connections": sorted(
-                    f"{kind}:{value}" for kind, value in device.connections
+                    f"{kind}:{value}"
+                    for kind, value in device_field(device, "connections", set())
                 ),
                 "identifiers": sorted(
                     str(ident) for _domain, ident in device.identifiers
