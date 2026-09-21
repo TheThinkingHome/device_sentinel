@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.13 (2026-09-21)
+# File: dashboard.py, Version: 0.22.16 (2026-09-21)
 
 """What the dashboard reads from the coordinator.
 
@@ -358,7 +358,7 @@ class IntegrationViewMixin:
                 "device_id": row["device_id"],
                 "name": row["name"],
                 "watched": row["watched"],
-                "muted": row["muted_global"],
+                "muted": row["muted"],
                 "set_aside": row["set_aside"],
                 "problem": problem["problem"] if problem else "",
                 "acknowledged": bool(problem and problem["acknowledged"]),
@@ -427,7 +427,7 @@ class DeviceViewMixin:
                 "name": self._device_name(device_id),
                 "integration": domain,
                 "integration_name": self._integration_title(domain),
-                "muted": self._muted_devices.get(device_id) or "",
+                "muted": self.mute_text(device_id),
                 "status": self._page_status(record),
                 "problem": problem["problem"] if problem else "",
                 "acknowledged": bool(problem and problem["acknowledged"]),
@@ -517,7 +517,7 @@ class DeviceViewMixin:
                 "clock": "last_seen" if device_id in self._last_seen_entity else "recorded",
                 "watched": device_id in self._watched,
                 "set_aside": (self._set_aside.get(device_id) or (None, None, ""))[2],
-                "muted": self._muted_devices.get(device_id) or "",
+                "muted": self.mute_text(device_id),
                 # Filled by the battery library lookup, when it arrives.
                 "battery_type": None,
             },

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.22.13 (2026-09-21)
+# File: report_maintainer.py, Version: 0.22.16 (2026-09-21)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -361,12 +361,14 @@ class MaintainerReportMixin:
             f"({WIKI_LINK_REPORTS}) on the Device Sentinel wiki.",
             "",
             f"All series read newest first. SIGNAL is each device's "
-            f"daily time-weighted 5th percentile (rulings #253, "
-            f"#322), read over the last {SIGNAL_DAYS_KEEP} days; the "
-            f"floor is the lowest of them and the line sits a "
-            f"sensitivity margin above it. Readings below the line "
-            f"are ~~struck~~ and null entries from rail-only days "
-            f"show as a dash. A "
+            f"daily low, its time-weighted 5th percentile (rulings "
+            f"#253, #322), over the last {SIGNAL_DAYS_KEEP} days. A bad "
+            f"day, one whose low fell below that day's bad-day line, is "
+            f"~~struck~~; the lowest day is **bold**; a rail-only day "
+            f"shows as a dash. ITS NORMAL and BAD-DAY LINE are today's, "
+            f"the figures the dashboard shows on the device's page: a "
+            f"link is weak on a day its low falls below the bad-day "
+            f"line. A "
             f"warning sign at the front of the cell marks a device "
             f"that spoke for three days and said nothing but the "
             f"rail fill value: a stuck reading that shows as perfect "
@@ -405,7 +407,7 @@ class MaintainerReportMixin:
             "",
             f"| DEVICE (INTEGRATION) | STATUS | GAPS (K={TRIM_TOP_K}) | "
             f"CLOCK | EVENTS | SIGNAL | "
-            f"FLOOR/WK | MEAN\u00b1SD | "
+            f"ITS NORMAL | BAD-DAY LINE | "
             f"BAT LEVEL (floor {self.low_threshold:g}%) |",
             # Nine cells, matching the header and every data row. The
             # Dwell column left all three when the dwell chart went,
@@ -437,9 +439,10 @@ class MaintainerReportMixin:
                     # rows are collected, sorted, and only then
                     # written: a call in the second loop reads
                     # whatever record the first loop left behind and
-                    # prints one device's figure on every row.
-                    self._floor_drift_cell(record),
-                    self._format_signal_mean_cell(record),
+                    # prints one device's figure on every row. Today's
+                    # normal and bad-day line replaced the floor's
+                    # weekly drift and the mean in 0.22.16.
+                    *self._signal_today_cells(record),
                     self._format_battery_cell(record),
                     self.signal_railed(record),
                     self._signal_muted(device_id),
@@ -458,8 +461,8 @@ class MaintainerReportMixin:
             clock_source,
             event_count,
             lows_cell,
-            floor_drift,
-            mean_cell,
+            its_normal,
+            badday_line,
             battery_cell,
             railed,
             sig_muted,
@@ -477,8 +480,8 @@ class MaintainerReportMixin:
                 f"| {device_label} | {status} | "
                 f"{maxima_cell} | "
                 f"{clock_source} | {event_count} | {signal_cell} | "
-                f"{floor_drift} | "
-                f"{mean_cell} | {battery_cell} |"
+                f"{its_normal} | "
+                f"{badday_line} | {battery_cell} |"
             )
         lines.append("")
         lines.append(f"{len(rows)} watched devices.")
@@ -535,21 +538,22 @@ class MaintainerReportMixin:
         return f"Global ({level})"
 
     def _family_mute_texts(self, device_id: str) -> list[str]:
-        """Battery, signal and freeze mutes, each with its source.
+        """Freeze, battery and signal mutes, each with its source.
 
         Invisible on Classification until 0.22.13, so a device muted
         for battery alone read as if nothing were muted (from the
-        second fleet's review, ruled 21 September 2026).
+        second fleet's review, ruled 21 September 2026). In the order
+        the owner set for 0.22.16: freeze, battery, signal.
         """
         options = self.entry.options
         found = []
         for family, integrations, labels, devices in (
+            ("freeze", CONF_FREEZE_MUTED_INTEGRATIONS,
+             CONF_FREEZE_MUTED_LABELS, CONF_FREEZE_MUTED_DEVICES),
             ("battery", CONF_BATTERY_MUTED_INTEGRATIONS,
              CONF_BATTERY_MUTED_LABELS, CONF_BATTERY_MUTED_DEVICES),
             ("signal", CONF_SIGNAL_MUTED_INTEGRATIONS,
              CONF_SIGNAL_MUTED_LABELS, CONF_SIGNAL_MUTED_DEVICES),
-            ("freeze", CONF_FREEZE_MUTED_INTEGRATIONS,
-             CONF_FREEZE_MUTED_LABELS, CONF_FREEZE_MUTED_DEVICES),
         ):
             source = self._mute_source(
                 device_id,
@@ -561,19 +565,33 @@ class MaintainerReportMixin:
                 found.append(f"{family} ({source})")
         return found
 
+    def mute_text(self, device_id: str) -> str:
+        """Every mute on a device, global first, each with its source.
+
+        The one wording behind Classification, classification.md, a
+        device's page, the Devices tab and an integration's device
+        list (0.22.16), so a device reads the same wherever it is
+        named. Empty when nothing is muted.
+        """
+        global_mute = self._global_mute_text(device_id)
+        mutes = ([global_mute] if global_mute else []) + (
+            self._family_mute_texts(device_id)
+        )
+        return "; ".join(mutes)
+
     def classification_rows(self) -> list[dict[str, Any]]:
         """Return one row per device, watched and set aside together.
 
         The one builder behind classification.md and the dashboard's
         Classification tab, so the two can never disagree. A watched
         device's MUTED cell holds every mute that applies to it, the
-        global one first and then battery, signal and freeze, each
+        global one first and then freeze, battery and signal, each
         naming its source; a set-aside device carries why it was set
         aside, and an exclusion names the integration excluded
         (ruling #257; the sources from the second fleet's review,
         0.22.13). `muted_global` keeps the global mute alone, for the
-        Integrations tab and the integration page, which count and
-        show a device as muted only when it is muted from everything.
+        Integrations tab's count, which counts a device as muted only
+        when it is muted from everything.
         COPIES counts watched devices sharing a name, by the naming
         ladder (ruling #402). Sorted by name, case-insensitively.
         """
@@ -584,17 +602,13 @@ class MaintainerReportMixin:
         rows: list[dict[str, Any]] = []
         for device_id, integration_domain in self._watched.items():
             name = self._device_name(device_id)
-            global_mute = self._global_mute_text(device_id)
-            mutes = ([global_mute] if global_mute else []) + (
-                self._family_mute_texts(device_id)
-            )
             rows.append({
                 "device_id": device_id,
                 "name": name,
                 "integration": integration_domain,
                 "watched": True,
-                "muted": "; ".join(mutes),
-                "muted_global": global_mute,
+                "muted": self.mute_text(device_id),
+                "muted_global": self._global_mute_text(device_id),
                 "set_aside": "",
                 "copies": name_copy_counts.get(name, 1),
             })

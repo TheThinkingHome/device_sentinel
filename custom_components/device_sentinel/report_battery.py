@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.22.6 (2026-09-20)
+# File: report_battery.py, Version: 0.22.16 (2026-09-21)
 
 """The battery report: which cells are going to be low.
 
@@ -839,8 +839,9 @@ class BatteryReportMixin:
             )
             + "<p>These devices report a raw sensor reading rather "
             "than a valid battery level between 0 to 100 percent. "
-            "They will never be flagged low. Turn Battery off for "
-            "them on their Device Sentinel device page.</p>"
+            "They will never be flagged low. To take them out of "
+            "these lists, mute them for battery in Configure, Low "
+            "Battery.</p>"
             if groups["unreadable"]
             else "<p class='empty'>None.</p>"
         )
@@ -857,9 +858,9 @@ class BatteryReportMixin:
                 3,
             )
             + "<p>These devices report no battery level. Most are "
-            "mains powered. If one of these runs on batteries, turn "
-            "Battery on for it on its Device Sentinel device "
-            "page.</p>"
+            "mains powered. If one of these runs on batteries, its "
+            "battery reading may be switched off: press Enable Battery "
+            "at the top of the dashboard.</p>"
             if groups["absent"]
             else "<p class='empty'>None.</p>"
         )

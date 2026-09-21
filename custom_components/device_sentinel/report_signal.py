@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_signal.py, Version: 0.22.6 (2026-09-20)
+# File: report_signal.py, Version: 0.22.16 (2026-09-21)
 
 """The signal report and the signal cells of the telemetry.
 
@@ -35,9 +35,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     DATA_DEVICES,
-    DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_DAILY_P5,
-    DEV_SIGNAL_DAILY_SD,
     DEV_SIGNAL_DAILY_COUNT,
     DEV_SIGNAL_SCALE,
     REPORT_SIGNAL,
@@ -45,7 +43,6 @@ from .const import (
     REPORT_SIGNAL_URL,
     REPORT_WWW_DIR,
     SIGNAL_DAYS_KEEP,
-    SIGNAL_TRIM_PER_WEEK,
     WIKI_BASE_URL,
 )
 
@@ -660,58 +657,36 @@ the Device Sentinel wiki.</footer>
         )
         self._trim_dated(directory, REPORT_SIGNAL_PREFIX)
 
-    def _floor_drift_cell(self, record: dict[str, Any]) -> str:
-        """Return how fast this device's floor is moving, per week.
+    def _signal_today_cells(self, record: dict[str, Any]) -> tuple[str, str]:
+        """Return today's normal and bad-day line, as the dashboard shows them.
 
-        The floor is the lowest daily P5 in the thirty-day window
-        (rulings #322, #323), so the drift is the slope of that
-        minimum recomputed as the window walks forward a day at a
-        time over the last week. Per week rather than per day,
-        because a daily figure would be mostly rounding. Points
-        rather than percent, because neither LQI nor dBm is a
-        percentage.
+        device_telemetry.md printed the floor's weekly drift here, a
+        figure from the floor-based line, which judges nothing: weak
+        links are raised by the bad-day model (0.22.16). Both figures
+        come from the same judgment the device page reads, for the
+        newest day, so the file and the page cannot disagree.
         """
-        history = [
-            value
-            for value in (record.get(DEV_SIGNAL_DAILY_P5) or [])
-            if isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and math.isfinite(value)
-        ]
-        if len(history) < SIGNAL_TRIM_PER_WEEK + 2:
-            return "-"
-        floors: list[float] = []
-        for end in range(
-            len(history) - SIGNAL_TRIM_PER_WEEK, len(history) + 1
-        ):
-            window = history[:end][-SIGNAL_DAYS_KEEP:]
-            if window:
-                floors.append(min(window))
-        if len(floors) < 3:
-            return "-"
-        weekly = self._battery_slope(floors) * SIGNAL_TRIM_PER_WEEK
-        if abs(weekly) < 0.5:
-            return f"{floors[-1]:g} flat"
-        return f"{floors[-1]:g} {weekly:+.0f}/wk"
+        series = record.get(DEV_SIGNAL_DAILY_P5) or []
+        today = self.signal_day_judgment(record, len(series) - 1) if series else None
+        if today is None:
+            return "-", "-"
+        return f"{today['normal']:.1f}", f"{today['line']:.1f}"
 
     def _format_signal_lows_cell(self, record: dict[str, Any]) -> str:
-        """Render the daily P5 series newest-first with the floor
-        marked.
+        """Render the daily P5 series newest-first, bad days struck.
 
-        The column shows exactly the window the floor is computed
-        over (rulings #126, #322): each value is the day's
-        time-weighted 5th percentile, a rail-only day's null shows
-        as a dash, and the floor, the lowest value in the window, is
-        bold at its earliest occurrence so a reader sees when the
-        device first reached its low. Nothing is struck: the floor
-        is the plain minimum (ruling #323), so no value sits below
-        it.
+        Each value is the day's time-weighted 5th percentile, over the
+        thirty days the report shows (rulings #126, #322). A day the
+        bad-day model judged bad is ~~struck~~, the same days the
+        device page marks red (0.22.16); the lowest day is bold at its
+        earliest occurrence, the dashboard's "lowest day"; a rail-only
+        day's null shows as a dash.
         """
-        stored = list(record.get(DEV_SIGNAL_DAILY_P5) or [])[
-            -SIGNAL_DAYS_KEEP:
-        ]
+        full = list(record.get(DEV_SIGNAL_DAILY_P5) or [])
+        stored = full[-SIGNAL_DAYS_KEEP:]
         if not stored:
             return "-"
+        offset = len(full) - len(stored)
         real = [
             value
             for value in stored
@@ -719,12 +694,12 @@ the Device Sentinel wiki.</footer>
             and not isinstance(value, bool)
             and math.isfinite(value)
         ]
-        floor = min(real) if real else None
-        floor_index = None
-        if floor is not None:
+        lowest = min(real) if real else None
+        lowest_index = None
+        if lowest is not None:
             for index, value in enumerate(stored):
-                if value == floor:
-                    floor_index = index
+                if value == lowest:
+                    lowest_index = index
                     break
         parts = []
         for index in reversed(range(len(stored))):
@@ -734,37 +709,13 @@ the Device Sentinel wiki.</footer>
                 # poisoned entry the hostile suite plants: the page
                 # is written whatever a series holds.
                 parts.append("-")
-            elif index == floor_index:
-                parts.append(f"**{value:g}**")
-            else:
-                parts.append(f"{value:g}")
+                continue
+            cell = f"{value:g}"
+            if index == lowest_index:
+                cell = f"**{cell}**"
+            judgment = self.signal_day_judgment(record, offset + index)
+            if judgment is not None and judgment["bad"]:
+                cell = f"~~{cell}~~"
+            parts.append(cell)
         return " ".join(parts)
 
-    @staticmethod
-    def _format_signal_mean_cell(record: dict[str, Any]) -> str:
-        """Return yesterday's mean and deviation, or a dash.
-
-        These are the good-state statistics the Bayesian successor
-        needs (ruling #172), shown so the numbers are visible while
-        the
-        method that will use them waits on the series maturing. One
-        value per day; the newest is enough for a reference table,
-        and the full series is in storage.
-        """
-        means = record.get(DEV_SIGNAL_DAILY_MEAN) or []
-        deviations = record.get(DEV_SIGNAL_DAILY_SD) or []
-        # The newest day that has statistics. A rail-only day writes
-        # null into both series (ruling #305), and this cell read
-        # [-1] unguarded: the second of two readers with that fault,
-        # missed because the sweep that found the first was
-        # truncated. The rail-day test now drives the whole report
-        # pipeline over a null day so a further missed reader fails
-        # in the suite rather than on a fleet.
-        for index in range(len(means) - 1, -1, -1):
-            if index < len(deviations) and means[
-                index
-            ] is not None and deviations[index] is not None:
-                return (
-                    f"{means[index]:g}\u00b1{deviations[index]:g}"
-                )
-        return "-"
