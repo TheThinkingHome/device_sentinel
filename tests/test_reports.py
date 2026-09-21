@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.22.16 (2026-09-21)
+# File: test_reports.py, Version: 0.22.19 (2026-09-21)
 
 """The diagnostic files: telemetry and classification.
 
@@ -46,6 +46,7 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.device_sentinel.const import (
     DEFAULT_LOW_THRESHOLD,
     CONF_BATTERY_MUTED_DEVICES,
+    CONF_BRIEF_TARGETS,
     CONF_MUTED_DEVICES,
     CONF_FREEZE_MUTED_DEVICES,
     CONF_HIGH_PRIORITY_TARGETS,
@@ -1079,3 +1080,16 @@ async def test_the_learned_statistics_table_has_matching_columns(
         f"header has {header.count('|') - 1} columns, "
         f"separator has {separator.count('---')}"
     )
+
+
+async def test_diagnostics_redact_the_brief_targets(hass: HomeAssistant):
+    """A notify service is often named after an email address, as
+    `notify.someone_gmail_com`, and the diagnostics are what testers
+    attach to public issues. The brief's targets are redacted with the
+    other two target settings."""
+    entry = await setup_entry(
+        hass, {CONF_BRIEF_TARGETS: ["notify.someone_gmail_com"]}
+    )
+    result = await async_get_config_entry_diagnostics(hass, entry)
+    assert result["entry_options"][CONF_BRIEF_TARGETS] == "**REDACTED**"
+    assert "someone_gmail_com" not in str(result)

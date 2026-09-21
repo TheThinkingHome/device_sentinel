@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.12.16 (2026-08-08)
+# File: test_hardening.py, Version: 0.22.19 (2026-09-21)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -23,6 +23,7 @@ holds the audit fixes, the two cleanups, and the wiki links.
 
 import json
 import os
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -133,6 +134,79 @@ async def test_newline_in_name_is_flattened(hass: HomeAssistant):
     """S1: a newline in a name cannot break a report row."""
     assert (
         DeviceSentinelCoordinator._report_cell("Two\nLines") == "Two Lines"
+    )
+
+
+async def test_pipe_in_name_keeps_its_row_in_the_brief_page(
+    hass: HomeAssistant,
+):
+    """The Markdown kept the pipe escaped, but the brief's page split
+    its rows on every pipe, the escaped one included: a device named
+    "A|B Sensor" gained a cell, shifted its row's columns, and lost its
+    link and area. Each row keeps its header's width and the name reads
+    whole."""
+    device, eid = _register(hass, "p2", "A|B Sensor")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, "21.5")
+    _freeze(coord, device.id, since=dt_util.utcnow().timestamp() - 4 * 3600)
+    coord._sync_problem_list()
+    await hass.async_add_executor_job(coord._write_reports, "test")
+
+    page = open(
+        hass.config.path("www", "device_sentinel", "daily_brief.html"),
+        encoding="utf-8",
+    ).read()
+    tables = page.split("<table>")[1:]
+    rows_seen = 0
+    for table in tables:
+        body = table.split("</table>")[0]
+        head = body.split("</tr>")[0]
+        width = head.count("<th>")
+        for row in body.split("</tr>")[1:]:
+            if "B Sensor" not in row:
+                continue
+            rows_seen += 1
+            assert row.count("<td>") == width, row
+            assert "A|B Sensor" in row
+            assert "\\" not in row
+    assert rows_seen >= 1
+
+
+async def test_markup_in_a_name_is_inert_in_the_markdown_reports(
+    hass: HomeAssistant,
+):
+    """A name holding markup reached the Markdown reports as markup,
+    where anything that renders them would draw it. The angle brackets
+    are escaped the way the pipe already was, and the brief's page reads
+    the name as written."""
+    name = "Door <img src=x onerror=alert(1)>"
+    device, eid = _register(hass, "m1", name)
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, "21.5")
+    _freeze(coord, device.id, since=dt_util.utcnow().timestamp() - 4 * 3600)
+    coord._sync_problem_list()
+    await hass.async_add_executor_job(coord._write_reports, "test")
+
+    for report in ("device_telemetry.md", "classification.md"):
+        text = open(
+            hass.config.path("device_sentinel", report), encoding="utf-8"
+        ).read()
+        # No angle bracket left without its backslash.
+        assert not re.search(r"(?<!\\)<", text), report
+        assert "Door \\<img src=x onerror=alert(1)\\>" in text, report
+    page = open(
+        hass.config.path("www", "device_sentinel", "daily_brief.html"),
+        encoding="utf-8",
+    ).read()
+    assert "<img" not in page
+    assert "Door &lt;img src=x onerror=alert(1)&gt;" in page
+    assert "\\&lt;" not in page
+
+
+async def test_the_cell_escape_covers_angle_brackets():
+    assert (
+        DeviceSentinelCoordinator._report_cell("a <b> | c")
+        == "a \\<b\\> \\| c"
     )
 
 

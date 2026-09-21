@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_brief.py, Version: 0.22.9 (2026-09-20)
+# File: tests/test_dashboard_brief.py, Version: 0.22.19 (2026-09-21)
 
 """The Daily Brief tab, and stepping back through the days.
 
@@ -17,7 +17,7 @@ which are kept fourteen days, and that is how far back the tab goes.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -156,3 +156,64 @@ async def test_it_is_admin_only(hass: HomeAssistant, hass_ws_client, hass_read_o
     await _house(hass)
     client = await hass_ws_client(hass, hass_read_only_access_token)
     assert (await _call(client, type="device_sentinel/brief"))["error"]["code"] == "unauthorized"
+
+
+# ==================================================================
+# A day ends at the next local midnight, not 24 hours after the last.
+# ==================================================================
+
+async def test_a_day_ends_at_the_next_midnight_across_a_clock_change(
+    hass: HomeAssistant,
+):
+    """The tab ended a finished day at midnight plus 24 hours. On the
+    25-hour day the clocks go back, 1 November in the second and fourth
+    fleets' time zone, that lost the last hour; on the 23-hour day they
+    go forward, 8 March, it repeated the next day's first hour."""
+    await hass.config.async_set_time_zone("America/Chicago")
+    coord = await setup_coordinator(hass)
+    for day, hours in (
+        (date(2026, 11, 1), 25),
+        (date(2026, 3, 8), 23),
+        (date(2026, 9, 20), 24),
+    ):
+        start, end, is_today = coord._brief_day_bounds(day)
+        next_midnight = dt_util.as_utc(
+            dt_util.start_of_local_day(day + timedelta(days=1))
+        ).timestamp()
+        assert is_today is False
+        assert end == next_midnight, day
+        assert end - start == hours * 3600, day
+
+
+async def test_the_last_hour_of_a_long_day_is_shown_once(
+    hass: HomeAssistant, freezer
+):
+    """An event at 11:30 PM on 1 November belongs to 1 November, and an
+    event at the stroke of midnight belongs to the day it opens."""
+    await hass.config.async_set_time_zone("America/Chicago")
+    freezer.move_to("2026-11-03T18:00:00+00:00")
+    plug, _ = register_device(hass, "plug", name="Plug Living Room Router")
+    coord = await setup_coordinator(hass)
+    # 24.5 hours of elapsed time after the day began, which on this
+    # 25-hour day is 11:30 PM by the clock.
+    late = (
+        dt_util.as_utc(dt_util.start_of_local_day(date(2026, 11, 1)))
+        + timedelta(hours=24, minutes=30)
+    ).timestamp()
+    assert dt_util.as_local(dt_util.utc_from_timestamp(late)).hour == 23
+    midnight = dt_util.as_utc(
+        dt_util.start_of_local_day(date(2026, 11, 2))
+    ).timestamp()
+    coord.data[DATA_INCIDENTS] = [
+        {INC_DEVICE_ID: plug.id, INC_NAME: "Plug Living Room Router",
+         INC_KIND: TODO_KIND_UNAVAILABLE, INC_EVENT: INCIDENT_OPENED, INC_WHEN: late},
+        {INC_DEVICE_ID: plug.id, INC_NAME: "Plug Living Room Router",
+         INC_KIND: TODO_KIND_UNAVAILABLE, INC_EVENT: INCIDENT_RESOLVED,
+         INC_WHEN: midnight, INC_DURATION: midnight - late},
+    ]
+    first = coord.dashboard_brief(date(2026, 11, 1))
+    second = coord.dashboard_brief(date(2026, 11, 2))
+    assert first["counts"]["opened"] == 1
+    assert first["counts"]["resolved"] == 0
+    assert second["counts"]["opened"] == 0
+    assert second["counts"]["resolved"] == 1
