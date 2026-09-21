@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_signal_badday.py, Version: 0.19.14 (2026-09-03)
+# File: tests/test_signal_badday.py, Version: 0.22.20 (2026-09-21)
 
 """The bad signal day detector (ruling #310).
 
@@ -22,9 +22,14 @@ was a rule reading a field the live journal never writes.
 from __future__ import annotations
 
 import json
+import math
 import os
 import pathlib
 import re
+import statistics
+from fractions import Fraction
+
+import pytest
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
@@ -39,8 +44,17 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_SCALE,
     SIGNAL_SCALE_RSSI,
+    BADDAY_BASELINE_DAYS_MAX,
+    BADDAY_BASELINE_DAYS_MIN,
+    BADDAY_SENSITIVITY_MAX,
+    BADDAY_SENSITIVITY_MIN,
+    DEFAULT_BADDAY_BASELINE_DAYS,
+    DEFAULT_BADDAY_SENSITIVITY,
 )
+from custom_components.device_sentinel import detect_signal
+from custom_components.device_sentinel.detect_signal import _spread
 
+from .conftest import fleet_param
 from .helpers import register_device, setup_coordinator
 
 STEADY_WEEK = [160.0, 162.0, 158.0, 161.0, 160.0, 159.0]
@@ -483,3 +497,69 @@ async def test_a_fleet_where_every_link_falls_on_one_day(
         assert len(named) == int(found.group(1))
     # The biographies are capped rather than one per device.
     assert page.count("<h3>") <= 12, page.count("<h3>")
+
+
+# ==================================================================
+# The spread in floating point gives the exact answer (0.22.20).
+# ==================================================================
+
+_FLEETS = [
+    fleet_param("james", "device_sentinel.storage", id="reference"),
+    fleet_param("tim", "device_sentinel_storage.json", id="second"),
+    fleet_param(
+        "christopher_2026-09-19", "device_sentinel_storage.json", id="fourth"
+    ),
+]
+
+
+def test_the_spread_matches_exact_arithmetic():
+    """Half steps on both scales, a flat run, and values with no exact
+    binary form, each against the deviation worked in fractions."""
+    for values in (
+        [200.0, 201.5, 199.0, 200.5],
+        [-71.5, -70.0, -74.5, -69.0, -72.0, -71.0, -70.5],
+        [255.0] * 14,
+        [0.1, 0.2, 0.3, 0.1],
+        [12.0, 250.0, 131.5, 7.5, 64.0, 199.0],
+    ):
+        exact = math.sqrt(statistics.pvariance([Fraction(v) for v in values]))
+        assert math.isclose(_spread(values), exact, rel_tol=1e-15, abs_tol=1e-15)
+
+
+@pytest.mark.parametrize("path", _FLEETS)
+async def test_the_spread_changes_no_judgment_on_a_fleet(
+    hass: HomeAssistant, path, monkeypatch
+):
+    """Every stored day of every device, at the defaults and at both
+    ends of the two sliders that shape the baseline, judged with the
+    floating-point spread and with the exact one the release before
+    used. No verdict, normal or fall may move, and no spread by more
+    than rounding."""
+    coord = await setup_coordinator(hass)
+    devices = json.loads(path.read_text(encoding="utf-8"))["data"]["devices"]
+    records = [r for r in devices.values() if r.get("signal_daily_p5")]
+    judged = 0
+    for days in (BADDAY_BASELINE_DAYS_MIN, DEFAULT_BADDAY_BASELINE_DAYS, BADDAY_BASELINE_DAYS_MAX):
+        for sensitivity in (BADDAY_SENSITIVITY_MIN, DEFAULT_BADDAY_SENSITIVITY, BADDAY_SENSITIVITY_MAX):
+            monkeypatch.setattr(coord, "_badday_baseline_days", lambda d=days: d)
+            monkeypatch.setattr(coord, "_badday_sensitivity", lambda s=sensitivity: s)
+            for record in records:
+                for index in range(len(record["signal_daily_p5"])):
+                    fast = coord.signal_badday(record, index)
+                    monkeypatch.setattr(detect_signal, "_spread", statistics.pstdev)
+                    exact = coord.signal_badday(record, index)
+                    monkeypatch.setattr(detect_signal, "_spread", _spread)
+                    if exact is None:
+                        assert fast is None
+                        continue
+                    judged += 1
+                    assert fast["bad"] == exact["bad"]
+                    assert fast["baseline"] == exact["baseline"]
+                    assert fast["fall"] == exact["fall"]
+                    assert math.isclose(fast["spread"], exact["spread"], rel_tol=1e-15)
+    # A house younger than the baseline has no day to judge yet: the
+    # fourth fleet held four days when captured. Anything older must
+    # have judged a good many.
+    longest = max((len(r["signal_daily_p5"]) for r in records), default=0)
+    if longest > DEFAULT_BADDAY_BASELINE_DAYS:
+        assert judged > 1000

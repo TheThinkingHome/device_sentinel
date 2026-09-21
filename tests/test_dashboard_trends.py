@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_trends.py, Version: 0.22.12 (2026-09-20)
+# File: tests/test_dashboard_trends.py, Version: 0.22.20 (2026-09-21)
 
 """The Battery Trends and Signal Trends tabs.
 
@@ -14,6 +14,9 @@ reports' own functions, worked out when asked.
 """
 
 from __future__ import annotations
+
+import json
+import threading
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -162,3 +165,28 @@ async def test_both_are_admin_only(hass: HomeAssistant, hass_ws_client, hass_rea
     client = await hass_ws_client(hass, hass_read_only_access_token)
     for kind in ("battery_trends", "signal_trends"):
         assert (await _call(client, type=f"device_sentinel/{kind}"))["error"]["code"] == "unauthorized"
+
+
+async def test_signal_trends_are_built_off_the_event_loop(
+    hass: HomeAssistant, hass_ws_client
+):
+    """The tab judges every stored day of every device, about 100 ms on
+    the fleets held, and while it ran on the event loop the whole of
+    Home Assistant waited. It is built in the executor, as the reports
+    are, and the reply is unchanged."""
+    coord, *_ = await _fleet(hass)
+    expected = coord.signal_trends()
+    loop_thread = threading.get_ident()
+    threads = []
+    real = coord.signal_trends
+
+    def recorded():
+        threads.append(threading.get_ident())
+        return real()
+
+    coord.signal_trends = recorded
+    client = await hass_ws_client(hass)
+    reply = await _call(client, type="device_sentinel/signal_trends")
+    assert reply["success"], reply
+    assert threads and loop_thread not in threads
+    assert reply["result"] == json.loads(json.dumps(expected))
