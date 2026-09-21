@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_classification_sources.py, Version: 0.22.13 (2026-09-21)
+# File: tests/test_classification_sources.py, Version: 0.22.16 (2026-09-21)
 
 """Classification says why: the source of every mute and exclusion.
 
@@ -96,9 +96,10 @@ async def test_every_mute_broadest_first_each_with_its_source(hass: HomeAssistan
         CONF_SIGNAL_MUTED_LABELS: [label_id],
         CONF_FREEZE_MUTED_INTEGRATIONS: ["test"],
     })
+    # The order ruled on 21 September: global, freeze, battery, signal.
     assert _row(coord, "Echo Sensor")["muted"] == (
-        "Global (device); battery (device); signal (label: Noisy links); "
-        "freeze (integration: test)"
+        "Global (device); freeze (integration: test); battery (device); "
+        "signal (label: Noisy links)"
     )
 
 
@@ -147,7 +148,10 @@ async def test_the_integrations_tab_counts_only_global_mutes(hass: HomeAssistant
     assert counts["muted"] == 0
 
 
-async def test_the_integration_page_shows_only_the_global_mute(hass: HomeAssistant):
+async def test_the_integration_page_shows_every_mute(hass: HomeAssistant):
+    """Ruled 21 September for 0.22.16: every surface that names a
+    device's mutes names all of them, in the same order. Only the
+    Integrations tab's count stays on the global mute."""
     device, _ = register_device(hass, "k", name="Kilo Panel")
     coord = await setup_coordinator(hass, {
         CONF_MUTED_DEVICES: [device.id],
@@ -155,7 +159,32 @@ async def test_the_integration_page_shows_only_the_global_mute(hass: HomeAssista
     })
     page = coord.dashboard_integration("test")
     listed = next(d for d in page["devices"] if d["name"] == "Kilo Panel")
-    assert listed["muted"] == "Global (device)"
+    assert listed["muted"] == "Global (device); battery (device)"
+
+
+async def test_the_device_page_shows_every_mute(hass: HomeAssistant):
+    """A device muted for battery alone read "Watched" on its own page."""
+    device, _ = register_device(hass, "m", name="Mike Phone")
+    coord = await setup_coordinator(hass, {CONF_BATTERY_MUTED_DEVICES: [device.id]})
+    page = coord.dashboard_device(device.id)
+    assert page["identity"]["muted"] == "battery (device)"
+
+
+async def test_the_devices_tab_shows_every_mute(hass: HomeAssistant):
+    device, _ = register_device(hass, "n", name="November Phone")
+    coord = await setup_coordinator(hass, {
+        CONF_MUTED_DEVICES: [device.id],
+        CONF_FREEZE_MUTED_INTEGRATIONS: ["test"],
+    })
+    row = next(r for r in coord.dashboard_devices() if r["name"] == "November Phone")
+    assert row["muted"] == "Global (device); freeze (integration: test)"
+
+
+async def test_a_device_muted_for_nothing_reads_empty_everywhere(hass: HomeAssistant):
+    device, _ = register_device(hass, "o", name="Oscar Plug")
+    coord = await setup_coordinator(hass)
+    assert coord.dashboard_device(device.id)["identity"]["muted"] == ""
+    assert next(r for r in coord.dashboard_devices() if r["name"] == "Oscar Plug")["muted"] == ""
 
 
 async def test_the_report_keys_every_set_aside_reason(hass: HomeAssistant):

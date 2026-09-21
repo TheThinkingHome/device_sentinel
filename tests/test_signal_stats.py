@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.16.3 (2026-08-20)
+# File: test_signal_stats.py, Version: 0.22.16 (2026-09-21)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -428,20 +428,6 @@ async def test_the_brief_carries_no_signal_anomaly_line(
     assert "Signal fell sharply" not in brief
 
 
-async def test_the_mean_column_reads_dash_until_a_day_rolls(
-    hass: HomeAssistant,
-):
-    """The telemetry cell is honest about an empty series."""
-    coord = await setup_coordinator(hass)
-    device, _ = register_device(hass, "m1", "Mean Device")
-    record = coord.data[DATA_DEVICES][device.id]
-
-    assert coord._format_signal_mean_cell(record) == "-"
-    for index, value in enumerate((100.0, 120.0, 110.0)):
-        coord._feed_signal(record, value, 1000.0 + index * 60.0)
-    coord._roll_signal_stats(record, 1180.0)
-    assert coord._format_signal_mean_cell(record) == "110\u00b18.16"
-
 async def test_the_strip_orders_worst_first(hass: HomeAssistant):
     """The page opens on what matters (ruling #310).
 
@@ -865,47 +851,6 @@ async def test_the_diagnostics_say_whether_the_line_was_bounded(
 
 
 # ------------------------------- the window and the ladder (#196)
-
-async def test_the_telemetry_report_shows_the_floor_moving(
-    hass: HomeAssistant,
-):
-    """The floor is what dwell is measured against, so a floor that
-    moves makes dwell unreadable across days. On the reference fleet
-    forty-three of seventy-nine were moving a point a week or more
-    and one was moving thirty-four (ruling #196).
-    """
-    coord = await setup_coordinator(hass)
-    sinking, _ = register_device(hass, "fd1", "Sinking Floor")
-    steady, _ = register_device(hass, "fd2", "Steady Floor")
-    # A floor walking down two points a day.
-    coord.data[DATA_DEVICES][sinking.id][DEV_SIGNAL_DAILY_P5] = [
-        float(120 - n * 2) for n in range(20)
-    ]
-    coord.data[DATA_DEVICES][steady.id][DEV_SIGNAL_DAILY_P5] = [
-        100.0
-    ] * 20
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    with open(
-        hass.config.path("device_sentinel/device_telemetry.md"),
-        encoding="utf-8",
-    ) as handle:
-        text = handle.read()
-
-    assert "FLOOR/WK" in text
-    sinking_row = next(
-        line for line in text.splitlines() if "Sinking Floor" in line
-    )
-    steady_row = next(
-        line for line in text.splitlines() if "Steady Floor" in line
-    )
-    assert "/wk" in sinking_row
-    # The series falls two points a day, so its floor walks down
-    # fourteen a week, and the cell carries the current floor with it.
-    assert "82 -14/wk" in sinking_row
-    assert "flat" in steady_row
-    assert "/wk" not in steady_row
-
 
 async def test_weak_links_are_counted_apart_from_rails(
     hass: HomeAssistant,

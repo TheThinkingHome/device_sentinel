@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.13.3 (2026-08-13)
+# File: test_reports.py, Version: 0.22.16 (2026-09-21)
 
 """The diagnostic files: telemetry and classification.
 
@@ -376,14 +376,18 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     assert "GAPS (K=" in header
     assert f"BAT LEVEL (floor {DEFAULT_LOW_THRESHOLD}%)" in header
     # The retired columns are gone.
-    assert "LINE" not in header
+    # The retired LINE column, by its own name: BAD-DAY LINE arrived in
+    # 0.22.16 and is the dashboard's line, not that one.
+    assert "| LINE |" not in header
     assert "FAMILY" not in header
     assert "SIG MIN" not in header
     assert "SIG FROZEN" not in header
 
-    # The floor is what dwell is measured against, so a floor that
-    # moves makes dwell unreadable across days (ruling #196).
-    assert "FLOOR/WK" in header
+    # The floor-based figures gave way to the bad-day model in 0.22.16,
+    # the line that raises weak links and that the dashboard draws.
+    assert "FLOOR/WK" not in header
+    assert "MEAN\u00b1SD" not in header
+    assert "| ITS NORMAL | BAD-DAY LINE |" in header
 
     # Every data row must have exactly as many cells as the header,
     # nine since 0.17.1 dropped DWELL% (ruling #322), so a dropped column can never
@@ -929,17 +933,20 @@ async def test_repeated_floor_bolds_the_earliest_and_strikes_none_equal(
     assert "~~" not in row
 
 
-async def test_nothing_sits_below_the_floor(hass: HomeAssistant):
-    """The floor is the plain minimum (ruling #323), so no value in
-    the window can sit below it and nothing is ever struck."""
+async def test_the_lowest_day_is_bold_and_struck_only_if_bad(hass: HomeAssistant):
+    """The lowest day is bold, the dashboard's "lowest day". Strikes
+    mark bad days since 0.22.16, judged by the bad-day model; under the
+    floor model nothing could be struck, since no day sits below the
+    minimum (ruling #323). Here the dip to 84 is a bad day and the
+    only one."""
     coord, device_id = await _marks_coordinator(hass)
     coord.data["devices"][device_id][DEV_SIGNAL_DAILY_P5] = [
         116.0, 116.0, 116.0, 120.0, 112.0, 112.0, 116.0, 84.0,
     ]
     await hass.async_add_executor_job(coord._write_reports)
     row = _telemetry_row(hass, "Marks Device")
-    assert "**84**" in row
-    assert "~~" not in row
+    assert "~~**84**~~" in row
+    assert row.count("~~") == 2
 async def test_the_episodes_header_says_when_the_newest_one_was(
     hass: HomeAssistant,
 ):
