@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.15 (2026-09-21)
+// File: frontend/panel.js, Version: 0.22.16 (2026-09-21)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -978,7 +978,7 @@ class DeviceSentinelPanel extends HTMLElement {
       el("thead", {}, el("tr", {}, ...["DEVICE", "STANDING", "PROBLEM"].map((h) => el("th", {}, h)))),
       el("tbody", {}, ...page.devices.map((d) => el("tr", {},
         el("td", {}, this._link(d.name, this._devicePath(d.device_id))),
-        el("td", {}, d.watched ? (d.muted ? `Watched, muted ${d.muted.replace(/^Global /, "")}` : "Watched") : `Set aside: ${d.set_aside}`),
+        el("td", {}, d.watched ? (d.muted ? `Watched, muted: ${d.muted}` : "Watched") : `Set aside: ${d.set_aside}`),
         el("td", {}, d.problem ? `${d.problem}${d.acknowledged ? ", acknowledged" : ""}` : ""))))));
     this._pane.replaceChildren(back, head, stats,
       el("h3", { class: "section" }, "Recommendations"), ...recs,
@@ -1217,7 +1217,8 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
         el("td", { class: "num" }, pct(row.level)))), [["DEVICE"], ["READING", "num"]]),
       el("p", { class: "small", style: "margin:6px 0 0" },
-        "These report a raw sensor value rather than a battery level, and are never called low. Turn Battery off for them on their device page."))
+        "These report a raw sensor value rather than a battery level, and are never called low. To take them out of these lists, "
+        + "mute them for battery in Configure, Low Battery."))
       : null;
     this._pane.replaceChildren(summary,
       el("h3", { class: "section" }, "The Bank"), bank,
@@ -1424,7 +1425,7 @@ class DeviceSentinelPanel extends HTMLElement {
       el("tbody", {}, ...rows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
         el("td", {}, this._link(row.integration_name, this._integrationPath(row.integration))),
-        el("td", {}, row.muted ? `Muted (${row.muted})` : "Watched"),
+        el("td", {}, row.muted ? `Muted: ${row.muted}` : "Watched"),
         el("td", {}, row.problem ? `${row.problem}${row.acknowledged ? ", acknowledged" : ""}` : ""),
         el("td", {}, ago(row.last_activity, at)),
         el("td", { class: "num" }, row.rhythm ? span(row.rhythm) : ""),
@@ -1474,7 +1475,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const [word, colour] = STATUS_WORDS[status.category] || [status.category, "var(--disabled-text-color, #888)"];
     const quiet = status.last_activity ? (now - new Date(status.last_activity).getTime()) / 1000 : null;
     const fill = status.window && quiet !== null ? Math.min(1, quiet / status.window) : 0;
-    const standing = who.watched ? (who.muted ? `Watched, muted (${who.muted})` : "Watched") : `Set aside: ${who.set_aside}`;
+    const standing = who.watched ? (who.muted ? `Watched, muted: ${who.muted}` : "Watched") : `Set aside: ${who.set_aside}`;
     const head = el("div", { class: "pagehead" },
       el("div", {},
         el("h2", {}, who.name),
