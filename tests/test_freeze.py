@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze.py, Version: 0.15.8 (2026-08-18)
+# File: test_freeze.py, Version: 0.22.24 (2026-09-22)
 
 """The freeze, unavailable, unknown, and never-reported detector.
 
@@ -384,7 +384,7 @@ async def test_frozen_list_and_report_show_the_device(
 
     lines = coord._reporting_lines()
     text = "\n".join(lines)
-    assert "Reporting Devices" in text
+    assert "Devices With A Fault" in text
     assert FREEZE_CATEGORY_FROZEN in text
 
 
@@ -394,7 +394,7 @@ async def test_empty_report_says_all_clear(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     lines = coord._reporting_lines()
     text = "\n".join(lines)
-    assert "Reporting Devices (0)" in text
+    assert "Devices With A Fault (0)" in text
     assert "nothing is frozen" in text
 
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_reachability.py, Version: 0.22.20 (2026-09-21)
+# File: tests/test_reachability.py, Version: 0.22.24 (2026-09-22)
 
 """Zigbee2MQTT reachability, replayed against a captured fleet.
 
@@ -238,11 +238,11 @@ async def test_the_phrase_carries_the_timeout(hass: HomeAssistant):
         "Zigbee2MQTT confirms it is offline."
     )
     assert coord.reachability_phrase("battery") == (
-        "Zigbee2MQTT reads it as online, though it allows a battery "
-        "device 25 hours of silence before saying otherwise."
+        "Zigbee2MQTT reads it as online. Zigbee2MQTT waits 25 hours "
+        "of silence from a battery device before it says otherwise."
     )
     assert coord.reachability_phrase("mains") == (
-        "Zigbee2MQTT reads it as online, and it pings a mains device "
+        "Zigbee2MQTT reads it as online. Zigbee2MQTT pings a mains device "
         "every 10 minutes."
     )
     assert coord.reachability_phrase("unknown_device") is None

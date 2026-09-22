@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.22.14 (2026-09-21)
+# File: test_brief_wording.py, Version: 0.22.24 (2026-09-22)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -258,7 +258,7 @@ async def test_device_line_names_the_worst_and_counts_the_rest(
     line = coord._compose_device_line(device.id)
     # Silence outranks battery, and the battery is counted, not named.
     assert line.startswith("Motion Closet stopped reporting")
-    assert line.endswith(", and 1 more problem.")
+    assert line.endswith(", and 1 more problem on the same device.")
 
 
 async def test_battery_line_carries_the_level(hass: HomeAssistant):
