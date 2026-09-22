@@ -114,7 +114,8 @@ const rowOf = (root, name) => [...root.querySelectorAll(".pane tbody tr")]
   check("a Helper filter counts it", chip && chip.textContent === "Helper 1", chip && chip.textContent);
   const summary = root.querySelector(".pane > p").textContent;
   check("the count of owners leaves both out", summary.startsWith("2 integrations own devices"), summary);
-  check("the summary names the helper", summary.includes("1 is a helper you linked to devices."), summary);
+  // 0.22.24 made the singular read "to a device".
+  check("the summary names the helper", summary.includes("1 is a helper you linked to a device."), summary);
   check("the key says what a helper is",
     text(root).includes("Helper: A Home Assistant helper you linked to a device."), text(root).slice(-500));
   check("the key says what no hardware is",
