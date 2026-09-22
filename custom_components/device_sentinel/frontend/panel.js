@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.21 (2026-09-22)
+// File: frontend/panel.js, Version: 0.22.22 (2026-09-22)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -49,6 +49,7 @@ const INTEGRATION_FILTERS = [
   ["muted", "Muted"],
   ["service", "Service only"],
   ["no_hardware", "No hardware"],
+  ["helper", "Helper"],
 ];
 const DEVICE_FILTERS = [
   ["all", "All"],
@@ -134,6 +135,7 @@ const STANDING = {
   muted: "Muted",
   service: "Service only",
   no_hardware: "No hardware",
+  helper: "Helper",
 };
 // The key under the Integrations table, the same words as
 // classification.md's (0.22.21). A test holds the two to one text.
@@ -142,7 +144,8 @@ const STANDING_KEY = [
   ["Excluded", "It is on your exclusion list, in Exclusions and Muting."],
   ["Muted", "It is muted, in Exclusions and Muting: its devices are watched but never reported."],
   ["Service only", "Its devices report themselves as services, so there is nothing to watch."],
-  ["No hardware", "It has no hardware of its own. It only adds entities to devices other integrations own, as Battery Notes does, and those entities never count as the device reporting."],
+  ["No hardware", "An add-on with no hardware of its own. It puts its entities on devices other integrations own, as Battery Notes does, and they never count as the device reporting."],
+  ["Helper", "A Home Assistant helper you linked to a device. Its entities never count as the device reporting."],
 ];
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -332,6 +335,9 @@ const STYLE = `
     padding: 8px 10px; border-bottom: 1px solid var(--divider-color); }
   td { padding: 9px 10px; border-bottom: 1px solid var(--divider-color); }
   a { color: var(--primary-color); text-decoration: none; }
+  button.entity { background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: left;
+    font: inherit; font-family: var(--code-font-family, monospace); font-size: 13px; color: var(--primary-color); }
+  button.entity:hover { text-decoration: underline; }
   a:hover { text-decoration: underline; }
   .error { color: var(--error-color, #db4437); }
   .sort { background: transparent; border: 0; padding: 0; color: inherit; font: inherit; letter-spacing: inherit;
@@ -971,12 +977,15 @@ class DeviceSentinelPanel extends HTMLElement {
     // Each count takes its own verb: "1 is muted", never "1 are muted".
     const be = (n) => `${n} ${n === 1 ? "is" : "are"}`;
     const owns = (n) => `${n} ${n === 1 ? "owns" : "own"}`;
-    const owners = all.length - counts.no_hardware;
-    const riders = counts.no_hardware
+    const owners = all.length - counts.no_hardware - counts.helper;
+    const riders = (counts.no_hardware
       ? ` ${counts.no_hardware} more ${counts.no_hardware === 1 ? "has" : "have"} no hardware of `
         + `${counts.no_hardware === 1 ? "its" : "their"} own and only ${counts.no_hardware === 1 ? "adds" : "add"} `
         + "entities to other integrations' devices."
-      : "";
+      : "")
+      + (counts.helper
+        ? ` ${counts.helper} ${counts.helper === 1 ? "is a helper" : "are helpers"} you linked to devices.`
+        : "");
     const summary = el("p", { style: "margin:0;line-height:1.5" },
       `${owners} ${owners === 1 ? "integration owns" : "integrations own"} devices in your house. `
       + `${be(watched)} watched, ${be(counts.excluded)} excluded, ${be(counts.muted)} muted, and `
@@ -999,10 +1008,11 @@ class DeviceSentinelPanel extends HTMLElement {
         el("th", { class: "num" }, header("PROBLEMS", "problems")),
         el("th", { class: "num" }, header("OUTAGES, 14 DAYS", "outages")))),
       el("tbody", {}, ...rows.map((row) => el("tr", {},
-        // An integration with no hardware owns no page to open.
-        el("td", {}, row.standing === "no_hardware" ? row.name : this._link(row.name, this._integrationPath(row.domain)),
+        // An integration with no hardware opens a page of the devices
+        // it adds entities to (0.22.22).
+        el("td", {}, this._link(row.name, this._integrationPath(row.domain)),
           " ", el("span", { class: "small" }, row.domain),
-          row.standing === "no_hardware" && row.adds_to
+          (row.standing === "no_hardware" || row.standing === "helper") && row.adds_to
             ? el("span", { class: "small" }, `, on ${row.adds_to} ${row.adds_to === 1 ? "device" : "devices"}`) : null),
         el("td", {}, this._standingText(row)),
         el("td", { class: "num" }, row.watched ? String(row.watched) : ""),
@@ -1018,6 +1028,41 @@ class DeviceSentinelPanel extends HTMLElement {
     this._pane.replaceChildren(summary, chips, el("div", { class: "scroll" }, table), key);
   }
 
+  // Home Assistant's own window for an entity, the one a dashboard
+  // opens: its value, its history, and a gear to its settings.
+  _moreInfo(entityId) {
+    this.dispatchEvent(new CustomEvent("hass-more-info", {
+      detail: { entityId }, bubbles: true, composed: true,
+    }));
+  }
+
+  // An integration with no hardware of its own, or a helper: the
+  // devices it adds entities to, each device opening its page here and
+  // each entity opening Home Assistant's window (0.22.22).
+  _paintRiderPage(page, back) {
+    const count = page.devices.length;
+    const what = page.standing === "helper"
+      ? `Helper. A Home Assistant helper linked to ${count} ${count === 1 ? "device" : "devices"}.`
+      : `No hardware. An add-on that puts its entities on ${count} ${count === 1 ? "device" : "devices"} other integrations own.`;
+    const head = el("div", { class: "pagehead" },
+      el("div", {},
+        el("h2", {}, page.name, " ", el("span", { class: "small" }, page.domain)),
+        el("div", { class: "muted" }, `${what} Its entities never count as ${count === 1 ? "that device" : "those devices"} reporting.`)),
+      el("div", { class: "links" },
+        this._link("Open in Home Assistant", `/config/integrations/integration/${encodeURIComponent(page.domain)}`)));
+    const entity = (id) => el("button", {
+      class: "entity", type: "button", title: "Open in Home Assistant",
+      onclick: () => this._moreInfo(id),
+    }, id);
+    const table = el("div", { class: "scroll" }, el("table", {},
+      el("thead", {}, el("tr", {}, ...["DEVICE", "AREA", "ITS ENTITIES"].map((h) => el("th", {}, h)))),
+      el("tbody", {}, ...page.devices.map((d) => el("tr", {},
+        el("td", {}, this._link(d.name, this._devicePath(d.device_id))),
+        el("td", {}, d.area || ""),
+        el("td", {}, ...d.entities.flatMap((id, i) => (i ? [el("br"), entity(id)] : [entity(id)]))))))));
+    this._pane.replaceChildren(back, head, table);
+  }
+
   _paintIntegrationPage() {
     const page = this._page;
     const back = el("p", { style: "margin:0" }, this._backLink());
@@ -1027,6 +1072,10 @@ class DeviceSentinelPanel extends HTMLElement {
     }
     if (page.error) {
       this._pane.replaceChildren(back, el("p", {}, page.error));
+      return;
+    }
+    if (page.rider) {
+      this._paintRiderPage(page, back);
       return;
     }
     const watched = page.devices.filter((d) => d.watched).length;
