@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.22.18 (2026-09-21)
+# File: coordinator.py, Version: 0.22.21 (2026-09-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -319,6 +319,9 @@ class DeviceSentinelCoordinator(
         # entity, disabled or not. A device with none has nothing
         # that could report (ruling #369).
         self._devices_with_entities: set[str] = set()
+        self._foreign_entities: set[str] = set()
+        self._foreign_by_device: dict[str, Counter[str]] = {}
+        self._no_hardware_integrations: set[str] = set()
         # The one notice the repair raises (ruling #370): what was
         # repaired and where the originals are. None when nothing
         # this session repaired anything; self-clears on a clean load.
@@ -1778,6 +1781,7 @@ class DeviceSentinelCoordinator(
         muted_devices: dict[str, str] = {}
         muted_entities: dict[str, str] = {}
         stacks: set[str] = set()
+        owning_domains: set[str] = set()
         stack_keys: dict[str, tuple[str, str]] = {}
         entry_of: dict[str, str] = {}
         for device in self._registry_devices(dev_reg):
@@ -1786,6 +1790,7 @@ class DeviceSentinelCoordinator(
             if entry_id is not None:
                 entry_of[device.id] = entry_id
             name = display_name(device, domain, device.id)
+            owning_domains.add(domain)
             # Which coordinator stacks the house runs, read from the
             # same walk (ruling #143). Which device proves which stack
             # is each stack file's own question and is asked through
@@ -1857,6 +1862,12 @@ class DeviceSentinelCoordinator(
                 muted_devices[device.id] = "device"
 
         entity_map: dict[str, tuple[str, str | None]] = {}
+        # Entities another integration added to a watched device
+        # (0.22.21). They are still mapped, so a reading the device
+        # publishes nowhere else can still be taken from one (ruling
+        # #404), but they never count as the device speaking.
+        foreign_entities: set[str] = set()
+        foreign_by_device: dict[str, Counter[str]] = {}
         last_seen_entity: dict[str, str] = {}
         device_entries: dict[str, set[str]] = {}
         signal_entities: set[str] = set()
@@ -1882,11 +1893,31 @@ class DeviceSentinelCoordinator(
             if ent.device_id not in watched:
                 continue
             entity_map[ent.entity_id] = (ent.device_id, ent.config_entry_id)
-            with_entities.add(ent.device_id)
-            if ent.config_entry_id is not None:
-                device_entries.setdefault(ent.device_id, set()).add(
-                    ent.config_entry_id
-                )
+            # The device's own integration published this entity, as
+            # opposed to an integration that enriches somebody else's
+            # devices (ruling #404). The registry records the author,
+            # so no list of such integrations is maintained and the
+            # rule holds for ones that do not exist yet.
+            own = ent.platform == watched.get(ent.device_id)
+            if not own:
+                # Battery Notes on the second fleet refreshed its
+                # entities about every 26 minutes, and on 65 devices
+                # with no Last Seen clock each refresh stamped the
+                # device as heard: a dead sensor could be kept looking
+                # alive by another integration. A foreign entity is
+                # not the device speaking, so it neither counts as the
+                # device having entities, nor ties the device to its
+                # integration's reloads (0.22.21).
+                foreign_entities.add(ent.entity_id)
+                foreign_by_device.setdefault(ent.device_id, Counter())[
+                    ent.platform
+                ] += 1
+            else:
+                with_entities.add(ent.device_id)
+                if ent.config_entry_id is not None:
+                    device_entries.setdefault(ent.device_id, set()).add(
+                        ent.config_entry_id
+                    )
             if muted_labels & set(ent.labels or ()):
                 # An entity carrying a muted label does not feed
                 # its device's judgment. This is the label axis, not a
@@ -1894,12 +1925,6 @@ class DeviceSentinelCoordinator(
                 # removed as residue from
                 # the entity-level Entity Sentinel blueprint.
                 muted_entities[ent.entity_id] = "label"
-            # The device's own integration published this entity, as
-            # opposed to an integration that enriches somebody else's
-            # devices (ruling #404). The registry records the author,
-            # so no list of such integrations is maintained and the
-            # rule holds for ones that do not exist yet.
-            own = ent.platform == watched.get(ent.device_id)
             if self._is_last_seen(ent):
                 if last_seen_entity.get(ent.device_id) is None or (
                     own and not last_seen_own.get(ent.device_id, False)
@@ -2021,6 +2046,17 @@ class DeviceSentinelCoordinator(
         self._muted_devices = muted_devices
         self._muted_entities = muted_entities
         self._entity_map = entity_map
+        self._foreign_entities = foreign_entities
+        self._foreign_by_device = foreign_by_device
+        # An integration whose entities all sit on devices other
+        # integrations own, and which owns no device itself, has no
+        # hardware of its own: Battery Notes is the one on the fleets
+        # held (0.22.21).
+        self._no_hardware_integrations = {
+            platform
+            for counts in foreign_by_device.values()
+            for platform in counts
+        } - owning_domains
         self._last_seen_entity = last_seen_entity
         self._device_entries = device_entries
         self._signal_entities = signal_entities
@@ -2295,6 +2331,22 @@ class DeviceSentinelCoordinator(
         if mapped is None:
             return
         device_id, entry_id = mapped
+        if entity_id in self._foreign_entities:
+            # Another integration's entity on this device (0.22.21):
+            # its absence says nothing about the device, and its
+            # value counts only as a reading the device publishes
+            # nowhere else, never as the device speaking.
+            if new_state.state not in BAD_STATES:
+                self._record_activity(
+                    device_id, entry_id, entity_id, new_state.state,
+                    foreign=True,
+                )
+                if entity_id in self._battery_entity_reverse:
+                    self._evaluate_battery(
+                        self._battery_entity_reverse[entity_id],
+                        notify_on_change=True,
+                    )
+            return
         if new_state.state in BAD_STATES:
             # Debounced: note when the absence began, taint only if it
             # lasts. A dead device never recovers, never completes a
@@ -2329,7 +2381,8 @@ class DeviceSentinelCoordinator(
             return
         device_id, entry_id = mapped
         self._record_activity(
-            device_id, entry_id, entity_id, new_state.state
+            device_id, entry_id, entity_id, new_state.state,
+            foreign=entity_id in self._foreign_entities,
         )
 
     @callback
@@ -2339,8 +2392,14 @@ class DeviceSentinelCoordinator(
         entry_id: str | None,
         entity_id: str | None = None,
         state: str | None = None,
+        foreign: bool = False,
     ) -> None:
-        """Stamp the device clock, completing a gap for learning if clean."""
+        """Stamp the device clock, completing a gap for learning if clean.
+
+        A foreign entity (0.22.21) feeds its reading and stops there:
+        it is not the device speaking, so it neither stamps the clock
+        nor counts toward an integration's update burst.
+        """
         now = dt_util.utcnow().timestamp()
         record = self.data[DATA_DEVICES].get(device_id)
         if record is None:
@@ -2372,6 +2431,8 @@ class DeviceSentinelCoordinator(
             if value is not None:
                 self._feed_signal(record, value, now)
 
+        if foreign:
+            return
         storm = self._storm_feed(entry_id, device_id, now)
         grace = now < self._grace_until
         if grace:
@@ -3202,7 +3263,8 @@ class DeviceSentinelCoordinator(
         has not loaded yet from a device with nothing to load.
         """
         return any(
-            owner == device_id for owner, _ in self._entity_map.values()
+            owner == device_id and entity_id not in self._foreign_entities
+            for entity_id, (owner, _) in self._entity_map.items()
         )
 
     def _live_entity_states(self, device_id: str) -> list[str]:
@@ -3213,7 +3275,9 @@ class DeviceSentinelCoordinator(
         """
         states: list[str] = []
         for entity_id, (owner, _) in self._entity_map.items():
-            if owner != device_id:
+            # A foreign entity (0.22.21) holding a value would read the
+            # device as up while every entity of its own is down.
+            if owner != device_id or entity_id in self._foreign_entities:
                 continue
             state = self.hass.states.get(entity_id)
             if state is not None:

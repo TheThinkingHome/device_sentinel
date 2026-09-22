@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.22.13 (2026-09-21)
+# File: const.py, Version: 0.22.21 (2026-09-22)
 
 """Constants for the Device Sentinel integration."""
 
@@ -511,6 +511,9 @@ SIGNAL_WEIGHTING_MARK = "minutes-2"
 # the four can end (ruling #257).
 SET_ASIDE_SERVICE = "service"
 SET_ASIDE_DISABLED = "disabled"
+# "No entities of its own" since 0.22.21: a device whose only entities
+# another integration added, such as Battery Notes, has nothing that
+# is the device speaking. The stored value is unchanged.
 SET_ASIDE_NO_ENTITIES = "no entities"
 SET_ASIDE_EXCLUDED = "excluded"
 # A coordinator already watched properly by something else, reaching
@@ -524,6 +527,24 @@ SET_ASIDE_DUPLICATE_COORDINATOR = "duplicate coordinator"
 # key under the Classification tab and under classification.md, so the
 # two say the same thing (0.22.13, from the second fleet's review:
 # which reasons are there, and did I miss any).
+# An integration's standing on the Integrations tab. Service: its
+# devices report themselves as services. No hardware (0.22.21): it owns
+# no device at all and only adds entities to devices other
+# integrations own, as Battery Notes does. The same words under the tab
+# and in classification.md.
+STANDING_NO_HARDWARE = "no_hardware"
+STANDING_MEANINGS: tuple[tuple[str, str], ...] = (
+    ("Watched", "It owns devices Device Sentinel watches."),
+    ("Excluded", "It is on your exclusion list, in Exclusions and Muting."),
+    ("Muted", "It is muted, in Exclusions and Muting: its devices are watched but never reported."),
+    ("Service only", "Its devices report themselves as services, so there is nothing to watch."),
+    (
+        "No hardware",
+        "It has no hardware of its own. It only adds entities to devices "
+        "other integrations own, as Battery Notes does, and those "
+        "entities never count as the device reporting.",
+    ),
+)
 SET_ASIDE_MEANINGS: tuple[tuple[str, str], ...] = (
     (
         SET_ASIDE_EXCLUDED,
@@ -547,7 +568,8 @@ SET_ASIDE_MEANINGS: tuple[tuple[str, str], ...] = (
     ),
     (
         SET_ASIDE_NO_ENTITIES,
-        "It has no entities at all, so nothing could ever report.",
+        "It has no entities of its own, so nothing could ever report. "
+        "Entities another integration added to it do not count.",
     ),
 )
 

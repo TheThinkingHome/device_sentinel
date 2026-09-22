@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.19 (2026-09-21)
+# File: dashboard.py, Version: 0.22.21 (2026-09-22)
 
 """What the dashboard reads from the coordinator.
 
@@ -79,6 +79,7 @@ from .const import (
     EP_WINDOW,
     EPISODE_KEEP_DAYS,
     CONF_MUTED_INTEGRATIONS,
+    STANDING_NO_HARDWARE,
     DATA_ROUTERS_SEEN,
     DATA_STORM_DAYS,
     DATA_SYSTEM_EVENTS,
@@ -284,6 +285,8 @@ class IntegrationViewMixin:
             return "excluded"
         if domain in set(self.entry.options.get(CONF_MUTED_INTEGRATIONS, [])):
             return "muted"
+        if not watched and domain in self._no_hardware_integrations:
+            return STANDING_NO_HARDWARE
         return "watched" if watched else "service"
 
     def _problems_by_device(self) -> dict[str, dict[str, Any]]:
@@ -342,6 +345,25 @@ class IntegrationViewMixin:
                 "first_seen": standing == "excluded" and domain in seen_routers,
                 **count,
                 "outages": len(outages.get(domain, [])),
+            })
+        # An integration with no hardware owns no row above; it is
+        # listed so a person can see it and why its entities are not
+        # counted (0.22.21). "adds_to" is how many watched devices
+        # carry its entities.
+        for domain in sorted(self._no_hardware_integrations - set(domains)):
+            adds_to = len([
+                device_id
+                for device_id, counts in self._foreign_by_device.items()
+                if domain in counts and device_id in self._watched
+            ])
+            result.append({
+                "domain": domain,
+                "name": self._integration_title(domain),
+                "standing": self._integration_standing(domain, 0),
+                "first_seen": False,
+                "watched": 0, "muted": 0, "set_aside": 0,
+                "problems": 0, "acknowledged": 0, "outages": 0,
+                "adds_to": adds_to,
             })
         result.sort(key=lambda row: row["name"].lower())
         return result

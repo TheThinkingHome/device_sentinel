@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.22.19 (2026-09-21)
+# File: diagnostics.py, Version: 0.22.21 (2026-09-22)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -246,6 +246,13 @@ async def async_get_config_entry_diagnostics(
             # aside: the fourth fleet's excluded Spook devices read None.
             "integration": coordinator._watched.get(device_id)
             or (coordinator._set_aside.get(device_id) or (None, None, None))[1],
+            # Entities other integrations added to this device, by
+            # integration, counted over the whole registry rather than
+            # only the entities read above (0.22.21). None of them
+            # counts as the device reporting.
+            "foreign_entities": dict(
+                coordinator._foreign_by_device.get(device_id) or {}
+            ),
             "clock_source": (
                 "last_seen"
                 if device_id in coordinator._last_seen_entity
@@ -346,6 +353,16 @@ async def async_get_config_entry_diagnostics(
             "watched": len(coordinator._watched),
             "set_aside": len(coordinator._set_aside),
             "deviceless_entities": coordinator.deviceless_count,
+            # Integrations that own no device and only add entities to
+            # devices other integrations own (0.22.21), and how many
+            # such entities sit on watched devices in all.
+            "no_hardware_integrations": sorted(
+                coordinator._no_hardware_integrations
+            ),
+            "foreign_entities": sum(
+                sum(counts.values())
+                for counts in coordinator._foreign_by_device.values()
+            ),
             # Coordinator stacks detected in this house. Derived from
             # the registry each rebuild rather than stored, so it is
             # never a stale truth, and it is the whole visible surface

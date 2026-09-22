@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.22.16 (2026-09-21)
+# File: report_maintainer.py, Version: 0.22.21 (2026-09-22)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -40,6 +40,7 @@ from .const import (
     DAILY_MAX_KEEP,
     SET_ASIDE_EXCLUDED,
     SET_ASIDE_MEANINGS,
+    STANDING_MEANINGS,
     TAINT_FLOOR_MINUTES,
     TAINT_SHARE_PCT,
     DEV_DAILY_MAX,
@@ -709,6 +710,29 @@ class MaintainerReportMixin:
         lines += [
             f"- {reason}: {meaning}" for reason, meaning in SET_ASIDE_MEANINGS
         ]
+
+        # Integrations with no hardware of their own own no row above,
+        # so they are named here, with the same meaning the
+        # Integrations tab gives (0.22.21).
+        riders = sorted(self._no_hardware_integrations)
+        if riders:
+            meaning = dict(STANDING_MEANINGS)["No hardware"]
+            lines += [
+                "",
+                f"## Integrations With No Hardware ({len(riders)})",
+                "",
+                meaning,
+                "",
+                "| INTEGRATION | WATCHED DEVICES IT ADDS TO |",
+                "|---|---|",
+            ]
+            for domain in riders:
+                adds_to = len([
+                    device_id
+                    for device_id, counts in self._foreign_by_device.items()
+                    if domain in counts and device_id in self._watched
+                ])
+                lines.append(f"| {self._report_cell(domain)} | {adds_to} |")
 
         if self._muted_entities:
             lines.append("")

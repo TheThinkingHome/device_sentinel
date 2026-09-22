@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.22.19 (2026-09-21)
+# File: report_brief.py, Version: 0.22.21 (2026-09-22)
 
 """The daily brief: the one report written for a person.
 
@@ -908,7 +908,17 @@ class BriefMixin:
                 continue
             domain = row.get(STORM_DAY_DOMAIN)
             day = str(row.get(STORM_DAY_DATE) or "")
-            if not domain or domain in excluded or day < earliest:
+            # An integration with no hardware of its own cannot be
+            # excluded to any effect: it owns no device, and since
+            # 0.22.21 its entities feed no burst. Bursts it logged
+            # before then would otherwise keep the advice alive for
+            # the whole window (0.22.21).
+            if (
+                not domain
+                or domain in excluded
+                or domain in self._no_hardware_integrations
+                or day < earliest
+            ):
                 continue
             if int(row.get(STORM_DAY_COUNT) or 0) >= FLOOD_MIN_STORMS:
                 bad_days.setdefault(domain, []).append(row)
