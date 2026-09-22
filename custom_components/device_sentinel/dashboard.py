@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.22 (2026-09-22)
+# File: dashboard.py, Version: 0.22.23 (2026-09-22)
 
 """What the dashboard reads from the coordinator.
 
@@ -32,6 +32,7 @@ from homeassistant.util import dt as dt_util
 from datetime import date, timedelta
 
 from .const import (
+    SYS_DETAIL,
     BATTERY_TREND_WINDOWS,
     SIGNAL_TREND_MIN_DAYS,
     DATA_INCIDENTS,
@@ -116,6 +117,7 @@ from .const import (
     WIFI_KEY,
     WIFI_SENSOR_NAME,
 )
+from .outage_detail import pair_key
 from .device_fields import device_field
 
 
@@ -220,11 +222,16 @@ class IntegrationViewMixin:
             return scope
         return None
 
-    def _outage_label(self, kind: str, scope: Any) -> str:
+    def _outage_label(self, kind: str, scope: Any, detail: Any = None) -> str:
         if kind in (SYS_BRIDGE_DOWN, SYS_BRIDGE_UP):
             return BRIDGE_SENSOR_NAMES.get(scope, f"{scope} Bridge")
         if kind in (SYS_BROKER_DOWN, SYS_BROKER_UP):
             return BROKER_SENSOR_NAME
+        # One device's own entry (0.22.23): named by the device, whose
+        # connection it is, rather than as the whole integration.
+        device = self.outage_device_name(detail)
+        if device is not None:
+            return f"{device} ({self._integration_title(str(scope))} connection)"
         return f"{self._integration_title(str(scope))} integration"
 
     def integration_outages(self) -> dict[str, list[dict[str, Any]]]:
@@ -241,16 +248,19 @@ class IntegrationViewMixin:
             (row for row in self.data.get(DATA_SYSTEM_EVENTS) or [] if isinstance(row, dict)),
             key=lambda row: row.get(SYS_WHEN) or 0,
         )
-        open_rows: dict[tuple[str, Any], dict[str, Any]] = {}
+        open_rows: dict[tuple[str, Any, Any], dict[str, Any]] = {}
         found: list[tuple[str, dict[str, Any]]] = []
         for row in rows:
             kind, scope, when = row.get(SYS_KIND), row.get(SYS_SCOPE), row.get(SYS_WHEN)
             if not isinstance(when, (int, float)):
                 continue
+            # Paired by entry too, so two entries of one integration
+            # are two outages (0.22.23).
+            entry = pair_key(kind, scope, row.get(SYS_DETAIL))[2]
             if kind in _OPENERS:
-                open_rows[(kind, scope)] = row
+                open_rows[(kind, scope, entry)] = row
             elif kind in _CLOSERS:
-                opened = open_rows.pop((_CLOSERS[kind], scope), None)
+                opened = open_rows.pop((_CLOSERS[kind], scope, entry), None)
                 duration = row.get(SYS_DURATION)
                 went_down = (
                     opened[SYS_WHEN] if opened is not None
@@ -262,19 +272,19 @@ class IntegrationViewMixin:
                     continue
                 found.append((owner, {
                     "went_down": dt_util.utc_from_timestamp(went_down).isoformat(),
-                    "what": self._outage_label(kind, scope),
+                    "what": self._outage_label(kind, scope, row.get(SYS_DETAIL)),
                     "duration": duration if isinstance(duration, (int, float)) else None,
                     "devices": row.get(SYS_DEVICES),
                     "worst": row.get(SYS_WORST),
                     "open": False,
                 }))
-        for (kind, scope), row in open_rows.items():
+        for (kind, scope, _entry), row in open_rows.items():
             owner = self._outage_owner(kind, scope)
             if owner is None or row[SYS_WHEN] < since:
                 continue
             found.append((owner, {
                 "went_down": dt_util.utc_from_timestamp(row[SYS_WHEN]).isoformat(),
-                "what": self._outage_label(kind, scope),
+                "what": self._outage_label(kind, scope, row.get(SYS_DETAIL)),
                 "duration": None, "devices": None, "worst": None, "open": True,
             }))
         by_owner: dict[str, list[dict[str, Any]]] = {}

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: attribution.py, Version: 0.20.7 (2026-09-05)
+# File: attribution.py, Version: 0.22.23 (2026-09-22)
 
 """Which recorded event explains an incident, and which do not.
 
@@ -77,6 +77,7 @@ from .const import (
     SYS_INTEGRATION_DOWN,
     SYS_INTEGRATION_UP,
 )
+from .outage_detail import pair_key
 
 # The pairs, opening kind to closing kind. Each becomes one window
 # running from the opening to the close, or left open where the close
@@ -236,7 +237,7 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
     correct: a bridge that is down right now is in effect.
     """
     found: list[Window] = []
-    pending: dict[tuple[str, str], Window] = {}
+    pending: dict[tuple[Any, Any, str | None], Window] = {}
     # A corrupted event must not take the builder down. Storage can
     # hold a log row whose kind or timestamp is the wrong type: the
     # shape check names such damage on the repair card but removes
@@ -307,21 +308,27 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
             )
             continue
         if kind in _PAIRS:
-            previous = pending.get((kind, scope))
+            # Paired by entry too, so two entries of one integration
+            # are two outages (0.22.23).
+            entry = pair_key(kind, scope, row.get(SYS_DETAIL))[2]
+            previous = pending.get((kind, scope, entry))
             if previous is not None:
                 # The same thing opening again is proof the last one
                 # ended, whether or not anybody wrote it down.
                 previous.end = when
                 previous.inferred_end = True
             window = Window(kind, scope, when, None, row.get(SYS_DEVICES))
-            pending[(kind, scope)] = window
+            pending[(kind, scope, entry)] = window
             found.append(window)
             continue
         if kind in _CLOSERS:
             for opening, closing in _PAIRS.items():
                 if closing != kind:
                     continue
-                closed = pending.pop((opening, scope), None)
+                closed = pending.pop(
+                    (opening, scope, pair_key(kind, scope, row.get(SYS_DETAIL))[2]),
+                    None,
+                )
                 if closed is not None:
                     closed.end = when
                     if closed.devices is None:

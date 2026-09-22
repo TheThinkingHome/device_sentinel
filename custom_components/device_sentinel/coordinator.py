@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.22.22 (2026-09-22)
+# File: coordinator.py, Version: 0.22.23 (2026-09-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -495,6 +495,12 @@ class DeviceSentinelCoordinator(
         self._entry_of_device: dict[str, str] = {}
         self._entry_down_at: dict[str, float] = {}
         self._integration_told: set[str] = set()
+        # Entry outages by entry (0.22.23): each one's detail, the one
+        # device an entry carries, and whether the open outages in the
+        # events log have been taken back this run.
+        self._integration_detail: dict[str, str] = {}
+        self._entry_only_device: dict[str, str] = {}
+        self._integration_resumed = False
         self._entry_seen_loaded: set[str] = set()
         # The Wi-Fi outage (0.20.3). Ties resolve at registry rebuild;
         # nothing here persists, which is the recorded

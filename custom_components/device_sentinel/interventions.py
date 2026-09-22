@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.22.0 (2026-09-18)
+# File: interventions.py, Version: 0.22.23 (2026-09-22)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -39,6 +39,7 @@ from .stacks import (
 from .transport_mqtt import MQTTBrokerReader
 
 from .const import (
+    SYS_DETAIL,
     DATA_SYSTEM_EVENTS,
     STORM_EXPLAINED_SECONDS,
     SYS_KIND,
@@ -113,6 +114,7 @@ from .const import (
     SYS_PAIRING_CLOSED,
     SYS_PAIRING_OPEN,
 )
+from .outage_detail import DOWN, FAILED, make_detail, pair_key, parse_detail
 
 
 def _spell_minutes(minutes: int) -> str:
@@ -633,6 +635,7 @@ class InterventionMixin:
         and a row for it would be noise.
         """
         behind: dict[str, int] = {}
+        carried: dict[str, str] = {}
         for device_id in self._watched:
             if self._stack_for_device(device_id) is not None:
                 continue
@@ -640,6 +643,16 @@ class InterventionMixin:
             if entry_id is None or self._freeze_muted(device_id):
                 continue
             behind[entry_id] = behind.get(entry_id, 0) + 1
+            carried[entry_id] = device_id
+        # The one device an entry carries, where it carries one
+        # (0.22.23): SwitchBot, TP-Link and Brother make an entry per
+        # device, so that entry failing is that device offline.
+        self._entry_only_device = {
+            entry_id: carried[entry_id]
+            for entry_id, count in behind.items()
+            if count == 1
+        }
+        self._resume_integration_outages()
 
         for entry_id in list(self._entry_down_at):
             if entry_id not in behind:
@@ -686,6 +699,48 @@ class InterventionMixin:
             if entry is not None and self._integration_new(entry_id):
                 self._integration_gone(entry, first, behind[entry_id])
 
+    def _resume_integration_outages(self) -> None:
+        """Take back, once a run, the entry outages still open in the
+        events log (0.22.23).
+
+        Which outages had been announced was held in memory alone, so
+        after every restart an entry that had never come back was
+        dated from the new run's start and recorded down again: the
+        second fleet's dead vacuum wrote a fresh outage after each
+        restart. An entry whose outage is still open resumes it, from
+        when it first went down; one that has come back is recorded
+        back when it is next seen loaded. Events written before
+        0.22.23 carry no entry and age out as they are.
+        """
+        if self._integration_resumed:
+            return
+        self._integration_resumed = True
+        open_rows: dict[str, dict[str, Any]] = {}
+        for row in self.data.get(DATA_SYSTEM_EVENTS) or []:
+            if not isinstance(row, dict):
+                continue
+            entry_id = parse_detail(row.get(SYS_DETAIL))[0]
+            if entry_id is None:
+                continue
+            if row.get(SYS_KIND) == SYS_INTEGRATION_DOWN:
+                open_rows[entry_id] = row
+            elif row.get(SYS_KIND) == SYS_INTEGRATION_UP:
+                open_rows.pop(entry_id, None)
+        for entry_id, row in open_rows.items():
+            when = row.get(SYS_WHEN)
+            if not isinstance(when, (int, float)):
+                continue
+            self._integration_told.add(entry_id)
+            self._integration_detail[entry_id] = row[SYS_DETAIL]
+            self._entry_down_at[entry_id] = float(when)
+
+    def outage_device_name(self, detail: Any) -> str | None:
+        """The device an entry outage was, by its name, or None."""
+        device_id = parse_detail(detail)[1]
+        if device_id is None:
+            return None
+        return self._device_names.get(device_id)
+
     def _integration_new(self, entry_id: str) -> bool:
         """True the first time an outage passes the dwell."""
         return entry_id not in self._integration_told
@@ -694,8 +749,17 @@ class InterventionMixin:
         """Record and announce an integration that has gone."""
         self._integration_told.add(entry.entry_id)
         self._begin_upstream_peak(entry.domain)
+        detail = make_detail(
+            entry.entry_id,
+            self._entry_only_device.get(entry.entry_id),
+            FAILED if entry.state in _FAILED_SETUP else DOWN,
+        )
+        self._integration_detail[entry.entry_id] = detail
+        # Dated from when it went down rather than from when the dwell
+        # confirmed it (0.22.23), so an outage resumed after a restart
+        # keeps its own start.
         self._record_system_event(
-            SYS_INTEGRATION_DOWN, scope=entry.domain
+            SYS_INTEGRATION_DOWN, scope=entry.domain, detail=detail, when=since
         )
         self._say_upstream_down(
             UPSTREAM_INTEGRATION, entry.domain, None, since, behind
@@ -729,6 +793,7 @@ class InterventionMixin:
         self._record_system_event(
             SYS_INTEGRATION_UP,
             scope=domain,
+            detail=self._integration_detail.pop(entry.entry_id, None),
             duration=now - since,
             **ended,
         )
@@ -1367,6 +1432,7 @@ class InterventionMixin:
                         ),
                     )
 
+    _integration_resumed: bool
     _broker_reader: Any | None
     _broker_down_at: float | None
 
@@ -1687,7 +1753,7 @@ class InterventionMixin:
             SYS_MAINTENANCE_OPEN: SYS_MAINTENANCE_CLOSED,
         }
         closes = {closer: opener for opener, closer in opens.items()}
-        open_now: dict[tuple[str, Any], bool] = {}
+        open_now: dict[tuple[str, Any, Any], bool] = {}
         for row in self.data.get(DATA_SYSTEM_EVENTS) or []:
             if not isinstance(row, dict):
                 continue
@@ -1696,10 +1762,11 @@ class InterventionMixin:
                 continue
             kind = row.get(SYS_KIND)
             scope = row.get(SYS_SCOPE)
+            entry = pair_key(kind, scope, row.get(SYS_DETAIL))[2]
             if kind in opens:
-                open_now[(kind, scope)] = True
+                open_now[(kind, scope, entry)] = True
             elif kind in closes:
-                open_now[(closes[kind], scope)] = False
+                open_now[(closes[kind], scope, entry)] = False
                 if start - when <= STORM_EXPLAINED_SECONDS:
                     return True
             elif kind == SYS_RESTART and start - when <= STORM_EXPLAINED_SECONDS:

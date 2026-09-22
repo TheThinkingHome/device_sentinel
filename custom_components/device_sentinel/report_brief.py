@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.22.21 (2026-09-22)
+# File: report_brief.py, Version: 0.22.23 (2026-09-22)
 
 """The daily brief: the one report written for a person.
 
@@ -135,6 +135,7 @@ from .const import (
     TODO_SORT_NAME,
     TODO_STATUS,
 )
+from .outage_detail import FAILED, parse_detail
 
 
 def _plural(count: int) -> str:
@@ -455,6 +456,26 @@ class BriefMixin:
                     "with nothing listening."
                 )
             return f"The system restarted at {when}."
+        # One device's own entry (0.22.23): the device is offline and
+        # its connection is the reason, rather than the whole
+        # integration being down.
+        device = self.outage_device_name(detail)
+        if device is not None and kind in (SYS_INTEGRATION_DOWN, SYS_INTEGRATION_UP):
+            title = self._integration_title(str(scope))
+            if kind == SYS_INTEGRATION_DOWN:
+                how = (
+                    "failed to start"
+                    if parse_detail(detail)[2] == FAILED
+                    else "went down"
+                )
+                return f"{device} is offline: its {title} connection {how} at {when}."
+            worst = self._worst_words(row, sentence=True)
+            said = (
+                f"{device} is back: its {title} connection came back at {when} after {held}."
+                if held
+                else f"{device} is back: its {title} connection came back at {when}."
+            )
+            return f"{said} {worst}" if worst else said
         if kind == SYS_INTEGRATION_DOWN:
             return f"The {scope} integration went down at {when}."
         worst = self._worst_words(row, sentence=True)
@@ -667,6 +688,21 @@ class BriefMixin:
         kind = row.get(SYS_KIND)
         worst = self._worst_words(row, sentence=False)
         tail = f", {worst}" if worst else ""
+        device = self.outage_device_name(detail)
+        if device is not None and kind in (SYS_INTEGRATION_DOWN, SYS_INTEGRATION_UP):
+            title = self._integration_title(str(scope))
+            if kind == SYS_INTEGRATION_DOWN:
+                how = (
+                    "failed to start"
+                    if parse_detail(detail)[2] == FAILED
+                    else "went down"
+                )
+                return f"{device} offline, its {title} connection {how}"
+            return (
+                f"{device} back, its {title} connection came back after {held}"
+                if held
+                else f"{device} back, its {title} connection came back"
+            ) + tail
         if kind == SYS_RESTART:
             return (
                 f"system restarted, {held} unwatched"
