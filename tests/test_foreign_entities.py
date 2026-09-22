@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_foreign_entities.py, Version: 0.22.21 (2026-09-22)
+# File: tests/test_foreign_entities.py, Version: 0.22.22 (2026-09-22)
 
 """Another integration's entity on a device is not the device speaking.
 
@@ -26,8 +26,10 @@ from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -42,6 +44,7 @@ from custom_components.device_sentinel.const import (
     FLOOD_MIN_STORMS,
     FREEZE_CATEGORY_UNAVAILABLE,
     SET_ASIDE_NO_ENTITIES,
+    STANDING_HELPER,
     STANDING_MEANINGS,
     STANDING_NO_HARDWARE,
     STARTUP_GRACE_SECONDS,
@@ -175,12 +178,11 @@ async def test_battery_notes_stands_as_no_hardware(hass: HomeAssistant):
     assert rows["battery_notes"]["standing"] == STANDING_NO_HARDWARE
     assert rows["battery_notes"]["adds_to"] == 1
     assert rows["zha"]["standing"] == "watched"
-    assert coord.dashboard_integration("battery_notes") is None
 
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = Path(hass.config.path("device_sentinel", "classification.md")).read_text()
     assert "## Integrations With No Hardware (1)" in text
-    assert "| battery_notes | 1 |" in text
+    assert "| battery_notes | No hardware | 1 |" in text
     assert "no entities of its own" in text
 
 
@@ -226,3 +228,48 @@ def test_the_standing_key_is_one_text():
     panel = PANEL.read_text(encoding="utf-8")
     for standing, meaning in STANDING_MEANINGS:
         assert f"[{json.dumps(standing)}, {json.dumps(meaning)}]" in panel
+
+
+# ==================================================================
+# A page for each, and helpers told apart (0.22.22).
+# ==================================================================
+
+
+async def test_its_page_names_the_devices_and_their_entities(hass: HomeAssistant):
+    """Before 0.22.22 the row said "on 1 device" and opened nothing."""
+    device, _contact, note = _house(hass)
+    area = ar.async_get(hass).async_create("Hall")
+    dr.async_get(hass).async_update_device(device.id, area_id=area.id)
+    coord = await setup_coordinator(hass)
+    page = coord.dashboard_integration("battery_notes")
+    assert page["rider"] is True
+    assert page["standing"] == STANDING_NO_HARDWARE
+    assert page["devices"] == [{
+        "device_id": device.id, "name": "Door Sensor",
+        "area": "Hall", "entities": [note],
+    }]
+
+
+async def test_a_linked_helper_stands_as_a_helper(hass: HomeAssistant):
+    """Home Assistant marks its helper integrations as helpers, so a
+    Derivative linked to a sensor is told apart from Battery Notes."""
+    await async_get_integration(hass, "derivative")
+    device, _contact, _note = _house(hass)
+    helper = MockConfigEntry(domain="derivative", title="Power rate")
+    helper.add_to_hass(hass)
+    rate = er.async_get(hass).async_get_or_create(
+        "sensor", "derivative", "power_rate",
+        device_id=device.id, config_entry=helper,
+    ).entity_id
+    coord = await setup_coordinator(hass)
+    rows = {row["domain"]: row for row in coord.dashboard_integrations()}
+    assert rows["derivative"]["standing"] == STANDING_HELPER
+    assert rows["battery_notes"]["standing"] == STANDING_NO_HARDWARE
+    page = coord.dashboard_integration("derivative")
+    assert page["standing"] == STANDING_HELPER
+    assert page["devices"][0]["entities"] == [rate]
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = Path(hass.config.path("device_sentinel", "classification.md")).read_text()
+    assert "## Integrations With No Hardware (2)" in text
+    assert "| derivative | Helper | 1 |" in text
+    assert "Helper: A Home Assistant helper you linked to a device." in text
