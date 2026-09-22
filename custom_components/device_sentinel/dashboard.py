@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.21 (2026-09-22)
+# File: dashboard.py, Version: 0.22.22 (2026-09-22)
 
 """What the dashboard reads from the coordinator.
 
@@ -26,6 +26,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.loader import async_get_loaded_integration
 from homeassistant.util import dt as dt_util
 
 from datetime import date, timedelta
@@ -79,6 +80,7 @@ from .const import (
     EP_WINDOW,
     EPISODE_KEEP_DAYS,
     CONF_MUTED_INTEGRATIONS,
+    STANDING_HELPER,
     STANDING_NO_HARDWARE,
     DATA_ROUTERS_SEEN,
     DATA_STORM_DAYS,
@@ -280,13 +282,51 @@ class IntegrationViewMixin:
             by_owner.setdefault(owner, []).append(outage)
         return by_owner
 
+    def _is_helper(self, domain: str) -> bool:
+        """Return whether Home Assistant marks this integration a helper.
+
+        Read from the integration's own manifest, so no list of helpers
+        is kept here and one added next year is told apart too. An
+        integration not loaded, or unknown, reads as no helper.
+        """
+        try:
+            integration = async_get_loaded_integration(self.hass, domain)
+        except Exception:  # noqa: BLE001 - an unknown domain is not a helper
+            return False
+        return getattr(integration, "integration_type", None) == "helper"
+
+    def _rider_devices(self, domain: str) -> list[dict[str, Any]]:
+        """The watched devices an integration with no hardware adds
+        entities to, each with its area and those entities (0.22.22)."""
+        areas = ar.async_get(self.hass)
+        devices = dr.async_get(self.hass)
+        listed = []
+        for device_id, by_platform in self._foreign_ids.items():
+            entities = by_platform.get(domain)
+            if not entities or device_id not in self._watched:
+                continue
+            device = devices.async_get(device_id)
+            area = (
+                areas.async_get_area(device.area_id)
+                if device is not None and device.area_id
+                else None
+            )
+            listed.append({
+                "device_id": device_id,
+                "name": self._device_name(device_id),
+                "area": area.name if area else None,
+                "entities": sorted(entities),
+            })
+        listed.sort(key=lambda row: str(row["name"]).lower())
+        return listed
+
     def _integration_standing(self, domain: str, watched: int) -> str:
         if domain in self.excluded_integrations:
             return "excluded"
         if domain in set(self.entry.options.get(CONF_MUTED_INTEGRATIONS, [])):
             return "muted"
         if not watched and domain in self._no_hardware_integrations:
-            return STANDING_NO_HARDWARE
+            return STANDING_HELPER if self._is_helper(domain) else STANDING_NO_HARDWARE
         return "watched" if watched else "service"
 
     def _problems_by_device(self) -> dict[str, dict[str, Any]]:
@@ -369,8 +409,21 @@ class IntegrationViewMixin:
         return result
 
     def dashboard_integration(self, domain: str) -> dict[str, Any] | None:
-        """One integration's page, or None if no device belongs to it."""
+        """One integration's page, or None if no device belongs to it.
+
+        An integration with no hardware of its own owns no device, so
+        its page is the devices it adds entities to, and those entities
+        by id, for a person to open (0.22.22).
+        """
         devices = [row for row in self.classification_rows() if row["integration"] == domain]
+        if not devices and domain in self._no_hardware_integrations:
+            return {
+                "domain": domain,
+                "name": self._integration_title(domain),
+                "standing": self._integration_standing(domain, 0),
+                "rider": True,
+                "devices": self._rider_devices(domain),
+            }
         if not devices:
             return None
         problems = self._problems_by_device()

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.22.21 (2026-09-22)
+# File: coordinator.py, Version: 0.22.22 (2026-09-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -321,6 +321,7 @@ class DeviceSentinelCoordinator(
         self._devices_with_entities: set[str] = set()
         self._foreign_entities: set[str] = set()
         self._foreign_by_device: dict[str, Counter[str]] = {}
+        self._foreign_ids: dict[str, dict[str, list[str]]] = {}
         self._no_hardware_integrations: set[str] = set()
         # The one notice the repair raises (ruling #370): what was
         # repaired and where the originals are. None when nothing
@@ -1868,6 +1869,9 @@ class DeviceSentinelCoordinator(
         # #404), but they never count as the device speaking.
         foreign_entities: set[str] = set()
         foreign_by_device: dict[str, Counter[str]] = {}
+        # The same, by name: device -> integration -> its entity ids,
+        # so a page can name them (0.22.22).
+        foreign_ids: dict[str, dict[str, list[str]]] = {}
         last_seen_entity: dict[str, str] = {}
         device_entries: dict[str, set[str]] = {}
         signal_entities: set[str] = set()
@@ -1912,6 +1916,9 @@ class DeviceSentinelCoordinator(
                 foreign_by_device.setdefault(ent.device_id, Counter())[
                     ent.platform
                 ] += 1
+                foreign_ids.setdefault(ent.device_id, {}).setdefault(
+                    ent.platform, []
+                ).append(ent.entity_id)
             else:
                 with_entities.add(ent.device_id)
                 if ent.config_entry_id is not None:
@@ -2048,6 +2055,7 @@ class DeviceSentinelCoordinator(
         self._entity_map = entity_map
         self._foreign_entities = foreign_entities
         self._foreign_by_device = foreign_by_device
+        self._foreign_ids = foreign_ids
         # An integration whose entities all sit on devices other
         # integrations own, and which owns no device itself, has no
         # hardware of its own: Battery Notes is the one on the fleets

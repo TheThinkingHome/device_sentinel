@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.22.21 (2026-09-22)
+# File: report_maintainer.py, Version: 0.22.22 (2026-09-22)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -716,15 +716,16 @@ class MaintainerReportMixin:
         # Integrations tab gives (0.22.21).
         riders = sorted(self._no_hardware_integrations)
         if riders:
-            meaning = dict(STANDING_MEANINGS)["No hardware"]
+            meanings = dict(STANDING_MEANINGS)
             lines += [
                 "",
                 f"## Integrations With No Hardware ({len(riders)})",
                 "",
-                meaning,
+                f"No hardware: {meanings['No hardware']}",
+                f"Helper: {meanings['Helper']}",
                 "",
-                "| INTEGRATION | WATCHED DEVICES IT ADDS TO |",
-                "|---|---|",
+                "| INTEGRATION | STANDING | WATCHED DEVICES IT ADDS TO |",
+                "|---|---|---|",
             ]
             for domain in riders:
                 adds_to = len([
@@ -732,7 +733,10 @@ class MaintainerReportMixin:
                     for device_id, counts in self._foreign_by_device.items()
                     if domain in counts and device_id in self._watched
                 ])
-                lines.append(f"| {self._report_cell(domain)} | {adds_to} |")
+                standing = "Helper" if self._is_helper(domain) else "No hardware"
+                lines.append(
+                    f"| {self._report_cell(domain)} | {standing} | {adds_to} |"
+                )
 
         if self._muted_entities:
             lines.append("")

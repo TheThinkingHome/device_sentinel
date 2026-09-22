@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.22.21 (2026-09-22)
+# File: const.py, Version: 0.22.22 (2026-09-22)
 
 """Constants for the Device Sentinel integration."""
 
@@ -533,6 +533,11 @@ SET_ASIDE_DUPLICATE_COORDINATOR = "duplicate coordinator"
 # integrations own, as Battery Notes does. The same words under the tab
 # and in classification.md.
 STANDING_NO_HARDWARE = "no_hardware"
+# A Home Assistant helper a person linked to a device (0.22.22): the
+# same rule as no hardware, told apart because Home Assistant marks its
+# helper integrations as helpers, and a Derivative linked to one sensor
+# is not what anyone pictures reading "as Battery Notes does".
+STANDING_HELPER = "helper"
 STANDING_MEANINGS: tuple[tuple[str, str], ...] = (
     ("Watched", "It owns devices Device Sentinel watches."),
     ("Excluded", "It is on your exclusion list, in Exclusions and Muting."),
@@ -540,9 +545,14 @@ STANDING_MEANINGS: tuple[tuple[str, str], ...] = (
     ("Service only", "Its devices report themselves as services, so there is nothing to watch."),
     (
         "No hardware",
-        "It has no hardware of its own. It only adds entities to devices "
-        "other integrations own, as Battery Notes does, and those "
-        "entities never count as the device reporting.",
+        "An add-on with no hardware of its own. It puts its entities on "
+        "devices other integrations own, as Battery Notes does, and they "
+        "never count as the device reporting.",
+    ),
+    (
+        "Helper",
+        "A Home Assistant helper you linked to a device. Its entities "
+        "never count as the device reporting.",
     ),
 )
 SET_ASIDE_MEANINGS: tuple[tuple[str, str], ...] = (
