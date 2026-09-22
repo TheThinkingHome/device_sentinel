@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_journal.py, Version: 0.19.12 (2026-09-02)
+# File: test_journal.py, Version: 0.22.25 (2026-09-22)
 
 """The forensic record: incidents, episodes, and system events.
 
@@ -714,7 +714,7 @@ async def test_a_recovery_with_no_duration_says_so_plainly(
     assert coord._brief_phrase(row) == "recovered"
 
     row[INC_DURATION] = 20.2 * 86400
-    assert coord._brief_phrase(row) == "recovered after 20.2d"
+    assert coord._brief_phrase(row) == "recovered after 2 and a half weeks"
 
     row[INC_CAUSE] = "reboot"
-    assert coord._brief_phrase(row) == "recovered after 20.2d, reboot"
+    assert coord._brief_phrase(row) == "recovered after 2 and a half weeks, reboot"

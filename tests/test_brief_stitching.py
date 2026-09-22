@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_brief_stitching.py, Version: 0.16.10 (2026-08-21)
+# File: tests/test_brief_stitching.py, Version: 0.22.25 (2026-09-22)
 
 """A silence the restarts segmented is told as one silence.
 
@@ -125,7 +125,7 @@ async def test_an_unbroken_silence_is_stitched_into_one_sentence(
     assert len(told) == 1
     line = told[0]
     assert line.startswith("SLZB-06 has been silent since ")
-    assert "3.0d so far" in line
+    assert "3 days so far" in line
     assert "across 7 restarts" in line
     assert "recovered" not in line
     assert "went silent" not in line

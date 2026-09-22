@@ -3,12 +3,12 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recovery_wording.py, Version: 0.22.1 (2026-09-19)
+# File: tests/test_recovery_wording.py, Version: 0.22.25 (2026-09-22)
 
 """A closed signal problem says it was the signal.
 
 The reference rig's brief of 19 September read "Plug Living Room
-Router recovered at 12:00 AM after 19.0d". The plug never stopped
+Router recovered at 12:00 AM after 2 and a half weeks". The plug never stopped
 reporting; its signal problem closed at the midnight judgment. A
 reader could only guess which.
 """
@@ -53,7 +53,7 @@ async def test_the_sentence_names_the_signal(hass: HomeAssistant):
 async def test_the_table_cell_names_the_signal(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     cell = coord._brief_phrase(_resolved(TODO_KIND_RAILED_SIGNAL))
-    assert cell.startswith("signal recovered after 19.0d")
+    assert cell.startswith("signal recovered after 2 and a half weeks")
 
 
 async def test_a_device_recovery_reads_as_before(hass: HomeAssistant):
