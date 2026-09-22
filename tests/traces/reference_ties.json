@@ -1,14 +1,14 @@
 {
-"Bluetooth Proxy 2d8900": "device_tracker.esp32_bluetooth_proxy_2d8900",
-"Dining Shades": "device_tracker.dining_room_shades",
-"Living Shades": "device_tracker.living_room_blinds",
-"Master City Blinds": "device_tracker.master_city_blinds",
-"Master City Shades": "device_tracker.master_city_shades",
-"Master Park Blinds": "device_tracker.master_park_blinds",
-"Master Park Shades": "device_tracker.master_park_shades",
-"NSPanel Pro James": "device_tracker.nspanel_pro_james_2",
-"NSPanel Pro Randy": "device_tracker.nspanel_pro_randy",
-"Stove Vent Relays": "device_tracker.tasmota_519243_4675",
-"Voice Assistant - Kitchen": "device_tracker.voice_assistant_kitchen",
-"Voice Assistant - Master": "device_tracker.home_assistant_voice_09bc45"
+ "Device 15": "device_tracker.reference_t04",
+ "Device 03": "device_tracker.reference_t06",
+ "Device 05": "device_tracker.reference_t03",
+ "Device 11": "device_tracker.reference_t13",
+ "Device 12": "device_tracker.reference_t17",
+ "Device 13": "device_tracker.reference_t11",
+ "Device 14": "device_tracker.reference_t16",
+ "Device 06": "device_tracker.reference_t12",
+ "Device 07": "device_tracker.reference_t26",
+ "Device 08": "device_tracker.reference_t02",
+ "Device 17": "device_tracker.reference_t08",
+ "Device 16": "device_tracker.reference_t14"
 }
