@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.17 (2026-09-21)
+// File: frontend/panel.js, Version: 0.22.21 (2026-09-22)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -48,6 +48,7 @@ const INTEGRATION_FILTERS = [
   ["excluded", "Excluded"],
   ["muted", "Muted"],
   ["service", "Service only"],
+  ["no_hardware", "No hardware"],
 ];
 const DEVICE_FILTERS = [
   ["all", "All"],
@@ -132,7 +133,17 @@ const STANDING = {
   excluded: "Excluded",
   muted: "Muted",
   service: "Service only",
+  no_hardware: "No hardware",
 };
+// The key under the Integrations table, the same words as
+// classification.md's (0.22.21). A test holds the two to one text.
+const STANDING_KEY = [
+  ["Watched", "It owns devices Device Sentinel watches."],
+  ["Excluded", "It is on your exclusion list, in Exclusions and Muting."],
+  ["Muted", "It is muted, in Exclusions and Muting: its devices are watched but never reported."],
+  ["Service only", "Its devices report themselves as services, so there is nothing to watch."],
+  ["No hardware", "It has no hardware of its own. It only adds entities to devices other integrations own, as Battery Notes does, and those entities never count as the device reporting."],
+];
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 function checkIcon(label) {
@@ -960,10 +971,16 @@ class DeviceSentinelPanel extends HTMLElement {
     // Each count takes its own verb: "1 is muted", never "1 are muted".
     const be = (n) => `${n} ${n === 1 ? "is" : "are"}`;
     const owns = (n) => `${n} ${n === 1 ? "owns" : "own"}`;
+    const owners = all.length - counts.no_hardware;
+    const riders = counts.no_hardware
+      ? ` ${counts.no_hardware} more ${counts.no_hardware === 1 ? "has" : "have"} no hardware of `
+        + `${counts.no_hardware === 1 ? "its" : "their"} own and only ${counts.no_hardware === 1 ? "adds" : "add"} `
+        + "entities to other integrations' devices."
+      : "";
     const summary = el("p", { style: "margin:0;line-height:1.5" },
-      `${all.length} ${all.length === 1 ? "integration owns" : "integrations own"} devices in your house. `
+      `${owners} ${owners === 1 ? "integration owns" : "integrations own"} devices in your house. `
       + `${be(watched)} watched, ${be(counts.excluded)} excluded, ${be(counts.muted)} muted, and `
-      + `${owns(counts.service)} only service devices, which have nothing to watch.`);
+      + `${owns(counts.service)} only service devices, which have nothing to watch.${riders}`);
     const chips = el("div", { class: "chips" }, ...INTEGRATION_FILTERS.map(([key, label]) =>
       el("button", {
         class: "chip", type: "button", "aria-pressed": String(key === this._integrationFilter),
@@ -982,7 +999,11 @@ class DeviceSentinelPanel extends HTMLElement {
         el("th", { class: "num" }, header("PROBLEMS", "problems")),
         el("th", { class: "num" }, header("OUTAGES, 14 DAYS", "outages")))),
       el("tbody", {}, ...rows.map((row) => el("tr", {},
-        el("td", {}, this._link(row.name, this._integrationPath(row.domain)), " ", el("span", { class: "small" }, row.domain)),
+        // An integration with no hardware owns no page to open.
+        el("td", {}, row.standing === "no_hardware" ? row.name : this._link(row.name, this._integrationPath(row.domain)),
+          " ", el("span", { class: "small" }, row.domain),
+          row.standing === "no_hardware" && row.adds_to
+            ? el("span", { class: "small" }, `, on ${row.adds_to} ${row.adds_to === 1 ? "device" : "devices"}`) : null),
         el("td", {}, this._standingText(row)),
         el("td", { class: "num" }, row.watched ? String(row.watched) : ""),
         el("td", { class: "num" }, row.muted ? String(row.muted) : ""),
@@ -990,7 +1011,11 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", { class: "num" }, row.problems ? String(row.problems) : "",
           row.acknowledged ? el("span", { class: "small" }, ` +${row.acknowledged} ack`) : null),
         el("td", { class: "num" }, row.outages ? String(row.outages) : "")))));
-    this._pane.replaceChildren(summary, chips, el("div", { class: "scroll" }, table));
+    const key = el("div", { class: "muted", style: "font-size:13px;line-height:1.5" },
+      el("p", { style: "margin:0 0 4px" }, "Standing, by kind:"),
+      ...STANDING_KEY.map(([standing, meaning]) =>
+        el("p", { style: "margin:0" }, el("strong", {}, standing), `: ${meaning}`)));
+    this._pane.replaceChildren(summary, chips, el("div", { class: "scroll" }, table), key);
   }
 
   _paintIntegrationPage() {
