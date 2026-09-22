@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.22.24 (2026-09-22)
+# File: report_maintainer.py, Version: 0.22.25 (2026-09-22)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -71,6 +71,7 @@ from .const import (
     TRIM_TOP_K,
     WIKI_LINK_REPORTS,
 )
+from .durations import LONG_SPAN_SECONDS, long_span
 
 
 class MaintainerReportMixin:
@@ -82,6 +83,8 @@ class MaintainerReportMixin:
         if seconds is None:
             return ""
         seconds = max(0.0, seconds)
+        if seconds >= LONG_SPAN_SECONDS:
+            return long_span(seconds)
         if seconds >= 3600:
             return f"{seconds / 3600:.2f}h"
         if seconds >= 60:
@@ -116,12 +119,7 @@ class MaintainerReportMixin:
         # intervention and waiting on the device's first word since.
         # Counting only the first read "0 still open" while a device
         # had been quiet seventeen hours.
-        open_count = sum(
-            1
-            for row in episodes
-            if row[EP_ENDED] is None
-            or (row[EP_ENDED] != EPISODE_ENDED_RESUMED and row[EP_LAG] is None)
-        )
+        open_count = sum(1 for row in episodes if self._still_silent(row))
         # When the newest row was opened, because an empty stretch and
         # a stopped recorder look identical from the file alone
         # (ruling #203). A quiet fleet can go days without a single
@@ -146,13 +144,14 @@ class MaintainerReportMixin:
             "own learned basis. Devices reporting within their rhythm "
             "never appear. An episode closes when the device reports "
             "again (resumed) or when something intervened (a reboot, "
-            "a bridge reconnect), which truncates the silence at a "
-            "lower bound. LAG is how long after an intervention the "
-            "device took to speak: seconds means the intervention "
-            "revived it, hours means it was never stuck, and \"not yet\" "
-            "means the device has not spoken since, with how long that "
-            "has been. An episode waiting on that first report counts "
-            "as still silent. LEARNED says "
+            "a bridge reconnect). SILENT FOR is the whole silence: up "
+            "to the moment it ended, or up to now while the device is "
+            "still silent. LAG is how long after an intervention the "
+            "device took to speak, and what it is counted from: "
+            "seconds means the intervention revived it, hours means it "
+            "was never stuck, and \"not yet\" means the device has not "
+            "spoken since. An episode waiting on that first word "
+            "counts as still silent. LEARNED says "
             "whether the completed gap reached the statistics, and "
             "why not when it did not. UNAVAIL is how long the device read unavailable when a taint excluded the gap, recorded so the debounce can be tuned from real spread rather than a guess. Kept "
             f"{EPISODE_KEEP_DAYS} days; {len(episodes)} episode(s), "
@@ -173,9 +172,14 @@ class MaintainerReportMixin:
             ]
             for row in episodes:
                 end_epoch = row[EP_AT]
+                # The whole silence (0.22.25): a device that has not
+                # spoken since the intervention is still silent, and
+                # the lower bound the intervention truncated it at
+                # said nothing a person could use. The intervention's
+                # own moment is in the AT column.
                 silence = (
                     (end_epoch - row[EP_SINCE])
-                    if end_epoch is not None
+                    if end_epoch is not None and not self._still_silent(row)
                     else (now - row[EP_SINCE])
                 )
                 lines.append(
@@ -194,6 +198,14 @@ class MaintainerReportMixin:
         path = os.path.join(report_directory, REPORT_EPISODES)
         self._write_file(path, "\n".join(lines))
 
+    @staticmethod
+    def _still_silent(row: dict[str, Any]) -> bool:
+        """Whether this episode is waiting on the device's first word."""
+        return bool(
+            row[EP_ENDED] is None
+            or (row[EP_ENDED] != EPISODE_ENDED_RESUMED and row[EP_LAG] is None)
+        )
+
     def _episode_lag(self, row: dict[str, Any], now: float) -> str:
         """The lag, or how long the device has been silent since the
         intervention that truncated its episode (0.22.24).
@@ -203,14 +215,21 @@ class MaintainerReportMixin:
         then been silent seventeen hours, which is the whole story of
         that row.
         """
+        since_what = str(row[EP_ENDED] or "").replace(
+            "intervention (", "the "
+        ).rstrip(")")
         if row[EP_LAG] is not None:
-            return self._episode_duration(row[EP_LAG])
+            said = self._episode_duration(row[EP_LAG])
+            return f"{said} after {since_what}" if since_what else said
         if row[EP_ENDED] in (None, EPISODE_ENDED_RESUMED):
             return ""
         at = row.get(EP_AT)
         if not isinstance(at, (int, float)):
             return "not yet"
-        return f"not yet, {self._episode_duration(now - at)}"
+        return (
+            f"not yet, {self._episode_duration(now - at)} since "
+            f"{since_what}"
+        )
 
     def _format_maxima_cell(self, daily_maximum_gaps: list[float]) -> str:
         """Render the maxima list newest-first with the trim visible.

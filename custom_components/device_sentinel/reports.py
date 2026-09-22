@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.22.19 (2026-09-21)
+# File: reports.py, Version: 0.22.25 (2026-09-22)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -60,6 +60,7 @@ from .const import (
     REPORT_STALE_FILES,
     REPORT_TELEMETRY,
 )
+from .durations import LONG_SPAN_SECONDS, long_span
 
 
 from .report_battery import BatteryReportMixin
@@ -144,8 +145,8 @@ class ReportWritingMixin(
         if seconds is None:
             return "?"
         seconds = max(0.0, seconds)
-        if seconds >= 86400:
-            return f"{seconds / 86400:.1f}d"
+        if seconds >= LONG_SPAN_SECONDS:
+            return long_span(seconds)
         if seconds >= 3600:
             return f"{seconds / 3600:.1f}h"
         if seconds >= 60:

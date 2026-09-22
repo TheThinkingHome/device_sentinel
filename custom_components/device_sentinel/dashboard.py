@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.24 (2026-09-22)
+# File: dashboard.py, Version: 0.22.25 (2026-09-22)
 
 """What the dashboard reads from the coordinator.
 
@@ -555,6 +555,22 @@ class DeviceViewMixin:
         rhythm, set_aside = self._trimmed_maximum(gaps)
         return rhythm, sorted(set_aside)
 
+    def _rhythm_scale(self, record: dict[str, Any]) -> float | None:
+        """The tallest figure worth drawing a rhythm chart against."""
+        daily = [
+            value
+            for value in (record.get(DEV_DAILY_MAX) or [])
+            if isinstance(value, (int, float))
+        ]
+        if not daily:
+            return None
+        _rhythm, aside = self._trimmed_maximum(daily[-DAILY_MAX_KEEP:])
+        offset = len(daily) - len(daily[-DAILY_MAX_KEEP:])
+        skip = {index + offset for index in aside}
+        kept = [value for index, value in enumerate(daily) if index not in skip]
+        window = self._freeze_window(record)
+        return max([*kept, window] if window is not None else kept or [0.0])
+
     def _page_status(self, device_id: str, record: dict[str, Any]) -> str:
         """The stored verdict the Problem List reads, or what else is
         true of the device (0.22.24).
@@ -652,6 +668,13 @@ class DeviceViewMixin:
                 "learned": row.get(EP_LEARNED),
                 # Truncated by an intervention and waiting on the
                 # device's first word since (0.22.24).
+                # The whole silence while it is still running
+                # (0.22.25), as the file shows it.
+                "silence_total": (
+                    dt_util.utcnow().timestamp() - row[EP_SINCE]
+                    if isinstance(row.get(EP_SINCE), (int, float))
+                    else None
+                ),
                 "still_silent": bool(
                     row.get(EP_ENDED)
                     and row.get(EP_ENDED) != EPISODE_ENDED_RESUMED
@@ -703,6 +726,12 @@ class DeviceViewMixin:
             "rhythm": {
                 "gaps": list((record.get(DEV_DAILY_MAX) or [])[-DAILY_MAX_KEEP:]),
                 "set_aside": set_aside,
+                # What the chart can be read against (0.22.25): the
+                # larger of the device's window and its largest day
+                # the trim did not set aside. A vibration sensor away
+                # from the house for six weeks gave its chart an axis
+                # of 1032 hours and flattened every ordinary day.
+                "scale": self._rhythm_scale(record),
                 # The whole history, and the window each day had,
                 # worked out from the days before it as the detector
                 # worked it out then.
