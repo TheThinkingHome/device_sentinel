@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.24 (2026-09-22)
+// File: frontend/panel.js, Version: 0.22.25 (2026-09-22)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -167,11 +167,24 @@ function checkIcon(label) {
   return svg;
 }
 
+// Past two days a duration reads in days, and past a week and a half
+// in weeks, in halves rounded down, the same rule and the same words
+// as durations.py (0.22.25). A test holds the two to one wording.
+function halves(value, noun) {
+  const count = Math.floor(value * 2);
+  const whole = Math.floor(count / 2);
+  if (count % 2 === 0) return `${whole} ${noun}${whole === 1 ? "" : "s"}`;
+  if (whole === 0) return `half a ${noun}`;
+  if (whole === 1) return `a ${noun} and a half`;
+  return `${whole} and a half ${noun}s`;
+}
+
 function span(seconds) {
   if (seconds < 90) return `${Math.max(0, Math.round(seconds))}s`;
   if (seconds < 5400) return `${Math.round(seconds / 60)}m`;
   if (seconds < 172800) return `${(seconds / 3600).toFixed(1)}h`;
-  return `${(seconds / 86400).toFixed(1)}d`;
+  if (seconds >= 1.5 * 7 * 86400) return halves(seconds / (7 * 86400), "week");
+  return halves(seconds / 86400, "day");
 }
 
 // The header's and the printout's moment: the time, then the date in
@@ -1700,14 +1713,16 @@ class DeviceSentinelPanel extends HTMLElement {
         el("thead", {}, el("tr", {}, ...["SILENT SINCE", "SILENT FOR", "WINDOW THEN", "ENDED", "LEARNED FROM"].map((h) => el("th", {}, h)))),
         el("tbody", {}, ...page.silences.map((row) => el("tr", {},
           el("td", {}, row.since ? moment(row.since) : ""),
-          el("td", {}, row.silence ? span(row.silence) : ""),
+          el("td", {}, row.still_silent && row.silence_total
+            ? span(row.silence_total)
+            : row.silence ? span(row.silence) : ""),
           el("td", {}, row.window ? span(row.window) : ""),
           el("td", {}, `${row.ended || ""}${row.at ? ` at ${new Date(row.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}`),
           // Truncated by an intervention and still waiting on the
           // device's first word since (0.22.24), which the blank cell
           // used to leave unsaid.
           el("td", {}, row.still_silent
-            ? `still silent, ${ago(row.at, Date.now())}`
+            ? `still silent, ${ago(row.at, Date.now())} since the intervention`
             : row.learned || ""))))))
       : el("p", { class: "muted", style: "margin:0" }, "No silence longer than its rhythm in the last 14 days.");
 
@@ -1985,10 +2000,18 @@ class DeviceSentinelPanel extends HTMLElement {
     if (!gaps.length) {
       rhythmCard = el("p", { class: "muted", style: "margin:0" }, "No reporting history for this device.");
     } else {
+      // The axis fits what can be read, not the device's worst ever
+      // day (0.22.25): a vibration sensor that left the house for six
+      // weeks had an axis of 1032 hours, against a rhythm of 1.6, and
+      // every ordinary day lay flat on the floor. The scale is the
+      // larger of the device's window and its largest day the trim
+      // did not set aside; a day above it is drawn at the top, marked
+      // as being off the scale.
       const inHours = [];
       gaps.forEach((g, i) => { if (gaps.length - 1 - i < days) { inHours.push(g / 3600); if (wins[i]) inHours.push(wins[i] / 3600); } });
-      // The axis fits the gaps, and reads in minutes while they are short.
-      const top = Math.max(...inHours);
+      const scale = page.rhythm.scale ? page.rhythm.scale / 3600 : null;
+      const top = scale && scale > 0 ? scale : Math.max(...inHours);
+      const clipped = Math.max(...inHours) > top;
       const inMinutes = top < 1.5;
       // A little headroom, so the window line is never drawn on the
       // chart's own top edge.
@@ -1996,17 +2019,26 @@ class DeviceSentinelPanel extends HTMLElement {
       const mark = (h) => (inMinutes ? `${Math.round(h * 60)}m` : `${Number(h.toFixed(1))}h`);
       const rhy = frame(0, highG, [[highG, mark(highG)], [highG / 2, mark(highG / 2)], [0, inMinutes ? "0m" : "0h"]],
         `Longest gap between reports each day for ${days} days, with its window`);
-      rhy.g.append(svg("polyline", { points: pts(wins.map((w) => (w ? w / 3600 : null)), rhy.y).join(" "), fill: "none",
+      const cap = (hours) => (hours == null ? null : Math.min(hours, highG));
+      rhy.g.append(svg("polyline", { points: pts(wins.map((w) => (w ? cap(w / 3600) : null)), rhy.y).join(" "), fill: "none",
         stroke: "var(--error-color, #db4437)", "stroke-width": 1.4, "stroke-dasharray": "5 4" }),
-      svg("polyline", { points: pts(gaps.map((g) => g / 3600), rhy.y).join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 1.4 }));
+      svg("polyline", { points: pts(gaps.map((g) => cap(g / 3600)), rhy.y).join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 1.4 }));
       let over = 0;
       gaps.forEach((g, i) => {
         const back = gaps.length - 1 - i;
         if (back >= days) return;
         const late = wins[i] && g > wins[i];
         if (late) over += 1;
-        rhy.g.append(svg("circle", { cx: x(back), cy: rhy.y(g / 3600), r: 3,
+        const beyond = g / 3600 > highG;
+        rhy.g.append(svg("circle", { cx: x(back), cy: rhy.y(cap(g / 3600)), r: 3,
           fill: late ? "var(--error-color, #db4437)" : "var(--primary-color)" }));
+        // Off the scale: drawn at the top with a caret, and named in
+        // the legend, so an absence is visible without flattening the
+        // days around it.
+        if (beyond) {
+          rhy.g.append(svg("text", { x: x(back), y: rhy.y(highG) - 6, class: "axis",
+            "text-anchor": "middle", fill: "var(--error-color, #db4437)" }, "\u25B2"));
+        }
       });
       addHover(rhy.g);
       rhythmCard = card("Rhythm", `longest gap between reports each day, in ${inMinutes ? "minutes" : "hours"}`,
@@ -2016,7 +2048,8 @@ class DeviceSentinelPanel extends HTMLElement {
         rhy.g,
         el("div", { class: "legend" }, el("span", {}, "Longest gap each day (dots)."),
           key("var(--error-color, #db4437)", "its window that day", true),
-          key("var(--error-color, #db4437)", "a gap longer than its window", false, true)));
+          key("var(--error-color, #db4437)", "a gap longer than its window", false, true),
+          clipped ? el("span", {}, "\u25B2 a day beyond the scale, drawn at the top.") : null));
     }
 
     // ------------------------------------------------------------------ table
