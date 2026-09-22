@@ -4,7 +4,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/setup_container.sh, Version: 0.22.12 (2026-09-21)
+# File: tools/setup_container.sh, Version: 0.22.20 (2026-09-21)
 #
 # Rebuild the whole test environment in a fresh build container.
 #
@@ -23,14 +23,16 @@
 # It is safe to run again. An environment that already exists at the
 # right version is left alone, so a second run costs seconds.
 #
-# Fleet data is separate and private. Unzip the test-data archive and
-# point DEVICE_SENTINEL_FLEET_DIR at its fleets folder; this script
-# reports whether it found one but never creates or fetches it.
+# Fleet data comes with the clone: an anonymized copy of each house
+# lives in tests/fleets/, and the suite and the gate read it by default.
+# The real files travel in the private test-data archive, for diagnosis
+# with real names: point DEVICE_SENTINEL_FLEET_DIR at its fleets folder
+# to run the suite on them, or GATE_FLEET_DIR to run the gate on them.
 
 set -uo pipefail
 
 PREFIX="${DEVICE_SENTINEL_ENV_PREFIX:-/home/claude}"
-FLEETS="${DEVICE_SENTINEL_FLEET_DIR:-$PREFIX/fleets}"
+FLEETS="${DEVICE_SENTINEL_FLEET_DIR:-}"
 TREE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 PYTHON_VERSION="3.14.6"
@@ -158,7 +160,9 @@ cat > "$PREFIX/gate.sh" <<GATE
 #   cd $PREFIX && setsid nohup ./gate.sh >/dev/null 2>&1 < /dev/null &
 TREE="\${1:-$TREE}"
 SUM="$PREFIX/gate_summary.txt"
-FLEETS="$FLEETS"
+# The committed anonymized set by default; GATE_FLEET_DIR runs the gate
+# on another set laid out the same way, such as the archive's real files.
+FLEETS="\${GATE_FLEET_DIR:-\$TREE/tests/fleets}"
 cd "\$TREE" || exit 1
 
 # Count python processes running pytest, not every command line that
@@ -178,7 +182,7 @@ fi
 NOFLEET=\$(mktemp -d)
 trap 'rm -rf "\$NOFLEET"' EXIT
 
-echo "=== gate start \$(date -u) tree=\$TREE ===" >> "\$SUM"
+echo "=== gate start \$(date -u) tree=\$TREE fleets=\$FLEETS ===" >> "\$SUM"
 run() {  # \$1 label  \$2 python  \$3 fleet directory
   local label="\$1" py="\$2" fleet="\$3" out start rc el
   out=\$(mktemp); start=\$SECONDS
@@ -200,6 +204,13 @@ run current_nofleet $CURRENT_ENV/bin/python "\$NOFLEET"
   printf 'bandit issues: '; $TOOLS_ENV/bin/bandit -q -r custom_components 2>&1 | grep -c "Issue:"
   printf 'mypy outside the mixin pattern: '; $CURRENT_ENV/bin/mypy custom_components/device_sentinel 2>&1 | grep "error:" | grep -v attr-defined | wc -l
   printf 'mypy total: ';    $CURRENT_ENV/bin/mypy custom_components/device_sentinel 2>&1 | grep -c "error:"
+  # The dashboard's checks, in a simulated browser against the tree's
+  # own panel.js. One line per file.
+  for check in tools/panel_checks/check_*.js; do
+    [ -f "\$check" ] || continue
+    printf 'panel %s: ' "\$(basename "\$check" .js)"
+    NODE_PATH="$JSDOM_DIR/node_modules" node "\$check" 2>&1 | tail -1
+  done
   echo "=== gate done \$(date -u) ==="
 } >> "\$SUM"
 GATE
@@ -208,27 +219,29 @@ note "written to $PREFIX/gate.sh"
 
 # ---------------------------------------------------------- fleet data
 #
-# Private, and never in this repository. It arrives as the test-data
-# archive; its MANIFEST.md says which file belongs to which house.
+# The anonymized set is committed under tests/fleets/. The real files
+# are private and never in this repository; they arrive as the
+# test-data archive, whose MANIFEST.md says which file belongs to which
+# house, and are needed only to diagnose with real names.
 
 say "fleet data"
-if [ -d "$FLEETS" ]; then
+for house in "$TREE"/tests/fleets/*/; do
+  [ -d "$house" ] || continue
+  note "committed $(basename "$house"): $(find "$house" -maxdepth 1 -type f | wc -l) file(s)"
+done
+if [ -n "$FLEETS" ] && [ -d "$FLEETS" ]; then
   for house in "$FLEETS"/*/; do
     [ -d "$house" ] || continue
-    note "$(basename "$house"): $(find "$house" -maxdepth 1 -type f | wc -l) file(s)"
+    note "real $(basename "$house"): $(find "$house" -maxdepth 1 -type f | wc -l) file(s)"
   done
-else
-  note "none found at $FLEETS"
-  note "unzip the test-data archive and move its fleets folder there,"
-  note "or set DEVICE_SENTINEL_FLEET_DIR. Without it every fleet case skips."
 fi
 
 cat <<DONE
 
 == ready
 
-  the suite   DEVICE_SENTINEL_FLEET_DIR=$FLEETS \\
-                $CURRENT_ENV/bin/python -m pytest tests -q -p no:sugar -rfExXs --timeout=120
+  the suite   $CURRENT_ENV/bin/python -m pytest tests -q -p no:sugar -rfExXs --timeout=120
+              (on real files: DEVICE_SENTINEL_FLEET_DIR=<archive fleets folder>)
   the gate    cd $PREFIX && setsid nohup ./gate.sh >/dev/null 2>&1 < /dev/null &
               then read $PREFIX/gate_summary.txt
 
