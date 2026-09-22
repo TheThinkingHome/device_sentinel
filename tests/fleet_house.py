@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/fleet_house.py, Version: 0.20.1 (2026-09-04)
+# File: tests/fleet_house.py, Version: 0.22.20 (2026-09-21)
 
 """Build a live coordinator shaped like a real reference fleet.
 
@@ -41,8 +41,8 @@ from tests.conftest import fleet_path
 from tests.helpers import setup_coordinator
 from tests.test_upstream_events_fleet import _stub
 
-JAMES = fleet_path("james", "device_sentinel.storage")
-TIM = fleet_path("tim", "device_sentinel_storage.json")
+JAMES = fleet_path("reference", "device_sentinel.storage")
+TIM = fleet_path("second", "device_sentinel_storage.json")
 
 JAMES_SHAPE = {
     "blinds_hub": 6,

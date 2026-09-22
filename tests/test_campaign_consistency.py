@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_campaign_consistency.py, Version: 0.22.0 (2026-09-18)
+# File: tests/test_campaign_consistency.py, Version: 0.22.20 (2026-09-21)
 
 """Pre-stable campaign: the changed paths stay consistent, and every
 report still renders.
@@ -85,12 +85,13 @@ from custom_components.device_sentinel.const import (
 from tests.conftest import FLEET_ABSENT, fleet_path
 from tests.helpers import devices_of_entry, register_device, setup_coordinator
 
-JAMES = fleet_path("james", "device_sentinel.storage")
-TIM = fleet_path("tim", "2026-08-26", "device_sentinel_storage.json")
+JAMES = fleet_path("reference", "device_sentinel.storage")
+TIM = fleet_path("second", "2026-08-26", "device_sentinel_storage.json")
 # The newest copy of each fleet, for the forward simulation below. The
 # dated pair above is the campaign's fixed ground; these move.
-JAMES_LIVE = fleet_path("james", "device_sentinel.storage")
-TIM_LIVE = fleet_path("tim", "device_sentinel_storage.json")
+JAMES_LIVE = fleet_path("reference", "device_sentinel.storage")
+TIM_LIVE = fleet_path("second", "device_sentinel_storage.json")
+FOURTH_LIVE = fleet_path("fourth", "device_sentinel_storage.json")
 CLOCKS_FOR = {
     "device_sentinel.storage": "device_sentinel.clocks",
     "device_sentinel_storage.json": "device_sentinel_clocks.json",
@@ -452,6 +453,17 @@ async def test_the_second_fleet_renders_every_page(
     """The same, on a fleet twice the size and differently shaped."""
     carried, pages = await _render_fleet(hass, TIM_LIVE)
     assert carried > 200, carried
+    _check_pages(pages)
+
+
+@pytest.mark.skipif(not FOURTH_LIVE.exists(), reason=FLEET_ABSENT)
+async def test_the_fourth_fleet_renders_every_page(
+    hass: HomeAssistant,
+):
+    """The same, on a Lutron, Z-Wave and Frigate house four days old
+    when captured, the youngest record any fleet holds."""
+    carried, pages = await _render_fleet(hass, FOURTH_LIVE)
+    assert carried > 100, carried
     _check_pages(pages)
 
 

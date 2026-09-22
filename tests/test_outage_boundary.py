@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_boundary.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_outage_boundary.py, Version: 0.22.20 (2026-09-21)
 
 """0.21.12's stored data at the storage boundary (rulings #279, #370).
 
@@ -59,8 +59,8 @@ _EVENT_FIELDS = (SYS_WORST, SYS_DEVICES, SYS_KIND)
 # The hostile file's own pair, and both fleets as they stand now.
 SHAPE_FLEETS = FLEETS + [
     fleet_param(
-        "james", "device_sentinel.storage", id="james_now",
-        clocks=("james", "device_sentinel.clocks"),
+        "reference", "device_sentinel.storage", id="james_now",
+        clocks=("reference", "device_sentinel.clocks"),
     ),
 ]
 

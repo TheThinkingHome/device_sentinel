@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_options_migration.py, Version: 0.22.5 (2026-09-20)
+# File: tests/test_options_migration.py, Version: 0.22.20 (2026-09-21)
 
 """The options migration, entry shape by entry shape (ruling #316).
 
@@ -250,7 +250,7 @@ async def test_the_reference_fleet_s_own_entry_survives(
     # Read from the reference fleet's folder, like every other fleet
     # case. It used to read the chat's upload folder, whose contents
     # are whatever was sent last, from any house.
-    files = sorted(fleet_path("james").glob("config_entry-device_sentinel-*.json"))
+    files = sorted(fleet_path("reference").glob("config_entry-device_sentinel-*.json"))
     if not files:
         pytest.skip(FLEET_ABSENT)
     stored = json.loads(files[0].read_text(encoding="utf-8"))

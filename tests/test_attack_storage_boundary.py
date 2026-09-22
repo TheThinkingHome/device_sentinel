@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_attack_storage_boundary.py, Version: 0.22.0 (2026-09-18)
+# File: test_attack_storage_boundary.py, Version: 0.22.20 (2026-09-21)
 
 """Attack the storage boundary of ruling #370.
 
@@ -46,8 +46,8 @@ from custom_components.device_sentinel.normalise import (
 from tests.conftest import FLEET_ABSENT, fleet_path
 from tests.helpers import register_device, setup_coordinator
 
-JAMES = fleet_path("james", "device_sentinel.storage")
-TIM = fleet_path("tim", "2026-08-26", "device_sentinel_storage.json")
+JAMES = fleet_path("reference", "device_sentinel.storage")
+TIM = fleet_path("second", "2026-08-26", "device_sentinel_storage.json")
 POISONS = [None, "junk", [1, 2], {"x": 1}, True, -7, 4.1e18, "", 3.5]
 ROUNDS = 40
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attack_coordinator_grace.py, Version: 0.22.0 (2026-09-18)
+# File: tests/test_attack_coordinator_grace.py, Version: 0.22.20 (2026-09-21)
 
 """Attack the coordinator fix until it cannot be broken.
 
@@ -64,8 +64,8 @@ from custom_components.device_sentinel.const import (
 from tests.conftest import FLEET_ABSENT, fleet_path
 from tests.helpers import record_events, setup_coordinator
 
-JAMES = fleet_path("james", "device_sentinel.storage")
-TIM = fleet_path("tim", "2026-08-26", "device_sentinel_storage.json")
+JAMES = fleet_path("reference", "device_sentinel.storage")
+TIM = fleet_path("second", "2026-08-26", "device_sentinel_storage.json")
 OBSERVED = "2026-07-08T00:00:00+00:00"
 ROUNDS = 150
 

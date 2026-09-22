@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: conftest.py, Version: 0.21.11 (2026-09-16)
+# File: conftest.py, Version: 0.22.20 (2026-09-21)
 
 """Shared test fixtures.
 
@@ -183,16 +183,20 @@ def read_brief():
 
 # ----------------------------------------------- the reference fleets
 
-# The reference fleets are two real people's storage files and are
-# deliberately not in this repository. Point DEVICE_SENTINEL_FLEET_DIR
-# at a directory holding them to run the fleet cases; without it
-# every fleet case skips, which is what happens in continuous
-# integration and on anyone else's checkout. One place since 0.19.11,
-# so no test can hardcode a path the others do not share.
+# The fleets are real houses' storage, anonymized and committed under
+# tests/fleets/ by tools/anonymise_fleet.py: reference/, second/ and
+# fourth/, and a folder for each tester after them. They are the set the
+# Test Baseline counts, and the set continuous integration runs. Point
+# DEVICE_SENTINEL_FLEET_DIR at another directory laid out the same way,
+# such as the private archive's real files, to run the fleet cases on
+# it instead, or at an empty one to run without fleets. One place since
+# 0.19.11, so no test can hardcode a path the others do not share.
 FLEET_DIR = Path(
-    os.environ.get("DEVICE_SENTINEL_FLEET_DIR", "/home/claude/fleets")
+    os.environ.get(
+        "DEVICE_SENTINEL_FLEET_DIR", str(Path(__file__).parent / "fleets")
+    )
 )
-FLEET_ABSENT = "reference fleet file absent; set DEVICE_SENTINEL_FLEET_DIR"
+FLEET_ABSENT = "fleet file absent; see tests/fleets or DEVICE_SENTINEL_FLEET_DIR"
 
 
 def fleet_path(*parts: str) -> Path:

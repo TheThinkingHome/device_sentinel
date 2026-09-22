@@ -504,10 +504,10 @@ async def test_a_fleet_where_every_link_falls_on_one_day(
 # ==================================================================
 
 _FLEETS = [
-    fleet_param("james", "device_sentinel.storage", id="reference"),
-    fleet_param("tim", "device_sentinel_storage.json", id="second"),
+    fleet_param("reference", "device_sentinel.storage", id="reference"),
+    fleet_param("second", "device_sentinel_storage.json", id="second"),
     fleet_param(
-        "christopher_2026-09-19", "device_sentinel_storage.json", id="fourth"
+        "fourth", "device_sentinel_storage.json", id="fourth"
     ),
 ]
 

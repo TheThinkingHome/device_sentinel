@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_campaign_boundary_hostile.py, Version: 0.22.0 (2026-09-18)
+# File: test_campaign_boundary_hostile.py, Version: 0.22.20 (2026-09-21)
 
 """The hostile campaign against ruling #370, both real fleets.
 
@@ -47,19 +47,23 @@ from custom_components.device_sentinel.normalise import (
 from tests.conftest import fleet_param, fleet_path
 from tests.helpers import register_device, setup_coordinator
 
-JAMES = fleet_path("james", "device_sentinel.storage")
-JAMES_CLOCKS = fleet_path("james", "device_sentinel.clocks")
-TIM = fleet_path("tim", "device_sentinel_storage.json")
-TIM_CLOCKS = fleet_path("tim", "device_sentinel_clocks.json")
+JAMES = fleet_path("reference", "device_sentinel.storage")
+JAMES_CLOCKS = fleet_path("reference", "device_sentinel.clocks")
+TIM = fleet_path("second", "device_sentinel_storage.json")
+TIM_CLOCKS = fleet_path("second", "device_sentinel_clocks.json")
 
 FLEETS = [
     fleet_param(
-        "james", "device_sentinel.storage", id="james",
-        clocks=("james", "device_sentinel.clocks"),
+        "reference", "device_sentinel.storage", id="james",
+        clocks=("reference", "device_sentinel.clocks"),
     ),
     fleet_param(
-        "tim", "device_sentinel_storage.json", id="tim",
-        clocks=("tim", "device_sentinel_clocks.json"),
+        "second", "device_sentinel_storage.json", id="tim",
+        clocks=("second", "device_sentinel_clocks.json"),
+    ),
+    fleet_param(
+        "fourth", "device_sentinel_storage.json", id="fourth",
+        clocks=("fourth", "device_sentinel_clocks.json"),
     ),
 ]
 
