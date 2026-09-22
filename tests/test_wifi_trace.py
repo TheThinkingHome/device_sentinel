@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_trace.py, Version: 0.21.7 (2026-09-15)
+# File: tests/test_wifi_trace.py, Version: 0.22.20 (2026-09-21)
 
 """A recorded outage, replayed through the shipped code.
 
@@ -113,7 +113,7 @@ async def test_no_device_is_orphaned_during_the_recovery(
         if not declared:
             # Devices down before the outage was ever declared are
             # their own problems and always were: the Fire TV at
-            # nought seconds, the Stove Vent Relays at 24.
+            # nought seconds, the Device 08 at 24.
             continue
         # Only the devices the outage was still claiming when it
         # closed. A device that recovered and then failed again is a
