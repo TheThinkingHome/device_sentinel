@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.22 (2026-09-22)
+// File: frontend/panel.js, Version: 0.22.24 (2026-09-22)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -63,6 +63,8 @@ const STATUS_WORDS = {
   unavailable: ["Unavailable", "var(--error-color, #db4437)"],
   unknown: ["Unknown", "var(--warning-color, #ffa600)"],
   never_reported: ["Never reported", "var(--error-color, #db4437)"],
+  // Nobody is watching it, so there is no verdict to give (0.22.24).
+  set_aside: ["Set aside", "var(--disabled-text-color, #888)"],
 };
 const LIVE_SECONDS = 60;
 // The print view: dark text on white whatever the theme, the same
@@ -984,13 +986,14 @@ class DeviceSentinelPanel extends HTMLElement {
         + "entities to other integrations' devices."
       : "")
       + (counts.helper
-        ? ` ${counts.helper} ${counts.helper === 1 ? "is a helper" : "are helpers"} you linked to devices.`
+        ? ` ${counts.helper} ${counts.helper === 1 ? "is a helper you linked to a device" : "are helpers you linked to devices"}.`
         : "");
     const summary = el("p", { style: "margin:0;line-height:1.5" },
       `${owners} ${owners === 1 ? "integration owns" : "integrations own"} devices in your house. `
       + `${be(watched)} watched, ${be(counts.excluded)} excluded, ${be(counts.muted)} muted, and `
       + `${owns(counts.service)} only service devices, which have nothing to watch.${riders}`);
-    const chips = el("div", { class: "chips" }, ...INTEGRATION_FILTERS.map(([key, label]) =>
+    const chips = el("div", { class: "chips" }, ...INTEGRATION_FILTERS.filter(([key]) =>
+      key === "all" || counts[key] || this._integrationFilter === key).map(([key, label]) =>
       el("button", {
         class: "chip", type: "button", "aria-pressed": String(key === this._integrationFilter),
         onclick: () => {
@@ -1260,7 +1263,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const summary = el("p", { style: "margin:0;line-height:1.5" },
       `${page.cells} cells report a level. ${page.falling.length} falling, ${page.steady.length} steady, `
       + `${page.low.length} at or under your threshold of ${page.threshold}%. ${page.no_battery} watched `
-      + `devices report no battery at all, and ${page.unreadable.length} report a reading that is not a percentage.`);
+      + `devices report no battery at all, and ${page.unreadable.length} ${page.unreadable.length === 1 ? "reports" : "report"} a reading that is not a percentage.`);
     // The bank.
     const top = Math.max(...page.bank, 1);
     const bank = el("div", {},
@@ -1582,21 +1585,37 @@ class DeviceSentinelPanel extends HTMLElement {
     const labels = { battery: "Battery", signal: "Signal", last_seen: "Last seen" };
     const cards = page.readings.map((reading) => {
       const state = this._hass && this._hass.states ? this._hass.states[reading.entity_id] : null;
-      let value = state ? state.state : "not available";
+      // A reading Home Assistant cannot give is not a reading
+      // (0.22.24): the second signal entity of a ZHA device often
+      // reads unknown, and a tile saying so is noise.
+      if (!state || state.state === "unknown" || state.state === "unavailable") return null;
+      let value = state.state;
       if (state && state.attributes && state.attributes.unit_of_measurement && !Number.isNaN(Number(value))) {
         value = `${value}${state.attributes.unit_of_measurement === "%" ? "%" : ` ${state.attributes.unit_of_measurement}`}`;
       }
       if (state && reading.kind === "last_seen" && !Number.isNaN(Date.parse(state.state))) {
         value = new Date(state.state).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
       }
-      const changed = state && state.last_changed ? `changed ${ago(state.last_changed, Date.now())}` : "";
+      // Home Assistant stamps an entity as changed when a retained
+      // message is replayed at a restart, so a device silent since
+      // yesterday read "changed 11m ago" on every tile (0.22.24).
+      // A tile is dated from the device's own last report when that
+      // is older than Home Assistant's stamp.
+      const stamped = state.last_changed ? new Date(state.last_changed).getTime() : null;
+      const heard = page.status && page.status.last_activity
+        ? new Date(page.status.last_activity).getTime() : null;
+      const changed = stamped === null ? ""
+        : heard !== null && heard < stamped - 1000
+          ? `last heard ${ago(page.status.last_activity, Date.now())}`
+          : `changed ${ago(state.last_changed, Date.now())}`;
       return el("div", { class: "stat reading" },
         el("div", { class: "small" }, labels[reading.kind]),
         el("div", { class: "v" }, value),
         el("div", { class: "small" }, reading.entity_id),
         el("div", { class: "small" }, changed));
     });
-    this._readingsBox.replaceChildren(...(cards.length ? cards
+    const shown = cards.filter(Boolean);
+    this._readingsBox.replaceChildren(...(shown.length ? shown
       : [el("p", { class: "muted", style: "margin:0" }, "This device has no battery, signal or last seen entity.")]));
   }
 
@@ -1684,7 +1703,12 @@ class DeviceSentinelPanel extends HTMLElement {
           el("td", {}, row.silence ? span(row.silence) : ""),
           el("td", {}, row.window ? span(row.window) : ""),
           el("td", {}, `${row.ended || ""}${row.at ? ` at ${new Date(row.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}`),
-          el("td", {}, row.learned || ""))))))
+          // Truncated by an intervention and still waiting on the
+          // device's first word since (0.22.24), which the blank cell
+          // used to leave unsaid.
+          el("td", {}, row.still_silent
+            ? `still silent, ${ago(row.at, Date.now())}`
+            : row.learned || ""))))))
       : el("p", { class: "muted", style: "margin:0" }, "No silence longer than its rhythm in the last 14 days.");
 
     this._pane.replaceChildren(back, head, statusBox,
@@ -1823,15 +1847,20 @@ class DeviceSentinelPanel extends HTMLElement {
     if (!battery.length) {
       batteryCard = el("p", { class: "muted", style: "margin:0" }, "No battery history for this device.");
     } else {
+      const percent = b.readable !== false;
+      const unit = percent ? "%" : "";
       const shown = battery.filter((v, i) => battery.length - 1 - i < days && v != null);
       const lowB = Math.max(0, Math.floor(Math.min(...shown)) - 1);
-      const highB = Math.min(100, Math.ceil(Math.max(...shown)) + 1);
+      const highB = percent ? Math.min(100, Math.ceil(Math.max(...shown)) + 1)
+        : Math.ceil(Math.max(...shown)) + 1;
       // The threshold is drawn once the battery comes within ten points of it.
-      const showThreshold = lowB <= b.threshold + 10;
+      // Your threshold is a percentage, so it means nothing against a
+      // reading that is not one (0.22.24): LUX Outdoors reports 186.
+      const showThreshold = percent && lowB <= b.threshold + 10;
       const lowAxis = showThreshold ? Math.max(0, Math.min(lowB, Math.floor(b.threshold) - 1)) : lowB;
       const mid = Math.round((lowAxis + highB) / 2);
-      const bat = frame(lowAxis, highB, [[highB, `${highB}%`], [mid, `${mid}%`], [lowAxis, `${lowAxis}%`]],
-        `Battery level for ${days} days, between ${lowAxis} and ${highB} percent`);
+      const bat = frame(lowAxis, highB, [[highB, `${highB}${unit}`], [mid, `${mid}${unit}`], [lowAxis, `${lowAxis}${unit}`]],
+        `Battery level for ${days} days, between ${lowAxis} and ${highB}${percent ? " percent" : ""}`);
       if (showThreshold) {
         bat.g.append(svg("line", { x1: 44, y1: bat.y(b.threshold), x2: 1090, y2: bat.y(b.threshold),
           stroke: "var(--error-color, #db4437)", "stroke-dasharray": "4 4" }),
@@ -1851,14 +1880,17 @@ class DeviceSentinelPanel extends HTMLElement {
           stroke: colour, "stroke-width": 2, "stroke-dasharray": "6 4" }));
         legend.push(key(colour, `${window}-day rate, ${slope >= 0 ? "+" : ""}${slope.toFixed(3)}/day`, true));
       }
-      if (!showThreshold) legend.push(el("span", {}, `Your threshold, ${b.threshold}%, is far below this range, so it is not drawn.`));
+      if (!showThreshold && percent) legend.push(el("span", {}, `Your threshold, ${b.threshold}%, is far below this range, so it is not drawn.`));
+      // A reading that is not a percentage is a raw sensor value, and
+      // your threshold has nothing to say about it (0.22.24).
+      if (!percent) legend.push(el("span", {}, "This is a raw reading rather than a percentage, so it is not judged against your threshold."));
       addHover(bat.g);
       const rate = (v) => (v == null ? "\u2013" : `${v >= 0 ? "+" : ""}${v.toFixed(3)}/day`);
       let figures = null;
       if (b.windows) {
         const blocks = (b.blocks || []).slice().sort((p, q) => q[0] - p[0]);
         const head = ["LEVEL", ...blocks.map(([start, stop]) => `DAY ${start}\u2013${stop}`), "30 DAY", "14 DAY", "7 DAY", "READING", "LEFT"];
-        const cells = [`${Math.round(b.now)}%`, ...blocks.map((block) => rate(block[2])),
+        const cells = [`${Math.round(b.now)}${unit}`, ...blocks.map((block) => rate(block[2])),
           rate(b.windows["30"]), rate(b.windows["14"]), rate(b.windows["7"]),
           b.reading || "not falling", b.left || "\u2013"];
         figures = el("div", { class: "scroll" }, el("table", { class: "figures" },
@@ -1871,7 +1903,7 @@ class DeviceSentinelPanel extends HTMLElement {
           `${b.reading[0].toUpperCase()}${b.reading.slice(1)}: ${b.reading_meaning}`)
         : el("p", { class: "small", style: "margin:0;line-height:1.5" },
           "Not falling: no window of this cell is dropping faster than the rounding of its own readings, so no time left is offered.");
-      batteryCard = card("Battery", b.now != null ? `${b.now}% now` : "", figures, meaning, bat.g, el("div", { class: "legend" }, ...legend));
+      batteryCard = card("Battery", b.now != null ? `${b.now}${unit} now` : "", figures, meaning, bat.g, el("div", { class: "legend" }, ...legend));
     }
 
     // ----------------------------------------------------------------- signal
