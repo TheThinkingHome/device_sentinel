@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.22.23 (2026-09-22)
+# File: report_brief.py, Version: 0.22.24 (2026-09-22)
 
 """The daily brief: the one report written for a person.
 
@@ -2297,6 +2297,16 @@ class BriefMixin:
                 f"{devices} device{'s' if devices != 1 else ''} "
                 f"need{'' if devices != 1 else 's'} attention"
             )
+            # The table lists problems, not devices, so a device with
+            # two faults gave "1 device needs attention" above two
+            # rows (0.22.24).
+            if len(now_rows) != devices:
+                summary += (
+                    f", with {len(now_rows)} problem"
+                    f"{'s' if len(now_rows) != 1 else ''} between them"
+                    if devices != 1
+                    else f", with {len(now_rows)} problems"
+                )
             summary += "."
             now = dt_util.utcnow().timestamp()
             lines += [

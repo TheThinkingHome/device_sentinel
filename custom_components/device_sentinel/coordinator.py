@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.22.23 (2026-09-22)
+# File: coordinator.py, Version: 0.22.24 (2026-09-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -2400,6 +2400,38 @@ class DeviceSentinelCoordinator(
         )
 
     @callback
+    def _device_is_speaking(
+        self, device_id: str, record: dict[str, Any], now: float
+    ) -> bool:
+        """Whether this reading comes from a device that is speaking.
+
+        A device whose clock is its own Last Seen value cannot be
+        revived by a replayed message, because the replay carries the
+        old value (ruling #124). Its signal was another matter: at a
+        restart the broker hands back every retained payload, and the
+        link quality in it was fed to the statistics as though the
+        device had just answered. The reference rig's watering sensor,
+        with a dead battery and silent since the evening before, took
+        four such readings at one restart (0.22.24).
+
+        A device with no Last Seen clock is heard whenever anything
+        arrives, so the question does not arise and the reading
+        counts, as it did. So does one still learning its rhythm,
+        which has no window to be overdue against.
+        """
+        if device_id not in self._last_seen_entity:
+            return True
+        window = self._freeze_window(record)
+        if window is None:
+            return True
+        stamp = self._contact_stamp(device_id, now)
+        if stamp is None:
+            stamp = record.get(DEV_LAST_ACTIVITY)
+        if stamp is None:
+            return False
+        return now - stamp <= window
+
+    @callback
     def _record_activity(
         self,
         device_id: str,
@@ -2442,7 +2474,9 @@ class DeviceSentinelCoordinator(
                     state,
                 )
                 value = None
-            if value is not None:
+            if value is not None and self._device_is_speaking(
+                device_id, record, now
+            ):
                 self._feed_signal(record, value, now)
 
         if foreign:

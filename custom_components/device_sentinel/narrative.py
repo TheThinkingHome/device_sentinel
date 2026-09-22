@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.22.4 (2026-09-19)
+# File: narrative.py, Version: 0.22.24 (2026-09-22)
 
 """How to say what happened: the composer.
 
@@ -445,8 +445,11 @@ class NarrativeMixin:
             )
             clause = with_age.format(ago=ago) if ago else without_age
         extra = len(ordered) - 1
+        # The same device, so say so: "and 1 more problem" read as a
+        # second device (0.22.24).
         tail = (
-            f", and {extra} more problem{'s' if extra != 1 else ''}"
+            f", and {extra} more problem{'s' if extra != 1 else ''} "
+            "on the same device"
             if extra
             else ""
         )

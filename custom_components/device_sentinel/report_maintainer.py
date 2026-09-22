@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.22.22 (2026-09-22)
+# File: report_maintainer.py, Version: 0.22.24 (2026-09-22)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -50,6 +50,7 @@ from .const import (
     EP_DEVICE_ID,
     EP_ENDED,
     EP_LAG,
+    EPISODE_ENDED_RESUMED,
     EP_LEARNED,
     EP_NAME,
     EP_SINCE,
@@ -111,7 +112,16 @@ class MaintainerReportMixin:
         episodes = list(self.episode_rows())
         episodes.sort(key=lambda row: row[EP_SINCE], reverse=True)
         now = dt_util.utcnow().timestamp()
-        open_count = sum(1 for row in episodes if row[EP_ENDED] is None)
+        # Still silent (0.22.24): fully open, or truncated by an
+        # intervention and waiting on the device's first word since.
+        # Counting only the first read "0 still open" while a device
+        # had been quiet seventeen hours.
+        open_count = sum(
+            1
+            for row in episodes
+            if row[EP_ENDED] is None
+            or (row[EP_ENDED] != EPISODE_ENDED_RESUMED and row[EP_LAG] is None)
+        )
         # When the newest row was opened, because an empty stretch and
         # a stopped recorder look identical from the file alone
         # (ruling #203). A quiet fleet can go days without a single
@@ -139,11 +149,14 @@ class MaintainerReportMixin:
             "a bridge reconnect), which truncates the silence at a "
             "lower bound. LAG is how long after an intervention the "
             "device took to speak: seconds means the intervention "
-            "revived it, hours means it was never stuck. LEARNED says "
+            "revived it, hours means it was never stuck, and \"not yet\" "
+            "means the device has not spoken since, with how long that "
+            "has been. An episode waiting on that first report counts "
+            "as still silent. LEARNED says "
             "whether the completed gap reached the statistics, and "
             "why not when it did not. UNAVAIL is how long the device read unavailable when a taint excluded the gap, recorded so the debounce can be tuned from real spread rather than a guess. Kept "
             f"{EPISODE_KEEP_DAYS} days; {len(episodes)} episode(s), "
-            f"{open_count} still open{newest}.",
+            f"{open_count} still silent{newest}.",
             "",
         ]
         if not episodes:
@@ -173,13 +186,31 @@ class MaintainerReportMixin:
                     f"| {self._episode_duration(silence)} "
                     f"| {row[EP_ENDED] or 'open'} "
                     f"| {self._episode_stamp(end_epoch)} "
-                    f"| {self._episode_duration(row[EP_LAG])} "
+                    f"| {self._episode_lag(row, now)} "
                     f"| {row[EP_LEARNED] or ''} "
                     f"| {self._episode_duration(row.get(EP_TAINT_SECONDS))} |"
                 )
             lines.append("")
         path = os.path.join(report_directory, REPORT_EPISODES)
         self._write_file(path, "\n".join(lines))
+
+    def _episode_lag(self, row: dict[str, Any], now: float) -> str:
+        """The lag, or how long the device has been silent since the
+        intervention that truncated its episode (0.22.24).
+
+        A blank cell read as nothing to say. The reference rig's
+        watering sensor was truncated by the nightly reboot and had
+        then been silent seventeen hours, which is the whole story of
+        that row.
+        """
+        if row[EP_LAG] is not None:
+            return self._episode_duration(row[EP_LAG])
+        if row[EP_ENDED] in (None, EPISODE_ENDED_RESUMED):
+            return ""
+        at = row.get(EP_AT)
+        if not isinstance(at, (int, float)):
+            return "not yet"
+        return f"not yet, {self._episode_duration(now - at)}"
 
     def _format_maxima_cell(self, daily_maximum_gaps: list[float]) -> str:
         """Render the maxima list newest-first with the trim visible.
@@ -217,7 +248,7 @@ class MaintainerReportMixin:
         return ", ".join(parts)
 
     def _reporting_lines(self) -> list[str]:
-        """Return the telemetry report's Reporting Devices section.
+        """Return the telemetry report's Devices With A Fault section.
 
         Every device with a fault, grouped by family (freeze, then
         battery, then signal) and alphabetical within each group, so
@@ -309,14 +340,14 @@ class MaintainerReportMixin:
         count = len(self._problem_device_ids())
         if count == 0:
             return [
-                "## Reporting Devices (0)",
+                "## Devices With A Fault (0)",
                 "",
                 f"As of {as_of}, nothing is frozen, unavailable, "
                 f"unknown, low on battery, or railed.",
                 "",
             ]
         out = [
-            f"## Reporting Devices ({count})",
+            f"## Devices With A Fault ({count})",
             "",
             f"As of {as_of}. Every device with a fault, grouped by "
             f"family. A duration is how long the fault had lasted "
@@ -640,7 +671,7 @@ class MaintainerReportMixin:
         a single line: whether it is Watched (has hardware, recording)
         or Set aside (a service device with nothing to watch), and, for
         a watched device, whether the global mute has it and why.
-        Every device is watched and recorded; muting only suppresses
+        Every watched device is recorded; muting only suppresses
         judgment and reporting, so a muted device still carries a
         Watched check, with the reason alongside it. COPIES flags a
         name shared by more than one registry device. Section muting
@@ -678,7 +709,7 @@ class MaintainerReportMixin:
             f"{total}; {len(self._set_aside)} set aside (integrations "
             f"you asked to exclude, service devices, disabled devices, "
             f"duplicate coordinators, and devices with no entities). "
-            f"Every device is watched and recorded; MUTED only "
+            f"Every watched device is recorded; MUTED only "
             f"suppresses judgment and reporting, and names every mute "
             f"and its source. COPIES above 1 is a "
             f"name shared by more than one registry device (a "

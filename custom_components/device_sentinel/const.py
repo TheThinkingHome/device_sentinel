@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.22.22 (2026-09-22)
+# File: const.py, Version: 0.22.24 (2026-09-22)
 
 """Constants for the Device Sentinel integration."""
 
@@ -509,6 +509,13 @@ SIGNAL_WEIGHTING_MARK = "minutes-2"
 # Why a device is set aside: recorded rather than inferred, because
 # the classification file has to say which, and because only one of
 # the four can end (ruling #257).
+# What a device's page and the Devices tab say when it has no freeze
+# verdict (0.22.24): it is reporting, it has never reported, or nobody
+# is watching it.
+STATUS_REPORTING = "reporting"
+STATUS_NEVER_REPORTED = "never_reported"
+STATUS_SET_ASIDE = "set_aside"
+
 SET_ASIDE_SERVICE = "service"
 SET_ASIDE_DISABLED = "disabled"
 # "No entities of its own" since 0.22.21: a device whose only entities
@@ -1242,7 +1249,10 @@ TREND_ACCELERATING = "accelerating"
 TREND_DISAGREE = "slopes do not agree"
 TREND_JUST_STARTED = "just started falling"
 TREND_STABILIZED = "stabilized"
-TREND_STEADY = "steady"
+# "Falling evenly" since 0.22.24: this word is a falling cell's rate,
+# and the page also has a Steady table for cells that are not falling.
+# One word for two things read as a contradiction.
+TREND_STEADY = "falling evenly"
 # What each reading means, the owner's words. One place, read by the
 # battery report's list and by the dashboard's device page, so the two
 # explain a reading the same way.

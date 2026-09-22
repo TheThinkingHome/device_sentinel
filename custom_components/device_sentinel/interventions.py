@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.22.23 (2026-09-22)
+# File: interventions.py, Version: 0.22.24 (2026-09-22)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -356,12 +356,12 @@ class InterventionMixin:
             return "Zigbee2MQTT reads it as online."
         if seen.get("class") == "passive":
             return (
-                "Zigbee2MQTT reads it as online, though it allows a "
-                f"battery device {_spell_minutes(minutes)} of silence "
-                "before saying otherwise."
+                "Zigbee2MQTT reads it as online. Zigbee2MQTT waits "
+                f"{_spell_minutes(minutes)} of silence from a battery "
+                "device before it says otherwise."
             )
         return (
-            "Zigbee2MQTT reads it as online, and it pings a mains "
+            "Zigbee2MQTT reads it as online. Zigbee2MQTT pings a mains "
             f"device every {_spell_minutes(minutes)}."
         )
 

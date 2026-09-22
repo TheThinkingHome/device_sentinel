@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.23 (2026-09-22)
+# File: dashboard.py, Version: 0.22.24 (2026-09-22)
 
 """What the dashboard reads from the coordinator.
 
@@ -46,6 +46,13 @@ from .const import (
     INCIDENT_RESOLVED,
     REPEAT_WINDOW_DAYS,
     TODO_KINDS,
+    TODO_KIND_FALLING_BATTERY,
+    TODO_KIND_FROZEN,
+    TODO_KIND_LOW_BATTERY,
+    TODO_KIND_NEVER_REPORTED,
+    TODO_KIND_RAILED_SIGNAL,
+    TODO_KIND_UNAVAILABLE,
+    TODO_KIND_UNKNOWN,
     TODO_UID,
     BATTERY_FALLING_SLOPE,
     BATTERY_TREND_MEANINGS,
@@ -76,12 +83,17 @@ from .const import (
     EP_BASIS,
     EP_DEVICE_ID,
     EP_ENDED,
+    EP_LAG,
     EP_LEARNED,
+    EPISODE_ENDED_RESUMED,
     EP_SINCE,
     EP_WINDOW,
     EPISODE_KEEP_DAYS,
     CONF_MUTED_INTEGRATIONS,
     STANDING_HELPER,
+    STATUS_NEVER_REPORTED,
+    STATUS_REPORTING,
+    STATUS_SET_ASIDE,
     STANDING_NO_HARDWARE,
     DATA_ROUTERS_SEEN,
     DATA_STORM_DAYS,
@@ -339,13 +351,61 @@ class IntegrationViewMixin:
             return STANDING_HELPER if self._is_helper(domain) else STANDING_NO_HARDWARE
         return "watched" if watched else "service"
 
+    # Which kind a phrase in a problem summary came from (0.22.24).
+    # The summary words each kind through `_kind_word`, so a phrase is
+    # matched back by the word that kind always carries. A phrase that
+    # matches nothing, or matches a kind the item does not hold, is
+    # left without an age rather than given a wrong one.
+    _PROBLEM_TOKENS: tuple[tuple[str, str], ...] = (
+        ("never reported", TODO_KIND_NEVER_REPORTED),
+        ("unavailable", TODO_KIND_UNAVAILABLE),
+        ("frozen", TODO_KIND_FROZEN),
+        ("stopped reporting", TODO_KIND_FROZEN),
+        ("unknown", TODO_KIND_UNKNOWN),
+        ("signal", TODO_KIND_RAILED_SIGNAL),
+        ("empty in", TODO_KIND_FALLING_BATTERY),
+        ("battery", TODO_KIND_LOW_BATTERY),
+    )
+
+    def _problem_since(self, part: str, kinds: dict[str, Any]) -> float | None:
+        """When the problem this phrase describes began, or None."""
+        lowered = part.lower()
+        for token, kind in self._PROBLEM_TOKENS:
+            if token in lowered:
+                since = kinds.get(kind)
+                return since if isinstance(since, (int, float)) else None
+        return None
+
+    def _problem_text(self, item: dict[str, Any]) -> str:
+        """One device's problems, each with its own age (0.22.24).
+
+        A device with two problems had one row dated from the older,
+        so the reference rig's watering sensor read "frozen, battery
+        0%, since Jul 22, for 61.9d" and its seventeen-hour freeze
+        appeared nowhere.
+        """
+        name = item.get(TODO_SORT_NAME) or ""
+        summary = item[TODO_SUMMARY]
+        text = summary[len(name) + 2:] if summary.startswith(f"{name}: ") else summary
+        kinds = item.get(TODO_KINDS) or {}
+        if len(kinds) < 2:
+            return text
+        now = dt_util.utcnow().timestamp()
+        aged = []
+        for part in text.split(", "):
+            since = self._problem_since(part, kinds)
+            aged.append(
+                f"{part} {self._human_span(now - since)}"
+                if since is not None
+                else part
+            )
+        return ", ".join(aged)
+
     def _problems_by_device(self) -> dict[str, dict[str, Any]]:
         found: dict[str, dict[str, Any]] = {}
         for item in self.todo_items:
-            name = item.get(TODO_SORT_NAME) or ""
-            summary = item[TODO_SUMMARY]
             found[item[TODO_DEVICE_ID]] = {
-                "problem": summary[len(name) + 2:] if summary.startswith(f"{name}: ") else summary,
+                "problem": self._problem_text(item),
                 "acknowledged": item.get(TODO_STATUS) == "completed",
             }
         return found
@@ -495,9 +555,25 @@ class DeviceViewMixin:
         rhythm, set_aside = self._trimmed_maximum(gaps)
         return rhythm, sorted(set_aside)
 
-    def _page_status(self, record: dict[str, Any]) -> str:
-        """The stored verdict the Problem List reads, or reporting."""
-        return record.get(DEV_FROZEN_CATEGORY) or "reporting"
+    def _page_status(self, device_id: str, record: dict[str, Any]) -> str:
+        """The stored verdict the Problem List reads, or what else is
+        true of the device (0.22.24).
+
+        Before, anything without a freeze verdict read as reporting,
+        so a device set aside for having no entities of its own, a
+        coordinator set aside as a duplicate and 11 days silent, and a
+        device that had never spoken all showed the green word. A
+        device nobody watches has no verdict to give, and one that has
+        never reported has not reported.
+        """
+        verdict = record.get(DEV_FROZEN_CATEGORY)
+        if verdict:
+            return verdict
+        if device_id not in self._watched:
+            return STATUS_SET_ASIDE
+        if record.get(DEV_LAST_ACTIVITY) is None:
+            return STATUS_NEVER_REPORTED
+        return STATUS_REPORTING
 
     def dashboard_devices(self) -> list[dict[str, Any]]:
         """One row per watched device, by name."""
@@ -514,7 +590,7 @@ class DeviceViewMixin:
                 "integration": domain,
                 "integration_name": self._integration_title(domain),
                 "muted": self.mute_text(device_id),
-                "status": self._page_status(record),
+                "status": self._page_status(device_id, record),
                 "problem": problem["problem"] if problem else "",
                 "acknowledged": bool(problem and problem["acknowledged"]),
                 "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
@@ -574,6 +650,13 @@ class DeviceViewMixin:
                 "ended": row.get(EP_ENDED),
                 "at": _iso(row.get(EP_AT)),
                 "learned": row.get(EP_LEARNED),
+                # Truncated by an intervention and waiting on the
+                # device's first word since (0.22.24).
+                "still_silent": bool(
+                    row.get(EP_ENDED)
+                    and row.get(EP_ENDED) != EPISODE_ENDED_RESUMED
+                    and row.get(EP_LAG) is None
+                ),
             }
             for row in self.data.get(DATA_EPISODES) or []
             if isinstance(row, dict)
@@ -612,7 +695,7 @@ class DeviceViewMixin:
             },
             "readings": readings,
             "status": {
-                "category": self._page_status(record),
+                "category": self._page_status(device_id, record),
                 "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
                 "rhythm": rhythm,
                 "window": self._freeze_window(record),
@@ -866,13 +949,12 @@ class BriefViewMixin:
             if not device_id or device_id in self._muted_devices:
                 continue
             name = item.get(TODO_SORT_NAME) or ""
-            summary = item[TODO_SUMMARY]
             kinds = item[TODO_KINDS]
             since = min((v for v in kinds.values() if isinstance(v, (int, float))), default=None)
             rows.append({
                 "device_id": device_id,
                 "name": name,
-                "problem": summary[len(name) + 2:] if summary.startswith(f"{name}: ") else summary,
+                "problem": self._problem_text(item),
                 "since": _iso(since),
                 "seconds": now - since if since is not None else None,
                 "acknowledged": item.get(TODO_STATUS) == "completed",
