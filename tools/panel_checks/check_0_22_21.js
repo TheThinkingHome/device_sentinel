@@ -94,7 +94,8 @@ const rowOf = (root, name) => [...root.querySelectorAll(".pane tbody tr")]
   const notes = rowOf(root, "Battery Notes");
   const cells = notes ? [...notes.cells].map((td) => td.textContent) : [];
   check("its STANDING reads No hardware", cells[1] === "No hardware", cells);
-  check("its name opens no page", notes && !notes.cells[0].querySelector("a"), notes && notes.cells[0].innerHTML);
+  // 0.22.21 opened no page for it; 0.22.22 opens the devices it adds to.
+  check("its name opens its page", notes && !!notes.cells[0].querySelector("a"), notes && notes.cells[0].innerHTML);
   check("it says how many devices carry its entities", cells[0] && cells[0].includes("on 3 devices"), cells[0]);
   const owner = rowOf(root, "test");
   check("an owning integration still links to its page", owner && !!owner.cells[0].querySelector("a"));
@@ -107,7 +108,7 @@ const rowOf = (root, name) => [...root.querySelectorAll(".pane tbody tr")]
   check("the key names every standing", ["Watched", "Excluded", "Muted", "Service only", "No hardware"]
     .every((s) => text(root).includes(`${s}: `)), text(root).slice(-600));
   check("the key says what no hardware means",
-    text(root).includes("No hardware: It has no hardware of its own."), text(root).slice(-400));
+    text(root).includes("No hardware: An add-on with no hardware of its own."), text(root).slice(-400));
   if (chip) chip.click();
   await settle();
   const shown = [...root.querySelectorAll(".pane tbody tr")].map((tr) => tr.cells[0].textContent);
