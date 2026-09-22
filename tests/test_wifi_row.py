@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_row.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_wifi_row.py, Version: 0.22.21 (2026-09-22)
 
 """The row a Wi-Fi outage writes. Rulings #411 to #414.
 
@@ -42,6 +42,7 @@ from datetime import timedelta
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
@@ -228,8 +229,13 @@ async def test_ownership_is_asked_of_the_bridge_not_the_domain(
     coord, trackers, devices, untied = await _house(hass, 14)
     first = await _declared(hass, coord, trackers[:10], freezer, count=10)
 
+    # Its own config entry, as a real NSPanel has: registered under
+    # Device Sentinel's entry, its entity read as another
+    # integration's, and since 0.22.21 that is not the device speaking.
+    panel_source = MockConfigEntry(domain="wifi_hub", title="panel")
+    panel_source.add_to_hass(hass)
     panel = _wifi_device(
-        hass, coord.entry, "nspanel", "NSPanel Pro James", None
+        hass, panel_source, "nspanel", "NSPanel Pro James", None
     )
     coord._watched[panel.id] = "mqtt"
     # No Z2M identifier, so the bridge does not own it.

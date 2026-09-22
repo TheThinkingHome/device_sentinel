@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: helpers.py, Version: 0.21.13 (2026-09-17)
+# File: helpers.py, Version: 0.22.21 (2026-09-22)
 
 """Shared test helpers, one canonical version of each.
 
@@ -155,9 +155,13 @@ def register_fleet(
             identifiers={("test", f"{prefix}{index}")},
             name=f"{prefix} {index}",
         )
+        # The entity's platform is the integration that made it, as in
+        # Home Assistant: a device of `poller` whose entity said `test`
+        # was, to the registry, another integration's entity on it,
+        # and since 0.22.21 such an entity is not the device speaking.
         entry = er.async_get(hass).async_get_or_create(
             "sensor",
-            "test",
+            source.domain,
             f"{prefix}_uid{index}",
             device_id=device.id,
             config_entry=source,
