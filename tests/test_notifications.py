@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.22.5 (2026-09-20)
+# File: test_notifications.py, Version: 0.22.28 (2026-09-23)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -344,6 +344,10 @@ class _Harness(NotifierMixin):
 
     def _high_priority_targets(self):
         return self._high
+
+    def _in_startup_grace(self):
+        """Long past any start: these tests are about what is pushed."""
+        return False
 
     @property
     def battery_low_list(self):
@@ -912,6 +916,9 @@ async def test_a_device_with_nothing_learned_is_announced_at_once(
         },
     )
     coord = entry.runtime_data
+    # Past the startup grace, inside which nothing is judged or
+    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    coord._grace_until = 0.0
     calls = _phone_capture(hass)
     hass.states.async_set(eid, "21.5")
 

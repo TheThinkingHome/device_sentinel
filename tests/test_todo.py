@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.22.4 (2026-09-19)
+# File: test_todo.py, Version: 0.22.28 (2026-09-23)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -573,6 +573,9 @@ async def test_option_exclusion_clears_the_item(hass: HomeAssistant):
     record[DEV_LAST_ACTIVITY] = (
         dt_util.utcnow().timestamp() - 8 * 3600
     )
+    # Past the startup grace, inside which nothing is judged or
+    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    coord._grace_until = 0.0
     coord._judge_all_devices()
     coord._sync_problem_list()
     assert _item_for(coord, device.id) is not None

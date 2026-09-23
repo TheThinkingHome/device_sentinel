@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.22.24 (2026-09-22)
+# File: test_reports.py, Version: 0.22.28 (2026-09-23)
 
 """The diagnostic files: telemetry and classification.
 
@@ -501,6 +501,9 @@ async def test_regenerate_judges_then_writes(hass: HomeAssistant):
     record[DEV_EVENT_COUNT] = 0
     record[DEV_LAST_ACTIVITY] = None
     coord.data["devices"][d.id] = record
+    # Past the startup grace, inside which nothing is judged or
+    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    coord._grace_until = 0.0
 
     result = await coord.async_regenerate_reports()
     assert result == {"regenerated": 2}

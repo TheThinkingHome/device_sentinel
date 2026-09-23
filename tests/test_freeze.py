@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze.py, Version: 0.22.24 (2026-09-22)
+# File: test_freeze.py, Version: 0.22.28 (2026-09-23)
 
 """The freeze, unavailable, unknown, and never-reported detector.
 
@@ -512,6 +512,9 @@ async def test_old_record_judges_without_crashing(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     record = _pre_050_record("2026-07-11T01:17:48.811715+00:00")
     coord.data["devices"][device.id] = record
+    # Past the startup grace, inside which nothing is judged or
+    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    coord._grace_until = 0.0
     # The whole sweep runs without raising, and the ghost, well past
     # the 48-hour grace, is flagged not_reported.
     coord._judge_all_devices()
@@ -529,6 +532,9 @@ async def test_every_old_record_in_the_sweep_is_judged(hass: HomeAssistant):
     second_record = _pre_050_record("2026-07-11T01:17:48.811715+00:00")
     coord.data["devices"][first.id] = first_record
     coord.data["devices"][second.id] = second_record
+    # Past the startup grace, inside which nothing is judged or
+    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    coord._grace_until = 0.0
     coord._judge_all_devices()
     assert first_record["frozen_category"] == FREEZE_CATEGORY_NEVER_REPORTED
     assert second_record["frozen_category"] == FREEZE_CATEGORY_NEVER_REPORTED

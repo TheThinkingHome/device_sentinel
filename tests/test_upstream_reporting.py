@@ -1,7 +1,7 @@
 """Reporting an upstream outage as one fault, not seventy-six.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_upstream_reporting.py, Version: 0.21.13 (2026-09-17)
+# File: test_upstream_reporting.py, Version: 0.22.28 (2026-09-23)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -136,6 +136,9 @@ async def test_the_count_is_pushed_again_only_when_it_changes(
     one."""
     device, _ = register_device(hass, "up8", "Counted Device")
     coord = await setup_coordinator(hass)
+    # Past the startup grace, inside which nothing is judged or
+    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    coord._grace_until = 0.0
     from homeassistant.util import dt as dt_util
 
     # The outage began just over a settle ago, and the device fell
@@ -156,6 +159,9 @@ async def test_the_recovery_is_announced_once(hass: HomeAssistant):
     """One message when the upstream returns, carrying how many had
     gone quiet, and nothing after it."""
     coord = await setup_coordinator(hass)
+    # Past the startup grace, inside which nothing is judged or
+    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    coord._grace_until = 0.0
     coord._upstream_announced[BROKER_LABEL] = 12
     coord._broker_down_at = None
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_timing.py, Version: 0.11.8 (2026-08-04)
+# File: test_storage_timing.py, Version: 0.22.28 (2026-09-23)
 
 """When a save happens: coalescing, and what forces one.
 
@@ -198,6 +198,9 @@ async def test_acknowledgment_saves_immediately(hass: HomeAssistant):
     record = coord.data["devices"][device.id]
     record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
     record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - 8 * 3600
+    # Past the startup grace, inside which nothing is judged or
+    # pushed (ruling #291, 0.22.28); this test is not about a start.
+    coord._grace_until = 0.0
     coord._judge_all_devices()
     coord._sync_problem_list()
     uid = coord.todo_items[0]["uid"]
