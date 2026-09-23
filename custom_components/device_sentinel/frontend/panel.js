@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.25 (2026-09-22)
+// File: frontend/panel.js, Version: 0.22.26 (2026-09-23)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1647,7 +1647,13 @@ class DeviceSentinelPanel extends HTMLElement {
     const who = page.identity;
     const now = Date.now();
     const status = page.status;
-    const [word, colour] = STATUS_WORDS[status.category] || [status.category, "var(--disabled-text-color, #888)"];
+    let [word, colour] = STATUS_WORDS[status.category] || [status.category, "var(--disabled-text-color, #888)"];
+    // Muted: the verdict is true and nobody asked to hear it, so the
+    // word stays and the alarm colour goes (0.22.26).
+    if (page.identity && page.identity.muted && status.category !== "set_aside") {
+      word = `${word}, muted`;
+      colour = "var(--disabled-text-color, #888)";
+    }
     const quiet = status.last_activity ? (now - new Date(status.last_activity).getTime()) / 1000 : null;
     const fill = status.window && quiet !== null ? Math.min(1, quiet / status.window) : 0;
     const standing = who.watched ? (who.muted ? `Watched, muted: ${who.muted}` : "Watched") : `Set aside: ${who.set_aside}`;
@@ -1687,7 +1693,7 @@ class DeviceSentinelPanel extends HTMLElement {
       ["Address", address || "none reported"],
       ["Device ID", who.device_id],
       ["First seen", who.first_observed ? moment(who.first_observed) : "unknown"],
-      ["Reports counted", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
+      ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
       // What Device Sentinel counts as this device speaking.
       ["Heartbeat", who.clock === "last_seen" ? "its Last Seen entity" : "updates from its entities"],
     ];
