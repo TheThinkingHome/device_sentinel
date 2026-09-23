@@ -190,28 +190,26 @@ async def matter_study(hass: HomeAssistant) -> dict[str, Any]:
             "rows_capped": len(listed) > NODE_ROW_CAP,
             "node_rows": rows,
         })
-    return {"fabrics": fabrics, "thread": await _thread_network(hass)}
+    return {"fabrics": fabrics, "thread": _thread_network(hass)}
 
 
-async def _thread_network(hass: HomeAssistant) -> dict[str, Any]:
-    """Whether a Thread network and a border router are configured."""
-    found: dict[str, Any] = {
+def _thread_network(hass: HomeAssistant) -> dict[str, Any]:
+    """Whether Thread and a border router are set up in this house.
+
+    Read from the outside, as every other stack is. Device Sentinel
+    imports MQTT because it subscribes to a broker; it imports none of
+    ZHA, Zigbee2MQTT, Z-Wave, Matter or Lutron, because it only ever
+    watches what they publish, and a stack it cannot reach into cannot
+    break it when that stack changes. Thread is observed too, so it is
+    read the same way: which integrations are loaded, and whether a
+    border router has a config entry of its own. The network's own
+    credentials are never touched (0.22.26).
+    """
+    return {
         "integration_loaded": "thread" in hass.config.components,
         "border_router_loaded": "otbr" in hass.config.components,
+        "border_routers": len(hass.config_entries.async_entries("otbr")),
     }
-    if not found["integration_loaded"]:
-        return found
-    try:
-        from homeassistant.components.thread import async_get_preferred_dataset
-
-        dataset = await async_get_preferred_dataset(hass)
-    except Exception as err:  # noqa: BLE001 - an optional integration
-        LOGGER.debug("device_sentinel: Thread dataset unreadable: %s", err)
-        return found
-    # The dataset itself is a network credential and is never
-    # recorded; that one exists is the whole fact needed here.
-    found["preferred_dataset"] = dataset is not None
-    return found
 
 
 # ------------------------------------------------------- the recorder
