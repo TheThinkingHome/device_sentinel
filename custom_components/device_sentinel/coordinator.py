@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.22.24 (2026-09-22)
+# File: coordinator.py, Version: 0.22.28 (2026-09-23)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -612,6 +612,9 @@ class DeviceSentinelCoordinator(
         # restart it explains. The rest is what the integrity count
         # found, kept for the diagnostics rather than acted on.
         self._pending_unclean = None
+        # When this start restarted the clocks of a lost clocks file,
+        # for the Repair card raised when the grace closes (0.22.28).
+        self._clocks_reset_at: float | None = None
         self._orphan_episodes: dict[str, Any] = {}
         self._options_seen: dict[str, Any] = dict(entry.options)
         # What the last shape check found, held for the Repairs pass
@@ -3049,6 +3052,11 @@ class DeviceSentinelCoordinator(
             days_installed=days_installed,
             version_changed=self._version_changed,
             namer=self._device_name,
+            clocks_reset=(
+                self._clock(self._clocks_reset_at)
+                if self._clocks_reset_at is not None
+                else None
+            ),
         )
 
     def _integration_finished_loading(self, domain: str | None) -> bool:

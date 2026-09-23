@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.20.16 (2026-09-11)
+# File: store.py, Version: 0.22.28 (2026-09-23)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -67,7 +67,11 @@ from .const import (
     DEFAULT_COALESCE_MINUTES,
     DEFAULT_EXCLUDED_INTEGRATIONS,
     DEFAULT_RETENTION_DAYS,
+    DEV_DAILY_MAX,
     DEV_FIRST_OBSERVED,
+    DEV_FROZEN_CATEGORY,
+    DEV_FROZEN_SINCE,
+    FREEZE_CATEGORY_FROZEN,
     DEV_LAST_ACTIVITY,
     DEV_TAINTED,
     DEV_TODAY_MAX,
@@ -120,6 +124,7 @@ class StorageMixin:
     _downtime: float
     _started_at: float | None
     _pending_unclean: int | None
+    _clocks_reset_at: float | None
 
     @staticmethod
     def _reconcile_records(
@@ -476,11 +481,14 @@ class StorageMixin:
         devices = loaded.get(DATA_DEVICES) or {}
         if not hot:
             if devices:
+                restarted = self._restart_lost_clocks(loaded)
                 LOGGER.warning(
-                    "The activity clocks file %s is missing, so every "
-                    "device's clock starts over from this boot. This "
-                    "is expected only if it was deleted by hand",
+                    "The activity clocks file %s is missing or was "
+                    "discarded, so %d device clock(s) restart at this "
+                    "start. A device already frozen stays frozen until "
+                    "it reports. Nothing learned is lost",
                     STORAGE_CLOCKS_KEY,
+                    restarted,
                 )
             return 0
         hot_at = hot.get(DATA_SAVED_AT)
@@ -706,6 +714,72 @@ class StorageMixin:
                 ),
             ),
         )
+
+    def _restart_lost_clocks(self, loaded: dict[str, Any]) -> int:
+        """Give every device that has reported a clock at this start.
+
+        The clocks file holds each device's last report, and the main
+        file never carries a copy (ruling #101). Losing it, deleted, or
+        discarded whole for damage (ruling #356), used to leave every
+        clock empty, and an empty clock with no events is what "never
+        reported" means: on the reference rig, 31 healthy devices went
+        on the list together when the grace closed, with a push and a
+        fault event each (0.22.28). So each device with learned
+        history restarts its clock here, the way an unclean stop does
+        (ruling #163), and the time before this start counts as
+        unwatched.
+
+        A restarted clock is not a report. A device already frozen
+        keeps its verdict until it speaks, the principle of ruling #124
+        that a replay cannot erase a standing silence: its clock is set
+        to the latest moment it could have reported, one window before
+        it was judged frozen, so its silence still reads past its
+        window and stays so across further restarts. An unavailable
+        device needs nothing, because that verdict is read from its
+        entities rather than its clock.
+
+        A device with no learned history keeps no clock, because it has
+        none to restart: one that has never reported must still read
+        so. Returns how many clocks were restarted.
+        """
+        now = dt_util.utcnow().timestamp()
+        restarted = 0
+        for record in (loaded.get(DATA_DEVICES) or {}).values():
+            if not isinstance(record, dict):
+                continue
+            # A clock the main file still carries is a real one, from a
+            # file written before the split (ruling #101), and is kept.
+            if record.get(DEV_LAST_ACTIVITY) is not None:
+                continue
+            if not record.get(DEV_DAILY_MAX):
+                continue
+            since = record.get(DEV_FROZEN_SINCE)
+            if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_FROZEN and (
+                isinstance(since, (int, float)) and not isinstance(since, bool)
+            ):
+                window = self._lost_clock_window(record)
+                record[DEV_LAST_ACTIVITY] = since - window
+            else:
+                record[DEV_LAST_ACTIVITY] = now
+            record[DEV_TAINTED] = False
+            restarted += 1
+        self._clocks_reset_at = now
+        return restarted
+
+    def _lost_clock_window(self, record: dict[str, Any]) -> float:
+        """Return a frozen device's window for rebuilding its clock.
+
+        Read before the records are reconciled, so a field the window
+        needs may be missing or damaged; the check that runs next
+        refuses such a record anyway. Zero then, which dates the clock
+        at the moment the device was judged frozen: still a silence,
+        and one the next report ends.
+        """
+        try:
+            window = self._freeze_window(record)
+        except (KeyError, TypeError, ValueError):
+            return 0.0
+        return window if isinstance(window, (int, float)) else 0.0
 
     def _handle_unclean_restart(self, loaded: dict[str, Any]) -> None:
         """Reset the clocks a power cut made unreadable (ruling #163).

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.22.26 (2026-09-23)
+# File: notifier.py, Version: 0.22.28 (2026-09-23)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -400,6 +400,19 @@ class NotifierMixin:
         if not events:
             return
         if not self._high_priority_targets():
+            return
+        if self._in_startup_grace():
+            # Nothing is pushed inside the startup grace, for any
+            # reason (ruling #291). A change to a device already on
+            # the list pushed straight through it: the reference rig's
+            # phone read "At 3:50 pm" one minute into a start
+            # (0.22.28). The list and the card carry what is true when
+            # the window shuts.
+            LOGGER.debug(
+                "Device Sentinel: %d event(s) fell inside the startup "
+                "grace and were not pushed",
+                len(events),
+            )
             return
         now_hms = dt_util.now().strftime("%H:%M:%S")
         if _in_quiet_hours(self.entry.options, now_hms):

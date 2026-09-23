@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.21.13 (2026-09-17)
+# File: detect_freeze.py, Version: 0.22.28 (2026-09-23)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -319,7 +319,15 @@ class FreezeMixin:
         # Checked first because it is categorically different from a
         # device that reported and stopped, and because such a device
         # has no rhythm to miss and may have no live entity to read.
-        if record[DEV_EVENT_COUNT] == 0 and record[DEV_LAST_ACTIVITY] is None:
+        # A device with learned history has reported, by definition,
+        # whatever its clock and counter say now: a lost clocks file
+        # empties both, and 31 healthy devices on the reference rig
+        # read "never reported" for it (0.22.28).
+        if (
+            record[DEV_EVENT_COUNT] == 0
+            and record[DEV_LAST_ACTIVITY] is None
+            and not record.get(DEV_DAILY_MAX)
+        ):
             if device_id not in self._devices_with_entities:
                 # Nothing that could report, so never reported says
                 # nothing about the device. A ZHA coordinator owns no
@@ -521,6 +529,15 @@ class FreezeMixin:
         now = dt_util.utcnow().timestamp()
         self._note_silences(now)
         self._trim_episodes(now)
+        if self._in_startup_grace():
+            # Nothing is judged inside the grace (ruling #291): every
+            # verdict stays as the last start left it, and the first
+            # sweep after the window shuts applies whatever is still
+            # true then, once. Judging here moved the reference rig's
+            # watering sensor from unavailable to never reported one
+            # minute into a start, closed the unavailable incident as
+            # a recovery, and pushed it (0.22.28).
+            return
         flipped = False
         for device_id in self._watched:
             record = self.data[DATA_DEVICES].get(device_id)

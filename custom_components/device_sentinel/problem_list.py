@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.22.26 (2026-09-23)
+# File: problem_list.py, Version: 0.22.28 (2026-09-23)
 
 """The problem list: the single memory every channel renders.
 
@@ -957,7 +957,13 @@ class ProblemListMixin:
         the phone is always current and only the first makes a sound.
         A recovery is announced once the upstream is back, carrying
         how many had gone quiet.
+
+        Nothing is owed inside the startup grace (ruling #291). The
+        phase is not recorded either, so an outage still standing when
+        the window shuts is announced then, once (0.22.28).
         """
+        if self._in_startup_grace():
+            return []
         now = dt_util.utcnow().timestamp()
         counts = self.suppressed_down_counts
         phases = self._upstream_phases()

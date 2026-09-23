@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.22.27 (2026-09-23)
+# File: const.py, Version: 0.22.28 (2026-09-23)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2622,6 +2622,10 @@ REPAIR_NO_DELIVERY = "no_delivery_configured"
 # it is a warning rather than an error, and its only action is to say
 # it has been read.
 REPAIR_STORAGE_RESTORED = "storage_restored"
+# The clocks file was missing or discarded at this start, so every
+# device's clock was restarted (0.22.28). A notice: nothing is left to
+# decide, and it clears at the next start that loads the file whole.
+REPAIR_CLOCKS_RESET = "clocks_reset"
 REPAIRS_ALL = (
     REPAIR_STORAGE_REPAIRED,
     REPAIR_CONTAINERS_REPAIRED,
@@ -2629,6 +2633,7 @@ REPAIRS_ALL = (
     REPAIR_NOTIFY_TARGET_MISSING,
     REPAIR_NO_DELIVERY,
     REPAIR_STORAGE_RESTORED,
+    REPAIR_CLOCKS_RESET,
 )
 
 # The two moments a Repair is evaluated (ruling #300, amended by
