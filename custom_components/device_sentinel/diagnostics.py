@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.22.21 (2026-09-22)
+# File: diagnostics.py, Version: 0.22.26 (2026-09-23)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -68,6 +68,14 @@ from .const import (
     TAINT_SHARE_PCT,
     TRIM_MIN_SAMPLES,
     TRIM_TOP_K,
+)
+from .study import studied_domains
+from .study_lutron import lutron_study
+from .study_stacks import (
+    MATTER_DOMAIN,
+    ZWAVE_DOMAIN,
+    matter_study,
+    zwave_study,
 )
 from .device_fields import device_field
 
@@ -382,6 +390,27 @@ async def async_get_config_entry_diagnostics(
                 entry.options.get(CONF_STUDY_HARDWARE) or []
             ),
             "study": coordinator.study_diagnostics,
+            # Stacks whose own words could carry a detector, for
+            # detectors that cannot be built yet (0.22.26). Each is
+            # gathered only while Extended Diagnostics is on, Lutron
+            # with the setting itself and the other two behind their
+            # own toggles, and each is empty where the stack is not
+            # in the house.
+            "lutron": (
+                await lutron_study(hass)
+                if entry.options.get(CONF_STUDY_HARDWARE)
+                else {}
+            ),
+            "zwave": (
+                zwave_study(hass)
+                if ZWAVE_DOMAIN in studied_domains(entry.options)
+                else {}
+            ),
+            "matter": (
+                await matter_study(hass)
+                if MATTER_DOMAIN in studied_domains(entry.options)
+                else {}
+            ),
             "broker": coordinator.broker_attributes,
             "bridge_state": {
                 stack: coordinator.bridge_state(stack)

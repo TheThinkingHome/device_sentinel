@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.22.0 (2026-09-18)
+# File: notifier.py, Version: 0.22.26 (2026-09-23)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -49,6 +49,10 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    TODO_KIND_FALLING_BATTERY,
+    TODO_KIND_LOW_BATTERY,
+    TODO_KIND_SEVERITY,
+    SUMMARY_NAMES,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_PERSISTENT_ENABLED,
     CONF_QUIET_ENABLED,
@@ -139,6 +143,27 @@ class NotifierMixin:
             if target
         ]
 
+    @staticmethod
+    def _capped(
+        entries: list[tuple[int, float, str]], always: list[str]
+    ) -> str:
+        """Name the worst few and count the rest (0.22.26).
+
+        Fifty devices down made a push of 2,160 characters, which a
+        phone truncates and a fleet of a hundred could push past the
+        4 kB a push may carry. Worst first, then most recent, so the
+        first name is the one the headline belongs to and a line read
+        aloud leads with what matters. The list, the card and the
+        brief's tables keep every name.
+        """
+        entries.sort(key=lambda row: (row[0], -row[1]))
+        named = [row[2] for row in entries[:SUMMARY_NAMES]]
+        rest = len(entries) - len(named)
+        parts = [*always, *named]
+        if rest > 0:
+            parts.append(f"and {rest} more device{'s' if rest != 1 else ''}")
+        return ", ".join(parts) + "." if parts else "All clear."
+
     def _family_summary(self, family: str) -> str:
         """Return a one-line current-state summary for a family.
 
@@ -155,7 +180,19 @@ class NotifierMixin:
         unavailable or never reported.
         """
         acknowledged = self._acknowledged_devices()
-        parts: list[str] = []
+        # (severity, when it began, what to say). The upstream lines
+        # are counts rather than devices, so they are never capped.
+        entries: list[tuple[int, float, str]] = []
+        always: list[str] = []
+        order = {kind: index for index, kind in enumerate(TODO_KIND_SEVERITY)}
+
+        def _rank(kind: str) -> int:
+            return order.get(kind, len(order))
+
+        def _since(row: dict[str, Any]) -> float:
+            value = row.get("since")
+            return float(value) if isinstance(value, (int, float)) else 0.0
+
         if family == NOTIFY_FAMILY_FREEZE:
             # The card is a human surface and follows the same rule as
             # the list and the pushes (ruling #266): while an upstream
@@ -169,7 +206,7 @@ class NotifierMixin:
                 # Casualties against membership (ruling #401): the
                 # count drains as devices return, and printed alone
                 # it read as one figure that would not hold still.
-                parts.append(
+                always.append(
                     f"{display} down, {count} of {behind} devices "
                     "unavailable"
                 )
@@ -183,7 +220,7 @@ class NotifierMixin:
             # two rarely name one device, but where they do the level
             # leads and the direction follows in one clause rather
             # than two entries (ruling #216).
-            rows: dict[str, str] = {}
+            rows: dict[str, tuple[int, float, str]] = {}
 
             def _key(row: dict[str, Any], count: int) -> str:
                 # The device id joins the two sources, so a cell that
@@ -199,9 +236,14 @@ class NotifierMixin:
                 level = row.get("level")
                 name = row.get("name") or row.get("device_id")
                 if level is not None:
-                    rows[_key(row, len(rows))] = f"{name} {int(level)}%"
+                    rows[_key(row, len(rows))] = (
+                        _rank(TODO_KIND_LOW_BATTERY), _since(row),
+                        f"{name} {int(level)}%",
+                    )
                 else:
-                    rows[_key(row, len(rows))] = f"{name} low"
+                    rows[_key(row, len(rows))] = (
+                        _rank(TODO_KIND_LOW_BATTERY), _since(row), f"{name} low",
+                    )
             for row in self.battery_falling_list:
                 if row.get("device_id") in acknowledged:
                     continue
@@ -210,10 +252,14 @@ class NotifierMixin:
                 clause = f"empty in {left}" if left else "running down"
                 key = _key(row, len(rows))
                 if key in rows:
-                    rows[key] = f"{rows[key]}, {clause}"
+                    rank, since, said = rows[key]
+                    rows[key] = (rank, since, f"{said}, {clause}")
                 else:
-                    rows[key] = f"{name} {clause}"
-            parts.extend(rows.values())
+                    rows[key] = (
+                        _rank(TODO_KIND_FALLING_BATTERY), _since(row),
+                        f"{name} {clause}",
+                    )
+            entries.extend(rows.values())
         elif family == NOTIFY_FAMILY_SIGNAL:
             # The signal list tags each row by kind, not category, and
             # a rail is not a low: a railed device shows a stale
@@ -225,17 +271,23 @@ class NotifierMixin:
                     continue
                 name = row.get("name") or row.get("device_id")
                 kind = row.get("kind") or SIGNAL_ROW_LOW
-                parts.append(f"{name} {_SUMMARY_WORD.get(kind, kind)}")
+                entries.append((
+                    _rank(TODO_KIND_RAILED_SIGNAL), _since(row),
+                    f"{name} {_SUMMARY_WORD.get(kind, kind)}",
+                ))
         elif family == NOTIFY_FAMILY_FREEZE:
             for row in self.reportable_down_rows:
                 if row.get("device_id") in acknowledged:
                     continue
                 name = row.get("name") or row.get("device_id")
                 kind = row.get("category") or "down"
-                parts.append(f"{name} {_SUMMARY_WORD.get(kind, kind)}")
-        if not parts:
+                entries.append((
+                    _rank(kind), _since(row),
+                    f"{name} {_SUMMARY_WORD.get(kind, kind)}",
+                ))
+        if not entries and not always:
             return "All clear."
-        return ", ".join(parts) + "."
+        return self._capped(entries, always)
 
     def _family_payload(
         self, family: str, event_line: str, recovery: bool

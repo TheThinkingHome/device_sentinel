@@ -598,6 +598,9 @@ class DeviceSentinelCoordinator(
         # Volunteered hardware study (#393). Empty unless a toggle is
         # on, and dropped at the fold when one goes off.
         self._study_shapes: dict[str, dict[str, dict]] = {}
+        # What each studied stack's nodes last said, so a line is
+        # written when that changes (0.22.26).
+        self._probe_last: dict[tuple[str, str], tuple[str, str]] = {}
         self._study_capped: dict[str, bool] = {}
         self._study_unsub = None
         self._study_watching: dict[str, str] = {}
@@ -3232,6 +3235,7 @@ class DeviceSentinelCoordinator(
         # Study readings for hardware no longer volunteered go here,
         # with everything else that ages out at the fold (#393).
         self.study_fold()
+        self.probe_fold(now)
         pushed = 0
         for device_id, record in self.data[DATA_DEVICES].items():
             if record[DEV_TODAY_MAX] is not None:
@@ -3404,6 +3408,7 @@ class DeviceSentinelCoordinator(
         # than run inside the synchronous judgment below.
         await self.async_sweep_wifi()
         self._sweep_storms(dt_util.utcnow().timestamp())
+        self.probe_tick(dt_util.utcnow().timestamp())
         self._expire_maintenance(dt_util.utcnow().timestamp())
         self._sample_bridges()
         self._judge_all_devices()

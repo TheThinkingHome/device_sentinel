@@ -55,10 +55,21 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_STUDY_HARDWARE,
     LOGGER,
+    DATA_STACK_PROBE,
+    PROBE_DETAIL,
+    PROBE_DEVICE_ID,
+    PROBE_KEEP_DAYS,
+    PROBE_NODE,
+    PROBE_NOW,
+    PROBE_ROW_CAP,
+    PROBE_STACK,
+    PROBE_WAS,
+    PROBE_WHEN,
     STUDIABLE,
     STUDY_SHAPE_CAP,
 )
 from .device_fields import device_field
+from .study_stacks import MATTER_DOMAIN, ZWAVE_DOMAIN, probe_rows
 
 ROUTER = "router"
 IGNORED_KEYS = {"friendly_name", "icon", "device_class"}
@@ -272,6 +283,79 @@ class StudyMixin:
                 ),
             })
         return {"trackers": trackers, "watched_devices": watched}
+
+    # ------------------------------------------- the probe, 0.22.26
+
+    @callback
+    def probe_tick(self, now: float) -> None:
+        """Write a line when a studied stack's node changes its mind.
+
+        Nothing is written while every node says what it said last
+        tick, which on a healthy network is every tick. Reading is in
+        memory, so the cost is one attribute per node.
+        """
+        studied = self.studied
+        if not studied & {ZWAVE_DOMAIN, MATTER_DOMAIN}:
+            self._probe_last.clear()
+            return
+        for row in probe_rows(self.hass, studied):
+            key = (row["stack"], row["node"])
+            said = (row["now"], row["detail"])
+            before = self._probe_last.get(key)
+            self._probe_last[key] = said
+            if before is None:
+                # The first reading of a node is its own line, so a
+                # file read months later knows where each node began.
+                was = ""
+            elif before[0] == said[0]:
+                # The numbers move constantly and the state does not;
+                # a line is worth writing when the state changes, and
+                # the numbers ride on that line.
+                continue
+            else:
+                was = before[0]
+            self._append_row(DATA_STACK_PROBE, {
+                PROBE_WHEN: now,
+                PROBE_STACK: row["stack"],
+                PROBE_NODE: row["node"],
+                PROBE_DEVICE_ID: "",
+                PROBE_WAS: was,
+                PROBE_NOW: row["now"],
+                PROBE_DETAIL: row["detail"],
+            })
+
+    @callback
+    def probe_fold(self, now: float) -> None:
+        """One counting line a day, and the old lines dropped."""
+        studied = self.studied
+        if studied & {ZWAVE_DOMAIN, MATTER_DOMAIN}:
+            counts: dict[str, dict[str, int]] = {}
+            for row in probe_rows(self.hass, studied):
+                by_state = counts.setdefault(row["stack"], {})
+                by_state[row["now"]] = by_state.get(row["now"], 0) + 1
+            for stack, by_state in counts.items():
+                self._append_row(DATA_STACK_PROBE, {
+                    PROBE_WHEN: now,
+                    PROBE_STACK: stack,
+                    PROBE_NODE: "",
+                    PROBE_DEVICE_ID: "",
+                    PROBE_WAS: "",
+                    PROBE_NOW: "day",
+                    PROBE_DETAIL: ", ".join(
+                        f"{state} {count}"
+                        for state, count in sorted(by_state.items())
+                    ),
+                })
+        rows = self.data.get(DATA_STACK_PROBE) or []
+        cutoff = now - PROBE_KEEP_DAYS * 86400
+        kept = [
+            row for row in rows
+            if isinstance(row.get(PROBE_WHEN), (int, float))
+            and row[PROBE_WHEN] >= cutoff
+        ][-PROBE_ROW_CAP:]
+        if len(kept) != len(rows):
+            self.data[DATA_STACK_PROBE] = kept
+            self._mark_cold_dirty()
 
     # --------------------------------------------------- the fold, #393
 

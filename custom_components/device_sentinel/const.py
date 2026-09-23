@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.22.24 (2026-09-22)
+# File: const.py, Version: 0.22.26 (2026-09-23)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1312,6 +1312,10 @@ BATTERY_LEFT_BEYOND = "over a year"
 REPORT_TELEMETRY = "device_telemetry.md"
 REPORT_CLASSIFICATION = "classification.md"
 REPORT_EPISODES = "silence_episodes.md"
+# The stack probe's own file, written beside the other diagnostics
+# while a stack is studied (0.22.26), so "send me the files in
+# config/device_sentinel" covers it.
+REPORT_STACK_PROBE = "stack_probe.md"
 REPORT_STALE_FILES = ("device_telemetry.txt", "classification.txt")
 
 # The trimmed maximum, previewed in the telemetry report (display
@@ -2181,6 +2185,12 @@ STUDY_SHAPE_CAP = 200
 # without a template. Unavailable leads because
 # FREEZE_CATEGORY_PRIORITY already ruled it above frozen: an
 # unavailable device is honestly absent and a frozen one is lying.
+# How many devices a spoken or pushed line names before it counts the
+# rest (0.22.26): worst first, then most recent. Fifty devices down
+# made a push of 2,160 characters and an In Short line of 2,700, which
+# is a minute and a half read aloud.
+SUMMARY_NAMES = 3
+
 TODO_KIND_SEVERITY = (
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_FROZEN,
@@ -2256,6 +2266,12 @@ INC_KIND = "kind"
 INC_EVENT = "event"
 INC_WHEN = "when"
 INC_CAUSE = "cause"
+# Whether this kind ended because a worse one replaced it (0.22.26).
+# The rule existed in the push engine alone, so the record said the
+# reference rig's watering sensor "recovered, revived by a reboot" in
+# the same second it was declared unavailable. A row written before
+# 0.22.26 carries no flag and reads as it did.
+INC_SUPERSEDED = "superseded"
 INC_DURATION = "duration"
 # Event types. ACTION is reserved: anything the integration one day
 # does, rather than observes, belongs on the same timeline as the
@@ -2699,6 +2715,22 @@ EPISODE_KEEP_DAYS = 14
 # episode trim. Episodes explain two weeks; the anchor needs
 # seasons.
 DATA_SIGNAL_STRESS = "signal_stress"
+# The stack probe's log (0.22.26): one row each time a Z-Wave node or
+# a Matter node changes what it says about itself, and one a day with
+# the counts. Written only while Extended Diagnostics is on and that
+# stack's toggle is ticked, kept as long as the episodes, and carrying
+# node ids rather than names, so a tester can send the file without
+# sending a floor plan.
+DATA_STACK_PROBE = "stack_probe"
+PROBE_WHEN = "when"
+PROBE_STACK = "stack"
+PROBE_NODE = "node"
+PROBE_DEVICE_ID = "device_id"
+PROBE_WAS = "was"
+PROBE_NOW = "now"
+PROBE_DETAIL = "detail"
+PROBE_KEEP_DAYS = 14
+PROBE_ROW_CAP = 4000
 EP_DEVICE_ID = "device_id"
 EP_NAME = "name"
 EP_SINCE = "since"

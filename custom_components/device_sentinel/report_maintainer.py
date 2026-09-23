@@ -21,6 +21,8 @@ is the coordinator throughout and nothing here stands alone.
 
 from __future__ import annotations
 
+import contextlib
+
 import os
 from typing import Any
 
@@ -60,6 +62,15 @@ from .const import (
     LEARNING_MIN_DAYS,
     LOGGER,
     REPORT_CLASSIFICATION,
+    DATA_STACK_PROBE,
+    PROBE_DETAIL,
+    PROBE_KEEP_DAYS,
+    PROBE_NODE,
+    PROBE_NOW,
+    PROBE_STACK,
+    PROBE_WAS,
+    PROBE_WHEN,
+    REPORT_STACK_PROBE,
     REPORT_EPISODES,
     REPORT_TELEMETRY,
     SIGNAL_DAYS_KEEP,
@@ -205,6 +216,48 @@ class MaintainerReportMixin:
             row[EP_ENDED] is None
             or (row[EP_ENDED] != EPISODE_ENDED_RESUMED and row[EP_LAG] is None)
         )
+
+    def _write_stack_probe(self, directory: str, trigger: str) -> None:
+        """The stack probe's log, or nothing where none is running.
+
+        Node ids, never names: the file is meant to be sent, and a
+        list of node numbers and their states carries no floor plan
+        (0.22.26).
+        """
+        rows = self.data.get(DATA_STACK_PROBE) or []
+        path = os.path.join(directory, REPORT_STACK_PROBE)
+        if not rows:
+            with contextlib.suppress(OSError):
+                os.remove(path)
+            return
+        lines = [
+            f"# Device Sentinel v{self.version} Stack Probe",
+            "",
+            f"Written {self._format_report_time(dt_util.now())} "
+            f"({trigger})",
+            "",
+            "One line each time a node of a studied stack changed "
+            "what it says about itself, and one a day with the "
+            "counts. Node ids, not names. Z-Wave says alive, asleep, "
+            "dead or unknown; Matter says available or away, with the "
+            "network it is on. Kept "
+            f"{PROBE_KEEP_DAYS} days; {len(rows)} line(s).",
+            "",
+            "| WHEN | STACK | NODE | WAS | NOW | DETAIL |",
+            "|---|---|---|---|---|---|",
+        ]
+        for row in sorted(
+            rows, key=lambda item: item.get(PROBE_WHEN) or 0.0, reverse=True
+        ):
+            lines.append(
+                f"| {self._episode_stamp(row.get(PROBE_WHEN))} "
+                f"| {self._report_cell(str(row.get(PROBE_STACK) or ''))} "
+                f"| {self._report_cell(str(row.get(PROBE_NODE) or ''))} "
+                f"| {self._report_cell(str(row.get(PROBE_WAS) or ''))} "
+                f"| {self._report_cell(str(row.get(PROBE_NOW) or ''))} "
+                f"| {self._report_cell(str(row.get(PROBE_DETAIL) or ''))} |"
+            )
+        self._write_file(path, "\n".join(lines))
 
     def _episode_lag(self, row: dict[str, Any], now: float) -> str:
         """The lag, or how long the device has been silent since the

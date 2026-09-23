@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: durations.py, Version: 0.22.25 (2026-09-22)
+# File: durations.py, Version: 0.22.26 (2026-09-23)
 
 """A long duration in the words a person reads.
 
@@ -24,6 +24,8 @@ and seconds, which is the scale a rhythm is read at.
 """
 
 from __future__ import annotations
+
+from math import isfinite
 
 DAY = 86400.0
 WEEK = 7 * DAY
@@ -47,7 +49,14 @@ def _halves(value: float, noun: str) -> str:
 
 
 def long_span(seconds: float) -> str:
-    """Return a duration of two days or more, in days or weeks."""
+    """Return a duration of two days or more, in days or weeks.
+
+    A value that is not a real number reads as unknown rather than
+    raising (0.22.26). Storage refuses a non-finite number, so this
+    guards the paths that never touch a file.
+    """
+    if not isfinite(seconds):
+        return "?"
     seconds = max(0.0, seconds)
     if seconds >= WEEK_SPAN_SECONDS:
         return _halves(seconds / WEEK, "week")

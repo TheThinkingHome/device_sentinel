@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.22.1 (2026-09-19)
+# File: journal.py, Version: 0.22.26 (2026-09-23)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -60,6 +60,7 @@ from .const import (
     FREEZE_ARMING_DAYS,
     FREEZE_KINDS_FOR_CAUSE,
     INC_CAUSE,
+    INC_SUPERSEDED,
     INC_DEVICE_ID,
     INC_DURATION,
     INCIDENT_SETTLE_SECONDS,
@@ -455,6 +456,7 @@ class JournalMixin:
         kind: str,
         event: str,
         cause: str | None = None,
+        superseded: bool = False,
         duration: float | None = None,
     ) -> None:
         """Append one event to the incident log.
@@ -473,6 +475,7 @@ class JournalMixin:
             INC_EVENT: event,
             INC_WHEN: dt_util.utcnow().timestamp(),
             INC_CAUSE: cause,
+            INC_SUPERSEDED: superseded,
             INC_DURATION: duration,
         }
         incidents = self.data.setdefault(DATA_INCIDENTS, [])
@@ -699,13 +702,14 @@ class JournalMixin:
             return ended.replace("intervention (", "").rstrip(")")
         return None
 
-    def _resolve_incident(
+    def _resolve_incident(  # noqa: PLR0913 - one row, one call
         self,
         device_id: str,
         name: str,
         kind: str,
         now: float,
         opened_at: float | None = None,
+        superseded: bool = False,
     ) -> None:
         """Close one problem on the incident timeline.
 
@@ -723,9 +727,12 @@ class JournalMixin:
         if opened is None:
             opened = opened_at
         duration = (now - opened) if opened is not None else None
+        # A kind that ended because a worse one replaced it recovered
+        # nothing, so it is neither timed against a reviving reboot
+        # nor told as good news (0.22.26).
         cause = (
             self._recovery_cause(device_id, opened or now)
-            if kind in FREEZE_KINDS_FOR_CAUSE
+            if kind in FREEZE_KINDS_FOR_CAUSE and not superseded
             else None
         )
         self._record_incident(
@@ -735,6 +742,7 @@ class JournalMixin:
             INCIDENT_RESOLVED,
             cause=cause,
             duration=duration,
+            superseded=superseded,
         )
 
     def _acknowledged_devices(self) -> set[str]:

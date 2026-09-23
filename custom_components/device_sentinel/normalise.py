@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.21.12 (2026-09-17)
+# File: normalise.py, Version: 0.22.26 (2026-09-23)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -116,6 +116,14 @@ from .const import (
     DATA_SIGNAL_WEIGHTING,
     BACKUP_TAKEN_KEY,
     DATA_SIGNAL_STRESS,
+    PROBE_DETAIL,
+    PROBE_NOW,
+    PROBE_WAS,
+    PROBE_DEVICE_ID,
+    PROBE_NODE,
+    PROBE_STACK,
+    PROBE_WHEN,
+    DATA_STACK_PROBE,
     DATA_STATS_EPOCH,
     DATA_STORM_DAYS,
     DATA_STORMS,
@@ -126,6 +134,11 @@ from .const import (
 
 # The kinds a field may hold. Each is a plain predicate over one value.
 NUMBER = "number or None"
+# A gap on its own: the seconds a device has been silent today, which
+# cannot be negative any more than a series of them can (0.22.26). A
+# negative one folded into the day's series at midnight and refused
+# the whole record on the next load.
+GAP = "gap or None"
 INTEGER = "integer"
 STRING = "string or None"
 BOOLEAN = "boolean"
@@ -165,7 +178,7 @@ NULLABLE_MAPPING = "None or a mapping"
 EXPECTED: dict[str, str] = {
     DEV_LAST_ACTIVITY: NUMBER,
     DEV_DAILY_MAX: GAP_SERIES,
-    DEV_TODAY_MAX: NUMBER,
+    DEV_TODAY_MAX: GAP,
     DEV_FIRST_OBSERVED: STRING,
     DEV_EVENT_COUNT: INTEGER,
     DEV_TAINTED: TAINT,
@@ -252,6 +265,12 @@ def _fault(kind: str, value: Any) -> str | None:
         if bad:
             return f"{len(bad)} bad element(s), first {_describe(bad[0])}"
         return None
+    if kind == GAP:
+        if value is None:
+            return None
+        if not _is_number(value):
+            return _describe(value)
+        return None if value >= 0 else f"a negative gap, {_describe(value)}"
     if kind == GAP_SERIES:
         # A learned gap series: every element is a number of seconds a
         # device stayed silent, so a negative element is a writer
@@ -475,11 +494,24 @@ STORM_DAY_SHAPE: dict[str, str] = {
     "median_duration": REAL_NUMBER,
 }
 
+# One line of the stack probe: when, which stack, which node, what it
+# was and what it is now, and whatever numbers came with it.
+PROBE_SHAPE: dict[str, str] = {
+    PROBE_WHEN: REAL_NUMBER,
+    PROBE_STACK: STRING,
+    PROBE_NODE: STRING,
+    PROBE_DEVICE_ID: STRING,
+    PROBE_WAS: STRING,
+    PROBE_NOW: STRING,
+    PROBE_DETAIL: STRING,
+}
+
 # table key -> (row shape, keys a row may leave out)
 TABLES: dict[str, tuple[dict[str, str], frozenset[str]]] = {
     DATA_INCIDENTS: (INCIDENT_SHAPE, frozenset()),
     DATA_EPISODES: (EPISODE_SHAPE, frozenset()),
     DATA_SIGNAL_STRESS: (STRESS_SHAPE, frozenset()),
+    DATA_STACK_PROBE: (PROBE_SHAPE, frozenset()),
     # A row carries a device count only where the event has one to
     # carry, so this key is absent far more often than present, and a
     # worst moment only where an outage has ended.

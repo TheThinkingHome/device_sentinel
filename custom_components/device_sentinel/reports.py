@@ -414,6 +414,7 @@ class ReportWritingMixin(
         self._write_telemetry(report_directory, trigger)
         self._write_classification(report_directory, trigger)
         self._write_episodes(report_directory, trigger)
+        self._write_stack_probe(report_directory, trigger)
         # The signal report is HTML rather than Markdown because the
         # bands are its whole point and Markdown cannot carry color.
         # It lives under www so a dashboard Webpage card can render it

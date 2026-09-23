@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.25 (2026-09-22)
+# File: dashboard.py, Version: 0.22.26 (2026-09-23)
 
 """What the dashboard reads from the coordinator.
 
@@ -764,7 +764,14 @@ class DeviceViewMixin:
             value for value in (record.get(DEV_BATTERY_DAILY) or [])
             if isinstance(value, (int, float))
         ]
-        readable = isinstance(level, (int, float)) and float(level) <= BATTERY_READABLE_MAX
+        # A percentage runs from nothing to full: a reading outside
+        # that is a raw sensor value, whichever end it is outside at
+        # (0.22.26). LUX Outdoors reports 186; a cell reporting below
+        # zero would have been drawn against your threshold.
+        readable = (
+            isinstance(level, (int, float))
+            and 0.0 <= float(level) <= BATTERY_READABLE_MAX
+        )
         page: dict[str, Any] = {
             "daily": list(record.get(DEV_BATTERY_DAILY) or []),
             "now": level,
