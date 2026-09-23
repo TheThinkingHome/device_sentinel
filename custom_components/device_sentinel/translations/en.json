@@ -301,6 +301,10 @@
       "title": "Device Sentinel Has Nowhere to Send Anything",
       "description": "Device Sentinel has been watching your devices for {days} days and has no way to tell you about a problem. No targets are set for alerts or for the daily brief.\n\nThe persistent card is on, so problems do appear in Home Assistant's notification panel, but nothing reaches a phone or an inbox.\n\nSet a target under Settings, Devices and Services, Device Sentinel, Configure, Notifications and Daily Brief."
     },
+    "clocks_reset": {
+      "title": "Activity Clocks Were Reset",
+      "description": "The file that holds each device's last report time was missing or damaged when Device Sentinel started. Every clock was restarted at {time}. Nothing learned was lost. If this happens again, check the storage on your Home Assistant host."
+    },
     "storage_restored": {
       "title": "Device Sentinel Restored Its Storage",
       "fix_flow": {
