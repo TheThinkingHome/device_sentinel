@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.22.24 (2026-09-22)
+# File: report_brief.py, Version: 0.22.27 (2026-09-23)
 
 """The daily brief: the one report written for a person.
 
@@ -32,7 +32,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.loader import async_get_loaded_integration
 from homeassistant.util import dt as dt_util
 
-from . import attribution
+from . import attribution, escalation
 from .repairs import (
     _english_list,
     delivery_is_configured,
@@ -301,6 +301,11 @@ class BriefMixin:
         """
         kind = row[INC_KIND]
         event = row[INC_EVENT]
+        # A worse problem replacing a lesser one: one change, never a
+        # recovery (0.22.27).
+        change = self._change_clause(row, "table")
+        if change is not None:
+            return change
         if event == INCIDENT_RESOLVED:
             # No duration means the opening is gone and nothing could
             # measure the gap, which the retention rule makes rare and
@@ -1569,7 +1574,14 @@ class BriefMixin:
                 )
                 owners.append({device_id})
                 continue
-            key = (window.key, opened[INC_KIND], resolved is not None)
+            # An escalation groups only with escalations from the same
+            # kind, so a flood sentence never loses the "from" (0.22.27).
+            key = (
+                window.key,
+                opened[INC_KIND],
+                opened.get(escalation.ESCALATED_FROM),
+                resolved is not None,
+            )
             if key not in placed:
                 placed[key] = len(told)
                 told.append("")
@@ -1848,7 +1860,7 @@ class BriefMixin:
         Beyond one, the count leads: a person reading a brief wants
         the size of the thing before a roll of seventy-four names.
         """
-        window_key, kind, resolved = key
+        window_key, kind, _lesser, resolved = key
         window = next(
             (span for span in spans if span.key == window_key), None
         )
@@ -1858,7 +1870,9 @@ class BriefMixin:
             if closed is not None:
                 return self._compose_episode(opened, closed, clause)
             return self._compose_event(opened)
-        word = self._EVENT_WORDING.get(kind, kind)
+        word = self._change_clause(
+            members[0][0], "flood"
+        ) or self._EVENT_WORDING.get(kind, kind)
         when = self._clock(min(row[INC_WHEN] for row, _ in members))
         if resolved:
             return (
@@ -2232,9 +2246,11 @@ class BriefMixin:
         """
         now_rows = self._brief_now_rows()
         silenced = self._acknowledged_devices()
+        # Folded before the window cuts, so an escalation's two rows
+        # are always read together (0.22.27).
         incidents = [
             row
-            for row in self.incident_rows()
+            for row in escalation.fold(self.incident_rows())
             if window_start <= row[INC_WHEN] <= window_end
             and row[INC_DEVICE_ID] not in self._muted_devices
             and row[INC_DEVICE_ID] not in silenced

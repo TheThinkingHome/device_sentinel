@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.22.24 (2026-09-22)
+# File: narrative.py, Version: 0.22.27 (2026-09-23)
 
 """How to say what happened: the composer.
 
@@ -63,6 +63,7 @@ from .const import (
     BATTERY_CLEAR_MARGIN,
     BATTERY_REPLACED_LANDS,
 )
+from .escalation import ESCALATED_FROM, state_word
 
 
 
@@ -204,6 +205,49 @@ class NarrativeMixin:
             return "battery read low, since recovered"
         return "battery is low" if state else "battery read low"
 
+    def _change_clause(
+        self, row: dict[str, Any], form: str = "sentence"
+    ) -> str | None:
+        """Return how a worse problem replaced a lesser one, else None.
+
+        The owner's words (0.22.27): "Soil Irrigation (Monstera) was
+        marked unavailable from frozen at 3:43 AM", and "Door 2nd
+        Bedroom's battery was marked low (18%) from running down". The
+        form follows where the clause lands: after the name in a
+        sentence, alone in a table cell whose row already names the
+        device, or after "N devices" in a flood.
+
+        The level follows the low battery rule (ruling #346): shown
+        only while the cell still reads low, because a row carries no
+        reading of its own.
+        """
+        lesser = row.get(ESCALATED_FROM)
+        if lesser is None:
+            return None
+        worse = row[INC_KIND]
+        if worse == TODO_KIND_LOW_BATTERY:
+            level = self.data[DATA_DEVICES].get(row[INC_DEVICE_ID], {}).get(
+                DEV_BATTERY_VALUE
+            )
+            shown = (
+                f" ({level:g}%)"
+                if isinstance(level, (int, float))
+                and level <= self.low_threshold + BATTERY_CLEAR_MARGIN
+                else ""
+            )
+            core = f"marked low{shown} from {state_word(lesser)}"
+            return {
+                "sentence": f"'s battery was {core}",
+                "table": f"battery {core}",
+                "flood": f"had their battery {core}",
+            }[form]
+        core = f"marked {state_word(worse)} from {state_word(lesser)}"
+        return {
+            "sentence": f" was {core}",
+            "table": core,
+            "flood": f"were {core}",
+        }[form]
+
     def _recovery_tail(self, row: dict[str, Any]) -> str:
         """Return what ended a silence, as a trailing clause.
 
@@ -231,6 +275,11 @@ class NarrativeMixin:
         name = self._told_name(row)
         kind = row[INC_KIND]
         when = self._clock(row[INC_WHEN])
+        # A worse problem replacing a lesser one is one change, told
+        # as that change (0.22.27).
+        change = self._change_clause(row)
+        if change is not None:
+            return f"{name}{change} at {when}"
         if kind == TODO_KIND_LOW_BATTERY:
             phrase = self._battery_phrase(row[INC_DEVICE_ID], False)
             return f"{name} {phrase} at {when}"

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.26 (2026-09-23)
+# File: dashboard.py, Version: 0.22.27 (2026-09-23)
 
 """What the dashboard reads from the coordinator.
 
@@ -129,6 +129,7 @@ from .const import (
     WIFI_KEY,
     WIFI_SENSOR_NAME,
 )
+from .escalation import fold
 from .outage_detail import pair_key
 from .device_fields import device_field
 
@@ -1007,9 +1008,11 @@ class BriefViewMixin:
             return None
         start, end, is_today = self._brief_day_bounds(day)
         silenced = self._acknowledged_devices()
+        # The written brief's fold, so the tab never calls an
+        # escalation a recovery the file does not (0.22.27).
         incidents = [
             row
-            for row in self.incident_rows()
+            for row in fold(self.incident_rows())
             if start <= row[INC_WHEN] < end
             and row[INC_DEVICE_ID] not in self._muted_devices
             and row[INC_DEVICE_ID] not in silenced

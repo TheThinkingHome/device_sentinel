@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.22.26 (2026-09-23)
+# File: const.py, Version: 0.22.27 (2026-09-23)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2185,10 +2185,11 @@ STUDY_SHAPE_CAP = 200
 # without a template. Unavailable leads because
 # FREEZE_CATEGORY_PRIORITY already ruled it above frozen: an
 # unavailable device is honestly absent and a frozen one is lying.
-# How many devices a spoken or pushed line names before it counts the
-# rest (0.22.26): worst first, then most recent. Fifty devices down
-# made a push of 2,160 characters and an In Short line of 2,700, which
-# is a minute and a half read aloud.
+# How many devices a phone push names before it counts the rest
+# (0.22.26): worst first, then most recent. Fifty devices down made a
+# push of 2,160 characters. The push only: the brief's In Short names
+# every device and is never capped, because it is the paragraph meant
+# one day to be spoken aloud whole (the owner's ruling, 23 September).
 SUMMARY_NAMES = 3
 
 TODO_KIND_SEVERITY = (

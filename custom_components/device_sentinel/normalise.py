@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.22.26 (2026-09-23)
+# File: normalise.py, Version: 0.22.27 (2026-09-23)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -142,6 +142,12 @@ GAP = "gap or None"
 INTEGER = "integer"
 STRING = "string or None"
 BOOLEAN = "boolean"
+# A flag a row written before the field existed does not carry. The
+# load fills a missing nullable field with None, so a plain boolean
+# here would fill the old row and then refuse what it filled: every
+# incident written before 0.22.26 dropped at the first load of 0.22.27,
+# caught by the migration tests before it shipped.
+NULLABLE_BOOLEAN = "boolean or None"
 FLOAT_SERIES = "list of numbers"
 GAP_SERIES = "gap series"
 # A daily statistic that a rail-only day legitimately cannot supply:
@@ -258,6 +264,8 @@ def _fault(kind: str, value: Any) -> str | None:
         return None if value is None or isinstance(value, str) else _describe(value)
     if kind == BOOLEAN:
         return None if isinstance(value, bool) else _describe(value)
+    if kind == NULLABLE_BOOLEAN:
+        return None if value is None or isinstance(value, bool) else _describe(value)
     if kind == FLOAT_SERIES:
         if not isinstance(value, list):
             return _describe(value)
@@ -415,6 +423,11 @@ INCIDENT_SHAPE: dict[str, str] = {
     "when": REAL_NUMBER,
     "cause": STRING,
     "duration": NUMBER,
+    # Whether a worse problem replaced this one. Written from 0.22.26
+    # and read from 0.22.27, so it is checked as a type now that a
+    # reader depends on it; a row written before 0.22.26 omits it and
+    # the load fills None, which reads as not replaced.
+    "superseded": NULLABLE_BOOLEAN,
 }
 
 EPISODE_SHAPE: dict[str, str] = {
@@ -508,7 +521,9 @@ PROBE_SHAPE: dict[str, str] = {
 
 # table key -> (row shape, keys a row may leave out)
 TABLES: dict[str, tuple[dict[str, str], frozenset[str]]] = {
-    DATA_INCIDENTS: (INCIDENT_SHAPE, frozenset()),
+    # The replaced-by-worse mark (0.22.27): absent from every row
+    # written before 0.22.26, which is not damage.
+    DATA_INCIDENTS: (INCIDENT_SHAPE, frozenset({"superseded"})),
     DATA_EPISODES: (EPISODE_SHAPE, frozenset()),
     DATA_SIGNAL_STRESS: (STRESS_SHAPE, frozenset()),
     DATA_STACK_PROBE: (PROBE_SHAPE, frozenset()),
