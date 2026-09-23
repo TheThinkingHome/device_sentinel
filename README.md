@@ -18,7 +18,6 @@
 
 <figure>
   <img src="https://xeazy.com/wp-content/uploads/Dashboard-Mockup-scaled.png" alt="Dashboard Mock-Up">
-  <figcaption><h3><em>Concept of the Device Sentinel dashboard currently in development.</em></h3></figcaption>
 </figure>
 
 &nbsp;
@@ -51,8 +50,8 @@ Device Sentinel spots four ways a device goes dark:
 | Verdict | What it means | Why you care |
 |---|---|---|
 | **Frozen** | Silent past its own learned window, while still showing a healthy value. | The dangerous one. Your automations are acting on a dead reading. |
-| **Unavailable** | Every live entity on the device reports `unavailable`. | Home Assistant knows it's gone. You probably don't. |
-| **Unknown** | Every live entity reports `unknown`. | Usually an integration or protocol failure. |
+| **Unavailable** | Every one of the device's own live entities reports `unavailable`. | Home Assistant knows it's gone. You probably don't. |
+| **Unknown** | Every one of the device's own live entities reports `unknown`. | Usually an integration or protocol failure. |
 | **Never reported** | Known to the registry but has produced nothing for 48 hours. | Ghost entries, and devices that died before you installed this. |
 
 And two warnings that arrive *before* the failure:
@@ -78,8 +77,11 @@ Every fault lands in one Home Assistant to-do list. A device that is both frozen
 **Smart Upstream Outage Detection**
 When a coordinator, broker, or Wi-Fi network goes down, every device behind it goes quiet. Device Sentinel reports the one failure you can fix, rather than giving you sixty separate alerts for sixty silent devices. When it comes back, the report shows the devices that have reconnected and gives the devices not yet reconnected time to rejoin before anything is reported. 
 
+**A Dashboard in Your Sidebar**
+The daily brief, the problem list, battery and signal trends, and a page for each device, one click apart. Administrators only.
+
 **Alerts That Respect Your Evening**
-Live push notifications are sent for real faults, but quiet hours hold them overnight. A daily brief, delivered by email or push on your schedule, summarizes what happened and highlights devices that keep failing for no clear reason.
+Live push notifications are sent for real faults, and quiet hours keep your phone silent overnight. A daily brief, delivered by email or push on your schedule, summarizes what happened and highlights devices that keep failing for no clear reason.
 
 ![A Device Sentinel daily brief, listing the devices that need attention and what happened over the last day](https://xeazy.com/wp-content/uploads/daily_brief.webp)
 
@@ -100,7 +102,7 @@ Device Sentinel is not in the default HACS store yet.
 
 It runs on sensible defaults immediately. Two things are worth doing on day one:
 1. Open the integration settings and configure **Notifications and Daily Brief**.
-2. On the Device Sentinel device page, press the three **Enable** buttons (Battery, Signals, Last Seen) so the integration has data to learn from.
+2. On the Device Sentinel dashboard or device page, press the three **Enable** buttons (Battery, Signals, Last Seen) so the integration has data to learn from.
 
 ![The Device Sentinel device page in Home Assistant, with its three enable buttons and diagnostic sensors](https://xeazy.com/wp-content/uploads/integration_page.webp)
 
@@ -125,7 +127,7 @@ Device Sentinel's settings are designed to be set once and forgotten. For comple
 
 ## The Reports
 
-Device Sentinel generates several reports to help you understand your network's health, all viewable as dashboard cards or plain text files. Device names in the reports are followed by their area, and if configured can link to that device's device page. 
+Device Sentinel generates several reports to help you understand your network's health, gathered in the Device Sentinel dashboard in your sidebar, and written as files you can email, print or share. Device names in the reports are followed by their area, and if configured can link to that device's device page. 
 
 *   **[The Problem List](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Problem-List):** The live Home Assistant To-Do list where you acknowledge active faults.
 *   **[The Daily Brief](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Daily-Brief):** A plain-English summary of what is wrong right now and what happened over the last 24 hours.
@@ -137,6 +139,7 @@ Device Sentinel generates several reports to help you understand your network's 
 
 | Area | Status | Notes |
 |---|---|---|
+| **Dashboard** | Working | Daily brief, problem list, battery and signal trends, classification, integrations, devices and recommendations, with a page for each device and integration. Administrators only. |
 | **Freeze Detection** | Stable | Rhythms fully modeled. Differentiates frozen, unavailable, unknown, and never reported. |
 | **Battery** | Stable | Dual-evaluation (flat threshold + predictive trend) is live. |
 | **Storage** | Stable | Highly resilient data storage with automatic last-good backups. |
