@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.22.28 (2026-09-23)
+# File: notifier.py, Version: 0.23.2 (2026-09-24)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -49,6 +49,7 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    TODO_KIND_FLAPPING,
     TODO_KIND_FALLING_BATTERY,
     TODO_KIND_LOW_BATTERY,
     TODO_KIND_SEVERITY,
@@ -96,6 +97,7 @@ _APPLE_SILENT = {"push": {"interruption-level": "passive"}}
 # "signal", which is why the family map had to list both; the rows
 # carry TODO_KIND_RAILED_SIGNAL now (ruling #299).
 _SUMMARY_WORD = {
+    TODO_KIND_FLAPPING: "keeps dropping out",
     TODO_KIND_RAILED_SIGNAL: "railed",
     SIGNAL_ROW_LOW: "low signal",
     TODO_KIND_FROZEN: "frozen",
@@ -276,8 +278,22 @@ class NotifierMixin:
                     f"{name} {_SUMMARY_WORD.get(kind, kind)}",
                 ))
         elif family == NOTIFY_FAMILY_FREEZE:
+            # A device in a flap is named for the flap, down this
+            # minute or not, and its drop is not named again (0.23.2).
+            flapping = set()
+            for row in self.flapping_list:
+                flapping.add(row.get("device_id"))
+                if row.get("device_id") in acknowledged:
+                    continue
+                name = row.get("name") or row.get("device_id")
+                entries.append((
+                    _rank(TODO_KIND_FLAPPING), _since(row),
+                    f"{name} {_SUMMARY_WORD[TODO_KIND_FLAPPING]}",
+                ))
             for row in self.reportable_down_rows:
                 if row.get("device_id") in acknowledged:
+                    continue
+                if row.get("device_id") in flapping:
                     continue
                 name = row.get("name") or row.get("device_id")
                 kind = row.get("category") or "down"

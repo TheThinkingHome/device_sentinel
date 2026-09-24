@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.23.0 (2026-09-24)
+# File: report_brief.py, Version: 0.23.2 (2026-09-24)
 
 """The daily brief: the one report written for a person.
 
@@ -39,6 +39,7 @@ from .repairs import (
     missing_targets,
 )
 from .const import (
+    TODO_KIND_FLAPPING,
     STACK_DISPLAY_NAMES,
     DEV_SIGNAL_VALUE,
     FLOOD_MIN_DAYS,
@@ -345,6 +346,7 @@ class BriefMixin:
             # (ruling #120). The level belongs in both or neither.
             return self._battery_phrase(row[INC_DEVICE_ID], False)
         wording = {
+            TODO_KIND_FLAPPING: "started dropping out again and again",
             TODO_KIND_FROZEN: "stopped reporting",
             TODO_KIND_NEVER_REPORTED: "has never reported",
             TODO_KIND_UNAVAILABLE: "went unavailable",
@@ -393,8 +395,13 @@ class BriefMixin:
             if record.get(TODO_STATUS) == "completed":
                 continue
             name = record.get(TODO_SORT_NAME) or device_id
-            for kind, since in (record.get(TODO_KINDS) or {}).items():
+            kinds = record.get(TODO_KINDS) or {}
+            for kind, since in kinds.items():
+                if kind == TODO_KIND_UNAVAILABLE and TODO_KIND_FLAPPING in kinds:
+                    # The flap is the row; its drops are not (0.23.2).
+                    continue
                 problem = {
+                    TODO_KIND_FLAPPING: self.flap_words(device_id),
                     TODO_KIND_FROZEN: "stopped reporting",
                     TODO_KIND_NEVER_REPORTED: "never reported",
                     TODO_KIND_UNAVAILABLE: "unavailable",

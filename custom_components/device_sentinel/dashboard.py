@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.23.1 (2026-09-24)
+# File: dashboard.py, Version: 0.23.2 (2026-09-24)
 
 """What the dashboard reads from the coordinator.
 
@@ -32,6 +32,7 @@ from homeassistant.util import dt as dt_util
 from datetime import date, timedelta
 
 from .const import (
+    TODO_KIND_FLAPPING,
     BATTERY_STEPS_WORDS,
     BROKER_RIDER_DOMAINS,
     SYS_DETAIL,
@@ -616,6 +617,10 @@ class DeviceViewMixin:
         device nobody watches has no verdict to give, and one that has
         never reported has not reported.
         """
+        # A device in a flap reads as the flap, the same word the list
+        # gives it, whether or not it is down this minute (0.23.2).
+        if device_id in self._watched and self.is_flapping(device_id):
+            return TODO_KIND_FLAPPING
         verdict = record.get(DEV_FROZEN_CATEGORY)
         if verdict:
             return verdict
@@ -760,6 +765,12 @@ class DeviceViewMixin:
             "readings": readings,
             "status": {
                 "category": self._page_status(device_id, record),
+                # How big the flap is, beside the word (0.23.2).
+                "flap": (
+                    self.flap_words(device_id).removeprefix("flapping, ")
+                    if self.is_flapping(device_id)
+                    else ""
+                ),
                 "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
                 "rhythm": rhythm,
                 "window": self._freeze_window(record),
@@ -1322,4 +1333,24 @@ class TrendsViewMixin:
                 reverse=True,
             ),
             "counts": {"unsteady": unsteady, "steady": len(devices) - unsteady},
+            # The devices in a flap, beside their signal, because a
+            # link that keeps dropping is where a person looking at
+            # network health looks first (0.23.2).
+            "dropping_out": [
+                {
+                    "device_id": row["device_id"],
+                    "name": row["name"],
+                    "drops": row["drops"],
+                    "since": _iso(row["since"]),
+                    "signal": next(
+                        (
+                            device.get("now")
+                            for device in devices
+                            if device.get("device_id") == row["device_id"]
+                        ),
+                        None,
+                    ),
+                }
+                for row in self.flapping_list
+            ],
         }

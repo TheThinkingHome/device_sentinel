@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.23.1 (2026-09-24)
+# File: interventions.py, Version: 0.23.2 (2026-09-24)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -39,6 +39,7 @@ from .stacks import (
 from .transport_mqtt import MQTTBrokerReader
 
 from .const import (
+    FLAP_CHECK_WORDS,
     SYS_DETAIL,
     DATA_SYSTEM_EVENTS,
     STORM_EXPLAINED_SECONDS,
@@ -349,6 +350,11 @@ class InterventionMixin:
         failed = self._own_entry_failure(device_id)
         if failed is not None:
             return failed
+        if self.is_flapping(device_id):
+            # Worded as something to check, not a diagnosis: the second
+            # fleet's flapping sensor held a steady link quality of 109
+            # to 112 whenever it got through (0.23.2).
+            return FLAP_CHECK_WORDS
         seen = self.reachability(device_id)
         if seen is None:
             return None

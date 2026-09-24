@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.22.27 (2026-09-23)
+# File: narrative.py, Version: 0.23.2 (2026-09-24)
 
 """How to say what happened: the composer.
 
@@ -31,6 +31,7 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    TODO_KIND_FLAPPING,
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
@@ -104,6 +105,7 @@ class NarrativeMixin:
     # matters. Silence outranks battery and signal: a device that
     # cannot be heard from cannot be trusted to report either.
     _KIND_SEVERITY = (
+        TODO_KIND_FLAPPING,
         TODO_KIND_UNAVAILABLE,
         TODO_KIND_FROZEN,
         TODO_KIND_UNKNOWN,
@@ -129,6 +131,7 @@ class NarrativeMixin:
     )
 
     _EVENT_WORDING = {
+        TODO_KIND_FLAPPING: "started dropping out again and again",
         TODO_KIND_FROZEN: "stopped reporting",
         TODO_KIND_UNAVAILABLE: "went unavailable",
         TODO_KIND_UNKNOWN: "went unknown",
@@ -145,6 +148,10 @@ class NarrativeMixin:
     # which is how "has been unavailable 4.0h ago" reached a live
     # brief. The second form is used when no duration is known.
     _STATE_TEMPLATE = {
+        TODO_KIND_FLAPPING: (
+            "has been dropping out for {ago}",
+            "keeps dropping out",
+        ),
         TODO_KIND_FROZEN: (
             "stopped reporting {ago} ago",
             "stopped reporting",

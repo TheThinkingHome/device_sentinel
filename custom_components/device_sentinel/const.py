@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.1 (2026-09-24)
+# File: const.py, Version: 0.23.2 (2026-09-24)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1255,6 +1255,14 @@ DEV_BATTERY_REPLACED_PENDING = "battery_replaced_pending"
 # daily history. Two confirm a coarse reporter; any smaller change
 # returns it to smooth.
 DEV_BATTERY_COARSE_DROPS = "battery_coarse_drops"
+# The current run of drops of a device that goes unavailable again and
+# again (0.23.2): when each drop began, when the run became a flap,
+# when the device last came back, and the longest it stayed back
+# between drops. Stored so a restart does not forget a flap.
+DEV_FLAP_DROPS = "flap_drops"
+DEV_FLAP_SINCE = "flap_since"
+DEV_FLAP_BACK = "flap_back"
+DEV_FLAP_LONGEST = "flap_longest"
 BATTERY_COARSE_STEP = 5.0
 BATTERY_COARSE_CONFIRM = 2
 BATTERY_STEPS_SMOOTH = "smooth"
@@ -1483,6 +1491,10 @@ EPOCH_KEPT = (
     DEV_BATTERY_REPLACED_AT,
     DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_COARSE_DROPS,
+    DEV_FLAP_DROPS,
+    DEV_FLAP_SINCE,
+    DEV_FLAP_BACK,
+    DEV_FLAP_LONGEST,
     DEV_SIGNAL_READS,
     DEV_SET_ASIDE_SINCE,
     DEV_LAST_ACTIVITY,
@@ -1995,6 +2007,18 @@ TODO_KIND_UNAVAILABLE = FREEZE_CATEGORY_UNAVAILABLE
 TODO_KIND_UNKNOWN = FREEZE_CATEGORY_UNKNOWN
 TODO_KIND_NEVER_REPORTED = FREEZE_CATEGORY_NEVER_REPORTED
 TODO_KIND_RAILED_SIGNAL = "railed_signal"
+# A device that keeps dropping out (0.23.2). The second fleet's S73, a
+# door tilt sensor in a shed, went unavailable for three to four and a
+# half minutes 53 times in 17 hours, each drop past the three-minute
+# wait, and each opened and closed a problem. Three drops in two hours
+# make a device flapping; it stays so until it has stayed back longer
+# than the longest it stayed back between drops, plus the freeze grace
+# for a gap that size. One item, one push when it starts and one when
+# it clears; each drop is still recorded.
+TODO_KIND_FLAPPING = "flapping"
+FLAP_DROPS_TO_START = 3
+FLAP_WINDOW_SECONDS = 2.0 * 3600.0
+FLAP_CHECK_WORDS = "Check its signal and the router it connects through."
 # The signal problem rows tag a railed link with the kind above and
 # leave a merely low one untagged. This names that default so the
 # absence reads as a decision rather than an oversight; it is a row
@@ -2033,6 +2057,7 @@ UPSTREAM_KIND = "upstream"
 # kinds by hand too, so it kept passing while checking six of seven
 # (ruling #215). Anything that maps kinds reads this.
 TODO_KINDS_ALL = (
+    TODO_KIND_FLAPPING,
     TODO_KIND_FROZEN,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
@@ -2054,6 +2079,7 @@ TODO_KINDS_ALL = (
 # on a device that is already silent is genuinely new and a person
 # wants to hear it.
 TODO_KIND_FAMILIES = {
+    TODO_KIND_FLAPPING: "down",
     TODO_KIND_FROZEN: "down",
     TODO_KIND_UNAVAILABLE: "down",
     TODO_KIND_UNKNOWN: "down",
@@ -2228,6 +2254,10 @@ STUDY_SHAPE_CAP = 200
 SUMMARY_NAMES = 3
 
 TODO_KIND_SEVERITY = (
+    # First, so a drop while flapping is never announced as news and a
+    # return between drops is never a recovery: the flap is the
+    # problem, and it outranks each of its drops (0.23.2).
+    TODO_KIND_FLAPPING,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_FROZEN,
     TODO_KIND_UNKNOWN,
@@ -2247,6 +2277,7 @@ UNASSIGNED_AREA = "Unassigned"
 # kind maps to its own family, and anything else is a freeze-family
 # event. This is the map from a problem kind to its notification family.
 NOTIFY_KIND_FAMILY = {
+    TODO_KIND_FLAPPING: NOTIFY_FAMILY_FREEZE,
     TODO_KIND_LOW_BATTERY: NOTIFY_FAMILY_BATTERY,
     TODO_KIND_FALLING_BATTERY: NOTIFY_FAMILY_BATTERY,
     TODO_KIND_RAILED_SIGNAL: NOTIFY_FAMILY_SIGNAL,

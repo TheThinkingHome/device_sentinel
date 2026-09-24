@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.22.28 (2026-09-23)
+# File: problem_list.py, Version: 0.23.2 (2026-09-24)
 
 """The problem list: the single memory every channel renders.
 
@@ -45,6 +45,7 @@ from homeassistant.util import dt as dt_util
 from .events import sort_kinds
 from .normalise import row_damage
 from .const import (
+    TODO_KIND_FLAPPING,
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
@@ -110,12 +111,17 @@ _EVENT_WORD = {
 # can carry a level and a forecast and "recovered" would not say
 # which of them ended (ruling #220).
 _FAULT_LINE = {
+    TODO_KIND_FLAPPING: (
+        "{name} keeps dropping out",
+        "{name} keeps dropping out",
+    ),
     TODO_KIND_FALLING_BATTERY: (
         "{name} battery is running down, empty in {left}",
         "{name} battery is running down",
     ),
 }
 _RECOVERY_LINE = {
+    TODO_KIND_FLAPPING: "{name} has stopped dropping out",
     TODO_KIND_LOW_BATTERY: "{name} battery is no longer low",
     TODO_KIND_FALLING_BATTERY: "{name} battery is no longer running down",
 }
@@ -351,9 +357,16 @@ class ProblemListMixin:
                 },
             )
 
-        for row in self.reportable_down_rows:
+        down_rows = self.reportable_down_rows
+        # The run of drops is folded in before the list is built, so a
+        # flap that starts on this pass is listed on it (0.23.2).
+        self._track_flaps(down_rows, dt_util.utcnow().timestamp())
+        for row in down_rows:
             entry = _entry(row["device_id"], row.get("name"))
             entry["kinds"][row["category"]] = row.get("since")
+        for row in self.flapping_list:
+            entry = _entry(row["device_id"], row.get("name"))
+            entry["kinds"][TODO_KIND_FLAPPING] = row["since"]
 
         # One row for the fault itself (ruling #264). The devices it
         # masks are counted in the summary rather than listed, so the
@@ -694,7 +707,17 @@ class ProblemListMixin:
 
         if UPSTREAM_KIND in kinds:
             return self._upstream_item_text(name, kinds, level)
-        words = [self._kind_word(kind, level, left) for kind in order]
+        if TODO_KIND_FLAPPING in order:
+            # The flap is the problem; a drop inside it is not listed
+            # beside it, whether or not the device is down this minute
+            # (0.23.2).
+            order = [kind for kind in order if kind != TODO_KIND_UNAVAILABLE]
+        words = [
+            self.flap_words(device_id)
+            if kind == TODO_KIND_FLAPPING and device_id is not None
+            else self._kind_word(kind, level, left)
+            for kind in order
+        ]
         # The falling clause names the battery unless the level
         # clause already did, so one item says the noun once and an
         # item carrying only the forecast still says what is empty
@@ -709,6 +732,9 @@ class ProblemListMixin:
         lines = []
         for kind, word in zip(order, words, strict=True):
             since = kinds.get(kind)
+            if kind == TODO_KIND_FLAPPING:
+                lines.append(f"{word.capitalize()}.")
+                continue
             if since is not None:
                 when = self._format_report_time(
                     dt_util.as_local(dt_util.utc_from_timestamp(since))
@@ -862,6 +888,12 @@ class ProblemListMixin:
         not stopped running down in any sense a person would accept
         (ruling #220).
         """
+        # A drop inside a flap is recorded, never announced: the flap
+        # was, once, and will be again when it ends. The second
+        # fleet's S73 would have pushed 53 drops and 53 returns in 17
+        # hours (0.23.2).
+        if kind == TODO_KIND_UNAVAILABLE and self.is_flapping(device_id):
+            return
         family = NOTIFY_KIND_FAMILY.get(kind, "freeze")
         when = dt_util.now().strftime("%-I:%M %p").lower()
         line = self._event_line(kind, name, when, recovery, left)
