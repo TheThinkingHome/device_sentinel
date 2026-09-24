@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.22.25 (2026-09-22)
+# File: report_maintainer.py, Version: 0.23.3 (2026-09-24)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -238,9 +238,11 @@ class MaintainerReportMixin:
             "",
             "One line each time a node of a studied stack changed "
             "what it says about itself, and one a day with the "
-            "counts. Node ids, not names. Z-Wave says alive, asleep, "
-            "dead or unknown; Matter says available or away, with the "
-            "network it is on. Kept "
+            "counts. Node ids, not names. Z-Wave says alive, awake, "
+            "asleep, dead or unknown, with its numbers and when it was "
+            "last seen; Matter says available or away, with the network "
+            "it is on and when it was last heard, where the version keeps "
+            "that. Kept "
             f"{PROBE_KEEP_DAYS} days; {len(rows)} line(s).",
             "",
             "| WHEN | STACK | NODE | WAS | NOW | DETAIL |",

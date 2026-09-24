@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_stacks.py, Version: 0.22.26 (2026-09-23)
+# File: study_stacks.py, Version: 0.23.3 (2026-09-24)
 
 """Z-Wave and Matter, gathered so their support can be built.
 
@@ -34,6 +34,7 @@ a later release knows which shape it is reading.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -62,9 +63,16 @@ def _read(holder: Any, name: str, default: Any = None) -> Any:
 
 
 def _plain(value: Any) -> Any:
-    """Return something a JSON file can hold, or its type's name."""
+    """Return something a JSON file can hold, or its type's name.
+
+    A moment is written as the moment it is: the second fleet's first
+    capture wrote the word "datetime" for every Z-Wave node's last
+    seen (0.23.3).
+    """
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
+    if isinstance(value, datetime):
+        return value.isoformat()
     name = getattr(value, "value", None)
     if isinstance(name, (str, int, float)):
         return name
@@ -82,6 +90,88 @@ def _statistics(holder: Any, names: tuple[str, ...]) -> dict[str, Any]:
         if value is not None:
             found[name] = value
     return found
+
+
+# What Z-Wave JS numbers a node's state with, in words (0.23.3). The
+# second fleet's first capture wrote 1, 3 and 4 where the file promised
+# asleep, dead and alive.
+ZWAVE_STATUS_WORDS = {0: "unknown", 1: "asleep", 2: "awake", 3: "dead", 4: "alive"}
+
+
+def _zwave_status(node: Any) -> str | None:
+    """A Z-Wave node's state as a word, whatever shape it arrives in.
+
+    None where the node carries no state at all, which is what a
+    version change looks like from here.
+    """
+    raw = _read(node, "status")
+    if raw is None:
+        return None
+    name = getattr(raw, "name", None)
+    if isinstance(name, str) and name:
+        return name.lower()
+    value = _plain(raw)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return ZWAVE_STATUS_WORDS.get(value, f"state {value}")
+    return str(value)
+
+
+# Matter's Network Commissioning cluster (0x0031) on the root endpoint
+# names the interfaces a node has in its feature map: Wi-Fi, Thread,
+# Ethernet. Where the map is absent, the diagnostics cluster the node
+# carries says the same: Thread (0x0035), Wi-Fi (0x0036), Ethernet
+# (0x0037). Read from the node's attribute table, so a node Home
+# Assistant shows as Thread or Wi-Fi reads the same here (0.23.3).
+_MATTER_FEATURES = ((2, "thread"), (1, "wifi"), (4, "ethernet"))
+_MATTER_DIAGNOSTICS = ((53, "thread"), (54, "wifi"), (55, "ethernet"))
+# Where a version might keep the moment a node was last heard. Read
+# defensively, and the name that answered is recorded (0.23.3).
+_MATTER_SEEN = ("last_seen", "lastSeen", "last_interview")
+
+
+def _matter_attributes(node: Any) -> dict[str, Any]:
+    for holder in (_read(node, "node_data"), node):
+        table = _read(holder, "attributes")
+        if isinstance(table, dict):
+            return table
+    return {}
+
+
+def _matter_network(node: Any) -> str:
+    """Thread, Wi-Fi or Ethernet, from the node's own attributes."""
+    table = _matter_attributes(node)
+    features = table.get("0/49/65532")
+    if isinstance(features, int) and not isinstance(features, bool):
+        found = [name for bit, name in _MATTER_FEATURES if features & bit]
+        if found:
+            return "+".join(found)
+    present = {key.split("/")[1] for key in table if key.startswith("0/")}
+    for cluster, name in _MATTER_DIAGNOSTICS:
+        if str(cluster) in present:
+            return name
+    return ""
+
+
+def _matter_seen(node: Any) -> tuple[str, Any]:
+    """The name a version keeps a node's last contact under, and it."""
+    for holder in (node, _read(node, "node_data")):
+        for name in _MATTER_SEEN:
+            value = _plain(_read(holder, name))
+            if value not in (None, ""):
+                return name, value
+    return "", None
+
+
+def _matter_detail(node: Any) -> str:
+    """What a Matter line carries: its network, and when last heard."""
+    parts = []
+    network = _matter_network(node)
+    if network:
+        parts.append(f"network {network}")
+    name, seen = _matter_seen(node)
+    if name:
+        parts.append(f"{name} {seen}")
+    return ", ".join(parts)
 
 
 _NODE_STATISTICS = (
@@ -112,7 +202,7 @@ def zwave_study(hass: HomeAssistant) -> dict[str, Any]:
         by_status: dict[str, int] = {}
         rows: list[dict[str, Any]] = []
         for node in listed:
-            status = _plain(_read(node, "status"))
+            status = _zwave_status(node)
             key = str(status)
             by_status[key] = by_status.get(key, 0) + 1
             if len(rows) >= NODE_ROW_CAP:
@@ -177,9 +267,11 @@ async def matter_study(hass: HomeAssistant) -> dict[str, Any]:
                 # Which network it is on, so Thread is told from
                 # Wi-Fi. The name is recorded rather than assumed,
                 # since this is the attribute most likely to move.
-                "network": _plain(
-                    _read(node, "network_type") or _read(node, "transport")
-                ),
+                "network": _matter_network(node) or None,
+                # When the node was last heard, under the name the
+                # version keeps it by, recorded beside it (0.23.3).
+                "seen_as": _matter_seen(node)[0] or None,
+                "seen": _matter_seen(node)[1],
             })
         fabrics.append({
             "entry_id": entry.entry_id,
@@ -231,7 +323,7 @@ def _thread_network(hass: HomeAssistant) -> dict[str, Any]:
 
 def _node_state(node: Any) -> tuple[str, str]:
     """A Z-Wave node's state, and the numbers worth keeping."""
-    status = str(_plain(_read(node, "status")))
+    status = str(_zwave_status(node))
     stats = _statistics(node, _NODE_STATISTICS)
     detail = ", ".join(f"{name} {value}" for name, value in stats.items())
     return status, detail
@@ -282,12 +374,6 @@ def probe_rows(hass: HomeAssistant, studied: set[str]) -> list[dict[str, Any]]:
                     "stack": MATTER_DOMAIN,
                     "node": str(_plain(_read(node, "node_id"))),
                     "now": "available" if _read(node, "available") else "away",
-                    "detail": str(
-                        _plain(
-                            _read(node, "network_type")
-                            or _read(node, "transport")
-                            or ""
-                        )
-                    ),
+                    "detail": _matter_detail(node),
                 })
     return rows[:NODE_ROW_CAP * 4]
