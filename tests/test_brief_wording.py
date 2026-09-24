@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.22.24 (2026-09-22)
+# File: test_brief_wording.py, Version: 0.23.0 (2026-09-24)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -1707,11 +1707,11 @@ async def test_the_repeat_window_matches_its_paragraph(
         REPEAT_WINDOW_DAYS,
     )
     from custom_components.device_sentinel.report_brief import (
-        _REPEAT_PARAGRAPH,
+        REPEAT_PARAGRAPH,
     )
 
     assert REPEAT_WINDOW_DAYS == 7.0
-    assert "seven days" in _REPEAT_PARAGRAPH
+    assert "seven days" in REPEAT_PARAGRAPH
 
     device, _entity_id, _ = _register(hass, "rw1", "Old Noise")
     coord = await setup_coordinator(hass)
