@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_hostile.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_outage_hostile.py, Version: 0.23.1 (2026-09-24)
 
 """Hard cases for the 0.21.12 outage rules (#440, #441, #445, #446).
 
@@ -185,22 +185,29 @@ async def test_two_entries_of_one_integration_recover_apart(
     coord = await setup_coordinator(hass)
     coord._grace_until = 0.0
     made = []
+    # Two devices behind each hub, so each entry is an outage behind
+    # its devices: an entry carrying one device is that device offline
+    # and claims nothing (0.23.1).
     for index in range(2):
         source = MockConfigEntry(domain="controller_hub", title=f"Hub {index}")
         source.add_to_hass(hass)
-        device = dr.async_get(hass).async_get_or_create(
-            config_entry_id=source.entry_id,
-            identifiers={("controller_hub", f"n{index}")}, name=f"Node {index}",
-        )
-        er.async_get(hass).async_get_or_create(
-            "sensor", "controller_hub", f"n{index}",
-            device_id=device.id, config_entry=source,
-        )
-        made.append((source, device))
+        first = None
+        for node in range(2):
+            device = dr.async_get(hass).async_get_or_create(
+                config_entry_id=source.entry_id,
+                identifiers={("controller_hub", f"n{index}{node}")},
+                name=f"Node {index}{node}",
+            )
+            er.async_get(hass).async_get_or_create(
+                "sensor", "controller_hub", f"n{index}{node}",
+                device_id=device.id, config_entry=source,
+            )
+            coord._watched[device.id] = "controller_hub"
+            first = first or device
+        made.append((source, first))
     coord._rebuild_registry_view()
     now = dt_util.utcnow().timestamp()
     for source, device in made:
-        coord._watched[device.id] = "controller_hub"
         source.mock_state(hass, ConfigEntryState.LOADED)
     coord._sample_integrations(now)
     for source, _device in made:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_loading.py, Version: 0.22.0 (2026-09-18)
+# File: tests/test_upstream_loading.py, Version: 0.23.1 (2026-09-24)
 
 """An upstream that has not loaded yet is loading, not down (#445).
 
@@ -173,7 +173,9 @@ async def test_an_integration_that_never_loads_is_down_from_the_start(
     freezer.tick(STARTUP_GRACE_SECONDS + 5)
     coord._sample_integrations(dt_util.utcnow().timestamp())
     assert _kinds(coord).count(SYS_INTEGRATION_DOWN) == 1
-    assert coord.upstream_down_since(device.id) == ("controller_hub", started)
+    # The outage is dated from the start; the entry carries one device,
+    # which is judged on its own rather than claimed (0.23.1).
+    assert coord.upstream_down_since_for("controller_hub") == started
 
 
 async def test_diagnostics_carry_the_load_times(hass: HomeAssistant, freezer):

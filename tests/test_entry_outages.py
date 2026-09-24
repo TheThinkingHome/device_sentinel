@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entry_outages.py, Version: 0.22.23 (2026-09-22)
+# File: tests/test_entry_outages.py, Version: 0.23.1 (2026-09-24)
 
 """An integration outage is one config entry's, and survives a restart.
 
@@ -127,7 +127,9 @@ async def test_an_outage_open_at_a_restart_is_resumed_not_repeated(
     coord = await setup_coordinator(hass)
     await _past_grace(coord, freezer)
     (down,) = _rows(coord, SYS_INTEGRATION_DOWN)
-    since = coord.upstream_down_since(device.id)[1]
+    # Read from the outage itself: an entry that carries one device no
+    # longer claims it as a casualty (0.23.1).
+    since = coord.upstream_down_since_for(DOMAIN)
 
     # A restart: everything held in memory is gone, the events log is
     # not, and the run starts again with its own grace.
@@ -140,7 +142,7 @@ async def test_an_outage_open_at_a_restart_is_resumed_not_repeated(
     coord._started_at = dt_util.utcnow().timestamp()
     await _past_grace(coord, freezer)
     assert len(_rows(coord, SYS_INTEGRATION_DOWN)) == 1, "recorded again after a restart"
-    assert coord.upstream_down_since(device.id)[1] == since
+    assert coord.upstream_down_since_for(DOMAIN) == since
 
     source.mock_state(hass, ConfigEntryState.LOADED)
     coord._sample_integrations(dt_util.utcnow().timestamp())

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.22.16 (2026-09-21)
+# File: test_signal_stats.py, Version: 0.23.1 (2026-09-24)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -483,7 +483,10 @@ async def test_the_brief_is_also_a_page_under_www(
     device, _ = register_device(hass, "bh1", "Anomalous Device")
     record = coord.data[DATA_DEVICES][device.id]
     record[DEV_BATTERY_VALUE] = 40.0
-    record["battery_daily_value"] = [80.0, 70.0, 60.0, 50.0, 40.0]
+    # Falling in small steps: a cell that falls only in steps of five
+    # or more is judged by the low threshold alone and never
+    # forecast (0.23.1), and this test needs one in the brief.
+    record["battery_daily_value"] = [52.0, 50.0, 48.0, 46.0, 44.0, 42.0, 40.0]
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
 
@@ -653,7 +656,10 @@ async def test_the_link_is_external_then_internal_never_relative(
     device, _ = register_device(hass, "ex1", "Anomalous Device")
     record = coord.data[DATA_DEVICES][device.id]
     record[DEV_BATTERY_VALUE] = 40.0
-    record["battery_daily_value"] = [80.0, 70.0, 60.0, 50.0, 40.0]
+    # Falling in small steps: a cell that falls only in steps of five
+    # or more is judged by the low threshold alone and never
+    # forecast (0.23.1), and this test needs one in the brief.
+    record["battery_daily_value"] = [52.0, 50.0, 48.0, 46.0, 44.0, 42.0, 40.0]
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     path = os.path.join(
