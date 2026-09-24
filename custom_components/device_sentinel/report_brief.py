@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.22.27 (2026-09-23)
+# File: report_brief.py, Version: 0.23.0 (2026-09-24)
 
 """The daily brief: the one report written for a person.
 
@@ -39,6 +39,7 @@ from .repairs import (
     missing_targets,
 )
 from .const import (
+    STACK_DISPLAY_NAMES,
     DEV_SIGNAL_VALUE,
     FLOOD_MIN_DAYS,
     FLOOD_MIN_STORMS,
@@ -170,7 +171,7 @@ _REPEAT_NOUNS = {
 
 # The author's own wording, printed verbatim beneath the Repeat
 # Offenders table (ruling #374).
-_REPEAT_PARAGRAPH = (
+REPEAT_PARAGRAPH = (
     "This table lists repeat offenders. Every row represents a "
     "device that failed more than once in the last seven days "
     "for no obvious reason. We ruled out the usual causes. These "
@@ -922,7 +923,15 @@ class BriefMixin:
         return f"{count} {unit}{'' if count == 1 else 's'}"
 
     def _integration_title(self, domain: str) -> str:
-        """The integration's name as Home Assistant shows it."""
+        """The integration's name as Home Assistant shows it.
+
+        Except where the dashboard's own status boxes already name it
+        otherwise: Home Assistant calls ZHA "Zigbee Home Automation",
+        the boxes and the outage lines call it ZHA, and one name for
+        one thing is the rule (0.23.0, from Tim Plas's review).
+        """
+        if domain in STACK_DISPLAY_NAMES:
+            return STACK_DISPLAY_NAMES[domain]
         try:
             return async_get_loaded_integration(self.hass, domain).name
         except Exception:  # noqa: BLE001 - a name is never worth a failure
@@ -2136,7 +2145,7 @@ class BriefMixin:
                 f"| {row['what']} | {row['n']} | {row['when']} "
                 f"| {row['typical']} | {row['with']} |"
             )
-        lines += ["", _REPEAT_PARAGRAPH, ""]
+        lines += ["", REPEAT_PARAGRAPH, ""]
         return lines
 
     def _brief_prose(

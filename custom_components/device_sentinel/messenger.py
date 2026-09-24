@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.18.6 (2026-08-27)
+# File: messenger.py, Version: 0.23.0 (2026-09-24)
 
 """Sending the daily brief, and nothing else yet.
 
@@ -48,6 +48,9 @@ from .const import (
     RESTORE_NOTICE_TITLE,
     REMINDER_MODE_NONE,
     REMINDER_MODE_OVERNIGHT,
+    SMTP_DOMAIN,
+    SMTP_SEND_MESSAGE,
+    SMTP_TARGET_PREFIX,
 )
 
 # Inline rather than a stylesheet block, because several mail
@@ -146,6 +149,32 @@ class MessengerMixin:
             return 0
         sent = 0
         for target in targets:
+            if target.startswith(SMTP_TARGET_PREFIX):
+                # An SMTP recipient chosen as its entity: the page goes
+                # as the email's HTML body through smtp.send_message,
+                # which Home Assistant keeps when it retires the
+                # old-style notify actions for SMTP in 2027.3. The
+                # composed text stays as the plain body (0.23.0).
+                payload = self._brief_payload(target, text)
+                try:
+                    await self.hass.services.async_call(
+                        SMTP_DOMAIN,
+                        SMTP_SEND_MESSAGE,
+                        {
+                            "title": payload["title"],
+                            "message": payload["message"],
+                            "html": payload["data"]["html"],
+                        },
+                        blocking=True,
+                        target={"entity_id": target[len(SMTP_TARGET_PREFIX):]},
+                    )
+                except Exception as err:  # noqa: BLE001
+                    LOGGER.warning(
+                        "Daily brief to %s was not delivered: %s", target, err
+                    )
+                    continue
+                sent += 1
+                continue
             if target == PERSISTENT_TARGET:
                 domain, service = PERSISTENT_TARGET, PERSISTENT_CREATE
             else:
@@ -213,15 +242,23 @@ class MessengerMixin:
         }
         targets.update(self._high_priority_targets())
         for target in sorted(targets):
-            domain, _, service = target.partition(".")
-            if not service:
-                continue
+            call: dict[str, Any] = {}
+            if target.startswith(SMTP_TARGET_PREFIX):
+                domain, service = SMTP_DOMAIN, SMTP_SEND_MESSAGE
+                call["target"] = {
+                    "entity_id": target[len(SMTP_TARGET_PREFIX):]
+                }
+            else:
+                domain, _, service = target.partition(".")
+                if not service:
+                    continue
             try:
                 await self.hass.services.async_call(
                     domain,
                     service,
                     {"title": RESTORE_NOTICE_TITLE, "message": message},
                     blocking=True,
+                    **call,
                 )
             except Exception as err:  # noqa: BLE001
                 LOGGER.warning(

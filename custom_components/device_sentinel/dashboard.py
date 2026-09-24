@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.22.27 (2026-09-23)
+# File: dashboard.py, Version: 0.23.0 (2026-09-24)
 
 """What the dashboard reads from the coordinator.
 
@@ -32,6 +32,7 @@ from homeassistant.util import dt as dt_util
 from datetime import date, timedelta
 
 from .const import (
+    BROKER_RIDER_DOMAINS,
     SYS_DETAIL,
     BATTERY_TREND_WINDOWS,
     SIGNAL_TREND_MIN_DAYS,
@@ -131,6 +132,7 @@ from .const import (
 )
 from .escalation import fold
 from .outage_detail import pair_key
+from .report_brief import REPEAT_PARAGRAPH
 from .device_fields import device_field
 
 
@@ -516,6 +518,26 @@ class IntegrationViewMixin:
         ))
         title = self._integration_title(domain)
         watched = sum(1 for row in devices if row["watched"])
+        # The devices another integration owns that reach Home
+        # Assistant through the broker, listed on MQTT's page beneath
+        # its own (0.23.0).
+        behind_broker: list[dict[str, Any]] = []
+        if domain == BROKER_SCOPE:
+            for row in self.classification_rows():
+                if row["integration"] not in BROKER_RIDER_DOMAINS:
+                    continue
+                problem = problems.get(row["device_id"])
+                behind_broker.append({
+                    "device_id": row["device_id"],
+                    "name": row["name"],
+                    "integration": self._integration_title(row["integration"]),
+                    "watched": row["watched"],
+                    "muted": row["muted"],
+                    "set_aside": row["set_aside"],
+                    "problem": problem["problem"] if problem else "",
+                    "acknowledged": bool(problem and problem["acknowledged"]),
+                })
+            behind_broker.sort(key=lambda row: row["name"].lower())
         return {
             "domain": domain,
             "name": title,
@@ -523,6 +545,7 @@ class IntegrationViewMixin:
             "first_seen": domain in (self.data.get(DATA_ROUTERS_SEEN) or [])
             and domain in self.excluded_integrations,
             "devices": listed,
+            "behind_broker": behind_broker,
             "outages": self.integration_outages().get(domain, []),
             "bursts": self._bursts(domain),
             "recommendations": [
@@ -1046,16 +1069,34 @@ class BriefViewMixin:
         # they can be told only while those days are still on record.
         held_from = dt_util.utcnow().timestamp() - INCIDENT_KEEP_DAYS * 86400.0
         covered = end - REPEAT_WINDOW_DAYS * 86400.0 >= held_from
-        repeat: dict[str, Any] = {"available": covered, "lines": [], "words": ""}
+        repeat: dict[str, Any] = {
+            "available": covered,
+            "rows": [],
+            "paragraph": "",
+            "words": "",
+        }
         if covered:
-            # The brief's own section, lines and all, so the tab and
-            # the file say the same thing about the same devices.
-            lines = [
-                line for line in self._repeat_offenders_section(end)
-                if line and not line.startswith("## ")
+            # The rows the brief's section is built from, so the tab
+            # and the file say the same thing about the same devices.
+            # The tab once took the section's Markdown and printed each
+            # table row as a paragraph of pipes (0.23.0, from Tim
+            # Plas's review): it draws the table itself from the rows.
+            rows = self._repeat_offender_rows(end)
+            repeat["rows"] = [
+                {
+                    "device_id": row.get("device_id"),
+                    "name": row["name"],
+                    "what": row["what"],
+                    "times": row["n"],
+                    "when": row["when"],
+                    "typical": row["typical"],
+                    "with": row["with"],
+                }
+                for row in rows
             ]
-            repeat["lines"] = lines
-            if not lines:
+            if rows:
+                repeat["paragraph"] = REPEAT_PARAGRAPH
+            else:
                 repeat["words"] = (
                     "No device failed more than once in the seven days "
                     "before this one for no obvious reason."

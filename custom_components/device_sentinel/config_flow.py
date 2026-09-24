@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.21.14 (2026-09-18)
+# File: config_flow.py, Version: 0.23.0 (2026-09-24)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -61,12 +61,15 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .naming import display_name
 from .wifi import scan_networks, wireless_interfaces
 
 from .const import (
+    SMTP_DOMAIN,
+    SMTP_TARGET_PREFIX,
     CONF_REPORT_LINKS,
     DEFAULT_REPORT_LINKS,
     REPORT_LINKS_EXTERNAL,
@@ -196,8 +199,39 @@ def _discover_notify_targets(hass: Any) -> list[str]:
     for service_name in hass.services.async_services().get(
         NOTIFY_DOMAIN, {}
     ):
+        # notify.send_message is the action for notify entities, not a
+        # target of its own; offered as one, it sent to nobody
+        # (0.23.0).
+        if service_name == "send_message":
+            continue
         targets.add(f"{NOTIFY_DOMAIN}.{service_name}")
     return sorted(targets)
+
+
+def _smtp_recipients(hass: Any) -> list[selector.SelectOptionDict]:
+    """Return the SMTP recipients, each chosen as its notify entity.
+
+    Home Assistant 2026.8 gave the SMTP integration one notify entity
+    per recipient and the smtp.send_message action, which carries an
+    HTML body; the old-style notify action per recipient is retired in
+    2027.3. Offered beside the old actions rather than in place of
+    them, so a person moves over when they choose (0.23.0). Labelled
+    by the entity's name, because its id says nothing a person reads.
+    """
+    options: list[selector.SelectOptionDict] = []
+    for entry in er.async_get(hass).entities.values():
+        if entry.domain != NOTIFY_DOMAIN or entry.platform != SMTP_DOMAIN:
+            continue
+        if entry.disabled_by is not None:
+            continue
+        name = entry.name or entry.original_name or entry.entity_id
+        options.append(
+            selector.SelectOptionDict(
+                value=f"{SMTP_TARGET_PREFIX}{entry.entity_id}",
+                label=f"Email, HTML: {name} ({entry.entity_id})",
+            )
+        )
+    return sorted(options, key=lambda option: option["label"].lower())
 
 
 def _device_options(
@@ -1525,6 +1559,33 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 )
             )
 
+        def brief_selector() -> selector.SelectSelector:
+            """The brief's targets: the old actions and SMTP recipients.
+
+            A recipient already saved keeps its place in the list even
+            if its entity has gone, so the screen can show every value
+            it holds, as the device pickers do.
+            """
+            smtp = _smtp_recipients(self.hass)
+            offered = {option["value"] for option in smtp}
+            held = [
+                selector.SelectOptionDict(value=value, label=value)
+                for value in options.get(CONF_BRIEF_TARGETS, [])
+                if value.startswith(SMTP_TARGET_PREFIX) and value not in offered
+            ]
+            plain = [
+                selector.SelectOptionDict(value=value, label=value)
+                for value in discovered
+            ]
+            return selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[*plain, *smtp, *held],
+                    multiple=True,
+                    custom_value=True,
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            )
+
         instant_section = vol.Schema(
             {
                 vol.Optional(
@@ -1593,7 +1654,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_BRIEF_TARGETS,
                     default=options.get(CONF_BRIEF_TARGETS, []),
-                ): target_selector(),
+                ): brief_selector(),
                 vol.Required(
                     CONF_REPORT_LINKS,
                     default=options.get(

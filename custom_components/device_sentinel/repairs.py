@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.22.28 (2026-09-23)
+# File: repairs.py, Version: 0.23.0 (2026-09-24)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -60,9 +60,13 @@ import voluptuous as vol
 from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
 from homeassistant.core import DOMAIN as HOMEASSISTANT_DOMAIN
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
 from .const import (
+    SMTP_DOMAIN,
+    SMTP_SEND_MESSAGE,
+    SMTP_TARGET_PREFIX,
     CONF_BRIEF_TARGETS,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_NORMAL_PRIORITY_TARGETS,
@@ -147,8 +151,18 @@ def missing_targets(hass: HomeAssistant, entry: Any) -> list[str]:
     same way at send time and neither can be fixed by waiting.
     """
     missing: list[str] = []
+    entities = er.async_get(hass)
     for target in _configured_targets(entry):
         if target == PERSISTENT_TARGET:
+            continue
+        if target.startswith(SMTP_TARGET_PREFIX):
+            # An SMTP recipient is present while its entity is and the
+            # action that sends to it exists (0.23.0).
+            entity_id = target[len(SMTP_TARGET_PREFIX):]
+            if entities.async_get(entity_id) is None or not (
+                hass.services.has_service(SMTP_DOMAIN, SMTP_SEND_MESSAGE)
+            ):
+                missing.append(target)
             continue
         domain, _, service = target.partition(".")
         if not service or not hass.services.has_service(domain, service):

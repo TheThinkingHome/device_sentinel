@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.22.28 (2026-09-23)
+# File: store.py, Version: 0.23.0 (2026-09-24)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -72,6 +72,8 @@ from .const import (
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     FREEZE_CATEGORY_FROZEN,
+    FREEZE_CATEGORY_NEVER_REPORTED,
+    FREEZE_NOT_REPORTED_SECONDS,
     DEV_LAST_ACTIVITY,
     DEV_TAINTED,
     DEV_TODAY_MAX,
@@ -738,9 +740,16 @@ class StorageMixin:
         device needs nothing, because that verdict is read from its
         entities rather than its clock.
 
-        A device with no learned history keeps no clock, because it has
-        none to restart: one that has never reported must still read
-        so. Returns how many clocks were restarted.
+        A device with no learned history is restarted too when it was
+        first seen more than FREEZE_NOT_REPORTED_SECONDS ago and its
+        stored verdict is not never reported: that old, it would carry
+        the verdict if it had never spoken, so it has spoken. Two
+        devices on the fourth fleet, 22 and 16 events and no learned
+        day yet, lost their clocks and read never reported in the
+        simulation of 23 September (0.23.0). A device younger than that
+        keeps no clock and still has its whole window to speak, and one
+        stored as never reported still reads so. Returns how many
+        clocks were restarted.
         """
         now = dt_util.utcnow().timestamp()
         restarted = 0
@@ -751,7 +760,9 @@ class StorageMixin:
             # file written before the split (ruling #101), and is kept.
             if record.get(DEV_LAST_ACTIVITY) is not None:
                 continue
-            if not record.get(DEV_DAILY_MAX):
+            if not record.get(DEV_DAILY_MAX) and not self._has_spoken(
+                record, now
+            ):
                 continue
             since = record.get(DEV_FROZEN_SINCE)
             if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_FROZEN and (
@@ -765,6 +776,23 @@ class StorageMixin:
             restarted += 1
         self._clocks_reset_at = now
         return restarted
+
+    @staticmethod
+    def _has_spoken(record: dict[str, Any], now: float) -> bool:
+        """Return whether a device without history must have reported.
+
+        First seen long enough ago to be judged never reported, and not
+        judged so: the verdict it does not carry is the proof (0.23.0).
+        """
+        if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_NEVER_REPORTED:
+            return False
+        first = record.get(DEV_FIRST_OBSERVED)
+        if not isinstance(first, str):
+            return False
+        observed = dt_util.parse_datetime(first)
+        if observed is None:
+            return False
+        return now - observed.timestamp() >= FREEZE_NOT_REPORTED_SECONDS
 
     def _lost_clock_window(self, record: dict[str, Any]) -> float:
         """Return a frozen device's window for rebuilding its clock.

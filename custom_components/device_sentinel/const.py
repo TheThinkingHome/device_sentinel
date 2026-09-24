@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.22.28 (2026-09-23)
+# File: const.py, Version: 0.23.0 (2026-09-24)
 
 """Constants for the Device Sentinel integration."""
 
@@ -105,6 +105,13 @@ BROKER_STATES = [BROKER_RUNNING, BROKER_DOWN, BROKER_UNKNOWN]
 # problem list resolves Wi-Fi through that map and the sensor reads
 # it directly, and the two must not be able to drift apart.
 WIFI_DISPLAY_NAME = "WiFi"
+
+# Integrations whose devices reach Home Assistant only through the MQTT
+# broker without being MQTT's own devices. The MQTT integration's page
+# lists them beneath its own, because the broker failing takes them
+# down too (0.23.0, from Tim Plas's review). Tasmota is the one Home
+# Assistant ships that works no other way.
+BROKER_RIDER_DOMAINS = ("tasmota",)
 
 # What a stack is called when a person reads it (ruling #266). The
 # internal key is the domain the stacks module uses; a to-do row
@@ -1798,6 +1805,16 @@ DEFAULT_REPORT_LINKS = REPORT_LINKS_NONE
 # to learn how a target is spelled.
 NOTIFY_DOMAIN = "notify"
 PERSISTENT_TARGET = "persistent_notification"
+
+# An SMTP recipient, chosen as its notify entity and sent through
+# smtp.send_message, the action that still carries the HTML page
+# (0.23.0). Stored as "smtp:notify.<entity>" so it can never be
+# mistaken for an old-style notify action of the same name: Home
+# Assistant retires those for SMTP in 2027.3, and until then both may
+# exist side by side, the old one chosen and working as before.
+SMTP_TARGET_PREFIX = "smtp:"
+SMTP_DOMAIN = "smtp"
+SMTP_SEND_MESSAGE = "send_message"
 PERSISTENT_CREATE = "create"
 # The restore notice title, used by the email and the push. The
 # persistent notification it once carried is retired: the durable
