@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.23.1 (2026-09-24)
+// File: frontend/panel.js, Version: 0.23.2 (2026-09-24)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -61,6 +61,8 @@ const STATUS_WORDS = {
   reporting: ["Reporting", "var(--success-color, #43a047)"],
   frozen: ["Frozen", "var(--error-color, #db4437)"],
   unavailable: ["Unavailable", "var(--error-color, #db4437)"],
+  // A device that keeps dropping out (0.23.2).
+  flapping: ["Flapping", "var(--error-color, #db4437)"],
   unknown: ["Unknown", "var(--warning-color, #ffa600)"],
   never_reported: ["Never reported", "var(--error-color, #db4437)"],
   // Nobody is watching it, so there is no verdict to give (0.22.24).
@@ -1548,7 +1550,24 @@ class DeviceSentinelPanel extends HTMLElement {
       : el("p", { class: "muted", style: "margin:0" }, "No day had more than one device fall below its line.");
     const unsteady = pick("unsteady");
     const steady = pick("steady");
+    // Devices in a flap (0.23.2): worded as something to check,
+    // because a flap does not prove a weak link.
+    const flapping = page.dropping_out || [];
+    const dropping = flapping.length
+      ? el("div", { class: "scroll" }, el("table", {},
+          el("thead", {}, el("tr", {}, el("th", {}, "DEVICE"), el("th", { class: "num" }, "DROPS"),
+            el("th", {}, "SINCE"), el("th", { class: "num" }, "SIGNAL"))),
+          el("tbody", {}, ...flapping.map((row) => el("tr", {},
+            el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+            el("td", { class: "num" }, String(row.drops)),
+            el("td", {}, row.since ? moment(row.since) : ""),
+            el("td", { class: "num" }, row.signal === null || row.signal === undefined ? "" : String(Math.round(row.signal))))))))
+      : el("p", { class: "muted", style: "margin:0" }, "No device is dropping out again and again.");
     this._pane.replaceChildren(summary,
+      el("h3", { class: "section" }, "Devices That Keep Dropping Out"),
+      el("p", { class: "small", style: "margin:0;line-height:1.5" },
+        "A device that goes unavailable three times in two hours, and stays listed until it holds on longer than it has between drops. Check its signal and the router it connects through."),
+      dropping,
       el("h3", { class: "section" }, "Days Several Devices Had a Bad Day"),
       el("p", { class: "small", style: "margin:0;line-height:1.5" },
         "One device having a bad day is its own business. Several on the same day usually means something happened to the mesh or the house."),
@@ -1682,6 +1701,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const now = Date.now();
     const status = page.status;
     let [word, colour] = STATUS_WORDS[status.category] || [status.category, "var(--disabled-text-color, #888)"];
+    if (status.flap) word = `${word}, ${status.flap}`;
     // Muted: the verdict is true and nobody asked to hear it, so the
     // word stays and the alarm colour goes (0.22.26).
     if (page.identity && page.identity.muted && status.category !== "set_aside") {
