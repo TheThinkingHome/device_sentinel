@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.22.28 (2026-09-23)
+# File: test_notifications.py, Version: 0.23.2 (2026-09-24)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -365,6 +365,11 @@ class _Harness(NotifierMixin):
     @property
     def frozen_devices_list(self):
         return self._freeze
+
+    @property
+    def flapping_list(self):
+        """No device in a flap unless a test says so (0.23.2)."""
+        return []
 
     @property
     def reportable_down_rows(self):

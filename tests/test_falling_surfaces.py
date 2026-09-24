@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_falling_surfaces.py, Version: 0.22.5 (2026-09-20)
+# File: tests/test_falling_surfaces.py, Version: 0.23.2 (2026-09-24)
 
 """The falling battery on the phone and the card, and the crossing.
 
@@ -43,6 +43,7 @@ from custom_components.device_sentinel.const import (
     NOTIFY_KIND_FAMILY,
     FREEZE_CATEGORY_NEVER_REPORTED,
     TODO_KINDS_ALL,
+    TODO_KIND_FLAPPING,
     TODO_KIND_FROZEN,
     TODO_KIND_FALLING_BATTERY,
     TODO_KIND_LOW_BATTERY,
@@ -58,6 +59,7 @@ from tests.helpers import setup_coordinator
 # the card fails here rather than showing a person an all-clear
 # while the list says otherwise (ruling #220).
 CARD_SOURCE = {
+    TODO_KIND_FLAPPING: ("flapping_list", {"since": 1790000000.0, "drops": 3}),
     TODO_KIND_FROZEN: ("frozen_devices_list", {"category": "frozen"}),
     TODO_KIND_UNAVAILABLE: (
         "frozen_devices_list",
