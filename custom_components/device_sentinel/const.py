@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.0 (2026-09-24)
+# File: const.py, Version: 0.23.1 (2026-09-24)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1248,6 +1248,23 @@ DEV_BATTERY_REPLACED_AT = "battery_replaced_at"
 # suspected replacement waits for a second sample to confirm it
 # (ruling #405). None when nothing is pending.
 DEV_BATTERY_REPLACED_PENDING = "battery_replaced_pending"
+# How many day-to-day falls of BATTERY_COARSE_STEP or more a cell has
+# made since it last showed a smaller change (0.23.1). Stored because
+# a cell that reports in 10-point steps may step once a month or two,
+# and a second step can land after the first has aged out of the
+# daily history. Two confirm a coarse reporter; any smaller change
+# returns it to smooth.
+DEV_BATTERY_COARSE_DROPS = "battery_coarse_drops"
+BATTERY_COARSE_STEP = 5.0
+BATTERY_COARSE_CONFIRM = 2
+BATTERY_STEPS_SMOOTH = "smooth"
+BATTERY_STEPS_UNKNOWN = "not_enough"
+BATTERY_STEPS_COARSE = "coarse"
+BATTERY_STEPS_WORDS = {
+    BATTERY_STEPS_SMOOTH: "Smooth",
+    BATTERY_STEPS_UNKNOWN: "Not enough data",
+    BATTERY_STEPS_COARSE: "Coarse",
+}
 SYS_BATTERY_REPLACED = "battery_replaced"
 
 # What the reading can say. Ordered as the rules are tested.
@@ -1465,6 +1482,7 @@ EPOCH_KEPT = (
     DEV_BATTERY_DAILY_PREVIOUS,
     DEV_BATTERY_REPLACED_AT,
     DEV_BATTERY_REPLACED_PENDING,
+    DEV_BATTERY_COARSE_DROPS,
     DEV_SIGNAL_READS,
     DEV_SET_ASIDE_SINCE,
     DEV_LAST_ACTIVITY,

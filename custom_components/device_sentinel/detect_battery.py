@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.21.11 (2026-09-16)
+# File: detect_battery.py, Version: 0.23.1 (2026-09-24)
 
 """Battery: the level threshold and what is tracked.
 
@@ -47,7 +47,13 @@ from .const import (
     BATTERY_REPLACED_LANDS,
     BATTERY_REPLACED_FROM_BELOW,
     BATTERY_REPLACED_RISE,
+    DEV_BATTERY_COARSE_DROPS,
     DEV_BATTERY_DAILY_PREVIOUS,
+    BATTERY_COARSE_CONFIRM,
+    BATTERY_COARSE_STEP,
+    BATTERY_STEPS_COARSE,
+    BATTERY_STEPS_SMOOTH,
+    BATTERY_STEPS_UNKNOWN,
     DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_REPLACED_AT,
     SYS_BATTERY_REPLACED,
@@ -104,6 +110,7 @@ class BatteryMixin:
             # later. So the rise is remembered and the series keeps
             # growing; the next sample decides.
             record[DEV_BATTERY_REPLACED_PENDING] = previous
+            self._note_battery_step(record, previous, level)
             series.append(level)
             del series[:-self.retention_days]
             return
@@ -113,6 +120,7 @@ class BatteryMixin:
                 # The rise did not hold against the reading before
                 # it, so the day it appeared was a bad sample and the
                 # history it would have erased is still the truth.
+                self._note_battery_step(record, series[-1] if series else None, level)
                 series.append(level)
                 del series[:-self.retention_days]
                 return
@@ -128,6 +136,8 @@ class BatteryMixin:
             carried = series[-1:]
             record[DEV_BATTERY_DAILY_PREVIOUS] = list(series[:-1])
             record[DEV_BATTERY_REPLACED_AT] = dt_util.utcnow().isoformat()
+            # A new cell is judged afresh (0.23.1).
+            record[DEV_BATTERY_COARSE_DROPS] = 0
             record[DEV_BATTERY_LOW] = False
             record[DEV_BATTERY_SINCE] = None
             series = record[DEV_BATTERY_DAILY] = carried
@@ -136,8 +146,81 @@ class BatteryMixin:
                 scope=SYS_SCOPE_SYSTEM,
                 detail=f"{device_id} {pending:.0f} {level:.0f}",
             )
+        else:
+            self._note_battery_step(record, previous, level)
         series.append(level)
         del series[:-self.retention_days]
+
+    @staticmethod
+    def _note_battery_step(
+        record: dict[str, Any], previous: Any, level: float
+    ) -> None:
+        """Count a coarse fall, or clear the count on a smaller change.
+
+        A fall of BATTERY_COARSE_STEP points or more from one day to
+        the next is counted; any change smaller than that returns the
+        cell to smooth, which is also how a cell whose integration
+        starts reporting finer is re-evaluated. A day that did not
+        change says nothing (0.23.1).
+        """
+        if not isinstance(previous, (int, float)):
+            return
+        change = level - previous
+        if change == 0:
+            return
+        drops = record.get(DEV_BATTERY_COARSE_DROPS)
+        drops = drops if isinstance(drops, int) and not isinstance(drops, bool) else 0
+        if abs(change) < BATTERY_COARSE_STEP:
+            record[DEV_BATTERY_COARSE_DROPS] = 0
+        elif change <= -BATTERY_COARSE_STEP:
+            record[DEV_BATTERY_COARSE_DROPS] = drops + 1
+
+    @staticmethod
+    def battery_steps(record: dict[str, Any]) -> str:
+        """Return how a cell reports: smooth, not enough data, or coarse.
+
+        Tim Plas's S02 reports in 10-point steps. It sat at 40 for
+        nine days, dropped once to 30, and the seven-day trend read
+        the single step as a steep fall and listed it as empty in
+        about a month. A cell is coarse after two falls of five points
+        or more with no smaller change in its retained history, which
+        is at least 30 days; a battery that accelerates toward empty
+        shows smaller changes on its way down, so it never qualifies,
+        and neither does one that has never changed. Its forecast is
+        withheld from the first such fall, and once coarse it is
+        judged against the low threshold alone (0.23.1).
+
+        The stored count keeps a second step that lands after the
+        first has aged out; the history's own count covers a cell
+        whose steps were recorded before the count existed.
+        """
+        series = [
+            value
+            for value in (record.get(DEV_BATTERY_DAILY) or [])
+            if isinstance(value, (int, float))
+        ]
+        big_drops = 0
+        smooth = False
+        for before, after in zip(series, series[1:]):
+            change = after - before
+            if change == 0:
+                continue
+            if abs(change) < BATTERY_COARSE_STEP:
+                smooth = True
+            elif change <= -BATTERY_COARSE_STEP:
+                big_drops += 1
+        stored = record.get(DEV_BATTERY_COARSE_DROPS)
+        stored = stored if isinstance(stored, int) and not isinstance(stored, bool) else 0
+        # Any smaller change in the retained history is a smooth cell,
+        # however large its other falls: Door 2nd Bedroom on the
+        # reference rig fell 10 and 9 points in 68 days among 44
+        # smaller changes, a sag, not a step.
+        if smooth:
+            return BATTERY_STEPS_SMOOTH
+        drops = max(stored, big_drops)
+        if drops >= BATTERY_COARSE_CONFIRM:
+            return BATTERY_STEPS_COARSE
+        return BATTERY_STEPS_UNKNOWN
 
     @staticmethod
     def _battery_replaced(previous: float, level: float) -> bool:

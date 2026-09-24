@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.22.16 (2026-09-21)
+# File: report_battery.py, Version: 0.23.1 (2026-09-24)
 
 """The battery report: which cells are going to be low.
 
@@ -29,6 +29,7 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BATTERY_STEPS_SMOOTH,
     BATTERY_TREND_MEANINGS,
     BATTERY_ACCELERATING_GAP,
     BATTERY_BLOCK_DAYS,
@@ -306,7 +307,16 @@ class BatteryReportMixin:
             # predicts how a projection then behaves, so no rule is
             # built on it (ruling #395).
             row["spread"] = self._battery_spread(series[-BATTERY_SLOPE_DAYS:])
-            if slope < BATTERY_FALLING_SLOPE and row["level"] > 0:
+            # A cell that reports in coarse steps, or has fallen by one
+            # such step and not yet shown which it is, is not
+            # forecast: it is judged against the low threshold alone
+            # (0.23.1).
+            row["steps"] = self.battery_steps(record)
+            if (
+                slope < BATTERY_FALLING_SLOPE
+                and row["level"] > 0
+                and row["steps"] == BATTERY_STEPS_SMOOTH
+            ):
                 row["slope"] = slope
                 row["days"] = row["level"] / -slope
                 falling.append(row)

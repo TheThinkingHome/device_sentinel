@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.20.19 (2026-09-12)
+# File: records.py, Version: 0.23.1 (2026-09-24)
 
 """The device record shape, and the two helpers that read it.
 
@@ -32,6 +32,7 @@ from .const import (
     DEV_BATTERY_DAILY_PREVIOUS,
     DEV_BATTERY_REPLACED_AT,
     DEV_BATTERY_REPLACED_PENDING,
+    DEV_BATTERY_COARSE_DROPS,
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
@@ -146,6 +147,7 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_BATTERY_DAILY_PREVIOUS: [],
         DEV_BATTERY_REPLACED_AT: None,
         DEV_BATTERY_REPLACED_PENDING: None,
+        DEV_BATTERY_COARSE_DROPS: 0,
         DEV_BATTERY_VALUE: None,
         DEV_BATTERY_DAILY: [],
         DEV_FROZEN_CATEGORY: None,

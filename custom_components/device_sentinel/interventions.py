@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.22.24 (2026-09-22)
+# File: interventions.py, Version: 0.23.1 (2026-09-24)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -346,6 +346,9 @@ class InterventionMixin:
         that is correct. The timeout travels with the reading, in the
         units the bridge published it in (ruling #221).
         """
+        failed = self._own_entry_failure(device_id)
+        if failed is not None:
+            return failed
         seen = self.reachability(device_id)
         if seen is None:
             return None
@@ -364,6 +367,27 @@ class InterventionMixin:
             "Zigbee2MQTT reads it as online. Zigbee2MQTT pings a mains "
             f"device every {_spell_minutes(minutes)}."
         )
+
+    def _own_entry_failure(self, device_id: str) -> str | None:
+        """Return why a device's own connection is down, or None.
+
+        For a device that is its entry's only device, whose outage has
+        been told (0.23.1). The words are the owner's from 0.22.23:
+        "its SwitchBot connection failed to start".
+        """
+        entry_id = self._entry_of_device.get(device_id)
+        if entry_id is None or self._entry_only_device.get(entry_id) != device_id:
+            return None
+        if entry_id not in self._integration_told:
+            return None
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None:
+            return None
+        title = self._integration_title(entry.domain)
+        detail = self._integration_detail.get(entry_id)
+        if parse_detail(detail)[2] == FAILED:
+            return f"Its {title} connection failed to start."
+        return f"Its {title} connection is down."
 
     def _sample_broker(self, now: float) -> str:
         """Record the broker going and returning. Returns its state.
@@ -802,9 +826,21 @@ class InterventionMixin:
         )
 
     def integration_down_since(self, device_id: str) -> tuple[str, float] | None:
-        """Return the integration that is down for this device."""
+        """Return the integration that is down for this device.
+
+        Never for a device that is its entry's only device (0.23.1). An
+        entry per device, as SwitchBot, TP-Link and Brother make, failing
+        is that device offline, not an outage behind it: claimed as a
+        casualty, the second fleet's two dead freezer sensors were kept
+        off the Problem List, counted instead under "switchbot down: 2
+        of 14 total devices unavailable", and went on and off the list
+        at each restart as the outage was taken back. They are judged
+        on their own, and the reason travels with the verdict.
+        """
         entry_id = self._entry_of_device.get(device_id)
         if entry_id is None:
+            return None
+        if self._entry_only_device.get(entry_id) == device_id:
             return None
         since = self._entry_down_at.get(entry_id)
         if since is None or entry_id not in self._integration_told:

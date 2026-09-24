@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.23.0 (2026-09-24)
+# File: dashboard.py, Version: 0.23.1 (2026-09-24)
 
 """What the dashboard reads from the coordinator.
 
@@ -32,6 +32,7 @@ from homeassistant.util import dt as dt_util
 from datetime import date, timedelta
 
 from .const import (
+    BATTERY_STEPS_WORDS,
     BROKER_RIDER_DOMAINS,
     SYS_DETAIL,
     BATTERY_TREND_WINDOWS,
@@ -293,9 +294,18 @@ class IntegrationViewMixin:
                     "worst": row.get(SYS_WORST),
                     "open": False,
                 }))
-        for (kind, scope, _entry), row in open_rows.items():
+        for (kind, scope, entry), row in open_rows.items():
             owner = self._outage_owner(kind, scope)
             if owner is None or row[SYS_WHEN] < since:
+                continue
+            # An integration outage written before 0.22.23 names no
+            # entry, and a run recorded one afresh after each restart,
+            # so it never meets its return: the second fleet's page
+            # read "SwitchBot Bluetooth integration, still down" for
+            # days while 12 of its 14 devices reported. Closed at the
+            # upgrade without a word (0.23.1): its outages are told
+            # by the entry-named rows since.
+            if kind == SYS_INTEGRATION_DOWN and entry is None:
                 continue
             found.append((owner, {
                 "went_down": dt_util.utc_from_timestamp(row[SYS_WHEN]).isoformat(),
@@ -739,6 +749,13 @@ class DeviceViewMixin:
                 "muted": self.mute_text(device_id),
                 # Filled by the battery library lookup, when it arrives.
                 "battery_type": None,
+                # How the cell reports, in the words Battery Trends
+                # uses (0.23.1); empty for a device with no battery.
+                "battery_steps": (
+                    BATTERY_STEPS_WORDS[self.battery_steps(record)]
+                    if record.get(DEV_BATTERY_VALUE) is not None
+                    else ""
+                ),
             },
             "readings": readings,
             "status": {
@@ -1195,6 +1212,7 @@ class TrendsViewMixin:
                     "name": row.get("name"),
                     "level": row.get("level"),
                     "since": row.get("since"),
+                    "steps": BATTERY_STEPS_WORDS.get(str(row.get("steps") or ""), ""),
                 }
                 if falling:
                     windows = row.get("windows") or {}
