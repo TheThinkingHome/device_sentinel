@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.23.0 (2026-09-24)
+// File: frontend/panel.js, Version: 0.23.1 (2026-09-24)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1394,8 +1394,11 @@ class DeviceSentinelPanel extends HTMLElement {
       el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
       el("td", { class: "num" }, pct(row.level)),
       el("td", { class: "num" }, rate(row.rate)),
-      el("td", { class: "num" }, String(row.days)))),
-    [["DEVICE"], ["LEVEL", "num"], ["30 DAY", "num"], ["DAYS RECORDED", "num"]]);
+      el("td", { class: "num" }, String(row.days)),
+      // How the cell reports (0.23.1): a coarse cell that is falling
+      // sits here with no forecast, and this says why.
+      el("td", {}, row.steps || ""))),
+    [["DEVICE"], ["LEVEL", "num"], ["30 DAY", "num"], ["DAYS RECORDED", "num"], ["STEPS"]]);
     const unreadable = page.unreadable.length
       ? el("div", {}, plain(page.unreadable.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
@@ -1719,6 +1722,7 @@ class DeviceSentinelPanel extends HTMLElement {
       ["Model ID", who.model_id || "not reported"],
       ["Hardware version", who.hw_version || "none reported"],
       ["Battery type", who.battery_type || "coming soon"],
+      ...(who.battery_steps ? [["Battery steps", who.battery_steps]] : []),
       ["Integration", who.integration_name || who.integration || ""],
       ["Area", who.area || "none assigned"],
       ["Address", address || "none reported"],
