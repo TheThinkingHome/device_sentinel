@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.22.26 (2026-09-23)
+// File: frontend/panel.js, Version: 0.23.0 (2026-09-24)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1133,10 +1133,27 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, this._link(d.name, this._devicePath(d.device_id))),
         el("td", {}, d.watched ? (d.muted ? `Watched, muted: ${d.muted}` : "Watched") : `Set aside: ${d.set_aside}`),
         el("td", {}, d.problem ? `${d.problem}${d.acknowledged ? ", acknowledged" : ""}` : ""))))));
+    // Devices another integration owns that reach Home Assistant
+    // through the broker, such as Tasmota's, on MQTT's page beneath
+    // its own (0.23.0, from Tim Plas's review).
+    const riders = page.behind_broker || [];
+    const ridersTable = riders.length
+      ? el("div", { class: "scroll" }, el("table", {},
+          el("thead", {}, el("tr", {}, ...["DEVICE", "INTEGRATION", "STANDING", "PROBLEM"].map((h) => el("th", {}, h)))),
+          el("tbody", {}, ...riders.map((d) => el("tr", {},
+            el("td", {}, this._link(d.name, this._devicePath(d.device_id))),
+            el("td", {}, d.integration),
+            el("td", {}, d.watched ? (d.muted ? `Watched, muted: ${d.muted}` : "Watched") : `Set aside: ${d.set_aside}`),
+            el("td", {}, d.problem ? `${d.problem}${d.acknowledged ? ", acknowledged" : ""}` : ""))))))
+      : null;
     this._pane.replaceChildren(back, head, stats,
       el("h3", { class: "section" }, "Recommendations"), ...recs,
       el("h3", { class: "section" }, "Outages, last 14 days"), outages,
-      el("h3", { class: "section" }, `Devices `, el("span", { class: "small" }, `${page.devices.length}, problems first`)), devices);
+      el("h3", { class: "section" }, `Devices `, el("span", { class: "small" }, `${page.devices.length}, problems first`)), devices,
+      ...(ridersTable ? [
+        el("h3", { class: "section" }, "Also on the broker ", el("span", { class: "small" },
+          `${riders.length}, owned by another integration, and down whenever the broker is`)),
+        ridersTable] : []));
   }
 
   async _briefGo(day) {
@@ -1210,8 +1227,22 @@ class DeviceSentinelPanel extends HTMLElement {
         + `${nowRows.length - open ? `, and ${nowRows.length - open} acknowledged` : ""}.`
       : "";
 
-    const repeat = brief.repeat.lines && brief.repeat.lines.length
-      ? brief.repeat.lines.map((line) => el("p", { style: "margin:0;line-height:1.5" }, line))
+    // The rows themselves, drawn as the table the brief file shows;
+    // the tab once printed the file's Markdown rows as paragraphs of
+    // pipes (0.23.0, from Tim Plas's review).
+    const repeatRows = brief.repeat.rows || [];
+    const repeat = repeatRows.length
+      ? [el("div", { class: "scroll" }, el("table", {},
+          el("thead", {}, el("tr", {}, ...["DEVICE", "WHAT HAPPENED", "TIMES", "WHEN", "TYPICAL", "WITH"]
+            .map((h) => el("th", {}, h)))),
+          el("tbody", {}, ...repeatRows.map((row) => el("tr", {},
+            el("td", {}, row.device_id ? this._link(row.name, this._devicePath(row.device_id)) : row.name),
+            el("td", {}, row.what),
+            el("td", {}, String(row.times)),
+            el("td", {}, row.when),
+            el("td", {}, row.typical),
+            el("td", {}, row.with)))))),
+        el("p", { style: "margin:8px 0 0;line-height:1.5" }, brief.repeat.paragraph)]
       : [el("p", { class: "muted", style: "margin:0" }, brief.repeat.words)];
 
     const counts = brief.counts;
