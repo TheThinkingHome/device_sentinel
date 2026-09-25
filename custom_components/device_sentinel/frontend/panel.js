@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.23.2 (2026-09-24)
+// File: frontend/panel.js, Version: 0.23.6 (2026-09-25)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1301,7 +1301,12 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _paintBatteryTrends() {
     const page = this._snapshot.battery;
-    const rate = (v) => (v === null || v === undefined ? "\u2013" : `${v >= 0 ? "+" : ""}${v.toFixed(3)}/day`);
+    // Points a week and points over four weeks, from weekly averages
+    // (0.23.6), in place of a rate per day that described a wobble.
+    const perWeek = (v) => (v === null || v === undefined ? "\u2013"
+      : Math.abs(v) < 0.05 ? "level" : v < 0 ? `down ${(-v).toFixed(1)} a week` : `up ${v.toFixed(1)} a week`);
+    const moved = (v) => (v === null || v === undefined ? "\u2013"
+      : Math.abs(v) < 0.05 ? "level" : v > 0 ? `down ${v.toFixed(1)}` : `up ${(-v).toFixed(1)}`);
     const pct = (v) => (v === null || v === undefined ? "" : `${Math.round(v)}%`);
     this._batterySort = this._batterySort || { key: null, dir: 1 };
     this._modelSort = this._modelSort || { key: null, dir: 1 };
@@ -1342,22 +1347,17 @@ class DeviceSentinelPanel extends HTMLElement {
       el("tbody", {}, ...models.map((row) => el("tr", {},
         el("td", {}, `${row.maker} ${row.model}`),
         el("td", { class: "num" }, String(row.cells)),
-        el("td", { class: "num", style: row.rate <= -0.05 ? "color:var(--error-color, #db4437)" : "" }, rate(row.rate)),
+        el("td", { class: "num", style: row.rate <= -1 ? "color:var(--error-color, #db4437)" : "" }, perWeek(row.rate)),
         el("td", { class: "num" }, pct(row.typical)),
         el("td", { class: "num" }, pct(row.lowest)),
         el("td", {}, this._link(row.lowest_name, this._devicePath(row.lowest_id)))))));
-    // The report's own groups.
-    const blocks = [];
-    for (const row of page.falling) {
-      for (const [start, stop] of row.blocks || []) {
-        const label = `DAY ${start}\u2013${stop}`;
-        if (!blocks.includes(label)) blocks.push(label);
-      }
-    }
+    // The report's own groups. A falling cell shows its last five
+    // weekly averages and what each week lost (0.23.6).
+    const weekHeads = ["28 DAYS AGO", "21 DAYS AGO", "14 DAYS AGO", "7 DAYS AGO", "THIS WEEK"];
     const fallingRows = this._sortRows(page.falling, this._batterySort, {
       name: (row) => row.name.toLowerCase(),
       level: (row) => row.level,
-      rate: (row) => (row.windows ? row.windows["30"] : 0),
+      rate: (row) => -(row.pace || 0),
       reading: (row) => row.reading || "",
     });
     const falling = page.falling.length
@@ -1365,21 +1365,20 @@ class DeviceSentinelPanel extends HTMLElement {
         el("thead", {}, el("tr", {},
           this._sortHead(this._batterySort, "DEVICE", "name", again),
           this._sortHead(this._batterySort, "LEVEL", "level", again, "num"),
-          ...blocks.map((label) => el("th", { class: "num" }, label)),
-          this._sortHead(this._batterySort, "30 DAY", "rate", again, "num"),
-          el("th", { class: "num" }, "14 DAY"), el("th", { class: "num" }, "7 DAY"),
+          ...weekHeads.map((label) => el("th", { class: "num" }, label)),
+          this._sortHead(this._batterySort, "PACE", "rate", again, "num"),
           this._sortHead(this._batterySort, "READING", "reading", again),
           el("th", {}, "LEFT"))),
         el("tbody", {}, ...fallingRows.map((row) => {
-          const byPeriod = Object.fromEntries((row.blocks || []).map(([start, stop, value]) => [`DAY ${start}\u2013${stop}`, value]));
+          const weeks = row.weeks || [];
+          const padded = [...Array(Math.max(0, 5 - weeks.length)).fill(null), ...weeks];
           return el("tr", {},
             el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
             el("td", { class: "num" }, pct(row.level)),
-            ...blocks.map((label) => el("td", { class: "num" }, label in byPeriod ? rate(byPeriod[label]) : "\u2013")),
-            el("td", { class: "num" }, rate(row.windows["30"])),
-            el("td", { class: "num" }, rate(row.windows["14"])),
-            el("td", { class: "num" }, rate(row.windows["7"])),
-            el("td", {}, row.reading || "not falling"),
+            ...padded.map((w, i) => el("td", { class: "num" }, w == null ? "\u2013" : `${w.toFixed(1)}%`,
+              i > 0 && padded[i - 1] != null ? el("div", { class: "small" }, moved(padded[i - 1] - w)) : "")),
+            el("td", { class: "num" }, perWeek(-(row.pace || 0))),
+            el("td", { style: row.reading === "accelerating" ? "color:var(--error-color, #db4437);font-weight:500" : "" }, row.reading || ""),
             el("td", row.left_soon ? { style: "color:var(--error-color, #db4437)" } : {}, row.left || ""));
         }))))
       : el("p", { class: "muted", style: "margin:0" }, "No cell is measurably falling.");
@@ -1395,12 +1394,12 @@ class DeviceSentinelPanel extends HTMLElement {
     const steady = plain(page.steady.map((row) => el("tr", {},
       el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
       el("td", { class: "num" }, pct(row.level)),
-      el("td", { class: "num" }, rate(row.rate)),
+      el("td", { class: "num" }, moved(row.month_drop)),
       el("td", { class: "num" }, String(row.days)),
       // How the cell reports (0.23.1): a coarse cell that is falling
       // sits here with no forecast, and this says why.
       el("td", {}, row.steps || ""))),
-    [["DEVICE"], ["LEVEL", "num"], ["30 DAY", "num"], ["DAYS RECORDED", "num"], ["STEPS"]]);
+    [["DEVICE"], ["LEVEL", "num"], ["4 WEEKS", "num"], ["DAYS RECORDED", "num"], ["STEPS"]]);
     const unreadable = page.unreadable.length
       ? el("div", {}, plain(page.unreadable.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
@@ -1414,7 +1413,7 @@ class DeviceSentinelPanel extends HTMLElement {
       el("h3", { class: "section" }, "By Model ",
         el("span", { class: "small" }, `${page.models.length} models, ${page.cells} cells, all of them`)),
       el("p", { class: "small", style: "margin:0;line-height:1.5" },
-        "Which of your models eat batteries, and which do not. The rate is the middle of that model's cells over the last 30 days. Mains-powered devices are absent: they report no battery."),
+        "Which of your models eat batteries, and which do not. The rate is the middle of that model's cells: points lost a week over the last four weeks, from weekly averages. Mains-powered devices are absent: they report no battery."),
       el("div", { class: "scroll" }, modelTable),
       el("h3", { class: "section" }, "At or Under the Threshold"), low,
       el("h3", { class: "section" }, "Falling"), falling,
@@ -1944,41 +1943,77 @@ class DeviceSentinelPanel extends HTMLElement {
           `your threshold, ${b.threshold}%`));
       }
       bat.g.append(svg("polyline", { points: pts(battery, bat.y).join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 2.2 }));
-      // The report's trend lines, ending at the latest reading.
-      const trendSet = this._range === 30 ? [[30, "#8E7CC3"], [14, "#E8A33D"], [7, "#D03B3B"]]
-        : this._range === 14 ? [[14, "#E8A33D"], [7, "#D03B3B"]] : [];
-      const last = battery[battery.length - 1];
+      // Each whole week's average level, drawn over the daily line
+      // (0.23.6): the ups and downs of a wobble cancel inside a week,
+      // so the bars show where the cell is going. Counted back from
+      // the newest day, as the rules count them.
       const legend = [el("span", {}, "Daily level (solid).")];
-      for (const [window, colour] of trendSet) {
-        const slope = b.windows ? b.windows[String(window)] : null;
-        if (slope == null || last == null || window > days) continue;
-        bat.g.append(svg("line", { x1: x(window - 1), y1: bat.y(last - slope * (window - 1)), x2: x(0), y2: bat.y(last),
-          stroke: colour, "stroke-width": 2, "stroke-dasharray": "6 4" }));
-        legend.push(key(colour, `${window}-day rate, ${slope >= 0 ? "+" : ""}${slope.toFixed(3)}/day`, true));
+      const weekBars = [];
+      for (let end = battery.length; end >= 7 && battery.length - end < days; end -= 7) {
+        const week = battery.slice(end - 7, end).filter((v) => v != null);
+        if (week.length === 7) weekBars.push([battery.length - end, week.reduce((a, v) => a + v, 0) / 7]);
+      }
+      const labelWeeks = weekBars.length <= 8;
+      for (const [endAgo, avg] of weekBars) {
+        const startAgo = Math.min(endAgo + 6, days - 1);
+        bat.g.append(svg("line", { x1: x(startAgo), y1: bat.y(avg), x2: x(endAgo), y2: bat.y(avg),
+          stroke: "var(--info-color, #039be5)", "stroke-width": 4, "stroke-linecap": "round", opacity: 0.85 }));
+        if (labelWeeks) bat.g.append(svg("text", { x: (x(startAgo) + x(endAgo)) / 2, y: bat.y(avg) - 8, class: "axis",
+          "text-anchor": "middle", fill: "var(--info-color, #039be5)" }, avg.toFixed(1)));
+      }
+      if (weekBars.length) legend.push(key("var(--info-color, #039be5)", "Weekly average (bars).", false));
+      // The fitted line, only on a falling cell: one line at an even
+      // pace, or two joined at the knee where the cell sped up, with
+      // the knee's date (0.23.6, chosen over three slope lines).
+      const fit = b.fit;
+      if (fit && Array.isArray(fit.line) && fit.line.every(([ago]) => ago < days)) {
+        const colour = fit.knee ? "var(--error-color, #db4437)" : "var(--secondary-text-color)";
+        bat.g.append(svg("polyline", { points: fit.line.map(([ago, v]) => `${x(ago)},${bat.y(v)}`).join(" "),
+          fill: "none", stroke: colour, "stroke-width": fit.knee ? 3 : 2, "stroke-dasharray": fit.knee ? "" : "7 5" }));
+        if (fit.knee) {
+          const [kAgo, kV] = fit.line[1];
+          const when = new Date(`${page.series_end}T12:00:00`);
+          when.setDate(when.getDate() - kAgo);
+          bat.g.append(svg("circle", { cx: x(kAgo), cy: bat.y(kV), r: 6, fill: "var(--card-background-color, #fff)", stroke: colour, "stroke-width": 3 }),
+            svg("text", { x: x(kAgo), y: bat.y(kV) - 12, class: "axis", "text-anchor": "middle", fill: colour, "font-weight": 700 },
+              when.toLocaleDateString(undefined, { month: "short", day: "numeric" })));
+          legend.push(key(colour, "The knee: where the fall sped up.", false));
+        } else {
+          legend.push(key(colour, "Falling at an even pace.", true));
+        }
       }
       if (!showThreshold && percent) legend.push(el("span", {}, `Your threshold, ${b.threshold}%, is far below this range, so it is not drawn.`));
       // A reading that is not a percentage is a raw sensor value, and
       // your threshold has nothing to say about it (0.22.24).
       if (!percent) legend.push(el("span", {}, "This is a raw reading rather than a percentage, so it is not judged against your threshold."));
       addHover(bat.g);
-      const rate = (v) => (v == null ? "\u2013" : `${v >= 0 ? "+" : ""}${v.toFixed(3)}/day`);
+      // The last five weekly averages, with what each week lost beneath
+      // it, in place of a rate per day (0.23.6).
       let figures = null;
-      if (b.windows) {
-        const blocks = (b.blocks || []).slice().sort((p, q) => q[0] - p[0]);
-        const head = ["LEVEL", ...blocks.map(([start, stop]) => `DAY ${start}\u2013${stop}`), "30 DAY", "14 DAY", "7 DAY", "READING", "LEFT"];
-        const cells = [`${Math.round(b.now)}${unit}`, ...blocks.map((block) => rate(block[2])),
-          rate(b.windows["30"]), rate(b.windows["14"]), rate(b.windows["7"]),
-          b.reading || "not falling", b.left || "\u2013"];
+      const weeks = b.weeks || [];
+      if (weeks.length) {
+        const agoWords = ["THIS WEEK", "7 DAYS AGO", "14 DAYS AGO", "21 DAYS AGO", "28 DAYS AGO"];
+        const heads = weeks.map((_, i) => agoWords[weeks.length - 1 - i]);
+        const change = (i) => {
+          if (i === 0) return "";
+          const d = weeks[i - 1] - weeks[i];
+          return Math.abs(d) < 0.05 ? "level" : d > 0 ? `down ${d.toFixed(1)}` : `up ${(-d).toFixed(1)}`;
+        };
+        const head = ["LEVEL", ...heads, "READING", "LEFT"];
+        const cells = [
+          el("td", {}, `${Math.round(b.now)}${unit}`),
+          ...weeks.map((w, i) => el("td", {}, `${w.toFixed(1)}${unit}`, el("div", { class: "small" }, change(i)))),
+          el("td", {}, b.reading || "steady"),
+          el("td", b.left_soon ? { style: "color:var(--error-color, #db4437)" } : {}, b.left || "\u2013"),
+        ];
         figures = el("div", { class: "scroll" }, el("table", { class: "figures" },
           el("thead", {}, el("tr", {}, ...head.map((h) => el("th", {}, h)))),
-          el("tbody", {}, el("tr", {}, ...cells.map((c, i) => el("td",
-            i === cells.length - 1 && b.left_soon ? { style: "color:var(--error-color, #db4437)" } : {}, c))))));
+          el("tbody", {}, el("tr", {}, ...cells))));
       }
-      const meaning = b.reading && b.reading_meaning
-        ? el("p", { class: "small", style: "margin:0;line-height:1.5" },
-          `${b.reading[0].toUpperCase()}${b.reading.slice(1)}: ${b.reading_meaning}`)
-        : el("p", { class: "small", style: "margin:0;line-height:1.5" },
-          "Not falling: no window of this cell is dropping faster than the rounding of its own readings, so no time left is offered.");
+      const meaning = el("p", { class: "small", style: "margin:0;line-height:1.5" },
+        b.sentence || (weeks.length < 2
+          ? "Steady: two whole weeks of history are needed before a fall can be judged."
+          : "Steady: no week has fallen a point below the week before, so no time left is offered."));
       batteryCard = card("Battery", b.now != null ? `${b.now}${unit} now` : "", figures, meaning, bat.g, el("div", { class: "legend" }, ...legend));
     }
 
