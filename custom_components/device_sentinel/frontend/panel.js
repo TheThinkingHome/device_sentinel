@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.23.6 (2026-09-25)
+// File: frontend/panel.js, Version: 0.23.7 (2026-09-25)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1943,43 +1943,63 @@ class DeviceSentinelPanel extends HTMLElement {
           `your threshold, ${b.threshold}%`));
       }
       bat.g.append(svg("polyline", { points: pts(battery, bat.y).join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 2.2 }));
-      // Each whole week's average level, drawn over the daily line
-      // (0.23.6): the ups and downs of a wobble cancel inside a week,
-      // so the bars show where the cell is going. Counted back from
-      // the newest day, as the rules count them.
+      // The last five weeks' average levels, in orange over the daily
+      // line, and the fitted line on a falling cell (0.23.6), drawn
+      // only at 30 and 14 days: those are the weeks the table and the
+      // accelerating rule read, and at 90 days and longer they only
+      // crowd the history (the owner, 25 September, as the old slope
+      // lines were drawn). Counted back from the newest day, as the
+      // rules count them; a week partly off the left edge is cut there.
       const legend = [el("span", {}, "Daily level (solid).")];
-      const weekBars = [];
-      for (let end = battery.length; end >= 7 && battery.length - end < days; end -= 7) {
-        const week = battery.slice(end - 7, end).filter((v) => v != null);
-        if (week.length === 7) weekBars.push([battery.length - end, week.reduce((a, v) => a + v, 0) / 7]);
-      }
-      const labelWeeks = weekBars.length <= 8;
-      for (const [endAgo, avg] of weekBars) {
-        const startAgo = Math.min(endAgo + 6, days - 1);
-        bat.g.append(svg("line", { x1: x(startAgo), y1: bat.y(avg), x2: x(endAgo), y2: bat.y(avg),
-          stroke: "var(--info-color, #039be5)", "stroke-width": 4, "stroke-linecap": "round", opacity: 0.85 }));
-        if (labelWeeks) bat.g.append(svg("text", { x: (x(startAgo) + x(endAgo)) / 2, y: bat.y(avg) - 8, class: "axis",
-          "text-anchor": "middle", fill: "var(--info-color, #039be5)" }, avg.toFixed(1)));
-      }
-      if (weekBars.length) legend.push(key("var(--info-color, #039be5)", "Weekly average (bars).", false));
-      // The fitted line, only on a falling cell: one line at an even
-      // pace, or two joined at the knee where the cell sped up, with
-      // the knee's date (0.23.6, chosen over three slope lines).
-      const fit = b.fit;
-      if (fit && Array.isArray(fit.line) && fit.line.every(([ago]) => ago < days)) {
-        const colour = fit.knee ? "var(--error-color, #db4437)" : "var(--secondary-text-color)";
-        bat.g.append(svg("polyline", { points: fit.line.map(([ago, v]) => `${x(ago)},${bat.y(v)}`).join(" "),
-          fill: "none", stroke: colour, "stroke-width": fit.knee ? 3 : 2, "stroke-dasharray": fit.knee ? "" : "7 5" }));
-        if (fit.knee) {
-          const [kAgo, kV] = fit.line[1];
-          const when = new Date(`${page.series_end}T12:00:00`);
-          when.setDate(when.getDate() - kAgo);
-          bat.g.append(svg("circle", { cx: x(kAgo), cy: bat.y(kV), r: 6, fill: "var(--card-background-color, #fff)", stroke: colour, "stroke-width": 3 }),
-            svg("text", { x: x(kAgo), y: bat.y(kV) - 12, class: "axis", "text-anchor": "middle", fill: colour, "font-weight": 700 },
-              when.toLocaleDateString(undefined, { month: "short", day: "numeric" })));
-          legend.push(key(colour, "The knee: where the fall sped up.", false));
-        } else {
-          legend.push(key(colour, "Falling at an even pace.", true));
+      const WEEK = "#E8A33D";
+      if (days <= 30) {
+        let drawn = 0;
+        for (let k = 0; k < 5; k += 1) {
+          const endAgo = 7 * k;
+          if (endAgo >= days) break;
+          const week = battery.slice(battery.length - 7 * (k + 1), battery.length - 7 * k).filter((v) => v != null);
+          if (week.length !== 7) break;
+          const avg = week.reduce((a, v) => a + v, 0) / 7;
+          const startAgo = Math.min(endAgo + 6, days - 1);
+          bat.g.append(svg("line", { x1: x(startAgo), y1: bat.y(avg), x2: x(endAgo), y2: bat.y(avg),
+            stroke: WEEK, "stroke-width": 5, "stroke-linecap": "round" }),
+          svg("text", { x: (x(startAgo) + x(endAgo)) / 2, y: bat.y(avg) - 9, class: "axis", "text-anchor": "middle",
+            fill: "#b86e00", "font-weight": 700, "paint-order": "stroke", stroke: "var(--card-background-color, #fff)", "stroke-width": 4 },
+          avg.toFixed(1)));
+          drawn += 1;
+        }
+        if (drawn) legend.push(key(WEEK, "Weekly average (bars).", false));
+        // The fitted line, cut to the range shown: at 14 days S63's
+        // knee falls before the chart starts, and only the steep part
+        // is drawn, with no marker.
+        const fit = b.fit;
+        if (fit && Array.isArray(fit.line) && fit.line.length >= 2) {
+          const colour = fit.knee ? "var(--error-color, #db4437)" : "var(--secondary-text-color)";
+          const edge = days - 1;
+          const points = [];
+          for (let i = 0; i < fit.line.length - 1; i += 1) {
+            const [a0, v0] = fit.line[i];
+            const [a1, v1] = fit.line[i + 1];
+            if (a1 > edge) continue;
+            if (a0 > edge) points.push([edge, v0 + ((v1 - v0) * (a0 - edge)) / (a0 - a1)]);
+            else if (!points.length) points.push([a0, v0]);
+            points.push([a1, v1]);
+          }
+          if (points.length >= 2) {
+            bat.g.append(svg("polyline", { points: points.map(([ago, v]) => `${x(ago)},${bat.y(v)}`).join(" "),
+              fill: "none", stroke: colour, "stroke-width": fit.knee ? 3 : 2, "stroke-dasharray": fit.knee ? "" : "7 5" }));
+            if (fit.knee && fit.line[1][0] <= edge) {
+              const [kAgo, kV] = fit.line[1];
+              const when = new Date(`${page.series_end}T12:00:00`);
+              when.setDate(when.getDate() - kAgo);
+              bat.g.append(svg("circle", { cx: x(kAgo), cy: bat.y(kV), r: 6, fill: "var(--card-background-color, #fff)", stroke: colour, "stroke-width": 3 }),
+                svg("text", { x: x(kAgo), y: bat.y(kV) - 12, class: "axis", "text-anchor": "middle", fill: colour, "font-weight": 700 },
+                  when.toLocaleDateString(undefined, { month: "short", day: "numeric" })));
+              legend.push(key(colour, "The knee: where the fall sped up.", false));
+            } else {
+              legend.push(key(colour, fit.knee ? "The fall since it sped up." : "Falling at an even pace.", !fit.knee));
+            }
+          }
         }
       }
       if (!showThreshold && percent) legend.push(el("span", {}, `Your threshold, ${b.threshold}%, is far below this range, so it is not drawn.`));
