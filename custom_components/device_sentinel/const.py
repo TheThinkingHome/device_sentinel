@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.4 (2026-09-25)
+# File: const.py, Version: 0.23.5 (2026-09-25)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1089,37 +1089,25 @@ REPORT_DIR = "device_sentinel"
 # name is kept only so the old folder can be emptied of those three
 # files once and removed if nothing else is in it.
 REPORT_DIAGNOSTIC_DIR = "diagnostics"
-# The signal report. Under www rather than the reports folder,
-# because www is what Home Assistant serves at /local, and a dashboard
-# Webpage card pointed at /local/device_sentinel/signal_report.html is
-# the whole reason the file is HTML.
+# The folder Home Assistant serves at /local, where the brief, the
+# battery report and the signal report lived until 0.23.5. Home
+# Assistant serves it to anyone who asks, signed in or not, and the
+# files named devices, battery levels and outage times, so it is
+# retired (#470): the two reports and the brief's dated copies go with
+# it, and the first start of 0.23.5 moves the current brief out and
+# deletes the folder. The name is kept for that deletion and for the
+# uninstall, which removes a leftover copy.
 REPORT_WWW_DIR = "www/device_sentinel"
-# The parent Home Assistant looks for, and the address our folder is
-# reachable at. Home Assistant registers /local only where the parent
-# already existed when the frontend set up, and it checks that once,
-# so on a system with no www folder the first boot after installing
-# leaves these files unreachable. Where that is the case the
-# integration registers this one folder for itself (ruling #186).
-REPORT_WWW_PARENT = "www"
-REPORT_WWW_URL = "/local/device_sentinel"
-REPORT_SIGNAL = "signal_report.html"
-REPORT_SIGNAL_PREFIX = "signal_report_"
-# The HTML brief. What a person reads lives under www, where a
-# browser and a dashboard card can render it, and what a developer
-# reads stays under config (ruling #178). One rendering serves the
-# dated record, the undated current file, and the emailed body, so
-# the three cannot drift (ruling #179).
+# The HTML brief, written beside the other reports in REPORT_DIR, which
+# Home Assistant does not serve. One rendering serves the file and the
+# emailed body, so the two cannot drift (ruling #179). Kept as HTML
+# rather than Markdown, ruled 25 September 2026, so there is one
+# rendering and not two.
 REPORT_BRIEF_HTML = "daily_brief.html"
-REPORT_SIGNAL_URL = "/local/device_sentinel/signal_report.html"
-# The battery report. A third page for a person, beside the brief and
-# the dwell chart, answering what a threshold alone cannot: not which
-# cells are low, but which are going to be (ruling #194). Its dated
-# copy is named for the day it was written, and under the same rule
-# as the chart (#190): its headline figures are the levels now, so
-# the day it covers and the day it is written are the same day.
-REPORT_BATTERY_HTML = "battery_report.html"
-REPORT_BATTERY_PREFIX = "battery_report_"
-REPORT_BATTERY_URL = "/local/device_sentinel/battery_report.html"
+# The dashboard's address, under which a device's page is
+# /device-sentinel/device/<id>. The brief's device names link there
+# (0.23.5), to the page that says why a device is listed.
+PANEL_URL_PATH = "device-sentinel"
 
 # How many recent daily levels the fall is measured over. Seven is
 # the shortest span that survives a single bad pair: the cell that
@@ -1199,24 +1187,6 @@ BATTERY_STABILIZED_RATIO = 0.5
 # suppressing a cell losing 1.75 a day, the one case it must never
 # suppress. The spread is still computed and carried on each row for
 # a dashboard to show; it decides nothing (ruling #395).
-
-# The curve beside each falling cell. Two panels: the whole kept
-# history, then the last month on its own vertical scale. One chart
-# cannot carry both, because on a year of retention a recent
-# movement of two points drawn against a hundred point axis is a
-# single pixel (ruling #395).
-BATTERY_CURVE_WIDTH = 470
-BATTERY_CURVE_HEIGHT = 72
-# Wider, because it has a label over every point and no second panel.
-BATTERY_HISTORY_WIDTH = 640
-# The trend lines drawn on the recent panel, longest first so the
-# shortest is drawn last and stays legible where they cross.
-BATTERY_TREND_COLOURS = ((30, "#8E7CC3"), (14, "#E8A33D"), (7, "#D03B3B"))
-# How many steady cells get a chart. The lowest ones, since a cell
-# near the threshold is the one a person has reason to look at, and
-# the rest keep the compact grid of ruling #379 so the section stays
-# a bounded length whatever the fleet size (ruling #395).
-BATTERY_STEADY_CHARTED = 12
 
 # ---------------------------------------------------------------
 # A battery replacement, and the day one that follows it.
@@ -2441,17 +2411,12 @@ RECOVERY_CAUSES_SELF = frozenset({RECOVERY_CAUSE_UNOBSERVED})
 LEGACY_CAUSE_UNOBSERVED = "on its own"
 
 # The span the live copy of the brief covers, as opposed to the
-# closed record, which runs brief hour to brief hour (ruling
-# #116). The undated file is the dashboard's address, and a
-# window measured from the brief time held almost nothing for
-# most of the day, so the card read as a quiet house while a
-# full day of events sat in yesterday's dated file. A rolling
-# day fixes that and costs the record nothing, because the
-# dated file is still named for the brief day and is rewritten
-# as the true closed window when the day closes (ruling #187).
+# closed brief, which runs brief hour to brief hour and is the one
+# emailed (ruling #116). A window measured from the brief time held
+# almost nothing for most of the day, so the file read as a quiet
+# house while a full day of events had passed; a rolling day fixes
+# that (ruling #187).
 BRIEF_LIVE_WINDOW_SECONDS = 86400.0
-REPORT_BRIEF_PREFIX = "daily_brief_"
-BRIEF_KEEP_DAYS = 14
 
 # The system events log: what happened to the house rather than to a
 # device. Every other record here is device-scoped, so when a bridge

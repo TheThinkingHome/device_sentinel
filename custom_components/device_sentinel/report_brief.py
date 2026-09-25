@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.23.2 (2026-09-24)
+# File: report_brief.py, Version: 0.23.5 (2026-09-25)
 
 """The daily brief: the one report written for a person.
 
@@ -82,11 +82,7 @@ from .const import (
     INC_KIND,
     INC_NAME,
     INC_WHEN,
-    REPORT_BATTERY_URL,
     REPORT_BRIEF_HTML,
-    REPORT_BRIEF_PREFIX,
-    REPORT_SIGNAL_URL,
-    REPORT_WWW_DIR,
     SYS_INTEGRATION_DOWN,
     SYS_INTEGRATION_UP,
     SYS_BRIDGE_DOWN,
@@ -2233,16 +2229,13 @@ class BriefMixin:
         window_start: float,
         window_end: float,
         complete: bool,
-        stamp_start: float | None = None,
     ) -> str | None:
         """Write the daily brief for a window, and return it when done.
 
         window_start and window_end are the content: what the brief
-        describes. stamp_start is the day the file is named for, and
-        it is passed separately because the two stopped agreeing
-        when the live copy became a rolling day (ruling #187). Left
-        out, it is the window start, which is what a closed brief
-        wants.
+        describes. The file is always daily_brief.html in the reports
+        folder; the dated copies retired with the www folder (0.23.5),
+        so no day names a file any more.
 
         The text comes back only for a completed brief, which is the
         one the email carries, since mailing an unfinished document
@@ -2418,9 +2411,11 @@ class BriefMixin:
                 f"{row['name']} ({self.battery_time_left(row['days'])})"
                 for row in fallers[:5]
             )
+            # The battery report retired with the www folder (0.23.5);
+            # the dashboard's Battery Trends tab carries what it did.
             lines += [
-                f"Batteries falling: {named}. Details and the full "
-                f"report: {REPORT_BATTERY_URL}",
+                f"Batteries falling: {named}. Details are in Battery "
+                f"Trends on the Device Sentinel dashboard.",
                 "",
             ]
         lines += self._recommendations_section()
@@ -2481,36 +2476,17 @@ class BriefMixin:
                     f"{what} |"
                 )
             lines.append("")
-        # Named for the day the window opened, not the moment of
-        # writing. Naming by "now" renamed the in-progress brief at
-        # midnight, so one window produced two files describing
-        # overlapping periods, and neither was ever completed.
-        stamp = dt_util.as_local(
-            dt_util.utc_from_timestamp(
-                window_start if stamp_start is None else stamp_start
-            )
-        ).strftime("%Y-%m-%d")
         text = "\n".join(lines)
-        # The Markdown brief is retired: what a person reads moved
-        # under www, where a browser and a dashboard card can render
-        # it (rulings #178 and #179). The dated HTML files are the
-        # record now, named exactly as
-        # the Markdown files were, and the undated current file is a
-        # copy of the newest write so a dashboard card has one stable
-        # URL that never breaks at midnight. Old .md briefs on disk
-        # are left as the history they are.
+        # One file, beside the other reports in the reports folder,
+        # which Home Assistant does not serve (0.23.5). The www copy
+        # and its fourteen dated copies retired: the folder was
+        # readable by anyone who asked, signed in or not (#470).
         page = self._render_brief_html(text)
-        directory = self.hass.config.path(REPORT_WWW_DIR)
-        os.makedirs(directory, exist_ok=True)
-        dated = os.path.join(
-            directory, f"{REPORT_BRIEF_PREFIX}{stamp}.html"
-        )
-        self._write_file(dated, page)
+        os.makedirs(report_directory, exist_ok=True)
         self._write_file(
-            os.path.join(directory, REPORT_BRIEF_HTML),
+            os.path.join(report_directory, REPORT_BRIEF_HTML),
             page,
         )
-        self._trim_briefs(directory)
         # The page is what a mail client renders; the composed text
         # remains the plain form for the persistent-notification
         # target and the message fallback. Same content by
@@ -2594,10 +2570,10 @@ class BriefMixin:
 
         The one renderer. Rendered from the composed Markdown text
         rather than written a second way, so the record and the page
-        cannot drift, and every consumer reads this: the dated file,
-        the undated current file, the emailed body, and the fallback
-        the sender falls back to when the stashed pair does not match
-        (rulings #135, #179 and #184).
+        cannot drift, and every consumer reads this: the file in the
+        reports folder, the emailed body, and the fallback the sender
+        falls back to when the stashed pair does not match (rulings
+        #135, #179 and #184).
 
         It was two renderers until 0.10.22, and they had already
         drifted. Only the other one escaped its content, so from
@@ -2613,11 +2589,9 @@ class BriefMixin:
         and anything unrecognized falls through as a paragraph, which
         keeps a future line from vanishing silently.
 
-        Everything is escaped before the chart link is turned into an
-        anchor, so the one tag this renderer creates is the only
-        markup that survives. The link is resolved to an absolute
-        address where Home Assistant knows one, so it works from a
-        mail client as well as a dashboard card.
+        Everything is escaped, and the only markup this renderer
+        creates is a device name's link, built in _device_cell, so it
+        is the only markup that survives.
         """
         # Each render walks the same composed text, so the pairing is
         # read rather than consumed: the page and the emailed body
@@ -2658,15 +2632,6 @@ class BriefMixin:
                 html_lines.append(f"<h2>{escape(_markdown_unescaped(line[3:]))}</h2>")
             elif line.strip():
                 text_line = escape(_markdown_unescaped(line))
-                for url, words in (
-                    (REPORT_SIGNAL_URL, "the signal report"),
-                    (REPORT_BATTERY_URL, "the battery report"),
-                ):
-                    if url in text_line:
-                        href = self._absolute_url(url)
-                        text_line = text_line.replace(
-                            url, f"<a href='{href}'>{words}</a>"
-                        )
                 html_lines.append(f"<p>{text_line}</p>")
         _flush_table()
 
@@ -2693,7 +2658,3 @@ a {{ color: #2a78d6; }}
 </body></html>
 """
         return page
-
-    def _trim_briefs(self, directory: str) -> None:
-        """Keep the most recent dated briefs, drop the rest."""
-        self._trim_dated(directory, REPORT_BRIEF_PREFIX)

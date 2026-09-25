@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.22.25 (2026-09-22)
+# File: reports.py, Version: 0.23.5 (2026-09-25)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -16,8 +16,7 @@ fifth of it, cohesive and almost entirely read-only, so they were the
 honest first cut.
 
 What lives here now is the shared half: the formatters every report
-uses, the address resolver, the dated-file trim, and the orchestrator
-that calls the four writers. Each report is its own module beside
+uses, the link helper, and the orchestrator that calls the writers. Each report is its own module beside
 this one (ruling #199), because the file had grown past two thousand
 lines and held every report the integration writes.
 
@@ -50,7 +49,7 @@ from .const import (
     DEFAULT_REPORT_LINKS,
     REPORT_LINKS_EXTERNAL,
     REPORT_LINKS_INTERNAL,
-    BRIEF_KEEP_DAYS,
+    PANEL_URL_PATH,
     BRIEF_LIVE_WINDOW_SECONDS,
     BRIEF_TRIGGER,
     REPORT_CLASSIFICATION,
@@ -174,11 +173,13 @@ class ReportWritingMixin(
     def _report_link(self, path: str) -> str | None:
         """The address a report links to, or None for no link.
 
-        Ruling #453. A report is a file that gets shared, so the
-        house's address goes into one only when its owner says which
-        address to use.
-        The setting is off until then, and off means the name prints
-        as text.
+        Ruling #453, kept by the owner on 25 September 2026 when the
+        www folder retired (amending #470). The brief is a file that
+        gets shared and forwarded, so the house's address goes into
+        it only when its owner says which address to use, and only
+        that address: the setting is off until then, off means the
+        name prints as text, and Internal never reaches for the
+        external address.
         """
         choice = self.entry.options.get(
             CONF_REPORT_LINKS, DEFAULT_REPORT_LINKS
@@ -214,10 +215,14 @@ class ReportWritingMixin(
         it is. The name links to its device page and carries its area
         in square brackets.
 
-        The link is absolute with the external URL preferred (ruling
-        #183), because the brief is emailed and read away from the
-        house. The area sits outside the link, so what is clickable is
-        the name itself.
+        The link opens the device's page on the Device Sentinel
+        dashboard, which says why the device is listed (0.23.5, in
+        place of Home Assistant's device page), on the address the
+        Links in Reports setting names and never another: None prints
+        the name plain, Internal never reaches for the external
+        address, and an address later removed from Home Assistant
+        prints the name plain. The area sits outside the link, so what
+        is clickable is the name itself.
 
         Two things are left plain. A row that belongs to the house
         rather than to a device, which has no id to link to. And a
@@ -228,7 +233,7 @@ class ReportWritingMixin(
         text = escape(name or "")
         cell = text
         url = (
-            self._report_link(f"/config/devices/device/{device_id}")
+            self._report_link(f"/{PANEL_URL_PATH}/device/{device_id}")
             if device_id
             else None
         )
@@ -280,41 +285,6 @@ class ReportWritingMixin(
         return "Reported"
 
 
-    def _absolute_url(self, path: str) -> str:
-        """Return the path resolved against the instance URL, if any.
-
-        A relative /local address is dead inside an email, which has
-        no host to resolve it against, so the link is never left
-        relative (ruling #183, amending #181). The external URL is
-        preferred
-        because it works from anywhere, which is when an emailed
-        brief is most useful; where none is configured the internal
-        URL is used instead, which at least works on home wifi and is
-        better than an address that resolves nowhere at all. Home
-        Assistant's own resolver already tries them in that order,
-        so one call expresses the whole rule.
-
-        The bare path is returned only where neither URL resolves,
-        which needs an instance that knows no address for itself. It
-        is the same dead link the amendment removed, kept because
-        there is nothing better to return and raising here would
-        cost the whole brief for one hyperlink.
-        """
-        try:
-            from homeassistant.helpers.network import get_url
-
-            return (
-                get_url(
-                    self.hass,
-                    allow_internal=True,
-                    prefer_external=True,
-                )
-                + path
-            )
-        except Exception:  # noqa: BLE001 - instance knows no URL at all
-            return path
-
-
     @staticmethod
     def _write_file(path: str, text: str) -> None:
         """Write a report so a reader never sees half of one.
@@ -351,28 +321,6 @@ class ReportWritingMixin(
                 os.remove(temporary)
             raise
 
-    def _trim_dated(self, directory: str, prefix: str) -> None:
-        """Keep the newest dated files of a prefix, drop the rest.
-
-        Every file under www follows one rule (ruling #180):
-        dated files as the record, an undated current file for the
-        one stable dashboard URL, and a trim on the same fourteen-day
-        schedule as the brief. The undated file never matches, since
-        a date always follows the underscore.
-        """
-        try:
-            names = sorted(
-                name
-                for name in os.listdir(directory)
-                if name.startswith(f"{prefix}2")
-                and name.endswith(".html")
-            )
-        except OSError:
-            return
-        for name in names[:-BRIEF_KEEP_DAYS]:
-            with contextlib.suppress(OSError):
-                os.remove(os.path.join(directory, name))
-
     def _write_reports(self, trigger: str = "manual") -> str | None:
         """Write the report files, and return a closed brief if one.
 
@@ -390,12 +338,10 @@ class ReportWritingMixin(
             stale_path = os.path.join(report_directory, stale_name)
             if os.path.isfile(stale_path):
                 os.remove(stale_path)
-        # The folder split completed (rulings #178 and #179): what a
-        # person reads lives under www/device_sentinel, so this
-        # folder is the developer's and the maintainer files come
-        # back up out of the diagnostics subfolder. They were put
-        # there to keep the briefs alone in this folder, and that
-        # reason retired when the Markdown brief did. The old
+        # The maintainer files came back up out of the diagnostics
+        # subfolder when the Markdown brief retired (rulings #178 and
+        # #179); since 0.23.5 the HTML brief lives here beside them,
+        # the www folder being gone. The old
         # subfolder's three files are removed once; anything else in
         # it, the rig log included, is not this integration's to
         # touch.
@@ -415,13 +361,9 @@ class ReportWritingMixin(
         self._write_classification(report_directory, trigger)
         self._write_episodes(report_directory, trigger)
         self._write_stack_probe(report_directory, trigger)
-        # The signal report is HTML rather than Markdown because the
-        # bands are its whole point and Markdown cannot carry color.
-        # It lives under www so a dashboard Webpage card can render it
-        # at /local/device_sentinel/signal_report.html; the reports
-        # folder is not web-served and cannot do that job.
-        self._write_signal_report_html()
-        self._write_battery_html()
+        # The signal and battery reports retired with the www folder
+        # (0.23.5): the dashboard's Signal Trends and Battery Trends
+        # tabs carry what they did, behind Home Assistant's sign-in.
         # The brief's window runs from the last brief time to now, so
         # a regenerate mid-day writes the in-progress one. The
         # scheduled write closes the day instead, covering the window
@@ -429,20 +371,15 @@ class ReportWritingMixin(
         closing = trigger == BRIEF_TRIGGER
         if closing:
             window_start, window_end = self._brief_close_bounds()
-            stamp_start = None
         else:
             # The live copy carries a rolling day rather than the
-            # hours since the brief time (ruling #187). The undated
-            # file is the dashboard's address, and for most of the
-            # day the brief-to-brief window had almost nothing in it,
-            # so a card read "nothing happened" while a full day of
-            # events sat in yesterday's dated file. Now stays live
-            # either way, since it is read from the problem list
-            # rather than from the window. The file is still named
-            # for the brief day, so this copy cannot land on top of a
-            # closed record.
+            # hours since the brief time (ruling #187): for most of
+            # the day the brief-to-brief window held almost nothing,
+            # so the file read "nothing happened" while a full day of
+            # events had passed. Now stays live either way, since it
+            # is read from the problem list rather than from the
+            # window.
             window_end = dt_util.utcnow().timestamp()
-            stamp_start = self._brief_window_start(window_end)
             window_start = window_end - BRIEF_LIVE_WINDOW_SECONDS
         brief_text = self._write_brief(
             report_directory,
@@ -450,17 +387,11 @@ class ReportWritingMixin(
             window_start,
             window_end,
             complete=closing,
-            stamp_start=stamp_start,
         )
-        # A scheduled write closes the day that just ended, but the
-        # day just beginning has no file until something writes the
-        # current window, and nothing does until the next startup or
-        # regenerate. So the file named for today is absent from the
-        # roll until then, which reads as a brief that stopped
-        # publishing (ruling #116, completed here). Open the new
-        # window's
-        # in-progress brief now, so today's file exists the moment
-        # the window rolls.
+        # A scheduled write closes the day that just ended and hands
+        # it to the email; the file then carries the day just
+        # beginning at once, rather than the closed day until the
+        # next startup or regenerate (ruling #116).
         if closing:
             now = dt_util.utcnow().timestamp()
             self._write_brief(
@@ -469,6 +400,5 @@ class ReportWritingMixin(
                 now - BRIEF_LIVE_WINDOW_SECONDS,
                 now,
                 complete=False,
-                stamp_start=self._brief_window_start(now),
             )
         return brief_text

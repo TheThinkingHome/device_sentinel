@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.22.5 (2026-09-20)
+# File: __init__.py, Version: 0.23.5 (2026-09-25)
 
 """The Device Sentinel integration.
 
@@ -22,7 +22,6 @@ and inert.
 from __future__ import annotations
 
 import hashlib
-import os
 import shutil
 from typing import Any
 from pathlib import Path
@@ -47,12 +46,12 @@ from .const import (
     CONF_LOW_THRESHOLD,
     LEGACY_LOW_THRESHOLD,
     OPTIONS_MINOR_VERSION,
+    PANEL_URL_PATH,
     CONF_PERSISTENT_ENABLED,
     RETIRED_SLIDER_KEYS,
+    REPORT_BRIEF_HTML,
     REPORT_DIR,
     REPORT_WWW_DIR,
-    REPORT_WWW_PARENT,
-    REPORT_WWW_URL,
     STORAGE_CLOCKS_KEY,
     STORAGE_KEY,
 )
@@ -263,71 +262,64 @@ def _drop_dead_entities(
             ent_reg.async_remove(entity_id)
 
 
-async def _async_serve_www_folder(hass: HomeAssistant) -> None:
-    """Serve this integration's www folder on the boot that creates it.
+def _retire_www_folder(hass: HomeAssistant) -> str | None:
+    """Delete www/device_sentinel after moving the current brief out.
 
-    Home Assistant registers /local only where config/www already
-    exists as a directory when the frontend sets up, and it checks
-    that once. Device Sentinel creates www/device_sentinel at its
-    first report write, which happens later, so on a system that
-    never had a www folder the very first boot after installing
-    leaves the daily brief and the dwell chart on disk at addresses
-    that return nothing. It heals at the next restart and says
-    nothing about why, which is the first impression the integration
-    makes on somebody who has just installed it.
+    Ruled 23 and 25 September 2026 (#470), built as 0.23.5. Home
+    Assistant serves config/www at /local to anyone who asks, signed in
+    or not, and the files there named devices, battery levels and
+    outage times: all six returned 200 to a client that had not signed
+    in. The battery and signal reports and the brief's dated copies are
+    retired with the folder, and the brief lives on beside the other
+    reports in config/device_sentinel, which Home Assistant does not
+    serve.
 
-    Registering the folder for ourselves closes that boot rather
-    than explaining it. The test is deliberately for the parent
-    folder, not our own: where config/www already existed the
-    frontend has /local covered and a second overlapping route would
-    be a route we do not need. Where it did not, /local is absent
-    for this whole boot and only our own registration can serve the
-    files.
-
-    Any failure here is logged and swallowed. A brief that cannot be
-    reached over HTTP is a worse brief, not a broken integration,
-    and the files are still on disk (ruling #186).
+    The whole folder goes, whatever else is in it: the owner ruled it
+    so, and the release note tells a person to copy it first. The
+    current brief is carried across unless one is already there, so
+    the first read after the upgrade finds a brief. Runs in the
+    executor, once per start, and does nothing once the folder is
+    gone. Returns what it did for the log, or None when there was
+    nothing to do.
     """
-    parent = hass.config.path(REPORT_WWW_PARENT)
-    folder = hass.config.path(REPORT_WWW_DIR)
+    folder = Path(hass.config.path(REPORT_WWW_DIR))
+    if not folder.is_dir():
+        return None
+    moved = False
+    brief = folder / REPORT_BRIEF_HTML
+    target_dir = Path(hass.config.path(REPORT_DIR))
+    target = target_dir / REPORT_BRIEF_HTML
+    if brief.is_file() and not target.exists():
+        target_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(brief, target)
+        moved = True
+    files = sum(1 for path in folder.rglob("*") if path.is_file())
+    shutil.rmtree(folder)
+    return (
+        f"deleted {REPORT_WWW_DIR} and the {files} file(s) in it"
+        + (f", after moving the current brief to {REPORT_DIR}" if moved else "")
+    )
 
-    def _look_then_make() -> bool:
-        """Answer both filesystem questions in one executor trip.
 
-        The look and the make are one job rather than two (ruling
-        #326): a stat is microseconds, but it is a filesystem call on
-        the event loop during setup, and the guide's rule is that the
-        boundary is crossed once where it can be crossed once rather
-        than chained.
-        """
-        if os.path.isdir(parent):
-            return False
-        os.makedirs(folder, exist_ok=True)
-        return True
+async def _async_retire_www_folder(hass: HomeAssistant) -> None:
+    """Run the retirement off the event loop; never fail the setup.
 
+    A folder that cannot be deleted leaves the old files where they
+    were, which is how every earlier release left them, so it is
+    logged and the start goes on.
+    """
     try:
-        needed = await hass.async_add_executor_job(_look_then_make)
-        if not needed:
-            return
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(REPORT_WWW_URL, folder, False)]
-        )
-    except Exception as err:  # noqa: BLE001 - a link is not the integration
+        done = await hass.async_add_executor_job(_retire_www_folder, hass)
+    except OSError as err:
         LOGGER.warning(
-            "Device Sentinel could not serve %s at %s, so the daily "
-            "brief and the signal report will not open until Home "
-            "Assistant restarts once (%s)",
+            "Device Sentinel could not delete %s, which it no longer "
+            "writes; remove it by hand (%s)",
             REPORT_WWW_DIR,
-            REPORT_WWW_URL,
             err,
         )
         return
-    LOGGER.info(
-        "Device Sentinel registered %s at %s for this session, because "
-        "no www folder existed when the frontend started",
-        REPORT_WWW_DIR,
-        REPORT_WWW_URL,
-    )
+    if done:
+        LOGGER.info("Device Sentinel %s", done)
 
 
 async def async_setup_entry(
@@ -341,9 +333,9 @@ async def async_setup_entry(
 
     _drop_dead_options(hass, entry)
     _drop_dead_entities(hass, entry)
-    # Before anything writes into www, because the test is whether
-    # the parent existed when the frontend looked.
-    await _async_serve_www_folder(hass)
+    # Before the first report write, so the brief the folder held is
+    # in its new home when the writer looks for it (0.23.5).
+    await _async_retire_www_folder(hass)
 
     coordinator = DeviceSentinelCoordinator(hass, entry, version)
     await coordinator.async_setup()
@@ -360,7 +352,6 @@ async def async_setup_entry(
     return True
 
 
-PANEL_URL_PATH = "device-sentinel"
 PANEL_ELEMENT = "device-sentinel-panel"
 PANEL_STATIC_ROOT = "/device_sentinel_panel"
 _PANEL_SERVED = f"{DOMAIN}_panel_served"

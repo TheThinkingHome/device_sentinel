@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.23.0 (2026-09-24)
+# File: messenger.py, Version: 0.23.5 (2026-09-25)
 
 """Sending the daily brief, and nothing else yet.
 
@@ -98,9 +98,9 @@ class MessengerMixin:
         payload: dict[str, Any] = {"title": BRIEF_TITLE, "message": text}
         if target != PERSISTENT_TARGET:
             # The emailed body is the brief page itself, the same
-            # string written to www: one rendering serves the file,
-            # the dashboard card, and the mail client, so what
-            # arrives is what is on disk. The composed text stays as
+            # string written to the reports folder: one rendering
+            # serves the file and the mail client, so what arrives
+            # is what is on disk. The composed text stays as
             # the message field for services without HTML and as the
             # plain fallback. The rule that the mail must be the
             # document that was written predates the HTML page and
