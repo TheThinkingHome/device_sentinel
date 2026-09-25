@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_trends.py, Version: 0.22.20 (2026-09-21)
+# File: tests/test_dashboard_trends.py, Version: 0.23.6 (2026-09-25)
 
 """The Battery Trends and Signal Trends tabs.
 
@@ -104,7 +104,9 @@ async def test_battery_trends_group_every_cell_by_model(hass: HomeAssistant, has
     assert aqara["lowest"] == 98.0
     assert aqara["typical"] == 99.0
     third = models["Third Reality Wireless motion sensor"]
-    assert round(third["rate"], 3) == -0.2
+    # Points a week from weekly averages since 0.23.6: the cell loses
+    # 0.2 a day, 1.4 a week.
+    assert round(third["rate"], 3) == -1.4
     assert page["models"][0]["maker"] == "Third Reality", "the fastest drain first"
 
 

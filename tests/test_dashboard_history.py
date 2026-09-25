@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_history.py, Version: 0.22.6 (2026-09-20)
+# File: tests/test_dashboard_history.py, Version: 0.23.6 (2026-09-25)
 
 """The device page's history: the report's figures, worked out once.
 
@@ -96,20 +96,25 @@ async def _page(hass, hass_ws_client, device):
 
 
 async def test_the_battery_figures_are_the_reports_own(hass: HomeAssistant, hass_ws_client):
+    """Button Terrace Dining's cell of 20 September, which the report
+    listed as falling "over a year" on a seven-day slope of -0.167 a
+    day. Its weekly averages move by a few tenths, so since 0.23.6 it
+    reads steady, with no line drawn and no time left: the fault the
+    release was built for, on a real cell."""
+    from custom_components.device_sentinel.report_battery import battery_weeks
+
     coord, device = await _terrace(hass)
     page = await _page(hass, hass_ws_client, device)
     battery = page["battery"]
-    report = next(row for row in coord._battery_rows()["falling"] if row["device_id"] == device.id)
-    assert battery["windows"] == {str(days): slope for days, slope in report["windows"].items()}
-    assert battery["blocks"] == [[start, end, slope] for start, end, slope in report["blocks"]]
-    assert battery["reading"] == report["reading"]
-    assert battery["left"] == coord.battery_time_left(report["days"])
-    # Button Terrace Dining's row in the report of 20 September.
-    assert round(battery["windows"]["30"], 3) == -0.053
-    assert round(battery["windows"]["14"], 3) == -0.056
-    assert round(battery["windows"]["7"], 3) == -0.167
-    assert [round(b[2], 3) for b in battery["blocks"] if b[:2] == [60, 30]] == [-0.071]
-    assert battery["left"] == "over a year"
+    record = coord.data["devices"][device.id]
+    assert battery["weeks"] == battery_weeks(record["battery_daily_value"])
+    assert len(battery["weeks"]) == 5
+    assert all(abs(a - b) < 1.0 for a, b in zip(battery["weeks"], battery["weeks"][1:]))
+    assert battery["reading"] == ""
+    assert battery["fit"] is None
+    assert battery["left"] is None
+    assert battery["sentence"] == ""
+    assert device.id not in [row["device_id"] for row in coord._battery_rows()["falling"]]
 
 
 async def test_each_signal_day_is_judged_as_the_report_judges_it(hass: HomeAssistant, hass_ws_client):

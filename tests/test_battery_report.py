@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.23.5 (2026-09-25)
+# File: test_battery_report.py, Version: 0.23.6 (2026-09-25)
 
 """Which cells are going to be low (ruling #194).
 
@@ -82,10 +82,15 @@ def _names(rows) -> list[str]:
 async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
     hass: HomeAssistant,
 ):
-    """Both cells are falling. One is at 12 percent losing 1.75 a day
-    and has a week; the other is at 82 percent losing 1.4 and has two
-    months. A rate alone cannot tell them apart, because their rates
-    are within half a point of each other. Time remaining can.
+    """Both cells are falling. One is at 12 percent and its last week
+    averaged 6.6 points below the week before, about two weeks left;
+    the other is at 82 percent and fell 4.7, about four months. Their
+    paces are within two points a week of each other, and time
+    remaining still tells them apart.
+
+    Before 0.23.6 the dying cell's pace came from a seven-day slope,
+    1.75 a day; it comes from the weekly averages now, since sixteen
+    days is too few for a knee.
     """
     coord = await setup_coordinator(hass)
     dying, _ = register_device(hass, "bat1", "Door 2nd Bedroom")
@@ -96,9 +101,10 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
 
     falling = coord._battery_rows()["falling"]
     assert _names(falling) == ["Door 2nd Bedroom", "Soil Moisture"]
-    assert falling[0]["slope"] == -1.75
-    assert coord.battery_time_left(falling[0]["days"]) == "under a week"
-    assert coord.battery_time_left(falling[1]["days"]) == "about 2 months"
+    assert round(falling[0]["slope"], 3) == -0.939
+    assert coord.battery_time_left(falling[0]["days"]) == "about 2 weeks"
+    assert falling[0]["reading"] == "falling"
+    assert coord.battery_time_left(falling[1]["days"]) == "about 6 months"
 
 
 async def test_the_sag_and_rebound_do_not_move_the_slope(
@@ -183,7 +189,11 @@ async def test_the_falling_sensor_is_a_different_set_from_low(
     assert "Already Low" not in names
     # And the sensor agrees with the report and the brief.
     row = coord.battery_falling_list[0]
-    assert row["left"] == "about a month"
+    # A week-against-week pace (0.23.6): the last week averaged about
+    # ten points below the one before, so two weeks, where the old
+    # seven-day slope was flattened by the last three days' 20.5, 20
+    # and 20 and said a month.
+    assert row["left"] == "about 2 weeks"
     assert row["device_id"] == soon.id
 
 
@@ -258,14 +268,14 @@ async def test_the_brief_names_a_cell_that_is_nearly_out(hass: HomeAssistant):
     battery report retired (0.23.5) it sends the reader to Battery
     Trends on the dashboard rather than to a page anyone could open.
     """
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
     device, _ = register_device(hass, "brf1", "Door 2nd Bedroom")
     _seed(coord, device.id, DYING, 12.0)
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     brief = _brief(hass)
 
-    assert "Batteries falling: Door 2nd Bedroom (under a week)" in brief
+    assert "Batteries falling: Door 2nd Bedroom (about 2 weeks)" in brief
     assert "Details are in Battery Trends on the Device Sentinel dashboard." in brief
     assert "battery_report" not in brief
     assert "/local/" not in brief

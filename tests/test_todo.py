@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.22.28 (2026-09-23)
+# File: test_todo.py, Version: 0.23.6 (2026-09-25)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -633,8 +633,11 @@ async def test_a_falling_cell_reaches_the_problem_list(
 
     item = _item_for(coord, device.id)
     assert item is not None
+    # Two weeks since 0.23.6: the last week averaged about ten points
+    # below the one before, where the seven-day slope was flattened by
+    # the last three days.
     assert item["summary"] == (
-        "Falling Cell: battery empty in about a month"
+        "Falling Cell: battery empty in about 2 weeks"
     )
 
 
