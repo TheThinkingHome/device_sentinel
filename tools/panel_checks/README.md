@@ -13,6 +13,7 @@ holds the checks written for one release.
 | `check_0_22_15.js` | 19 | back links to the exact page a view was opened from |
 | `check_0_22_16.js` | 6 | mutes named on a device's page, the Devices tab and an integration's page |
 | `check_0_22_17.js` | 15 | every table pinned, so filters and sorts leave the columns still |
+| `check_0_23_6.js` | 13 | battery trends by the week: five weekly averages, the knee and its sentence on a device's page, and Battery Trends' weekly columns |
 
 ## Running Them
 
