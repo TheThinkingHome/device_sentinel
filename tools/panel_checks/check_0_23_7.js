@@ -1,6 +1,6 @@
-// Checks for 0.23.6 (the knee check moved to 30 days in 0.23.7): battery trends by the week, and the knee, on a
-// device's page and on Battery Trends. Run with
-//   node check_0_23_6.js [path/to/panel.js]
+// Checks for 0.23.7: the weekly bars in orange and the fitted line,
+// drawn only at 30 and 14 days. Run with
+//   node check_0_23_7.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
 
@@ -108,36 +108,36 @@ const trends = {
   },
 };
 
-(async () => {
-  console.log("A cell that sped up, on its page");
-  const fast = await open(`${PREFIX}/device/${DEVICE}`, accelerating);
-  const page = text(fast.root);
-  const heads = [...fast.root.querySelectorAll("table.figures th")].map((th) => th.textContent);
-  check("its table shows five weeks, oldest first", heads.join("|") === "LEVEL|28 DAYS AGO|21 DAYS AGO|14 DAYS AGO|7 DAYS AGO|THIS WEEK|READING|LEFT", heads);
-  check("each week says what it lost", page.includes("down 6.4") && page.includes("down 5.2"), page.slice(-1500));
-  check("the sentence names the knee", page.includes("Accelerating: steady until about Sep 4"), page.slice(-1500));
-  // At 30 days: since 0.23.7 the knee is drawn only at 30 and 14 days.
-  [...fast.root.querySelectorAll("button")].find((b) => b.textContent === "30 Days").click();
+const range = async (root, label) => {
+  [...root.querySelectorAll("button")].find((b) => b.textContent === label).click();
   await settle();
-  check("the chart marks the knee", fast.root.querySelectorAll("svg circle").length >= 1);
-  check("no rate per day is left on the page", !page.includes("/day"), page.slice(-1500));
-  check("no three-slope legend is left", !page.includes("-day rate"), page.slice(-1500));
+};
+const bars = (root) => [...root.querySelectorAll("svg line")].filter((l) => l.getAttribute("stroke") === "#E8A33D");
+const fitted = (root) => [...root.querySelectorAll("svg polyline")].filter((p) => (p.getAttribute("stroke") || "").includes("error-color"));
 
-  console.log("A cell that only wobbles, on its page");
+(async () => {
+  console.log("A cell that sped up, at each range");
+  const fast = await open(`${PREFIX}/device/${DEVICE}`, accelerating);
+  check("at all 39 days: no weekly bars", bars(fast.root).length === 0, bars(fast.root).length);
+  check("and no fitted line", fitted(fast.root).length === 0);
+  await range(fast.root, "90 Days");
+  check("at 90 days: no weekly bars", bars(fast.root).length === 0, bars(fast.root).length);
+  check("and no fitted line", fitted(fast.root).length === 0);
+  await range(fast.root, "30 Days");
+  check("at 30 days: five weekly bars, the oldest cut at the edge", bars(fast.root).length === 5, bars(fast.root).length);
+  check("in orange, labelled with their averages", text(fast.root).includes("59.6") && text(fast.root).includes("66.0"));
+  check("the fitted line, with its knee", fitted(fast.root).length === 1 && fast.root.querySelectorAll("svg circle").length === 1);
+  await range(fast.root, "14 Days");
+  check("at 14 days: the last two weekly bars", bars(fast.root).length === 2, bars(fast.root).length);
+  check("the steep part of the fitted line", fitted(fast.root).length === 1);
+  check("but no knee, which is before the chart starts", fast.root.querySelectorAll("svg circle").length === 0);
+  check("the five-week table stays at every range", text(fast.root).includes("28 DAYS AGO"));
+
+  console.log("A steady cell at 30 days");
   const calm = await open(`${PREFIX}/device/${DEVICE}`, steady);
-  const calmText = text(calm.root);
-  check("it reads steady", calmText.includes("Steady: no week has fallen a point below the week before"), calmText.slice(-1200));
-  check("no fitted line is drawn", ![...calm.root.querySelectorAll("svg polyline")].some((p) => p.getAttribute("stroke-dasharray") === "7 5"));
-  check("and no knee", calm.root.querySelectorAll("svg circle").length === 0);
-
-  console.log("Battery Trends");
-  const tab = await open(`${PREFIX}/battery-trends`, trends);
-  const tabText = text(tab.root);
-  const tabHeads = [...tab.root.querySelectorAll("th")].map((th) => th.textContent);
-  check("the Falling table shows the five weeks", ["28 DAYS AGO", "THIS WEEK", "PACE"].every((h) => tabHeads.some((t) => t.startsWith(h))), tabHeads);
-  check("with the pace in points a week", tabText.includes("down 5.9 a week"), tabText.slice(0, 600));
-  check("the Steady table counts four weeks in points", tabHeads.some((t) => t.startsWith("4 WEEKS")), tabHeads);
-  check("the models are read a week at a time", tabText.includes("points lost a week over the last four weeks"), tabText.slice(0, 600));
+  await range(calm.root, "30 Days");
+  check("weekly bars, and no fitted line", bars(calm.root).length >= 4 && fitted(calm.root).length === 0
+    && ![...calm.root.querySelectorAll("svg polyline")].some((p) => p.getAttribute("stroke-dasharray") === "7 5"), bars(calm.root).length);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

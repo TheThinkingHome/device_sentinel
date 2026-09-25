@@ -14,6 +14,7 @@ holds the checks written for one release.
 | `check_0_22_16.js` | 6 | mutes named on a device's page, the Devices tab and an integration's page |
 | `check_0_22_17.js` | 15 | every table pinned, so filters and sorts leave the columns still |
 | `check_0_23_6.js` | 13 | battery trends by the week: five weekly averages, the knee and its sentence on a device's page, and Battery Trends' weekly columns |
+| `check_0_23_7.js` | 12 | the weekly bars in orange and the fitted line only at 30 and 14 days, cut to the range, the knee marked only when it is inside it |
 
 ## Running Them
 
