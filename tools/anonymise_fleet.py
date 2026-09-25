@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/anonymise_fleet.py, Version: 0.22.20 (2026-09-21)
+# File: tools/anonymise_fleet.py, Version: 0.23.3 (2026-09-25)
 
 """Build the committed fleet set from real houses' files.
 
@@ -69,6 +69,17 @@ ANY_ID = re.compile(
 # The fields that carry a device's name, and the ones that carry a name
 # inside a sentence.
 NAME_FIELDS = {"name", "sort_name"}
+# A problem-list item for an upstream, keyed "upstream:<domain>", names
+# an integration, not a person's device, and its name is the domain
+# the rest of the file carries as a scope. Anonymizing it as a device
+# name made the leak check find the domain everywhere: the second
+# fleet's "switchbot" item of 24 September (0.23.3).
+UPSTREAM_PREFIX = "upstream:"
+
+
+def _is_upstream(value: dict[str, Any]) -> bool:
+    device_id = value.get("device_id")
+    return isinstance(device_id, str) and device_id.startswith(UPSTREAM_PREFIX)
 SENTENCE_FIELDS = {"summary", "detail"}
 
 STORAGE_NAMES = (
@@ -154,8 +165,12 @@ def _walk(value: Any, house: House, names: list[str], field: str = "") -> Any:
     """Return an anonymized copy, keys kept in their order."""
     if isinstance(value, dict):
         out: dict[str, Any] = {}
+        upstream = _is_upstream(value)
         for key, item in value.items():
             new_key = house.ids_in(key) if isinstance(key, str) else key
+            if upstream and key in NAME_FIELDS:
+                out[new_key] = item
+                continue
             out[new_key] = _walk(item, house, names, str(key))
         return out
     if isinstance(value, list):
@@ -183,7 +198,10 @@ def _options(options: dict[str, Any], house: House, names: list[str]) -> Any:
 def _collect_names(value: Any, found: set[str], field: str = "") -> None:
     """Gather every value standing in a name field."""
     if isinstance(value, dict):
+        upstream = _is_upstream(value)
         for key, item in value.items():
+            if upstream and key in NAME_FIELDS:
+                continue
             _collect_names(item, found, str(key))
     elif isinstance(value, list):
         for item in value:
