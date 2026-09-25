@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.22.26 (2026-09-23)
+# File: diagnostics.py, Version: 0.23.4 (2026-09-25)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -248,6 +248,9 @@ async def async_get_config_entry_diagnostics(
             # None through device_field rather than a deprecation line.
             "manufacturer": device_field(device, "manufacturer"),
             "model": device_field(device, "model"),
+            # Finer than the display name where a device gives it, and
+            # what a model group is keyed on (0.23.4).
+            "model_id": device_field(device, "model_id"),
             "sw_version": device_field(device, "sw_version"),
             "hw_version": device_field(device, "hw_version"),
             # A set-aside device's integration comes from why it was set
@@ -434,6 +437,12 @@ async def async_get_config_entry_diagnostics(
         # rather than from a screenshot of the Status sensor's
         # attributes (ruling #305).
         "awaiting_enable": coordinator.awaiting_enable_counts(),
+        # Watched devices read as groups of the same maker, model and
+        # hardware version, with each firmware inside (0.23.4). Worked
+        # out now from the registry and the records, stored nowhere,
+        # and read by nothing that judges: it is here to be observed
+        # before anything is built on it.
+        "model_groups": coordinator.model_groups(),
         "battery": {
             "low_count": coordinator.battery_low_count,
             "low_list": coordinator.battery_low_list,

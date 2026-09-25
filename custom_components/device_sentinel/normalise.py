@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.23.2 (2026-09-24)
+# File: normalise.py, Version: 0.23.4 (2026-09-25)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -68,6 +68,7 @@ from .const import (
     DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_COARSE_DROPS,
     DEV_FLAP_BACK,
+    DEV_FIRMWARE_HISTORY,
     DEV_FLAP_DROPS,
     DEV_FLAP_LONGEST,
     DEV_FLAP_SINCE,
@@ -182,6 +183,9 @@ REAL_NUMBER = "number, not None"
 TEXT_LIST = "list of strings"
 MAPPING = "mapping"
 NULLABLE_MAPPING = "None or a mapping"
+# A device's firmware history (0.23.4): [version, first seen] pairs,
+# the version a non-empty string and the moment a number.
+VERSION_HISTORY = "list of [version, first seen] pairs"
 
 # Every field a record is expected to hold, and what shape it takes.
 # A key absent from this table is reported as unknown; a key in this
@@ -228,6 +232,7 @@ EXPECTED: dict[str, str] = {
     DEV_FLAP_SINCE: NUMBER,
     DEV_FLAP_BACK: NUMBER,
     DEV_FLAP_LONGEST: NUMBER,
+    DEV_FIRMWARE_HISTORY: VERSION_HISTORY,
     DEV_FROZEN_CATEGORY: STRING,
     DEV_FROZEN_SINCE: NUMBER,
 }
@@ -310,6 +315,21 @@ def _fault(kind: str, value: Any) -> str | None:
             return _describe(value)
         bad = [x for x in value if x is not None and not _is_number(x)]
         return None if not bad else f"{len(bad)} bad element(s), first {_describe(bad[0])}"
+    if kind == VERSION_HISTORY:
+        if not isinstance(value, list):
+            return _describe(value)
+        bad = [
+            pair
+            for pair in value
+            if not (
+                isinstance(pair, list)
+                and len(pair) == 2
+                and isinstance(pair[0], str)
+                and pair[0]
+                and _is_number(pair[1])
+            )
+        ]
+        return None if not bad else f"{len(bad)} bad pair(s), first {_describe(bad[0])}"
     if kind == INT_SERIES:
         if not isinstance(value, list):
             return _describe(value)

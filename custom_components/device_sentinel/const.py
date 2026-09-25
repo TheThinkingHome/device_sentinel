@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.2 (2026-09-24)
+# File: const.py, Version: 0.23.4 (2026-09-25)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1263,6 +1263,13 @@ DEV_FLAP_DROPS = "flap_drops"
 DEV_FLAP_SINCE = "flap_since"
 DEV_FLAP_BACK = "flap_back"
 DEV_FLAP_LONGEST = "flap_longest"
+# Each firmware a device has reported, as [version, first seen]
+# pairs, oldest first (0.23.4). Home Assistant's device registry keeps
+# only the current version, so a change is recorded here or lost. Kept
+# for the History setting's window like every daily series; the
+# current version always stays, and an older one goes once the version
+# that replaced it was first seen before the window opened.
+DEV_FIRMWARE_HISTORY = "firmware_history"
 BATTERY_COARSE_STEP = 5.0
 BATTERY_COARSE_CONFIRM = 2
 BATTERY_STEPS_SMOOTH = "smooth"
@@ -1495,6 +1502,7 @@ EPOCH_KEPT = (
     DEV_FLAP_SINCE,
     DEV_FLAP_BACK,
     DEV_FLAP_LONGEST,
+    DEV_FIRMWARE_HISTORY,
     DEV_SIGNAL_READS,
     DEV_SET_ASIDE_SINCE,
     DEV_LAST_ACTIVITY,
@@ -3121,3 +3129,17 @@ DEAD_ENTITY_SENTINEL_TYPES = (
     SENTINEL_TYPE_DATA_BATTERY,
     SENTINEL_TYPE_DATA_SIGNAL,
 )
+
+
+# Model groups (0.23.4). Devices of the same maker, model and hardware
+# version are read as a group, so one device's behaviour can be told
+# from its model's. Recorded for the diagnostics download only: no
+# verdict, list, push, screen or bus event reads any of it until the
+# owner has seen enough to rule how it is used.
+#
+# The window each device's figures are read over: the battery rate is
+# the same 30-day rate Battery Trends shows, and signal is judged over
+# thirty days (ruling #196).
+MODEL_GROUP_WINDOW_DAYS = 30
+# Words the section writes where Home Assistant gives no value.
+MODEL_GROUP_NOT_GIVEN = "not given"

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.2 (2026-09-24)
+# File: coordinator.py, Version: 0.23.4 (2026-09-25)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -212,6 +212,7 @@ from .const import (
 )
 from .detect_battery import BatteryMixin
 from .flapping import FlapMixin
+from .model_groups import ModelGroupMixin
 from .detect_freeze import FreezeMixin
 from .detect_signal import SignalMixin, _entity_unit, _is_percentage
 from .device_fields import child_devices, device_field
@@ -251,6 +252,7 @@ class DeviceSentinelCoordinator(
     BatteryMixin,
     FreezeMixin,
     FlapMixin,
+    ModelGroupMixin,
     ProblemListMixin,
     StorageMixin,
     InterventionMixin,
@@ -2109,6 +2111,10 @@ class DeviceSentinelCoordinator(
                     now_iso, self._seed_from_last_seen(device_id)
                 )
                 self._mark_cold_dirty()
+        # Each watched device's firmware, at every start and every
+        # registry change, since the registry keeps only the current
+        # version (0.23.4).
+        self._note_firmware(watched)
         now_stamp = dt_util.utcnow().timestamp()
         departed = 0
         for device_id in list(devices):
@@ -3264,6 +3270,7 @@ class DeviceSentinelCoordinator(
                 bucket[DEV_SIGNAL_TODAY_MIN] = None
             self._roll_dwell(record, now)
             self._roll_battery(record, device_id)
+            self._prune_firmware(record, now)
         # The day's storm tally, one row per domain (ruling #320),
         # written before the save that carries it. Dated by the day
         # that just ended: the roll runs at local midnight, when today
