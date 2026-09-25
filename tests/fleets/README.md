@@ -21,3 +21,7 @@ Wi-Fi network names and notification targets are stand-ins. Everything
 learned, every timestamp and every count is as the house recorded it.
 The set is refreshed when the owner decides, as a commit of its own
 with its new Test Baseline line and no product code.
+
+Last refreshed 25 September 2026: `reference/` and `second/` from their
+files of 24 September, both on 0.22.28; `fourth/` unchanged since 21
+September.
