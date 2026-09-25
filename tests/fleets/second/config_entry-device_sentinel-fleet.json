@@ -619,9 +619,6 @@
    "03fa00000000000000000000000000ce": {
     "name": "Device 155"
    },
-   "03fa00000000000000000000000000cf": {
-    "name": "Device 085"
-   },
    "03fa00000000000000000000000000d0": {
     "name": "Device 065"
    },
@@ -729,19 +726,22 @@
    },
    "03fa00000000000000000000000000f3": {
     "name": "Device 248"
+   },
+   "03fa00000000000000000000000000fb": {
+    "name": "Device 250"
    }
   },
   "entry_options": {
-   "battery_muted_devices": [],
+   "battery_days_till_empty": 30.0,
+   "battery_muted_devices": [
+    "03fa0000000000000000000000000002"
+   ],
    "battery_muted_integrations": [],
    "battery_muted_labels": [],
-   "brief_document_targets": [
-    "persistent_notification"
-   ],
+   "brief_document_targets": "**REDACTED**",
    "daily_reminder_mode": "daily",
    "daily_reminder_time": "08:00:00",
    "excluded_integrations": [
-    "mobile_app",
     "fully_kiosk",
     "spook",
     "ping",
@@ -754,14 +754,15 @@
     "apple_tv",
     "dlna_dmr",
     "samsungtv",
-    "unifi"
+    "unifi",
+    "mobile_app"
    ],
    "freeze_muted_devices": [],
    "freeze_muted_integrations": [],
    "freeze_muted_labels": [],
    "high_priority_targets": "**REDACTED**",
    "history_days": 60.0,
-   "low_threshold": 20,
+   "low_threshold": 20.0,
    "maintenance_minutes": 15.0,
    "muted_devices": [
     "03fa000000000000000000000000009b",
@@ -788,20 +789,24 @@
    "muted_integrations": [],
    "muted_labels": [
     "devsen_ignore",
-    "spare"
+    "spare",
+    "troubleshooting"
    ],
    "normal_priority_targets": "**REDACTED**",
-   "persistent_enabled": false,
+   "persistent_enabled": true,
    "quiet_hours_enabled": false,
    "quiet_hours_end": "08:00:00",
    "quiet_hours_start": "22:00:00",
    "repeat_floor": 2.0,
-   "report_link_address": "none",
+   "report_link_address": "internal",
    "signal_muted_devices": [],
    "signal_muted_integrations": [],
    "signal_muted_labels": [],
    "storage_write_minutes": 20.0,
-   "study_hardware": [],
+   "study_hardware": [
+    "Z-Wave",
+    "Matter"
+   ],
    "wifi_confirm_seconds": 60.0,
    "wifi_networks": [
     "network_1"
