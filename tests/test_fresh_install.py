@@ -1,7 +1,7 @@
 """What a stranger gets: an empty install, driven end to end.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_fresh_install.py, Version: 0.13.8 (2026-08-13)
+# File: test_fresh_install.py, Version: 0.23.5 (2026-09-25)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -30,20 +30,18 @@ from .helpers import register_device, setup_coordinator
 async def test_a_fresh_install_writes_its_reports_at_once(
     hass: HomeAssistant,
 ):
-    """The files exist from the first boot, so a dashboard card
-    pointed at them is never a broken link, and a person who installs
-    and immediately looks finds a page rather than a 404."""
+    """The files exist from the first boot, so a person who installs
+    and immediately looks finds them. Since 0.23.5 the brief sits with
+    the other reports, and nothing is written under www."""
     register_device(hass, "fi1", "First Device")
     coord = await setup_coordinator(hass)
 
     await hass.async_add_executor_job(coord._write_reports, "setup")
 
     reports = hass.config.path(REPORT_DIR)
-    www = hass.config.path(REPORT_WWW_DIR)
-    for name in ("device_telemetry.md", "classification.md"):
+    for name in ("device_telemetry.md", "classification.md", "daily_brief.html"):
         assert os.path.exists(os.path.join(reports, name)), name
-    for name in ("daily_brief.html", "battery_report.html"):
-        assert os.path.exists(os.path.join(www, name)), name
+    assert not os.path.exists(hass.config.path(REPORT_WWW_DIR))
 
 
 async def test_a_fresh_install_claims_nothing_it_has_not_learned(

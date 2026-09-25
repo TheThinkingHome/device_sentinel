@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_wording.py, Version: 0.22.0 (2026-09-18)
+# File: tests/test_battery_wording.py, Version: 0.23.5 (2026-09-25)
 
 """What the brief says when a battery level jumps.
 
@@ -69,7 +69,7 @@ async def test_the_written_brief_never_claims_a_replacement(hass: HomeAssistant)
     coord = await setup_coordinator(hass)
     coord.data[DATA_SYSTEM_EVENTS] = [_row(device.id)]
     await hass.async_add_executor_job(coord._write_reports, "manual")
-    path = hass.config.path("www", "device_sentinel", "daily_brief.html")
+    path = hass.config.path("device_sentinel", "daily_brief.html")
     text = await hass.async_add_executor_job(
         lambda: open(path, encoding="utf-8").read()
     )

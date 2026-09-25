@@ -3,17 +3,21 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_labels.py, Version: 0.21.14 (2026-09-18)
+# File: tests/test_device_labels.py, Version: 0.23.5 (2026-09-25)
 
 """A device's name in an HTML report: its area, and a link to it.
 
 Issue #13, from fetzerch: on a large house the reports name a device
 that means nothing on its own. Every one of his temperature sensors
 is called "Temperature & Humidity", and finding the one that is
-reported means going and looking. The name now carries its area in
-square brackets and links to the device page, and the link is
-absolute with the external URL preferred (ruling #183), so it works
-from outside the house as well as in it.
+reported means going and looking. The name carries its area in
+square brackets and links to the device, on the address the Links in
+Reports setting names and no other (#453).
+
+Since 0.23.5 the link opens the device's page on the Device Sentinel
+dashboard, /device-sentinel/device/<id>, which says why the device is
+listed, in place of Home Assistant's device page; and the brief is
+the only HTML report left.
 """
 
 from __future__ import annotations
@@ -60,7 +64,7 @@ async def test_the_name_links_to_the_device_page(hass: HomeAssistant):
     await _linking(hass, coord, REPORT_LINKS_INTERNAL)
 
     label = coord._device_cell(device.id, "Motion Laundry")
-    assert f'href="http://10.10.10.10:8123/config/devices/device/{device.id}"' in label
+    assert f'href="http://10.10.10.10:8123/device-sentinel/device/{device.id}"' in label
     assert ">Motion Laundry</a>" in label
 
 
@@ -120,7 +124,7 @@ async def test_nothing_is_linked_until_a_person_says_so(
 
     label = coord._device_cell(device.id, "Motion Laundry")
     assert label == "Motion Laundry [Laundry]"
-    assert coord._report_link("/config/devices/device/x") is None
+    assert coord._report_link("/device-sentinel/device/x") is None
 
 
 async def test_the_area_survives_the_setting_being_off(
@@ -199,10 +203,10 @@ async def test_the_brief_tables_carry_the_area_and_the_link(
     await hass.async_block_till_done()
     await hass.async_add_executor_job(coord._write_reports, "manual")
 
-    page = coord.hass.config.path("www/device_sentinel/daily_brief.html")
+    page = coord.hass.config.path("device_sentinel/daily_brief.html")
     with open(page, encoding="utf-8") as handle:
         html = handle.read()
-    assert f"/config/devices/device/{device.id}" in html
+    assert f"/device-sentinel/device/{device.id}" in html
     assert ">Motion Laundry</a> [Laundry]" in html
 
 
@@ -224,7 +228,7 @@ async def test_two_devices_sharing_a_name_link_to_the_right_one(
         "| frozen |"
     )
     cells = coord._brief_cells(line)
-    assert f"/config/devices/device/{second.id}" in cells[0]
+    assert f"/device-sentinel/device/{second.id}" in cells[0]
     assert first.id not in cells[0]
 
 
@@ -245,8 +249,8 @@ async def test_a_name_that_repeats_keeps_its_own_device(
         f"| {coord._note_brief_device(second.id, 'Dining Shades')} | b |",
     ]
     rendered = [coord._brief_cells(line)[0] for line in lines]
-    assert f"/config/devices/device/{first.id}" in rendered[0]
-    assert f"/config/devices/device/{second.id}" in rendered[1]
+    assert f"/device-sentinel/device/{first.id}" in rendered[0]
+    assert f"/device-sentinel/device/{second.id}" in rendered[1]
 
 
 async def test_a_brief_rendered_twice_reads_the_same(
@@ -269,5 +273,5 @@ async def test_a_brief_rendered_twice_reads_the_same(
     once = coord._render_brief_html(markdown)
     twice = coord._render_brief_html(markdown)
     assert once == twice
-    assert f"/config/devices/device/{first.id}" in once
-    assert f"/config/devices/device/{second.id}" in once
+    assert f"/device-sentinel/device/{first.id}" in once
+    assert f"/device-sentinel/device/{second.id}" in once

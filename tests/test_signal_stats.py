@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.23.1 (2026-09-24)
+# File: test_signal_stats.py, Version: 0.23.5 (2026-09-25)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -26,13 +26,10 @@ nothing alerts from it (#59).
 
 from __future__ import annotations
 
-import glob
 import os
-from datetime import timedelta
 
 import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
     BRIEF_TRIGGER,
@@ -68,8 +65,8 @@ from custom_components.device_sentinel.const import (
     EP_SIG_VALUE,
     EP_SIGNAL,
     EP_SINCE,
-    REPORT_SIGNAL,
-    REPORT_WWW_DIR,
+    REPORT_BRIEF_HTML,
+    REPORT_DIR,
     SIGNAL_RAIL_LQI,
 )
 from custom_components.device_sentinel.diagnostics import (
@@ -79,27 +76,13 @@ from custom_components.device_sentinel.diagnostics import (
 from .helpers import register_device, setup_coordinator, setup_entry
 
 
+def _brief_path(hass: HomeAssistant) -> str:
+    return os.path.join(hass.config.path(REPORT_DIR), REPORT_BRIEF_HTML)
+
+
 def _brief_text(hass: HomeAssistant) -> str:
-    written = sorted(
-        glob.glob(
-            hass.config.path(REPORT_WWW_DIR, "daily_brief_2*.html")
-        )
-    )
-    assert written
-    with open(written[-1], encoding="utf-8") as handle:
+    with open(_brief_path(hass), encoding="utf-8") as handle:
         return handle.read()
-
-
-def _report_path(hass: HomeAssistant) -> str:
-    return os.path.join(
-        hass.config.path(REPORT_WWW_DIR), REPORT_SIGNAL
-    )
-
-
-def _read(hass: HomeAssistant) -> str:
-    with open(_report_path(hass), encoding="utf-8") as handle:
-        return handle.read()
-
 
 
 def _trimmed(coordinator, depth):
@@ -337,75 +320,6 @@ async def test_the_load_leaves_zero_count_rows_alone(
     assert coord.signal_railed(stored) is False
 
 
-async def test_a_bad_day_gets_a_biography_and_a_calm_device_does_not(
-    hass: HomeAssistant,
-):
-    """The page describes the devices that changed and only those.
-
-    A device whose P5 fell 60 points below a tight week is a bad day
-    on every gate (ruling #310); a steady neighbour renders in the
-    strip and nowhere else.
-    """
-    coord = await setup_coordinator(hass, {})
-    hot, _ = register_device(hass, "an1", "Anomalous Device")
-    coord.data[DATA_DEVICES][hot.id][DEV_SIGNAL_DAILY_P5] = [
-        160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
-    ]
-    calm, _ = register_device(hass, "an2", "Calm Device")
-    coord.data[DATA_DEVICES][calm.id][DEV_SIGNAL_DAILY_P5] = [
-        150.0, 151.0, 149.0, 150.0, 152.0, 150.0, 151.0,
-    ]
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    html = _read(hass)
-
-    section = html[html.index("Devices That Had a Bad Day"):]
-    assert "Anomalous Device" in section
-    assert "It has not come back." in section
-    assert "Calm Device" not in section
-    assert "Calm Device" in html
-
-
-async def test_a_cluster_is_one_sentence_with_the_router_hint(
-    hass: HomeAssistant,
-):
-    """Two devices falling on the same day share a headline.
-
-    Four mysteries against one dead router is the whole value of the
-    sentence (ruling #310), so the shared-cause hint is pinned.
-    """
-    coord = await setup_coordinator(hass, {})
-    for key, name in (("c1", "First Victim"), ("c2", "Second Victim")):
-        device, _ = register_device(hass, key, name)
-        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
-            160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
-        ]
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    html = _read(hass)
-
-    assert "Signal fell sharply on 2 devices" in html
-    assert "First Victim and Second Victim" in html
-    assert "usually share a router" in html
-
-
-async def test_a_quiet_fleet_says_so_in_plain_words(
-    hass: HomeAssistant,
-):
-    """No bad day writes the quiet sentence, not an empty box."""
-    coord = await setup_coordinator(hass, {})
-    device, _ = register_device(hass, "q1", "Quiet Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
-        150.0, 151.0, 149.0, 150.0, 152.0, 150.0, 151.0,
-    ]
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    html = _read(hass)
-
-    assert "No device had a bad signal day" in html
-    assert "Quiet Device" in html
-
-
 async def test_the_brief_carries_no_signal_anomaly_line(
     hass: HomeAssistant,
 ):
@@ -428,56 +342,14 @@ async def test_the_brief_carries_no_signal_anomaly_line(
     assert "Signal fell sharply" not in brief
 
 
-async def test_the_strip_orders_worst_first(hass: HomeAssistant):
-    """The page opens on what matters (ruling #310).
-
-    A reader who stops after the first rows has seen the devices
-    that moved. Order is by the deepest fall anywhere in the strip,
-    so yesterday's victim outranks today's calm fleet.
-    """
-    coord = await setup_coordinator(hass, {})
-    fell, _ = register_device(hass, "o1", "Fallen Device")
-    coord.data[DATA_DEVICES][fell.id][DEV_SIGNAL_DAILY_P5] = [
-        160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
-    ]
-    calm, _ = register_device(hass, "o2", "Calm Device")
-    coord.data[DATA_DEVICES][calm.id][DEV_SIGNAL_DAILY_P5] = [
-        150.0, 151.0, 149.0, 150.0, 152.0, 150.0, 151.0,
-    ]
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    html = _read(hass)
-
-    assert html.index("Fallen Device") < html.index("Calm Device")
-
-
-async def test_a_bad_day_is_ringed_in_the_strip(hass: HomeAssistant):
-    """The ring is the strip's only verdict marker (ruling #310):
-    shading says how far, the ring says it crossed both gates."""
-    coord = await setup_coordinator(hass, {})
-    device, _ = register_device(hass, "r1", "Ringed Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
-        160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
-    ]
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    html = _read(hass)
-
-    assert "stroke='#1a1a19'" in html
-
-
-async def test_the_brief_is_also_a_page_under_www(
+async def test_the_brief_is_a_page_in_the_reports_folder(
     hass: HomeAssistant,
 ):
-    """Rung one of the www ladder (#178): daily_brief.html.
+    """daily_brief.html (#178), in the reports folder since 0.23.5.
 
-    Rendered from the Markdown text itself so the two briefs cannot
-    drift: the heading, the problem table, and the report pointer
-    all arrive as HTML, the pointer as a live link, and the page
-    carries the same dark-mode stylesheet approach as the report.
-    The pointer asserted is the battery report's, because dwell's
-    anomaly line is retired (ruling #310) and the bad-day sentence
-    has not yet earned the brief.
+    Rendered from the Markdown text itself so the two cannot drift:
+    the heading and the problem table arrive as HTML, and the page
+    carries its dark-mode stylesheet.
     """
     coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "bh1", "Anomalous Device")
@@ -489,12 +361,7 @@ async def test_the_brief_is_also_a_page_under_www(
     record["battery_daily_value"] = [52.0, 50.0, 48.0, 46.0, 44.0, 42.0, 40.0]
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
-
-    path = os.path.join(
-        hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
-    )
-    with open(path, encoding="utf-8") as handle:
-        page = handle.read()
+    page = _brief_text(hass)
 
     assert "<h1>Device Sentinel Daily Brief</h1>" in page
     assert "<h2>In Short</h2>" in page
@@ -502,44 +369,17 @@ async def test_the_brief_is_also_a_page_under_www(
     assert "prefers-color-scheme: dark" in page
 
 
-async def test_the_html_brief_tracks_the_markdown(
-    hass: HomeAssistant,
-):
-    """The page is the current picture: a second write replaces it,
-    and its content is the newest Markdown brief's content."""
-    import glob as _glob
-
-    coord = await setup_coordinator(hass)
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    path = os.path.join(
-        hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
-    )
-    with open(path, encoding="utf-8") as handle:
-        page = handle.read()
-    dated = sorted(
-        _glob.glob(
-            hass.config.path(REPORT_WWW_DIR, "daily_brief_2*.html")
-        )
-    )
-    with open(dated[-1], encoding="utf-8") as handle:
-        dated_page = handle.read()
-    # The dated file and the current file are the same document.
-    assert dated_page == page
-
-async def test_the_markdown_brief_is_retired(hass: HomeAssistant):
-    """0.10.18: no new .md brief is written; the dated record is
-    HTML under www, named as the Markdown files were, and trimmed."""
+async def test_the_brief_is_one_file(hass: HomeAssistant):
+    """No Markdown brief since 0.10.18, and no dated copies since
+    0.23.5: one daily_brief.html, and nothing written under www."""
     import glob as _glob
 
     coord = await setup_coordinator(hass)
     await hass.async_add_executor_job(coord._write_reports, "manual")
 
-    assert not _glob.glob(
-        hass.config.path("device_sentinel", "daily_brief_*.md")
-    )
-    assert _glob.glob(
-        hass.config.path(REPORT_WWW_DIR, "daily_brief_2*.html")
-    )
+    assert not _glob.glob(hass.config.path("device_sentinel", "daily_brief_*"))
+    assert os.path.isfile(_brief_path(hass))
+    assert not os.path.exists(hass.config.path("www", "device_sentinel"))
 
 
 async def test_the_diagnostics_live_one_level_up(hass: HomeAssistant):
@@ -576,8 +416,10 @@ async def test_the_email_body_is_the_page(hass: HomeAssistant):
     every morning: it paired the closed day's text with a page
     belonging to another window. The rule it was meant to hold is
     that the mail carries the page of the document being sent, so it
-    now takes a closing write, the text that write returned, and the
-    dated file that write produced.
+    now takes a closing write and the text that write returned. Since
+    0.23.5 there is no dated file to hold the closed day, so the page
+    is rendered from that text, which is exactly what the writer
+    wrote before it opened the new day.
     """
     coord = await setup_coordinator(hass)
     text = await hass.async_add_executor_job(
@@ -586,146 +428,8 @@ async def test_the_email_body_is_the_page(hass: HomeAssistant):
     assert text is not None
 
     payload = coord._brief_payload("notify.mail", text)
-    start, _end = coord._brief_close_bounds()
-    closed = dt_util.as_local(
-        dt_util.utc_from_timestamp(start)
-    ).strftime("daily_brief_%Y-%m-%d.html")
-    with open(
-        os.path.join(hass.config.path(REPORT_WWW_DIR), closed),
-        encoding="utf-8",
-    ) as handle:
-        page = handle.read()
-    assert payload["data"]["html"] == page
+    assert payload["data"]["html"] == coord._render_brief_html(text)
     assert payload["message"] == text
-
-async def test_every_www_file_is_dated_and_trimmed(
-    hass: HomeAssistant,
-):
-    """One rule for the folder (ruled 2026-08-02): dated files as
-    the record, an undated current file for the stable URL, and the
-    brief's fourteen-day trim applied to every prefix alike."""
-    import glob as _glob
-
-    from custom_components.device_sentinel.const import BRIEF_KEEP_DAYS
-
-    directory = hass.config.path(REPORT_WWW_DIR)
-    os.makedirs(directory, exist_ok=True)
-    for day in range(1, BRIEF_KEEP_DAYS + 5):
-        name = f"signal_report_2026-06-{day:02d}.html"
-        with open(
-            os.path.join(directory, name), "w", encoding="utf-8"
-        ) as handle:
-            handle.write("stale")
-
-    coord = await setup_coordinator(hass)
-    device, _ = register_device(hass, "dt1", "Dated Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
-        150.0, 151.0, 149.0, 150.0, 152.0,
-    ]
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-
-    dated = sorted(
-        _glob.glob(os.path.join(directory, "signal_report_2*.html"))
-    )
-    assert len(dated) == BRIEF_KEEP_DAYS
-    # Today's dated file and the current file are the same document.
-    with open(dated[-1], encoding="utf-8") as handle:
-        newest = handle.read()
-    with open(
-        os.path.join(directory, "signal_report.html"), encoding="utf-8"
-    ) as handle:
-        current = handle.read()
-    assert newest == current
-    assert "Dated Device" in current
-
-async def test_the_link_is_external_then_internal_never_relative(
-    hass: HomeAssistant,
-):
-    """#183, amending #181: the link is never left relative.
-
-    #181 preferred the external URL and let the link stay relative
-    where none was configured, on the reasoning that a relative
-    address still works for a browser already facing the instance.
-    It does not work in a mail client, which has no host to resolve
-    it against, so the relative case was a dead link in the one
-    place the rule was written for. The order is now external, then
-    internal, then nothing. This environment configures no external
-    URL, so the rendered link must carry the internal host.
-    """
-    coord = await setup_coordinator(hass, {})
-    device, _ = register_device(hass, "ex1", "Anomalous Device")
-    record = coord.data[DATA_DEVICES][device.id]
-    record[DEV_BATTERY_VALUE] = 40.0
-    # Falling in small steps: a cell that falls only in steps of five
-    # or more is judged by the low threshold alone and never
-    # forecast (0.23.1), and this test needs one in the brief.
-    record["battery_daily_value"] = [52.0, 50.0, 48.0, 46.0, 44.0, 42.0, 40.0]
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    path = os.path.join(
-        hass.config.path(REPORT_WWW_DIR), "daily_brief.html"
-    )
-    with open(path, encoding="utf-8") as handle:
-        page = handle.read()
-
-    assert "href='/local/device_sentinel/battery_report.html'" not in page
-    assert (
-        "href='http://10.10.10.10:8123"
-        "/local/device_sentinel/battery_report.html'" in page
-    )
-
-
-async def test_the_chart_names_the_days_it_covers(
-    hass: HomeAssistant,
-):
-    """Every date on the page is its own, never "yesterday" (ruling
-    #190): the header names the closed day it covers."""
-    coord = await setup_coordinator(hass, {})
-    device, _ = register_device(hass, "dn1", "Dated Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
-        150.0, 151.0, 149.0, 150.0, 152.0, 150.0, 151.0,
-    ]
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    html = _read(hass)
-
-    covered = (dt_util.now().date() - timedelta(days=1)).strftime(
-        "%b %-d"
-    )
-    assert f"Covering {covered}, the most recent day that" in html
-    assert f"<h2>{covered}</h2>" in html
-
-
-async def test_the_dated_chart_is_named_for_the_day_it_covers(
-    hass: HomeAssistant,
-):
-    """The fault as found (ruling #190).
-
-    Dwell rolls at midnight, so a chart written on the 3rd carries
-    the 2nd's figures. It was named for the write, so the file called
-    signal_report_2026-08-02 held the 1st, while the brief's dated
-    file for the same date held the 2nd. Two files, one date, two
-    days.
-    """
-    coord = await setup_coordinator(hass)
-    device, _ = register_device(hass, "dt2", "Dated Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [160.0]
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-
-    directory = hass.config.path(REPORT_WWW_DIR)
-    covered = dt_util.now().date() - timedelta(days=1)
-    assert os.path.isfile(
-        os.path.join(
-            directory,
-            f"signal_report_{covered.strftime('%Y-%m-%d')}.html",
-        )
-    )
-    # No dated chart for today, because today's dwell has not closed.
-    today = dt_util.now().date().strftime("%Y-%m-%d")
-    assert not os.path.isfile(
-        os.path.join(directory, f"signal_report_{today}.html")
-    )
 
 
 # ------------------------------------ the good-state ceiling (#193)

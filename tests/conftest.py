@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: conftest.py, Version: 0.22.20 (2026-09-21)
+# File: conftest.py, Version: 0.23.5 (2026-09-25)
 
 """Shared test fixtures.
 
@@ -16,7 +16,6 @@ passed an incorrect one. Every test now starts from an empty report
 directory.
 """
 
-import glob
 import importlib.util
 import logging
 import os
@@ -37,9 +36,9 @@ WWW_DIRECTORY = os.path.join(get_test_config_dir(), "www", "device_sentinel")
 def clean_report_directory():
     """Give each test empty report directories, before and after.
 
-    Both folders since 0.10.18: what a person reads lives under www
-    (#178), and a dated brief left by one test is a wrong answer in
-    the next test's file count.
+    The www folder too, though nothing writes there since 0.23.5: a
+    test planting an old installation's files there must not leave
+    them for the next test to find.
     """
     shutil.rmtree(REPORT_DIRECTORY, ignore_errors=True)
     shutil.rmtree(WWW_DIRECTORY, ignore_errors=True)
@@ -153,11 +152,9 @@ def no_new_deprecations():
 
 @pytest.fixture
 def read_brief():
-    """Return a reader for whichever brief was written.
+    """Return a reader for the brief that was written.
 
-    The file is named for the day its window opened, which is not
-    today's date when the window began before the brief hour, so
-    tests locate it rather than reconstructing the name.
+    One file since 0.23.5, daily_brief.html in the reports folder.
     """
 
     def _read(hass):
@@ -166,13 +163,10 @@ def read_brief():
         # composed text is returned, because it is the message field
         # and the source the page renders from, so its prose is the
         # prose these tests examine.
-        pattern = os.path.join(
-            hass.config.path("www", "device_sentinel"),
-            "daily_brief_2*.html",
+        written = os.path.join(
+            hass.config.path("device_sentinel"), "daily_brief.html"
         )
-        written = sorted(glob.glob(pattern))
-        assert written, "no daily brief was written"
-        assert len(written) == 1, f"expected one brief, found {written}"
+        assert os.path.isfile(written), "no daily brief was written"
         from custom_components.device_sentinel.const import DOMAIN
 
         entry = hass.config_entries.async_entries(DOMAIN)[0]

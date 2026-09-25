@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_signal_badday.py, Version: 0.22.20 (2026-09-21)
+# File: tests/test_signal_badday.py, Version: 0.23.5 (2026-09-25)
 
 """The bad signal day detector (ruling #310).
 
@@ -25,15 +25,12 @@ import json
 import math
 import os
 import pathlib
-import re
 import statistics
 from fractions import Fraction
 
 import pytest
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import area_registry as ar
-from homeassistant.helpers import device_registry as dr
 
 from custom_components.device_sentinel.const import (
     REPORT_WWW_DIR,
@@ -246,84 +243,6 @@ async def test_the_approved_slider_words_are_pinned(hass: HomeAssistant):
         assert "signal_red_threshold" not in signal["data"]
 
 
-async def test_the_strip_shows_only_devices_worth_a_look(
-    hass: HomeAssistant,
-):
-    """Ruling #315, and Tim Plas's whole complaint about the page.
-
-    He read the first version and said there was no chance he would
-    read it daily: 79 rows, 74 of them entirely green, with the
-    answer buried under a chart nobody asked a question of. A device
-    now earns a row by having fallen three of its own spreads below
-    its normal at some point in the window; the rest are named in a
-    line and the full fleet stays behind a toggle.
-    """
-    coord = await setup_coordinator(hass)
-    for index in range(9):
-        device, _ = register_device(hass, f"q{index}", f"Quiet {index}")
-        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
-            160.0, 161.0, 159.0, 160.0, 161.0, 160.0, 159.5,
-        ]
-    loud, _ = register_device(hass, "loud", "Fallen Device")
-    coord.data[DATA_DEVICES][loud.id][DEV_SIGNAL_DAILY_P5] = (
-        STEADY_WEEK + [100.0]
-    )
-
-    rows = coord._signal_report_rows()
-    worth, quiet = coord._signal_strip_rows(rows)
-
-    assert len(rows) == 10
-    assert worth[0]["name"] == "Fallen Device"
-    # The floor holds: a fleet with one fallen device still shows
-    # enough rows to read a band against.
-    assert len(worth) == 5
-    assert len(quiet) == 5
-
-
-async def test_a_fleet_wide_event_cannot_put_every_row_back(
-    hass: HomeAssistant,
-):
-    """The ceiling. A broker outage drops everything at once, and a
-    page of eighty rows is the page this ruling removed."""
-    coord = await setup_coordinator(hass)
-    for index in range(30):
-        device, _ = register_device(hass, f"d{index}", f"Device {index}")
-        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = (
-            STEADY_WEEK + [90.0]
-        )
-
-    rows = coord._signal_report_rows()
-    worth, quiet = coord._signal_strip_rows(rows)
-
-    assert len(rows) == 30
-    assert len(worth) == 20
-    assert len(quiet) == 10
-
-
-async def test_each_row_carries_its_area(hass: HomeAssistant):
-    """Shown even though it can mislead (ruling #315).
-
-    The router unplugged on 18 August took devices in five different
-    rooms, because a router serves by radio topology rather than by
-    the room it sits in. The area is still a fact, and withholding a
-    fact because it is not yet interpretable is how dwell came to
-    measure against a line that moved.
-    """
-    device, _ = register_device(hass, "ar1", "Placed Device")
-    areas = ar.async_get(hass)
-    area = areas.async_get_or_create("Master Bedroom")
-    dr.async_get(hass).async_update_device(device.id, area_id=area.id)
-    coord = await setup_coordinator(hass)
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = (
-        STEADY_WEEK + [100.0]
-    )
-
-    rows = coord._signal_report_rows()
-
-    assert rows[0]["area"] == "Master Bedroom"
-    assert "Master Bedroom" in coord._signal_strip_svg(rows)
-
-
 # 0.19.14: the signal report release (ruling #380).
 
 
@@ -342,161 +261,6 @@ def _signal_page(hass):
     )
     with open(path, encoding="utf-8") as handle:
         return handle.read()
-
-
-async def test_the_steady_devices_are_named(hass: HomeAssistant):
-    """The count and the list come from one place, so the page can
-    never say a different number than it shows (ruling #380)."""
-    coord = await setup_coordinator(hass)
-    for index in range(9):
-        device, _ = register_device(hass, f"sq{index}", f"Quiet {index}")
-        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
-            150.0 + index
-        ] * 12
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    page = _signal_page(hass)
-
-    assert "<h2>Steady Signals</h2>" in page
-    assert "stayed within their own normal." in page
-    steady = page[page.index("<h2>Steady Signals</h2>"):]
-    steady = steady[: steady.index("<h2>Devices That Had a Bad Day")]
-    named = [
-        cell
-        for cell in re.findall(r"<td>(.*?)</td>", steady)
-        if cell.strip()
-    ]
-    counted = int(
-        re.search(r"(\d+) device\(s\) stayed within", steady).group(1)
-    )
-    assert len(named) == counted
-    # The old line that counted without naming is gone.
-    assert "and are not shown" not in page
-
-
-async def test_the_page_reads_in_plain_words(hass: HomeAssistant):
-    """The section heading, the legend and the help text carry no
-    method, and the footer says only what a footer can (#380)."""
-    coord = await setup_coordinator(hass)
-    device, _ = register_device(hass, "pw1", "Plain Device")
-    coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
-        150.0
-    ] * 12
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    page = " ".join(_signal_page(hass).split())
-
-    assert "<h2>Signal Anomalies</h2>" in page
-    assert "Devices Worth a Look" not in page
-    # The legend names depths rather than spreads.
-    assert "slightly below normal" in page
-    assert "spreads below" not in page
-    # The help text sits under its chart, not above it.
-    assert page.index("Signal Anomalies") < page.index("<svg")
-    assert page.index("<svg") < page.index("A vertical cluster of orange")
-    assert "needs your attention" in page
-
-    footer = page[page.index("<footer>"):]
-    assert "Regenerate Reports" in footer
-    assert "<code>" in footer
-    assert "The Signal Report" in footer
-    # What left the footer.
-    assert "fifth percentile" not in footer
-    assert "dwell chart" not in footer
-    assert "Configure, Signal Strength" not in footer
-    assert "alerts or joins the problem list" not in footer
-
-
-async def test_a_bad_day_is_described_without_arithmetic(
-    hass: HomeAssistant,
-):
-    """The biography says how far below normal in the legend's own
-    words rather than in spreads (ruling #380)."""
-    coord = await setup_coordinator(hass)
-
-    assert coord._signal_depth_words(10.0) == "far below"
-    assert coord._signal_depth_words(6.0) == "far below"
-    assert coord._signal_depth_words(3.5) == "well below"
-    assert coord._signal_depth_words(2.5) == "slightly below"
-    assert coord._signal_depth_words(1.0) == "below"
-
-
-async def test_a_router_taking_a_room_down(hass: HomeAssistant):
-    """Twelve devices behind one router fall on the same day.
-
-    This is the vertical band the chart exists to show, and the case
-    the help text tells a person to look for. What is checked is that
-    the page describes the fall in words rather than in spreads
-    (ruling #380), and that the steady list still agrees with its
-    count while a third of the fleet is in trouble.
-    """
-    room = _mk(hass, 12, "room")
-    far = _mk(hass, 30, "far")
-    coord = await setup_coordinator(hass)
-    coord._rebuild_registry_view()
-    for device in far:
-        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = [
-            160.0
-        ] * 14
-    for device in room:
-        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = (
-            [170.0] * 9 + [90.0] + [168.0] * 4
-        )
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    page = _signal_page(hass)
-
-    assert "<h2>Signal Anomalies</h2>" in page
-    assert "<h2>Devices That Had a Bad Day</h2>" in page
-    assert "of its own spreads" not in page
-    assert "anything this device normally reads" in page
-
-    block = page[
-        page.index("<h2>Steady Signals</h2>"):
-        page.index("<h2>Devices That Had a Bad Day")
-    ]
-    counted = int(
-        re.search(r"(\d+) device\(s\) stayed within", block).group(1)
-    )
-    named = [
-        cell for cell in re.findall(r"<td>(.*?)</td>", block)
-        if cell.strip()
-    ]
-    assert len(named) == counted, (counted, len(named))
-
-
-async def test_a_fleet_where_every_link_falls_on_one_day(
-    hass: HomeAssistant,
-):
-    """A hundred devices fall together: the coordinator, not a room.
-
-    The page has to stay finite. The chart is capped, the steady list
-    is empty, and neither may lie about its count.
-    """
-    devices = _mk(hass, 100, "all")
-    coord = await setup_coordinator(hass)
-    coord._rebuild_registry_view()
-    for device in devices:
-        coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = (
-            [175.0] * 9 + [80.0] + [174.0] * 4
-        )
-
-    await hass.async_add_executor_job(coord._write_reports, "manual")
-    page = _signal_page(hass)
-
-    block = page[
-        page.index("<h2>Signal Anomalies</h2>"):
-        page.index("<h2>Devices That Had a Bad Day")
-    ]
-    found = re.search(r"(\d+) device\(s\) stayed within", block)
-    if found is not None:
-        named = [
-            cell for cell in re.findall(r"<td>(.*?)</td>", block)
-            if cell.strip()
-        ]
-        assert len(named) == int(found.group(1))
-    # The biographies are capped rather than one per device.
-    assert page.count("<h3>") <= 12, page.count("<h3>")
 
 
 # ==================================================================

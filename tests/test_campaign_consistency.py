@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_campaign_consistency.py, Version: 0.22.20 (2026-09-21)
+# File: tests/test_campaign_consistency.py, Version: 0.23.5 (2026-09-25)
 
 """Pre-stable campaign: the changed paths stay consistent, and every
 report still renders.
@@ -69,7 +69,6 @@ from custom_components.device_sentinel.const import (
     DEV_BATTERY_LOW,
     DEV_BATTERY_DAILY,
     REPORT_DIR,
-    REPORT_WWW_DIR,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
@@ -363,12 +362,10 @@ async def _render_fleet(hass, path):
     coord._rebuild_registry_view()
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
-    # What a person reads is under www; the maintainer files sit in the
-    # reports folder, and a person reads those too.
+    # Every report sits in the reports folder since 0.23.5, the brief
+    # included; nothing is written under www.
     pages = {}
-    for directory in (
-        hass.config.path(REPORT_WWW_DIR), hass.config.path(REPORT_DIR)
-    ):
+    for directory in (hass.config.path(REPORT_DIR),):
         for name in os.listdir(directory):
             path = os.path.join(directory, name)
             if os.path.isfile(path) and name.endswith((".html", ".md")):
@@ -377,50 +374,12 @@ async def _render_fleet(hass, path):
     return carried, pages
 
 
-def _agree(page, heading, stop, pattern, pairs=False):
-    """Assert a section shows as many devices as it claims.
-
-    Rulings #379 and #380 put the count and the list in one source.
-    This is that promise checked against real data rather than a
-    fixture.
-    """
-    if heading not in page:
-        return
-    block = page[page.index(heading):]
-    if stop in block:
-        block = block[: block.index(stop)]
-    found = re.search(pattern, block)
-    if found is None:
-        return
-    counted = int(found.group(1))
-    rows = re.findall(r"<tr><td>.*?</tr>", block, re.S)
-    step = 2 if pairs else 1
-    shown = sum(
-        1
-        for row in rows
-        for cell in re.findall(r"<td>(.*?)</td>", row, re.S)[::step]
-        # A chart cell is not a device. The steady table charts the
-        # lowest cells at name, level, chart, so its third cell holds
-        # an SVG where the grid holds a second name (ruling #395).
-        if cell.strip() and "<svg" not in cell
-    )
-    assert shown == counted, (heading, counted, shown)
-
-
 def _check_pages(pages):
     """Every page renders, agrees with itself, and names no raw id."""
-    for name in ("daily_brief.html", "battery_report.html",
-                 "signal_report.html"):
-        assert name in pages, name
-
-    battery = pages["battery_report.html"]
-    _agree(battery, "<h2>Steady</h2>", "<h2>Unreadable</h2>",
-           r"(\d+) cell\(s\) holding steady", pairs=True)
-    _agree(battery, "<h2>No Battery Reported</h2>", "<footer>",
-           r"(\d+) watched device\(s\)")
-    _agree(pages["signal_report.html"], "<h2>Steady Signals</h2>",
-           "<h2>Devices That Had a Bad Day",
-           r"(\d+) device\(s\) stayed within")
+    assert "daily_brief.html" in pages
+    # The two retired pages are written nowhere (0.23.5).
+    assert "battery_report.html" not in pages
+    assert "signal_report.html" not in pages
 
     # A registry id in reader-facing text is the fault #307 found on
     # the first live trim: a name lookup that missed and printed the
@@ -558,7 +517,7 @@ async def test_the_worst_night_a_fleet_could_have(hass: HomeAssistant):
     coord._sync_problem_list()
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
-    directory = hass.config.path(REPORT_WWW_DIR)
+    directory = hass.config.path(REPORT_DIR)
     pages = {}
     for name in os.listdir(directory):
         if name.endswith((".html", ".md")):

@@ -1,7 +1,7 @@
 """Tests for what the reports say about set-aside devices.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_report_columns.py, Version: 0.22.13 (2026-09-21)
+# File: test_report_columns.py, Version: 0.23.5 (2026-09-25)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -13,7 +13,6 @@ shape of gap, recording the day's percentiles since 0.12.19 and
 showing neither.
 """
 
-import os
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -21,7 +20,6 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
-    REPORT_WWW_DIR,
     SET_ASIDE_DISABLED,
     SET_ASIDE_NO_ENTITIES,
     SET_ASIDE_SERVICE,
@@ -32,14 +30,6 @@ from .helpers import setup_coordinator
 
 def _classification(hass) -> str:
     path = hass.config.path("device_sentinel/classification.md")
-    with open(path, encoding="utf-8") as handle:
-        return handle.read()
-
-
-def _signal_page(hass) -> str:
-    path = os.path.join(
-        hass.config.path(REPORT_WWW_DIR), "signal_report.html"
-    )
     with open(path, encoding="utf-8") as handle:
         return handle.read()
 

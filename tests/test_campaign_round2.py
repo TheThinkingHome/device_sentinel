@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_campaign_round2.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_campaign_round2.py, Version: 0.23.5 (2026-09-25)
 
 """Hardening round two for 0.19.8.
 
@@ -374,7 +374,7 @@ async def test_the_brief_counts_a_set_aside_as_neither(
     await hass.async_block_till_done()
     await coord.async_regenerate_reports()
     text = ""
-    for path in glob.glob(hass.config.path("www/device_sentinel/*.html")):
+    for path in glob.glob(hass.config.path("device_sentinel/*.html")):
         text += open(path, encoding="utf-8").read()
     assert "1 problem started, 0 ended" in text or "1 problem started, 0 ended" in text.replace("problems", "problem"), (
         [line for line in text.splitlines() if "started" in line][:2]

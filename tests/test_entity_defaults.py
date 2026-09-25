@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entity_defaults.py, Version: 0.12.20 (2026-08-12)
+# File: tests/test_entity_defaults.py, Version: 0.23.5 (2026-09-25)
 
 """Which entities a first install presents, and what deletion leaves.
 
@@ -87,8 +87,8 @@ async def test_every_entity_default_matches_the_ruling(
 
 async def test_removal_deletes_everything_written(hass: HomeAssistant):
     """Deletion leaves nothing (ruling #240): storage, backups, reports,
-    and the www folder all go, and files belonging to anything else
-    are untouched."""
+    and a www folder left over from before 0.23.5 all go, and files
+    belonging to anything else are untouched."""
     entry = await setup_entry(hass)
 
     storage = Path(hass.config.path(STORAGE_DIR))

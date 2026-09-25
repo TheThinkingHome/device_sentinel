@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_settings.py, Version: 0.21.14 (2026-09-18)
+# File: test_settings.py, Version: 0.23.5 (2026-09-25)
 
 """The reorganized settings screen and the brief wording it governs.
 
@@ -68,7 +68,7 @@ def _brief_text(hass):
     when the window began before the brief hour (0.7.5).
     """
     path = hass.config.path(
-        "www", "device_sentinel", "daily_brief.html"
+        "device_sentinel", "daily_brief.html"
     )
     assert os.path.isfile(path), "no daily brief was written"
     with open(path, encoding="utf-8") as handle:

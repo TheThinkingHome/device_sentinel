@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.22.19 (2026-09-21)
+# File: test_hardening.py, Version: 0.23.5 (2026-09-25)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -153,7 +153,7 @@ async def test_pipe_in_name_keeps_its_row_in_the_brief_page(
     await hass.async_add_executor_job(coord._write_reports, "test")
 
     page = open(
-        hass.config.path("www", "device_sentinel", "daily_brief.html"),
+        hass.config.path("device_sentinel", "daily_brief.html"),
         encoding="utf-8",
     ).read()
     tables = page.split("<table>")[1:]
@@ -195,7 +195,7 @@ async def test_markup_in_a_name_is_inert_in_the_markdown_reports(
         assert not re.search(r"(?<!\\)<", text), report
         assert "Door \\<img src=x onerror=alert(1)\\>" in text, report
     page = open(
-        hass.config.path("www", "device_sentinel", "daily_brief.html"),
+        hass.config.path("device_sentinel", "daily_brief.html"),
         encoding="utf-8",
     ).read()
     assert "<img" not in page
@@ -674,27 +674,18 @@ async def test_the_number_platform_is_gone(hass: HomeAssistant):
 
 # ------------------------------ no filesystem call on the loop (#326)
 
-async def test_the_www_check_never_touches_the_loop(
+async def test_the_www_retirement_never_touches_the_loop(
     hass: HomeAssistant, monkeypatch
 ) -> None:
-    """The look and the make are one executor job.
+    """The look, the copy and the delete are one executor job.
 
-    The stat was the only filesystem call the integration made on the
-    event loop, which is the one rule the review guide puts above
-    every other.
+    Replaces the test of the retired www serving (0.23.5), which held
+    the same rule: no filesystem call on the event loop, the one rule
+    the review guide puts above every other.
     """
     import importlib
 
     module = importlib.import_module("custom_components.device_sentinel")
-
-    seen: list[str] = []
-    real_isdir = module.os.path.isdir
-
-    def _watched(path):
-        seen.append("isdir")
-        return real_isdir(path)
-
-    monkeypatch.setattr(module.os.path, "isdir", _watched)
 
     jobs: list[str] = []
     real_executor = hass.async_add_executor_job
@@ -704,11 +695,9 @@ async def test_the_www_check_never_touches_the_loop(
         return real_executor(target, *args)
 
     monkeypatch.setattr(hass, "async_add_executor_job", _counted)
-    await module._async_serve_www_folder(hass)
+    await module._async_retire_www_folder(hass)
 
-    # One trip, and the stat happened inside it rather than beside it.
-    assert jobs.count("_look_then_make") == 1
-    assert seen == ["isdir"]
+    assert jobs == ["_retire_www_folder"]
 
 
 # --------------------------------------------- explicit pairing (#328)

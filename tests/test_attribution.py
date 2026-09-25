@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.19.14 (2026-09-03)
+# File: tests/test_attribution.py, Version: 0.23.5 (2026-09-25)
 
 """What explains an incident, and what a flood reads as.
 
@@ -69,7 +69,6 @@ def _event(kind, scope, when, duration=None, devices=None):
     if devices is not None:
         row[SYS_DEVICES] = devices
     return row
-
 
 
 def _row(kind: str, scope: str, when: float, devices: int | None = None):
@@ -527,32 +526,6 @@ async def test_an_orphan_closing_is_never_spoken(hass: HomeAssistant):
     assert len(said) == 2
     assert "47 devices" not in " ".join(said)
     assert "50 devices" in " ".join(said)
-
-
-async def test_a_hostile_device_name_cannot_reach_the_signal_page(
-    hass: HomeAssistant,
-):
-    """The old dwell page escaped nothing until 0.12.8, and its
-    replacement keeps the discipline.
-
-    A device name is not always the reader's own words: MQTT
-    discovery lets a device advertise its own, so an angle bracket
-    can arrive from the network. The page is served to a dashboard,
-    so raw markup there is script running in the reader's session
-    (ruling #231).
-    """
-    coord = await setup_coordinator(hass)
-    evil = "<img src=x onerror=alert(1)>"
-    row = {
-        "name": evil,
-        "area": "",
-        "readings": [None, None, None, None],
-        "bad_days": 0,
-        "series": [100.0] * 4,
-    }
-    chart = coord._signal_strip_svg([row])
-    assert "<img" not in chart
-    assert "&lt;img" in chart
 
 
 async def test_a_corrupt_storm_row_cannot_break_the_listener(

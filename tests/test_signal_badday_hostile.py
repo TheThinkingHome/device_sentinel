@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_signal_badday_hostile.py, Version: 0.16.11 (2026-08-21)
+# File: tests/test_signal_badday_hostile.py, Version: 0.23.5 (2026-09-25)
 
 """What the bad-day detector does with data it should never see.
 
@@ -182,14 +182,15 @@ async def test_an_index_past_the_end_is_unjudged(hass: HomeAssistant):
     assert coord.signal_badday(record, 0) is None
 
 
-async def test_a_hostile_fleet_still_writes_the_page(
+async def test_a_hostile_fleet_still_draws_signal_trends(
     hass: HomeAssistant,
 ):
-    """End to end. Every poison at once, and the report is written.
+    """End to end. Every poison at once, and the reports are written
+    and Signal Trends is built.
 
-    A page that raises leaves the person with yesterday's file and no
-    sign that anything is wrong, which is worse than a page missing
-    one device.
+    The signal report page this once read retired with the www folder
+    in 0.23.5; the dashboard tab that replaced it reads the same
+    judgment, so it is the surface that must survive the poison now.
     """
     coord = await setup_coordinator(hass)
     poisons = {
@@ -206,19 +207,8 @@ async def test_a_hostile_fleet_still_writes_the_page(
         coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = series
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
+    import json
 
-    import os
-
-    from custom_components.device_sentinel.const import (
-        REPORT_SIGNAL,
-        REPORT_WWW_DIR,
-    )
-
-    path = os.path.join(hass.config.path(REPORT_WWW_DIR), REPORT_SIGNAL)
-    with open(path, encoding="utf-8") as handle:
-        page = handle.read()
-
-    assert "Device Sentinel Signal Report" in page
-    assert "nan" not in page.lower().replace("naname", "")
-    assert "inf" not in page.replace("information", "")
-    assert "Poison p7" in page
+    text = json.dumps(coord.signal_trends())
+    assert "NaN" not in text
+    assert "Infinity" not in text
