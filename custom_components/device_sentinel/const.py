@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.5 (2026-09-25)
+# File: const.py, Version: 0.23.6 (2026-09-25)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1109,20 +1109,10 @@ REPORT_BRIEF_HTML = "daily_brief.html"
 # (0.23.5), to the page that says why a device is listed.
 PANEL_URL_PATH = "device-sentinel"
 
-# How many recent daily levels the fall is measured over. Seven is
-# the shortest span that survives a single bad pair: the cell that
-# proved this reported a ten point drop and an eight and a half point
-# rebound on consecutive days, which is a coin cell sagging under
-# load and recovering, not a battery that refilled. The slope is a
-# median of every pairwise slope in the window rather than a fit, so
-# both of those readings land in the tails and neither moves the
-# answer (ruling #194).
-BATTERY_SLOPE_DAYS = 7
-# Below this the device is called flat rather than falling. A cell
-# reporting in half point steps produces a slope of a few hundredths
-# from rounding alone, and projecting a lifetime from rounding gives
-# numbers in the thousands of days.
-BATTERY_FALLING_SLOPE = -0.05
+# Days of battery history before a cell's trend can be judged: two
+# whole weeks, the fewest that give one week to compare with another
+# (0.23.6; seven before, when a seven-day slope decided it).
+BATTERY_ARMING_DAYS = 14
 # A percentage that cannot be one. Seen on the reference fleet: an
 # MQTT device reporting around 196 every day, which is a raw scale
 # rather than a percentage. It can never cross a low threshold and it
@@ -1130,63 +1120,10 @@ BATTERY_FALLING_SLOPE = -0.05
 # instead of counted as very healthy.
 BATTERY_READABLE_MAX = 100.0
 
-# ---------------------------------------------------------------
-# The trend: three nested windows and the periods before them.
-# ---------------------------------------------------------------
-# The 7 day slope answers what a cell is doing now, and it is what
-# the projection has always been built from. It cannot say whether
-# that is new. Two more nested windows and a run of earlier periods
-# answer that, and cost nothing to compute: the daily levels they
-# read have been kept since 0.9.0 (ruling #395).
-BATTERY_TREND_WINDOWS = (30, 14, 7)
 # A link needs three weeks before the Signal Trends tab compares its
 # last week against its own normal: fewer days and the normal is
 # mostly the week being judged.
 SIGNAL_TREND_MIN_DAYS = 21
-# Blocks of history before the nested windows, in days. A month at a
-# time for the first quarter, then a quarter at a time, so a year of
-# retention is five blocks rather than eleven.
-BATTERY_BLOCK_DAYS = 30
-BATTERY_WIDE_BLOCK_DAYS = 90
-BATTERY_WIDE_BLOCK_AFTER = 90
-# A block shorter than this is not reported. A handful of days
-# produces a slope with nothing behind it.
-BATTERY_BLOCK_MIN_DAYS = 5
-# Days of history before the 30 day window is trusted at all. Under
-# this a cell is simply falling, with no comparison offered, which
-# is what every cell on a new install looks like for three weeks.
-BATTERY_TREND_MIN_DAYS = 21
-# What counts as steeper. Acceleration is a progression rather than a
-# ratio: every window steeper than the one before it. A ratio needs a
-# real denominator and three of the reference fleet's seven falling
-# cells have a 30 day slope of zero or positive, so there was nothing
-# to divide by. A progression works whatever the sign, and a positive
-# 30 day figure only means the recent fall has not yet outweighed
-# what came before it (ruling #395).
-#
-# The progression alone is not enough. A cell drifting down at a
-# tenth of a point a day produces -0.100, -0.104, -0.108, which is a
-# progression and is not news. So the 7 day slope must also be at
-# least one falling-step steeper than the 30 day slope before the
-# decline is called accelerating. Measured over 105 samples of the
-# reference fleet's history: where the progression holds the gap has
-# a median of 0.111 and a lower quartile of 0.050. A floor of 0.05
-# keeps 38 of 47 monotonic samples, while 0.10 would discard 28 of
-# them including a live cell sitting at exactly 0.100.
-BATTERY_ACCELERATING_GAP = 0.05
-# A decline that has eased to half its 30 day pace or less.
-BATTERY_STABILIZED_RATIO = 0.5
-# There is no erratic threshold, and the reason is recorded so it is
-# not re-derived. The spread of the pairwise slopes was proposed as a
-# confidence measure, and on the reference fleet's 153 samples it
-# correlated 0.375 with how far a projection then swung. Remeasured
-# on 667 samples across both fleets and synthetic cells falling up to
-# four points a day, that fell to 0.047 absolute and -0.006 relative:
-# nothing. The first figure was an artifact of a fleet with no cell
-# falling faster than a quarter point a day. A test caught the rule
-# suppressing a cell losing 1.75 a day, the one case it must never
-# suppress. The spread is still computed and carried on each row for
-# a dashboard to show; it decides nothing (ruling #395).
 
 # ---------------------------------------------------------------
 # A battery replacement, and the day one that follows it.
@@ -1253,38 +1190,6 @@ BATTERY_STEPS_WORDS = {
 SYS_BATTERY_REPLACED = "battery_replaced"
 
 # What the reading can say. Ordered as the rules are tested.
-TREND_TOO_NEW = "falling"
-TREND_ACCELERATING = "accelerating"
-TREND_DISAGREE = "slopes do not agree"
-TREND_JUST_STARTED = "just started falling"
-TREND_STABILIZED = "stabilized"
-# "Falling evenly" since 0.22.24: this word is a falling cell's rate,
-# and the page also has a Steady table for cells that are not falling.
-# One word for two things read as a contradiction.
-TREND_STEADY = "falling evenly"
-# What each reading means, the owner's words. One place, read by the
-# battery report's list and by the dashboard's device page, so the two
-# explain a reading the same way.
-BATTERY_TREND_MEANINGS = {
-    TREND_ACCELERATING: (
-        "Drain rates increase as you move right. For lithium coin cells, "
-        "this indicates the steep voltage drop immediately preceding failure."
-    ),
-    TREND_STEADY: (
-        "Drain rates remain consistent across all columns. The projected "
-        "lifespan estimate is reliable."
-    ),
-    TREND_DISAGREE: (
-        "The 30, 14 and 7 day rates do not form a consistent progression, so "
-        "the recent decline is not confirmed by the period between. Treat the "
-        "estimate with caution."
-    ),
-    TREND_STABILIZED: (
-        "High drain in older columns is followed by flat recent columns. This "
-        "indicates a temporary voltage dip (e.g., cold weather, mesh storm) "
-        "that has since recovered. Replacement is not yet required."
-    ),
-}
 
 # How near the end a cell has to be before the daily brief names it.
 # The report lists every cell that is measurably falling, which on a
@@ -3108,3 +3013,50 @@ DEAD_ENTITY_SENTINEL_TYPES = (
 MODEL_GROUP_WINDOW_DAYS = 30
 # Words the section writes where Home Assistant gives no value.
 MODEL_GROUP_NOT_GIVEN = "not given"
+
+
+# Battery trends by the week (0.23.6). The seven-day slope called a
+# cell falling at 0.05 points a day, smaller than the half-point steps
+# most cells report in, so a cell wobbling by half a point read as
+# falling and as accelerating. On the reference rig seven cells near
+# full were listed, each "over a year", and none was going anywhere.
+#
+# A week's average level is the measure instead: the ups and downs of
+# a wobble cancel inside it. A cell is falling when its last seven
+# days average at least a point below the seven before.
+BATTERY_WEEK_DAYS = 7
+BATTERY_WEEKS_SHOWN = 5
+BATTERY_FALLING_WEEK_DROP = 1.0
+# And, once four weeks are held, the six-week fitted line must be going
+# down at least this many points a week. One week can dip a point by
+# chance on a cell that flips between two levels: Tim Plas's B01 reads
+# 84 and 80.5 by turns, and one simulated day put it on Falling "over
+# a year". The owner doubted a single week was reliable; the fitted
+# line is the longer look.
+BATTERY_FALLING_MIN_PACE = 0.5
+# Accelerating is found the way battery research finds a knee point:
+# two straight lines joined at one day are fitted to the last six
+# weeks, and the join is the day the pace changed. The owner saw three
+# slope lines, a bar chart of weekly losses and a replay chart, and
+# chose this: one line, or two joined at the knee, with its date.
+BATTERY_KNEE_WINDOW_DAYS = 42
+# Four weeks of history before a knee is looked for, a week before
+# it, and two weeks after it: the owner ruled that accelerating takes
+# two fast weeks in a row. With one week allowed after the knee, a
+# single two-point step on Tim Plas's S57 read as accelerating.
+BATTERY_KNEE_MIN_DAYS = 28
+BATTERY_KNEE_EDGE_DAYS = 7
+BATTERY_KNEE_AFTER_DAYS = 14
+# The two lines must explain the history far better than one (an F
+# test on the two extra terms), and the pace after the knee must be
+# at least two points a week and at least twice the pace before, with
+# the pace before counted as at least half a point. On Tim Plas's
+# house S63 passes by a wide margin (F about 200, 0.5 then 5.9 points
+# a week); S71, falling about 3.5 points a week with a pause, does not
+# (F under 1), and neither does any cell on the reference rig.
+BATTERY_KNEE_MIN_F = 10.0
+BATTERY_KNEE_AFTER_MIN = 2.0
+BATTERY_KNEE_RATIO = 2.0
+BATTERY_KNEE_BEFORE_FLOOR = 0.5
+READING_ACCELERATING = "accelerating"
+READING_FALLING = "falling"

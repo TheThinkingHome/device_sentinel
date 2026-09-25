@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.4 (2026-09-25)
+# File: coordinator.py, Version: 0.23.6 (2026-09-25)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -110,7 +110,7 @@ from .const import (
     AREA_SIGNAL,
     BACKUP_SUFFIX_PREPHASE_C,
     BACKUP_TAKEN_KEY,
-    BATTERY_SLOPE_DAYS,
+    BATTERY_ARMING_DAYS,
     BRIEF_TRIGGER,
     CONF_BATTERY_MUTED_DEVICES,
     CONF_MUTED_DEVICES,
@@ -3563,7 +3563,7 @@ class DeviceSentinelCoordinator(
         out: dict[str, dict[str, Any]] = {}
         for area, series, arming, learned in (
             (AREA_FREEZE, SERIES_FREEZE, FREEZE_ARMING_DAYS, DAILY_MAX_KEEP),
-            (AREA_BATTERY, SERIES_BATTERY, BATTERY_SLOPE_DAYS, None),
+            (AREA_BATTERY, SERIES_BATTERY, BATTERY_ARMING_DAYS, None),
             (AREA_SIGNAL, SERIES_SIGNAL, SIGNAL_ARMING_DAYS, SIGNAL_DAYS_KEEP),
         ):
             days = 0

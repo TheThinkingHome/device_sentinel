@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.23.2 (2026-09-24)
+# File: dashboard.py, Version: 0.23.6 (2026-09-25)
 
 """What the dashboard reads from the coordinator.
 
@@ -31,12 +31,14 @@ from homeassistant.util import dt as dt_util
 
 from datetime import date, timedelta
 
+from .report_battery import battery_month_drop, battery_sentence, battery_trend
 from .const import (
+    BATTERY_STEPS_SMOOTH,
+    BATTERY_WEEK_DAYS,
     TODO_KIND_FLAPPING,
     BATTERY_STEPS_WORDS,
     BROKER_RIDER_DOMAINS,
     SYS_DETAIL,
-    BATTERY_TREND_WINDOWS,
     SIGNAL_TREND_MIN_DAYS,
     DATA_INCIDENTS,
     INC_DEVICE_ID,
@@ -57,10 +59,7 @@ from .const import (
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
     TODO_UID,
-    BATTERY_FALLING_SLOPE,
-    BATTERY_TREND_MEANINGS,
     BATTERY_READABLE_MAX,
-    BATTERY_SLOPE_DAYS,
     DEV_SIGNAL_DAILY_COUNT,
     STARTUP_GRACE_SECONDS,
     SYS_MAINTENANCE_CLOSED,
@@ -833,17 +832,21 @@ class DeviceViewMixin:
         if not isinstance(level, (int, float)) or not readable or not series:
             return page
         current = float(level)
-        windows = self._battery_windows(series)
-        slope = self._battery_slope(series[-BATTERY_SLOPE_DAYS:])
-        falling = slope < BATTERY_FALLING_SLOPE and current > 0
+        # The same trend the rows and the rules read (0.23.6): weekly
+        # averages, and the fitted line or knee when the cell falls.
+        trend = battery_trend(
+            series, current, self.battery_steps(record) == BATTERY_STEPS_SMOOTH
+        )
+        falling = bool(trend["reading"] and trend["pace"])
+        days = current / (trend["pace"] / BATTERY_WEEK_DAYS) if falling else None
         page.update({
-            "windows": {str(days): value for days, value in windows.items()},
-            "blocks": [[start, end, value] for start, end, value in self._battery_blocks(series)],
-            "reading": self._battery_reading(windows, len(series)),
-            "reading_meaning": BATTERY_TREND_MEANINGS.get(self._battery_reading(windows, len(series))),
+            "weeks": trend["weeks"],
+            "reading": trend["reading"],
+            "fit": trend["fit"] if falling else None,
+            "sentence": battery_sentence(trend, dt_util.now().date() - timedelta(days=1)),
             "falling": falling,
-            "left": self.battery_time_left(current / -slope) if falling else None,
-            "left_soon": falling and current / -slope <= self._battery_days(),
+            "left": self.battery_time_left(days) if days is not None else None,
+            "left_soon": days is not None and days <= self._battery_days(),
         })
         return page
 
@@ -1174,7 +1177,7 @@ class TrendsViewMixin:
                 value for value in (record.get(DEV_BATTERY_DAILY) or [])
                 if isinstance(value, (int, float))
             ]
-            if len(series) < BATTERY_TREND_WINDOWS[-1]:
+            if len(series) < BATTERY_WEEK_DAYS:
                 continue
             cells.append((device_id, record, series))
         return cells
@@ -1196,8 +1199,10 @@ class TrendsViewMixin:
                 "device_id": device_id,
                 "name": self._device_name(device_id),
                 "level": level,
-                # The same rate the battery report's 30-day column shows.
-                "rate": self._battery_slope(series[-BATTERY_TREND_WINDOWS[0]:]),
+                # Points a week over the last four weeks (0.23.6),
+                # negative for a fall, as the models table has always
+                # sorted: the hungriest model first.
+                "rate": -(battery_month_drop(series) or 0.0) / 3,
             })
         models = []
         for (maker, model), cells in groups.items():
@@ -1226,20 +1231,19 @@ class TrendsViewMixin:
                     "steps": BATTERY_STEPS_WORDS.get(str(row.get("steps") or ""), ""),
                 }
                 if falling:
-                    windows = row.get("windows") or {}
                     item.update({
-                        "windows": {str(days): value for days, value in windows.items()},
-                        "blocks": [[start, stop, value] for start, stop, value in (row.get("blocks") or [])],
+                        "weeks": row.get("weeks") or [],
                         "reading": row.get("reading"),
+                        "pace": -row["slope"] * BATTERY_WEEK_DAYS,
                         "left": self.battery_time_left(row["days"]),
                         "left_soon": row["days"] <= self._battery_days(),
                     })
                 else:
                     item["days"] = len(row.get("series") or [])
-                    series = row.get("series") or []
-                    item["rate"] = (
-                        self._battery_slope(series[-BATTERY_TREND_WINDOWS[0]:]) if series else None
-                    )
+                    # Points lost over the last four weeks, from the
+                    # first week's average to the last's (0.23.6), in
+                    # place of a rate per day that described a wobble.
+                    item["month_drop"] = battery_month_drop(row.get("series") or [])
                 out.append(item)
             return out
 

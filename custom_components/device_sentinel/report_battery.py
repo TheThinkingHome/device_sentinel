@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.23.5 (2026-09-25)
+# File: report_battery.py, Version: 0.23.6 (2026-09-25)
 
 """Which cells are going to be low: the rows, rates and forecast.
 
@@ -26,30 +26,29 @@ is the coordinator throughout and nothing here stands alone.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 
 from .const import (
+    BATTERY_FALLING_MIN_PACE,
+    BATTERY_FALLING_WEEK_DROP,
+    BATTERY_KNEE_AFTER_DAYS,
+    BATTERY_KNEE_AFTER_MIN,
+    BATTERY_KNEE_BEFORE_FLOOR,
+    BATTERY_KNEE_EDGE_DAYS,
+    BATTERY_KNEE_MIN_DAYS,
+    BATTERY_KNEE_MIN_F,
+    BATTERY_KNEE_RATIO,
+    BATTERY_KNEE_WINDOW_DAYS,
+    BATTERY_WEEK_DAYS,
+    BATTERY_WEEKS_SHOWN,
+    READING_ACCELERATING,
+    READING_FALLING,
     BATTERY_STEPS_SMOOTH,
-    BATTERY_ACCELERATING_GAP,
-    BATTERY_BLOCK_DAYS,
-    BATTERY_BLOCK_MIN_DAYS,
-    BATTERY_STABILIZED_RATIO,
-    BATTERY_TREND_MIN_DAYS,
-    BATTERY_TREND_WINDOWS,
-    BATTERY_WIDE_BLOCK_AFTER,
-    BATTERY_WIDE_BLOCK_DAYS,
-    TREND_ACCELERATING,
-    TREND_DISAGREE,
-    TREND_JUST_STARTED,
-    TREND_STABILIZED,
-    TREND_STEADY,
-    TREND_TOO_NEW,
-    BATTERY_FALLING_SLOPE,
     BATTERY_LEFT_BANDS,
     BATTERY_LEFT_BEYOND,
     BATTERY_READABLE_MAX,
-    BATTERY_SLOPE_DAYS,
     CONF_BATTERY_DAYS,
     DEFAULT_BATTERY_DAYS,
     DEV_BATTERY_DAILY,
@@ -57,6 +56,182 @@ from .const import (
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
 )
+
+
+def battery_weeks(series: list[float], count: int = BATTERY_WEEKS_SHOWN) -> list[float]:
+    """Return the average level of each of the last whole weeks,
+    oldest first, at most count of them (0.23.6).
+
+    The weeks are counted back from the newest day, so the last is
+    always the seven days just folded. A week not yet whole is left
+    out rather than averaged over fewer days.
+    """
+    weeks: list[float] = []
+    end = len(series)
+    while end >= BATTERY_WEEK_DAYS and len(weeks) < count:
+        week = series[end - BATTERY_WEEK_DAYS:end]
+        weeks.append(sum(week) / BATTERY_WEEK_DAYS)
+        end -= BATTERY_WEEK_DAYS
+    weeks.reverse()
+    return weeks
+
+
+def _least_squares(columns: list[list[float]], y: list[float]) -> tuple[list[float], float] | None:
+    """Solve the normal equations for a small fit; return the terms
+    and the sum of squared residuals, or None when they are singular.
+
+    Two or three terms and at most six weeks of days, so a direct
+    solve is exact enough and keeps the integration free of numpy.
+    """
+    k = len(columns)
+    matrix = [
+        [sum(a * b for a, b in zip(columns[i], columns[j])) for j in range(k)]
+        + [sum(a * b for a, b in zip(columns[i], y))]
+        for i in range(k)
+    ]
+    for col in range(k):
+        pivot = max(range(col, k), key=lambda row: abs(matrix[row][col]))
+        if abs(matrix[pivot][col]) < 1e-12:
+            return None
+        matrix[col], matrix[pivot] = matrix[pivot], matrix[col]
+        for row in range(k):
+            if row != col:
+                factor = matrix[row][col] / matrix[col][col]
+                matrix[row] = [a - factor * b for a, b in zip(matrix[row], matrix[col])]
+    terms = [matrix[i][k] / matrix[i][i] for i in range(k)]
+    residual = sum(
+        (sum(terms[i] * columns[i][n] for i in range(k)) - y[n]) ** 2
+        for n in range(len(y))
+    )
+    return terms, residual
+
+
+def battery_knee(series: list[float]) -> dict[str, Any] | None:
+    """Fit the last six weeks with one line and with two joined lines.
+
+    The standard way to find where a slope changed (segmented
+    regression, the knee point of battery research): every day with a
+    week on each side is tried as the join, and the one leaving the
+    least error is kept. Paces are in points a week, positive for a
+    fall. Returns None for fewer than BATTERY_KNEE_MIN_DAYS days.
+
+    The result carries the drawn line as [days ago, level] points:
+    two for a single line, three for a knee, so the page draws what
+    was fitted rather than fitting again.
+    """
+    window = series[-BATTERY_KNEE_WINDOW_DAYS:]
+    n = len(window)
+    if n < BATTERY_KNEE_MIN_DAYS:
+        return None
+    t = [float(i) for i in range(n)]
+    ones = [1.0] * n
+    single = _least_squares([ones, t], window)
+    if single is None:
+        return None
+    (a1, b1), sse1 = single
+    best = None
+    for join in range(BATTERY_KNEE_EDGE_DAYS, n - BATTERY_KNEE_AFTER_DAYS):
+        hinge = [max(0.0, i - join) for i in t]
+        fitted = _least_squares([ones, t, hinge], window)
+        if fitted is not None and (best is None or fitted[1] < best[2]):
+            best = (join, fitted[0], fitted[1])
+    one_pace = -b1 * BATTERY_WEEK_DAYS
+    last = n - 1
+    result: dict[str, Any] = {
+        "knee": False,
+        "pace": one_pace,
+        "line": [[last, a1], [0, a1 + b1 * last]],
+    }
+    if best is None:
+        return result
+    join, (a2, b2, c2), sse2 = best
+    f_value = ((sse1 - sse2) / 2) / (sse2 / (n - 4)) if sse2 > 1e-9 else float("inf")
+    before = -b2 * BATTERY_WEEK_DAYS
+    after = -(b2 + c2) * BATTERY_WEEK_DAYS
+    if (
+        f_value >= BATTERY_KNEE_MIN_F
+        and after >= BATTERY_KNEE_AFTER_MIN
+        and after >= BATTERY_KNEE_RATIO * max(before, BATTERY_KNEE_BEFORE_FLOOR)
+    ):
+        at_knee = a2 + b2 * join
+        result.update({
+            "knee": True,
+            "knee_ago": last - join,
+            "before": before,
+            "pace": after,
+            "line": [
+                [last, a2],
+                [last - join, at_knee],
+                [0, a2 + b2 * last + c2 * (last - join)],
+            ],
+        })
+    return result
+
+
+def battery_trend(series: list[float], level: float, smooth: bool) -> dict[str, Any]:
+    """Everything the screens and the rules say about a cell's trend.
+
+    Falling: the last week averages at least a point below the week
+    before, and once four weeks are held, the six-week fitted line is
+    going down at least half a point a week. Accelerating: the knee fit finds a join where the pace
+    became at least two points a week and at least twice what it was.
+    Either needs a cell that reports in small steps (a coarse cell is
+    judged against the low threshold alone, 0.23.1) with charge left.
+    The pace a cell is projected on is the fitted one: after the knee
+    when there is one, the single line otherwise.
+    """
+    weeks = battery_weeks(series)
+    knee = battery_knee(series) if smooth else None
+    trend: dict[str, Any] = {
+        "weeks": weeks,
+        "reading": "",
+        "pace": None,
+        "fit": None,
+    }
+    if not smooth or level <= 0 or len(weeks) < 2:
+        return trend
+    week_drop = weeks[-2] - weeks[-1]
+    if knee is not None and knee["knee"]:
+        trend.update(reading=READING_ACCELERATING, pace=knee["pace"], fit=knee)
+    elif week_drop >= BATTERY_FALLING_WEEK_DROP and (
+        knee is None or knee["pace"] >= BATTERY_FALLING_MIN_PACE
+    ):
+        pace = knee["pace"] if knee is not None else week_drop
+        trend.update(reading=READING_FALLING, pace=pace, fit=knee)
+    return trend
+
+
+def battery_month_drop(series: list[float]) -> float | None:
+    """Points lost from the first to the last of the last four weekly
+    averages, positive for a fall; None with under four weeks."""
+    weeks = battery_weeks(series, 4)
+    if len(weeks) < 4:
+        return None
+    return weeks[0] - weeks[-1]
+
+
+def battery_sentence(trend: dict[str, Any], last_day: date | None = None) -> str:
+    """One sentence under the device page's table, saying what the
+    weeks show (0.23.6); empty for a cell that is not falling.
+
+    last_day is the day the newest point describes, yesterday, so the
+    knee can be named as a date rather than a count of days.
+    """
+    fit = trend.get("fit") or {}
+    if trend.get("reading") == READING_ACCELERATING:
+        ago = int(fit.get("knee_ago") or 0)
+        when = (
+            f"about {(last_day - timedelta(days=ago)).strftime('%b %-d')}"
+            if last_day is not None
+            else f"{ago} days ago"
+        )
+        return (
+            f"Accelerating: steady until {when}, "
+            f"then falling about {trend['pace']:.1f} points a week since."
+        )
+    if trend.get("reading") == READING_FALLING and trend.get("pace"):
+        return f"Falling about {trend['pace']:.1f} points a week, at a steady pace."
+    return ""
 
 
 class BatteryReportMixin:
@@ -88,144 +263,6 @@ class BatteryReportMixin:
         if len(slopes) % 2:
             return slopes[middle]
         return (slopes[middle - 1] + slopes[middle]) / 2.0
-
-    @staticmethod
-    def _battery_spread(levels: list[float]) -> float | None:
-        """Return how much the pairwise slopes disagree, in points a day.
-
-        The same slopes the trend is a median of, measured for their
-        spread rather than their middle. It is an interquartile range
-        and not a standard deviation, because a deviation is dragged
-        by the same outliers Theil-Sen exists to ignore, and a
-        confidence that moves with the noise is no confidence at all.
-
-        Small means every pair of days tells the same story. Large
-        means they do not, and a projection drawn from them would
-        only look precise (ruling #395).
-        """
-        n = len(levels)
-        if n < 4:
-            return None
-        slopes = sorted(
-            (levels[j] - levels[i]) / (j - i)
-            for i in range(n)
-            for j in range(i + 1, n)
-        )
-        return slopes[3 * len(slopes) // 4] - slopes[len(slopes) // 4]
-
-    def _battery_windows(self, series: list[float]) -> dict[int, float | None]:
-        """Return the slope over each nested window that has the days."""
-        return {
-            days: (
-                self._battery_slope(series[-days:])
-                if len(series) >= days
-                else None
-            )
-            for days in BATTERY_TREND_WINDOWS
-        }
-
-    def _battery_blocks(
-        self, series: list[float]
-    ) -> list[tuple[int, int, float]]:
-        """Return the periods before the nested windows, oldest first.
-
-        Each is (days ago it started, days ago it ended, slope), and
-        each covers only itself. A running total back from today
-        cannot say a cell fell hard and then held, because the fall
-        and the plateau average each other out; separate periods can.
-
-        Blocks are a month wide until day ninety and a quarter wide
-        after it, so a year of retention reads as five periods rather
-        than eleven (ruling #395).
-        """
-        older = series[: -BATTERY_BLOCK_DAYS]
-        blocks: list[tuple[int, int, float]] = []
-        ago_end = BATTERY_BLOCK_DAYS
-        while older:
-            width = (
-                BATTERY_BLOCK_DAYS
-                if ago_end < BATTERY_WIDE_BLOCK_AFTER
-                else BATTERY_WIDE_BLOCK_DAYS
-            )
-            block = older[-width:]
-            older = older[:-width]
-            ago_start = ago_end + len(block)
-            if len(block) >= BATTERY_BLOCK_MIN_DAYS:
-                blocks.append(
-                    (ago_start, ago_end, self._battery_slope(block))
-                )
-            ago_end = ago_start
-        blocks.reverse()
-        return blocks
-
-    def _battery_reading(
-        self, windows: dict[int, float | None], days_held: int
-    ) -> str:
-        """Return what the nested windows say about the decline.
-
-        Thirty days sets the baseline pace, fourteen confirms the
-        direction, seven is the pace now.
-
-        A window shallower than the falling floor is read as level
-        rather than as a decline. A cell reporting in half point
-        steps produces a slope of a few hundredths from rounding
-        alone, and on the reference fleet five of ten negative thirty
-        day slopes sat inside that band. Dividing by one of those is
-        comparing a rate against rounding.
-
-        Acceleration is a progression and not a ratio: every window
-        steeper than the one before it, and the seven day slope at
-        least one falling-step steeper than the thirty. The
-        progression alone would call a cell drifting at -0.100,
-        -0.104, -0.108 an acceleration, which is not news.
-
-        A verdict the middle window contradicts is not offered. Where
-        the three do not form a progression but seven is far steeper
-        than thirty, the reading says the slopes disagree rather than
-        asserting an acceleration one of the three does not support
-        (ruling #395).
-        """
-
-        def falling(slope: float | None) -> float | None:
-            """The slope, or None where it is inside the rounding band."""
-            if slope is None or slope > BATTERY_FALLING_SLOPE:
-                return None
-            return slope
-
-        short = falling(windows.get(7))
-        if short is None:
-            return ""
-        if days_held < BATTERY_TREND_MIN_DAYS or windows.get(30) is None:
-            return TREND_TOO_NEW
-
-        middle = windows.get(14)
-        long = windows.get(30)
-        ordered = [
-            windows[days]
-            for days in BATTERY_TREND_WINDOWS
-            if windows.get(days) is not None
-        ]
-        steepening = len(ordered) > 1 and all(
-            earlier >= later
-            for earlier, later in zip(ordered, ordered[1:])
-        )
-        gap = (long - short) if long is not None else None
-
-        if steepening:
-            if gap is not None and gap >= BATTERY_ACCELERATING_GAP:
-                return TREND_ACCELERATING
-            return TREND_STEADY
-
-        baseline = falling(long)
-        if baseline is None:
-            return TREND_JUST_STARTED
-        if gap is not None and gap >= BATTERY_ACCELERATING_GAP:
-            if middle is not None:
-                return TREND_DISAGREE
-            return TREND_ACCELERATING
-        if short / baseline <= BATTERY_STABILIZED_RATIO:
-            return TREND_STABILIZED
-        return TREND_STEADY
 
     def _battery_rows(self) -> dict[str, list[dict[str, Any]]]:
         """Sort every watched cell into what the report has to say.
@@ -275,29 +312,23 @@ class BatteryReportMixin:
                 for level in (record.get(DEV_BATTERY_DAILY) or [])
                 if isinstance(level, (int, float))
             ]
-            slope = self._battery_slope(series[-BATTERY_SLOPE_DAYS:])
             row["series"] = series
-            row["windows"] = self._battery_windows(series)
-            row["blocks"] = self._battery_blocks(series)
-            row["reading"] = self._battery_reading(row["windows"], len(series))
-            # Carried for the dashboard. It does not decide anything:
-            # measured across 667 samples of both fleets and synthetic
-            # decliners, neither absolute nor relative spread
-            # predicts how a projection then behaves, so no rule is
-            # built on it (ruling #395).
-            row["spread"] = self._battery_spread(series[-BATTERY_SLOPE_DAYS:])
             # A cell that reports in coarse steps, or has fallen by one
             # such step and not yet shown which it is, is not
             # forecast: it is judged against the low threshold alone
             # (0.23.1).
             row["steps"] = self.battery_steps(record)
-            if (
-                slope < BATTERY_FALLING_SLOPE
-                and row["level"] > 0
-                and row["steps"] == BATTERY_STEPS_SMOOTH
-            ):
-                row["slope"] = slope
-                row["days"] = row["level"] / -slope
+            trend = battery_trend(
+                series, row["level"], row["steps"] == BATTERY_STEPS_SMOOTH
+            )
+            row["weeks"] = trend["weeks"]
+            row["reading"] = trend["reading"]
+            row["fit"] = trend["fit"]
+            if trend["reading"] and trend["pace"]:
+                # The Problem List's forecast item and the Battery:
+                # Falling sensor read a rate per day and days left.
+                row["slope"] = -trend["pace"] / BATTERY_WEEK_DAYS
+                row["days"] = row["level"] / (trend["pace"] / BATTERY_WEEK_DAYS)
                 falling.append(row)
             elif not row["low"]:
                 flat.append(row)
@@ -312,6 +343,27 @@ class BatteryReportMixin:
             "flat": flat,
             "unreadable": unreadable,
             "absent": sorted(absent, key=lambda r: r["name"] or ""),
+        }
+
+    def battery_trend_summary(self, record: dict[str, Any]) -> dict[str, Any] | None:
+        """A cell's weekly averages and trend, for the diagnostics
+        download (0.23.6), so a capture shows the rule working without
+        opening the dashboard. None for a device with no readable
+        battery."""
+        level = record.get(DEV_BATTERY_VALUE)
+        if not isinstance(level, (int, float)) or not 0 <= level <= BATTERY_READABLE_MAX:
+            return None
+        series = [v for v in (record.get(DEV_BATTERY_DAILY) or []) if isinstance(v, (int, float))]
+        trend = battery_trend(
+            series, float(level), self.battery_steps(record) == BATTERY_STEPS_SMOOTH  # type: ignore[attr-defined]
+        )
+        fit = trend["fit"] or {}
+        return {
+            "weeks": [round(week, 2) for week in trend["weeks"]],
+            "reading": trend["reading"],
+            "pace_per_week": round(trend["pace"], 2) if trend["pace"] else None,
+            "knee_days_ago": fit.get("knee_ago"),
+            "pace_before_knee": round(fit["before"], 2) if "before" in fit else None,
         }
 
     def _battery_days(self) -> float:
