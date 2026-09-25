@@ -320,9 +320,7 @@
    "battery_muted_devices": [],
    "battery_muted_integrations": [],
    "battery_muted_labels": [],
-   "brief_document_targets": [
-    "notify.target_1"
-   ],
+   "brief_document_targets": "**REDACTED**",
    "daily_reminder_mode": "daily",
    "daily_reminder_time": "07:00:00",
    "excluded_integrations": [
