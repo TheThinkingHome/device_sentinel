@@ -66,7 +66,7 @@
             "data_description": {
               "daily_reminder_mode": "The brief file is written either way; this decides whether it is sent.",
               "brief_document_targets": "Email or other services that can carry the whole document.",
-              "report_link_address": "Device names in the HTML reports can become links to that device's device page. This is a very convenient feature, but a report is a file you might share. Enable this after considering your security and how you will use these reports. If the internal or external URLs are not set, they can be configured in Home Assistant's [Network Settings](/config/network)."
+              "report_link_address": "Device names in the daily brief can become links to that device's page on the Device Sentinel dashboard. The brief is emailed and can be forwarded, so a link carries your house's address with it. Choose the address the links use, or None for no links. If the internal or external URLs are not set, they can be configured in Home Assistant's [Network Settings](/config/network)."
             }
           }
         }
