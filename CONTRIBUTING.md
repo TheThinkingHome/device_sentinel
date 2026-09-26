@@ -1,26 +1,34 @@
 # Contributing to Device Sentinel
 
-Thanks for the interest. A few things worth knowing before you open an issue or a pull request.
+Device Sentinel gets better every time it runs on a house it hasn't seen before. You don't need to write a line of code to help. Your opinion, your problem reports and your data are what shape it.
 
-## The state of the project
+## Tell Me What You Think
 
-Device Sentinel is pre-release and built in strict, ordered steps: observe, learn, detect, notify. Each step is proven on a live system before the next begins. The design document rules the build; decisions recorded there are not re-litigated in issues, though new evidence is always welcome.
+Run it for a week or two, then tell me how it went. What do you like? What don't you like? What confused you, and what did you expect it to do that it didn't? Open an issue titled "Review" and say it plainly. A short honest review is worth more than a long polite one.
 
-## Bug reports
+## Something Not Working?
 
-Evidence beats description. The bug report form asks for the diagnostics download (Settings, Devices and Services, Device Sentinel, three-dot menu, Download diagnostics) because it answers most questions before they are asked. Reports with diagnostics get fixed; reports without them get a request for diagnostics.
+Use the bug report form. It asks for your diagnostics download (**Settings > Devices and Services > Device Sentinel**, the three dots, **Download diagnostics**), because that file answers most questions before they're asked. Say what you expected to see and what happened instead. A report with diagnostics gets fixed fastest.
 
-## Feature requests
+## Share Your Data
 
-Welcome, especially the real-situation kind: what happened in your home that this would have caught? Ideas that fit the design land in the queue. Detection accuracy comes first, everything else after.
+Some hardware can only be supported once someone has seen how it behaves on a real system. Under **Extended Diagnostics** in Device Sentinel's settings, you can turn on the hardware you'd like supported, such as Z-Wave, Matter or your router. Device Sentinel then records how it behaves, in files on your own system. Nothing is sent anywhere unless you attach it yourself.
 
-## Pull requests
+Let it run for a few days while you use your house normally, try a few simple tests (unplug a device for ten minutes, take a battery out until the device reads frozen, unplug your hub for ten minutes), and send the files. The [Extended Diagnostics](https://github.com/TheThinkingHome/device_sentinel/wiki/Extended-Diagnostics) page in the wiki walks you through each step and lists the files to attach.
 
-Held until 1.0. The pre-release build follows a single design under active development, and outside code, however good, would collide with steps already in motion. After 1.0 this section changes.
+The files carry device names and readings, and never passwords, tokens or addresses. If you'd still rather not post them publicly, open the issue without them, and you'll be given an email address to send them to.
 
-## Code standards, for later
+## Ask for Your Hub or Integration
 
-Docstrings carry the decision and the reason, not just the what. Inline comments explain why. Names are fully descriptive, no abbreviations. Every source file carries the copyright header. The test suite runs on every push and stays green. Run it serially (plain `pytest`, never `pytest -n`): the pinned Home Assistant harness shares one `testing_config/www/` directory across xdist workers, so a parallel run races the daily brief's atomic write and fails intermittently.
+If you run a hub or integration that Device Sentinel doesn't support yet, open an issue titled "Extend support for *name* integration" or "Extend support for *name* hub". Say what it is, what Device Sentinel does with its devices today, and what you'd like it to do.
+
+## Feature Requests
+
+Welcome, especially the real-situation kind: what happened in your home that this would have caught? Catching real failures comes first, everything else after.
+
+## Pull Requests
+
+Held until 1.0. Device Sentinel follows a single design under active development, and outside code, however good, would collide with work already in motion. After 1.0 this section changes.
 
 ## License
 
