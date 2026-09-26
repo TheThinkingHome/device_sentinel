@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_escalation_and_limits.py, Version: 0.22.26 (2026-09-23)
+# File: tests/test_escalation_and_limits.py, Version: 0.23.8 (2026-09-25)
 
 """A worse problem replacing a lesser one, and lines a person reads.
 
@@ -271,15 +271,21 @@ async def test_the_stack_probe_writes_a_line_when_a_node_changes(
         hass, {CONF_STUDY_HARDWARE: [STUDIABLE[ZWAVE_DOMAIN]]}
     )
     now = dt_util.utcnow().timestamp()
+
+    def node_lines():
+        # Since 0.23.8 the controller has a line of its own; this test
+        # is about the node's.
+        return [row for row in coordinator.data[DATA_STACK_PROBE] if row["node"] == "7"]
+
     coordinator.probe_tick(now)
-    assert len(coordinator.data[DATA_STACK_PROBE]) == 1, "the first reading"
+    assert len(node_lines()) == 1, "the first reading"
 
     coordinator.probe_tick(now + 30)
-    assert len(coordinator.data[DATA_STACK_PROBE]) == 1, "nothing changed"
+    assert len(node_lines()) == 1, "nothing changed"
 
     node.status = "dead"
     coordinator.probe_tick(now + 60)
-    rows = coordinator.data[DATA_STACK_PROBE]
+    rows = node_lines()
     assert len(rows) == 2
     assert rows[-1]["was"] == "alive" and rows[-1]["now"] == "dead"
     assert "rssi -70" in rows[-1]["detail"]
@@ -289,7 +295,9 @@ async def test_the_stack_probe_writes_a_line_when_a_node_changes(
         hass.config.path("device_sentinel", REPORT_STACK_PROBE),
         encoding="utf-8",
     ).read()
-    assert "| zwave_js | 7 | alive | dead |" in text
+    # The DEVICE column (0.23.8) sits between NODE and WAS; this node
+    # has no device in the registry.
+    assert "| zwave_js | 7 |  | alive | dead |" in text
     assert "Stack Probe" in text
 
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_stack_capture.py, Version: 0.23.3 (2026-09-24)
+# File: tests/test_stack_capture.py, Version: 0.23.8 (2026-09-25)
 
 """What Extended Diagnostics captures from Z-Wave and Matter.
 
@@ -95,7 +95,9 @@ async def test_matter_network_from_its_diagnostics_cluster(hass: HomeAssistant):
         node_data=SimpleNamespace(attributes={"0/53/0": 11, "0/53/1": 3}))
     _matter(hass, [node])
     (row,) = probe_rows(hass, {MATTER_DOMAIN})
-    assert row["detail"] == "network thread"
+    # Since 0.23.8 a Thread node's routing role (0/53/1) rides beside
+    # its network: 3 is an end device.
+    assert row["detail"] == "network thread, thread role end device"
 
 
 async def test_matter_last_contact_names_its_source(hass: HomeAssistant):
