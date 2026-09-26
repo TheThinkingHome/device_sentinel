@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.6 (2026-09-25)
+# File: const.py, Version: 0.23.8 (2026-09-25)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2679,6 +2679,12 @@ PROBE_DEVICE_ID = "device_id"
 PROBE_WAS = "was"
 PROBE_NOW = "now"
 PROBE_DETAIL = "detail"
+# Device Sentinel's own view of the node's device at that moment, and
+# whether the stack and it agree the device is quiet (0.23.8): the
+# readers in shadow, recorded before either stack's reader is built.
+# Absent from every line written before 0.23.8.
+PROBE_SENTINEL = "sentinel"
+PROBE_AGREES = "agrees"
 PROBE_KEEP_DAYS = 14
 PROBE_ROW_CAP = 4000
 EP_DEVICE_ID = "device_id"

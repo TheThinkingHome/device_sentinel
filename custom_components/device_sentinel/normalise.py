@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.23.4 (2026-09-25)
+# File: normalise.py, Version: 0.23.8 (2026-09-25)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -122,7 +122,9 @@ from .const import (
     DATA_SIGNAL_WEIGHTING,
     BACKUP_TAKEN_KEY,
     DATA_SIGNAL_STRESS,
+    PROBE_AGREES,
     PROBE_DETAIL,
+    PROBE_SENTINEL,
     PROBE_NOW,
     PROBE_WAS,
     PROBE_DEVICE_ID,
@@ -547,6 +549,8 @@ PROBE_SHAPE: dict[str, str] = {
     PROBE_WAS: STRING,
     PROBE_NOW: STRING,
     PROBE_DETAIL: STRING,
+    PROBE_SENTINEL: STRING,
+    PROBE_AGREES: STRING,
 }
 
 # table key -> (row shape, keys a row may leave out)
@@ -556,7 +560,9 @@ TABLES: dict[str, tuple[dict[str, str], frozenset[str]]] = {
     DATA_INCIDENTS: (INCIDENT_SHAPE, frozenset({"superseded"})),
     DATA_EPISODES: (EPISODE_SHAPE, frozenset()),
     DATA_SIGNAL_STRESS: (STRESS_SHAPE, frozenset()),
-    DATA_STACK_PROBE: (PROBE_SHAPE, frozenset()),
+    # The shadow readers' two keys (0.23.8): absent from every line
+    # written before, which is not damage.
+    DATA_STACK_PROBE: (PROBE_SHAPE, frozenset({PROBE_SENTINEL, PROBE_AGREES})),
     # A row carries a device count only where the event has one to
     # carry, so this key is absent far more often than present, and a
     # worst moment only where an outage has ended.

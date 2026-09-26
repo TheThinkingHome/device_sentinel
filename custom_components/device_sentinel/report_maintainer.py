@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.23.3 (2026-09-24)
+# File: report_maintainer.py, Version: 0.23.8 (2026-09-25)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -63,7 +63,10 @@ from .const import (
     LOGGER,
     REPORT_CLASSIFICATION,
     DATA_STACK_PROBE,
+    PROBE_AGREES,
+    PROBE_SENTINEL,
     PROBE_DETAIL,
+    PROBE_DEVICE_ID,
     PROBE_KEEP_DAYS,
     PROBE_NODE,
     PROBE_NOW,
@@ -217,12 +220,20 @@ class MaintainerReportMixin:
             or (row[EP_ENDED] != EPISODE_ENDED_RESUMED and row[EP_LAG] is None)
         )
 
+    def _probe_device(self, row: dict[str, Any]) -> str:
+        """A probe line's device, by name, or nothing (0.23.8)."""
+        device_id = row.get(PROBE_DEVICE_ID)
+        if not device_id:
+            return ""
+        return str(self._device_name(device_id) or device_id)
+
     def _write_stack_probe(self, directory: str, trigger: str) -> None:
         """The stack probe's log, or nothing where none is running.
 
-        Node ids, never names: the file is meant to be sent, and a
-        list of node numbers and their states carries no floor plan
-        (0.22.26).
+        Node ids only until 0.23.8, when the owner ruled names beside
+        them (#478): a node number alone could not say which of a
+        tester's devices Z-Wave called dead. The file names devices as
+        the diagnostics download already does.
         """
         rows = self.data.get(DATA_STACK_PROBE) or []
         path = os.path.join(directory, REPORT_STACK_PROBE)
@@ -237,16 +248,22 @@ class MaintainerReportMixin:
             f"({trigger})",
             "",
             "One line each time a node of a studied stack changed "
-            "what it says about itself, and one a day with the "
-            "counts. Node ids, not names. Z-Wave says alive, awake, "
-            "asleep, dead or unknown, with its numbers and when it was "
-            "last seen; Matter says available or away, with the network "
-            "it is on and when it was last heard, where the version keeps "
-            "that. Kept "
+            "what it says about itself, or Device Sentinel changed what "
+            "it says about the node's device, and one a day with the "
+            "counts. NOW is the stack's view: Z-Wave says alive, awake, "
+            "asleep, dead or unknown, and \"not heard within its window\" "
+            "when it was last heard longer ago than the device's own "
+            "freeze window, since a mains node stays alive until a "
+            "command to it fails; Matter says available or away. "
+            "SENTINEL is Device Sentinel's view of the same device at "
+            "that moment, and AGREES whether the two agree it is quiet. "
+            "Lines for the controller and the server say whether the "
+            "stack itself is there. Neither side acts on the other: "
+            "these are the readers in shadow. Kept "
             f"{PROBE_KEEP_DAYS} days; {len(rows)} line(s).",
             "",
-            "| WHEN | STACK | NODE | WAS | NOW | DETAIL |",
-            "|---|---|---|---|---|---|",
+            "| WHEN | STACK | NODE | DEVICE | WAS | NOW | SENTINEL | AGREES | DETAIL |",
+            "|---|---|---|---|---|---|---|---|---|",
         ]
         for row in sorted(
             rows, key=lambda item: item.get(PROBE_WHEN) or 0.0, reverse=True
@@ -255,8 +272,11 @@ class MaintainerReportMixin:
                 f"| {self._episode_stamp(row.get(PROBE_WHEN))} "
                 f"| {self._report_cell(str(row.get(PROBE_STACK) or ''))} "
                 f"| {self._report_cell(str(row.get(PROBE_NODE) or ''))} "
+                f"| {self._report_cell(self._probe_device(row))} "
                 f"| {self._report_cell(str(row.get(PROBE_WAS) or ''))} "
                 f"| {self._report_cell(str(row.get(PROBE_NOW) or ''))} "
+                f"| {self._report_cell(str(row.get(PROBE_SENTINEL) or ''))} "
+                f"| {self._report_cell(str(row.get(PROBE_AGREES) or ''))} "
                 f"| {self._report_cell(str(row.get(PROBE_DETAIL) or ''))} |"
             )
         self._write_file(path, "\n".join(lines))

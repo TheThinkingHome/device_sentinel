@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.22.18 (2026-09-21)
+# File: study.py, Version: 0.23.8 (2026-09-25)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -55,7 +55,13 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_STUDY_HARDWARE,
     LOGGER,
+    DATA_DEVICES,
     DATA_STACK_PROBE,
+    PROBE_AGREES,
+    PROBE_SENTINEL,
+    STATUS_NEVER_REPORTED,
+    STATUS_REPORTING,
+    STATUS_SET_ASIDE,
     PROBE_DETAIL,
     PROBE_DEVICE_ID,
     PROBE_KEEP_DAYS,
@@ -69,7 +75,7 @@ from .const import (
     STUDY_SHAPE_CAP,
 )
 from .device_fields import device_field
-from .study_stacks import MATTER_DOMAIN, ZWAVE_DOMAIN, probe_rows
+from .study_stacks import MATTER_DOMAIN, ZWAVE_DOMAIN, coordinator_rows, probe_rows
 
 ROUTER = "router"
 IGNORED_KEYS = {"friendly_name", "icon", "device_class"}
@@ -127,6 +133,10 @@ def _shape(integration: str, was: str | None, now: str,
 
 class StudyMixin:
     """Collect what a volunteered integration does, and only that."""
+
+    # Set in the coordinator's __init__ (0.23.8); declared here so
+    # the type is known where the probe reads it.
+    _probe_wifi_down: bool | None
 
     # ------------------------------------------------------- settings
 
@@ -286,31 +296,88 @@ class StudyMixin:
 
     # ------------------------------------------- the probe, 0.22.26
 
+    def _probe_views(self, row: dict[str, Any], now: float) -> dict[str, Any]:
+        """The stack's view of a node beside Device Sentinel's (0.23.8).
+
+        The readers in shadow: each is worked out and written down, and
+        neither acts. A Z-Wave node counts as quiet when the stack says
+        dead, or when it was last heard longer ago than the device's own
+        freeze window, because a mains node stays "alive" until a
+        command to it fails (research finding 4: Tim Plas's P03 read
+        alive three days after it was last heard). A Matter node counts
+        as quiet when it is away. Device Sentinel counts a device quiet
+        when its page would read anything but reporting, set aside or
+        never reported.
+        """
+        device_id = row.get("device_id") or ""
+        record = (self.data.get(DATA_DEVICES) or {}).get(device_id) if device_id else None
+        sentinel = self._page_status(device_id, record) if record is not None else ""  # type: ignore[attr-defined]
+        sentinel_quiet = (
+            None if sentinel in ("", STATUS_SET_ASIDE, STATUS_NEVER_REPORTED)
+            else sentinel != STATUS_REPORTING
+        )
+        state = row["now"]
+        stale = False
+        detail = row.get("detail") or ""
+        if row["stack"] == ZWAVE_DOMAIN:
+            seen = row.get("seen")
+            window = self._freeze_window(record) if record is not None else None  # type: ignore[attr-defined]
+            if isinstance(seen, (int, float)):
+                age = max(0.0, now - seen)
+                detail = ", ".join(
+                    part for part in (f"last heard {self._episode_duration(age)} ago", detail) if part  # type: ignore[attr-defined]
+                )
+                stale = window is not None and age > window
+            stack_quiet = True if state == "dead" or stale else (
+                None if state in ("unknown", "None") else False
+            )
+        else:
+            stack_quiet = state == "away"
+        agrees = (
+            "" if stack_quiet is None or sentinel_quiet is None
+            else "yes" if stack_quiet == sentinel_quiet else "no"
+        )
+        return {
+            "now": f"{state}, not heard within its window" if stale else state,
+            "sentinel": sentinel,
+            "agrees": agrees,
+            "detail": detail,
+        }
+
     @callback
     def probe_tick(self, now: float) -> None:
-        """Write a line when a studied stack's node changes its mind.
+        """Write a line when a studied stack's node, its coordinator, or
+        Device Sentinel's view of the node's device changes.
 
-        Nothing is written while every node says what it said last
+        Nothing is written while both sides say what they said last
         tick, which on a healthy network is every tick. Reading is in
-        memory, so the cost is one attribute per node.
+        memory, so the cost is one attribute per node. A Z-Wave plug
+        unplugged stays "alive", so the stack side alone would write
+        nothing for it; the line comes from last seen passing the
+        device's window, or from Device Sentinel's verdict changing
+        (0.23.8, research finding 12).
         """
         studied = self.studied
         if not studied & {ZWAVE_DOMAIN, MATTER_DOMAIN}:
             self._probe_last.clear()
             return
+        wifi_nodes: dict[str, bool] = {}
         for row in probe_rows(self.hass, studied):
+            views = self._probe_views(row, now)
+            if row["stack"] == MATTER_DOMAIN and "wifi" in (row.get("network") or ""):
+                wifi_nodes[self._probe_name(row)] = row["now"] == "available"
             key = (row["stack"], row["node"])
-            said = (row["now"], row["detail"])
+            said = (views["now"], views["sentinel"])
             before = self._probe_last.get(key)
             self._probe_last[key] = said
             if before is None:
                 # The first reading of a node is its own line, so a
                 # file read months later knows where each node began.
                 was = ""
-            elif before[0] == said[0]:
+            elif before == said:
                 # The numbers move constantly and the state does not;
-                # a line is worth writing when the state changes, and
-                # the numbers ride on that line.
+                # a line is worth writing when a state changes, and the
+                # numbers ride on that line.
                 continue
             else:
                 was = before[0]
@@ -318,22 +385,81 @@ class StudyMixin:
                 PROBE_WHEN: now,
                 PROBE_STACK: row["stack"],
                 PROBE_NODE: row["node"],
-                PROBE_DEVICE_ID: "",
+                PROBE_DEVICE_ID: row.get("device_id") or "",
                 PROBE_WAS: was,
+                PROBE_NOW: views["now"],
+                PROBE_SENTINEL: views["sentinel"],
+                PROBE_AGREES: views["agrees"],
+                PROBE_DETAIL: views["detail"],
+            })
+        for row in coordinator_rows(self.hass, studied):
+            key = (row["stack"], row["node"])
+            said = (row["now"], row["detail"])
+            before = self._probe_last.get(key)
+            self._probe_last[key] = said
+            if before == said:
+                continue
+            self._append_row(DATA_STACK_PROBE, {
+                PROBE_WHEN: now,
+                PROBE_STACK: row["stack"],
+                PROBE_NODE: row["node"],
+                PROBE_DEVICE_ID: "",
+                PROBE_WAS: before[0] if before else "",
                 PROBE_NOW: row["now"],
+                PROBE_SENTINEL: "",
+                PROBE_AGREES: "",
                 PROBE_DETAIL: row["detail"],
             })
+        # Matter over Wi-Fi in a Wi-Fi outage (#412's exception): when
+        # Device Sentinel's Wi-Fi outage opens or closes, which Matter
+        # Wi-Fi nodes were away and which were not.
+        wifi_down = getattr(self, "_wifi_down_at", None) is not None
+        if MATTER_DOMAIN in studied and wifi_down != self._probe_wifi_down:
+            if self._probe_wifi_down is not None and wifi_nodes:
+                away = sorted(name for name, up in wifi_nodes.items() if not up)
+                up = sorted(name for name, up in wifi_nodes.items() if up)
+                self._append_row(DATA_STACK_PROBE, {
+                    PROBE_WHEN: now,
+                    PROBE_STACK: MATTER_DOMAIN,
+                    PROBE_NODE: "wifi",
+                    PROBE_DEVICE_ID: "",
+                    PROBE_WAS: "",
+                    PROBE_NOW: "wifi down" if wifi_down else "wifi up",
+                    PROBE_SENTINEL: "",
+                    PROBE_AGREES: "",
+                    PROBE_DETAIL: (
+                        f"away: {', '.join(away) or 'none'}; "
+                        f"available: {', '.join(up) or 'none'}"
+                    ),
+                })
+            self._probe_wifi_down = wifi_down
+
+    def _probe_name(self, row: dict[str, Any]) -> str:
+        """A node's device name, or its node id where it has none."""
+        device_id = row.get("device_id")
+        return (self._device_name(device_id) if device_id else None) or f"node {row['node']}"  # type: ignore[attr-defined]
 
     @callback
     def probe_fold(self, now: float) -> None:
-        """One counting line a day, and the old lines dropped."""
+        """One counting line a day per stack, and the old lines dropped.
+
+        The count carries each state and, since 0.23.8, how many nodes
+        the stack and Device Sentinel agreed on and how many they did
+        not, which is the figure the readers will be built from.
+        """
         studied = self.studied
         if studied & {ZWAVE_DOMAIN, MATTER_DOMAIN}:
             counts: dict[str, dict[str, int]] = {}
+            agreement: dict[str, dict[str, int]] = {}
             for row in probe_rows(self.hass, studied):
+                views = self._probe_views(row, now)
                 by_state = counts.setdefault(row["stack"], {})
                 by_state[row["now"]] = by_state.get(row["now"], 0) + 1
+                if views["agrees"]:
+                    tally = agreement.setdefault(row["stack"], {"yes": 0, "no": 0})
+                    tally[views["agrees"]] += 1
             for stack, by_state in counts.items():
+                tally = agreement.get(stack, {"yes": 0, "no": 0})
                 self._append_row(DATA_STACK_PROBE, {
                     PROBE_WHEN: now,
                     PROBE_STACK: stack,
@@ -341,6 +467,8 @@ class StudyMixin:
                     PROBE_DEVICE_ID: "",
                     PROBE_WAS: "",
                     PROBE_NOW: "day",
+                    PROBE_SENTINEL: "",
+                    PROBE_AGREES: f"{tally['yes']} agree, {tally['no']} do not",
                     PROBE_DETAIL: ", ".join(
                         f"{state} {count}"
                         for state, count in sorted(by_state.items())

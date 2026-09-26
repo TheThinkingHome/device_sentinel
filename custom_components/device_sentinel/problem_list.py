@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.23.2 (2026-09-24)
+# File: problem_list.py, Version: 0.23.8 (2026-09-25)
 
 """The problem list: the single memory every channel renders.
 
@@ -733,7 +733,10 @@ class ProblemListMixin:
         for kind, word in zip(order, words, strict=True):
             since = kinds.get(kind)
             if kind == TODO_KIND_FLAPPING:
-                lines.append(f"{word.capitalize()}.")
+                # The first letter only: str.capitalize() lowers the
+                # rest, and Tim Plas's list read "since september 25,
+                # 2026 at 2:04 pm" (0.23.8).
+                lines.append(f"{word[:1].upper()}{word[1:]}.")
                 continue
             if since is not None:
                 when = self._format_report_time(

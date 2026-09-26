@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_stacks.py, Version: 0.23.3 (2026-09-24)
+# File: study_stacks.py, Version: 0.23.8 (2026-09-25)
 
 """Z-Wave and Matter, gathered so their support can be built.
 
@@ -34,10 +34,13 @@ a later release knows which shape it is reading.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .const import LOGGER
 
@@ -329,8 +332,107 @@ def _node_state(node: Any) -> tuple[str, str]:
     return status, detail
 
 
+# ------------------------------------------ names and coordinators, 0.23.8
+#
+# Researched on 25 September 2026 in the code Home Assistant 2026.9.2
+# ships and the libraries it pins (zwave-js-server-python 0.73.1,
+# matter-python-client 1.4.0); the findings are in
+# Project__Stack_Readers.md. Home Assistant registers a Z-Wave node as
+# ("zwave_js", "<home id>-<node id>") and a Matter node as ("matter",
+# "deviceid_<fabric hex>-<node hex>-MatterNodeDevice"), with an
+# endpoint number in place of the last part for a bridged device. So a
+# node is named from the device registry, and neither integration is
+# imported (#478).
+
+_ZWAVE_IDENT = re.compile(r"^\d+-(\d+)$")
+_MATTER_IDENT = re.compile(r"^deviceid_[0-9A-F]{16}-([0-9A-F]{16})-(.+)$")
+# A Thread device's routing role, from Thread Network Diagnostics
+# (0/53/1), as the Matter specification numbers it.
+_THREAD_ROLES = {
+    0: "unspecified", 1: "unassigned", 2: "sleepy end device",
+    3: "end device", 4: "router-eligible end device", 5: "router",
+    6: "leader",
+}
+
+
+def node_devices(hass: HomeAssistant, entry: Any, domain: str) -> dict[str, str]:
+    """Each node id of an entry's network, mapped to its device id.
+
+    A Matter bridge's own node maps to the bridge; its bridged
+    endpoints are devices of their own and are not a node.
+    """
+    registry = dr.async_get(hass)
+    found: dict[str, str] = {}
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        for ident_domain, ident in device.identifiers:
+            if ident_domain != domain:
+                continue
+            if domain == ZWAVE_DOMAIN:
+                match = _ZWAVE_IDENT.match(str(ident))
+                if match:
+                    found[match.group(1)] = device.id
+            else:
+                match = _MATTER_IDENT.match(str(ident))
+                if match and match.group(2) == "MatterNodeDevice":
+                    found[str(int(match.group(1), 16))] = device.id
+    return found
+
+
+def _zwave_seen(node: Any) -> float | None:
+    """When a Z-Wave node was last heard, as a timestamp."""
+    for holder in (node, _read(node, "statistics")):
+        seen = _read(holder, "last_seen")
+        if isinstance(seen, datetime):
+            return seen.timestamp()
+    return None
+
+
+def _zwave_status_sensor(hass: HomeAssistant, home_id: Any, node_id: Any) -> str:
+    """Whether the node's status sensor is on, off or absent.
+
+    Home Assistant makes one per node, enabled by default, and its
+    change to "dead" is a state change on the device like any other,
+    which Device Sentinel counts as the device speaking (research
+    finding 5). The probe says where it is on.
+    """
+    unique_id = f"{home_id}.{node_id}.node_status"
+    entity_id = er.async_get(hass).async_get_entity_id("sensor", ZWAVE_DOMAIN, unique_id)
+    if entity_id is None:
+        return "absent"
+    entry = er.async_get(hass).async_get(entity_id)
+    return "off" if entry is not None and entry.disabled_by else "on"
+
+
+def _zwave_listening(node: Any) -> str:
+    """How a node listens, which makes its silence normal or not."""
+    if _read(node, "is_listening"):
+        return "listens"
+    if _read(node, "is_frequent_listening"):
+        return "wakes briefly"
+    if _read(node, "is_listening") is False:
+        return "sleeps"
+    return ""
+
+
+def _matter_radio(node: Any) -> str:
+    """A Wi-Fi node's signal or a Thread node's role, where carried."""
+    table = _matter_attributes(node)
+    rssi = table.get("0/54/4")
+    if isinstance(rssi, (int, float)) and not isinstance(rssi, bool):
+        return f"wifi rssi {rssi}"
+    role = table.get("0/53/1")
+    if isinstance(role, int) and not isinstance(role, bool):
+        return f"thread role {_THREAD_ROLES.get(role, role)}"
+    return ""
+
+
 def probe_rows(hass: HomeAssistant, studied: set[str]) -> list[dict[str, Any]]:
-    """What each studied stack's nodes say right now, one row each."""
+    """What each studied stack's nodes say right now, one row each.
+
+    Each row carries the node's device, when there is one, so the
+    recorder can set Device Sentinel's own view beside the stack's
+    (0.23.8).
+    """
     rows: list[dict[str, Any]] = []
     if ZWAVE_DOMAIN in studied:
         for entry in hass.config_entries.async_entries(ZWAVE_DOMAIN):
@@ -338,6 +440,8 @@ def probe_rows(hass: HomeAssistant, studied: set[str]) -> list[dict[str, Any]]:
                 _read(_read(_read(entry, "runtime_data"), "client"), "driver"),
                 "controller",
             )
+            home_id = _read(controller, "home_id")
+            devices = node_devices(hass, entry, ZWAVE_DOMAIN)
             nodes = _read(controller, "nodes") or {}
             try:
                 listed = list(nodes.values())
@@ -347,12 +451,23 @@ def probe_rows(hass: HomeAssistant, studied: set[str]) -> list[dict[str, Any]]:
                 )
                 listed = []
             for node in listed:
-                status, detail = _node_state(node)
+                if _read(node, "is_controller_node"):
+                    continue
+                node_id = str(_plain(_read(node, "node_id")))
+                status, numbers = _node_state(node)
+                extra = [
+                    part for part in (
+                        _zwave_listening(node),
+                        f"status sensor {_zwave_status_sensor(hass, home_id, node_id)}",
+                    ) if part
+                ]
                 rows.append({
                     "stack": ZWAVE_DOMAIN,
-                    "node": str(_plain(_read(node, "node_id"))),
+                    "node": node_id,
+                    "device_id": devices.get(node_id, ""),
                     "now": status,
-                    "detail": detail,
+                    "seen": _zwave_seen(node),
+                    "detail": ", ".join(extra + ([numbers] if numbers else [])),
                 })
     if MATTER_DOMAIN in studied:
         for entry in hass.config_entries.async_entries(MATTER_DOMAIN):
@@ -362,6 +477,7 @@ def probe_rows(hass: HomeAssistant, studied: set[str]) -> list[dict[str, Any]]:
             getter = _read(client, "get_nodes")
             if not callable(getter):
                 continue
+            devices = node_devices(hass, entry, MATTER_DOMAIN)
             try:
                 listed = list(getter())
             except Exception as err:  # noqa: BLE001 - a library call
@@ -370,10 +486,67 @@ def probe_rows(hass: HomeAssistant, studied: set[str]) -> list[dict[str, Any]]:
                 )
                 listed = []
             for node in listed:
+                node_id = str(_plain(_read(node, "node_id")))
+                detail = [part for part in (_matter_detail(node), _matter_radio(node)) if part]
                 rows.append({
                     "stack": MATTER_DOMAIN,
-                    "node": str(_plain(_read(node, "node_id"))),
+                    "node": node_id,
+                    "device_id": devices.get(node_id, ""),
                     "now": "available" if _read(node, "available") else "away",
-                    "detail": _matter_detail(node),
+                    "network": _matter_network(node),
+                    "detail": ", ".join(detail),
                 })
     return rows[:NODE_ROW_CAP * 4]
+
+
+# What a Z-Wave controller says about itself (ControllerStatus).
+_CONTROLLER_WORDS = {0: "ready", 1: "unresponsive", 2: "jammed"}
+
+
+def coordinator_rows(hass: HomeAssistant, studied: set[str]) -> list[dict[str, Any]]:
+    """Each studied stack's coordinator, one row per config entry.
+
+    Z-Wave: the entry's state, whether the client's connection to the
+    Z-Wave JS server is open, whether the driver is there, and the
+    controller's own status. Matter: the entry's state and whether the
+    server connection is open. A stick pulled or a server restarted
+    shows here, which is what a reader must tell from a real outage
+    (research findings 1, 6 and 10).
+    """
+    rows: list[dict[str, Any]] = []
+    if ZWAVE_DOMAIN in studied:
+        for entry in hass.config_entries.async_entries(ZWAVE_DOMAIN):
+            client = _read(_read(entry, "runtime_data"), "client")
+            driver = _read(client, "driver")
+            raw = _read(_read(driver, "controller"), "status")
+            value = _plain(raw)
+            words = (
+                _CONTROLLER_WORDS.get(value, f"status {value}")
+                if isinstance(value, int) and not isinstance(value, bool)
+                else (str(value) if value is not None else "no controller")
+            )
+            state = getattr(entry.state, "value", str(entry.state))
+            connected = bool(_read(client, "connected"))
+            now = (
+                words if connected and driver is not None
+                else "no driver" if connected
+                else "disconnected"
+            )
+            rows.append({
+                "stack": ZWAVE_DOMAIN,
+                "node": "controller",
+                "now": now,
+                "detail": f"entry {state}",
+            })
+    if MATTER_DOMAIN in studied:
+        for entry in hass.config_entries.async_entries(MATTER_DOMAIN):
+            client = _read(_read(_read(entry, "runtime_data"), "adapter"), "matter_client")
+            connected = _read(_read(client, "connection"), "connected")
+            state = getattr(entry.state, "value", str(entry.state))
+            rows.append({
+                "stack": MATTER_DOMAIN,
+                "node": "server",
+                "now": "connected" if connected else "disconnected",
+                "detail": f"entry {state}",
+            })
+    return rows

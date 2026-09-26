@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.6 (2026-09-25)
+# File: coordinator.py, Version: 0.23.8 (2026-09-25)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -605,6 +605,9 @@ class DeviceSentinelCoordinator(
         # What each studied stack's nodes last said, so a line is
         # written when that changes (0.22.26).
         self._probe_last: dict[tuple[str, str], tuple[str, str]] = {}
+        # Whether Device Sentinel's Wi-Fi outage was open at the last
+        # probe tick; None until the first tick (0.23.8).
+        self._probe_wifi_down: bool | None = None
         self._study_capped: dict[str, bool] = {}
         self._study_unsub = None
         self._study_watching: dict[str, str] = {}
