@@ -45,26 +45,16 @@ If a battery is projected to reach empty inside your chosen horizon, say thirty 
 
 ### What It Catches
 
-Device Sentinel spots four ways a device goes dark:
-
-| Verdict | What it means | Why you care |
-|---|---|---|
-| **Frozen** | Silent past its own learned window, while still showing a healthy value. | The dangerous one. Your automations are acting on a dead reading. |
-| **Unavailable** | Every one of the device's own live entities reports `unavailable`. | Home Assistant knows it's gone. You probably don't. |
-| **Unknown** | Every one of the device's own live entities reports `unknown`. | Usually an integration or protocol failure. |
-| **Never reported** | Known to the registry but has produced nothing for 48 hours. | Ghost entries, and devices that died before you installed this. |
-
-And two warnings that arrive *before* the failure:
-
-| Verdict | What it means | Why you care |
-|---|---|---|
-| **Low battery** | The level falls past your threshold (default 15%). | Warning while you can still act. |
-| **Falling battery** | The cell is projected to reach empty inside your chosen horizon, based on how fast it is *actually* dropping. | A lithium coin cell at 82% that is falling steadily can be dead within days, while an alkaline cell sitting at 24% that hasn't moved in a month keeps going. |
-| **Weak or railed signal** | A link spending much of its day worse than that device has ever normally run, or stuck at a "no reading" value. | Links degrade before they fail. |
+| Problem | Why you care |
+|---|---|
+| **Frozen** | Silent while still showing a healthy value. Your automations are acting on a dead reading. |
+| **Unavailable** | Home Assistant knows it's gone. You probably don't. |
+| **Flapping** | Drops out and comes back again and again. One alert, not dozens. |
+| **Never reported** | Ghost entries, and devices that died before you installed this. |
+| **Low or falling battery** | Warned while you can still act, even when a coin cell still reads 80%. |
+| **Weak or stuck signal** | Links degrade before they fail. |
 
 ![Device Sentinel battery decay beside a device's radio link](https://xeazy.com/wp-content/uploads/Battery-Decay-Signal-Dwell.png)
-
-![The Device Sentinel signal report, charting the devices whose radio link is worse than usual, with every steady device named below](https://xeazy.com/wp-content/uploads/signal_report.webp)
 
 ## What You Get
 
@@ -82,6 +72,8 @@ The daily brief, the problem list, battery and signal trends, and a page for eac
 
 **Alerts That Respect Your Evening**
 Live push notifications are sent for real faults, and quiet hours keep your phone silent overnight. A daily brief, delivered by email or push on your schedule, summarizes what happened and highlights devices that keep failing for no clear reason.
+
+Every screen and setting is explained in the [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki).
 
 ![A Device Sentinel daily brief, listing the devices that need attention and what happened over the last day](https://xeazy.com/wp-content/uploads/daily_brief.webp)
 
@@ -102,11 +94,11 @@ Device Sentinel is not in the default HACS store yet.
 
 It runs on sensible defaults immediately. Two things are worth doing on day one:
 1. Open the integration settings and configure **Notifications and Daily Brief**.
-2. On the Device Sentinel dashboard or device page, press the three **Enable** buttons (Battery, Signals, Last Seen) so the integration has data to learn from.
+2. At the top of the Device Sentinel dashboard, press the three **Enable** buttons (Battery, Signals, Last Seen) so the integration has data to learn from.
 
 ![The Device Sentinel device page in Home Assistant, with its three enable buttons and diagnostic sensors](https://xeazy.com/wp-content/uploads/integration_page.webp)
 
-It takes time to learn your house. Freeze detection arms after a week, and signal baselines settle after a month.
+It takes time to learn your house. Freeze detection arms after a week, battery trends after two weeks, and signal baselines settle after a month.
 
 ## Configuration Overview
 
@@ -116,44 +108,34 @@ Device Sentinel's settings are designed to be set once and forgotten. For comple
 
 | Section | What it controls |
 |---|---|
-| **[Notifications](https://github.com/TheThinkingHome/device_sentinel/wiki/Notifications-and-Daily-Brief)** | Where your instant alerts go, your quiet hours, when the Daily Brief is generated and sent, and whether reports link to your device pages. |
+| **[Notifications](https://github.com/TheThinkingHome/device_sentinel/wiki/Notifications-and-Daily-Brief)** | Where your instant alerts go, your quiet hours, when the Daily Brief is generated and sent, and whether device names in the daily brief open their pages on the dashboard. |
 | **[Exclusions and Muting](https://github.com/TheThinkingHome/device_sentinel/wiki/Exclusions-and-Muting)** | Manage the hardware you want ignored. *Exclude* integrations that provide useless data (like mobile apps). *Mute* devices to stop alerts while keeping their history. |
 | **[Low Battery](https://github.com/TheThinkingHome/device_sentinel/wiki/Low-Battery)** | Set your flat percentage threshold and your "Days Till Empty" horizon. |
 | **[Signal Strength](https://github.com/TheThinkingHome/device_sentinel/wiki/Signal-Strength)** | Define what constitutes a "bad signal day" by adjusting how far a signal must drop below its own normal baseline. |
 | **[Freeze Detection](https://github.com/TheThinkingHome/device_sentinel/wiki/Freeze-Detection)** | Fine-tune the grace period added to a device's learned reporting rhythm before it is flagged as frozen. |
 | **[WiFi](https://github.com/TheThinkingHome/device_sentinel/wiki/WiFi)** | Configure the integration to watch your server's wireless adapter to detect home-wide Wi-Fi outages. |
-| **[Advanced](https://github.com/TheThinkingHome/device_sentinel/wiki/Advanced)** | Deep system tuning: debounce timers, repeat offender thresholds, and storage write intervals. Also includes the Data Trim tool. |
+| **[Advanced](https://github.com/TheThinkingHome/device_sentinel/wiki/Advanced)** | Storage, history and maintenance-window settings, and the Data Trim tool. |
 | **[Extended Diagnostics](https://github.com/TheThinkingHome/device_sentinel/wiki/Extended-Diagnostics)** | Volunteer hardware data to help build support for new routers and coordinators. |
-
-## The Reports
-
-Device Sentinel generates several reports to help you understand your network's health, gathered in the Device Sentinel dashboard in your sidebar, and written as files you can email, print or share. Device names in the reports are followed by their area, and if configured can link to that device's device page. 
-
-*   **[The Problem List](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Problem-List):** The live Home Assistant To-Do list where you acknowledge active faults.
-*   **[The Daily Brief](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Daily-Brief):** A plain-English summary of what is wrong right now and what happened over the last 24 hours.
-*   **[The Battery Report](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Battery-Report):** Ranks every falling battery by how much time it has left.
-*   **[The Signal Report](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Signal-Report):** Charts the devices struggling with unusually bad radio links.
-*   **[The Diagnostic Reports](https://github.com/TheThinkingHome/device_sentinel/wiki/The-Diagnostic-Reports):** The raw data. View exactly what rhythm Device Sentinel learned for each sensor and investigate silence episodes.
 
 ## Integration Status
 
 | Area | Status | Notes |
 |---|---|---|
-| **Dashboard** | Working | Daily brief, problem list, battery and signal trends, classification, integrations, devices and recommendations, with a page for each device and integration. Administrators only. |
-| **Freeze Detection** | Stable | Rhythms fully modeled. Differentiates frozen, unavailable, unknown, and never reported. |
-| **Battery** | Stable | Dual-evaluation (flat threshold + predictive trend) is live. |
-| **Storage** | Stable | Highly resilient data storage with automatic last-good backups. |
-| **Zigbee2MQTT** | Working | Supports pairing window recognition and bridge/broker outage detection. |
-| **MQTT** | Working | Watches the MQTT broker itself; devices clear blame during broker outages. |
-| **ZHA** | Working | Coordinator outage detection. Re-pairs/reconfigures recognized automatically. |
-| **Signal** | Experimental | Weak links charted; alerts held back until logic is field-proven. |
-| **WiFi** | Experimental | Detects Wi-Fi outages from the host adapter, or from supported router integrations (like TP-Link and UniFi). Requires server wireless capability if a supported router is not used. See the [WiFi](https://github.com/TheThinkingHome/device_sentinel/wiki/WiFi) documentation. |
-| **Z-Wave** | Basic Detection | Watches the integration itself. An integration outage or a storm of devices dropping simultaneously is reported as a single event, clearing the individual devices of blame. When the integration returns, its devices get time to rejoin before any of them is reported. The running controller is not built yet. See [Z-Wave](https://github.com/TheThinkingHome/device_sentinel/wiki/Z-Wave) to contribute. |
-| **Matter** | Basic Detection | Devices are watched and judged. An integration outage is reported as one event, and its devices get time to rejoin. Commissioning is not researched. |
+| **Dashboard** | Working | Everything Device Sentinel knows, one click apart, with a page for each device. Administrators only. |
+| **Freeze Detection** | Stable | Catches frozen, unavailable and flapping devices, each on its own rhythm. |
+| **Battery** | Stable | Warns on low batteries and on batteries falling or speeding up. |
+| **Storage** | Stable | Survives power cuts and restores itself from a backup. |
+| **Zigbee2MQTT** | Working | A bridge outage is one alert, and your re-pairs are never mistaken for faults. |
+| **MQTT** | Working | A broker outage is one alert, not one per device. |
+| **ZHA** | Working | A coordinator outage is one alert, and your re-pairs are recognized. |
+| **Signal** | Experimental | Weak links shown on the dashboard; stuck readings alert. |
+| **WiFi** | Experimental | A Wi-Fi outage is one alert. Needs a wireless adapter on your server or a supported router. |
+| **Z-Wave** | Basic Detection | Devices watched; an integration outage is one alert. Controller support is being built. |
+| **Matter** | Basic Detection | Devices watched; an integration outage is one alert. Controller support is being built. |
 
 ## AI Disclosure
 
-See [AI_DISCLOSURE.md](AI_DISCLOSURE.md).
+Device Sentinel was built with AI assistance under my direction. Every design decision is mine, and nothing reaches this repository without my review and a full test gate, with detection proven on real hardware. [AI_DISCLOSURE.md](AI_DISCLOSURE.md) explains exactly what the AI did and how every release is checked.
 
 ## From The Thinking Home
 
