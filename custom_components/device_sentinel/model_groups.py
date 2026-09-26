@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: model_groups.py, Version: 0.23.4 (2026-09-25)
+# File: model_groups.py, Version: 0.23.9 (2026-09-26)
 
 """Devices read as groups of the same maker, model and hardware (0.23.4).
 
@@ -52,6 +52,8 @@ from .const import (
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
     DEV_FIRMWARE_HISTORY,
+    FIRMWARE_FLICKER_SECONDS,
+    FIRMWARE_HOLD_SECONDS,
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_SCALE,
@@ -103,6 +105,41 @@ def note_firmware(record: dict[str, Any], firmware: str | None, now: float) -> b
     if history and history[-1][0] == firmware:
         return False
     history.append([firmware, now])
+    return True
+
+
+def unflicker_firmware(record: dict[str, Any]) -> bool:
+    """Remove flickers from a history written before 0.23.9.
+
+    A version replaced within FIRMWARE_FLICKER_SECONDS by the version
+    before it was never run: the registry held a stale value for a
+    moment. It is dropped, and the repeat of the version before it is
+    merged into that version's first entry, so the history reads as
+    the device ran. Returns whether anything changed.
+    """
+    history = record.get(DEV_FIRMWARE_HISTORY)
+    if not isinstance(history, list) or len(history) < 3:
+        return False
+    cleaned: list[list[Any]] = []
+    index = 0
+    while index < len(history):
+        pair = history[index]
+        if (
+            cleaned
+            and index + 1 < len(history)
+            and history[index + 1][0] == cleaned[-1][0]
+            and history[index + 1][1] - pair[1] <= FIRMWARE_FLICKER_SECONDS
+        ):
+            index += 2
+            continue
+        if cleaned and cleaned[-1][0] == pair[0]:
+            index += 1
+            continue
+        cleaned.append(pair)
+        index += 1
+    if len(cleaned) == len(history):
+        return False
+    record[DEV_FIRMWARE_HISTORY] = cleaned
     return True
 
 
@@ -371,24 +408,69 @@ class ModelGroupMixin:
     data: dict[str, Any]
     _watched: dict[str, Any]
     _muted_devices: dict[str, Any]
+    _firmware_candidates: dict[str, tuple[str, float]]
 
     def _note_firmware(self, device_ids: Any) -> None:
-        """Record the current firmware of each device given.
+        """Hold each changed firmware version as a candidate (0.23.9).
 
-        Runs with every rebuild of the registry view, which is each
-        start and each registry change, so an update is caught the
-        moment Home Assistant records it.
+        Runs with every rebuild of the registry view, each start and
+        each registry change. A version different from the one
+        recorded is held in memory with the time it first appeared,
+        and written only at the midnight fold (_confirm_firmware). A
+        device that goes back to its recorded version drops its
+        candidate, and a restart forgets every candidate, so the
+        stale values a restart shows for a moment never reach the
+        history. Nothing new is stored.
         """
         registry = dr.async_get(self.hass)
         devices = self.data.get(DATA_DEVICES) or {}
         now = dt_util.utcnow().timestamp()
-        changed = False
+        candidates = self._firmware_candidates
         for device_id in device_ids:
             record = devices.get(device_id)
             if not isinstance(record, dict):
                 continue
             firmware = identity_of(registry.async_get(device_id))["firmware"]
-            changed = note_firmware(record, firmware, now) or changed
+            if firmware is None:
+                continue
+            history = record.get(DEV_FIRMWARE_HISTORY) or []
+            if history and history[-1][0] == firmware:
+                candidates.pop(device_id, None)
+                continue
+            held = candidates.get(device_id)
+            if held is None or held[0] != firmware:
+                candidates[device_id] = (firmware, now)
+
+    def _confirm_firmware(self, now: float) -> None:
+        """Write the candidates that held, at the midnight fold.
+
+        A candidate is written when the registry still reports it and
+        it first appeared at least FIRMWARE_HOLD_SECONDS earlier, with
+        the time it first appeared. A newer one waits for the next
+        fold; one the device has left is dropped.
+        """
+        registry = dr.async_get(self.hass)
+        devices = self.data.get(DATA_DEVICES) or {}
+        changed = False
+        for device_id, (firmware, first_seen) in list(self._firmware_candidates.items()):
+            record = devices.get(device_id)
+            current = identity_of(registry.async_get(device_id))["firmware"]
+            if not isinstance(record, dict) or current != firmware:
+                self._firmware_candidates.pop(device_id, None)
+                continue
+            if now - first_seen < FIRMWARE_HOLD_SECONDS:
+                continue
+            changed = note_firmware(record, firmware, first_seen) or changed
+            self._firmware_candidates.pop(device_id, None)
+        if changed:
+            self._mark_cold_dirty()  # type: ignore[attr-defined]
+
+    def _unflicker_firmware(self) -> None:
+        """Clean the flickers recorded before 0.23.9, once per start."""
+        changed = False
+        for record in (self.data.get(DATA_DEVICES) or {}).values():
+            if isinstance(record, dict):
+                changed = unflicker_firmware(record) or changed
         if changed:
             self._mark_cold_dirty()  # type: ignore[attr-defined]
 

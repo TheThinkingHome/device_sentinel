@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.8 (2026-09-25)
+# File: const.py, Version: 0.23.9 (2026-09-26)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2117,6 +2117,11 @@ STUDIABLE = {
     "mikrotik": "Router: MikroTik",
     "zwave_js": "Z-Wave",
     "matter": "Matter",
+    # The four stacks added in 0.23.9 (Project__Stack_Readers.md).
+    "hue": "Philips Hue",
+    "smartthings": "SmartThings",
+    "tuya": "Tuya",
+    "lutron_caseta": "Lutron Caséta",
 }
 
 # A study keeps the shapes it has seen, not every reading: one stored
@@ -2687,6 +2692,12 @@ PROBE_SENTINEL = "sentinel"
 PROBE_AGREES = "agrees"
 PROBE_KEEP_DAYS = 14
 PROBE_ROW_CAP = 4000
+# The probe file (0.23.9): lines are appended to stack_probe.md rather
+# than kept in storage, and the file rolls to .1, .2 and .3 at this
+# size, the oldest dropped. Six stacks write to the one file, as the
+# owner ruled on 26 September, and storage stays small.
+PROBE_FILE_MAX_BYTES = 1_000_000
+PROBE_FILE_ROLLS = 3
 EP_DEVICE_ID = "device_id"
 EP_NAME = "name"
 EP_SINCE = "since"
@@ -3066,3 +3077,35 @@ BATTERY_KNEE_RATIO = 2.0
 BATTERY_KNEE_BEFORE_FLOOR = 0.5
 READING_ACCELERATING = "accelerating"
 READING_FALLING = "falling"
+
+
+# Firmware history (0.23.9). A version is recorded only once it has
+# held until the midnight fold, first seen at least this long before
+# it. At a restart on 25 September four of the reference rig's buttons
+# each recorded an older version and their current one again within
+# the same second: Home Assistant's registry held a stale value while
+# the MQTT devices came back up. The owner ruled the record tied to the
+# fold, which also settles downgrades: a real one holds, a flicker
+# never lasts that long.
+FIRMWARE_HOLD_SECONDS = 3600
+# A recorded version replaced within this long by the version before
+# it is a flicker, removed from histories written before 0.23.9.
+FIRMWARE_FLICKER_SECONDS = 600
+
+
+# How a device connects, from its integration's own declaration (its
+# manifest's iot_class), in the words the owner approved on 26
+# September for the device page (0.23.9). A device's class is its
+# integration's: a Tuya device paired through Zigbee2MQTT is local, as
+# it should be.
+CONNECTS_WORDS = {
+    "local_push": "On your network. It reports changes as they happen.",
+    "local_polling": "On your network. Home Assistant asks it for updates at set times.",
+    "cloud_push": "Through the maker's cloud. It stops reporting if their servers or your internet go down.",
+    "cloud_polling": (
+        "Through the maker's cloud, checked at set times. It stops reporting "
+        "if their servers or your internet go down."
+    ),
+    "assumed_state": "It can't report back, so Home Assistant shows what it last told it to do.",
+    "calculated": "Worked out by Home Assistant from other readings.",
+}

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.23.8 (2026-09-25)
+# File: study.py, Version: 0.23.9 (2026-09-26)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -44,6 +44,7 @@ the same way everything else here ages out.
 
 from __future__ import annotations
 
+from collections import deque
 from typing import Any
 
 from homeassistant.core import callback
@@ -64,10 +65,8 @@ from .const import (
     STATUS_SET_ASIDE,
     PROBE_DETAIL,
     PROBE_DEVICE_ID,
-    PROBE_KEEP_DAYS,
     PROBE_NODE,
     PROBE_NOW,
-    PROBE_ROW_CAP,
     PROBE_STACK,
     PROBE_WAS,
     PROBE_WHEN,
@@ -75,7 +74,21 @@ from .const import (
     STUDY_SHAPE_CAP,
 )
 from .device_fields import device_field
-from .study_stacks import MATTER_DOMAIN, ZWAVE_DOMAIN, coordinator_rows, probe_rows
+from .study_stacks import (
+    HUE_DOMAIN,
+    LUTRON_DOMAIN,
+    MATTER_DOMAIN,
+    SMARTTHINGS_DOMAIN,
+    TUYA_DOMAIN,
+    ZWAVE_DOMAIN,
+    coordinator_rows,
+    probe_rows,
+)
+
+# Every stack the probe reads (0.23.9 added the last four).
+PROBED_DOMAINS = {
+    ZWAVE_DOMAIN, MATTER_DOMAIN, HUE_DOMAIN, SMARTTHINGS_DOMAIN, TUYA_DOMAIN, LUTRON_DOMAIN,
+}
 
 ROUTER = "router"
 IGNORED_KEYS = {"friendly_name", "icon", "device_class"}
@@ -137,6 +150,8 @@ class StudyMixin:
     # Set in the coordinator's __init__ (0.23.8); declared here so
     # the type is known where the probe reads it.
     _probe_wifi_down: bool | None
+    _probe_pending: list[str]
+    _probe_recent: deque[str]
 
     # ------------------------------------------------------- settings
 
@@ -332,7 +347,9 @@ class StudyMixin:
                 None if state in ("unknown", "None") else False
             )
         else:
-            stack_quiet = state == "away"
+            # Matter, Hue and Tuya say quiet or not on the row; a
+            # SmartThings row carries only the device's type (None).
+            stack_quiet = row.get("quiet")
         agrees = (
             "" if stack_quiet is None or sentinel_quiet is None
             else "yes" if stack_quiet == sentinel_quiet else "no"
@@ -357,8 +374,10 @@ class StudyMixin:
         device's window, or from Device Sentinel's verdict changing
         (0.23.8, research finding 12).
         """
+        self._probe_migrate()
+        self._probe_flush()
         studied = self.studied
-        if not studied & {ZWAVE_DOMAIN, MATTER_DOMAIN}:
+        if not studied & PROBED_DOMAINS:
             self._probe_last.clear()
             return
         wifi_nodes: dict[str, bool] = {}
@@ -381,7 +400,7 @@ class StudyMixin:
                 continue
             else:
                 was = before[0]
-            self._append_row(DATA_STACK_PROBE, {
+            self._probe_queue({
                 PROBE_WHEN: now,
                 PROBE_STACK: row["stack"],
                 PROBE_NODE: row["node"],
@@ -399,7 +418,7 @@ class StudyMixin:
             self._probe_last[key] = said
             if before == said:
                 continue
-            self._append_row(DATA_STACK_PROBE, {
+            self._probe_queue({
                 PROBE_WHEN: now,
                 PROBE_STACK: row["stack"],
                 PROBE_NODE: row["node"],
@@ -418,7 +437,7 @@ class StudyMixin:
             if self._probe_wifi_down is not None and wifi_nodes:
                 away = sorted(name for name, up in wifi_nodes.items() if not up)
                 up = sorted(name for name, up in wifi_nodes.items() if up)
-                self._append_row(DATA_STACK_PROBE, {
+                self._probe_queue({
                     PROBE_WHEN: now,
                     PROBE_STACK: MATTER_DOMAIN,
                     PROBE_NODE: "wifi",
@@ -439,6 +458,45 @@ class StudyMixin:
         device_id = row.get("device_id")
         return (self._device_name(device_id) if device_id else None) or f"node {row['node']}"  # type: ignore[attr-defined]
 
+    def _probe_queue(self, row: dict[str, Any]) -> None:
+        """Render a probe line now and hold it for the next flush.
+
+        Rendered at once, so the device name is the one it had when
+        the line happened. Written to the file on the next tick or at
+        the fold, off the event loop (0.23.9).
+        """
+        line = self._probe_render(row)  # type: ignore[attr-defined]
+        self._probe_pending.append(line)
+        self._probe_recent.append(line)
+
+    @callback
+    def _probe_flush(self) -> None:
+        """Append the held lines to stack_probe.md, off the event loop."""
+        if not self._probe_pending:
+            return
+        lines, self._probe_pending = self._probe_pending, []
+        self.hass.async_add_executor_job(self._probe_write_lines, lines)  # type: ignore[attr-defined]
+
+    @callback
+    def _probe_migrate(self) -> None:
+        """Move lines stored before 0.23.9 into the file, once.
+
+        They were kept in storage and the file was rebuilt from them;
+        now the file is the record. The old file, a copy of those
+        lines newest first, is replaced by them in order.
+        """
+        rows = self.data.get(DATA_STACK_PROBE)
+        if not rows:
+            return
+        ordered = sorted(
+            (row for row in rows if isinstance(row, dict)),
+            key=lambda row: row.get(PROBE_WHEN) or 0.0,
+        )
+        lines = [self._probe_render(row) for row in ordered]  # type: ignore[attr-defined]
+        self.data[DATA_STACK_PROBE] = []
+        self._mark_cold_dirty()
+        self.hass.async_add_executor_job(self._probe_write_lines, lines, True)  # type: ignore[attr-defined]
+
     @callback
     def probe_fold(self, now: float) -> None:
         """One counting line a day per stack, and the old lines dropped.
@@ -448,7 +506,7 @@ class StudyMixin:
         not, which is the figure the readers will be built from.
         """
         studied = self.studied
-        if studied & {ZWAVE_DOMAIN, MATTER_DOMAIN}:
+        if studied & PROBED_DOMAINS:
             counts: dict[str, dict[str, int]] = {}
             agreement: dict[str, dict[str, int]] = {}
             for row in probe_rows(self.hass, studied):
@@ -460,7 +518,7 @@ class StudyMixin:
                     tally[views["agrees"]] += 1
             for stack, by_state in counts.items():
                 tally = agreement.get(stack, {"yes": 0, "no": 0})
-                self._append_row(DATA_STACK_PROBE, {
+                self._probe_queue({
                     PROBE_WHEN: now,
                     PROBE_STACK: stack,
                     PROBE_NODE: "",
@@ -474,16 +532,7 @@ class StudyMixin:
                         for state, count in sorted(by_state.items())
                     ),
                 })
-        rows = self.data.get(DATA_STACK_PROBE) or []
-        cutoff = now - PROBE_KEEP_DAYS * 86400
-        kept = [
-            row for row in rows
-            if isinstance(row.get(PROBE_WHEN), (int, float))
-            and row[PROBE_WHEN] >= cutoff
-        ][-PROBE_ROW_CAP:]
-        if len(kept) != len(rows):
-            self.data[DATA_STACK_PROBE] = kept
-            self._mark_cold_dirty()
+        self._probe_flush()
 
     # --------------------------------------------------- the fold, #393
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.8 (2026-09-25)
+# File: coordinator.py, Version: 0.23.9 (2026-09-26)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import copy
 import math
+import threading
 from collections import Counter, deque
 from collections.abc import Callable
 from datetime import timedelta
@@ -605,9 +606,22 @@ class DeviceSentinelCoordinator(
         # What each studied stack's nodes last said, so a line is
         # written when that changes (0.22.26).
         self._probe_last: dict[tuple[str, str], tuple[str, str]] = {}
+        # Probe lines rendered and waiting for the next flush, and the
+        # lock that keeps two flushes from rolling the file at once
+        # (0.23.9).
+        self._probe_pending: list[str] = []
+        # The last lines this session wrote, for the diagnostics and
+        # for a test to read without waiting on the file.
+        self._probe_recent: deque[str] = deque(maxlen=500)
+        self._probe_lock = threading.Lock()
         # Whether Device Sentinel's Wi-Fi outage was open at the last
         # probe tick; None until the first tick (0.23.8).
         self._probe_wifi_down: bool | None = None
+        # Firmware versions seen but not yet held through a fold, by
+        # device, with the time each first appeared (0.23.9). Memory
+        # only: a restart forgets them, which is the point.
+        self._firmware_candidates: dict[str, tuple[str, float]] = {}
+        self._firmware_unflickered = False
         self._study_capped: dict[str, bool] = {}
         self._study_unsub = None
         self._study_watching: dict[str, str] = {}
@@ -2117,6 +2131,9 @@ class DeviceSentinelCoordinator(
         # Each watched device's firmware, at every start and every
         # registry change, since the registry keeps only the current
         # version (0.23.4).
+        if not self._firmware_unflickered:
+            self._unflicker_firmware()
+            self._firmware_unflickered = True
         self._note_firmware(watched)
         now_stamp = dt_util.utcnow().timestamp()
         departed = 0
@@ -3274,6 +3291,8 @@ class DeviceSentinelCoordinator(
             self._roll_dwell(record, now)
             self._roll_battery(record, device_id)
             self._prune_firmware(record, now)
+        # Firmware candidates that held through the day (0.23.9).
+        self._confirm_firmware(now)
         # The day's storm tally, one row per domain (ruling #320),
         # written before the save that carries it. Dated by the day
         # that just ended: the roll runs at local midnight, when today

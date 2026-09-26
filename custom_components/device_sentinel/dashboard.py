@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.23.6 (2026-09-25)
+# File: dashboard.py, Version: 0.23.9 (2026-09-26)
 
 """What the dashboard reads from the coordinator.
 
@@ -33,6 +33,7 @@ from datetime import date, timedelta
 
 from .report_battery import battery_month_drop, battery_sentence, battery_trend
 from .const import (
+    CONNECTS_WORDS,
     BATTERY_STEPS_SMOOTH,
     BATTERY_WEEK_DAYS,
     TODO_KIND_FLAPPING,
@@ -139,6 +140,17 @@ from .device_fields import device_field
 
 class DashboardMixin:
     """The change marker and the header status."""
+
+    def iot_class_of(self, domain: str | None) -> str | None:
+        """How an integration talks to its devices: its manifest's
+        iot_class, read through Home Assistant's public loader, with
+        nothing added to Device Sentinel's own manifest (0.23.9)."""
+        if not domain:
+            return None
+        try:
+            return async_get_loaded_integration(self.hass, domain).iot_class  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001 - not loaded, or no manifest
+            return None
 
     _change_marker: int
     _change_listeners: list[Callable[[int], None]]
@@ -741,6 +753,9 @@ class DeviceViewMixin:
                 "area": area_name,
                 "integration": domain,
                 "integration_name": self._integration_title(domain) if domain else None,
+                # How it connects, from its integration's declaration
+                # (0.23.9).
+                "connects": CONNECTS_WORDS.get(self.iot_class_of(domain) or ""),
                 "connections": sorted(
                     [kind, value]
                     for kind, value in device_field(device, "connections", set())

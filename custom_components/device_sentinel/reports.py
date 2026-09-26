@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.23.5 (2026-09-25)
+# File: reports.py, Version: 0.23.9 (2026-09-26)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -360,7 +360,6 @@ class ReportWritingMixin(
         self._write_telemetry(report_directory, trigger)
         self._write_classification(report_directory, trigger)
         self._write_episodes(report_directory, trigger)
-        self._write_stack_probe(report_directory, trigger)
         # The signal and battery reports retired with the www folder
         # (0.23.5): the dashboard's Signal Trends and Battery Trends
         # tabs carry what they did, behind Home Assistant's sign-in.

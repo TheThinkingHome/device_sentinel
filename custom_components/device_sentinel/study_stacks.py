@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_stacks.py, Version: 0.23.8 (2026-09-25)
+# File: study_stacks.py, Version: 0.23.9 (2026-09-26)
 
 """Z-Wave and Matter, gathered so their support can be built.
 
@@ -355,6 +355,23 @@ _THREAD_ROLES = {
 }
 
 
+# The four stacks added in 0.23.9. Researched on 26 September 2026 in
+# Home Assistant 2026.9.2 and the libraries it pins (aiohue 4.9.0,
+# pysmartthings 4.0.1, tuya-device-sharing-sdk 0.2.15, and the Lutron
+# probe's reading of pylutron-caseta); the findings are in
+# Project__Stack_Readers.md. Read as Z-Wave and Matter are: from what
+# Home Assistant already holds in memory, by attribute, with no import
+# and nothing in the manifest. The Lutron session is a private
+# attribute; the owner ruled on 26 September that Extended
+# Diagnostics, and only Extended Diagnostics, may read one, since it
+# records and never judges.
+HUE_DOMAIN = "hue"
+SMARTTHINGS_DOMAIN = "smartthings"
+TUYA_DOMAIN = "tuya"
+LUTRON_DOMAIN = "lutron_caseta"
+PLAIN_ID_DOMAINS = (HUE_DOMAIN, SMARTTHINGS_DOMAIN, TUYA_DOMAIN)
+
+
 def node_devices(hass: HomeAssistant, entry: Any, domain: str) -> dict[str, str]:
     """Each node id of an entry's network, mapped to its device id.
 
@@ -367,7 +384,11 @@ def node_devices(hass: HomeAssistant, entry: Any, domain: str) -> dict[str, str]
         for ident_domain, ident in device.identifiers:
             if ident_domain != domain:
                 continue
-            if domain == ZWAVE_DOMAIN:
+            if domain in PLAIN_ID_DOMAINS:
+                # Hue, SmartThings and Tuya register a device by the
+                # stack's own id for it, unchanged.
+                found[str(ident)] = device.id
+            elif domain == ZWAVE_DOMAIN:
                 match = _ZWAVE_IDENT.match(str(ident))
                 if match:
                     found[match.group(1)] = device.id
@@ -493,10 +514,128 @@ def probe_rows(hass: HomeAssistant, studied: set[str]) -> list[dict[str, Any]]:
                     "node": node_id,
                     "device_id": devices.get(node_id, ""),
                     "now": "available" if _read(node, "available") else "away",
+                    "quiet": not _read(node, "available"),
                     "network": _matter_network(node),
                     "detail": ", ".join(detail),
                 })
+    if HUE_DOMAIN in studied:
+        rows.extend(_hue_rows(hass))
+    if SMARTTHINGS_DOMAIN in studied:
+        rows.extend(_smartthings_rows(hass))
+    if TUYA_DOMAIN in studied:
+        rows.extend(_tuya_rows(hass))
     return rows[:NODE_ROW_CAP * 4]
+
+
+def _listed(container: Any) -> list[Any]:
+    """The items of a mapping or an iterable, or nothing."""
+    try:
+        values = container.values() if hasattr(container, "values") else container
+        return list(values or [])
+    except Exception as err:  # noqa: BLE001 - a library's container
+        LOGGER.debug("device_sentinel: stack items unreadable (%s)", err)
+        return []
+
+
+def _hue_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """Each Hue device's Zigbee connectivity, as the bridge judges it.
+
+    The bridge says connected, disconnected, connectivity issue,
+    unidirectional incoming (heard but not reachable) or pending
+    discovery; Home Assistant makes that available or not. A device on
+    Hue's ignore-availability list stays available while disconnected,
+    so Device Sentinel can only see it as silent, and the line says so.
+    A v1 bridge exposes none of this and gives no rows.
+    """
+    rows: list[dict[str, Any]] = []
+    for entry in hass.config_entries.async_entries(HUE_DOMAIN):
+        bridge = _read(entry, "runtime_data")
+        if _read(bridge, "api_version") != 2:
+            continue
+        devices = _read(_read(bridge, "api"), "devices")
+        lookup = _read(devices, "get_zigbee_connectivity")
+        if not callable(lookup):
+            continue
+        ignored = set((_read(entry, "options") or {}).get("ignore_availability") or [])
+        mapped = node_devices(hass, entry, HUE_DOMAIN)
+        for device in _listed(devices):
+            node_id = str(_read(device, "id") or "")
+            try:
+                connectivity = lookup(node_id)
+            except Exception as err:  # noqa: BLE001 - a library call
+                LOGGER.debug("device_sentinel: Hue connectivity unreadable (%s)", err)
+                continue
+            if connectivity is None:
+                continue
+            status = str(_plain(_read(connectivity, "status")) or "unknown")
+            rows.append({
+                "stack": HUE_DOMAIN,
+                "node": node_id[:8],
+                "device_id": mapped.get(node_id, ""),
+                "now": status,
+                "quiet": status != "connected",
+                "detail": "availability ignored in Hue's options" if node_id in ignored else "",
+            })
+    return rows
+
+
+def _smartthings_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """Each SmartThings device's type, and whether it hangs off a hub.
+
+    The cloud's online or offline already reaches Device Sentinel as
+    unavailable, and the online flag Home Assistant stores is set only
+    at start, so the stack's side of the line is the device's type:
+    which devices share a hub, and which reach the cloud on their own.
+    """
+    rows: list[dict[str, Any]] = []
+    for entry in hass.config_entries.async_entries(SMARTTHINGS_DOMAIN):
+        full_devices = _read(_read(entry, "runtime_data"), "devices") or {}
+        mapped = node_devices(hass, entry, SMARTTHINGS_DOMAIN)
+        for full in _listed(full_devices):
+            device = _read(full, "device")
+            node_id = str(_read(device, "device_id") or "")
+            kind = str(_plain(_read(device, "type")) or "unknown").lower()
+            behind = _read(device, "hub") is not None or bool(_read(device, "parent_device_id"))
+            rows.append({
+                "stack": SMARTTHINGS_DOMAIN,
+                "node": node_id[:8],
+                "device_id": mapped.get(node_id, ""),
+                "now": kind,
+                "quiet": None,
+                "detail": "behind a SmartThings hub" if behind else "",
+            })
+    return rows
+
+
+def _tuya_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """Each Tuya device's online flag, kept live by Tuya's cloud.
+
+    Home Assistant makes a Tuya entity available exactly while its
+    device reads online. A sub-device sits behind a Tuya gateway, so
+    the line says which devices share one.
+    """
+    rows: list[dict[str, Any]] = []
+    for entry in hass.config_entries.async_entries(TUYA_DOMAIN):
+        manager = _read(_read(entry, "runtime_data"), "manager")
+        mapped = node_devices(hass, entry, TUYA_DOMAIN)
+        for device in _listed(_read(manager, "device_map") or {}):
+            node_id = str(_read(device, "id") or "")
+            online = bool(_read(device, "online"))
+            parts = [
+                part for part in (
+                    "behind a Tuya gateway" if _read(device, "sub") else "",
+                    f"category {_read(device, 'category')}" if _read(device, "category") else "",
+                ) if part
+            ]
+            rows.append({
+                "stack": TUYA_DOMAIN,
+                "node": node_id[:8],
+                "device_id": mapped.get(node_id, ""),
+                "now": "online" if online else "offline",
+                "quiet": not online,
+                "detail": ", ".join(parts),
+            })
+    return rows
 
 
 # What a Z-Wave controller says about itself (ControllerStatus).
@@ -549,4 +688,81 @@ def coordinator_rows(hass: HomeAssistant, studied: set[str]) -> list[dict[str, A
                 "now": "connected" if connected else "disconnected",
                 "detail": f"entry {state}",
             })
+    for domain, reader in (
+        (HUE_DOMAIN, _hue_bridge),
+        (SMARTTHINGS_DOMAIN, _smartthings_cloud),
+        (TUYA_DOMAIN, _tuya_cloud),
+        (LUTRON_DOMAIN, _lutron_hub),
+    ):
+        if domain not in studied:
+            continue
+        for entry in hass.config_entries.async_entries(domain):
+            node, now, detail = reader(entry)
+            state = getattr(entry.state, "value", str(entry.state))
+            rows.append({
+                "stack": domain,
+                "node": node,
+                "now": now,
+                "detail": ", ".join(part for part in (detail, f"entry {state}") if part),
+            })
     return rows
+
+
+def _hue_bridge(entry: Any) -> tuple[str, str, str]:
+    """The Hue bridge's event stream: connected, connecting or not."""
+    bridge = _read(entry, "runtime_data")
+    if bridge is None:
+        return "bridge", "not loaded", ""
+    if _read(bridge, "api_version") == 1:
+        return "bridge", "v1 bridge, not read", ""
+    status = _read(_read(_read(bridge, "api"), "events"), "status")
+    name = getattr(status, "name", None)
+    return "bridge", (name.lower() if isinstance(name, str) else "unknown"), ""
+
+
+def _smartthings_cloud(entry: Any) -> tuple[str, str, str]:
+    """Whether SmartThings holds its event subscription with the cloud.
+
+    Home Assistant keeps the subscription's id in the entry and clears
+    it when the subscription goes; a Samsung outage should show here.
+    """
+    subscribed = bool((_read(entry, "data") or {}).get("subscription_id"))
+    return "cloud", "subscribed" if subscribed else "not subscribed", ""
+
+
+def _tuya_cloud(entry: Any) -> tuple[str, str, str]:
+    """Whether Tuya's cloud push connection is up."""
+    queue = _read(_read(_read(entry, "runtime_data"), "manager"), "mq")
+    if queue is None:
+        return "cloud", "no cloud link", ""
+    check = _read(_read(queue, "client"), "is_connected")
+    try:
+        connected = bool(check()) if callable(check) else False
+    except Exception as err:  # noqa: BLE001 - a library call
+        LOGGER.debug("device_sentinel: Tuya connection unreadable (%s)", err)
+        return "cloud", "unknown", ""
+    return "cloud", "connected" if connected else "disconnected", ""
+
+
+def _lutron_hub(entry: Any) -> tuple[str, str, str]:
+    """Whether the Lutron library holds a live session with its hub.
+
+    The Lutron integration checks its hub once, at setup, and its
+    entities never go unavailable after, so an outage leaves every
+    light showing its last state. The library drops its session on
+    every failure and makes a new one on every reconnect; that session
+    is the honest signal, read from a private attribute. Its own
+    is_connected() answers from a login marker that is never reset,
+    and is recorded beside the session to show it.
+    """
+    bridge = _read(_read(entry, "runtime_data"), "bridge")
+    if bridge is None:
+        return "hub", "not loaded", ""
+    session = "session held" if getattr(bridge, "_leap", None) is not None else "no session"
+    check = _read(bridge, "is_connected")
+    try:
+        said = ("says connected" if check() else "says not connected") if callable(check) else ""
+    except Exception as err:  # noqa: BLE001 - a library call
+        LOGGER.debug("device_sentinel: Lutron connection unreadable (%s)", err)
+        said = ""
+    return "hub", session, f"library {said}" if said else ""

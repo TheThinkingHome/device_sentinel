@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.23.8 (2026-09-25)
+# File: report_maintainer.py, Version: 0.23.9 (2026-09-26)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -62,17 +62,18 @@ from .const import (
     LEARNING_MIN_DAYS,
     LOGGER,
     REPORT_CLASSIFICATION,
-    DATA_STACK_PROBE,
     PROBE_AGREES,
     PROBE_SENTINEL,
     PROBE_DETAIL,
     PROBE_DEVICE_ID,
-    PROBE_KEEP_DAYS,
+    PROBE_FILE_MAX_BYTES,
+    PROBE_FILE_ROLLS,
     PROBE_NODE,
     PROBE_NOW,
     PROBE_STACK,
     PROBE_WAS,
     PROBE_WHEN,
+    REPORT_DIR,
     REPORT_STACK_PROBE,
     REPORT_EPISODES,
     REPORT_TELEMETRY,
@@ -227,59 +228,76 @@ class MaintainerReportMixin:
             return ""
         return str(self._device_name(device_id) or device_id)
 
-    def _write_stack_probe(self, directory: str, trigger: str) -> None:
-        """The stack probe's log, or nothing where none is running.
+    def _probe_render(self, row: dict[str, Any]) -> str:
+        """One probe line, as the file shows it."""
+        return (
+            f"| {self._episode_stamp(row.get(PROBE_WHEN))} "
+            f"| {self._report_cell(str(row.get(PROBE_STACK) or ''))} "
+            f"| {self._report_cell(str(row.get(PROBE_NODE) or ''))} "
+            f"| {self._report_cell(self._probe_device(row))} "
+            f"| {self._report_cell(str(row.get(PROBE_WAS) or ''))} "
+            f"| {self._report_cell(str(row.get(PROBE_NOW) or ''))} "
+            f"| {self._report_cell(str(row.get(PROBE_SENTINEL) or ''))} "
+            f"| {self._report_cell(str(row.get(PROBE_AGREES) or ''))} "
+            f"| {self._report_cell(str(row.get(PROBE_DETAIL) or ''))} |"
+        )
 
-        Node ids only until 0.23.8, when the owner ruled names beside
-        them (#478): a node number alone could not say which of a
-        tester's devices Z-Wave called dead. The file names devices as
-        the diagnostics download already does.
-        """
-        rows = self.data.get(DATA_STACK_PROBE) or []
-        path = os.path.join(directory, REPORT_STACK_PROBE)
-        if not rows:
-            with contextlib.suppress(OSError):
-                os.remove(path)
-            return
-        lines = [
+    def _probe_header(self) -> list[str]:
+        """The top of a new stack_probe.md."""
+        return [
             f"# Device Sentinel v{self.version} Stack Probe",
             "",
-            f"Written {self._format_report_time(dt_util.now())} "
-            f"({trigger})",
+            f"Started {self._format_report_time(dt_util.now())}",
             "",
-            "One line each time a node of a studied stack changed "
-            "what it says about itself, or Device Sentinel changed what "
-            "it says about the node's device, and one a day with the "
-            "counts. NOW is the stack's view: Z-Wave says alive, awake, "
+            "One line each time a node of a studied stack changed what it "
+            "says about itself, or Device Sentinel changed what it says "
+            "about the node's device, and one a day with the counts, oldest "
+            "first. NOW is the stack's view: Z-Wave says alive, awake, "
             "asleep, dead or unknown, and \"not heard within its window\" "
-            "when it was last heard longer ago than the device's own "
-            "freeze window, since a mains node stays alive until a "
-            "command to it fails; Matter says available or away. "
-            "SENTINEL is Device Sentinel's view of the same device at "
-            "that moment, and AGREES whether the two agree it is quiet. "
-            "Lines for the controller and the server say whether the "
-            "stack itself is there. Neither side acts on the other: "
-            "these are the readers in shadow. Kept "
-            f"{PROBE_KEEP_DAYS} days; {len(rows)} line(s).",
+            "when it was last heard longer ago than the device's own freeze "
+            "window; Matter says available or away; Hue gives the bridge's "
+            "own judgment of the device's Zigbee link; Tuya says online or "
+            "offline; SmartThings gives the device's type. SENTINEL is "
+            "Device Sentinel's view of the same device at that moment, and "
+            "AGREES whether the two agree it is quiet. Lines for a "
+            "controller, bridge, hub, server or cloud say whether the stack "
+            "itself is there. Neither side acts on the other: these are the "
+            "readers in shadow. At "
+            f"{PROBE_FILE_MAX_BYTES // 1_000_000} MB this file becomes "
+            f"stack_probe.md.1, and older ones move up to .{PROBE_FILE_ROLLS}.",
             "",
             "| WHEN | STACK | NODE | DEVICE | WAS | NOW | SENTINEL | AGREES | DETAIL |",
             "|---|---|---|---|---|---|---|---|---|",
         ]
-        for row in sorted(
-            rows, key=lambda item: item.get(PROBE_WHEN) or 0.0, reverse=True
-        ):
-            lines.append(
-                f"| {self._episode_stamp(row.get(PROBE_WHEN))} "
-                f"| {self._report_cell(str(row.get(PROBE_STACK) or ''))} "
-                f"| {self._report_cell(str(row.get(PROBE_NODE) or ''))} "
-                f"| {self._report_cell(self._probe_device(row))} "
-                f"| {self._report_cell(str(row.get(PROBE_WAS) or ''))} "
-                f"| {self._report_cell(str(row.get(PROBE_NOW) or ''))} "
-                f"| {self._report_cell(str(row.get(PROBE_SENTINEL) or ''))} "
-                f"| {self._report_cell(str(row.get(PROBE_AGREES) or ''))} "
-                f"| {self._report_cell(str(row.get(PROBE_DETAIL) or ''))} |"
-            )
-        self._write_file(path, "\n".join(lines))
+
+    def _probe_write_lines(self, lines: list[str], replace: bool = False) -> None:
+        """Append probe lines to stack_probe.md, rolling it at the cap.
+
+        Runs in the executor. replace starts a fresh file, used once
+        when lines stored before 0.23.9 move into it.
+        """
+        directory = self.hass.config.path(REPORT_DIR)
+        path = os.path.join(directory, REPORT_STACK_PROBE)
+        with self._probe_lock:
+            os.makedirs(directory, exist_ok=True)
+            if replace:
+                with contextlib.suppress(OSError):
+                    os.remove(path)
+            body = "\n".join(lines) + "\n"
+            with contextlib.suppress(OSError):
+                if os.path.getsize(path) + len(body.encode("utf-8")) > PROBE_FILE_MAX_BYTES:
+                    oldest = f"{path}.{PROBE_FILE_ROLLS}"
+                    with contextlib.suppress(OSError):
+                        os.remove(oldest)
+                    for index in range(PROBE_FILE_ROLLS - 1, 0, -1):
+                        with contextlib.suppress(OSError):
+                            os.replace(f"{path}.{index}", f"{path}.{index + 1}")
+                    os.replace(path, f"{path}.1")
+            fresh = not os.path.exists(path)
+            with open(path, "a", encoding="utf-8") as handle:
+                if fresh:
+                    handle.write("\n".join(self._probe_header()) + "\n")
+                handle.write(body)
 
     def _episode_lag(self, row: dict[str, Any], now: float) -> str:
         """The lag, or how long the device has been silent since the
