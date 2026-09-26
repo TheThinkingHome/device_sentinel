@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.23.7 (2026-09-25)
+// File: frontend/panel.js, Version: 0.23.9 (2026-09-26)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1743,6 +1743,8 @@ class DeviceSentinelPanel extends HTMLElement {
       ["Battery type", who.battery_type || "coming soon"],
       ...(who.battery_steps ? [["Battery steps", who.battery_steps]] : []),
       ["Integration", who.integration_name || who.integration || ""],
+      // How it connects, from its integration's declaration (0.23.9).
+      ...(who.connects ? [["Connects", who.connects]] : []),
       ["Area", who.area || "none assigned"],
       ["Address", address || "none reported"],
       ["Device ID", who.device_id],
