@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_escalation_and_limits.py, Version: 0.23.8 (2026-09-25)
+# File: tests/test_escalation_and_limits.py, Version: 0.23.9 (2026-09-26)
 
 """A worse problem replacing a lesser one, and lines a person reads.
 
@@ -247,7 +247,6 @@ async def test_the_stack_probe_writes_a_line_when_a_node_changes(
 
     from custom_components.device_sentinel.const import (
         CONF_STUDY_HARDWARE,
-        DATA_STACK_PROBE,
         REPORT_STACK_PROBE,
         STUDIABLE,
     )
@@ -275,7 +274,11 @@ async def test_the_stack_probe_writes_a_line_when_a_node_changes(
     def node_lines():
         # Since 0.23.8 the controller has a line of its own; this test
         # is about the node's.
-        return [row for row in coordinator.data[DATA_STACK_PROBE] if row["node"] == "7"]
+        # Since 0.23.9 the lines are rendered and appended to the file
+        # at the next tick; these are the rendered ones.
+        from .helpers import probe_lines
+
+        return probe_lines(coordinator, "7")
 
     coordinator.probe_tick(now)
     assert len(node_lines()) == 1, "the first reading"
@@ -290,7 +293,9 @@ async def test_the_stack_probe_writes_a_line_when_a_node_changes(
     assert rows[-1]["was"] == "alive" and rows[-1]["now"] == "dead"
     assert "rssi -70" in rows[-1]["detail"]
 
-    await hass.async_add_executor_job(coordinator._write_reports, "test")
+    # The lines reach the file at the next tick (0.23.9).
+    coordinator.probe_tick(now + 90)
+    await hass.async_block_till_done()
     text = open(
         hass.config.path("device_sentinel", REPORT_STACK_PROBE),
         encoding="utf-8",

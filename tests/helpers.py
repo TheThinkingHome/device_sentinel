@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: helpers.py, Version: 0.22.21 (2026-09-22)
+# File: helpers.py, Version: 0.23.9 (2026-09-26)
 
 """Shared test helpers, one canonical version of each.
 
@@ -297,3 +297,33 @@ def record_labelled(hass: HomeAssistant, labels: dict[str, str]) -> list:
 
         hass.bus.async_listen(event_type, _record)
     return seen
+
+
+def probe_lines(coord, node=None):
+    """The probe lines written this session, as dicts (0.23.9).
+
+    Since 0.23.9 the probe renders each line at once and appends it to
+    stack_probe.md at the next tick, so a test reads the rendered
+    lines, keyed as the stored rows once were; DEVICE is the name.
+    """
+    from custom_components.device_sentinel.const import (
+        PROBE_AGREES,
+        PROBE_DETAIL,
+        PROBE_DEVICE_ID,
+        PROBE_NODE,
+        PROBE_NOW,
+        PROBE_SENTINEL,
+        PROBE_STACK,
+        PROBE_WAS,
+        PROBE_WHEN,
+    )
+
+    keys = (PROBE_WHEN, PROBE_STACK, PROBE_NODE, PROBE_DEVICE_ID, PROBE_WAS,
+            PROBE_NOW, PROBE_SENTINEL, PROBE_AGREES, PROBE_DETAIL)
+    rows = []
+    for line in coord._probe_recent:
+        cells = [cell.strip() for cell in line.strip().strip("|").split(" | ")]
+        row = dict(zip(keys, cells))
+        if node is None or row[PROBE_NODE] == node:
+            rows.append(row)
+    return rows

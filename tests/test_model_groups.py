@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_model_groups.py, Version: 0.23.4 (2026-09-25)
+# File: tests/test_model_groups.py, Version: 0.23.9 (2026-09-26)
 
 """Model groups, the backbone (0.23.4).
 
@@ -104,6 +104,9 @@ async def test_the_firmware_a_device_gives_is_recorded_at_the_start(
     source = _source(hass)
     panel = _device(hass, source, "panel", manufacturer="Sonoff", model="NSPanel Pro", sw_version="2.3.0")
     entry = await setup_entry(hass)
+    # Since 0.23.9 a version waits for the fold, held an hour at least.
+    assert _history(entry, panel) == []
+    entry.runtime_data._confirm_firmware(dt_util.utcnow().timestamp() + 3601)
     history = _history(entry, panel)
     assert [version for version, _ in history] == ["2.3.0"]
     assert isinstance(history[0][1], float)
@@ -118,7 +121,14 @@ async def test_an_update_is_recorded_once_and_a_repeat_is_not(hass: HomeAssistan
     await hass.async_block_till_done()
     registry.async_update_device(panel.id, name_by_user="James's panel")
     await hass.async_block_till_done()
-    assert [version for version, _ in _history(entry, panel)] == ["2.3.0", "3.4.0"]
+    # Held until the fold (0.23.9): the start's 2.3.0 was replaced
+    # before any fold, so only 3.4.0 is written.
+    entry.runtime_data._confirm_firmware(dt_util.utcnow().timestamp() + 3601)
+    assert [version for version, _ in _history(entry, panel)] == ["3.4.0"]
+    registry.async_update_device(panel.id, name_by_user="James's other panel")
+    await hass.async_block_till_done()
+    entry.runtime_data._confirm_firmware(dt_util.utcnow().timestamp() + 7200)
+    assert [version for version, _ in _history(entry, panel)] == ["3.4.0"]
 
 
 async def test_a_device_that_gives_no_firmware_records_none(hass: HomeAssistant):
@@ -177,6 +187,7 @@ async def test_a_record_stored_before_the_field_is_filled_and_noted(
         },
     }
     entry = await setup_entry(hass)
+    entry.runtime_data._confirm_firmware(dt_util.utcnow().timestamp() + 3601)
     assert [v for v, _ in _history(entry, panel)] == ["3.4.0"]
 
 

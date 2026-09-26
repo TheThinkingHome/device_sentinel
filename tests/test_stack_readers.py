@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_stack_readers.py, Version: 0.23.8 (2026-09-25)
+# File: tests/test_stack_readers.py, Version: 0.23.9 (2026-09-26)
 
 """The Z-Wave and Matter readers in shadow (0.23.8).
 
@@ -42,7 +42,6 @@ from custom_components.device_sentinel.const import (
     PROBE_AGREES,
     PROBE_DETAIL,
     PROBE_DEVICE_ID,
-    PROBE_NODE,
     PROBE_NOW,
     PROBE_SENTINEL,
     PROBE_WAS,
@@ -56,7 +55,7 @@ from custom_components.device_sentinel.study_stacks import (
     probe_rows,
 )
 
-from .helpers import setup_coordinator
+from .helpers import probe_lines, setup_coordinator
 
 HOME = 3947620411
 FABRIC = 0x2A6F1C3D4E5B6A79
@@ -111,7 +110,7 @@ async def _studied(hass):
 
 
 def _lines(coord, node):
-    return [row for row in coord.data.get(DATA_STACK_PROBE) or [] if row[PROBE_NODE] == node]
+    return probe_lines(coord, node)
 
 
 async def test_each_node_names_its_device(hass: HomeAssistant):
@@ -139,7 +138,7 @@ async def test_an_unplugged_plug_that_stays_alive_is_still_recorded(hass: HomeAs
     record[DEV_FROZEN_CATEGORY] = "frozen"
     coord.probe_tick(now.timestamp())
     (line,) = _lines(coord, "10")
-    assert line[PROBE_DEVICE_ID] == p03.id
+    assert line[PROBE_DEVICE_ID] == "P03 Z-Wave Smart plug"
     assert line[PROBE_NOW] == "alive, not heard within its window"
     assert line[PROBE_SENTINEL] == "frozen"
     assert line[PROBE_AGREES] == "yes"
@@ -250,13 +249,14 @@ async def test_the_day_counts_what_agreed(hass: HomeAssistant):
         if frozen:
             record[DEV_FROZEN_CATEGORY] = "frozen"
     coord.probe_fold(now.timestamp())
-    day = next(row for row in coord.data[DATA_STACK_PROBE] if row[PROBE_NOW] == "day")
+    day = next(row for row in probe_lines(coord) if row[PROBE_NOW] == "day")
     assert day[PROBE_AGREES] == "1 agree, 1 do not"
 
 
 async def test_the_file_names_devices_and_reads_old_lines(hass: HomeAssistant):
-    """Guard: a line written before 0.23.8 has no Device Sentinel column,
-    and still renders."""
+    """Lines stored before 0.23.9 move into the file once, oldest
+    first, and storage lets them go; a line written before 0.23.8 has
+    no Device Sentinel column and still renders."""
     zentry, _client = _zwave(hass, {10: _plug(10)})
     p03 = _device(hass, zentry, ZWAVE_DOMAIN, f"{HOME}-10", "P03 Z-Wave Smart plug")
     coord = await _studied(hass)
@@ -264,14 +264,38 @@ async def test_the_file_names_devices_and_reads_old_lines(hass: HomeAssistant):
         {"when": 900.0, "stack": "zwave_js", "node": "6", "device_id": "", "was": "", "now": "dead", "detail": ""},
     ]
     coord.probe_tick(1000.0)
-    await hass.async_add_executor_job(coord._write_reports, "manual")
+    await hass.async_block_till_done()
+    assert coord.data[DATA_STACK_PROBE] == []
+    coord.probe_tick(1060.0)
+    await hass.async_block_till_done()
     with open(os.path.join(hass.config.path(REPORT_DIR), REPORT_STACK_PROBE), encoding="utf-8") as handle:
         page = handle.read()
     assert "| WHEN | STACK | NODE | DEVICE | WAS | NOW | SENTINEL | AGREES | DETAIL |" in page
     assert "| P03 Z-Wave Smart plug |" in page
     assert "| zwave_js | 6 |  |  | dead |" in page
+    assert page.index("| zwave_js | 6 |") < page.index("| P03 Z-Wave Smart plug |"), "oldest first"
     assert p03.id not in page
 
+
+async def test_the_file_rolls_over_at_its_cap(hass: HomeAssistant, monkeypatch):
+    """At the cap the file becomes .1, older ones move up to .3, and
+    the oldest is dropped (0.23.9)."""
+    from custom_components.device_sentinel import report_maintainer
+
+    monkeypatch.setattr(report_maintainer, "PROBE_FILE_MAX_BYTES", 4000)
+    coord = await setup_coordinator(hass)
+    base = os.path.join(hass.config.path(REPORT_DIR), REPORT_STACK_PROBE)
+    for batch in range(14):
+        lines = [f"| line {batch}-{i} |" + "x" * 80 for i in range(10)]
+        await hass.async_add_executor_job(coord._probe_write_lines, lines)
+    names = sorted(os.path.basename(p) for p in os.listdir(os.path.dirname(base)) if p.startswith(REPORT_STACK_PROBE))
+    assert names == [REPORT_STACK_PROBE, f"{REPORT_STACK_PROBE}.1", f"{REPORT_STACK_PROBE}.2", f"{REPORT_STACK_PROBE}.3"]
+    with open(base, encoding="utf-8") as handle:
+        newest = handle.read()
+    assert newest.startswith("# Device Sentinel") and "line 13-9" in newest
+    assert all(os.path.getsize(f"{base}.{index}") <= 4000 for index in (1, 2, 3))
+    with open(f"{base}.3", encoding="utf-8") as handle:
+        assert "line 0-0" not in handle.read(), "the oldest file is dropped"
 
 async def test_the_flapping_description_keeps_its_capitals(hass: HomeAssistant, freezer):
     """Tim Plas's list read "since september 25, 2026 at 2:04 pm":
