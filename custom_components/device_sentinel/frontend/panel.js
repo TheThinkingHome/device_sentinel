@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.23.9 (2026-09-26)
+// File: frontend/panel.js, Version: 0.23.10 (2026-09-26)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -334,10 +334,21 @@ const STYLE = `
   .maint select { min-height: 44px; background: transparent; color: var(--primary-text-color); border: 0;
     border-left: 1px solid var(--divider-color); padding: 0 12px; border-radius: 0 22px 22px 0; }
   .asof { margin-left: auto; font-size: 13px; color: var(--secondary-text-color); }
-  .tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--divider-color); overflow-x: auto; }
-  .tab { min-height: 48px; padding: 0 16px; background: transparent; border: 0; border-bottom: 2px solid transparent;
-    color: var(--secondary-text-color); cursor: pointer; white-space: nowrap; }
-  .tab[aria-selected="true"] { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+  /* The controls above sit in a band of their own, and the tabs read
+     as tabs: a tinted strip joined to the content, labels in the main
+     text colour, the active one bold with a thicker underline (0.23.10,
+     from Tim Plas: the tab row read as one more row of buttons). */
+  .head { display: flex; flex-direction: column; gap: 12px; padding: 14px;
+    background: var(--secondary-background-color, rgba(127,127,127,0.08)); border: 1px solid var(--divider-color);
+    border-radius: var(--ha-card-border-radius, 12px); margin-bottom: 8px; }
+  .tabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--divider-color); overflow-x: auto;
+    background: var(--secondary-background-color, rgba(127,127,127,0.08));
+    border-radius: var(--ha-card-border-radius, 12px) var(--ha-card-border-radius, 12px) 0 0; }
+  .tab { min-height: 48px; padding: 0 18px; background: transparent; border: 0; border-bottom: 3px solid transparent;
+    color: var(--primary-text-color); font-size: 15px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .tab:hover { background: rgba(127,127,127,0.12); }
+  .tab[aria-selected="true"] { color: var(--primary-color); font-weight: 600; border-bottom-color: var(--primary-color);
+    background: var(--card-background-color, var(--ha-card-background)); }
   .pane { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
   .muted { color: var(--secondary-text-color); }
   .chips { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -684,7 +695,8 @@ class DeviceSentinelPanel extends HTMLElement {
       }
     }).observe(this._pane, { childList: true, subtree: true });
     root.append(
-      el("div", { class: "body" }, this._statusRow, actions,
+      el("div", { class: "body" },
+        el("div", { class: "head" }, this._statusRow, actions),
         el("div", { class: "card" }, this._tabRow, this._pane)),
     );
     this._paintTabs();
