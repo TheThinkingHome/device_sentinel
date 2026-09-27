@@ -102,8 +102,39 @@ PROBE_MUTED = "muted"
 # devices on the second fleet left no trace.
 ZWAVE_NODE_EVENTS = ("wake up", "sleep", "dead", "alive")
 
-# Border routers seen by Home Assistant's own Thread discovery (0.23.11).
+# Border routers, from their own announcements on the local network
+# (0.23.11). The service type is the one Home Assistant's Thread code
+# listens for, and the key is where Home Assistant keeps its shared
+# zeroconf instance.
 THREAD_STACK = "thread"
+MESHCOP_TYPE = "_meshcop._udp.local."
+ZEROCONF_KEY = "zeroconf"
+
+
+def _decoded(value: Any) -> str:
+    """A text field of an announcement, or nothing."""
+    if not isinstance(value, bytes):
+        return ""
+    try:
+        return value.decode()
+    except UnicodeDecodeError:
+        return ""
+
+
+class _BorderRouterListener:
+    """What the shared zeroconf instance calls, handed to the recorder."""
+
+    def __init__(self, owner: Any) -> None:
+        self._owner = owner
+
+    def add_service(self, _zc: Any, service_type: str, name: str) -> None:
+        self._owner._meshcop_seen(service_type, name)
+
+    def update_service(self, _zc: Any, service_type: str, name: str) -> None:
+        self._owner._meshcop_seen(service_type, name)
+
+    def remove_service(self, _zc: Any, _service_type: str, name: str) -> None:
+        self._owner._meshcop_gone(name)
 
 # Every stack the probe reads (0.23.9 added the last four).
 PROBED_DOMAINS = {
@@ -182,6 +213,7 @@ class StudyMixin:
     _thread_starting: bool
     _thread_failed: bool
     _thread_routers: dict[str, tuple[str, str, str]]
+    _meshcop_names: dict[str, str]
 
     # ------------------------------------------------------- settings
 
@@ -604,12 +636,9 @@ class StudyMixin:
         power cut.
         """
         self._zwave_unlisten()
-        discovery, self._thread_discovery = self._thread_discovery, None
-        if discovery is not None:
-            try:
-                await discovery.async_stop()
-            except Exception as err:  # noqa: BLE001 - the save after this must run
-                LOGGER.debug("device_sentinel: Thread discovery did not stop (%s)", err)
+        held, self._thread_discovery = self._thread_discovery, None
+        if held is not None:
+            await self._async_thread_remove(held)
         if not self._probe_pending:
             return
         lines, self._probe_pending = self._probe_pending, []
@@ -728,69 +757,106 @@ class StudyMixin:
 
     @callback
     def _thread_start(self) -> None:
-        """Start watching for Thread border routers, once.
+        """Start listening for Thread border routers, once.
 
-        Home Assistant's Thread integration finds border routers by
-        their announcements on the local network, and says when one
-        appears and when one goes; its Thread panel shows the same
-        (ruled 27 September 2026, recording only).
+        A border router announces itself on the local network as a
+        `_meshcop._udp` service, and withdraws the announcement when it
+        goes; Home Assistant's own Thread panel is drawn from the same
+        announcements (ruled 27 September 2026, recording only). The
+        listener is Home Assistant's shared zeroconf instance, read from
+        its private state as rule 3 of 26 September allows Extended
+        Diagnostics: nothing is added to the manifest and no integration
+        is imported. A house whose zeroconf has not started yet is asked
+        again on the next tick; a house without it records nothing.
         """
         if self._thread_discovery is not None or self._thread_starting or self._thread_failed:
             return
+        shared = self.hass.data.get(ZEROCONF_KEY)  # type: ignore[attr-defined]
+        adder = getattr(shared, "async_add_service_listener", None)
+        if not callable(adder):
+            return
         self._thread_starting = True
-        self.hass.async_create_task(self._async_thread_start())  # type: ignore[attr-defined]
+        self.hass.async_create_task(self._async_thread_start(shared))  # type: ignore[attr-defined]
 
-    async def _async_thread_start(self) -> None:
-        """Open the discovery; a house without Thread simply has none."""
+    async def _async_thread_start(self, shared: Any) -> None:
+        """Add the listener to the shared instance."""
+        listener = _BorderRouterListener(self)
         try:
-            from homeassistant.components.thread.discovery import (  # noqa: PLC0415 - loaded only when studied
-                ThreadRouterDiscovery,
-            )
-
-            discovery = ThreadRouterDiscovery(
-                self.hass,  # type: ignore[attr-defined]
-                self._thread_router_found,
-                self._thread_router_gone,
-            )
-            await discovery.async_start()
-        except Exception as err:  # noqa: BLE001 - no Thread, or a library behaving oddly
-            # Tried once per start: a house without Thread has neither the
-            # integration nor its library, and asking every minute would
-            # only repeat the answer.
-            LOGGER.debug("device_sentinel: Thread discovery not started (%s)", err)
+            await shared.async_add_service_listener(MESHCOP_TYPE, listener)
+        except Exception as err:  # noqa: BLE001 - a library behaving oddly
+            # Tried once per start: asking every minute would only
+            # repeat the answer.
+            LOGGER.debug("device_sentinel: border router listener not added (%s)", err)
             self._thread_starting = False
             self._thread_failed = True
             return
-        self._thread_discovery = discovery
+        self._thread_discovery = (shared, listener)
         self._thread_starting = False
 
     @callback
     def _thread_stop(self) -> None:
-        """Stop watching for border routers."""
-        discovery, self._thread_discovery = self._thread_discovery, None
-        if discovery is not None:
-            self.hass.async_create_task(discovery.async_stop())  # type: ignore[attr-defined]
+        """Stop listening for border routers."""
+        held, self._thread_discovery = self._thread_discovery, None
+        if held is not None:
+            self.hass.async_create_task(self._async_thread_remove(held))  # type: ignore[attr-defined]
 
-    def _thread_router_found(self, address: str, data: Any) -> None:
-        """A border router announced itself, or changed what it says."""
-        name = " ".join(
-            str(part) for part in (getattr(data, "vendor_name", None), getattr(data, "model_name", None)) if part
-        ) or str(getattr(data, "instance_name", "") or "")
-        detail = ", ".join(
-            part
-            for part in (
-                f"network {getattr(data, 'network_name', None) or 'unnamed'}",
-                f"network id {str(getattr(data, 'extended_pan_id', '') or '').lower() or 'unknown'}",
-                name,
-                f"router {address}",
-            )
-            if part
+    @staticmethod
+    async def _async_thread_remove(held: tuple[Any, Any]) -> None:
+        """Take the listener off the shared instance."""
+        shared, listener = held
+        try:
+            await shared.async_remove_service_listener(listener)
+        except Exception as err:  # noqa: BLE001 - the instance may be gone already
+            LOGGER.debug("device_sentinel: border router listener not removed (%s)", err)
+
+    def _meshcop_seen(self, service_type: str, name: str) -> None:
+        """An announcement arrived or changed; read it on the event loop."""
+        self.hass.loop.call_soon_threadsafe(  # type: ignore[attr-defined]
+            lambda: self.hass.async_create_task(self._async_meshcop_read(service_type, name))  # type: ignore[attr-defined]
         )
-        self.hass.loop.call_soon_threadsafe(self._thread_router_line, address, "present", detail)  # type: ignore[attr-defined]
 
-    def _thread_router_gone(self, address: str) -> None:
-        """A border router stopped announcing itself."""
-        self.hass.loop.call_soon_threadsafe(self._thread_router_line, address, "gone", "")  # type: ignore[attr-defined]
+    def _meshcop_gone(self, name: str) -> None:
+        """An announcement was withdrawn."""
+        address = self._meshcop_names.get(name)
+        if address is not None:
+            self.hass.loop.call_soon_threadsafe(self._thread_router_line, address, "gone", "")  # type: ignore[attr-defined]
+
+    async def _async_meshcop_read(self, service_type: str, name: str) -> None:
+        """Read one announcement's fields, as Home Assistant's Thread code does.
+
+        The extended address (xa) names the router and the extended PAN
+        ID (xp) its network; an announcement missing either is not a
+        router Home Assistant would list either.
+        """
+        held = self._thread_discovery
+        if held is None:
+            return
+        try:
+            info = None
+            for _attempt in range(3):
+                info = await held[0].async_get_service_info(service_type, name)
+                if info is not None:
+                    break
+            properties = getattr(info, "properties", None) or {}
+            address, network = properties.get(b"xa"), properties.get(b"xp")
+            if not isinstance(address, bytes) or not isinstance(network, bytes):
+                return
+            words = {key: _decoded(properties.get(key)) for key in (b"nn", b"vn", b"mn")}
+            router = address.hex()
+            self._meshcop_names[name] = router
+            detail = ", ".join(
+                part
+                for part in (
+                    f"network {words[b'nn'] or 'unnamed'}",
+                    f"network id {network.hex()}",
+                    " ".join(part for part in (words[b"vn"], words[b"mn"]) if part),
+                    f"router {router}",
+                )
+                if part
+            )
+            self._thread_router_line(router, "present", detail)
+        except Exception as err:  # noqa: BLE001 - recording must never stop the listener
+            self._probe_failure(THREAD_STACK, err)
 
     @callback
     def _thread_router_line(self, address: str, state: str, detail: str) -> None:

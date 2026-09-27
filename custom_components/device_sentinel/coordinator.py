@@ -629,6 +629,7 @@ class DeviceSentinelCoordinator(
         self._thread_starting = False
         self._thread_failed = False
         self._thread_routers: dict[str, tuple[str, str, str]] = {}
+        self._meshcop_names: dict[str, str] = {}
         # Firmware versions seen but not yet held through a fold, by
         # device, with the time each first appeared (0.23.9). Memory
         # only: a restart forgets them, which is the point.
