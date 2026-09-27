@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_brief_stitching.py, Version: 0.22.25 (2026-09-22)
+# File: tests/test_brief_stitching.py, Version: 0.23.11 (2026-09-27)
 
 """A silence the restarts segmented is told as one silence.
 
@@ -33,6 +33,7 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
     DATA_INCIDENTS,
+    DATA_SYSTEM_EVENTS,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     FREEZE_CATEGORY_UNAVAILABLE,
@@ -290,3 +291,56 @@ async def test_the_table_drops_the_bookkeeping_rows(
     assert "| SLZB-06 | went unavailable |" not in text
     assert "0 problems started, 0 ended." in text
     assert now
+
+
+async def test_one_silence_split_across_kinds_is_one_sentence(
+    hass: HomeAssistant, freezer
+):
+    """The reference rig's brief of 27 September, from its real rows.
+
+    One silence from 4:35 PM. The bridge's outage at the 3:40 AM reboot
+    escalated frozen to unavailable, and at 3:47 AM, still silent, it
+    was frozen again. The unavailable piece carried the claimed
+    recovery and was stitched; the two frozen pieces carried none,
+    failed on their own, and were told as "went silent twice" beside
+    the stitched sentence. Judged as one pile per device, the three
+    are one sentence (ruled 27 September 2026, amending #308 and #335).
+    """
+    freezer.move_to("2026-09-27T11:02:30+00:00")
+    device, _ = register_device(hass, "hall", "Hall Switch")
+    coord = await setup_coordinator(hass)
+    # The five rows as the store holds them, times to the second.
+    opened_frozen, restart_down, reopened = 1790458526.66, 1790498421.10, 1790498831.72
+
+    def row(kind, event, when, **extra):
+        return {
+            INC_DEVICE_ID: device.id, INC_NAME: "Hall Switch", INC_KIND: kind,
+            INC_EVENT: event, INC_WHEN: when, INC_CAUSE: None, INC_DURATION: None,
+            **extra,
+        }
+
+    coord.data[DATA_INCIDENTS] = [
+        row("frozen", INCIDENT_OPENED, opened_frozen, superseded=False),
+        row(TODO_KIND_UNAVAILABLE, INCIDENT_OPENED, restart_down, superseded=False),
+        row("frozen", INCIDENT_RESOLVED, restart_down + 0.0002, superseded=True,
+            **{INC_DURATION: restart_down - opened_frozen}),
+        row("frozen", INCIDENT_OPENED, reopened, superseded=False),
+        row(TODO_KIND_UNAVAILABLE, INCIDENT_RESOLVED, reopened + 0.0001, superseded=False,
+            **{INC_DURATION: reopened - restart_down}),
+    ]
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        {SYS_KIND: SYS_RESTART, SYS_WHEN: 1790475980.0, "scope": "system", "detail": None, "duration": 33.0},
+        {SYS_KIND: SYS_RESTART, SYS_WHEN: 1790498526.0, "scope": "system", "detail": None, "duration": 101.0},
+    ]
+    record = coord.data["devices"][device.id]
+    record[DEV_FROZEN_CATEGORY] = "frozen"
+    record[DEV_FROZEN_SINCE] = 1790458526.49
+
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    text = coord._last_brief_text
+    short = text.split("## In Short")[1].split("## Now")[0]
+
+    assert "went silent twice" not in short, short
+    assert short.count("Hall Switch") == 1, short
+    assert "Hall Switch has been silent since" in short
+    assert "across 2 restarts" in short
