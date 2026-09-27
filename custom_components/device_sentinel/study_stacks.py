@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_stacks.py, Version: 0.23.10 (2026-09-26)
+# File: study_stacks.py, Version: 0.23.11 (2026-09-27)
 
 """Z-Wave and Matter, gathered so their support can be built.
 
@@ -425,6 +425,81 @@ def _zwave_status_sensor(hass: HomeAssistant, home_id: Any, node_id: Any) -> str
     return "off" if entry is not None and entry.disabled_by else "on"
 
 
+def zwave_route(node: Any) -> str:
+    """The route a Z-Wave node's messages last travelled (0.23.11).
+
+    From the node's last working route: the repeaters between it and
+    the controller, or the two nodes a route failed between. Z-Wave's
+    version of which router a device depends on; when a repeater dies,
+    everything routed through it goes quiet with it. Read from the
+    statistics the library already holds in memory; nothing is sent.
+    """
+    lwr = _read(_read(node, "statistics"), "lwr")
+    if lwr is None:
+        return ""
+    data = _read(lwr, "data")
+    data = data if isinstance(data, dict) else {}
+    failed = data.get("routeFailedBetween")
+    if isinstance(failed, (list, tuple)) and len(failed) == 2:
+        return f"route failed between {_plain(failed[0])} and {_plain(failed[1])}"
+    repeaters = data.get("repeaters")
+    if not isinstance(repeaters, (list, tuple)):
+        return ""
+    ids = [str(_plain(each)) for each in repeaters]
+    return f"route via {', '.join(ids)}" if ids else "route direct"
+
+
+def zwave_health(hass: HomeAssistant) -> list[tuple[str, dict[str, int], str]]:
+    """Each Z-Wave controller's counters and background noise (0.23.11).
+
+    The counters only ever rise, so the caller writes the day's change.
+    Background noise is the controller's own reading of each channel,
+    the sign of interference that no counter shows.
+    """
+    found: list[tuple[str, dict[str, int], str]] = []
+    for entry in hass.config_entries.async_entries(ZWAVE_DOMAIN):
+        controller = _read(
+            _read(_read(_read(entry, "runtime_data"), "client"), "driver"),
+            "controller",
+        )
+        if controller is None:
+            continue
+        counters = {
+            name: value
+            for name, value in _statistics(controller, _CONTROLLER_STATISTICS).items()
+            if isinstance(value, int) and not isinstance(value, bool)
+        }
+        stats_data = _read(_read(controller, "statistics"), "data")
+        raw = stats_data.get("backgroundRSSI") if isinstance(stats_data, dict) else None
+        channels = []
+        if isinstance(raw, dict):
+            for index in range(4):
+                reading = raw.get(f"channel{index}")
+                if isinstance(reading, dict):
+                    average = reading.get("average")
+                    if isinstance(average, (int, float)) and not isinstance(average, bool):
+                        channels.append(f"ch{index} {average} dBm")
+        found.append((str(entry.entry_id), counters, ", ".join(channels)))
+    return found
+
+
+def zwave_nodes(hass: HomeAssistant) -> list[tuple[Any, str, str]]:
+    """Each Z-Wave node object with its id and device, to listen to."""
+    nodes_found: list[tuple[Any, str, str]] = []
+    for entry in hass.config_entries.async_entries(ZWAVE_DOMAIN):
+        controller = _read(
+            _read(_read(_read(entry, "runtime_data"), "client"), "driver"),
+            "controller",
+        )
+        devices = node_devices(hass, entry, ZWAVE_DOMAIN)
+        for node in _listed(_read(controller, "nodes")):
+            if _read(node, "is_controller_node"):
+                continue
+            node_id = str(_plain(_read(node, "node_id")))
+            nodes_found.append((node, node_id, devices.get(node_id, "")))
+    return nodes_found
+
+
 def _zwave_listening(node: Any) -> str:
     """How a node listens, which makes its silence normal or not."""
     if _read(node, "is_listening"):
@@ -444,7 +519,30 @@ def _matter_radio(node: Any) -> str:
         return f"wifi rssi {rssi}"
     role = table.get("0/53/1")
     if isinstance(role, int) and not isinstance(role, bool):
-        return f"thread role {_THREAD_ROLES.get(role, role)}"
+        parts = [f"thread role {_THREAD_ROLES.get(role, role)}"]
+        network = thread_network_id(table.get("0/53/4"))
+        if network:
+            parts.append(f"thread network {network}")
+        return ", ".join(parts)
+    return ""
+
+
+def thread_network_id(value: Any) -> str:
+    """A Thread network's Extended PAN ID as sixteen hex digits (0.23.11).
+
+    A Thread node reports it in attribute 0/53/4 and a border router
+    announces the same number, so the two can be matched: it says which
+    border routers a device actually depends on, which matters where an
+    Apple or Google router carries the same network or a separate one
+    (ruled 27 September 2026). Written as the border router announces
+    it; anything that is not a whole number is left out.
+    """
+    if isinstance(value, bool):
+        return ""
+    if isinstance(value, int) and value >= 0:
+        return f"{value:016x}"
+    if isinstance(value, str) and re.fullmatch(r"[0-9A-Fa-f]{16}", value):
+        return value.lower()
     return ""
 
 
@@ -492,13 +590,17 @@ def _zwave_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
                     f"status sensor {_zwave_status_sensor(hass, home_id, node_id)}",
                 ) if part
             ]
+            route = zwave_route(node)
             rows.append({
                 "stack": ZWAVE_DOMAIN,
                 "node": node_id,
                 "device_id": devices.get(node_id, ""),
                 "now": status,
                 "seen": _zwave_seen(node),
-                "detail": ", ".join(extra + ([numbers] if numbers else [])),
+                "route": route,
+                "detail": ", ".join(
+                    extra + ([route] if route else []) + ([numbers] if numbers else [])
+                ),
             })
     return rows
 

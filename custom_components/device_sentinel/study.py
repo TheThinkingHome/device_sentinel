@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.23.10 (2026-09-26)
+# File: study.py, Version: 0.23.11 (2026-09-27)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -45,6 +45,7 @@ the same way everything else here ages out.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from typing import Any
 
 from homeassistant.core import callback
@@ -57,6 +58,9 @@ from .const import (
     CONF_STUDY_HARDWARE,
     LOGGER,
     DATA_DEVICES,
+    DEV_DAILY_MAX,
+    LEARNING_MIN_DAYS,
+    STATUS_LEARNING,
     DATA_STACK_PROBE,
     PROBE_AGREES,
     PROBE_SENTINEL,
@@ -83,7 +87,23 @@ from .study_stacks import (
     ZWAVE_DOMAIN,
     coordinator_rows,
     probe_rows,
+    zwave_health,
+    zwave_nodes,
 )
+
+# The probe's own word for Device Sentinel's stance where "reporting"
+# would claim a verdict never reached (0.23.11): a muted device is not
+# judged, and one still learning (STATUS_LEARNING) has no window.
+PROBE_MUTED = "muted"
+
+# What the Z-Wave library announces about a node as it happens, recorded
+# with the moment (0.23.11). A device awake for seconds is asleep again
+# by the next minute's reading, which is how an afternoon of waking
+# devices on the second fleet left no trace.
+ZWAVE_NODE_EVENTS = ("wake up", "sleep", "dead", "alive")
+
+# Border routers seen by Home Assistant's own Thread discovery (0.23.11).
+THREAD_STACK = "thread"
 
 # Every stack the probe reads (0.23.9 added the last four).
 PROBED_DOMAINS = {
@@ -153,6 +173,15 @@ class StudyMixin:
     _probe_pending: list[str]
     _probe_recent: deque[str]
     _probe_failed: set[str]
+    # 0.23.11: node event subscriptions keyed by the node object's id,
+    # each controller's counters at the last fold, and the border router
+    # discovery with what each router last said.
+    _zwave_listeners: dict[int, list[Callable[[], None]]]
+    _zwave_counters: dict[str, dict[str, int]]
+    _thread_discovery: Any
+    _thread_starting: bool
+    _thread_failed: bool
+    _thread_routers: dict[str, tuple[str, str, str]]
 
     # ------------------------------------------------------- settings
 
@@ -328,8 +357,18 @@ class StudyMixin:
         device_id = row.get("device_id") or ""
         record = (self.data.get(DATA_DEVICES) or {}).get(device_id) if device_id else None
         sentinel = self._page_status(device_id, record) if record is not None else ""  # type: ignore[attr-defined]
+        # A muted device is not judged and one still learning has no
+        # window, so "reporting" would claim a verdict never reached
+        # (0.23.11). The second fleet's S81, dead to Z-Wave for a week
+        # and a half and muted, read as a disagreement.
+        if record is not None and sentinel == STATUS_REPORTING:
+            if device_id in getattr(self, "_muted_devices", set()) or self._freeze_muted(device_id):  # type: ignore[attr-defined]
+                sentinel = PROBE_MUTED
+            elif len(record.get(DEV_DAILY_MAX) or []) < LEARNING_MIN_DAYS:
+                sentinel = STATUS_LEARNING
         sentinel_quiet = (
-            None if sentinel in ("", STATUS_SET_ASIDE, STATUS_NEVER_REPORTED)
+            None
+            if sentinel in ("", STATUS_SET_ASIDE, STATUS_NEVER_REPORTED, PROBE_MUTED, STATUS_LEARNING)
             else sentinel != STATUS_REPORTING
         )
         state = row["now"]
@@ -418,16 +457,33 @@ class StudyMixin:
         studied = self.studied
         if not studied & PROBED_DOMAINS:
             self._probe_last.clear()
+            self._zwave_unlisten()
+            self._thread_stop()
             return
+        if ZWAVE_DOMAIN in studied:
+            self._zwave_listen()
+        else:
+            self._zwave_unlisten()
+        if MATTER_DOMAIN in studied:
+            self._thread_start()
+        else:
+            self._thread_stop()
         wifi_nodes: dict[str, bool] = {}
         for row in probe_rows(self.hass, studied, self._probe_failure):
             views = self._probe_views(row, now)
             if row["stack"] == MATTER_DOMAIN and "wifi" in (row.get("network") or ""):
                 wifi_nodes[self._probe_name(row)] = row["now"] == "available"
             key = (row["stack"], row["node"])
-            said = (views["now"], views["sentinel"])
+            # A Z-Wave node's route is part of what it says (0.23.11):
+            # a repeater dying moves or breaks the routes through it.
+            route = row.get("route") or ""
+            said = (views["now"], views["sentinel"], route)
             before = self._probe_last.get(key)
             self._probe_last[key] = said
+            if before is not None and before[:2] == said[:2] and before[2] != route:
+                views["detail"] = ", ".join(
+                    part for part in (f"route changed from {before[2] or 'unknown'}", views["detail"]) if part
+                )
             if before is None:
                 # The first reading of a node is its own line, so a
                 # file read months later knows where each node began.
@@ -452,10 +508,10 @@ class StudyMixin:
             })
         for row in coordinator_rows(self.hass, studied, self._probe_failure):
             key = (row["stack"], row["node"])
-            said = (row["now"], row["detail"])
+            stated = (row["now"], row["detail"])
             before = self._probe_last.get(key)
-            self._probe_last[key] = said
-            if before == said:
+            self._probe_last[key] = stated
+            if before == stated:
                 continue
             self._probe_queue({
                 PROBE_WHEN: now,
@@ -547,6 +603,13 @@ class StudyMixin:
         clean-stop marker, and the next start would read the stop as a
         power cut.
         """
+        self._zwave_unlisten()
+        discovery, self._thread_discovery = self._thread_discovery, None
+        if discovery is not None:
+            try:
+                await discovery.async_stop()
+            except Exception as err:  # noqa: BLE001 - the save after this must run
+                LOGGER.debug("device_sentinel: Thread discovery did not stop (%s)", err)
         if not self._probe_pending:
             return
         lines, self._probe_pending = self._probe_pending, []
@@ -559,6 +622,203 @@ class StudyMixin:
                 type(err).__name__,
                 err,
             )
+
+    # --------------------------------------- node events and routers, 0.23.11
+
+    @callback
+    def _zwave_listen(self) -> None:
+        """Listen to each Z-Wave node's wake up, sleep, dead and alive.
+
+        Recording only: the library already announces these to Home
+        Assistant, and listening sends nothing to the network. A node
+        object is replaced when the driver reconnects, so subscriptions
+        are keyed by the object and a new one is listened to afresh.
+        """
+        seen: set[int] = set()
+        for node, node_id, device_id in zwave_nodes(self.hass):  # type: ignore[attr-defined]
+            key = id(node)
+            seen.add(key)
+            if key in self._zwave_listeners:
+                continue
+            on = getattr(node, "on", None)
+            if not callable(on):
+                continue
+            removers: list[Callable[[], None]] = []
+            for event in ZWAVE_NODE_EVENTS:
+                try:
+                    removers.append(on(event, self._zwave_event_handler(node_id, device_id, event)))
+                except Exception as err:  # noqa: BLE001 - a library behaving oddly
+                    self._probe_failure(ZWAVE_DOMAIN, err)
+                    break
+            self._zwave_listeners[key] = [each for each in removers if callable(each)]
+        for key in [k for k in self._zwave_listeners if k not in seen]:
+            self._remove_all(self._zwave_listeners.pop(key))
+
+    @staticmethod
+    def _remove_all(removers: list[Callable[[], None]]) -> None:
+        """Call each unsubscribe, ignoring a node already gone."""
+        for remove in removers:
+            try:
+                remove()
+            except Exception as err:  # noqa: BLE001 - a node already gone
+                LOGGER.debug("device_sentinel: a Z-Wave listener was already gone (%s)", err)
+
+    @callback
+    def _zwave_unlisten(self) -> None:
+        """Stop listening to every Z-Wave node."""
+        for removers in self._zwave_listeners.values():
+            self._remove_all(removers)
+        self._zwave_listeners.clear()
+
+    def _zwave_event_handler(self, node_id: str, device_id: str, event: str) -> Callable[..., None]:
+        """One node event, written as a line with the second it came."""
+
+        @callback
+        def _heard(_data: Any = None) -> None:
+            try:
+                moment = dt_util.now()
+                row = {"stack": ZWAVE_DOMAIN, "node": node_id, "device_id": device_id, "now": event}
+                views = self._probe_views(row, moment.timestamp())
+                self._probe_queue({
+                    PROBE_WHEN: moment.timestamp(),
+                    PROBE_STACK: ZWAVE_DOMAIN,
+                    PROBE_NODE: node_id,
+                    PROBE_DEVICE_ID: device_id,
+                    PROBE_WAS: "",
+                    PROBE_NOW: f"event: {event}",
+                    PROBE_SENTINEL: views["sentinel"],
+                    PROBE_AGREES: "",
+                    PROBE_DETAIL: f"at {moment.strftime('%H:%M:%S')}",
+                })
+            except Exception as err:  # noqa: BLE001 - recording must never stop the library
+                self._probe_failure(ZWAVE_DOMAIN, err)
+
+        return _heard
+
+    @callback
+    def _zwave_health_line(self, now: float) -> None:
+        """One line a day per controller: the counters' change and the noise.
+
+        Dropped messages, NAKs, collisions and timeouts only ever rise,
+        so the line carries the day's change; the counters restart with
+        Home Assistant, and the first line after a start carries the
+        count since then. Background noise is the controller's own
+        reading of each channel.
+        """
+        for entry_id, counters, noise in zwave_health(self.hass):  # type: ignore[attr-defined]
+            before = self._zwave_counters.get(entry_id) or {}
+            self._zwave_counters[entry_id] = counters
+            changes = []
+            for name in sorted(counters):
+                start = before.get(name, 0)
+                change = counters[name] - start if counters[name] >= start else counters[name]
+                changes.append(f"{name} +{change}")
+            detail = ", ".join(part for part in (", ".join(changes), f"noise {noise}" if noise else "") if part)
+            self._probe_queue({
+                PROBE_WHEN: now,
+                PROBE_STACK: ZWAVE_DOMAIN,
+                PROBE_NODE: "controller",
+                PROBE_DEVICE_ID: "",
+                PROBE_WAS: "",
+                PROBE_NOW: "health",
+                PROBE_SENTINEL: "",
+                PROBE_AGREES: "",
+                PROBE_DETAIL: detail or "no counters read",
+            })
+
+    @callback
+    def _thread_start(self) -> None:
+        """Start watching for Thread border routers, once.
+
+        Home Assistant's Thread integration finds border routers by
+        their announcements on the local network, and says when one
+        appears and when one goes; its Thread panel shows the same
+        (ruled 27 September 2026, recording only).
+        """
+        if self._thread_discovery is not None or self._thread_starting or self._thread_failed:
+            return
+        self._thread_starting = True
+        self.hass.async_create_task(self._async_thread_start())  # type: ignore[attr-defined]
+
+    async def _async_thread_start(self) -> None:
+        """Open the discovery; a house without Thread simply has none."""
+        try:
+            from homeassistant.components.thread.discovery import (  # noqa: PLC0415 - loaded only when studied
+                ThreadRouterDiscovery,
+            )
+
+            discovery = ThreadRouterDiscovery(
+                self.hass,  # type: ignore[attr-defined]
+                self._thread_router_found,
+                self._thread_router_gone,
+            )
+            await discovery.async_start()
+        except Exception as err:  # noqa: BLE001 - no Thread, or a library behaving oddly
+            # Tried once per start: a house without Thread has neither the
+            # integration nor its library, and asking every minute would
+            # only repeat the answer.
+            LOGGER.debug("device_sentinel: Thread discovery not started (%s)", err)
+            self._thread_starting = False
+            self._thread_failed = True
+            return
+        self._thread_discovery = discovery
+        self._thread_starting = False
+
+    @callback
+    def _thread_stop(self) -> None:
+        """Stop watching for border routers."""
+        discovery, self._thread_discovery = self._thread_discovery, None
+        if discovery is not None:
+            self.hass.async_create_task(discovery.async_stop())  # type: ignore[attr-defined]
+
+    def _thread_router_found(self, address: str, data: Any) -> None:
+        """A border router announced itself, or changed what it says."""
+        name = " ".join(
+            str(part) for part in (getattr(data, "vendor_name", None), getattr(data, "model_name", None)) if part
+        ) or str(getattr(data, "instance_name", "") or "")
+        detail = ", ".join(
+            part
+            for part in (
+                f"network {getattr(data, 'network_name', None) or 'unnamed'}",
+                f"network id {str(getattr(data, 'extended_pan_id', '') or '').lower() or 'unknown'}",
+                name,
+                f"router {address}",
+            )
+            if part
+        )
+        self.hass.loop.call_soon_threadsafe(self._thread_router_line, address, "present", detail)  # type: ignore[attr-defined]
+
+    def _thread_router_gone(self, address: str) -> None:
+        """A border router stopped announcing itself."""
+        self.hass.loop.call_soon_threadsafe(self._thread_router_line, address, "gone", "")  # type: ignore[attr-defined]
+
+    @callback
+    def _thread_router_line(self, address: str, state: str, detail: str) -> None:
+        """Write a border router's line when what it says changes."""
+        try:
+            before = self._thread_routers.get(address)
+            if state == "gone":
+                if before is None or before[0] == "gone":
+                    return
+                detail = before[1]
+            elif before is not None and before[:2] == (state, detail):
+                return
+            self._thread_routers[address] = (state, detail, "")
+            self._probe_queue({
+                PROBE_WHEN: dt_util.utcnow().timestamp(),
+                PROBE_STACK: THREAD_STACK,
+                PROBE_NODE: "border router",
+                PROBE_DEVICE_ID: "",
+                PROBE_WAS: before[0] if before else "",
+                PROBE_NOW: state,
+                PROBE_SENTINEL: "",
+                PROBE_AGREES: "",
+                PROBE_DETAIL: ", ".join(
+                    part for part in (detail, f"at {dt_util.now().strftime('%H:%M:%S')}") if part
+                ),
+            })
+        except Exception as err:  # noqa: BLE001 - recording must never stop discovery
+            self._probe_failure(THREAD_STACK, err)
 
     @callback
     def probe_fold(self, now: float) -> None:
@@ -591,6 +851,8 @@ class StudyMixin:
                 if views["agrees"]:
                     tally = agreement.setdefault(row["stack"], {"yes": 0, "no": 0})
                     tally[views["agrees"]] += 1
+            if ZWAVE_DOMAIN in studied:
+                self._zwave_health_line(now)
             for stack, by_state in counts.items():
                 tally = agreement.get(stack, {"yes": 0, "no": 0})
                 self._probe_queue({

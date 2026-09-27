@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.23.5 (2026-09-25)
+# File: report_brief.py, Version: 0.23.11 (2026-09-27)
 
 """The daily brief: the one report written for a person.
 
@@ -1676,11 +1676,34 @@ class BriefMixin:
         # a freeze-family bucket can be claimed by it: a railed or a
         # battery bucket beside a standing freeze is its own news,
         # not a fragment of the silence.
+        # Judged per device across the down family, not per kind (ruled
+        # 27 September 2026, amending #308 and #335). One silence moves
+        # between frozen and unavailable as its entities change, so its
+        # pieces land in different buckets: on the reference rig's 27
+        # September brief the unavailable piece carried the claimed
+        # recovery and was stitched, while the two frozen pieces carried
+        # none, failed the test on their own, and were told as "went
+        # silent twice" beside the stitched sentence.
+        family: dict[str, list[tuple[dict, dict | None]]] = {}
+        for (device_id, kind), members in by_bucket.items():
+            # Never reported keeps its own standing sentence, as it did
+            # when buckets were judged one at a time.
+            if (
+                kind in FREEZE_KINDS_FOR_CAUSE
+                and kind != TODO_KIND_NEVER_REPORTED
+            ):
+                family.setdefault(device_id, []).extend(members)
+        whole = {
+            device_id
+            for device_id, members in family.items()
+            if self._silence_never_broken(device_id, members)
+        }
         stitched = {
             key: members
             for key, members in by_bucket.items()
             if key[1] in FREEZE_KINDS_FOR_CAUSE
-            and self._silence_never_broken(key[0], members)
+            and key[1] != TODO_KIND_NEVER_REPORTED
+            and key[0] in whole
         }
         # A device that has never reported is one standing condition,
         # not a device going and returning, so it keeps the sentence

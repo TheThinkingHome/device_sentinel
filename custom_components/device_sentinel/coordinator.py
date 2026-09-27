@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.10 (2026-09-26)
+# File: coordinator.py, Version: 0.23.11 (2026-09-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -621,6 +621,14 @@ class DeviceSentinelCoordinator(
         # Whether Device Sentinel's Wi-Fi outage was open at the last
         # probe tick; None until the first tick (0.23.8).
         self._probe_wifi_down: bool | None = None
+        # 0.23.11: Z-Wave node event subscriptions, each controller's
+        # counters at the last fold, and the Thread border routers.
+        self._zwave_listeners: dict[int, list[Any]] = {}
+        self._zwave_counters: dict[str, dict[str, int]] = {}
+        self._thread_discovery: Any = None
+        self._thread_starting = False
+        self._thread_failed = False
+        self._thread_routers: dict[str, tuple[str, str, str]] = {}
         # Firmware versions seen but not yet held through a fold, by
         # device, with the time each first appeared (0.23.9). Memory
         # only: a restart forgets them, which is the point.

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.22.28 (2026-09-23)
+# File: detect_freeze.py, Version: 0.23.11 (2026-09-27)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -48,6 +48,7 @@ from .records import BAD_STATES
 from .stacks import reader_for_domain
 
 from .const import (
+    BRIDGE_HANDBACK_SECONDS,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
     CONF_FREEZE_MUTED_DEVICES,
@@ -543,6 +544,8 @@ class FreezeMixin:
             record = self.data[DATA_DEVICES].get(device_id)
             if not isinstance(record, dict):
                 continue
+            if self._held_by_bridge(device_id, now):
+                continue
             # Guard each device: one malformed record must never kill
             # the whole sweep, which would stop verdicts, saving, and
             # refreshing for every device, which once crashed the
@@ -558,6 +561,36 @@ class FreezeMixin:
                 )
         if flipped:
             self._notify()
+
+    def _held_by_bridge(self, device_id: str, now: float) -> bool:
+        """Whether the device's bridge is down or still handing back.
+
+        A bridge going down says something about the bridge and nothing
+        about the devices behind it (ruled 27 September 2026, amending
+        #264). While it is down, and for the window #436 gives its
+        devices to rejoin once it is back, the device's verdict stays
+        exactly as it was, frozen, unavailable or none, and so does any
+        debounce stamp. After that it is judged on its own again.
+
+        Before this the sweep read the outage's unavailable entities as
+        news about each device. On the reference rig at 3:40 AM on 27
+        September Switch Hall Living, frozen since the afternoon, turned
+        unavailable 0.2 seconds after Zigbee2MQTT went down: its frozen
+        record closed, unavailable opened, the bus heard it recover, and
+        the brief told one silence twice. A healthy device turned
+        unavailable underneath after the debounce, hidden from the list
+        by #264 but written to its record.
+
+        Bridges only, as ruled. The broker, an integration and a Wi-Fi
+        network are not yet ruled and are judged as before.
+        """
+        stack = self._stack_for_device(device_id)
+        if stack is None:
+            return False
+        if stack in self._bridge_down_at:
+            return True
+        held = self._bridge_handback.get(stack)
+        return held is not None and now - held[1] < BRIDGE_HANDBACK_SECONDS
 
     def _observed_silence(
         self, record: dict[str, Any], now: float
