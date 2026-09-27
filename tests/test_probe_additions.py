@@ -14,8 +14,9 @@ happen. Z-Wave keeps each node's route, the repeaters its messages
 last travelled through, and a controller's health counters and
 background noise. A muted device read "reporting" in the probe's
 Device Sentinel column. For Thread, the upstream to build, the probe
-records border routers appearing and disappearing, as Home Assistant's
-own Thread discovery reports them, and each Thread device's network ID.
+records border routers appearing and disappearing, from their own
+announcements through Home Assistant's shared zeroconf instance, and
+each Thread device's network ID.
 Recording only throughout: nothing is sent to any network.
 
 The fakes carry the shapes the libraries carry: zwave-js-server-python
@@ -27,10 +28,8 @@ The fakes carry the shapes the libraries carry: zwave-js-server-python
 
 from __future__ import annotations
 
-from types import ModuleType, SimpleNamespace
-from unittest.mock import patch
+from types import SimpleNamespace
 
-import sys
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -238,67 +237,64 @@ async def test_a_thread_node_carries_its_network_id(hass: HomeAssistant):
     entry.add_to_hass(hass)
     entry.mock_state(hass, ConfigEntryState.LOADED)
     entry.runtime_data = SimpleNamespace(adapter=SimpleNamespace(matter_client=client))
-    with _thread_package(_Discovery):
-        coord = await _study(hass, "matter")
-        coord.probe_tick(1000.0)
+    coord = await _study(hass, "matter")
+    coord.probe_tick(1000.0)
     lines = _lines(coord, "matter")
     assert any("thread network dead00beef001234" in line for line in lines), lines
 
 
-def _thread_package(discovery_class):
-    """Home Assistant's Thread package as far as the probe imports it.
+class _Zeroconf:
+    """Home Assistant's shared zeroconf instance, as far as the probe uses it."""
 
-    The real one needs python-otbr-api, which only a house with the
-    Thread integration installed has; the probe's import is guarded for
-    the house without it, and that path is tested at the end.
-    """
-    package = ModuleType("homeassistant.components.thread")
-    module = ModuleType("homeassistant.components.thread.discovery")
-    module.ThreadRouterDiscovery = discovery_class
-    package.discovery = module
-    return patch.dict(sys.modules, {
-        "homeassistant.components.thread": package,
-        "homeassistant.components.thread.discovery": module,
-    })
+    def __init__(self):
+        self.listeners: list = []
+        self.services: dict = {}
 
+    async def async_add_service_listener(self, service_type, listener):
+        self.listeners.append((service_type, listener))
 
-class _Discovery:
-    """Home Assistant's ThreadRouterDiscovery, as far as the probe uses it."""
+    async def async_remove_service_listener(self, listener):
+        self.listeners = [pair for pair in self.listeners if pair[1] is not listener]
 
-    made: list["_Discovery"] = []
+    async def async_get_service_info(self, service_type, name):
+        return self.services.get(name)
 
-    def __init__(self, hass, found, gone):
-        self.found, self.gone, self.stopped = found, gone, False
-        _Discovery.made.append(self)
+    def announce(self, name, props):
+        self.services[name] = SimpleNamespace(properties=props)
+        for service_type, listener in list(self.listeners):
+            listener.add_service(None, service_type, name)
 
-    async def async_start(self):
-        return None
-
-    async def async_stop(self):
-        self.stopped = True
+    def withdraw(self, name):
+        for service_type, listener in list(self.listeners):
+            listener.remove_service(None, service_type, name)
 
 
-def _router(network="MyHome", pan="DEAD00BEEF001234", vendor="SMLIGHT", model="SMHUB"):
-    return SimpleNamespace(
-        network_name=network, extended_pan_id=pan, vendor_name=vendor, model_name=model,
-        instance_name="SMHUB-1",
-    )
+def _router(address="aa11aa11aa11aa11", network="MyHome", pan="dead00beef001234", vendor="SMLIGHT", model="SMHUB"):
+    return {
+        b"xa": bytes.fromhex(address), b"xp": bytes.fromhex(pan),
+        b"nn": network.encode(), b"vn": vendor.encode(), b"mn": model.encode(),
+    }
+
+
+async def _listening(hass):
+    shared = _Zeroconf()
+    hass.data["zeroconf"] = shared
+    coord = await _study(hass, "matter")
+    coord.probe_tick(1000.0)
+    await hass.async_block_till_done()
+    return coord, shared
 
 
 async def test_border_routers_appearing_and_going_are_written(hass: HomeAssistant):
-    _Discovery.made.clear()
-    with _thread_package(_Discovery):
-        coord = await _study(hass, "matter")
-        coord.probe_tick(1000.0)
-        await hass.async_block_till_done()
-        assert len(_Discovery.made) == 1
-        discovery = _Discovery.made[0]
-        discovery.found("aa11", _router())
-        discovery.found("aa11", _router())  # the same announcement again
-        discovery.found("bb22", _router(vendor="Apple", model="HomePod"))
-        discovery.gone("aa11")
-        discovery.gone("aa11")  # already gone
-        await hass.async_block_till_done()
+    coord, shared = await _listening(hass)
+    assert [pair[0] for pair in shared.listeners] == ["_meshcop._udp.local."]
+    shared.announce("SMHUB-1._meshcop._udp.local.", _router())
+    shared.announce("SMHUB-1._meshcop._udp.local.", _router())  # the same announcement again
+    shared.announce("HomePod._meshcop._udp.local.", _router(address="bb22bb22bb22bb22", vendor="Apple", model="HomePod"))
+    await hass.async_block_till_done()
+    shared.withdraw("SMHUB-1._meshcop._udp.local.")
+    shared.withdraw("SMHUB-1._meshcop._udp.local.")  # already gone
+    await hass.async_block_till_done()
     lines = _lines(coord, "thread")
     states = [line.split("|")[6].strip() for line in lines]
     assert states == ["present", "present", "gone"], lines
@@ -307,36 +303,48 @@ async def test_border_routers_appearing_and_going_are_written(hass: HomeAssistan
     assert "SMLIGHT SMHUB" in lines[2], "a gone line names the router it was"
 
 
-async def test_discovery_starts_once_and_stops_with_device_sentinel(hass: HomeAssistant):
-    _Discovery.made.clear()
-    with _thread_package(_Discovery):
-        coord = await _study(hass, "matter")
-        for minute in range(3):
-            coord.probe_tick(1000.0 + 60 * minute)
-            await hass.async_block_till_done()
-        assert len(_Discovery.made) == 1
-        await coord.async_probe_stop()
-    assert _Discovery.made[0].stopped
+async def test_an_announcement_without_its_ids_is_not_a_router(hass: HomeAssistant):
+    coord, shared = await _listening(hass)
+    shared.announce("Odd._meshcop._udp.local.", {b"nn": b"MyHome"})
+    await hass.async_block_till_done()
+    assert not _lines(coord, "thread")
 
 
-async def test_a_house_without_thread_starts_nothing_and_breaks_nothing(hass: HomeAssistant):
-    class _Refuses(_Discovery):
-        async def async_start(self):
-            raise RuntimeError("zeroconf is not set up")
-
-    with _thread_package(_Refuses):
-        coord = await _study(hass, "matter")
-        coord.probe_tick(1000.0)
+async def test_the_listener_is_added_once_and_taken_off_at_stop(hass: HomeAssistant):
+    coord, shared = await _listening(hass)
+    for minute in range(3):
+        coord.probe_tick(1060.0 + 60 * minute)
         await hass.async_block_till_done()
-        await coord._on_render_tick(None)
-    assert coord._thread_discovery is None
-    assert coord._thread_failed, "it would ask again every minute"
+    assert len(shared.listeners) == 1
+    await coord.async_probe_stop()
+    assert not shared.listeners
 
 
-async def test_a_house_without_the_thread_library_breaks_nothing(hass: HomeAssistant):
-    """The real import, where python-otbr-api is not installed."""
+async def test_zeroconf_starting_later_is_picked_up(hass: HomeAssistant):
+    """Nothing is declared, so zeroconf may start after Device Sentinel."""
     coord = await _study(hass, "matter")
     coord.probe_tick(1000.0)
     await hass.async_block_till_done()
+    assert coord._thread_discovery is None and not coord._thread_failed
+    shared = _Zeroconf()
+    hass.data["zeroconf"] = shared
+    coord.probe_tick(1060.0)
+    await hass.async_block_till_done()
+    assert len(shared.listeners) == 1
+
+
+async def test_a_listener_that_cannot_be_added_is_not_asked_again(hass: HomeAssistant):
+    class _Refuses(_Zeroconf):
+        calls = 0
+
+        async def async_add_service_listener(self, service_type, listener):
+            _Refuses.calls += 1
+            raise RuntimeError("zeroconf is shutting down")
+
+    hass.data["zeroconf"] = _Refuses()
+    coord = await _study(hass, "matter")
+    for minute in range(3):
+        coord.probe_tick(1000.0 + 60 * minute)
+        await hass.async_block_till_done()
     await coord._on_render_tick(None)
-    assert coord._thread_discovery is None
+    assert _Refuses.calls == 1 and coord._thread_failed
