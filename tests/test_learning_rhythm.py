@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_learning_rhythm.py, Version: 0.9.9 (2026-07-26)
+# File: test_learning_rhythm.py, Version: 0.23.12 (2026-09-27)
 
 """How the integration learns each device's reporting rhythm.
 
@@ -896,8 +896,14 @@ async def test_seeding_from_last_seen(hass: HomeAssistant):
 
 
 async def test_grace_recovery_consumes_taint(hass: HomeAssistant, freezer):
-    """A boot-blip taint must be consumed by the in-grace recovery,
-    so the first post-grace gap still feeds learning."""
+    """A boot blip inside the grace sets no taint, and learning goes on
+    from the device's own reports.
+
+    Before #535 the value coming back inside the grace was a report
+    (#125) and the first gap was measured from it. #535 reversed that:
+    a value the stack republishes through a restart is not the device
+    speaking, so the first report after the grace starts the clock and
+    the gap after it is the first one learned."""
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device = dr.async_get(hass).async_get_or_create(
@@ -930,13 +936,10 @@ async def test_grace_recovery_consumes_taint(hass: HomeAssistant, freezer):
     await hass.async_block_till_done()
     hass.states.async_set(eid, "on")
     await hass.async_block_till_done()
-    # The gap from the in-grace recovery stamp (grace ended 305 s in,
-    # recovery at 5 s) to this first post-grace event is organic
-    # silence and must be learned: 310 s.
-    assert rec[DEV_TODAY_MAX] == pytest.approx(310, abs=1), (
-        "first post-grace gap must be learned"
-    )
+    assert rec[DEV_TODAY_MAX] is None, "the republished value was taken as speech"
     freezer.tick(timedelta(seconds=140))
     hass.states.async_set(eid, "off")
     await hass.async_block_till_done()
-    assert rec[DEV_TODAY_MAX] == pytest.approx(310, abs=1)
+    assert rec[DEV_TODAY_MAX] == pytest.approx(140, abs=1), (
+        "the first gap between two of the device's own reports is learned"
+    )

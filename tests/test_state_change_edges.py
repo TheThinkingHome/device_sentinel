@@ -1,7 +1,7 @@
 """Characterization tests for the state-change handler's edges.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_state_change_edges.py, Version: 0.13.0 (2026-08-12)
+# File: test_state_change_edges.py, Version: 0.23.12 (2026-09-27)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -24,6 +24,7 @@ from custom_components.device_sentinel.const import (
     DATA_EPISODES,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
+    DEV_FROZEN_CATEGORY,
     DEV_LAST_ACTIVITY,
     EP_LEARNED,
     FREEZE_ARMING_DAYS,
@@ -92,7 +93,10 @@ async def test_a_taint_raised_inside_grace_is_also_held_in_the_grace_set(
     assert len(coord.data[DATA_EPISODES]) == 1
 
     # Wide enough to still be open when the device recovers, which is
-    # the moment the branch is decided.
+    # the moment the branch is decided. Judged unavailable, so its
+    # stack saying it is available is a genuine recovery under #535
+    # rather than a republished value.
+    record[DEV_FROZEN_CATEGORY] = "unavailable"
     coord._grace_until = dt_util.utcnow().timestamp() + 86400.0
     hass.states.async_set(entity_id, "unavailable")
     await hass.async_block_till_done()

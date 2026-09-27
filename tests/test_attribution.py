@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.23.5 (2026-09-25)
+# File: tests/test_attribution.py, Version: 0.23.12 (2026-09-27)
 
 """What explains an incident, and what a flood reads as.
 
@@ -216,9 +216,12 @@ async def test_the_flood_collapses_to_one_sentence(hass: HomeAssistant):
     told = coord._tell_episodes(pairs, BROKER_OUTAGE)
     assert len(told) == 1
     assert told[0].startswith("74 devices went unavailable at ")
+    # #535: an outage revives nothing; the group is told as recovering
+    # during it, never as revived by it.
     assert told[0].endswith(
-        "revived by the MQTT broker going down and coming back."
+        "during the MQTT broker going down and coming back, and recovered."
     )
+    assert "revived by" not in told[0]
     for wrong in ("bridge reconnect", "reboot", "no intervention recorded"):
         assert wrong not in told[0]
 
@@ -254,7 +257,8 @@ async def test_one_device_keeps_its_own_sentence(hass: HomeAssistant):
     told = coord._tell_episodes([(opened, closed)], BROKER_OUTAGE)
     assert len(told) == 1
     assert told[0].startswith("Door 2nd Bedroom went unavailable at ")
-    assert "revived by the MQTT broker" in told[0]
+    # #535: one device matched to an outage recovers plainly.
+    assert "revived by" not in told[0]
     assert "reboot" not in told[0]
 
 

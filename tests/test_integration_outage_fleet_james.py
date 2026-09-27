@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integration_outage_fleet_james.py, Version: 0.20.1 (2026-09-04)
+# File: tests/test_integration_outage_fleet_james.py, Version: 0.23.12 (2026-09-27)
 
 """The integration outage, driven against the reference fleet.
 
@@ -29,6 +29,7 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
     BRIDGE_DOWN,
+    BROKER_LABEL,
     BRIDGE_RUNNING,
     INTEGRATION_DOWN_DWELL_SECONDS,
 )
@@ -165,11 +166,15 @@ async def test_the_broker_still_outranks_everything(
     assert coord.upstream_down_since(device.id)[0] == "blinds_hub"
 
     coord._broker_down_at = now
+    # Since 0.23.12 the broker outranks only for the devices that ride
+    # it; a device on another integration keeps its own upstream.
     for domain, members in behind.items():
         for member, _ in members:
             found = coord.upstream_down_since(member.id)
-            assert found is not None
-            assert found[0] != domain or domain == "mqtt", domain
+            if coord._rides_the_broker(member.id):
+                assert found is not None and found[0] == BROKER_LABEL, domain
+            else:
+                assert found is None or found[0] != BROKER_LABEL, domain
 
 
 @pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)

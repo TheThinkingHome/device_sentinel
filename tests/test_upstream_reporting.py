@@ -1,7 +1,7 @@
 """Reporting an upstream outage as one fault, not seventy-six.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_upstream_reporting.py, Version: 0.22.28 (2026-09-23)
+# File: test_upstream_reporting.py, Version: 0.23.12 (2026-09-27)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -34,6 +34,11 @@ from custom_components.device_sentinel.const import (
 from .helpers import register_device, setup_coordinator
 
 
+def _on_the_broker(coord):
+    for device_id in list(coord._watched):
+        coord._watched[device_id] = "mqtt"
+
+
 def _down(coord, device_id, category="unavailable", since=1000.0):
     record = coord.data[DATA_DEVICES][device_id]
     record[DEV_FROZEN_CATEGORY] = category
@@ -48,6 +53,9 @@ async def test_devices_are_not_reported_while_their_broker_is_down(
     first, _ = register_device(hass, "up1", "First Device")
     second, _ = register_device(hass, "up2", "Second Device")
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     _down(coord, first.id, since=2000.0)
     _down(coord, second.id, since=2000.0)
     coord._broker_down_at = 1500.0
@@ -68,6 +76,9 @@ async def test_a_device_broken_before_the_outage_keeps_its_row(
     old, _ = register_device(hass, "up3", "Already Broken")
     new, _ = register_device(hass, "up4", "Casualty")
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     _down(coord, old.id, since=1000.0)
     _down(coord, new.id, since=2000.0)
     coord._broker_down_at = 1500.0
@@ -86,6 +97,9 @@ async def test_everything_is_reported_when_the_upstream_is_up(
     reads as one."""
     device, _ = register_device(hass, "up5", "Ordinary Casualty")
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     _down(coord, device.id)
 
     assert [row["name"] for row in coord.reportable_down_rows] == [
@@ -101,6 +115,9 @@ async def test_a_device_still_down_after_recovery_is_reported(
     this one did not."""
     device, _ = register_device(hass, "up6", "Did Not Return")
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     _down(coord, device.id, since=2000.0)
     coord._broker_down_at = 1500.0
     assert coord.reportable_down_rows == []
@@ -120,6 +137,9 @@ async def test_an_outage_settles_before_it_is_announced(
     the burst this fixes."""
     device, _ = register_device(hass, "up7", "Settling Device")
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     _down(coord, device.id, since=2000.0)
     from homeassistant.util import dt as dt_util
 
@@ -136,6 +156,9 @@ async def test_the_count_is_pushed_again_only_when_it_changes(
     one."""
     device, _ = register_device(hass, "up8", "Counted Device")
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     # Past the startup grace, inside which nothing is judged or
     # pushed (ruling #291, 0.22.28); this test is not about a start.
     coord._grace_until = 0.0
@@ -159,6 +182,9 @@ async def test_the_recovery_is_announced_once(hass: HomeAssistant):
     """One message when the upstream returns, carrying how many had
     gone quiet, and nothing after it."""
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     # Past the startup grace, inside which nothing is judged or
     # pushed (ruling #291, 0.22.28); this test is not about a start.
     coord._grace_until = 0.0
@@ -175,6 +201,9 @@ async def test_the_upstream_row_reads_like_a_sentence(
     for their house, not what to do about it."""
     device, _ = register_device(hass, "up9", "Casualty")
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     _down(coord, device.id, since=2000.0)
     coord._bridge_down_at["z2m"] = 1500.0
     coord._watched[device.id] = "mqtt"
@@ -195,6 +224,9 @@ async def test_one_casualty_reads_in_the_singular(hass: HomeAssistant):
     """A row that says "1 devices" is the kind of detail that makes a
     person doubt the rest of it."""
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
 
     summary, _ = coord._upstream_item_text("z2m", {"upstream": 1500.0}, 1)
 
@@ -214,6 +246,9 @@ async def test_the_count_changes_and_the_stamp_does_not(
     first, _ = register_device(hass, "upa", "First Casualty")
     second, _ = register_device(hass, "upb", "Second Casualty")
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     coord._broker_down_at = 1500.0
     _down(coord, first.id, since=2000.0)
 
@@ -262,6 +297,9 @@ async def test_a_zha_outage_reports_the_coordinator_not_the_devices(
     first, _ = register_device(hass, "zha1", "ZHA Test Device - Motion")
     second, _ = register_device(hass, "zha2", "ZHA Test Device - mmWave")
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     coord._watched[first.id] = STACK_ZHA
     coord._watched[second.id] = STACK_ZHA
     _down(coord, first.id, since=1741_36.0)
@@ -299,6 +337,9 @@ async def test_an_impossible_onset_is_refused(hass: HomeAssistant):
 
     device, _ = register_device(hass, "zha3", "Casualty")
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     coord._watched[device.id] = STACK_ZHA
     _down(coord, device.id, since=2000.0)
 
@@ -367,6 +408,9 @@ async def test_an_integration_outage_stamps_its_row_and_pushes(
         )
         made.append(device)
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     coord._grace_until = 0.0
     coord._rebuild_registry_view()
 
@@ -405,6 +449,9 @@ async def test_the_sentence_says_what_went_down_with_it(
     singular device, and a membership count where a person wants to
     know what the outage took."""
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
 
     _summary, description = coord._upstream_item_text(
         "brother", {"upstream": 1500.0}, 1
@@ -433,6 +480,9 @@ async def test_a_row_before_any_device_is_judged_says_none_yet(
     """An upstream can be known down before a single device behind it
     has been judged."""
     coord = await setup_coordinator(hass)
+    # These devices reach Home Assistant through the broker; since
+    # 0.23.12 a broker outage is upstream only to such devices.
+    _on_the_broker(coord)
     coord.upstream_membership = lambda _name: 4
 
     _summary, description = coord._upstream_item_text(

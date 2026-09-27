@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_reachability.py, Version: 0.22.24 (2026-09-22)
+# File: tests/test_reachability.py, Version: 0.23.12 (2026-09-27)
 
 """Zigbee2MQTT reachability, replayed against a captured fleet.
 
@@ -793,6 +793,10 @@ async def test_the_broker_still_outranks_an_integration(
     assert coord.upstream_down_since(made[0].id)[0] == "controller_hub"
 
     coord._broker_down_at = now - 30.0
+    # Since 0.23.12 the broker is upstream only to devices that ride it,
+    # and a controller hub's device does not.
+    assert coord.upstream_down_since(made[0].id)[0] == "controller_hub"
+    coord._watched[made[0].id] = "mqtt"
     assert coord.upstream_down_since(made[0].id)[0] != "controller_hub"
 
 

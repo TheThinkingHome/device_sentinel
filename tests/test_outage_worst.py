@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_worst.py, Version: 0.21.14 (2026-09-18)
+# File: tests/test_outage_worst.py, Version: 0.23.12 (2026-09-27)
 
 """The daily brief tells an outage by its worst moment (ruling #442).
 
@@ -115,7 +115,7 @@ async def test_the_brief_says_the_worst_beside_the_total(hass: HomeAssistant):
         "after 10m. 14 of its 55 devices went down."
     )
     assert coord._system_event_phrase(bridge) == (
-        "zha bridge came back after 10m, 14 of 55 devices went down"
+        "ZHA bridge came back after 10m, 14 of 55 devices went down"
     )
     integration = {**base, SYS_KIND: SYS_INTEGRATION_UP,
                    SYS_SCOPE: "zwave_js", SYS_DEVICES: 17, SYS_WORST: 1}

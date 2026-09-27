@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.23.0 (2026-09-24)
+# File: test_brief_wording.py, Version: 0.23.12 (2026-09-27)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -210,7 +210,9 @@ async def test_recovery_sentence_carries_span_and_cause(
     )
     assert "recovered at " in text
     assert "after 2.0h" in text
-    assert "revived by a bridge reconnect" in text
+    # #535: a bridge reconnect revives nothing, even on a row stored
+    # with it as the cause before the ruling.
+    assert "revived by" not in text
 
     text = _row(
         coord, "d", "Leak Washer", "frozen", INCIDENT_RESOLVED,
@@ -594,10 +596,14 @@ async def test_a_known_lever_is_still_credited(hass: HomeAssistant):
         INC_KIND: "frozen",
         INC_EVENT: INCIDENT_RESOLVED,
         INC_WHEN: dt_util.utcnow().timestamp(),
-        INC_CAUSE: "bridge reconnect",
+        INC_CAUSE: "handled at the device",
         INC_DURATION: 7200.0,
     }
-    assert "revived by a bridge reconnect" in coord._compose_event(row)
+    # A person's own act is still credited (#535 keeps it); a restart
+    # or an outage is not.
+    assert coord._compose_event(row).endswith("after 2.0h, handled at the device.")
+    row[INC_CAUSE] = "bridge reconnect"
+    assert "revived by" not in coord._compose_event(row)
 
 
 async def test_a_stop_and_its_recovery_are_one_sentence(
@@ -615,7 +621,8 @@ async def test_a_stop_and_its_recovery_are_one_sentence(
     prose = text[text.index("## In Short"): text.index("## Now")]
     assert (
         "Presence Guest stopped reporting at" in prose
-        and "and recovered 4.1h later, revived by a reboot." in prose
+        and "and recovered 4.1h later." in prose
+        and "revived by" not in prose
     )
     # One sentence, so the name is said once rather than twice.
     assert prose.count("Presence Guest") == 1
@@ -845,7 +852,7 @@ async def test_one_long_outage_is_the_only_thing_said(
     short = read_brief(hass)
     short = short[short.index("## In Short"): short.index("## Now")]
 
-    assert "The z2m bridge was down for 17m" in short
+    assert "The Zigbee2MQTT bridge was down for 17m" in short
     # The two-minute artefact and the 28-second restart say nothing.
     assert short.count("bridge") == 1
     assert "The system was unwatched" not in short
@@ -1621,7 +1628,7 @@ async def test_a_storm_inside_a_restart_is_the_restart(
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = _brief_text(hass)
     assert "The mqtt integration reloaded" not in text
-    assert "The zha integration reloaded" in text
+    assert "The ZHA integration reloaded" in text
 
 
 async def test_a_clean_stop_is_named_clean(hass: HomeAssistant):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_outage.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_wifi_outage.py, Version: 0.23.12 (2026-09-27)
 
 """The Wi-Fi outage: the tie ladder, the burst, the hold, the claim.
 
@@ -360,6 +360,11 @@ async def test_the_broker_still_outranks_the_network(
     await _declared(hass, coord, trackers, freezer, count=3)
     assert coord.upstream_down_since(devices[0].id)[0] == WIFI_KEY
     coord._broker_down_at = dt_util.utcnow().timestamp()
+    # Since 0.23.12 the broker is upstream only to devices that ride it;
+    # a Wi-Fi device keeps its network.
+    found = coord.upstream_down_since(devices[0].id)
+    assert found is not None and found[0] == WIFI_KEY
+    coord._watched[devices[0].id] = "mqtt"
     found = coord.upstream_down_since(devices[0].id)
     assert found is not None and found[0] != WIFI_KEY
 
