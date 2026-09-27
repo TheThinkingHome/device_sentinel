@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.20.3 (2026-09-04)
+# File: events.py, Version: 0.23.12 (2026-09-27)
 
 """What Device Sentinel says on the Home Assistant bus.
 
@@ -53,6 +53,7 @@ from .const import (
     RECOVERY_BY_SELF,
     RECOVERY_BY_UNKNOWN,
     RECOVERY_CAUSES_INTERVENTION,
+    RECOVERY_CAUSES_RESTART,
     RECOVERY_CAUSES_SELF,
     TODO_KIND_SEVERITY,
     UNASSIGNED_AREA,
@@ -80,12 +81,13 @@ def sort_kinds(kinds) -> list[str]:
 def resolved_by(cause: str | None) -> str:
     """Say how a silence ended, and say unknown when it is unknown.
 
-    The incident carries four cause values in practice. A bridge
-    reconnect or a reboot is an intervention; a recorded absence of
-    one is the device recovering by itself; and a null is two
-    different things wearing one value, a battery or a rail that has
-    no lever to name and a silence whose episode fell outside #228's
-    slack.
+    The incident carries a few cause values in practice. A person's
+    own act, handling the device, is an intervention; a restart or an
+    outage is not, and a recovery after one is the device recovering
+    by itself (#535, amending #228), as is a recorded absence of any
+    intervention; and a null is two different things wearing one
+    value, a battery or a rail that has no lever to name and a silence
+    whose episode fell outside #228's slack.
 
     Those nulls become unknown rather than being guessed into self
     (ruling #291). An automation that resumes trusting a device on a
@@ -94,7 +96,7 @@ def resolved_by(cause: str | None) -> str:
     """
     if cause in RECOVERY_CAUSES_INTERVENTION:
         return RECOVERY_BY_INTERVENTION
-    if cause in RECOVERY_CAUSES_SELF:
+    if cause in RECOVERY_CAUSES_SELF or cause in RECOVERY_CAUSES_RESTART:
         return RECOVERY_BY_SELF
     return RECOVERY_BY_UNKNOWN
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.22.26 (2026-09-23)
+# File: journal.py, Version: 0.23.12 (2026-09-27)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -32,6 +32,7 @@ from homeassistant.util import dt as dt_util
 
 from .normalise import row_damage
 from .const import (
+    RECOVERY_CAUSES_RESTART,
     CAUSE_EPISODE_SLACK_SECONDS,
     DATA_EPISODES,
     DATA_INCIDENTS,
@@ -699,7 +700,15 @@ class JournalMixin:
                 return None
             if ended == EPISODE_ENDED_RESUMED:
                 return RECOVERY_CAUSE_UNOBSERVED
-            return ended.replace("intervention (", "").rstrip(")")
+            # A restart or an outage is no intervention on a device and
+            # earns no credit (#535, amending #228). The episode still
+            # closed at it, for learning; the recovery is the device's
+            # own. The second fleet's brief credited a reboot with a
+            # plug the tester woke by hand 13.5 hours later.
+            cause = ended.replace("intervention (", "").rstrip(")")
+            if cause in RECOVERY_CAUSES_RESTART:
+                return RECOVERY_CAUSE_UNOBSERVED
+            return cause
         return None
 
     def _resolve_incident(  # noqa: PLR0913 - one row, one call

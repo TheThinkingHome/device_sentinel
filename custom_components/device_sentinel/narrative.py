@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.23.2 (2026-09-24)
+# File: narrative.py, Version: 0.23.12 (2026-09-27)
 
 """How to say what happened: the composer.
 
@@ -31,6 +31,8 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    RECOVERY_CAUSES_INTERVENTION,
+    RECOVERY_CAUSES_RESTART,
     TODO_KIND_FLAPPING,
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
@@ -267,6 +269,16 @@ class NarrativeMixin:
         """
         cause = row.get(INC_CAUSE)
         if cause == RECOVERY_CAUSE_UNOBSERVED:
+            return f", {cause}"
+        if cause in RECOVERY_CAUSES_RESTART:
+            # Stored before #535: a restart or an outage revived
+            # nothing, so the recovery is told plainly.
+            return ""
+        if cause in RECOVERY_CAUSES_INTERVENTION:
+            # A person's own act, already a phrase: "handled at the
+            # device". Glued to "revived by a" it read "revived by a
+            # handled at the device" (found in 0.23.12, present since
+            # #362).
             return f", {cause}"
         if cause:
             return f", revived by a {cause}"

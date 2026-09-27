@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: attribution.py, Version: 0.22.23 (2026-09-22)
+# File: attribution.py, Version: 0.23.12 (2026-09-27)
 
 """Which recorded event explains an incident, and which do not.
 
@@ -51,6 +51,7 @@ only those recorded from this release onward.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from .const import (
@@ -412,10 +413,27 @@ _PHRASE_INFERRED = {
 }
 
 
-def phrase(window: Window) -> str:
-    """Return the clause naming an intervention, without punctuation."""
+# The windows that are a person's own act and may be credited with a
+# recovery. The rest are restarts and outages, which say nothing about
+# the devices and revive nothing (#535): a recovery inside one is told
+# as happening during it, never as caused by it.
+CREDITED_WINDOWS = frozenset({SYS_PAIRING_OPEN, SYS_DEVICE_HANDLED})
+
+
+def credits(window: Window) -> bool:
+    """Whether a recovery inside this window is credited to it (#535)."""
+    return window.kind in CREDITED_WINDOWS
+
+
+def phrase(window: Window, name: Callable[[str], str] | None = None) -> str:
+    """Return the clause naming an intervention, without punctuation.
+
+    The scope is named as Home Assistant shows it where the caller can
+    say (#532): Zigbee2MQTT, not z2m.
+    """
+    scope = name(str(window.scope)) if name is not None and window.scope else window.scope
     if getattr(window, "inferred_end", False):
         wording = _PHRASE_INFERRED.get(window.kind)
         if wording is not None:
-            return wording.format(scope=window.scope)
-    return _PHRASE.get(window.kind, window.kind).format(scope=window.scope)
+            return wording.format(scope=scope)
+    return _PHRASE.get(window.kind, window.kind).format(scope=scope)

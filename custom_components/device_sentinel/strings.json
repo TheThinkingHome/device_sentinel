@@ -235,7 +235,7 @@
       },
       "extended": {
         "title": "Extended Diagnostics",
-        "description": "Some hardware will not be supported until we see how it behaves on a real system, and nobody working on Device Sentinel owns one of everything. Turning a toggle on here adds raw readings about that hardware to your diagnostics download. Nothing is transmitted. If you want support for hardware listed here, turn this toggle on and wait 48 hours. Then, download your diagnostics from the Device Sentinel integration page and open an issue with the diagnostic file attached, telling us what you would like built. [Extended Diagnostics on the wiki]({wiki_link})",
+        "description": "Device Sentinel supports some hardware only after seeing how it behaves on a real system, and nobody working on Device Sentinel owns one of everything. Turning a toggle on here adds raw readings about that hardware to your diagnostics download. Nothing is transmitted. If you want support for hardware listed here, turn this toggle on and wait 48 hours. Then, download your diagnostics from the Device Sentinel integration page and open an issue with the diagnostic file attached, saying what you would like built. [Extended Diagnostics on the wiki]({wiki_link})",
         "data": {
           "study_hardware": "Hardware To Study"
         },

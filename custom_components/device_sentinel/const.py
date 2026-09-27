@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.10 (2026-09-26)
+# File: const.py, Version: 0.23.12 (2026-09-27)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2310,13 +2310,28 @@ RECOVERY_CAUSE_UNOBSERVED = "no intervention recorded"
 RECOVERY_BY_SELF = "self"
 RECOVERY_BY_INTERVENTION = "intervention"
 RECOVERY_BY_UNKNOWN = "unknown"
-RECOVERY_CAUSES_INTERVENTION = frozenset(
-    {
-        "bridge reconnect",
-        "reboot",
-        "unclean shutdown",
-        "handled at the device",
-    }
+# Only a person's own act is credited with a recovery. A restart or an
+# outage says nothing about the devices, on any stack (#535, reversing
+# #125 and amending #228; it withdrew #531's 25-minute window before
+# release): "bridge reconnect", "reboot", "restart" and "unclean
+# shutdown" left this set, and a recovery after one is the device's own.
+RECOVERY_CAUSES_INTERVENTION = frozenset({"handled at the device"})
+# Integrations whose reading after a restart or a reconnect is fetched
+# from the device itself, so it is the device answering (#535, amended
+# the day it was ruled). Each is here only because its source shows it:
+# HomeKit Device polls every characteristic from the accessory when it
+# connects (homekit_controller/connection.py, async_setup), and an
+# ESPHome device sends its current states when its connection opens
+# (esphome/manager.py, on_connect). ZHA restores each entity's last
+# state from Home Assistant's store, Zigbee2MQTT's broker hands back
+# retained messages, and Matter and Z-Wave serve their own caches, so
+# none of those is here. Any integration not listed gets the literal
+# reading: a value it restores is not the device speaking.
+FETCHING_INTEGRATIONS = frozenset({"homekit_controller", "esphome"})
+# The restart and outage causes still stored on incidents written before
+# #535, recognised so they are told plainly rather than credited.
+RECOVERY_CAUSES_RESTART = frozenset(
+    {"bridge reconnect", "reboot", "restart", "unclean shutdown"}
 )
 RECOVERY_CAUSES_SELF = frozenset({RECOVERY_CAUSE_UNOBSERVED})
 # The wording this replaced, still sitting in stored incidents from

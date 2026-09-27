@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.23.11 (2026-09-27)
+# File: detect_freeze.py, Version: 0.23.12 (2026-09-27)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -48,7 +48,6 @@ from .records import BAD_STATES
 from .stacks import reader_for_domain
 
 from .const import (
-    BRIDGE_HANDBACK_SECONDS,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
     CONF_FREEZE_MUTED_DEVICES,
@@ -544,7 +543,7 @@ class FreezeMixin:
             record = self.data[DATA_DEVICES].get(device_id)
             if not isinstance(record, dict):
                 continue
-            if self._held_by_bridge(device_id, now):
+            if self._held_by_upstream(device_id, now):
                 continue
             # Guard each device: one malformed record must never kill
             # the whole sweep, which would stop verdicts, saving, and
@@ -562,35 +561,27 @@ class FreezeMixin:
         if flipped:
             self._notify()
 
-    def _held_by_bridge(self, device_id: str, now: float) -> bool:
-        """Whether the device's bridge is down or still handing back.
+    def _held_by_upstream(self, device_id: str, now: float) -> bool:
+        """Whether the device's upstream is down or still handing back.
 
-        A bridge going down says something about the bridge and nothing
-        about the devices behind it (ruled 27 September 2026, amending
-        #264). While it is down, and for the window #436 gives its
-        devices to rejoin once it is back, the device's verdict stays
-        exactly as it was, frozen, unavailable or none, and so does any
-        debounce stamp. After that it is judged on its own again.
+        A restart or an outage says nothing about the devices, on any
+        stack (#535, generalising #523 from bridges). While the
+        device's broker, bridge, coordinator, integration or Wi-Fi
+        network is down, and through the window its devices are given
+        to rejoin (#436, #441), the device's verdict stays exactly as
+        it was, working, frozen or unavailable, and so does any
+        debounce stamp. Home Assistant's own restart is held by the
+        startup grace, which judges nothing. After that each device is
+        judged on its own again.
 
-        Before this the sweep read the outage's unavailable entities as
-        news about each device. On the reference rig at 3:40 AM on 27
-        September Switch Hall Living, frozen since the afternoon, turned
-        unavailable 0.2 seconds after Zigbee2MQTT went down: its frozen
-        record closed, unavailable opened, the bus heard it recover, and
-        the brief told one silence twice. A healthy device turned
-        unavailable underneath after the debounce, hidden from the list
-        by #264 but written to its record.
-
-        Bridges only, as ruled. The broker, an integration and a Wi-Fi
-        network are not yet ruled and are judged as before.
+        The reference rig, 3:40 AM on 27 September: Switch Hall Living,
+        frozen since the afternoon, turned unavailable 0.2 seconds after
+        Zigbee2MQTT went down, its frozen record closed, the bus heard
+        it recover, and the brief told one silence twice. The second
+        fleet's Z-Wave stick returning on 26 September stored five
+        sleepy devices unavailable the same way through its integration.
         """
-        stack = self._stack_for_device(device_id)
-        if stack is None:
-            return False
-        if stack in self._bridge_down_at:
-            return True
-        held = self._bridge_handback.get(stack)
-        return held is not None and now - held[1] < BRIDGE_HANDBACK_SECONDS
+        return self.upstream_down_since(device_id) is not None
 
     def _observed_silence(
         self, record: dict[str, Any], now: float
@@ -706,9 +697,10 @@ class FreezeMixin:
     def reportable_down_rows(self) -> list[dict[str, Any]]:
         """Return the down devices worth reporting on their own.
 
-        Ruling #264: while a device's upstream is down, its verdict is
-        recorded and not reported, because the fault is the upstream
-        and the devices are its symptoms. Stopping one add-on on the
+        Ruling #264: while a device's upstream is down, the fault is
+        the upstream and the devices are its symptoms, so they are not
+        reported; and since #523, generalised by #535, the verdict
+        itself holds as it was. Stopping one add-on on the
         reference system raised seventy-four problems and pushed a
         notification naming seventy-four devices without naming the
         bridge, which is the one thing a person can act on.

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.11 (2026-09-27)
+# File: coordinator.py, Version: 0.23.12 (2026-09-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -34,7 +34,9 @@ Core rules implemented here, all ruled in the project document:
   learning: an echo carries no evidence that the device spoke,
   because the protocol clock behind it has not moved, and for a
   device without one the muting rules were discarding the only
-  evidence there was (rulings #124 and #125).
+  evidence there was (rulings #124 and #125; #535 reversed #125's
+  reboot stamp, so a restart's republished values are not reports and
+  a restart ends a silence as a lever).
 - The taint rule: a gap that spans an unavailable stretch is an
   outage, not normal silence, and never feeds statistics.
 - Daily maxima roll at local midnight into a bounded per-device set.
@@ -101,6 +103,8 @@ from .backup import (
     _last_good_holds_devices,
 )
 from .const import (
+    FETCHING_INTEGRATIONS,
+    FREEZE_CATEGORY_UNAVAILABLE,
     DEFAULT_RETENTION_DAYS,
     CONF_RETENTION_DAYS,
     REPAIR_MOMENT_BRIEF,
@@ -2232,7 +2236,9 @@ class DeviceSentinelCoordinator(
 
         A device with no such entity falls back to arrival time
         (ruling #125), because the moment we heard something is then the
-        only evidence there is.
+        only evidence there is. A value the stack republishes through a
+        restart or an outage never arrives here as speech (#535, which
+        reversed #125's reboot stamp).
         """
         entity_id = self._last_seen_entity.get(device_id)
         if entity_id is None:
@@ -2413,6 +2419,17 @@ class DeviceSentinelCoordinator(
         pending = self._pending_unavailable.pop(entity_id, None)
         if pending is not None:
             self._taint_after_absence(device_id, entity_id, pending)
+        old_state = event.data.get("old_state")
+        if self._republished(device_id, old_state):
+            # A value coming back through a restart or an outage is the
+            # stack republishing it, not the device speaking (#535,
+            # reversing #125 and generalising #530). Kept as a reading,
+            # as a foreign entity's value is, so a battery or signal
+            # figure is not lost; the device's clock does not move.
+            self._record_activity(
+                device_id, entry_id, entity_id, new_state.state, foreign=True
+            )
+            return
         self._record_activity(
             device_id, entry_id, entity_id, new_state.state
         )
@@ -2421,6 +2438,36 @@ class DeviceSentinelCoordinator(
                 self._battery_entity_reverse[entity_id],
                 notify_on_change=True,
             )
+
+    def _republished(self, device_id: str, old_state: Any) -> bool:
+        """Whether a value coming back is the stack republishing it (#535).
+
+        Only a value returning from unavailable or unknown while the
+        device's upstream is held, or inside the startup grace after
+        Home Assistant's own restart. Three devices are exempt. One with
+        a last-seen clock: its clock is the stack's own record of
+        hearing it, so a restored old time cannot move it and a new one
+        is the device speaking (#124). One on an integration that
+        fetches its readings from the device itself (FETCHING_INTEGRATIONS),
+        whose reading is the device answering (#535, amended). And one
+        Device Sentinel had judged unavailable: its stack now saying it
+        is available is the genuine recovery #535 names.
+        """
+        if old_state is None or old_state.state not in BAD_STATES:
+            return False
+        if device_id in self._last_seen_entity:
+            return False
+        if self._watched.get(device_id) in FETCHING_INTEGRATIONS:
+            # Fetched from the device, not restored from a cache: the
+            # device answering (#535, amended). Presence Guest on the
+            # reference rig ends most nights at the reboot's reading.
+            return False
+        record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
+        if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_UNAVAILABLE:
+            return False
+        return self._in_startup_grace() or self._held_by_upstream(
+            device_id, dt_util.utcnow().timestamp()
+        )
 
     @callback
     def _on_state_reported(self, event: Event[Any]) -> None:
@@ -2590,7 +2637,9 @@ class DeviceSentinelCoordinator(
             ):
                 record[DEV_TODAY_MAX] = learned_gap
 
-        # Taint is the only surviving muting (rulings #124 and #125). Grace
+        # Taint is the only surviving muting (rulings #124 and #125;
+        # #535 reversed #125's reboot stamp, so a restart now ends a
+        # silence as a lever rather than as a report). Grace
         # and storm are gone: for a device with a protocol clock they
         # were never needed, since a replayed payload cannot advance
         # it, and for a device without one they were discarding the

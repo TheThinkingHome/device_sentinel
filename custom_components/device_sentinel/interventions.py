@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.23.2 (2026-09-24)
+# File: interventions.py, Version: 0.23.12 (2026-09-27)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -29,6 +29,7 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.loader import async_get_loaded_integration
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 from .stacks import (
@@ -948,7 +949,7 @@ class InterventionMixin:
         and is always reported on its own.
         """
         broker_since = self._broker_down_at
-        if broker_since is not None:
+        if broker_since is not None and self._rides_the_broker(device_id):
             return BROKER_LABEL, broker_since
         stack = self._stack_for_device(device_id)
         if stack is None:
@@ -1212,6 +1213,29 @@ class InterventionMixin:
             if first is not None:
                 stamps.append(first)
         return min(stamps) if stamps else None
+
+    def _rides_the_broker(self, device_id: str) -> bool:
+        """Whether a device reaches Home Assistant through the MQTT broker.
+
+        Its integration is MQTT, or Home Assistant's own manifest for its
+        integration depends on MQTT, as Tasmota's does. Before 0.23.12 a
+        broker outage was every device's upstream, whatever its
+        integration: the chaos weeks of 27 September found the fourth
+        fleet's Lutron Picos hidden behind a silent broker and their
+        standing items retired as recovered, and under #535's hold every
+        device in the house would have stopped being judged for as long
+        as the broker was down.
+        """
+        domain = self._watched.get(device_id)
+        if domain is None:
+            return False
+        if domain == BROKER_SCOPE:
+            return True
+        try:
+            integration = async_get_loaded_integration(self.hass, domain)
+        except Exception:  # noqa: BLE001 - unknown integration: not on the broker
+            return False
+        return BROKER_SCOPE in (integration.dependencies or [])
 
     def _stack_for_device(self, device_id: str) -> str | None:
         """Return the stack whose bridge owns this device, if any."""
@@ -1859,7 +1883,8 @@ class InterventionMixin:
         # behaving normally, and normal behaviour is not information.
         # The wording is corrected with it: nothing is muted from
         # learning by a storm and nothing has been since taint became
-        # the only surviving muting (rulings #124 and #125), so the
+        # the only surviving muting (rulings #124 and #125, the second
+        # reversed by #535 for a restart's republished values), so the
         # count is named for what it is, the reports seen inside the
         # burst.
         if announce and storm["stamps"]:
@@ -1914,7 +1939,7 @@ class InterventionMixin:
             # Same correction as the storm line: the grace window
             # mutes nothing from learning and has not since taint
             # became the only surviving muting (rulings #124 and
-            # #125). The count is the reports that arrived inside the
+            # #125, the second reversed by #535). The count is the reports that arrived inside the
             # window, which is worth one line at every start.
             "Startup grace closed after %d s: %d report(s) across %d "
             "device(s) inside the window; %d boot-blip taints "

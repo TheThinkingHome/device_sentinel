@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.23.11 (2026-09-27)
+# File: report_brief.py, Version: 0.23.12 (2026-09-27)
 
 """The daily brief: the one report written for a person.
 
@@ -171,7 +171,8 @@ _REPEAT_NOUNS = {
 REPEAT_PARAGRAPH = (
     "This table lists repeat offenders. Every row represents a "
     "device that failed more than once in the last seven days "
-    "for no obvious reason. We ruled out the usual causes. These "
+    "for no obvious reason. Device Sentinel ruled out the usual "
+    "causes. These "
     "failures did not happen during a system restart, a "
     "coordinator outage, a network or integration outage, or work "
     "you did yourself in Maintenance Mode. To help you track down "
@@ -486,30 +487,30 @@ class BriefMixin:
             )
             return f"{said} {worst}" if worst else said
         if kind == SYS_INTEGRATION_DOWN:
-            return f"The {scope} integration went down at {when}."
+            return f"The {self._integration_title(str(scope))} integration went down at {when}."
         worst = self._worst_words(row, sentence=True)
         if kind == SYS_INTEGRATION_UP:
             said = (
-                f"The {scope} integration came back at {when} after "
+                f"The {self._integration_title(str(scope))} integration came back at {when} after "
                 f"{held}."
                 if held
-                else f"The {scope} integration came back at {when}."
+                else f"The {self._integration_title(str(scope))} integration came back at {when}."
             )
             return f"{said} {worst}" if worst else said
         if kind == SYS_BRIDGE_DOWN:
-            return f"The {scope} bridge went down at {when}."
+            return f"The {self._integration_title(str(scope))} bridge went down at {when}."
         if kind == SYS_BRIDGE_UP:
             said = (
-                f"The {scope} bridge came back at {when} after {held}."
+                f"The {self._integration_title(str(scope))} bridge came back at {when} after {held}."
                 if held
-                else f"The {scope} bridge came back at {when}."
+                else f"The {self._integration_title(str(scope))} bridge came back at {when}."
             )
             return f"{said} {worst}" if worst else said
         # The broker names itself rather than its scope, because a
         # house has one and "the mqtt broker" reads as a stack name
         # to somebody who does not know the difference.
         if kind == SYS_STORM_OPEN:
-            return f"The {scope} integration reloaded at {when}."
+            return f"The {self._integration_title(str(scope))} integration reloaded at {when}."
         if kind == SYS_STORM_CLOSED:
             count = row.get(SYS_DEVICES)
             if count:
@@ -594,10 +595,10 @@ class BriefMixin:
         if kind == SYS_PAIRING_CLOSED:
             if held:
                 return (
-                    f"The {scope} pairing window closed at {when} "
+                    f"The {self._integration_title(str(scope))} pairing window closed at {when} "
                     f"after {held}."
                 )
-            return f"The {scope} pairing window closed at {when}."
+            return f"The {self._integration_title(str(scope))} pairing window closed at {when}."
         if kind == SYS_MAINTENANCE_OPEN:
             return f"Maintenance mode was opened at {when}."
         if kind == SYS_MAINTENANCE_CLOSED:
@@ -719,30 +720,30 @@ class BriefMixin:
                 else "system restarted"
             )
         if kind == SYS_INTEGRATION_DOWN:
-            return f"{scope} integration went down"
+            return f"{self._integration_title(str(scope))} integration went down"
         if kind == SYS_INTEGRATION_UP:
             return (
-                f"{scope} integration came back after {held}"
+                f"{self._integration_title(str(scope))} integration came back after {held}"
                 if held
-                else f"{scope} integration came back"
+                else f"{self._integration_title(str(scope))} integration came back"
             ) + tail
         if kind == SYS_BRIDGE_DOWN:
-            return f"{scope} bridge went down"
+            return f"{self._integration_title(str(scope))} bridge went down"
         if kind == SYS_BRIDGE_UP:
             return (
-                f"{scope} bridge came back after {held}"
+                f"{self._integration_title(str(scope))} bridge came back after {held}"
                 if held
-                else f"{scope} bridge came back"
+                else f"{self._integration_title(str(scope))} bridge came back"
             ) + tail
         if kind == SYS_STORM_OPEN:
-            return f"{scope} integration reloaded"
+            return f"{self._integration_title(str(scope))} integration reloaded"
         if kind == SYS_STORM_CLOSED:
             count = row.get(SYS_DEVICES)
             return (
-                f"{scope} integration settled after {held}, "
+                f"{self._integration_title(str(scope))} integration settled after {held}, "
                 f"{_plural(count)}"
                 if held and count
-                else f"{scope} integration settled"
+                else f"{self._integration_title(str(scope))} integration settled"
             )
         if kind == SYS_WIFI_DOWN:
             return "WiFi network went down"
@@ -771,12 +772,12 @@ class BriefMixin:
                 else "MQTT broker came back"
             ) + tail
         if kind == SYS_PAIRING_OPEN:
-            return f"{scope} pairing window opened"
+            return f"{self._integration_title(str(scope))} pairing window opened"
         if kind == SYS_PAIRING_CLOSED:
             return (
-                f"{scope} pairing window closed after {held}"
+                f"{self._integration_title(str(scope))} pairing window closed after {held}"
                 if held
-                else f"{scope} pairing window closed"
+                else f"{self._integration_title(str(scope))} pairing window closed"
             )
         if kind == SYS_MAINTENANCE_OPEN:
             return "maintenance mode opened"
@@ -1319,7 +1320,7 @@ class BriefMixin:
             worst = self._longest(rows, SYS_BRIDGE_UP, scope)
             if worst is not None:
                 said.append(
-                    f"The {scope} bridge was down for "
+                    f"The {self._integration_title(str(scope))} bridge was down for "
                     f"{self._human_span(worst[SYS_DURATION])} at "
                     f"{self._brief_moment(worst[SYS_WHEN])}."
                 )
@@ -1489,7 +1490,7 @@ class BriefMixin:
         # (ruling #233).
         tail = f", the largest affecting {_plural(most)}" if most else ""
         return (
-            f"The {scope} integration reloaded {len(opens)} times "
+            f"The {self._integration_title(str(scope))} integration reloaded {len(opens)} times "
             f"between {first} and {last}{tail}."
         )
 
@@ -1899,20 +1900,32 @@ class BriefMixin:
         window = next(
             (span for span in spans if span.key == window_key), None
         )
-        clause = attribution.phrase(window) if window else "an intervention"
+        clause = (
+            attribution.phrase(window, self._integration_title)
+            if window
+            else "an intervention"
+        )
+        # Only a person's own act is credited (#535): a restart or an
+        # outage is what the silence happened during, never what ended it.
+        credited = window is not None and attribution.credits(window)
         if len(members) == 1:
             opened, closed = members[0]
             if closed is not None:
-                return self._compose_episode(opened, closed, clause)
+                return self._compose_episode(opened, closed, clause if credited else "")
             return self._compose_event(opened)
         word = self._change_clause(
             members[0][0], "flood"
         ) or self._EVENT_WORDING.get(kind, kind)
         when = self._clock(min(row[INC_WHEN] for row, _ in members))
-        if resolved:
+        if resolved and credited:
             return (
                 f"{len(members)} devices {word} at {when} and "
                 f"recovered, revived by {clause}."
+            )
+        if resolved:
+            return (
+                f"{len(members)} devices {word} at {when}, during "
+                f"{clause}, and recovered."
             )
         return f"{len(members)} devices {word} at {when}, with {clause}."
 

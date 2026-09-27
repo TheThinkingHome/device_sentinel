@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.23.10 (2026-09-26)
+# File: store.py, Version: 0.23.12 (2026-09-27)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -895,7 +895,7 @@ class StorageMixin:
                 if watched is not None and truncated > watched:
                     # The bound of ruling #399. A clock carried from
                     # the protocol rather than from arrival (rulings
-                    # #124, #125) is the coordinator's own record of
+                    # #124; #125 as reversed by #535) is the coordinator's own record of
                     # contact and can predate the install by years: a
                     # Z-Wave JS last_seen reading 2023 on a fleet set
                     # up in 2026. Banking the raw difference invents a

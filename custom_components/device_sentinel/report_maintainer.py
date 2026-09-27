@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.23.10 (2026-09-26)
+# File: report_maintainer.py, Version: 0.23.12 (2026-09-27)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -309,8 +309,22 @@ class MaintainerReportMixin:
         with self._probe_lock:
             os.makedirs(directory, exist_ok=True)
             if replace:
+                # The stored lines moving in are older than anything
+                # already written, so lines already here are kept after
+                # them (0.23.12). Replacing the file lost the catch-up
+                # fold's lines on the first start after an upgrade from
+                # 0.23.8, found replaying the second fleet on 0.23.11.
+                header = set(self._probe_header())
+                kept: list[str] = []
                 with contextlib.suppress(OSError):
+                    with open(path, encoding="utf-8") as handle:
+                        kept = [
+                            line.rstrip("\n")
+                            for line in handle
+                            if line.startswith("| ") and line.rstrip("\n") not in header
+                        ]
                     os.remove(path)
+                lines = [*lines, *kept]
             body = "\n".join(lines) + "\n"
             with contextlib.suppress(OSError):
                 if os.path.getsize(path) + len(body.encode("utf-8")) > PROBE_FILE_MAX_BYTES:

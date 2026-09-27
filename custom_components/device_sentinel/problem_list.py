@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.23.8 (2026-09-25)
+# File: problem_list.py, Version: 0.23.12 (2026-09-27)
 
 """The problem list: the single memory every channel renders.
 
@@ -52,6 +52,7 @@ from .const import (
     ACTION_SET_ASIDE,
     ACTION_UNACKNOWLEDGED,
     DATA_DEVICES,
+    DEV_FROZEN_CATEGORY,
     DATA_TODO_ITEMS,
     DATA_TODO_JOURNAL,
     SETTLE_SHARE_PCT,
@@ -738,10 +739,8 @@ class ProblemListMixin:
                 # 2026 at 2:04 pm" (0.23.8).
                 lines.append(f"{word[:1].upper()}{word[1:]}.")
                 continue
-            if since is not None:
-                when = self._format_report_time(
-                    dt_util.as_local(dt_util.utc_from_timestamp(since))
-                )
+            when = self._plausible_time(since)
+            if when is not None:
                 lines.append(f"{word.capitalize()} since {when}.")
             else:
                 lines.append(f"{word.capitalize()}.")
@@ -806,6 +805,90 @@ class ProblemListMixin:
                 "kind": kind,
                 "when": when,
             },
+        )
+
+    def _still_judged_down(self, device_id: str | None) -> bool:
+        """Whether a device's own verdict still says it is not reporting.
+
+        A recovery goes one way (#529): an item leaves the list as
+        recovered only when its device reports. Its problem can be
+        missing from the source for a moment while the verdict stands,
+        and that absence is not a return: after a restart the grace
+        keeps never-reported devices off the source until it closes
+        (#369), and the chaos weeks of 27 September found the fourth
+        fleet's three Lutron Picos announced as recovered at every
+        reload, and devices on the other two fleets told recovered from
+        unavailable while still unavailable. Such an item is held, as a
+        held upstream's devices are. A device that is unwatched or muted
+        is not, since those do leave the list (#368).
+        """
+        if device_id is None or device_id not in self._watched:
+            return False
+        if device_id in getattr(self, "_muted_devices", set()) or self._freeze_muted(device_id):  # type: ignore[attr-defined]
+            return False
+        record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
+        return record.get(DEV_FROZEN_CATEGORY) is not None
+
+    def _plausible_time(self, since: Any) -> str | None:
+        """A start time as a person reads it, or None when it cannot be one.
+
+        A stamp outside what a date can hold crashed the minute tick
+        here, and with it the freeze judgment, the list and the save,
+        for as long as the stamp stood (0.23.12, found by the hostile
+        outage tests once #535 held a stamp the sweep used to
+        overwrite). The item then says what is wrong without a time.
+        """
+        if isinstance(since, bool) or not isinstance(since, (int, float)) or since <= 0:
+            return None
+        try:
+            return self._format_report_time(
+                dt_util.as_local(dt_util.utc_from_timestamp(since))
+            )
+        except (OverflowError, OSError, ValueError):
+            return None
+
+    # The down family's plain verdicts, which one silence moves between
+    # as its entities change. Flapping is the family's own problem with
+    # its own ending, ruled in 0.23.2, and never held (#529).
+    _HELD_DOWN = (TODO_KIND_UNAVAILABLE, TODO_KIND_FROZEN, TODO_KIND_UNKNOWN)
+
+    def _hold_the_worst(
+        self,
+        stored_kinds: dict[str, float | None],
+        incoming: dict[str, float | None],
+    ) -> dict[str, float | None]:
+        """Keep a silent device's worst verdict until it reports (#529).
+
+        A recovery goes one way. Frozen to unavailable is the device
+        getting worse and is told so; the step back, unavailable to
+        frozen or unknown, happens only while a boot or a coordinator
+        restart hides the entities for a moment, and it is false data.
+        So within the down family the list never steps down: the worse
+        kind stays, with its own start, until the device reports and
+        the family clears. On the reference rig at 3:47 AM on 27
+        September the step back closed Switch Hall Living's unavailable
+        record, the bus heard it recover, and a new frozen record
+        opened, though the switch never spoke.
+        """
+        order = self._KIND_SEVERITY
+        standing = [k for k in stored_kinds if k in self._HELD_DOWN]
+        arriving = [k for k in incoming if k in self._HELD_DOWN]
+        if not standing or not arriving:
+            return incoming
+        worst = min(standing, key=order.index)
+        if any(order.index(k) <= order.index(worst) for k in arriving):
+            return incoming
+        held = {k: v for k, v in incoming.items() if k not in self._HELD_DOWN}
+        held[worst] = stored_kinds[worst]
+        return held
+
+    @staticmethod
+    def _still_down(kind: str, new_kinds: dict[str, float | None]) -> bool:
+        """Whether a down kind leaves while the device is still down."""
+        if TODO_KIND_FAMILIES.get(kind) != "down":
+            return False
+        return any(
+            TODO_KIND_FAMILIES.get(other) == "down" for other in new_kinds
         )
 
     def _overtaken(self, kind: str, gained: set[str]) -> bool:
@@ -1153,7 +1236,8 @@ class ProblemListMixin:
         where another kind overtook it in the same pass.
         """
         new_kinds: dict[str, float | None] = {}
-        for kind, since in problem["kinds"].items():
+        incoming = self._hold_the_worst(stored_kinds, problem["kinds"])
+        for kind, since in incoming.items():
             if kind in stored_kinds:
                 new_kinds[kind] = (
                     since if since is not None else stored_kinds[kind]
@@ -1193,16 +1277,23 @@ class ProblemListMixin:
                 opened, (int, float)
             ):
                 opened = None
+            # A recovery goes one way (#529): a kind leaving while
+            # another of the down family still stands is the device
+            # still not reporting, said differently, and no surface
+            # tells it as a recovery.
+            replaced = self._overtaken(kind, gained) or self._still_down(
+                kind, new_kinds
+            )
             self._resolve_incident(
                 device_id, problem["name"], kind, now, opened_at=opened,
-                superseded=self._overtaken(kind, gained),
+                superseded=replaced,
             )
             self._collect_event(
                 kind, problem["name"], recovery=True,
                 device_id=device_id,
-                superseded=self._overtaken(kind, gained),
+                superseded=replaced,
             )
-            if kind == top:
+            if kind == top and not replaced:
                 self.fire_recovered(
                     device_id,
                     problem["name"],
@@ -1366,6 +1457,21 @@ class ProblemListMixin:
         held = self.wifi_burst_held() | self.loading_held()
         items = self.data.get(DATA_TODO_ITEMS, [])
         now = dt_util.utcnow().timestamp()
+        # A start time no clock could give is taken as now, here where
+        # every stamp enters the list, so nothing downstream is handed
+        # a date it cannot write. One such stamp crashed the minute tick,
+        # and with it the freeze judgment, the list and the save (0.23.12,
+        # found by the hostile outage tests once #535 held a stamp the
+        # sweep used to overwrite).
+        for problem in problems.values():
+            kinds = problem.get("kinds") or {}
+            for kind, since in list(kinds.items()):
+                if since is not None and (
+                    isinstance(since, bool)
+                    or not isinstance(since, (int, float))
+                    or not 0 < since <= now + 86400
+                ):
+                    kinds[kind] = now
         changed = False
         kept: list[dict[str, Any]] = []
 
@@ -1386,6 +1492,12 @@ class ProblemListMixin:
                 continue
             device_id = record.get(TODO_DEVICE_ID)
             problem = problems.pop(device_id, None)
+            if problem is None and self._still_judged_down(device_id):
+                # Absent from the source for a moment while its own
+                # verdict still says down: held, never retired as
+                # recovered (#529).
+                kept.append(record)
+                continue
             if device_id in held:
                 standing = {
                     kind: since
