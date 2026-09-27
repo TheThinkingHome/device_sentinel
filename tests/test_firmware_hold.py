@@ -3,18 +3,24 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_firmware_hold.py, Version: 0.23.9 (2026-09-26)
+# File: tests/test_firmware_hold.py, Version: 0.23.10 (2026-09-26)
 
-"""A firmware version is recorded only once it holds through the fold.
+"""A firmware version is recorded only once it has held.
 
 At the 5:19 PM restart of 25 September four buttons on the reference
 rig each recorded an older firmware and their current one again within
-the same second. The owner ruled the record tied to the midnight fold
-(0.23.9), which also settles downgrades. The histories pinned below are
-those four buttons' real ones.
+the same second. 0.23.9 tied the record to the midnight fold with an
+hour's hold. A restart forgets what is held, so a house restarting in
+the hour before midnight, or rebooting across it (#406), never
+recorded an update; the owner ruled on 26 September that a version is
+recorded on the minute tick once it has held ten minutes, after the
+startup grace (0.23.10). The histories pinned below are the four
+buttons' real ones.
 """
 
 from __future__ import annotations
+
+from datetime import datetime, timedelta
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -23,7 +29,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.device_sentinel.const import DATA_DEVICES, DEV_FIRMWARE_HISTORY
+from custom_components.device_sentinel.const import (
+    DATA_DEVICES,
+    DEV_FIRMWARE_HISTORY,
+    FIRMWARE_HOLD_SECONDS,
+    STARTUP_GRACE_SECONDS,
+)
 from custom_components.device_sentinel.model_groups import unflicker_firmware
 
 from .helpers import setup_entry
@@ -92,17 +103,35 @@ async def test_a_flicker_never_reaches_the_history(hass: HomeAssistant):
     assert [v for v, _ in _history(entry, panel)] == ["2.3.0"]
 
 
-async def test_a_version_under_an_hour_old_waits_for_the_next_fold(hass: HomeAssistant):
+async def test_a_version_under_ten_minutes_old_waits(hass: HomeAssistant):
     source = _source(hass)
     panel = _panel(hass, source, "2.3.0")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     first = coord._firmware_candidates[panel.id][1]
-    coord._confirm_firmware(first + 600)
+    coord._confirm_firmware(first + FIRMWARE_HOLD_SECONDS - 1)
     assert _history(entry, panel) == []
-    coord._confirm_firmware(first + 86400)
+    coord._confirm_firmware(first + FIRMWARE_HOLD_SECONDS)
     history = _history(entry, panel)
     assert history == [["2.3.0", first]], "written with the time it first appeared"
+
+
+async def test_the_tick_records_it_once_the_grace_has_closed(hass: HomeAssistant, freezer):
+    """The record is taken on the minute tick, never inside the grace,
+    when the registry may still hold a restart's stale value."""
+    source = _source(hass)
+    panel = _panel(hass, source, "2.3.0")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    start = dt_util.utcnow()
+    grace_left = coord._grace_until - start.timestamp()
+    freezer.move_to(start + timedelta(seconds=max(0.0, grace_left - 1)))
+    coord._firmware_candidates[panel.id] = ("2.3.0", start.timestamp() - FIRMWARE_HOLD_SECONDS)
+    await coord._on_render_tick(None)
+    assert _history(entry, panel) == [], "recorded inside the startup grace"
+    freezer.move_to(start + timedelta(seconds=grace_left + 1))
+    await coord._on_render_tick(None)
+    assert [v for v, _ in _history(entry, panel)] == ["2.3.0"]
 
 
 async def test_a_restart_forgets_every_candidate(hass: HomeAssistant):
@@ -129,3 +158,67 @@ async def test_a_downgrade_that_holds_is_recorded(hass: HomeAssistant):
     await hass.async_block_till_done()
     coord._confirm_firmware(now + 2 * 86400)
     assert [v for v, _ in _history(entry, panel)] == ["3.4.0", "3.1.0"]
+
+
+# ---------------------------------------------- restart schedules, 0.23.10
+
+_BASE = datetime(2026, 10, 1)
+
+
+def _local(day: int, hour: int, minute: int = 0) -> datetime:
+    zone = dt_util.get_default_time_zone()
+    return dt_util.as_utc(_BASE.replace(tzinfo=zone) + timedelta(days=day, hours=hour, minutes=minute))
+
+
+async def _a_day_later_update(hass, freezer):
+    """A panel recorded at 1.0, updated to 1.1 at 2 PM on day 2."""
+    freezer.move_to(_local(1, 12))
+    source = _source(hass)
+    panel = _panel(hass, source, "1.0")
+    entry = await setup_entry(hass)
+    freezer.move_to(_local(1, 12) + timedelta(seconds=STARTUP_GRACE_SECONDS + FIRMWARE_HOLD_SECONDS + 5))
+    await entry.runtime_data._on_render_tick(None)
+    assert [v for v, _ in _history(entry, panel)] == ["1.0"]
+    freezer.move_to(_local(2, 14))
+    dr.async_get(hass).async_update_device(panel.id, sw_version="1.1")
+    await hass.async_block_till_done()
+    return entry, panel
+
+
+async def _ticks(hass, entry, freezer, until: datetime) -> None:
+    """The minute ticks from now until a moment, every five minutes."""
+    now = dt_util.utcnow()
+    while now < until:
+        now = min(until, now + timedelta(minutes=5))
+        freezer.move_to(now)
+        await entry.runtime_data._on_render_tick(None)
+
+
+async def test_a_house_that_restarts_every_night_at_23_30(hass: HomeAssistant, freezer):
+    """0.23.9 held a week of folds and never recorded the update."""
+    entry, panel = await _a_day_later_update(hass, freezer)
+    await _ticks(hass, entry, freezer, _local(2, 14, 30))
+    for day in range(2, 5):
+        freezer.move_to(_local(day, 23, 30))
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        await _ticks(hass, entry, freezer, _local(day + 1, 0, 30))
+    assert [v for v, _ in _history(entry, panel)] == ["1.0", "1.1"]
+
+
+async def test_a_house_that_reboots_across_midnight(hass: HomeAssistant, freezer):
+    """Down at 23:58, back at 00:03, so the fold runs at start (#406).
+    0.23.9 held a week of folds and never recorded the update; the
+    update is recorded the afternoon it lands."""
+    entry, panel = await _a_day_later_update(hass, freezer)
+    for day in range(2, 5):
+        await _ticks(hass, entry, freezer, _local(day, 23, 55))
+        freezer.move_to(_local(day, 23, 58))
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        freezer.move_to(_local(day + 1, 0, 3))
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    history = _history(entry, panel)
+    assert [v for v, _ in history] == ["1.0", "1.1"]
+    assert history[-1][1] == _local(2, 14).timestamp()

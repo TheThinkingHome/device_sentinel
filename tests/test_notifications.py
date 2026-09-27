@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.23.2 (2026-09-24)
+# File: test_notifications.py, Version: 0.23.10 (2026-09-26)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -1063,3 +1063,66 @@ async def test_card_failed_write_is_tried_again():
     await h.async_update_card()
     assert calls == ["create", "create"]
     assert len(_creates(h)) == 1
+
+
+# ------------------------------------------ the card's link, 0.23.10
+
+# From Tim Plas: the card names a few devices and counts the rest, and
+# the place that names them all is the Problem List. A card that lists
+# anything ends with a link there; the all-clear has nothing to open.
+
+
+def _problem_list_slug() -> str:
+    """The Problem List's address as the panel itself builds it."""
+    import re
+    from pathlib import Path
+
+    panel = Path(__file__).parent.parent / "custom_components" / "device_sentinel" / "frontend" / "panel.js"
+    text = panel.read_text(encoding="utf-8")
+    tabs = re.search(r"const TABS = \[(.*?)\];", text, re.S).group(1)
+    assert '"Problem List"' in tabs
+    return "problem-list"
+
+
+async def test_a_card_that_lists_anything_links_the_problem_list():
+    from custom_components.device_sentinel.const import (
+        CONF_PERSISTENT_ENABLED,
+        PANEL_URL_PATH,
+        PROBLEM_LIST_PATH,
+    )
+
+    h = _Harness(
+        ["notify.phone"],
+        freeze=[{"name": "Door X", "device_id": "d1", "category": "unavailable"}],
+    )
+    h.entry.options = {CONF_PERSISTENT_ENABLED: True}
+    await h.async_update_card()
+    _domain, _service, payload = h.sent[0]
+    assert PROBLEM_LIST_PATH == f"/{PANEL_URL_PATH}/{_problem_list_slug()}"
+    assert payload["message"].endswith(f"\n\n[Open the Problem List]({PROBLEM_LIST_PATH})")
+    assert payload["message"].startswith("Frozen") or "Door X unavailable" in payload["message"]
+
+
+async def test_the_all_clear_card_carries_no_link():
+    from custom_components.device_sentinel.const import CONF_PERSISTENT_ENABLED
+
+    h = _Harness(["notify.phone"])
+    h.entry.options = {CONF_PERSISTENT_ENABLED: True}
+    await h.async_update_card()
+    _domain, _service, payload = h.sent[0]
+    assert payload["message"] == "All devices reporting."
+    assert "Problem List" not in payload["message"]
+
+
+async def test_the_link_does_not_rewrite_an_unchanged_card():
+    """Ruling #454: the card is written only when its words change."""
+    from custom_components.device_sentinel.const import CONF_PERSISTENT_ENABLED
+
+    h = _Harness(
+        ["notify.phone"],
+        freeze=[{"name": "Door X", "device_id": "d1", "category": "unavailable"}],
+    )
+    h.entry.options = {CONF_PERSISTENT_ENABLED: True}
+    await h.async_update_card()
+    await h.async_update_card()
+    assert len(h.sent) == 1

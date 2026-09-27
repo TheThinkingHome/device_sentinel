@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_falling_surfaces.py, Version: 0.23.2 (2026-09-24)
+# File: tests/test_falling_surfaces.py, Version: 0.23.10 (2026-09-26)
 
 """The falling battery on the phone and the card, and the crossing.
 
@@ -235,8 +235,11 @@ async def test_the_card_names_a_falling_cell(hass: HomeAssistant):
     await coord.async_update_card()
     assert calls
     message = calls[-1].data["message"]
+    # Since 0.23.10 a card that lists anything ends with a link to the
+    # Problem List.
     assert message == (
         "Battery: Door 2nd Bedroom empty in about 2 weeks."
+        "\n\n[Open the Problem List](/device-sentinel/problem-list)"
     )
 
 

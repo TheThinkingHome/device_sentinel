@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_escalation_and_limits.py, Version: 0.23.9 (2026-09-26)
+# File: tests/test_escalation_and_limits.py, Version: 0.23.10 (2026-09-26)
 
 """A worse problem replacing a lesser one, and lines a person reads.
 
@@ -295,7 +295,9 @@ async def test_the_stack_probe_writes_a_line_when_a_node_changes(
 
     # The lines reach the file at the next tick (0.23.9).
     coordinator.probe_tick(now + 90)
-    await hass.async_block_till_done()
+    # Written off the event loop as a background task, which is waited
+    # for only when asked (0.23.10).
+    await hass.async_block_till_done(wait_background_tasks=True)
     text = open(
         hass.config.path("device_sentinel", REPORT_STACK_PROBE),
         encoding="utf-8",

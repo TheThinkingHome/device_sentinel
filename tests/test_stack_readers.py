@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_stack_readers.py, Version: 0.23.9 (2026-09-26)
+# File: tests/test_stack_readers.py, Version: 0.23.10 (2026-09-26)
 
 """The Z-Wave and Matter readers in shadow (0.23.8).
 
@@ -263,11 +263,15 @@ async def test_the_file_names_devices_and_reads_old_lines(hass: HomeAssistant):
     coord.data[DATA_STACK_PROBE] = [
         {"when": 900.0, "stack": "zwave_js", "node": "6", "device_id": "", "was": "", "now": "dead", "detail": ""},
     ]
+    # The file is written off the event loop, and a job started from a
+    # test is a background task, which async_block_till_done waits for
+    # only when asked. Without it the file was sometimes read before
+    # the write landed: one gate run of 26 September (0.23.10).
     coord.probe_tick(1000.0)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert coord.data[DATA_STACK_PROBE] == []
     coord.probe_tick(1060.0)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     with open(os.path.join(hass.config.path(REPORT_DIR), REPORT_STACK_PROBE), encoding="utf-8") as handle:
         page = handle.read()
     assert "| WHEN | STACK | NODE | DEVICE | WAS | NOW | SENTINEL | AGREES | DETAIL |" in page
