@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.9 (2026-09-26)
+# File: coordinator.py, Version: 0.23.10 (2026-09-26)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -613,6 +613,10 @@ class DeviceSentinelCoordinator(
         # The last lines this session wrote, for the diagnostics and
         # for a test to read without waiting on the file.
         self._probe_recent: deque[str] = deque(maxlen=500)
+        # Each stack and kind of error the probe has already warned of
+        # this start (0.23.10), and whether the file has refused a write.
+        self._probe_failed: set[str] = set()
+        self._probe_write_failed = False
         self._probe_lock = threading.Lock()
         # Whether Device Sentinel's Wi-Fi outage was open at the last
         # probe tick; None until the first tick (0.23.8).
@@ -660,11 +664,6 @@ class DeviceSentinelCoordinator(
         # Registry id -> when that device was last reported handled,
         # so the same handling's several messages make one event.
         self._handled_at: dict[str, float] = {}
-        # True once a person confirms Restore Backup on the repair
-        # card: the disk file has been replaced from the copy, so the
-        # unload that follows must not flush this session's damaged
-        # document over it.
-        self._restore_pending: bool = False
         self._repairs_at_load: int = 0
         self._last_good_taken: float | None = None
         # The signal census is a fact about the fleet, not an event
@@ -1676,6 +1675,9 @@ class DeviceSentinelCoordinator(
         for cancel in self._held_events.values():
             cancel()
         self._held_events.clear()
+        # The probe's lines wait a minute for the next tick; a stop has
+        # none, so they are written here (0.23.10).
+        await self.async_probe_stop()
         # The brief schedule is held separately so a changed brief
         # time can re-arm it without disturbing the others, which
         # also means it has to be cancelled by name here.
@@ -1700,17 +1702,12 @@ class DeviceSentinelCoordinator(
         # files that agree, which is what makes going back to an older
         # version safe.
         #
-        # Except after a confirmed restore (ruling #353): the disk
-        # file has just been replaced from the last-good backup, and
-        # this flush would write the damaged document straight back
-        # over it. The one thing that session may not do is save.
-        if self._restore_pending:
-            LOGGER.warning(
-                "Skipping the stop flush: the storage file was just "
-                "restored and this session's document must not "
-                "overwrite it"
-            )
-            return
+        # 0.23.10 removed an exception here for a session running
+        # after a restore confirmed on a repair card (ruling #353).
+        # Since rulings #345 and #370 a restore happens at load, before
+        # the session reads anything, and the session runs on the
+        # restored copy, so its save is the right one; nothing set the
+        # flag any longer.
         await self._save_now()
 
     # ---------------------------------------------------- registry view
@@ -3291,8 +3288,6 @@ class DeviceSentinelCoordinator(
             self._roll_dwell(record, now)
             self._roll_battery(record, device_id)
             self._prune_firmware(record, now)
-        # Firmware candidates that held through the day (0.23.9).
-        self._confirm_firmware(now)
         # The day's storm tally, one row per domain (ruling #320),
         # written before the save that carries it. Dated by the day
         # that just ended: the roll runs at local midnight, when today
@@ -3448,6 +3443,10 @@ class DeviceSentinelCoordinator(
         await self.async_sweep_wifi()
         self._sweep_storms(dt_util.utcnow().timestamp())
         self.probe_tick(dt_util.utcnow().timestamp())
+        # Firmware that has held ten minutes, once the restart's stale
+        # registry values have settled (0.23.10).
+        if not self._in_startup_grace():
+            self._confirm_firmware(dt_util.utcnow().timestamp())
         self._expire_maintenance(dt_util.utcnow().timestamp())
         self._sample_bridges()
         self._judge_all_devices()

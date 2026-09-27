@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.23.2 (2026-09-24)
+# File: notifier.py, Version: 0.23.10 (2026-09-26)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -65,6 +65,7 @@ from .const import (
     DEFAULT_QUIET_START,
     LOGGER,
     NOTIFY_CARD_ID,
+    PROBLEM_LIST_PATH,
     NOTIFY_FAMILY_BATTERY,
     NOTIFY_FAMILY_FREEZE,
     NOTIFY_FAMILY_IDS,
@@ -493,7 +494,15 @@ class NotifierMixin:
             if summary != "All clear.":
                 title = NOTIFY_FAMILY_TITLES[family]
                 lines.append(f"{title}: {summary}")
-        message = "\n".join(lines) if lines else "All devices reporting."
+        # A card that lists anything ends with a link to the Problem
+        # List, which names every device the card counts (0.23.10).
+        # Home Assistant draws the card as Markdown and leaves a link
+        # inside Home Assistant as a plain link, so it opens in place.
+        message = (
+            "\n".join(lines) + f"\n\n[Open the Problem List]({PROBLEM_LIST_PATH})"
+            if lines
+            else "All devices reporting."
+        )
         if message == getattr(self, "_card_written", None):
             return
         try:

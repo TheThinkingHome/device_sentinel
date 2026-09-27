@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_stacks.py, Version: 0.23.9 (2026-09-26)
+# File: study_stacks.py, Version: 0.23.10 (2026-09-26)
 
 """Z-Wave and Matter, gathered so their support can be built.
 
@@ -35,6 +35,7 @@ a later release knows which shape it is reading.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -447,83 +448,120 @@ def _matter_radio(node: Any) -> str:
     return ""
 
 
-def probe_rows(hass: HomeAssistant, studied: set[str]) -> list[dict[str, Any]]:
+# One reader per stack, each run on its own so a stack whose library
+# throws costs its own lines and nothing else (0.23.10). Before it, a
+# throw here stopped the minute tick ahead of the freeze judgment and
+# aborted the midnight fold for the whole house.
+StackFailure = Callable[[str, Exception], None]
+
+
+def _failed(on_failure: StackFailure | None, domain: str, err: Exception) -> None:
+    """Hand a stack's failure to the caller, or note it at debug."""
+    if on_failure is not None:
+        on_failure(domain, err)
+    else:
+        LOGGER.debug("device_sentinel: %s could not be read (%s)", domain, err)
+
+
+def _zwave_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """Each Z-Wave node, with its device, status and last seen."""
+    rows: list[dict[str, Any]] = []
+    for entry in hass.config_entries.async_entries(ZWAVE_DOMAIN):
+        controller = _read(
+            _read(_read(_read(entry, "runtime_data"), "client"), "driver"),
+            "controller",
+        )
+        home_id = _read(controller, "home_id")
+        devices = node_devices(hass, entry, ZWAVE_DOMAIN)
+        nodes = _read(controller, "nodes") or {}
+        try:
+            listed = list(nodes.values())
+        except Exception as err:  # noqa: BLE001 - not a mapping
+            LOGGER.debug(
+                "device_sentinel: Z-Wave nodes unreadable (%s)", err
+            )
+            listed = []
+        for node in listed:
+            if _read(node, "is_controller_node"):
+                continue
+            node_id = str(_plain(_read(node, "node_id")))
+            status, numbers = _node_state(node)
+            extra = [
+                part for part in (
+                    _zwave_listening(node),
+                    f"status sensor {_zwave_status_sensor(hass, home_id, node_id)}",
+                ) if part
+            ]
+            rows.append({
+                "stack": ZWAVE_DOMAIN,
+                "node": node_id,
+                "device_id": devices.get(node_id, ""),
+                "now": status,
+                "seen": _zwave_seen(node),
+                "detail": ", ".join(extra + ([numbers] if numbers else [])),
+            })
+    return rows
+
+
+def _matter_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """Each Matter node, with its device, availability and network."""
+    rows: list[dict[str, Any]] = []
+    for entry in hass.config_entries.async_entries(MATTER_DOMAIN):
+        client = _read(
+            _read(_read(entry, "runtime_data"), "adapter"), "matter_client"
+        )
+        getter = _read(client, "get_nodes")
+        if not callable(getter):
+            continue
+        devices = node_devices(hass, entry, MATTER_DOMAIN)
+        try:
+            listed = list(getter())
+        except Exception as err:  # noqa: BLE001 - a library call
+            LOGGER.debug(
+                "device_sentinel: Matter nodes unreadable (%s)", err
+            )
+            listed = []
+        for node in listed:
+            node_id = str(_plain(_read(node, "node_id")))
+            detail = [part for part in (_matter_detail(node), _matter_radio(node)) if part]
+            rows.append({
+                "stack": MATTER_DOMAIN,
+                "node": node_id,
+                "device_id": devices.get(node_id, ""),
+                "now": "available" if _read(node, "available") else "away",
+                "quiet": not _read(node, "available"),
+                "network": _matter_network(node),
+                "detail": ", ".join(detail),
+            })
+    return rows
+
+
+def probe_rows(
+    hass: HomeAssistant,
+    studied: set[str],
+    on_failure: StackFailure | None = None,
+) -> list[dict[str, Any]]:
     """What each studied stack's nodes say right now, one row each.
 
     Each row carries the node's device, when there is one, so the
     recorder can set Device Sentinel's own view beside the stack's
-    (0.23.8).
+    (0.23.8). A stack that throws is handed to on_failure and the
+    others are read as usual (0.23.10).
     """
     rows: list[dict[str, Any]] = []
-    if ZWAVE_DOMAIN in studied:
-        for entry in hass.config_entries.async_entries(ZWAVE_DOMAIN):
-            controller = _read(
-                _read(_read(_read(entry, "runtime_data"), "client"), "driver"),
-                "controller",
-            )
-            home_id = _read(controller, "home_id")
-            devices = node_devices(hass, entry, ZWAVE_DOMAIN)
-            nodes = _read(controller, "nodes") or {}
-            try:
-                listed = list(nodes.values())
-            except Exception as err:  # noqa: BLE001 - not a mapping
-                LOGGER.debug(
-                    "device_sentinel: Z-Wave nodes unreadable (%s)", err
-                )
-                listed = []
-            for node in listed:
-                if _read(node, "is_controller_node"):
-                    continue
-                node_id = str(_plain(_read(node, "node_id")))
-                status, numbers = _node_state(node)
-                extra = [
-                    part for part in (
-                        _zwave_listening(node),
-                        f"status sensor {_zwave_status_sensor(hass, home_id, node_id)}",
-                    ) if part
-                ]
-                rows.append({
-                    "stack": ZWAVE_DOMAIN,
-                    "node": node_id,
-                    "device_id": devices.get(node_id, ""),
-                    "now": status,
-                    "seen": _zwave_seen(node),
-                    "detail": ", ".join(extra + ([numbers] if numbers else [])),
-                })
-    if MATTER_DOMAIN in studied:
-        for entry in hass.config_entries.async_entries(MATTER_DOMAIN):
-            client = _read(
-                _read(_read(entry, "runtime_data"), "adapter"), "matter_client"
-            )
-            getter = _read(client, "get_nodes")
-            if not callable(getter):
-                continue
-            devices = node_devices(hass, entry, MATTER_DOMAIN)
-            try:
-                listed = list(getter())
-            except Exception as err:  # noqa: BLE001 - a library call
-                LOGGER.debug(
-                    "device_sentinel: Matter nodes unreadable (%s)", err
-                )
-                listed = []
-            for node in listed:
-                node_id = str(_plain(_read(node, "node_id")))
-                detail = [part for part in (_matter_detail(node), _matter_radio(node)) if part]
-                rows.append({
-                    "stack": MATTER_DOMAIN,
-                    "node": node_id,
-                    "device_id": devices.get(node_id, ""),
-                    "now": "available" if _read(node, "available") else "away",
-                    "quiet": not _read(node, "available"),
-                    "network": _matter_network(node),
-                    "detail": ", ".join(detail),
-                })
-    if HUE_DOMAIN in studied:
-        rows.extend(_hue_rows(hass))
-    if SMARTTHINGS_DOMAIN in studied:
-        rows.extend(_smartthings_rows(hass))
-    if TUYA_DOMAIN in studied:
-        rows.extend(_tuya_rows(hass))
+    for domain, reader in (
+        (ZWAVE_DOMAIN, _zwave_rows),
+        (MATTER_DOMAIN, _matter_rows),
+        (HUE_DOMAIN, _hue_rows),
+        (SMARTTHINGS_DOMAIN, _smartthings_rows),
+        (TUYA_DOMAIN, _tuya_rows),
+    ):
+        if domain not in studied:
+            continue
+        try:
+            rows.extend(reader(hass))
+        except Exception as err:  # noqa: BLE001 - a library behaving oddly
+            _failed(on_failure, domain, err)
     return rows[:NODE_ROW_CAP * 4]
 
 
@@ -642,7 +680,75 @@ def _tuya_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
 _CONTROLLER_WORDS = {0: "ready", 1: "unresponsive", 2: "jammed"}
 
 
-def coordinator_rows(hass: HomeAssistant, studied: set[str]) -> list[dict[str, Any]]:
+def _zwave_controller_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """Each Z-Wave entry's client, driver and controller."""
+    rows: list[dict[str, Any]] = []
+    for entry in hass.config_entries.async_entries(ZWAVE_DOMAIN):
+        client = _read(_read(entry, "runtime_data"), "client")
+        driver = _read(client, "driver")
+        raw = _read(_read(driver, "controller"), "status")
+        value = _plain(raw)
+        words = (
+            _CONTROLLER_WORDS.get(value, f"status {value}")
+            if isinstance(value, int) and not isinstance(value, bool)
+            else (str(value) if value is not None else "no controller")
+        )
+        state = getattr(entry.state, "value", str(entry.state))
+        connected = bool(_read(client, "connected"))
+        now = (
+            words if connected and driver is not None
+            else "no driver" if connected
+            else "disconnected"
+        )
+        rows.append({
+            "stack": ZWAVE_DOMAIN,
+            "node": "controller",
+            "now": now,
+            "detail": f"entry {state}",
+        })
+    return rows
+
+
+def _matter_server_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """Each Matter entry's server connection."""
+    rows: list[dict[str, Any]] = []
+    for entry in hass.config_entries.async_entries(MATTER_DOMAIN):
+        client = _read(_read(_read(entry, "runtime_data"), "adapter"), "matter_client")
+        connected = _read(_read(client, "connection"), "connected")
+        state = getattr(entry.state, "value", str(entry.state))
+        rows.append({
+            "stack": MATTER_DOMAIN,
+            "node": "server",
+            "now": "connected" if connected else "disconnected",
+            "detail": f"entry {state}",
+        })
+    return rows
+
+
+def _hub_rows(
+    hass: HomeAssistant,
+    domain: str,
+    reader: Callable[[Any], tuple[str, str, str]],
+) -> list[dict[str, Any]]:
+    """Each entry of a hub or cloud stack, through its reader."""
+    rows: list[dict[str, Any]] = []
+    for entry in hass.config_entries.async_entries(domain):
+        node, now, detail = reader(entry)
+        state = getattr(entry.state, "value", str(entry.state))
+        rows.append({
+            "stack": domain,
+            "node": node,
+            "now": now,
+            "detail": ", ".join(part for part in (detail, f"entry {state}") if part),
+        })
+    return rows
+
+
+def coordinator_rows(
+    hass: HomeAssistant,
+    studied: set[str],
+    on_failure: StackFailure | None = None,
+) -> list[dict[str, Any]]:
     """Each studied stack's coordinator, one row per config entry.
 
     Z-Wave: the entry's state, whether the client's connection to the
@@ -650,61 +756,25 @@ def coordinator_rows(hass: HomeAssistant, studied: set[str]) -> list[dict[str, A
     controller's own status. Matter: the entry's state and whether the
     server connection is open. A stick pulled or a server restarted
     shows here, which is what a reader must tell from a real outage
-    (research findings 1, 6 and 10).
+    (research findings 1, 6 and 10). A stack that throws is handed to
+    on_failure and the others are read as usual (0.23.10).
     """
     rows: list[dict[str, Any]] = []
-    if ZWAVE_DOMAIN in studied:
-        for entry in hass.config_entries.async_entries(ZWAVE_DOMAIN):
-            client = _read(_read(entry, "runtime_data"), "client")
-            driver = _read(client, "driver")
-            raw = _read(_read(driver, "controller"), "status")
-            value = _plain(raw)
-            words = (
-                _CONTROLLER_WORDS.get(value, f"status {value}")
-                if isinstance(value, int) and not isinstance(value, bool)
-                else (str(value) if value is not None else "no controller")
-            )
-            state = getattr(entry.state, "value", str(entry.state))
-            connected = bool(_read(client, "connected"))
-            now = (
-                words if connected and driver is not None
-                else "no driver" if connected
-                else "disconnected"
-            )
-            rows.append({
-                "stack": ZWAVE_DOMAIN,
-                "node": "controller",
-                "now": now,
-                "detail": f"entry {state}",
-            })
-    if MATTER_DOMAIN in studied:
-        for entry in hass.config_entries.async_entries(MATTER_DOMAIN):
-            client = _read(_read(_read(entry, "runtime_data"), "adapter"), "matter_client")
-            connected = _read(_read(client, "connection"), "connected")
-            state = getattr(entry.state, "value", str(entry.state))
-            rows.append({
-                "stack": MATTER_DOMAIN,
-                "node": "server",
-                "now": "connected" if connected else "disconnected",
-                "detail": f"entry {state}",
-            })
-    for domain, reader in (
-        (HUE_DOMAIN, _hue_bridge),
-        (SMARTTHINGS_DOMAIN, _smartthings_cloud),
-        (TUYA_DOMAIN, _tuya_cloud),
-        (LUTRON_DOMAIN, _lutron_hub),
-    ):
+    readers: tuple[tuple[str, Callable[[], list[dict[str, Any]]]], ...] = (
+        (ZWAVE_DOMAIN, lambda: _zwave_controller_rows(hass)),
+        (MATTER_DOMAIN, lambda: _matter_server_rows(hass)),
+        (HUE_DOMAIN, lambda: _hub_rows(hass, HUE_DOMAIN, _hue_bridge)),
+        (SMARTTHINGS_DOMAIN, lambda: _hub_rows(hass, SMARTTHINGS_DOMAIN, _smartthings_cloud)),
+        (TUYA_DOMAIN, lambda: _hub_rows(hass, TUYA_DOMAIN, _tuya_cloud)),
+        (LUTRON_DOMAIN, lambda: _hub_rows(hass, LUTRON_DOMAIN, _lutron_hub)),
+    )
+    for domain, read in readers:
         if domain not in studied:
             continue
-        for entry in hass.config_entries.async_entries(domain):
-            node, now, detail = reader(entry)
-            state = getattr(entry.state, "value", str(entry.state))
-            rows.append({
-                "stack": domain,
-                "node": node,
-                "now": now,
-                "detail": ", ".join(part for part in (detail, f"entry {state}") if part),
-            })
+        try:
+            rows.extend(read())
+        except Exception as err:  # noqa: BLE001 - a library behaving oddly
+            _failed(on_failure, domain, err)
     return rows
 
 

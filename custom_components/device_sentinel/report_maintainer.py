@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.23.9 (2026-09-26)
+# File: report_maintainer.py, Version: 0.23.10 (2026-09-26)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -91,6 +91,10 @@ from .durations import LONG_SPAN_SECONDS, long_span
 
 class MaintainerReportMixin:
     """The three Markdown files written for whoever maintains the system."""
+
+    # Set in the coordinator; whether stack_probe.md has refused a
+    # write this start (0.23.10).
+    _probe_write_failed: bool
 
     @staticmethod
     def _episode_duration(seconds: float | None) -> str:
@@ -278,6 +282,30 @@ class MaintainerReportMixin:
         """
         directory = self.hass.config.path(REPORT_DIR)
         path = os.path.join(directory, REPORT_STACK_PROBE)
+        try:
+            self._probe_append(directory, path, lines, replace)
+        except Exception as err:  # noqa: BLE001 - a lost line is only a lost line
+            # A full disk, a path that cannot be written, or text that
+            # cannot be encoded (a lone surrogate in a name is not an
+            # OSError). The lines are lost; one warning per start says
+            # so, where before 0.23.10 Home Assistant logged an
+            # anonymous traceback every minute.
+            if self._probe_write_failed:
+                LOGGER.debug("device_sentinel: %s not written (%s)", path, err)
+                return
+            self._probe_write_failed = True
+            LOGGER.warning(
+                "Device Sentinel could not write %s (%s). Extended "
+                "Diagnostics lines are lost until it can; detection is "
+                "unaffected. Said once per start.",
+                path,
+                err,
+            )
+
+    def _probe_append(
+        self, directory: str, path: str, lines: list[str], replace: bool
+    ) -> None:
+        """The append itself, with the roll at the cap."""
         with self._probe_lock:
             os.makedirs(directory, exist_ok=True)
             if replace:

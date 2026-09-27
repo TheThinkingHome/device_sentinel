@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.23.9 (2026-09-26)
+# File: diagnostics.py, Version: 0.23.10 (2026-09-26)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -25,6 +25,8 @@ since it carries the user's notification targets.
 
 from __future__ import annotations
 
+import inspect
+from collections.abc import Callable
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
@@ -208,6 +210,22 @@ def _infrastructure(
             "device_count": len(hardware),
         }
     return out
+
+
+async def _studied(read: Callable[[], Any]) -> dict[str, Any]:
+    """One stack's study for the download, or what stopped it (0.23.10).
+
+    The study reads a library's live objects, and one that throws
+    failed the whole download, which is how a tester sends what
+    Extended Diagnostics found. The error is recorded in its place.
+    """
+    try:
+        result = read()
+        if inspect.isawaitable(result):
+            result = await result
+    except Exception as err:  # noqa: BLE001 - the download must still arrive
+        return {"unreadable": f"{type(err).__name__}: {err}"}
+    return result if isinstance(result, dict) else {}
 
 
 async def async_get_config_entry_diagnostics(
@@ -407,17 +425,17 @@ async def async_get_config_entry_diagnostics(
             # own toggles, and each is empty where the stack is not
             # in the house.
             "lutron": (
-                await lutron_study(hass)
+                await _studied(lambda: lutron_study(hass))
                 if entry.options.get(CONF_STUDY_HARDWARE)
                 else {}
             ),
             "zwave": (
-                zwave_study(hass)
+                await _studied(lambda: zwave_study(hass))
                 if ZWAVE_DOMAIN in studied_domains(entry.options)
                 else {}
             ),
             "matter": (
-                await matter_study(hass)
+                await _studied(lambda: matter_study(hass))
                 if MATTER_DOMAIN in studied_domains(entry.options)
                 else {}
             ),

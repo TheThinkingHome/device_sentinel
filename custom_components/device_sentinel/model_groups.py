@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: model_groups.py, Version: 0.23.9 (2026-09-26)
+# File: model_groups.py, Version: 0.23.10 (2026-09-26)
 
 """Devices read as groups of the same maker, model and hardware (0.23.4).
 
@@ -416,11 +416,12 @@ class ModelGroupMixin:
         Runs with every rebuild of the registry view, each start and
         each registry change. A version different from the one
         recorded is held in memory with the time it first appeared,
-        and written only at the midnight fold (_confirm_firmware). A
-        device that goes back to its recorded version drops its
-        candidate, and a restart forgets every candidate, so the
-        stale values a restart shows for a moment never reach the
-        history. Nothing new is stored.
+        and written once it has held FIRMWARE_HOLD_SECONDS
+        (_confirm_firmware, on the minute tick). A device that goes
+        back to its recorded version drops its candidate, and a
+        restart forgets every candidate, so the stale values a
+        restart shows for a moment never reach the history. Nothing
+        new is stored.
         """
         registry = dr.async_get(self.hass)
         devices = self.data.get(DATA_DEVICES) or {}
@@ -442,12 +443,16 @@ class ModelGroupMixin:
                 candidates[device_id] = (firmware, now)
 
     def _confirm_firmware(self, now: float) -> None:
-        """Write the candidates that held, at the midnight fold.
+        """Write the candidates that held, on the minute tick (0.23.10).
 
         A candidate is written when the registry still reports it and
         it first appeared at least FIRMWARE_HOLD_SECONDS earlier, with
-        the time it first appeared. A newer one waits for the next
-        fold; one the device has left is dropped.
+        the time it first appeared. A newer one waits for a later
+        tick; one the device has left is dropped. The caller keeps
+        this out of the startup grace, when the registry may still
+        hold a stale value. 0.23.9 ran it at the midnight fold with an
+        hour's hold, which a house restarting in the hour before
+        midnight, or rebooting across it, never met.
         """
         registry = dr.async_get(self.hass)
         devices = self.data.get(DATA_DEVICES) or {}

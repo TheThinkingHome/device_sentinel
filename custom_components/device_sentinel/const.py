@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.9 (2026-09-26)
+# File: const.py, Version: 0.23.10 (2026-09-26)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1108,6 +1108,11 @@ REPORT_BRIEF_HTML = "daily_brief.html"
 # /device-sentinel/device/<id>. The brief's device names link there
 # (0.23.5), to the page that says why a device is listed.
 PANEL_URL_PATH = "device-sentinel"
+# The Problem List tab's own address, the panel's slug for the tab
+# (0.22.14). The persistent card links there whenever it lists
+# anything (0.23.10, from Tim Plas: the card names a few devices and
+# counts the rest, and the list holds them all).
+PROBLEM_LIST_PATH = f"/{PANEL_URL_PATH}/problem-list"
 
 # Days of battery history before a cell's trend can be judged: two
 # whole weeks, the fewest that give one week to compare with another
@@ -3079,15 +3084,19 @@ READING_ACCELERATING = "accelerating"
 READING_FALLING = "falling"
 
 
-# Firmware history (0.23.9). A version is recorded only once it has
-# held until the midnight fold, first seen at least this long before
-# it. At a restart on 25 September four of the reference rig's buttons
-# each recorded an older version and their current one again within
-# the same second: Home Assistant's registry held a stale value while
-# the MQTT devices came back up. The owner ruled the record tied to the
-# fold, which also settles downgrades: a real one holds, a flicker
-# never lasts that long.
-FIRMWARE_HOLD_SECONDS = 3600
+# Firmware history. A version is recorded only once it has held this
+# long, counted from when it first appeared and read on the minute tick
+# after the startup grace. At a restart on 25 September four of the
+# reference rig's buttons each recorded an older version and their
+# current one again within the same second: Home Assistant's registry
+# held a stale value while the MQTT devices came back up. 0.23.9 tied
+# the record to the midnight fold with an hour's hold. A restart
+# forgets what is held, so a house that restarts in the hour before
+# midnight, or reboots across it (#406), never held a version long
+# enough and recorded no update at all; the owner ruled on 26 September
+# that the record waits ten minutes on the tick instead (0.23.10). A
+# flicker lasts under a second; a real update or downgrade holds.
+FIRMWARE_HOLD_SECONDS = 600
 # A recorded version replaced within this long by the version before
 # it is a flicker, removed from histories written before 0.23.9.
 FIRMWARE_FLICKER_SECONDS = 600

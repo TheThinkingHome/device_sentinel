@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.23.0 (2026-09-24)
+# File: store.py, Version: 0.23.10 (2026-09-26)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -1077,6 +1077,11 @@ class StorageMixin:
         # exactly like an ordinary interval write, so no comparison
         # of stamps can tell the two apart.
         self.data[DATA_CLEAN_STOP] = True
+        # Extended Diagnostics' held lines (0.23.10). Home Assistant
+        # does not unload integrations when it stops, so the unload's
+        # write never runs at a restart; this one does. It cannot
+        # raise, so the save below always follows.
+        await self.async_probe_stop()  # type: ignore[attr-defined]
         await self._save_now()
 
     @property

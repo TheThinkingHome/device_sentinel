@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.23.9 (2026-09-26)
+# File: study.py, Version: 0.23.10 (2026-09-26)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -152,6 +152,7 @@ class StudyMixin:
     _probe_wifi_down: bool | None
     _probe_pending: list[str]
     _probe_recent: deque[str]
+    _probe_failed: set[str]
 
     # ------------------------------------------------------- settings
 
@@ -361,8 +362,46 @@ class StudyMixin:
             "detail": detail,
         }
 
+    def _probe_failure(self, what: str, err: Exception) -> None:
+        """Say once per start that a stack could not be read (0.23.10).
+
+        The probe records and never judges, so a library that throws
+        costs its own lines and nothing else. Logged as a warning the
+        first time each stack fails with each kind of error, and at
+        debug after, since the tick would otherwise repeat it every
+        minute.
+        """
+        name = STUDIABLE.get(what, what)
+        key = f"{what}:{type(err).__name__}"
+        if key in self._probe_failed:
+            LOGGER.debug("device_sentinel: Extended Diagnostics, %s: %s", name, err)
+            return
+        self._probe_failed.add(key)
+        LOGGER.warning(
+            "Extended Diagnostics could not read %s (%s: %s). Its lines are "
+            "left out of stack_probe.md; detection is unaffected. Said once "
+            "per start.",
+            name,
+            type(err).__name__,
+            err,
+        )
+
     @callback
     def probe_tick(self, now: float) -> None:
+        """The probe's minute, guarded (0.23.10).
+
+        Runs in the minute tick ahead of the freeze judgment. Before
+        0.23.10 a throw anywhere in it stopped that tick, so while a
+        studied library misbehaved nothing was judged, listed or
+        saved.
+        """
+        try:
+            self._probe_tick(now)
+        except Exception as err:  # noqa: BLE001 - recording must never stop judging
+            self._probe_failure("the probe", err)
+
+    @callback
+    def _probe_tick(self, now: float) -> None:
         """Write a line when a studied stack's node, its coordinator, or
         Device Sentinel's view of the node's device changes.
 
@@ -381,7 +420,7 @@ class StudyMixin:
             self._probe_last.clear()
             return
         wifi_nodes: dict[str, bool] = {}
-        for row in probe_rows(self.hass, studied):
+        for row in probe_rows(self.hass, studied, self._probe_failure):
             views = self._probe_views(row, now)
             if row["stack"] == MATTER_DOMAIN and "wifi" in (row.get("network") or ""):
                 wifi_nodes[self._probe_name(row)] = row["now"] == "available"
@@ -411,7 +450,7 @@ class StudyMixin:
                 PROBE_AGREES: views["agrees"],
                 PROBE_DETAIL: views["detail"],
             })
-        for row in coordinator_rows(self.hass, studied):
+        for row in coordinator_rows(self.hass, studied, self._probe_failure):
             key = (row["stack"], row["node"])
             said = (row["now"], row["detail"])
             before = self._probe_last.get(key)
@@ -497,8 +536,44 @@ class StudyMixin:
         self._mark_cold_dirty()
         self.hass.async_add_executor_job(self._probe_write_lines, lines, True)  # type: ignore[attr-defined]
 
+    async def async_probe_stop(self) -> None:
+        """Write the lines still held, as Device Sentinel stops (0.23.10).
+
+        Lines wait for the next tick to be written, and a stop has no
+        next tick, so the minute before every restart or settings
+        change was lost. Called on Home Assistant's stop event and on
+        every unload, each time ahead of the save that must follow it,
+        so nothing here may raise: a throw would cost the save and the
+        clean-stop marker, and the next start would read the stop as a
+        power cut.
+        """
+        if not self._probe_pending:
+            return
+        lines, self._probe_pending = self._probe_pending, []
+        try:
+            await self.hass.async_add_executor_job(self._probe_write_lines, lines)  # type: ignore[attr-defined]
+        except Exception as err:  # noqa: BLE001 - the save after this must run
+            LOGGER.warning(
+                "Device Sentinel could not write its last Extended "
+                "Diagnostics lines at the stop (%s: %s)",
+                type(err).__name__,
+                err,
+            )
+
     @callback
     def probe_fold(self, now: float) -> None:
+        """The probe's part of the midnight fold, guarded (0.23.10).
+
+        Runs before the day is rolled. Before 0.23.10 a throw here
+        aborted the fold for every device in the house.
+        """
+        try:
+            self._probe_fold(now)
+        except Exception as err:  # noqa: BLE001 - recording must never stop the fold
+            self._probe_failure("the probe", err)
+
+    @callback
+    def _probe_fold(self, now: float) -> None:
         """One counting line a day per stack, and the old lines dropped.
 
         The count carries each state and, since 0.23.8, how many nodes
@@ -509,7 +584,7 @@ class StudyMixin:
         if studied & PROBED_DOMAINS:
             counts: dict[str, dict[str, int]] = {}
             agreement: dict[str, dict[str, int]] = {}
-            for row in probe_rows(self.hass, studied):
+            for row in probe_rows(self.hass, studied, self._probe_failure):
                 views = self._probe_views(row, now)
                 by_state = counts.setdefault(row["stack"], {})
                 by_state[row["now"]] = by_state.get(row["now"], 0) + 1
