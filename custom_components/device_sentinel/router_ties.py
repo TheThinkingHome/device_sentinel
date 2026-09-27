@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.22.18 (2026-09-21)
+# File: router_ties.py, Version: 0.22.29 (2026-09-27)
 
 """Router ties: which watched devices a router says have left.
 
@@ -108,7 +108,7 @@ from .const import (
     WIFI_HOLD_SECONDS,
     WIFI_KEY,
 )
-from .device_fields import device_field
+from .device_fields import device_field, identifier_values
 
 STATE_NOT_HOME = "not_home"
 STATE_HOME = "home"
@@ -323,6 +323,35 @@ class RouterTiesMixin:
 
     # ------------------------------------------------------------ ties
 
+    @staticmethod
+    def _tie_for(device: Any, tracker_by_mac: dict[str, Any], owner: str | None) -> Any:
+        """The tracker a device is tied to by MAC, or None (rungs 1 and 2)."""
+        tracker = None
+        # Rung 1: a normalized MAC in the device's connections.
+        for kind, value in device_field(device, "connections", set()):
+            if kind != dr.CONNECTION_NETWORK_MAC:
+                continue
+            found = tracker_by_mac.get(normalize_mac(value) or "")
+            if found and found[1] != owner:
+                tracker = found[0]
+                break
+        # Rung 2: the full twelve-hex MAC inside an identifier.
+        # Every part after the domain is searched, whatever the
+        # identifier's length (issue #16: hOn's has three).
+        if tracker is None:
+            for _domain, parts in identifier_values(device):
+                for ident in parts:
+                    bare = _HEX_ONLY.sub("", str(ident).lower())
+                    for mac, found in tracker_by_mac.items():
+                        if mac in bare and found[1] != owner:
+                            tracker = found[0]
+                            break
+                    if tracker:
+                        break
+                if tracker:
+                    break
+        return tracker
+
     def _rebuild_wifi_ties(self) -> None:
         """Resolve every watched device to its router tracker, or to
         nothing.
@@ -412,25 +441,13 @@ class RouterTiesMixin:
             # where 126 of 205 tied devices were this and sixteen of
             # nineteen declared outages came from it.
             owner = self._watched.get(device_id)
-            tracker = None
-            # Rung 1: a normalized MAC in the device's connections.
-            for kind, value in device_field(device, "connections", set()):
-                if kind != dr.CONNECTION_NETWORK_MAC:
-                    continue
-                found = tracker_by_mac.get(normalize_mac(value) or "")
-                if found and found[1] != owner:
-                    tracker = found[0]
-                    break
-            # Rung 2: the full twelve-hex MAC inside an identifier.
-            if tracker is None:
-                for _domain, ident in device.identifiers:
-                    bare = _HEX_ONLY.sub("", str(ident).lower())
-                    for mac, found in tracker_by_mac.items():
-                        if mac in bare and found[1] != owner:
-                            tracker = found[0]
-                            break
-                    if tracker:
-                        break
+            try:
+                tracker = self._tie_for(device, tracker_by_mac, owner)
+            except Exception as err:  # noqa: BLE001 - another integration's data
+                # One device's registry entry must not stop the ties
+                # being built for the house (issue #16).
+                self._note_odd_device(device, str(device.name_by_user or device.name or device_id), err)  # type: ignore[attr-defined]
+                tracker = None
             if tracker is not None:
                 ties[device_id] = tracker
 

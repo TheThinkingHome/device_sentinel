@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.22.18 (2026-09-21)
+# File: study.py, Version: 0.22.29 (2026-09-27)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -68,7 +68,7 @@ from .const import (
     STUDIABLE,
     STUDY_SHAPE_CAP,
 )
-from .device_fields import device_field
+from .device_fields import device_field, identifier_values
 from .study_stacks import MATTER_DOMAIN, ZWAVE_DOMAIN, probe_rows
 
 ROUTER = "router"
@@ -278,8 +278,11 @@ class StudyMixin:
                     f"{kind}:{value}"
                     for kind, value in device_field(device, "connections", set())
                 ),
+                # The whole identifier after its domain, at any length
+                # (issue #16: hOn's has three parts).
                 "identifiers": sorted(
-                    str(ident) for _domain, ident in device.identifiers
+                    ":".join(str(part) for part in parts)
+                    for _domain, parts in identifier_values(device)
                 ),
             })
         return {"trackers": trackers, "watched_devices": watched}

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: device_fields.py, Version: 0.22.18 (2026-09-21)
+# File: device_fields.py, Version: 0.22.29 (2026-09-27)
 
 """Child devices, and the fields only an ordinary device carries.
 
@@ -57,6 +57,29 @@ def device_field(device: Any, field: str, default: Any = None) -> Any:
     if device is None or is_child_device(device):
         return default
     return getattr(device, field, default)
+
+
+def identifier_values(device: Any) -> list[tuple[str, tuple[Any, ...]]]:
+    """Each of a device's identifiers as its domain and the parts after it.
+
+    Home Assistant types an identifier as a pair, a domain and a value,
+    but stores whatever an integration registers. hOn 0.8.4 registers
+    three parts, its domain, the appliance's MAC and its type, and
+    reading every identifier as a pair stopped Device Sentinel starting
+    at all in any house with a Haier appliance, and failed the
+    diagnostics download (issue #16). Any length is read here: the
+    domain first, every part after it kept. Anything that is not a
+    tuple or a list with a domain is skipped.
+    """
+    values: list[tuple[str, tuple[Any, ...]]] = []
+    try:
+        identifiers = list(device_field(device, "identifiers", set()) or ())
+    except TypeError:
+        return values
+    for identifier in identifiers:
+        if isinstance(identifier, (tuple, list)) and identifier:
+            values.append((str(identifier[0]), tuple(identifier[1:])))
+    return values
 
 
 def child_devices(registry: dr.DeviceRegistry, entry_id: str) -> list[Any]:
