@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_labels.py, Version: 0.23.5 (2026-09-25)
+# File: tests/test_device_labels.py, Version: 0.23.15 (2026-09-28)
 
 """A device's name in an HTML report: its area, and a link to it.
 
@@ -74,7 +74,9 @@ async def test_a_device_with_no_area_says_none(hass: HomeAssistant):
     await _linking(hass, coord, REPORT_LINKS_INTERNAL)
 
     label = coord._device_cell(device.id, "HL-L2370DW")
-    assert label.endswith(">HL-L2370DW</a> [None]")
+    # "Unassigned", the word the bus events use (the owner's choice, 28
+    # September 2026, 0.23.15); the reports said None.
+    assert label.endswith(">HL-L2370DW</a> [Unassigned]")
 
 
 async def test_a_name_that_already_ends_in_a_bracket_is_left_alone(
@@ -169,7 +171,7 @@ async def test_a_choice_that_home_assistant_cannot_serve_links_nothing(
     await _linking(hass, coord, REPORT_LINKS_EXTERNAL)
     assert coord._report_link("/x") is None
     assert coord._device_cell(device.id, "Motion Laundry") == (
-        "Motion Laundry [None]"
+        "Motion Laundry [Unassigned]"
     )
 
 

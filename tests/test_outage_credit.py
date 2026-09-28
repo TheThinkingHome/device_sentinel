@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_credit.py, Version: 0.23.14 (2026-09-28)
+# File: tests/test_outage_credit.py, Version: 0.23.15 (2026-09-28)
 
 """An outage is not a device's silence (#536).
 
@@ -58,6 +58,19 @@ def _event(kind, scope, when, duration=None):
     return {SYS_KIND: kind, SYS_SCOPE: scope, SYS_WHEN: when, SYS_DURATION: duration, "detail": None}
 
 
+_FALL_OF = {
+    SYS_BRIDGE_UP: "bridge_down",
+    SYS_INTEGRATION_UP: "integration_down",
+    SYS_WIFI_UP: "wifi_down",
+    SYS_BROKER_UP: SYS_BROKER_DOWN,
+}
+
+
+def _outage(kind, scope, back, duration):
+    """An outage as the product stores it: its fall, then its return."""
+    return [_event(_FALL_OF[kind], scope, back - duration), _event(kind, scope, back, duration)]
+
+
 async def _one(hass, domain="mqtt"):
     device, _ = register_device(hass, "d", name="Door Laundry")
     coord = await setup_coordinator(hass)
@@ -82,7 +95,7 @@ async def test_a_bridge_outage_is_taken_out_of_the_silence(hass: HomeAssistant):
     now = dt_util.utcnow().timestamp()
     back = now - 5 * 60
     record[DEV_LAST_ACTIVITY] = back - 4 * HOUR - 10 * 60  # heard 10 minutes before the outage
-    coord.data[DATA_SYSTEM_EVENTS] = [_event(SYS_BRIDGE_UP, STACK_Z2M, back, 4 * HOUR)]
+    coord.data[DATA_SYSTEM_EVENTS] = _outage(SYS_BRIDGE_UP, STACK_Z2M, back, 4 * HOUR)
     window = coord._freeze_window(record)
     silence = coord._observed_silence(record, now, device.id, window)
     assert abs(silence - 15 * 60) < 1, silence
@@ -96,7 +109,7 @@ async def test_a_device_frozen_before_the_outage_keeps_its_silence(hass: HomeAss
     window = coord._freeze_window(record)
     back = now - 60
     record[DEV_LAST_ACTIVITY] = back - 4 * HOUR - window - HOUR  # overdue an hour before it began
-    coord.data[DATA_SYSTEM_EVENTS] = [_event(SYS_BRIDGE_UP, STACK_Z2M, back, 4 * HOUR)]
+    coord.data[DATA_SYSTEM_EVENTS] = _outage(SYS_BRIDGE_UP, STACK_Z2M, back, 4 * HOUR)
     silence = coord._observed_silence(record, now, device.id, window)
     assert silence == now - record[DEV_LAST_ACTIVITY]
 
@@ -110,7 +123,7 @@ async def test_a_short_nightly_outage_costs_a_long_reporter_only_its_minutes(has
     now = dt_util.utcnow().timestamp()
     record[DEV_LAST_ACTIVITY] = now - 40 * HOUR
     coord.data[DATA_SYSTEM_EVENTS] = [
-        _event(SYS_BRIDGE_UP, STACK_Z2M, now - night * 24 * HOUR, 120.0) for night in (1, 0.5)
+        row for night in (1, 0.5) for row in _outage(SYS_BRIDGE_UP, STACK_Z2M, now - night * 24 * HOUR, 120.0)
     ]
     window = coord._freeze_window(record)
     silence = coord._observed_silence(record, now, device.id, window)
@@ -124,7 +137,7 @@ async def test_ha_downtime_inside_the_outage_is_not_taken_out_twice(hass: HomeAs
     back = now - 60
     began = back - 4 * HOUR
     record[DEV_LAST_ACTIVITY] = began - 600
-    coord.data[DATA_SYSTEM_EVENTS] = [_event(SYS_BRIDGE_UP, STACK_Z2M, back, 4 * HOUR)]
+    coord.data[DATA_SYSTEM_EVENTS] = _outage(SYS_BRIDGE_UP, STACK_Z2M, back, 4 * HOUR)
     coord._last_alive = began + HOUR
     coord._downtime = 120.0
     window = coord._freeze_window(record)
@@ -138,10 +151,10 @@ async def test_the_broker_integrations_and_wifi_are_upstreams_too(hass: HomeAssi
     back = now - 60
     record[DEV_LAST_ACTIVITY] = back - HOUR - 300
     window = coord._freeze_window(record)
-    coord.data[DATA_SYSTEM_EVENTS] = [_event(SYS_INTEGRATION_UP, "zwave_js", back, HOUR)]
+    coord.data[DATA_SYSTEM_EVENTS] = _outage(SYS_INTEGRATION_UP, "zwave_js", back, HOUR)
     assert abs(coord._observed_silence(record, now, device.id, window) - 360) < 1
     coord._watched[device.id] = "hue"
-    coord.data[DATA_SYSTEM_EVENTS] = [_event(SYS_WIFI_UP, "wifi", back + 1, HOUR)]
+    coord.data[DATA_SYSTEM_EVENTS] = _outage(SYS_WIFI_UP, "wifi", back + 1, HOUR)
     coord._wifi_ties = {device.id: "device_tracker.x"}
     assert abs(coord._observed_silence(record, now, device.id, window) - 360) < 2
     coord._wifi_ties = {}
@@ -157,7 +170,7 @@ async def test_an_unrelated_upstream_is_not_credited(hass: HomeAssistant):
     coord, device, record = await _one(hass, domain="zwave_js")
     now = dt_util.utcnow().timestamp()
     record[DEV_LAST_ACTIVITY] = now - 2 * HOUR
-    coord.data[DATA_SYSTEM_EVENTS] = [_event(SYS_INTEGRATION_UP, "lutron_caseta", now - 60, HOUR)]
+    coord.data[DATA_SYSTEM_EVENTS] = _outage(SYS_INTEGRATION_UP, "lutron_caseta", now - 60, HOUR)
     window = coord._freeze_window(record)
     assert coord._observed_silence(record, now, device.id, window) == 2 * HOUR
 
@@ -202,7 +215,7 @@ async def test_the_gap_across_an_outage_is_not_learned(hass: HomeAssistant, free
     before = (now - 4 * timedelta(hours=1) - timedelta(minutes=10)).timestamp()
     record[DEV_LAST_ACTIVITY] = before
     record[DEV_TODAY_MAX] = None
-    coord.data[DATA_SYSTEM_EVENTS] = [_event(SYS_BRIDGE_UP, STACK_Z2M, now.timestamp() - 60, 4 * HOUR)]
+    coord.data[DATA_SYSTEM_EVENTS] = _outage(SYS_BRIDGE_UP, STACK_Z2M, now.timestamp() - 60, 4 * HOUR)
     hass.states.async_set(seen, now.isoformat())  # the device speaks after the outage
     await hass.async_block_till_done()
     assert record[DEV_LAST_ACTIVITY] > before

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.15.6 (2026-08-17)
+# File: test_storage_shape.py, Version: 0.23.15 (2026-09-28)
 
 """The shape check reports and touches nothing; last-good follows it.
 
@@ -160,14 +160,19 @@ def test_every_planted_corruption_is_named():
     assert check_records("garbage")[0][1] == "devices"
 
 
-def test_a_missing_and_an_unknown_field_are_both_named():
+def test_a_missing_and_a_retired_field_are_both_named():
+    """A retired field is damage; a newer version's field is not (#189,
+    amended 28 September 2026): it is kept, unread, so going back a
+    release and forward again loses nothing."""
     rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
     del rec[DEV_TAINTED]
-    rec["some_old_field"] = 1
+    rec["signal_sum"] = 1
+    rec["a_newer_versions_field"] = {"kept": True}
     faults = check_records({"d1": rec})
     named = {(f, w) for _d, f, w in faults}
     assert (DEV_TAINTED, "missing") in named
-    assert ("some_old_field", "unknown field") in named
+    assert ("signal_sum", "retired field") in named
+    assert not [f for f, _w in named if f == "a_newer_versions_field"]
 
 
 def test_the_check_changes_nothing():

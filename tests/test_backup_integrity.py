@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_backup_integrity.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_backup_integrity.py, Version: 0.23.15 (2026-09-28)
 
 # Tests for 0.18.0 and 0.18.1.
 #
@@ -25,6 +25,7 @@ from custom_components.device_sentinel.backup import (
 )
 from custom_components.device_sentinel.normalise import check_records
 from custom_components.device_sentinel.const import (
+    DEV_EVENT_COUNT,
     DATA_DEVICES,
     DEV_LAST_ACTIVITY,
     DEV_TAINTED,
@@ -93,7 +94,10 @@ async def test_a_clean_save_rotates_and_a_faulty_one_leaves_it(
     device, _ = register_device(hass, "wf", name="WF")
     coord._rebuild_registry_view()
     record = coord.data[DATA_DEVICES].setdefault(device.id, {})
-    record["window_basis"] = "not a number"
+    # A field of the wrong type. An unknown field is no longer damage:
+    # it is a newer version's, kept untouched (#189, amended 28
+    # September 2026), so the fault here is a known field's type.
+    record[DEV_EVENT_COUNT] = "not a number"
     await coord._save_main()
     assert coord.storage_load_faulty
     assert coord.last_good_taken == first_taken
