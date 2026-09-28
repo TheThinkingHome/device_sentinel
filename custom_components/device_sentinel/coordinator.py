@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.12 (2026-09-27)
+# File: coordinator.py, Version: 0.23.13 (2026-09-27)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -342,6 +342,9 @@ class DeviceSentinelCoordinator(
         # Whether the live file on disk was last written clean, so
         # the next clean save may rotate it to last-good (#370).
         self._rotation_armed: bool = False
+        # Devices whose registry entry could not be read, warned of once
+        # per start (issue #16).
+        self._odd_devices: set[str] = set()
         self._watched: dict[str, str] = {}  # device_id -> integration domain
         # Which coordinator stacks this house runs, derived from the
         # registry rather than asked (ruling #143).
@@ -1795,6 +1798,38 @@ class DeviceSentinelCoordinator(
                     devices.append(device)
         return devices
 
+    def _ask_registry(
+        self, question: Any, domain: str, device: Any, name: str
+    ) -> Any:
+        """Ask a stack question of one device, never letting it stop setup.
+
+        One device's registry entry, written by another integration,
+        must not stop Device Sentinel starting for the whole house:
+        issue #16 was a three-part identifier from hOn 0.8.4 that left
+        it in setup_error. A device whose entry cannot be read is
+        answered None for that question, stays watched, and is named in
+        one warning per start. Fixed first in 0.22.29.
+        """
+        try:
+            return question(domain, device)
+        except Exception as err:  # noqa: BLE001 - another integration's data
+            self._note_odd_device(device, name, err)
+            return None
+
+    def _note_odd_device(self, device: Any, name: str, err: Exception) -> None:
+        """Say once per start that a device's registry entry was unreadable."""
+        key = str(getattr(device, "id", name))
+        if key in self._odd_devices:
+            return
+        self._odd_devices.add(key)
+        LOGGER.warning(
+            "Device Sentinel could not read part of %s's registry entry "
+            "(%s: %s). It is still watched. Said once per start.",
+            name,
+            type(err).__name__,
+            err,
+        )
+
     def _rebuild_registry_view(self, audit: bool = False) -> None:
         """Classify devices and rebuild the entity-to-device map."""
         ent_reg = er.async_get(self.hass)
@@ -1839,7 +1874,7 @@ class DeviceSentinelCoordinator(
             # same walk (ruling #143). Which device proves which stack
             # is each stack file's own question and is asked through
             # the registry, so this walk names no stack (ruling #218).
-            stack = detect_stack(domain, device)
+            stack = self._ask_registry(detect_stack, domain, device, name)
             if stack is not None:
                 stacks.add(stack)
             if domain in excluded_integrations:
@@ -1880,7 +1915,7 @@ class DeviceSentinelCoordinator(
             # say. Read on the same walk for the same reason stack
             # presence is (ruling #143), and asked through the
             # registry so this file still names no stack.
-            owner = device_key(domain, device)
+            owner = self._ask_registry(device_key, domain, device, name)
             if owner is not None:
                 stack_keys[device.id] = owner
             # Whether a radio stack owns this device (ruling #412). A
@@ -1889,7 +1924,7 @@ class DeviceSentinelCoordinator(
             # Asked on the same walk, and deliberately not read from
             # `stack_keys`, which ZHA, Z-Wave and Matter leave empty
             # because their identifiers are unverified.
-            if radio_owner(domain, device) is not None:
+            if self._ask_registry(radio_owner, domain, device, name) is not None:
                 radio_owned.add(device.id)
             device_names[device.id] = name
             device_labels[device.id] = frozenset(device.labels or ())

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.22.18 (2026-09-21)
+# File: stack_z2m.py, Version: 0.23.13 (2026-09-27)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -44,6 +44,7 @@ from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
+
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -64,7 +65,7 @@ from .const import (
     Z2M_TOPIC_INFO,
     Z2M_TOPIC_STATE,
 )
-from .device_fields import device_field
+from .device_fields import device_field, identifier_values
 
 STACK = STACK_Z2M
 
@@ -134,12 +135,17 @@ def device_key(device: dr.DeviceEntry) -> str | None:
     as a panel publishing its own discovery, has no such identifier
     and returns None, which rejects it without a special case.
     """
-    for domain, value in device.identifiers:
-        if domain != "mqtt" or not isinstance(value, str):
+    for domain, parts in identifier_values(device):
+        if domain != "mqtt":
             continue
-        _, marker, address = value.partition(Z2M_IDENTIFIER_MARK)
-        if marker and address.startswith("0x"):
-            return address
+        # Any length, since an integration may register more than a
+        # pair (issue #16).
+        for value in parts:
+            if not isinstance(value, str):
+                continue
+            _, marker, address = value.partition(Z2M_IDENTIFIER_MARK)
+            if marker and address.startswith("0x"):
+                return address
     return None
 
 

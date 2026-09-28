@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.23.12 (2026-09-27)
+# File: store.py, Version: 0.23.13 (2026-09-27)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -674,9 +674,16 @@ class StorageMixin:
         the check vouches for.
         """
         devices = self.data.get(DATA_DEVICES) or {}
+        # A snapshot, taken in one step the event loop cannot interleave,
+        # because the reports are written on a worker thread while the
+        # loop adds a record when a device pairs and deletes one when it
+        # goes. Iterating the live map failed 25 of 150 report writes
+        # under that churn, "dictionary changed size during iteration",
+        # and lost that day's reports (0.23.13; found on the 0.22 line's
+        # signal report while proving 0.22.29).
         return [
             (device_id, record)
-            for device_id, record in devices.items()
+            for device_id, record in list(devices.items())
             if device_id in self._watched
         ]
 

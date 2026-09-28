@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_stacks.py, Version: 0.23.11 (2026-09-27)
+# File: study_stacks.py, Version: 0.23.13 (2026-09-27)
 
 """Z-Wave and Matter, gathered so their support can be built.
 
@@ -41,6 +41,8 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+
+from .device_fields import identifier_values
 from homeassistant.helpers import entity_registry as er
 
 from .const import LOGGER
@@ -382,9 +384,12 @@ def node_devices(hass: HomeAssistant, entry: Any, domain: str) -> dict[str, str]
     registry = dr.async_get(hass)
     found: dict[str, str] = {}
     for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
-        for ident_domain, ident in device.identifiers:
-            if ident_domain != domain:
+        # Any length (issue #16); the stack's own id is the first part
+        # after the domain.
+        for ident_domain, parts in identifier_values(device):
+            if ident_domain != domain or not parts:
                 continue
+            ident = parts[0]
             if domain in PLAIN_ID_DOMAINS:
                 # Hue, SmartThings and Tuya register a device by the
                 # stack's own id for it, unchanged.
