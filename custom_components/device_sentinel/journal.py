@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.23.12 (2026-09-27)
+# File: journal.py, Version: 0.23.15 (2026-09-28)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -31,7 +31,10 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .normalise import row_damage
+from . import attribution
 from .const import (
+    SYS_PAIRING_OPEN,
+    RECOVERY_CAUSE_PAIRING,
     RECOVERY_CAUSES_RESTART,
     CAUSE_EPISODE_SLACK_SECONDS,
     DATA_EPISODES,
@@ -683,6 +686,30 @@ class JournalMixin:
         the device closed itself says so. Only silences carry a
         cause; a battery or a rail recovering has no lever to name.
         """
+        # A person's pairing window open at the return is credited here
+        # as the brief credits it, from the same attribution (#535), so
+        # the automation event and the stored record say intervention
+        # where the brief says revived. Switch Hall Living on the
+        # reference rig, 28 September: the brief credited the window,
+        # the bus said unknown.
+        try:
+            spans = attribution.windows(self.data.get(DATA_SYSTEM_EVENTS) or [])
+            window = attribution.attribute(
+                spans,
+                self._watched.get(device_id),
+                self._stack_for_device(device_id),
+                opened,
+                dt_util.utcnow().timestamp(),
+                device_id,
+            )
+        except Exception:  # noqa: BLE001 - a cause is never worth a failed resolve
+            window = None
+        if (
+            window is not None
+            and window.kind == SYS_PAIRING_OPEN
+            and attribution.credits(window)
+        ):
+            return RECOVERY_CAUSE_PAIRING
         for episode in reversed(self.episode_rows()):
             if episode[EP_DEVICE_ID] != device_id:
                 continue

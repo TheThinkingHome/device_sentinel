@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.14 (2026-09-28)
+# File: coordinator.py, Version: 0.23.15 (2026-09-28)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -3007,9 +3007,10 @@ class DeviceSentinelCoordinator(
                 dropped.append(device_id)
                 continue
             if field not in template:
-                # An unknown key is damage the schema cannot describe,
-                # so its repair is removal, the same answer the
-                # reconciler gives a key a past version wrote.
+                # Only a retired field reaches here (#189, amended 28
+                # September 2026); its repair is removal, the answer
+                # the reconciler gives it too. A newer version's field
+                # is never flagged, so never removed.
                 record.pop(field, None)
             else:
                 # A fresh copy per record, never the template's own

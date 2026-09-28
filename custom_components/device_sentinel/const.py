@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.14 (2026-09-28)
+# File: const.py, Version: 0.23.15 (2026-09-28)
 
 """Constants for the Device Sentinel integration."""
 
@@ -705,6 +705,32 @@ DEV_SIGNAL_TODAY_MIN = "signal_today_min"
 # the rail column beside the reading count (ruling #322). The key
 # strings survive only so the load sweep can remove them from
 # stored files, including inside signal_alt blocks.
+# Every device field a released version wrote and a later one
+# retired, read from the fresh-record schema at all 309 release tags
+# (0.23.15). Only these are removed from a stored record at load; any
+# other field the schema does not know belongs to a newer version and
+# is kept, unread, so going back to an earlier release and forward
+# again loses nothing (#189, amended 28 September 2026).
+RETIRED_DEVICE_FIELDS = frozenset(
+    {
+        "signal_below_since",
+        "signal_below_today_seconds",
+        "signal_daily_line",
+        "signal_daily_min",
+        "signal_dwell_daily_pct",
+        "signal_frozen_at",
+        "signal_frozen_verdict",
+        "signal_rail_since",
+        "signal_repeat_count",
+        "signal_sum",
+        "signal_sum_sq",
+    }
+)
+
+# The classification report's trigger once the startup grace has
+# closed and the registry has settled (0.23.15).
+CLASSIFICATION_SETTLED_TRIGGER = "after startup"
+
 RETIRED_SIGNAL_KEYS = (
     "signal_daily_min",
     "signal_daily_line",
@@ -2319,7 +2345,14 @@ RECOVERY_BY_UNKNOWN = "unknown"
 # #125 and amending #228; it withdrew #531's 25-minute window before
 # release): "bridge reconnect", "reboot", "restart" and "unclean
 # shutdown" left this set, and a recovery after one is the device's own.
-RECOVERY_CAUSES_INTERVENTION = frozenset({"handled at the device"})
+# A person's pairing window open when the device came back (#535):
+# credited on every surface, the brief's windows and the stored cause
+# alike, so the bus says intervention where the brief says revived
+# (found on the reference rig on 28 September, Switch Hall Living).
+RECOVERY_CAUSE_PAIRING = "pairing window"
+RECOVERY_CAUSES_INTERVENTION = frozenset(
+    {"handled at the device", RECOVERY_CAUSE_PAIRING}
+)
 # Integrations whose reading after a restart or a reconnect is fetched
 # from the device itself, so it is the device answering (#535, amended
 # the day it was ruled). Each is here only because its source shows it:

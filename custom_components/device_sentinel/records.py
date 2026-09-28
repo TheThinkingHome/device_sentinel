@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.23.4 (2026-09-25)
+# File: records.py, Version: 0.23.15 (2026-09-28)
 
 """The device record shape, and the two helpers that read it.
 
@@ -14,10 +14,13 @@ and putting it in either would have made the other import from it
 and closed a circle (ruling #201).
 
 _new_device_record is the one authoritative field set. A key a
-stored record carries that a fresh one does not was written by a
-past version; a key a fresh one carries that a stored one does not
-belongs to a version newer than the file. Both are reconciled on
-load (ruling #189).
+fresh one carries that a stored one does not belongs to a version
+newer than the file, and is filled on load (ruling #189). A key a
+stored record carries that a fresh one does not is either retired,
+written by a past version and removed (RETIRED_DEVICE_FIELDS), or
+written by a newer version, and kept untouched so a house can go
+back a release and forward again without losing it (#189, amended
+28 September 2026).
 """
 
 from __future__ import annotations

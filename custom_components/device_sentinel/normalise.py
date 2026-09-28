@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.23.8 (2026-09-25)
+# File: normalise.py, Version: 0.23.15 (2026-09-28)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -61,6 +61,7 @@ from typing import Any
 
 from .records import _new_device_record
 from .const import (
+    RETIRED_DEVICE_FIELDS,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
     DEV_BATTERY_DAILY_PREVIOUS,
@@ -419,9 +420,12 @@ def check_records(devices: Any) -> list[tuple[str, str, str]]:
             why = _fault(kind, record[field])
             if why is not None:
                 faults.append((device_id, field, f"expected {kind}, found {why}"))
+        # Only a retired field is damage. Any other field the schema
+        # does not know was written by a newer version and is not this
+        # version's to judge (#189, amended 28 September 2026).
         for field in record:
-            if field not in EXPECTED:
-                faults.append((device_id, field, "unknown field"))
+            if field not in EXPECTED and field in RETIRED_DEVICE_FIELDS:
+                faults.append((device_id, field, "retired field"))
     return faults
 
 

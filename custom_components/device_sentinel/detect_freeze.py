@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.23.14 (2026-09-28)
+# File: detect_freeze.py, Version: 0.23.15 (2026-09-28)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -683,7 +683,8 @@ class FreezeMixin:
         return carries no duration, as a broker's return may not.
         """
         events = self.data.get(DATA_SYSTEM_EVENTS) or []
-        key = (len(events), events[-1].get(SYS_WHEN) if events else None)
+        last = events[-1] if events else None
+        key = (len(events), last.get(SYS_WHEN) if isinstance(last, dict) else repr(last))
         cached = getattr(self, "_outage_cache", None)
         if cached is not None and cached[0] == key:
             return cached[1]
@@ -695,22 +696,61 @@ class FreezeMixin:
         }
         opened: dict[tuple[str, str], float] = {}
         spans: dict[tuple[str, str], list[tuple[float, float]]] = {}
+        # Where each upstream last came back. An outage cannot have
+        # begun before that, so a corrupt duration, or a fall stamped
+        # at zero, covers at most the time since the last return and
+        # never the whole history: the hostile-data round of 28
+        # September found one such row silencing every device behind
+        # its upstream for as long as it was stored (0.23.15).
+        returned: dict[tuple[str, str], float] = {}
+        fell: dict[tuple[str, str], float] = {}
         for row in events:
+            if not isinstance(row, dict):
+                continue
             kind, scope, when = row.get(SYS_KIND), row.get(SYS_SCOPE), row.get(SYS_WHEN)
-            if not isinstance(when, (int, float)) or isinstance(when, bool):
+            if (
+                not isinstance(when, (int, float))
+                or isinstance(when, bool)
+                or not math.isfinite(when)
+            ):
                 continue
             if kind in falls:
                 opened.setdefault((falls[kind], str(scope)), float(when))
+                fell.setdefault((falls[kind], str(scope)), float(when))
                 continue
             if kind not in falls.values():
                 continue
             slot = (str(kind), str(scope))
             duration = row.get(SYS_DURATION)
             began = opened.pop(slot, None)
-            if isinstance(duration, (int, float)) and not isinstance(duration, bool) and duration > 0:
+            if (
+                isinstance(duration, (int, float))
+                and not isinstance(duration, bool)
+                and math.isfinite(duration)
+                and duration > 0
+            ):
                 began = float(when) - float(duration)
+            # Every upstream stores its fall as well as its return. A
+            # fall is recorded when it is noticed, which can be minutes
+            # after the outage began (dated from the start of the run,
+            # 3:42 against a fall recorded at 3:47 on the rig), never
+            # hours; a return whose fall is not on record is credited
+            # at most that slack. So a corrupt duration cannot forgive
+            # a silence that began long before: without the bound, a
+            # device frozen for days was credited back under its
+            # window and read as recovered without speaking.
+            recorded_fall = fell.pop(slot, None)
+            floors = [returned.get(slot)]
+            if recorded_fall is not None:
+                floors.append(recorded_fall - _FALL_SLACK_SECONDS)
+            else:
+                floors.append(float(when) - _FALL_SLACK_SECONDS)
+            floor = max((f for f in floors if f is not None), default=None)
+            if began is not None and floor is not None and began < floor:
+                began = floor
             if began is not None and began < when:
                 spans.setdefault(slot, []).append((began, float(when)))
+            returned[slot] = max(float(when), returned.get(slot, float(when)))
         self._outage_cache = (key, spans)
         return spans
 
@@ -918,3 +958,7 @@ def _covered(spans: list[tuple[float, float]], start: float, end: float) -> floa
         total += b - max(a, reach)
         reach = b
     return total
+
+
+# How far before its recorded fall an outage may be dated (0.23.15).
+_FALL_SLACK_SECONDS = 3600.0

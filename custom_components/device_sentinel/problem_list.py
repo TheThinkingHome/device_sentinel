@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.23.12 (2026-09-27)
+# File: problem_list.py, Version: 0.23.15 (2026-09-28)
 
 """The problem list: the single memory every channel renders.
 
@@ -856,6 +856,7 @@ class ProblemListMixin:
         self,
         stored_kinds: dict[str, float | None],
         incoming: dict[str, float | None],
+        device_id: str | None = None,
     ) -> dict[str, float | None]:
         """Keep a silent device's worst verdict until it reports (#529).
 
@@ -873,8 +874,25 @@ class ProblemListMixin:
         order = self._KIND_SEVERITY
         standing = [k for k in stored_kinds if k in self._HELD_DOWN]
         arriving = [k for k in incoming if k in self._HELD_DOWN]
-        if not standing or not arriving:
+        if not standing:
             return incoming
+        if not arriving:
+            # The down problem left while another kept the item, and
+            # the device's own verdict still says it is down: an
+            # upstream outage dated from the start of the run claims
+            # everything behind it (#450) and hides the row, which is
+            # not the device reporting (#529). On the reference rig at
+            # 3:47 AM on 28 September Soil Irrigation's six-day
+            # unavailable left an item its 0% battery kept, the bus
+            # heard it recover, and the bridge's return at 7:37
+            # announced it again. Every upstream did the same once its
+            # outage dated from the start. The worst kind stays.
+            if not self._still_judged_down(device_id):
+                return incoming
+            held = dict(incoming)
+            worst = min(standing, key=order.index)
+            held[worst] = stored_kinds[worst]
+            return held
         worst = min(standing, key=order.index)
         if any(order.index(k) <= order.index(worst) for k in arriving):
             return incoming
@@ -1236,7 +1254,9 @@ class ProblemListMixin:
         where another kind overtook it in the same pass.
         """
         new_kinds: dict[str, float | None] = {}
-        incoming = self._hold_the_worst(stored_kinds, problem["kinds"])
+        incoming = self._hold_the_worst(
+            stored_kinds, problem["kinds"], device_id
+        )
         for kind, since in incoming.items():
             if kind in stored_kinds:
                 new_kinds[kind] = (

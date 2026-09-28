@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.23.12 (2026-09-27)
+# File: interventions.py, Version: 0.23.15 (2026-09-28)
 
 """Interventions: bridge state, pairing windows, and storms.
 
@@ -1928,6 +1928,9 @@ class InterventionMixin:
         # battery can be hours away. A cell that read low through
         # the whole window is genuinely low and flags here.
         self._evaluate_all_batteries()
+        # The setup classification was written before every integration
+        # had loaded; the settled one replaces it (0.23.15).
+        self.hass.async_create_task(self._rewrite_classification())  # type: ignore[attr-defined]
         if self._restored_from is not None:
             # The restore happened inside setup, before the notify
             # platform and the messenger existed, so the notice waits

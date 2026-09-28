@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.23.13 (2026-09-27)
+# File: store.py, Version: 0.23.15 (2026-09-28)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -28,6 +28,7 @@ from .normalise import check_records, damaged_rows
 from .records import _new_device_record, _reset_signal_day, _span
 
 from .const import (
+    RETIRED_DEVICE_FIELDS,
     DATA_INCIDENTS,
     DATA_SYSTEM_EVENTS,
     DATA_LAST_VERSION,
@@ -161,7 +162,15 @@ class StorageMixin:
         filled = 0
         for record in devices.values():
             schema = _new_device_record(now_iso, None)
-            for key in [k for k in record if k not in schema]:
+            # Only a field this code retired is dead. Any other field
+            # the schema does not know was written by a newer version
+            # and is carried through untouched (#189, amended 28
+            # September 2026): 0.22.29 dropped firmware, flapping and
+            # coarse battery history this way when a house went back
+            # to it from 0.23.
+            for key in [
+                k for k in record if k not in schema and k in RETIRED_DEVICE_FIELDS
+            ]:
                 del record[key]
                 removed += 1
             for key, value in schema.items():

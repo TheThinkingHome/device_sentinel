@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.23.9 (2026-09-26)
+# File: reports.py, Version: 0.23.15 (2026-09-28)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -45,6 +45,9 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    LOGGER,
+    CLASSIFICATION_SETTLED_TRIGGER,
+    UNASSIGNED_AREA,
     CONF_REPORT_LINKS,
     DEFAULT_REPORT_LINKS,
     REPORT_LINKS_EXTERNAL,
@@ -204,6 +207,33 @@ class ReportWritingMixin(
         except Exception:  # noqa: BLE001 - that address is not set
             return None
 
+    def _write_classification_settled(self) -> None:
+        """Write classification.md again once the startup grace closes.
+
+        The setup report is written before every integration has
+        loaded, so a device waiting on one reads as watched in it and
+        is set aside only when the grace closes (#260, #367): on the
+        reference rig, 28 September, the ZHA coordinator read watched
+        at 7:36 AM, minutes after its radio restarted, and set aside
+        once ZHA loaded. The file now ends on the settled answer
+        (0.23.15, the owner's choice).
+        """
+        report_directory = self.hass.config.path(REPORT_DIR)
+        os.makedirs(report_directory, exist_ok=True)
+        self._write_classification(report_directory, CLASSIFICATION_SETTLED_TRIGGER)
+
+    async def _rewrite_classification(self) -> None:
+        """Rewrite the classification report off the event loop."""
+        try:
+            await self.hass.async_add_executor_job(
+                self._write_classification_settled
+            )
+        except OSError as err:
+            LOGGER.warning(
+                "Device Sentinel could not rewrite its classification report: %s",
+                err,
+            )
+
     def _device_cell(
         self, device_id: str | None, name: str, *, area: bool = True
     ) -> str:
@@ -253,8 +283,10 @@ class ReportWritingMixin(
         room = self._device_area(device_id)
         # A device in no area says so, briefly: a reader who sees an
         # area beside every other name should not be left wondering
-        # whether this one was looked up at all.
-        return f"{cell} [{escape(room) if room else 'None'}]"
+        # whether this one was looked up at all. In the word the bus
+        # events use, the owner's choice of 28 September (0.23.15):
+        # the reports said None, the events Unassigned.
+        return f"{cell} [{escape(room) if room else UNASSIGNED_AREA}]"
 
     def _device_status(self, device_id: str) -> str:
         """Return a device's muting status for the report column.

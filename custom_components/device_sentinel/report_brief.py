@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.23.12 (2026-09-27)
+# File: report_brief.py, Version: 0.23.15 (2026-09-28)
 
 """The daily brief: the one report written for a person.
 
@@ -1320,18 +1320,38 @@ class BriefMixin:
             worst = self._longest(rows, SYS_BRIDGE_UP, scope)
             if worst is not None:
                 said.append(
-                    f"The {self._integration_title(str(scope))} bridge was down for "
-                    f"{self._human_span(worst[SYS_DURATION])} at "
-                    f"{self._brief_moment(worst[SYS_WHEN])}."
+                    self._outage_span_sentence(
+                        f"The {self._integration_title(str(scope))} bridge", worst
+                    )
                 )
         worst = self._longest(rows, SYS_BROKER_UP)
         if worst is not None:
-            said.append(
-                "The MQTT broker was down for "
-                f"{self._human_span(worst[SYS_DURATION])} at "
-                f"{self._brief_moment(worst[SYS_WHEN])}."
-            )
+            said.append(self._outage_span_sentence("The MQTT broker", worst))
         return said
+
+    def _outage_span_sentence(self, subject: str, row: dict[str, Any]) -> str:
+        """Say how long an upstream was down, from when until when.
+
+        "Was down for 3.9h at Sep 28, 7:37 AM" read as though it went
+        down at 7:37, when that was its return (the reference rig's
+        brief, 28 September). The span now runs from its start to its
+        return, the date said once when both fall on one day. A return
+        stored without a duration says only when it came back.
+        """
+        end = row[SYS_WHEN]
+        duration = row.get(SYS_DURATION)
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration <= 0:
+            return f"{subject} came back at {self._brief_moment(end)}."
+        start = end - duration
+        same_day = (
+            dt_util.as_local(dt_util.utc_from_timestamp(start)).date()
+            == dt_util.as_local(dt_util.utc_from_timestamp(end)).date()
+        )
+        until = self._clock(end) if same_day else self._brief_moment(end)
+        return (
+            f"{subject} was down for {self._human_span(duration)}, from "
+            f"{self._brief_moment(start)} until {until}."
+        )
 
     def _options_sentence(self, rows: list[dict[str, Any]]) -> list[str]:
         """Return one sentence naming what a person changed.
