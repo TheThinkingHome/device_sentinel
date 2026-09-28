@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.12 (2026-09-27)
+# File: const.py, Version: 0.23.14 (2026-09-28)
 
 """Constants for the Device Sentinel integration."""
 
@@ -250,6 +250,10 @@ RATCHET_SLOW_ALLOWANCE = 4320.0
 TAINT_UNAVAILABLE = "unavailable"
 TAINT_UNKNOWN = "unknown"
 TAINT_BRIDGE_DOWN = "bridge down"
+# A completed gap that spanned an outage of the device's broker,
+# integration or network (#536). Only ever a learning label; never
+# stored as a device's taint.
+TAINT_UPSTREAM_DOWN = "upstream down"
 # The widest cause of all, and the one the reason field reserved a
 # place for before anything could detect it (ruling #164): the system
 # stopped without being asked to, so the device was not silent,

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.23.12 (2026-09-27)
+# File: detect_freeze.py, Version: 0.23.14 (2026-09-28)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -48,6 +48,20 @@ from .records import BAD_STATES
 from .stacks import reader_for_domain
 
 from .const import (
+    BROKER_SCOPE,
+    SYS_DURATION,
+    SYS_WHEN,
+    SYS_SCOPE,
+    SYS_KIND,
+    SYS_WIFI_UP,
+    SYS_WIFI_DOWN,
+    SYS_BROKER_UP,
+    SYS_BROKER_DOWN,
+    SYS_INTEGRATION_UP,
+    SYS_INTEGRATION_DOWN,
+    SYS_BRIDGE_UP,
+    SYS_BRIDGE_DOWN,
+    DATA_SYSTEM_EVENTS,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
     CONF_FREEZE_MUTED_DEVICES,
@@ -355,7 +369,7 @@ class FreezeMixin:
         # Frozen: armed, and silent past its window while entities
         # still hold values. Judged first because it is the timer's
         # own verdict.
-        silence = self._observed_silence(record, now)
+        silence = self._observed_silence(record, now, device_id, window)
         frozen = (
             window is not None
             and silence is not None
@@ -584,7 +598,11 @@ class FreezeMixin:
         return self.upstream_down_since(device_id) is not None
 
     def _observed_silence(
-        self, record: dict[str, Any], now: float
+        self,
+        record: dict[str, Any],
+        now: float,
+        device_id: str | None = None,
+        window: float | None = None,
     ) -> float | None:
         """How long this device was silent while anyone was listening.
 
@@ -604,14 +622,97 @@ class FreezeMixin:
         last = record.get(DEV_LAST_ACTIVITY)
         if not isinstance(last, (int, float)):
             return None
-        silence = now - last
+        spans: list[tuple[float, float]] = []
         if (
             self._downtime > 0.0
             and self._last_alive is not None
             and last <= self._last_alive
         ):
-            silence -= self._downtime
-        return max(0.0, silence)
+            spans.append((self._last_alive, self._last_alive + self._downtime))
+        if device_id is not None:
+            spans.extend(self._outage_spans_for(device_id, last, window))
+        return max(0.0, (now - last) - _covered(spans, last, now))
+
+    def _outage_spans_for(
+        self, device_id: str, last: float, window: float | None
+    ) -> list[tuple[float, float]]:
+        """The outages of this device's upstreams that its silence leaves out.
+
+        Time an upstream was down is not counted as its devices'
+        silence (#536), exactly as Device Sentinel's own downtime is not
+        (#160): the reference rig's Zigbee2MQTT was down from 3:40 to
+        7:37 on 28 September, and when the three-minute rejoin window
+        (#436) closed, 24 living devices were announced frozen in one
+        check on four hours they could not have been heard in.
+
+        The outages come from the stored returns, so a restart in the
+        middle of an outage cannot erase them. An outage that began only
+        after the device was already past its window is left out, so a
+        device frozen before the outage keeps that verdict.
+        """
+        found: list[tuple[float, float]] = []
+        for start, end in self._device_outages(device_id):
+            if end <= last:
+                continue
+            if window is not None and start >= last + window:
+                continue
+            found.append((start, end))
+        return found
+
+    def _device_outages(self, device_id: str) -> list[tuple[float, float]]:
+        """Every stored outage of an upstream this device depends on."""
+        spans = self._stored_outages()
+        found: list[tuple[float, float]] = []
+        stack = self._stack_for_device(device_id)
+        if stack is not None:
+            found.extend(spans.get((SYS_BRIDGE_UP, stack), []))
+        domain = self._watched.get(device_id)
+        if domain is not None:
+            found.extend(spans.get((SYS_INTEGRATION_UP, domain), []))
+        if self._rides_the_broker(device_id):
+            found.extend(spans.get((SYS_BROKER_UP, BROKER_SCOPE), []))
+        if device_id in getattr(self, "_wifi_ties", {}):
+            found.extend(spans.get((SYS_WIFI_UP, WIFI_KEY), []))
+        return found
+
+    def _stored_outages(self) -> dict[tuple[str, str], list[tuple[float, float]]]:
+        """Each upstream's outages, from the system events, cached.
+
+        An outage ends at its stored return and began that return's
+        duration earlier, or at the matching stored fall when the
+        return carries no duration, as a broker's return may not.
+        """
+        events = self.data.get(DATA_SYSTEM_EVENTS) or []
+        key = (len(events), events[-1].get(SYS_WHEN) if events else None)
+        cached = getattr(self, "_outage_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        falls = {
+            SYS_BRIDGE_DOWN: SYS_BRIDGE_UP,
+            SYS_INTEGRATION_DOWN: SYS_INTEGRATION_UP,
+            SYS_BROKER_DOWN: SYS_BROKER_UP,
+            SYS_WIFI_DOWN: SYS_WIFI_UP,
+        }
+        opened: dict[tuple[str, str], float] = {}
+        spans: dict[tuple[str, str], list[tuple[float, float]]] = {}
+        for row in events:
+            kind, scope, when = row.get(SYS_KIND), row.get(SYS_SCOPE), row.get(SYS_WHEN)
+            if not isinstance(when, (int, float)) or isinstance(when, bool):
+                continue
+            if kind in falls:
+                opened.setdefault((falls[kind], str(scope)), float(when))
+                continue
+            if kind not in falls.values():
+                continue
+            slot = (str(kind), str(scope))
+            duration = row.get(SYS_DURATION)
+            began = opened.pop(slot, None)
+            if isinstance(duration, (int, float)) and not isinstance(duration, bool) and duration > 0:
+                began = float(when) - float(duration)
+            if began is not None and began < when:
+                spans.setdefault(slot, []).append((began, float(when)))
+        self._outage_cache = (key, spans)
+        return spans
 
     @property
     def freeze_tracked_count(self) -> int:
@@ -802,3 +903,18 @@ class FreezeMixin:
                 record[DEV_TAINTED] = TAINT_UNAVAILABLE
                 converted += 1
         return converted
+
+
+def _covered(spans: list[tuple[float, float]], start: float, end: float) -> float:
+    """How much of [start, end] the spans cover, each minute counted once."""
+    clipped = sorted(
+        (max(a, start), min(b, end)) for a, b in spans if b > start and a < end
+    )
+    total = 0.0
+    reach = start
+    for a, b in clipped:
+        if b <= reach:
+            continue
+        total += b - max(a, reach)
+        reach = b
+    return total
