@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.23.16 (2026-09-28)
+# File: report_brief.py, Version: 0.23.16 (2026-09-29)
 
 """The daily brief: the one report written for a person.
 
