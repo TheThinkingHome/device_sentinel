@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.16 (2026-09-29)
+# File: coordinator.py, Version: 0.23.17 (2026-09-29)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -227,6 +227,7 @@ from .const import (
 from .detect_battery import BatteryMixin
 from .flapping import FlapMixin
 from .model_groups import ModelGroupMixin
+from .rhythm_shadow import RhythmShadowMixin
 from .detect_freeze import FreezeMixin
 from .detect_signal import SignalMixin, _entity_unit, _is_percentage
 from .device_fields import child_devices, device_field
@@ -273,6 +274,7 @@ class DeviceSentinelCoordinator(
     FreezeMixin,
     FlapMixin,
     ModelGroupMixin,
+    RhythmShadowMixin,
     ProblemListMixin,
     StorageMixin,
     InterventionMixin,
@@ -640,6 +642,7 @@ class DeviceSentinelCoordinator(
         self._probe_failed: set[str] = set()
         self._probe_write_failed = False
         self._probe_lock = threading.Lock()
+        self._init_rhythm_shadow()
         # Whether Device Sentinel's Wi-Fi outage was open at the last
         # probe tick; None until the first tick (0.23.8).
         self._probe_wifi_down: bool | None = None
@@ -3637,6 +3640,7 @@ class DeviceSentinelCoordinator(
             dt_util.utcnow() - timedelta(minutes=1)
         ).date()
         self._fold_storm_days(ended.isoformat())
+        self.shadow_fold(now)
         # A new day's figures are something the dashboard should offer.
         self._mark_changed()
         # The roll is what confirms a rail (three consecutive days
@@ -3790,6 +3794,9 @@ class DeviceSentinelCoordinator(
         await self._close_brief_if_skipped()
         self._sample_bridges()
         self._judge_all_devices()
+        # The clipped rhythm beside the one judgment used, the same
+        # minute and the same silence (ruling #542). Changes nothing.
+        self.shadow_check(dt_util.utcnow().timestamp())
         self._wifi_backdate()
         self._note_upstream_peaks()
         # The sync follows the sweep every tick, so a freeze the

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.23.12 (2026-09-27)
+# File: report_maintainer.py, Version: 0.23.17 (2026-09-29)
 
 """The three Markdown files written for whoever maintains the system.
 
@@ -22,7 +22,7 @@ is the coordinator throughout and nothing here stands alone.
 from __future__ import annotations
 
 import contextlib
-
+import math
 import os
 from typing import Any
 
@@ -74,6 +74,7 @@ from .const import (
     PROBE_WAS,
     PROBE_WHEN,
     REPORT_DIR,
+    REPORT_RHYTHM_SHADOW,
     REPORT_STACK_PROBE,
     REPORT_EPISODES,
     REPORT_TELEMETRY,
@@ -83,9 +84,15 @@ from .const import (
     STORM_EXEMPT_PER_HOUR,
     STORM_WINDOW_SECONDS,
     TRIM_MIN_SAMPLES,
+    CLIP_DEVIATIONS,
+    CLIP_MAX_DAYS,
+    CLIP_SPREAD_FLOOR,
+    CLIP_START_DAYS,
+    CLIP_TARGET_DEVIATIONS,
     TRIM_TOP_K,
     WIKI_LINK_REPORTS,
 )
+from .rhythm_shadow import clipped_rhythm
 from .durations import LONG_SPAN_SECONDS, long_span
 
 
@@ -366,6 +373,31 @@ class MaintainerReportMixin:
             f"{since_what}"
         )
 
+    def _rhythm_cells(self, record: dict[str, Any]) -> list[str]:
+        """Six cells: today's basis and window, the clipped ones, and
+        the clipped rhythm's working (ruling #542)."""
+        daily = record.get(DEV_DAILY_MAX) or []
+        basis, _ = self._trimmed_maximum(daily)  # type: ignore[attr-defined]
+        window = self._freeze_window(record)  # type: ignore[attr-defined]
+        found = clipped_rhythm(daily)
+        clipped_window = self.clipped_window(record)  # type: ignore[attr-defined]
+        gap = self._fmt_gap  # type: ignore[attr-defined]
+        if found is None:
+            young = f"under {CLIP_START_DAYS} days"
+            return [
+                gap(basis) if basis is not None else "-",
+                gap(window) if window is not None else "-",
+                young, "-", "-", "-",
+            ]
+        return [
+            gap(basis) if basis is not None else "-",
+            gap(window) if window is not None else "-",
+            gap(found["basis"]),
+            gap(clipped_window) if clipped_window is not None else "-",
+            f"{found['read']} / {found['clipped']}",
+            f"{gap(found['typical'])} / {100 * (math.exp(found['spread']) - 1):.0f}%",
+        ]
+
     def _format_maxima_cell(self, daily_maximum_gaps: list[float]) -> str:
         """Render the maxima list newest-first with the trim visible.
 
@@ -574,7 +606,25 @@ class MaintainerReportMixin:
             f"Rule: the window basis is the **trimmed maximum** of "
             f"the rolling daily maxima: the top {TRIM_TOP_K} value(s) "
             f"are ~~set aside~~ as suspected anomalies and the basis "
-            f"is the max of the survivors. {sample_note}",
+            f"is the max of the survivors. {sample_note} BASIS and "
+            f"WINDOW are what judgment uses today; the window is the "
+            f"basis plus the grace margin.",
+            "",
+            f"The CLIPPED rhythm is computed beside it and changes "
+            f"nothing yet (ruling #542): from a device's "
+            f"{CLIP_START_DAYS}th day, over up to its last "
+            f"{CLIP_MAX_DAYS}, it works on the logarithm of each day's "
+            f"longest gap, sets aside every day more than "
+            f"{CLIP_DEVIATIONS:g} spreads above the mean, again until "
+            f"none is, and takes the mean of the rest plus "
+            f"{CLIP_TARGET_DEVIATIONS:g} spreads, the same "
+            f"90th-percentile day the trimmed maximum aims at. The "
+            f"spread never reads below {CLIP_SPREAD_FLOOR:g}. DAYS READ "
+            f"/ CLIPPED is how many days it read and how many it set "
+            f"aside; TYPICAL is the device's usual longest gap and "
+            f"SPREAD how far its days scatter around it, as a share. "
+            f"Where the two rules would disagree about a device is "
+            f"recorded in {REPORT_RHYTHM_SHADOW}.",
             "",
             f"Tunables: grace {STARTUP_GRACE_SECONDS} s, storm "
             f"{STORM_DEVICE_THRESHOLD} devices/"
@@ -592,6 +642,8 @@ class MaintainerReportMixin:
             "## Learned Statistics",
             "",
             f"| DEVICE (INTEGRATION) | STATUS | GAPS (K={TRIM_TOP_K}) | "
+            f"BASIS | WINDOW | CLIPPED BASIS | CLIPPED WINDOW | "
+            f"DAYS READ / CLIPPED | TYPICAL / SPREAD | "
             f"CLOCK | EVENTS | SIGNAL | "
             f"ITS NORMAL | BAD-DAY LINE | "
             f"BAT LEVEL (floor {self.low_threshold:g}%) |",
@@ -601,7 +653,7 @@ class MaintainerReportMixin:
             # every renderer print the table as plain text. Reported
             # against 0.19.14 on 15 September; the fault reached
             # 0.21.9 unnoticed because nothing counted the pipes.
-            "|---|---|---|---|---|---|---|---|---|",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
         for device_id, record in self.watched_records():
@@ -616,6 +668,7 @@ class MaintainerReportMixin:
                     device_label,
                     self._device_status(device_id),
                     self._format_maxima_cell(daily_maximum_gaps),
+                    self._rhythm_cells(record),
                     "seen"
                     if device_id in self._last_seen_entity
                     else "clock",
@@ -644,6 +697,7 @@ class MaintainerReportMixin:
             device_label,
             status,
             maxima_cell,
+            rhythm_cells,
             clock_source,
             event_count,
             lows_cell,
@@ -665,6 +719,7 @@ class MaintainerReportMixin:
             lines.append(
                 f"| {device_label} | {status} | "
                 f"{maxima_cell} | "
+                f"{' | '.join(rhythm_cells)} | "
                 f"{clock_source} | {event_count} | {signal_cell} | "
                 f"{its_normal} | "
                 f"{badday_line} | {battery_cell} |"

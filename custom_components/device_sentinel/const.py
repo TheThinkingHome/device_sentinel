@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.16 (2026-09-29)
+# File: const.py, Version: 0.23.17 (2026-09-29)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1280,6 +1280,10 @@ REPORT_EPISODES = "silence_episodes.md"
 # while a stack is studied (0.22.26), so "send me the files in
 # config/device_sentinel" covers it.
 REPORT_STACK_PROBE = "stack_probe.md"
+# The clipped rhythm in shadow (ruling #542): a line when it and the
+# trimmed maximum disagree about a device, and one a day. Written and
+# rolled the way stack_probe.md is.
+REPORT_RHYTHM_SHADOW = "rhythm_shadow.md"
 REPORT_STALE_FILES = ("device_telemetry.txt", "classification.txt")
 
 # The trimmed maximum, previewed in the telemetry report (display
@@ -1290,6 +1294,24 @@ REPORT_STALE_FILES = ("device_telemetry.txt", "classification.txt")
 # Below TRIM_MIN_SAMPLES days there are too few samples to spare
 # any, so nothing is trimmed. Both are soak-settled provisionals.
 TRIM_TOP_K = 1
+# The clipped rhythm, computed in shadow beside the trimmed maximum
+# (ruling #542) and fixed for the shadow run, since the run exists to
+# judge exactly these. Settled on the reference rig's 80 days and the
+# second house's 39 on 29 September 2026. From the 28th usable day,
+# over up to the last 42, on the logarithm of each day's longest gap:
+# days more than 2.5 spreads above the mean are set aside, repeatedly,
+# and the rhythm is the mean of the rest plus 1.2816 spreads, the
+# 90th-percentile day the trimmed maximum aims at. 2.0 cleared every
+# planted bad day but tripled false alarms on the second house; 3.0
+# let three bad days through. At 42 days five far-out bad days vanish,
+# at 28 they did not. A spread floor of 0.15 keeps a device whose
+# longest gap is nearly the same every day from reading as perfectly
+# regular.
+CLIP_START_DAYS = 28
+CLIP_MAX_DAYS = 42
+CLIP_DEVIATIONS = 2.5
+CLIP_TARGET_DEVIATIONS = 1.2816
+CLIP_SPREAD_FLOOR = 0.15
 TRIM_MIN_SAMPLES = 7
 
 # Step 3: battery detection (value-only; liveness belongs to Step 4).
@@ -2515,7 +2537,7 @@ SYS_WORST = "worst"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 541
+HIGHEST_RULING = 542
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
