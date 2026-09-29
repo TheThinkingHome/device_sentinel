@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.17 (2026-09-29)
+# File: coordinator.py, Version: 0.23.18 (2026-09-29)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -224,7 +224,7 @@ from .const import (
     TODO_DEVICE_ID,
     TODO_KINDS,
 )
-from .detect_battery import BatteryMixin
+from .detect_battery import BatteryMixin, mark_raw_battery, raw_battery_history
 from .flapping import FlapMixin
 from .model_groups import ModelGroupMixin
 from .rhythm_shadow import RhythmShadowMixin
@@ -1288,6 +1288,32 @@ class DeviceSentinelCoordinator(
                     filled,
                 )
 
+            # Values a real device or a longer retention can explain,
+            # brought into range before the boundary rather than
+            # called damage by it (rulings #543, #545): a device on
+            # Zigbee's raw battery scale has its history halved, and a
+            # gap longer than this house's retention is learned as the
+            # retention. Only then does #544 hold what is left to the
+            # possible.
+            raw = self._convert_raw_batteries(loaded.get(DATA_DEVICES) or {})
+            if raw:
+                LOGGER.info(
+                    "%d device(s) report Zigbee's raw battery scale of 0 "
+                    "to 200; their stored levels were halved to percent "
+                    "(ruling #545): %s",
+                    len(raw),
+                    ", ".join(raw[:5]),
+                )
+            held = self._cap_gaps_at_retention(loaded.get(DATA_DEVICES) or {})
+            if held:
+                LOGGER.info(
+                    "%d learned gap(s) were longer than the %d days kept "
+                    "and are held at %d days (ruling #543)",
+                    held,
+                    self.retention_days,
+                    self.retention_days,
+                )
+
             # The boundary (ruling #370), placed here on purpose:
             # after every migration, which may still repair a legacy
             # shape, and before the first reader. From this line on
@@ -1689,6 +1715,16 @@ class DeviceSentinelCoordinator(
                 "Device Sentinel could not write its reports (%s): %s",
                 trigger or "midnight",
                 err,
+            )
+            return None
+        except Exception:  # noqa: BLE001 - a report is never worth the tick
+            # Each report is already guarded on its own (#544); this is
+            # the brief, or the writer around them. The midnight fold and
+            # the brief's send carry on without it.
+            LOGGER.exception(
+                "Device Sentinel could not write its reports (%s); the "
+                "tick carries on (ruling #544)",
+                trigger or "midnight",
             )
             return None
 
@@ -2720,6 +2756,10 @@ class DeviceSentinelCoordinator(
                         gap,
                         cap,
                     )
+            # Held at the retention (ruling #543): a silence longer
+            # than the history kept is learned as the retention and
+            # shown as more than it.
+            learned_gap = min(learned_gap, self.gap_cap())
             if (
                 record[DEV_TODAY_MAX] is None
                 or learned_gap > record[DEV_TODAY_MAX]
@@ -3253,6 +3293,54 @@ class DeviceSentinelCoordinator(
                 record[field] = copy.deepcopy(template[field])
             reset.append((device_id, field))
         return dropped, reset
+
+    def _convert_raw_batteries(self, devices: dict[str, Any]) -> list[str]:
+        """Halve the stored battery history of every device that can
+        only be on Zigbee's raw scale (ruling #545). Returns the names
+        of the devices converted."""
+        converted: list[str] = []
+        for device_id, record in devices.items():
+            if isinstance(record, dict) and raw_battery_history(record):
+                mark_raw_battery(record)
+                converted.append(str(self._device_name(device_id) or device_id))
+        return converted
+
+    def gap_cap(self) -> float:
+        """The longest gap this house can learn: its retention (#543)."""
+        return float(self.retention_days) * 86400.0
+
+    def _cap_gaps_at_retention(self, devices: dict[str, Any]) -> int:
+        """Hold every stored gap at the retention (ruling #543).
+
+        A silence longer than the history kept cannot be learned
+        from, and the stored day says so as "more than" the retention
+        in every report. Only positive numbers are held; anything else
+        is the boundary's to judge.
+        """
+        cap = self.gap_cap()
+        held = 0
+        for record in devices.values():
+            if not isinstance(record, dict):
+                continue
+            series = record.get(DEV_DAILY_MAX)
+            if isinstance(series, list):
+                for i, gap in enumerate(series):
+                    if (
+                        isinstance(gap, (int, float))
+                        and not isinstance(gap, bool)
+                        and gap > cap
+                    ):
+                        series[i] = cap
+                        held += 1
+            today = record.get(DEV_TODAY_MAX)
+            if (
+                isinstance(today, (int, float))
+                and not isinstance(today, bool)
+                and today > cap
+            ):
+                record[DEV_TODAY_MAX] = cap
+                held += 1
+        return held
 
     def _cap_gap_series(
         self, devices: dict[str, Any], loaded: dict[str, Any]

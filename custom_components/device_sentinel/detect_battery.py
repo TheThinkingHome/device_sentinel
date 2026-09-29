@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.23.16 (2026-09-29)
+# File: detect_battery.py, Version: 0.23.18 (2026-09-29)
 
 """Battery: the level threshold and what is tracked.
 
@@ -48,6 +48,8 @@ from .const import (
     BATTERY_REPLACED_FROM_BELOW,
     BATTERY_REPLACED_RISE,
     DEV_BATTERY_COARSE_DROPS,
+    DEV_BATTERY_RAW_SCALE,
+    DEV_BATTERY_RAW_FIRST_DAY,
     DEV_BATTERY_DAILY_PREVIOUS,
     BATTERY_COARSE_CONFIRM,
     BATTERY_COARSE_STEP,
@@ -60,6 +62,8 @@ from .const import (
     SYS_SCOPE_SYSTEM,
     BATTERY_CLEAR_MARGIN,
     BATTERY_LEVEL_HIGHEST,
+    BATTERY_RAW_HIGHEST,
+    BATTERY_RAW_PROOF,
     BATTERY_LEVEL_LOWEST,
     CONF_BATTERY_MUTED_DEVICES,
     CONF_BATTERY_MUTED_INTEGRATIONS,
@@ -75,6 +79,82 @@ from .const import (
 )
 from .records import BAD_STATES
 
+
+
+def mark_raw_battery(record: dict[str, Any]) -> bool:
+    """Mark a record as on Zigbee's raw battery scale and halve what
+    it already stored (ruling #545). Idempotent: a record already
+    marked is left alone. Returns whether it marked it."""
+    if record.get(DEV_BATTERY_RAW_SCALE):
+        return False
+    record[DEV_BATTERY_RAW_SCALE] = True
+    record[DEV_BATTERY_RAW_FIRST_DAY] = None
+    for field in (DEV_BATTERY_DAILY, DEV_BATTERY_DAILY_PREVIOUS):
+        series = record.get(field)
+        if isinstance(series, list):
+            record[field] = [
+                v / 2.0
+                if isinstance(v, (int, float)) and not isinstance(v, bool)
+                else v
+                for v in series
+            ]
+    for field in (DEV_BATTERY_VALUE, DEV_BATTERY_REPLACED_PENDING):
+        value = record.get(field)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            record[field] = value / 2.0
+    return True
+
+
+def clear_raw_battery(record: dict[str, Any], why: str) -> bool:
+    """Clear a raw-scale mark so the device is measured again (ruling
+    #545, amended): at a battery change, and at a firmware update,
+    either of which can change the scale a device reports on. The
+    history already stored stays in percent. Until the scale is proved
+    again, a reading over 100 is ignored, as it was before the first
+    proof. Returns whether a mark was cleared."""
+    if not record.get(DEV_BATTERY_RAW_SCALE):
+        return False
+    record[DEV_BATTERY_RAW_SCALE] = False
+    record[DEV_BATTERY_RAW_FIRST_DAY] = None
+    LOGGER.info(
+        "device_sentinel: the raw battery scale mark was cleared after "
+        "%s; the device is measured again (ruling #545)",
+        why,
+    )
+    return True
+
+
+def raw_battery_history(record: dict[str, Any]) -> bool:
+    """Whether a stored record carries a battery level only the raw
+    scale can explain: over 100 and at most 200 (ruling #545)."""
+    if record.get(DEV_BATTERY_RAW_SCALE):
+        return False
+    values: list[Any] = [record.get(DEV_BATTERY_VALUE), record.get(DEV_BATTERY_REPLACED_PENDING)]
+    for field in (DEV_BATTERY_DAILY, DEV_BATTERY_DAILY_PREVIOUS):
+        series = record.get(field)
+        if isinstance(series, list):
+            values.extend(series)
+    numbers = [
+        v for v in values
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    ]
+    # Stored history counts as proof the same way live readings do:
+    # daily levels over 110 on two different days (ruling #545). A
+    # record whose levels leave the raw scale altogether is not raw; it
+    # is the range check's to repair.
+    if not all(0.0 <= v <= BATTERY_RAW_HIGHEST for v in numbers):
+        return False
+    daily = record.get(DEV_BATTERY_DAILY)
+    proving_days = (
+        sum(
+            1 for v in daily
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
+            and BATTERY_RAW_PROOF < v <= BATTERY_RAW_HIGHEST
+        )
+        if isinstance(daily, list)
+        else 0
+    )
+    return proving_days >= 2
 
 class BatteryMixin:
     """Battery: the level threshold and what is tracked."""
@@ -138,6 +218,10 @@ class BatteryMixin:
             carried = series[-1:]
             record[DEV_BATTERY_DAILY_PREVIOUS] = list(series[:-1])
             record[DEV_BATTERY_REPLACED_AT] = dt_util.utcnow().isoformat()
+            # A new battery is measured afresh (ruling #545, amended
+            # 29 September 2026): the raw mark lasts until the next
+            # battery change, and the new cell proves its scale again.
+            clear_raw_battery(record, "a battery change")
             # A new cell is judged afresh (0.23.1).
             record[DEV_BATTERY_COARSE_DROPS] = 0
             record[DEV_BATTERY_LOW] = False
@@ -320,6 +404,30 @@ class BatteryMixin:
                     state.state,
                 )
                 return
+            if not record.get(DEV_BATTERY_RAW_SCALE) and (
+                BATTERY_RAW_PROOF < level <= BATTERY_RAW_HIGHEST
+            ):
+                # Evidence of Zigbee's raw half-percent scale (ruling
+                # #545): no percentage exceeds 100. Proof takes a
+                # reading over 110 on two different days, so a percent
+                # device that glitches once is never halved.
+                today = dt_util.now().date().isoformat()
+                first = record.get(DEV_BATTERY_RAW_FIRST_DAY)
+                if first is None:
+                    record[DEV_BATTERY_RAW_FIRST_DAY] = today
+                elif first != today:
+                    mark_raw_battery(record)
+                    LOGGER.info(
+                        "device_sentinel: %s reported %s, over 110 on a "
+                        "second day (first on %s), so it reports "
+                        "Zigbee's raw battery scale of 0 to 200; its "
+                        "readings are halved from now on (ruling #545)",
+                        battery_entity_id,
+                        state.state,
+                        first,
+                    )
+            if record.get(DEV_BATTERY_RAW_SCALE):
+                level = level / 2.0
             if not BATTERY_LEVEL_LOWEST <= level <= BATTERY_LEVEL_HIGHEST:
                 # Finite, and still not a percentage: ignored, never
                 # brought into range, and the last verdict holds

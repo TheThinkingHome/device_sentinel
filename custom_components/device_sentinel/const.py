@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.17 (2026-09-29)
+# File: const.py, Version: 0.23.18 (2026-09-29)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1212,6 +1212,28 @@ DEV_BATTERY_REPLACED_PENDING = "battery_replaced_pending"
 # daily history. Two confirm a coarse reporter; any smaller change
 # returns it to smooth.
 DEV_BATTERY_COARSE_DROPS = "battery_coarse_drops"
+# Whether a device reports its battery on Zigbee's raw scale, 0 to 200
+# in half-percents, rather than 0 to 100 (ruling #545). LUX Outdoors on
+# the reference rig, a Sunricher 4IN1 sensor through Zigbee2MQTT,
+# reported 200 down to 178 under a "%" unit, which is 100% down to 89%.
+# Neither the unit nor the device class tells the two apart, since the
+# raw value arrives labelled "%". The owner ruled the mark conservative:
+# a reading over BATTERY_RAW_PROOF on two different days, so a percent
+# device that glitches once to 101 or 105 is never halved. Until then a
+# reading over 100 is ignored, as #540 ignores it; a raw device caught
+# late is still caught. Once marked, every reading is halved, and the
+# history stored before it was halved once when the mark was set.
+# Amended the same day: the mark lasts until the next battery change or
+# firmware update, either of which can change the scale, and the device
+# is then measured again.
+DEV_BATTERY_RAW_SCALE = "battery_raw_scale"
+# The local day of the first reading that would prove the raw scale,
+# as an ISO date, or None. A reading on a different day confirms it.
+DEV_BATTERY_RAW_FIRST_DAY = "battery_raw_first_day"
+BATTERY_RAW_PROOF = 110.0
+# The highest reading the raw scale gives; past it a reading is not a
+# battery level on either scale and is ignored (#540).
+BATTERY_RAW_HIGHEST = 200.0
 # The current run of drops of a device that goes unavailable again and
 # again (0.23.2): when each drop began, when the run became a flap,
 # when the device last came back, and the longest it stayed back
@@ -1445,6 +1467,8 @@ EPOCH_KEPT = (
     DEV_BATTERY_REPLACED_AT,
     DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_COARSE_DROPS,
+    DEV_BATTERY_RAW_SCALE,
+    DEV_BATTERY_RAW_FIRST_DAY,
     DEV_FLAP_DROPS,
     DEV_FLAP_SINCE,
     DEV_FLAP_BACK,
@@ -2537,7 +2561,7 @@ SYS_WORST = "worst"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 542
+HIGHEST_RULING = 545
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

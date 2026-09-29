@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: model_groups.py, Version: 0.23.10 (2026-09-26)
+# File: model_groups.py, Version: 0.23.18 (2026-09-29)
 
 """Devices read as groups of the same maker, model and hardware (0.23.4).
 
@@ -60,6 +60,7 @@ from .const import (
     MODEL_GROUP_NOT_GIVEN,
     MODEL_GROUP_WINDOW_DAYS,
 )
+from .detect_battery import clear_raw_battery
 from .device_fields import device_field
 
 SECONDS_PER_DAY = 86400.0
@@ -465,7 +466,15 @@ class ModelGroupMixin:
                 continue
             if now - first_seen < FIRMWARE_HOLD_SECONDS:
                 continue
-            changed = note_firmware(record, firmware, first_seen) or changed
+            had = bool(record.get(DEV_FIRMWARE_HISTORY))
+            if note_firmware(record, firmware, first_seen):
+                changed = True
+                if had:
+                    # An update can change the battery scale a device
+                    # reports on; it is measured again (ruling #545,
+                    # amended). A first version on record is not an
+                    # update.
+                    clear_raw_battery(record, "a firmware update")
             self._firmware_candidates.pop(device_id, None)
         if changed:
             self._mark_cold_dirty()  # type: ignore[attr-defined]

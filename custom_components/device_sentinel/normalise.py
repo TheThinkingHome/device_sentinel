@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.23.16 (2026-09-28)
+# File: normalise.py, Version: 0.23.18 (2026-09-29)
 
 """Check every stored record against its expected shape. Report, and
 touch nothing.
@@ -68,6 +68,8 @@ from .const import (
     DEV_BATTERY_REPLACED_AT,
     DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_COARSE_DROPS,
+    DEV_BATTERY_RAW_SCALE,
+    DEV_BATTERY_RAW_FIRST_DAY,
     DEV_FLAP_BACK,
     DEV_FIRMWARE_HISTORY,
     DEV_FLAP_DROPS,
@@ -143,7 +145,50 @@ from .const import (
 )
 
 # The kinds a field may hold. Each is a plain predicate over one value.
+#
+# Every kind also holds its values to what is possible (ruling #544).
+# A type check alone let a finite value no device and no clock can
+# produce into memory, where it failed later wherever it was turned
+# into a date or raised to a power: a moment 292 billion years away,
+# a day's longest gap of 10^308 seconds. Found by the adversarial round
+# of 29 September 2026, which planted such values in every stored
+# field of the reference fleet: five fields stopped Device Sentinel
+# starting, and more broke the brief, the reports and the dashboard.
+# Signal (#540), battery (#540) and the clipped rhythm had each been
+# patched where the fault showed; this is the one place every stored
+# value passes through, at load and at save.
+#
+# The ranges, all wider than anything real and narrower than anything
+# that can fail:
+#   a moment: 1 January 2020 to 1 January 2100
+#   a span, a gap or a duration: zero to the longest retention, 360 days
+#   a battery level: 0 to 100
+#   a signal reading: the #540 scales, -130 to 255
+#   a spread of signal readings: zero to 400
+#   a count: zero to a trillion
+#   any other number: within a trillion either way
+MOMENT_LOWEST = 1_577_836_800.0  # 2020-01-01T00:00:00Z
+MOMENT_HIGHEST = 4_102_444_800.0  # 2100-01-01T00:00:00Z
+SPAN_HIGHEST = 360 * 86_400.0
+LEVEL_LOWEST, LEVEL_HIGHEST = 0.0, 100.0
+READING_LOWEST, READING_HIGHEST = -130.0, 255.0
+SPREAD_HIGHEST = 400.0
+COUNT_HIGHEST = 1_000_000_000_000
+MAGNITUDE_HIGHEST = 1e12
+
 NUMBER = "number or None"
+MOMENT = "a moment or None"
+REAL_MOMENT = "a moment, not None"
+SPAN = "a span or None"
+REAL_SPAN = "a span, not None"
+LEVEL = "a battery level or None"
+LEVEL_SERIES = "list of battery levels"
+READING = "a signal reading or None"
+READING_SERIES = "list of signal readings or None"
+SPREAD_SERIES = "list of signal spreads or None"
+MOMENT_SERIES = "list of moments"
+KIND_MOMENTS = "a mapping of kinds to moments"
+NONNEGATIVE = "a non-negative number or None"
 # A gap on its own: the seconds a device has been silent today, which
 # cannot be negative any more than a series of them can (0.22.26). A
 # negative one folded into the day's series at midnight and refused
@@ -195,7 +240,7 @@ VERSION_HISTORY = "list of [version, first seen] pairs"
 # A key absent from this table is reported as unknown; a key in this
 # table absent from a record is reported as missing.
 EXPECTED: dict[str, str] = {
-    DEV_LAST_ACTIVITY: NUMBER,
+    DEV_LAST_ACTIVITY: MOMENT,
     DEV_DAILY_MAX: GAP_SERIES,
     DEV_TODAY_MAX: GAP,
     DEV_FIRST_OBSERVED: STRING,
@@ -203,55 +248,84 @@ EXPECTED: dict[str, str] = {
     DEV_TAINTED: TAINT,
     DEV_SIGNAL_SCALE: STRING,
     DEV_SIGNAL_ALT: ALT,
-    DEV_SET_ASIDE_SINCE: NUMBER,
-    DEV_SIGNAL_VALUE: NUMBER,
-    DEV_SIGNAL_TODAY_MIN: NUMBER,
+    DEV_SET_ASIDE_SINCE: MOMENT,
+    DEV_SIGNAL_VALUE: READING,
+    DEV_SIGNAL_TODAY_MIN: READING,
     DEV_SIGNAL_COUNT: INTEGER,
     DEV_SIGNAL_READS: INTEGER,
-    DEV_SIGNAL_MEAN_RUN: NUMBER,
-    DEV_SIGNAL_M2: NUMBER,
+    DEV_SIGNAL_MEAN_RUN: READING,
+    DEV_SIGNAL_M2: NONNEGATIVE,
     DEV_SIGNAL_P5_STATE: STATE,
     DEV_SIGNAL_P50_STATE: STATE,
-    DEV_SIGNAL_PSQ_VALUE: NUMBER,
-    DEV_SIGNAL_PSQ_TS: NUMBER,
-    DEV_SIGNAL_DAILY_P5: NULLABLE_FLOAT_SERIES,
-    DEV_SIGNAL_DAILY_P50: NULLABLE_FLOAT_SERIES,
-    DEV_SIGNAL_TODAY_MAX: NUMBER,
-    DEV_SIGNAL_DAILY_MEAN: NULLABLE_FLOAT_SERIES,
-    DEV_SIGNAL_DAILY_SD: NULLABLE_FLOAT_SERIES,
-    DEV_SIGNAL_DAILY_MAX: NULLABLE_FLOAT_SERIES,
+    DEV_SIGNAL_PSQ_VALUE: READING,
+    DEV_SIGNAL_PSQ_TS: MOMENT,
+    DEV_SIGNAL_DAILY_P5: READING_SERIES,
+    DEV_SIGNAL_DAILY_P50: READING_SERIES,
+    DEV_SIGNAL_TODAY_MAX: READING,
+    DEV_SIGNAL_DAILY_MEAN: READING_SERIES,
+    DEV_SIGNAL_DAILY_SD: SPREAD_SERIES,
+    DEV_SIGNAL_DAILY_MAX: READING_SERIES,
     DEV_SIGNAL_DAILY_COUNT: INT_SERIES,
     DEV_SIGNAL_DAILY_RAIL: INT_SERIES,
     DEV_SIGNAL_RAIL_COUNT: INTEGER,
-    DEV_SIGNAL_LAST_CHANGE: NUMBER,
+    DEV_SIGNAL_LAST_CHANGE: MOMENT,
     DEV_BATTERY_LOW: BOOLEAN,
     DEV_BATTERY_SINCE: STRING,
-    DEV_BATTERY_VALUE: NUMBER,
-    DEV_BATTERY_DAILY: FLOAT_SERIES,
-    DEV_BATTERY_DAILY_PREVIOUS: FLOAT_SERIES,
+    DEV_BATTERY_VALUE: LEVEL,
+    DEV_BATTERY_DAILY: LEVEL_SERIES,
+    DEV_BATTERY_DAILY_PREVIOUS: LEVEL_SERIES,
     DEV_BATTERY_REPLACED_AT: STRING,
-    DEV_BATTERY_REPLACED_PENDING: NUMBER,
+    DEV_BATTERY_REPLACED_PENDING: LEVEL,
     DEV_BATTERY_COARSE_DROPS: INTEGER,
-    DEV_FLAP_DROPS: FLOAT_SERIES,
-    DEV_FLAP_SINCE: NUMBER,
-    DEV_FLAP_BACK: NUMBER,
-    DEV_FLAP_LONGEST: NUMBER,
+    DEV_BATTERY_RAW_SCALE: BOOLEAN,
+    DEV_BATTERY_RAW_FIRST_DAY: STRING,
+    DEV_FLAP_DROPS: MOMENT_SERIES,
+    DEV_FLAP_SINCE: MOMENT,
+    DEV_FLAP_BACK: MOMENT,
+    DEV_FLAP_LONGEST: SPAN,
     DEV_FIRMWARE_HISTORY: VERSION_HISTORY,
     DEV_FROZEN_CATEGORY: STRING,
-    DEV_FROZEN_SINCE: NUMBER,
+    DEV_FROZEN_SINCE: MOMENT,
 }
 
 
 def _is_number(value: Any) -> bool:
-    """A finite int or float. A bool is not a number here: True is an
-    int to Python and a mistake to a series."""
+    """A finite int or float within a trillion either way. A bool is
+    not a number here: True is an int to Python and a mistake to a
+    series. Nothing Device Sentinel stores comes near a trillion, and
+    past it squares and powers start to fail (ruling #544)."""
     if isinstance(value, bool):
         return False
-    if isinstance(value, int):
-        return True
-    if isinstance(value, float):
-        return math.isfinite(value)
+    if isinstance(value, (int, float)):
+        return math.isfinite(value) and abs(value) <= MAGNITUDE_HIGHEST
     return False
+
+
+def _within(value: Any, low: float, high: float) -> bool:
+    return _is_number(value) and low <= value <= high
+
+
+# Each ranged kind: (lowest, highest, None allowed).
+_RANGED: dict[str, tuple[float, float, bool]] = {
+    MOMENT: (MOMENT_LOWEST, MOMENT_HIGHEST, True),
+    REAL_MOMENT: (MOMENT_LOWEST, MOMENT_HIGHEST, False),
+    SPAN: (0.0, SPAN_HIGHEST, True),
+    REAL_SPAN: (0.0, SPAN_HIGHEST, False),
+    LEVEL: (LEVEL_LOWEST, LEVEL_HIGHEST, True),
+    READING: (READING_LOWEST, READING_HIGHEST, True),
+    NONNEGATIVE: (0.0, MAGNITUDE_HIGHEST, True),
+}
+# Each ranged series: (lowest, highest, None elements allowed).
+_RANGED_SERIES: dict[str, tuple[float, float, bool]] = {
+    LEVEL_SERIES: (LEVEL_LOWEST, LEVEL_HIGHEST, False),
+    READING_SERIES: (READING_LOWEST, READING_HIGHEST, True),
+    SPREAD_SERIES: (0.0, SPREAD_HIGHEST, True),
+    MOMENT_SERIES: (MOMENT_LOWEST, MOMENT_HIGHEST, False),
+}
+
+
+def _out_of_range(value: Any, low: float, high: float) -> str:
+    return f"{_describe(value)}, outside {low:g} to {high:g}"
 
 
 def _describe(value: Any) -> str:
@@ -274,10 +348,45 @@ def _describe(value: Any) -> str:
 
 def _fault(kind: str, value: Any) -> str | None:
     """Return why a value does not fit its kind, or None if it does."""
+    if kind in _RANGED:
+        low, high, nullable = _RANGED[kind]
+        if value is None and nullable:
+            return None
+        if not _is_number(value):
+            return _describe(value)
+        return None if low <= value <= high else _out_of_range(value, low, high)
+    if kind in _RANGED_SERIES:
+        low, high, nulls = _RANGED_SERIES[kind]
+        if not isinstance(value, list):
+            return _describe(value)
+        bad = [
+            x for x in value
+            if not (x is None and nulls) and not _within(x, low, high)
+        ]
+        if bad:
+            return f"{len(bad)} bad element(s), first {_out_of_range(bad[0], low, high)}"
+        return None
+    if kind == KIND_MOMENTS:
+        # A to-do item's kinds, each with when it began or None.
+        if not isinstance(value, dict):
+            return _describe(value)
+        bad = [
+            v for v in value.values()
+            if v is not None and not _within(v, MOMENT_LOWEST, MOMENT_HIGHEST)
+        ]
+        if bad:
+            return f"{len(bad)} bad moment(s), first {_out_of_range(bad[0], MOMENT_LOWEST, MOMENT_HIGHEST)}"
+        return None
     if kind == NUMBER:
         return None if value is None or _is_number(value) else _describe(value)
     if kind == INTEGER:
-        ok = isinstance(value, int) and not isinstance(value, bool)
+        # A count: nothing Device Sentinel counts is negative or past
+        # a trillion (ruling #544).
+        ok = (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and 0 <= value <= COUNT_HIGHEST
+        )
         return None if ok else _describe(value)
     if kind == STRING:
         return None if value is None or isinstance(value, str) else _describe(value)
@@ -297,7 +406,9 @@ def _fault(kind: str, value: Any) -> str | None:
             return None
         if not _is_number(value):
             return _describe(value)
-        return None if value >= 0 else f"a negative gap, {_describe(value)}"
+        if value < 0:
+            return f"a negative gap, {_describe(value)}"
+        return None if value <= SPAN_HIGHEST else _out_of_range(value, 0.0, SPAN_HIGHEST)
     if kind == GAP_SERIES:
         # A learned gap series: every element is a number of seconds a
         # device stayed silent, so a negative element is a writer
@@ -313,6 +424,12 @@ def _fault(kind: str, value: Any) -> str | None:
         negative = [x for x in value if x < 0]
         if negative:
             return f"{len(negative)} negative element(s), first {_describe(negative[0])}"
+        # Longer than the longest retention cannot have been watched
+        # (ruling #544); the house's own retention caps it lower at
+        # load (ruling #543).
+        long = [x for x in value if x > SPAN_HIGHEST]
+        if long:
+            return f"{len(long)} element(s) past 360 days, first {_describe(long[0])}"
         return None
     if kind == NULLABLE_FLOAT_SERIES:
         if not isinstance(value, list):
@@ -330,14 +447,17 @@ def _fault(kind: str, value: Any) -> str | None:
                 and len(pair) == 2
                 and isinstance(pair[0], str)
                 and pair[0]
-                and _is_number(pair[1])
+                and _within(pair[1], MOMENT_LOWEST, MOMENT_HIGHEST)
             )
         ]
         return None if not bad else f"{len(bad)} bad pair(s), first {_describe(bad[0])}"
     if kind == INT_SERIES:
         if not isinstance(value, list):
             return _describe(value)
-        bad = [x for x in value if not (isinstance(x, int) and not isinstance(x, bool))]
+        bad = [
+            x for x in value
+            if not (isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= COUNT_HIGHEST)
+        ]
         return None if not bad else f"{len(bad)} bad element(s), first {_describe(bad[0])}"
     if kind == ALT:
         # None, or a block holding exactly the recording fields under
@@ -457,9 +577,9 @@ INCIDENT_SHAPE: dict[str, str] = {
     "name": TEXT,
     "kind": TEXT,
     "event": TEXT,
-    "when": REAL_NUMBER,
+    "when": REAL_MOMENT,
     "cause": STRING,
-    "duration": NUMBER,
+    "duration": SPAN,
     # Whether a worse problem replaced this one. Written from 0.22.26
     # and read from 0.22.27, so it is checked as a type now that a
     # reader depends on it; a row written before 0.22.26 omits it and
@@ -470,9 +590,9 @@ INCIDENT_SHAPE: dict[str, str] = {
 EPISODE_SHAPE: dict[str, str] = {
     "device_id": TEXT,
     "name": TEXT,
-    "since": REAL_NUMBER,
-    "basis": REAL_NUMBER,
-    "window": REAL_NUMBER,
+    "since": REAL_MOMENT,
+    "basis": REAL_SPAN,
+    "window": REAL_SPAN,
     # An episode is written the moment a silence passes its basis and
     # stays open until the device speaks or something intervenes, so
     # a row that is still running carries None in both of these by
@@ -481,29 +601,29 @@ EPISODE_SHAPE: dict[str, str] = {
     # a repair card that named nothing wrong (ruling #364). They are
     # checked as types the moment they hold a value, and a closed row
     # is still fully checked, because the closer writes both.
-    "at": NUMBER,
+    "at": MOMENT,
     "ended": STRING,
-    "lag": NUMBER,
+    "lag": SPAN,
     "learned": STRING,
-    "taint_seconds": NUMBER,
+    "taint_seconds": SPAN,
     "signal": NULLABLE_MAPPING,
 }
 
 STRESS_SHAPE: dict[str, str] = {
     "device_id": TEXT,
     "name": TEXT,
-    "since": REAL_NUMBER,
-    "at": REAL_NUMBER,
+    "since": REAL_MOMENT,
+    "at": REAL_MOMENT,
     "ended": TEXT,
     "signal": NULLABLE_MAPPING,
 }
 
 SYSTEM_EVENT_SHAPE: dict[str, str] = {
     "kind": TEXT,
-    "when": REAL_NUMBER,
+    "when": REAL_MOMENT,
     "scope": STRING,
     "detail": STRING,
-    "duration": NUMBER,
+    "duration": SPAN,
     "devices": INTEGER,
     # The most devices an ended outage had down at once (ruling #442).
     "worst": INTEGER,
@@ -517,7 +637,7 @@ TODO_ITEM_SHAPE: dict[str, str] = {
     "status": TEXT,
     "acked_at": STRING,
     "sort_name": TEXT,
-    "kinds": MAPPING,
+    "kinds": KIND_MOMENTS,
 }
 
 JOURNAL_SHAPE: dict[str, str] = {
@@ -528,26 +648,26 @@ JOURNAL_SHAPE: dict[str, str] = {
 }
 
 STORM_SHAPE: dict[str, str] = {
-    "at": REAL_NUMBER,
+    "at": REAL_MOMENT,
     "entry_id": TEXT,
     "domain": TEXT,
     "devices": INTEGER,
-    "duration": NUMBER,
+    "duration": SPAN,
 }
 
 STORM_DAY_SHAPE: dict[str, str] = {
     "day": TEXT,
     "domain": TEXT,
     "count": INTEGER,
-    "median_interval": NUMBER,
+    "median_interval": SPAN,
     "median_devices": REAL_NUMBER,
-    "median_duration": REAL_NUMBER,
+    "median_duration": REAL_SPAN,
 }
 
 # One line of the stack probe: when, which stack, which node, what it
 # was and what it is now, and whatever numbers came with it.
 PROBE_SHAPE: dict[str, str] = {
-    PROBE_WHEN: REAL_NUMBER,
+    PROBE_WHEN: REAL_MOMENT,
     PROBE_STACK: STRING,
     PROBE_NODE: STRING,
     PROBE_DEVICE_ID: STRING,
@@ -586,7 +706,7 @@ SCALARS: dict[str, str] = {
     DATA_LAST_VERSION: TEXT,
     DATA_BRIEF_CLOSED_DAY: TEXT,
     DATA_STATS_EPOCH: TEXT,
-    DATA_SAVED_AT: NUMBER,
+    DATA_SAVED_AT: MOMENT,
     DATA_SETUP_COUNT: INTEGER,
     DATA_BRIDGE_SEEN: MAPPING,
     DATA_BROKER_SEEN: MAPPING,

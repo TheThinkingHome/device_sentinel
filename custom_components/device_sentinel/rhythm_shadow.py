@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: rhythm_shadow.py, Version: 0.23.17 (2026-09-29)
+# File: rhythm_shadow.py, Version: 0.23.18 (2026-09-29)
 
 """A second rhythm, computed beside the one judgment uses (ruling #542).
 
@@ -105,9 +105,19 @@ def clipped_rhythm(daily: list[Any]) -> dict[str, Any] | None:
         kept = survivors
     mean = statistics.fmean(kept)
     spread = max(statistics.pstdev(kept), CLIP_SPREAD_FLOOR)
+    # No rhythm rather than an overflow (ruling #544). The range check
+    # keeps every stored gap within 360 days, so this cannot be reached
+    # from storage; it stands behind that check, not instead of it.
+    try:
+        basis = math.exp(mean + CLIP_TARGET_DEVIATIONS * spread)
+        typical = math.exp(mean)
+    except OverflowError:
+        return None
+    if not (math.isfinite(basis) and basis > 0):
+        return None
     return {
-        "basis": math.exp(mean + CLIP_TARGET_DEVIATIONS * spread),
-        "typical": math.exp(mean),
+        "basis": basis,
+        "typical": typical,
         "spread": spread,
         "read": len(read),
         "clipped": len(read) - len(kept),
@@ -132,7 +142,7 @@ class RhythmShadowMixin:
         again on the first check after it, marked as carried, so the
         daily count does not take it for a new one.
         """
-        self._shadow_open: dict[str, tuple[str, float, bool]] = {}
+        self._shadow_open: dict[str, tuple[str, float, bool, str]] = {}
         self._shadow_first_check = True
         self._shadow_opened = 0
         self._shadow_closed = 0
@@ -146,7 +156,35 @@ class RhythmShadowMixin:
         # the whole of it.
         self._shadow_counting_from: float | None = None
 
-    def clipped_window(self, record: dict[str, Any]) -> float | None:
+    def clipped_for(self, device_id: str | None, daily: list[Any]) -> dict[str, Any] | None:
+        """The clipped rhythm, worked out once until the days change.
+
+        A device's daily maxima change only at the midnight fold or a
+        repair, so the rule is computed once per change rather than
+        every minute: 44 ms a minute on the second house with a year of
+        history each, measured on 29 September 2026, to next to nothing.
+        The key is the series' length and its last and first values,
+        which any fold or repair moves.
+        """
+        if device_id is None:
+            return clipped_rhythm(daily)
+        cache: dict[str, tuple[tuple[Any, ...], dict[str, Any] | None]] | None = getattr(
+            self, "_clip_cache", None
+        )
+        if cache is None:
+            cache = {}
+            self._clip_cache = cache
+        key = (len(daily), daily[-1] if daily else None, daily[0] if daily else None)
+        held = cache.get(device_id)
+        if held is not None and held[0] == key:
+            return held[1]
+        found = clipped_rhythm(daily)
+        cache[device_id] = (key, found)
+        return found
+
+    def clipped_window(
+        self, record: dict[str, Any], device_id: str | None = None
+    ) -> float | None:
         """The freeze window the clipped rhythm would give, or None.
 
         The same grace margin today's window adds (#85), and the same
@@ -156,7 +194,7 @@ class RhythmShadowMixin:
         daily = record.get(DEV_DAILY_MAX) or []
         if len(daily) < FREEZE_ARMING_DAYS:
             return None
-        found = clipped_rhythm(daily)
+        found = self.clipped_for(device_id, daily)
         if found is None:
             return None
         rhythm = found["basis"]
@@ -194,7 +232,7 @@ class RhythmShadowMixin:
                 continue
             try:
                 today_window = self._freeze_window(record)  # type: ignore[attr-defined]
-                clipped = self.clipped_window(record)
+                clipped = self.clipped_window(record, device_id)
                 if today_window is None or clipped is None:
                     continue
                 silence = self._observed_silence(  # type: ignore[attr-defined]
@@ -224,7 +262,9 @@ class RhythmShadowMixin:
             standing = self._shadow_open.get(device_id)
             if alone is not None and (standing is None or standing[0] != alone):
                 carried = self._shadow_first_check
-                self._shadow_open[device_id] = (alone, now, carried)
+                self._shadow_open[device_id] = (
+                    alone, now, carried, self._shadow_name(device_id)
+                )
                 if not carried:
                     self._shadow_opened += 1
                 lines.append(
@@ -237,14 +277,20 @@ class RhythmShadowMixin:
             elif alone is None and standing is not None:
                 del self._shadow_open[device_id]
                 self._shadow_closed += 1
+                reset = getattr(self, "_clock_reset", None)
                 ended = (
-                    "both would list it" if listed_today else "it spoke"
+                    "both would list it"
+                    if listed_today
+                    else "the clocks restarted"
+                    if reset is not None and now - reset[0] < 120.0
+                    else "it spoke"
                 )
                 lines.append(
                     self._shadow_line(
                         now, device_id, "closed", standing[0], silence,
                         today_window, clipped,
                         f"after {self._shadow_span(now - standing[1])}, {ended}",
+                        name=standing[3],
                     )
                 )
         for device_id in list(self._shadow_open):
@@ -256,7 +302,7 @@ class RhythmShadowMixin:
                 lines.append(
                     self._shadow_line(
                         now, device_id, "closed", standing[0], None, None,
-                        None, "no longer compared",
+                        None, "no longer compared", name=standing[3],
                     )
                 )
         self._shadow_first_check = False
@@ -276,7 +322,7 @@ class RhythmShadowMixin:
                 continue
             try:
                 today_window = self._freeze_window(record)  # type: ignore[attr-defined]
-                clipped = self.clipped_window(record)
+                clipped = self.clipped_window(record, device_id)
             except Exception as err:  # noqa: BLE001 - the count skips it
                 LOGGER.debug(
                     "device_sentinel: rhythm shadow left %s out of the day's "
@@ -339,8 +385,10 @@ class RhythmShadowMixin:
         today_window: float | None,
         clipped: float | None,
         detail: str,
+        name: str | None = None,
     ) -> str:
-        name = self._device_name(device_id) or device_id  # type: ignore[attr-defined]
+        if name is None:
+            name = self._shadow_name(device_id)
         span = self._shadow_span
         return (
             f"| {self._episode_stamp(now)} "  # type: ignore[attr-defined]
@@ -352,6 +400,11 @@ class RhythmShadowMixin:
             f"| {span(clipped) if clipped is not None else ''} "
             f"| {self._report_cell(detail)} |"  # type: ignore[attr-defined]
         )
+
+    def _shadow_name(self, device_id: str) -> str:
+        """The device's name as it stands, kept when a line opens so a
+        device removed before its line closes is still named."""
+        return str(self._device_name(device_id) or device_id)  # type: ignore[attr-defined]
 
     def _shadow_header(self) -> list[str]:
         return [

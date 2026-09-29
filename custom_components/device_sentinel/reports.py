@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.23.15 (2026-09-28)
+# File: reports.py, Version: 0.23.18 (2026-09-29)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -132,9 +132,17 @@ class ReportWritingMixin(
         )
 
     def _fmt_gap(self, seconds: Any) -> str:
-        """Format a gap for the report."""
+        """Format a gap for the report.
+
+        A gap held at the retention reads "more than" it (ruling
+        #543): the silence was at least that long, and how much longer
+        is no longer kept.
+        """
         if seconds is None:
             return "-"
+        cap = self.gap_cap()  # type: ignore[attr-defined]
+        if isinstance(seconds, (int, float)) and seconds >= cap:
+            return f"more than {cap / 86400.0:.0f} days"
         if seconds >= 3600:
             return f"{seconds / 3600:.2f}h"
         return f"{seconds:.0f}s"
@@ -353,6 +361,36 @@ class ReportWritingMixin(
                 os.remove(temporary)
             raise
 
+    def _write_one_report(
+        self, name: str, writer: Any, report_directory: str, trigger: str
+    ) -> None:
+        """Write one report, and if it fails, log it and carry on.
+
+        A file error is logged as a warning, as before. Anything else
+        is a fault in the report or in what it read, and is logged with
+        its traceback once per report per start, so the person can
+        report it, without stopping the reports after it.
+        """
+        try:
+            writer(report_directory, trigger)
+        except OSError as err:
+            LOGGER.warning("Device Sentinel could not write %s: %s", name, err)
+        except Exception:  # noqa: BLE001 - one report never stops the rest
+            failed: set[str] | None = getattr(self, "_report_failed", None)
+            if failed is None:
+                failed = set()
+                self._report_failed = failed
+            if name in failed:
+                LOGGER.debug("Device Sentinel could not write %s again", name)
+                return
+            failed.add(name)
+            LOGGER.exception(
+                "Device Sentinel could not write %s; the other reports "
+                "and the brief are written without it. Said once per "
+                "start (ruling #544)",
+                name,
+            )
+
     def _write_reports(self, trigger: str = "manual") -> str | None:
         """Write the report files, and return a closed brief if one.
 
@@ -389,9 +427,14 @@ class ReportWritingMixin(
                 os.remove(os.path.join(old_diagnostics, name))
         with contextlib.suppress(OSError):
             os.rmdir(old_diagnostics)
-        self._write_telemetry(report_directory, trigger)
-        self._write_classification(report_directory, trigger)
-        self._write_episodes(report_directory, trigger)
+        # Each report on its own (ruling #544): one that fails is logged
+        # and skipped, and the rest are written, the brief among them.
+        # Before 0.23.18 a single impossible value in one report's input
+        # stopped every report after it and the brief's send, found by
+        # the adversarial round of 29 September 2026.
+        self._write_one_report(REPORT_TELEMETRY, self._write_telemetry, report_directory, trigger)
+        self._write_one_report(REPORT_CLASSIFICATION, self._write_classification, report_directory, trigger)
+        self._write_one_report(REPORT_EPISODES, self._write_episodes, report_directory, trigger)
         # The signal and battery reports retired with the www folder
         # (0.23.5): the dashboard's Signal Trends and Battery Trends
         # tabs carry what they did, behind Home Assistant's sign-in.
