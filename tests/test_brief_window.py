@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_window.py, Version: 0.23.5 (2026-09-25)
+# File: test_brief_window.py, Version: 0.23.16 (2026-09-29)
 
 """Which window the brief covers, and where it is written.
 
@@ -22,27 +22,28 @@ pooled, so each file reads on its own.
 
 import glob
 import os
-
 from datetime import timedelta
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
-
+from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.device_sentinel.const import (
     BRIEF_TRIGGER,
     CONF_REMINDER_TIME,
+    DATA_BRIEF_CLOSED_DAY,
     DATA_INCIDENTS,
-    INCIDENT_OPENED,
     INC_DEVICE_ID,
     INC_EVENT,
     INC_KIND,
     INC_NAME,
     INC_WHEN,
+    INCIDENT_OPENED,
     TODO_KIND_FROZEN,
 )
-
 from tests.helpers import register_device, setup_coordinator
+
+from .helpers import setup_entry
 
 DOMAIN = "device_sentinel"
 
@@ -230,3 +231,89 @@ async def test_a_manual_write_stays_in_progress(hass: HomeAssistant):
     assert "In progress" not in text
     # And an in-progress brief is never handed to the sender (#135).
     assert returned is None
+
+
+# One brief a day through daylight saving (#539).
+
+
+HOUR = 3600.0
+
+async def _brief_house(hass, freezer, when: str, zone: str, brief: str):
+    await hass.config.async_set_time_zone(zone)
+    freezer.move_to(when)
+    register_device(hass, "d", name="Door")
+    entry = await setup_entry(hass, {CONF_REMINDER_TIME: brief})
+    coord = entry.runtime_data
+    sent = []
+
+    async def _send(text, *args, **kwargs):
+        sent.append(str(dt_util.now())[:16])
+
+    coord.async_send_brief = _send  # type: ignore[method-assign]
+    return coord, sent
+
+async def test_a_brief_in_the_repeated_hour_sends_once(hass: HomeAssistant, freezer):
+    """1 November 2026 in Chicago: 1:30 AM happens twice, and Home
+    Assistant's tracker fires at both (measured on the fourth house's
+    week across the change). The second firing sends nothing."""
+    coord, sent = await _brief_house(hass, freezer, "2026-11-01 06:30:00+00:00", "America/Chicago", "01:30:00")
+    await coord._on_brief_time(None)  # 1:30 CDT
+    await hass.async_block_till_done()
+    assert len(sent) == 1, sent
+    freezer.tick(HOUR)  # 1:30 CST, the same wall time an hour later
+    assert dt_util.now().strftime("%H:%M") == "01:30"
+    await coord._on_brief_time(None)
+    await hass.async_block_till_done()
+    assert len(sent) == 1, sent
+    assert coord.data[DATA_BRIEF_CLOSED_DAY] == "2026-11-01"
+    freezer.tick(24 * HOUR)  # the next day sends as usual
+    await coord._on_brief_time(None)
+    await hass.async_block_till_done()
+    assert len(sent) == 2, sent
+
+async def test_a_brief_in_the_skipped_hour_still_sends(hass: HomeAssistant, freezer):
+    """14 March 2027 in Chicago: 2:30 AM never happens."""
+    coord, sent = await _brief_house(hass, freezer, "2027-03-14 07:59:50+00:00", "America/Chicago", "02:30:00")
+    for _ in range(4):
+        freezer.tick(60)
+        async_fire_time_changed(hass, dt_util.utcnow())
+        await coord._on_render_tick(None)
+        await hass.async_block_till_done()
+    assert sent == [], "sent before the skipped moment's equivalent, 3:30 CDT"
+    freezer.tick(30 * 60)
+    await coord._on_render_tick(None)
+    await hass.async_block_till_done()
+    assert len(sent) == 1, sent
+    assert coord.data[DATA_BRIEF_CLOSED_DAY] == "2027-03-14"
+    for _ in range(3):
+        freezer.tick(60)
+        await coord._on_render_tick(None)
+        await hass.async_block_till_done()
+    assert len(sent) == 1, "the skipped brief sent again"
+
+async def test_the_brief_minute_leaves_no_save_pending(hass: HomeAssistant, freezer):
+    """The gate of 29 September at 12:44 UTC: a four-hour step crossed
+    the 8:00 brief in the same pass as the minute check's save, and the
+    brief's stored day forced a critical write the save had already
+    cleared, failing test_verdict_flip_saves_immediately at that hour
+    only. Pinned to the hour, so it no longer depends on when it runs."""
+    await hass.config.async_set_time_zone("US/Pacific")
+    freezer.move_to("2026-09-29 12:44:39+00:00")
+    register_device(hass, "d", name="Door")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    freezer.tick(timedelta(hours=4))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert coord.data[DATA_BRIEF_CLOSED_DAY] == "2026-09-29"
+    assert coord._critical is False
+
+async def test_an_ordinary_day_is_not_sent_by_the_check(hass: HomeAssistant, freezer):
+    """A brief time that exists is the tracker's; the check never
+    sends it late or twice."""
+    coord, sent = await _brief_house(hass, freezer, "2026-10-05 15:05:00+00:00", "America/Chicago", "08:00:00")
+    for _ in range(3):
+        freezer.tick(60)
+        await coord._on_render_tick(None)
+        await hass.async_block_till_done()
+    assert sent == [], sent

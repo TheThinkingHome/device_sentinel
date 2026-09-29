@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recovery_one_way.py, Version: 0.23.12 (2026-09-27)
+# File: tests/test_recovery_one_way.py, Version: 0.23.16 (2026-09-29)
 
 """A recovery goes one way, and what else 0.23.12 settles (#529 to #533).
 
@@ -25,12 +25,18 @@ import os
 from datetime import timedelta
 from types import SimpleNamespace
 
+import pytest
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     BRIDGE_DOWN,
     BRIDGE_RUNNING,
+    BROKER_LABEL,
     DATA_DEVICES,
     DATA_INCIDENTS,
     DEV_DAILY_MAX,
@@ -405,3 +411,127 @@ async def test_a_silent_device_missing_from_the_source_is_not_retired(
     coord._sync_problem_list()
     assert _item_kinds(coord, device.id) == {"never_reported"}, "retired while still silent"
     assert not fired and _resolved(coord, device.id) == []
+
+
+# A problem hidden behind an outage dated from the start of the run is held, not closed and announced again (#529, every upstream).
+
+
+def _probe(hass, domain):
+    """A device with a battery and a value, and a sibling on its entry."""
+    source = MockConfigEntry(domain=domain, title=domain)
+    source.add_to_hass(hass)
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    reg = dr.async_get(hass)
+    device = reg.async_get_or_create(config_entry_id=source.entry_id, identifiers={(domain, "soil")}, name="Soil Probe")
+    sibling = reg.async_get_or_create(config_entry_id=source.entry_id, identifiers={(domain, "sib")}, name="Sibling")
+    ents = er.async_get(hass)
+    ents.async_get_or_create("sensor", domain, "sib", device_id=sibling.id, config_entry=source)
+    value = ents.async_get_or_create("sensor", domain, "soil_value", device_id=device.id, config_entry=source).entity_id
+    battery = ents.async_get_or_create(
+        "sensor", domain, "soil_battery", device_id=device.id, config_entry=source, original_device_class="battery"
+    ).entity_id
+    return source, device, value, battery
+
+def _kinds(coord, device_id):
+    for item in coord.todo_items:
+        if item.get("device_id") == device_id:
+            return sorted(item.get(TODO_KINDS) or {})
+    return []
+
+@pytest.mark.parametrize("upstream", ["bridge", "integration", "broker", "wifi"])
+async def test_a_problem_hidden_by_a_start_of_run_outage_is_held(hass: HomeAssistant, freezer, upstream):
+    """Soil Irrigation (Monstera), 3:47 AM on 28 September, on every upstream."""
+    domain = {"bridge": "mqtt", "integration": "zwave_js", "broker": "mqtt", "wifi": "shelly"}[upstream]
+    source, device, value, battery = _probe(hass, domain)
+    hass.states.async_set(value, "40")
+    hass.states.async_set(battery, "5", {"unit_of_measurement": "%", "device_class": "battery"})
+    heard = dt_util.utcnow() - timedelta(hours=10)
+    bus = []
+    for name in ("device_sentinel_fault", "device_sentinel_recovered"):
+        hass.bus.async_listen(name, lambda e, n=name: bus.append(n.rsplit("_", 1)[-1]))
+    entry = await setup_entry(hass)
+    state = {"down": False, "graced": True}
+
+    def arm():
+        c = entry.runtime_data
+        if state["graced"]:
+            c._grace_until = 0.0
+        c._watched[device.id] = domain
+        if upstream == "bridge":
+            c._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_DOWN if state["down"] else BRIDGE_RUNNING)
+            c._stack_for_device = lambda d: STACK_Z2M if d == device.id else None
+        if upstream == "wifi":
+            c._wifi_ties = {device.id: "device_tracker.probe"}
+            if state["down"]:
+                c._wifi_down_at = c._run_start()
+                c._wifi_fallen = {"device_tracker.probe": c._run_start()}
+                c._upstream_from_start.add("wifi")
+            else:
+                c._wifi_down_at = None
+                c._upstream_from_start.discard("wifi")
+        if upstream == "broker":
+            c._broker_down_at = c._run_start() if state["down"] else None
+            if state["down"]:
+                c._upstream_from_start.add(BROKER_LABEL)
+            else:
+                c._upstream_from_start.discard(BROKER_LABEL)
+        record = c.data[DATA_DEVICES][device.id]
+        record[DEV_EVENT_COUNT] = max(record.get(DEV_EVENT_COUNT) or 0, 5000)
+        if len(record.get(DEV_DAILY_MAX) or []) < LEARNING_MIN_DAYS + 5:
+            record[DEV_DAILY_MAX] = [600.0] * (LEARNING_MIN_DAYS + 5)
+        if record.get(DEV_LAST_ACTIVITY) is None:
+            record[DEV_LAST_ACTIVITY] = heard.timestamp()
+        return c
+
+    async def minutes(count):
+        for _ in range(count):
+            freezer.tick(60)
+            c = arm()
+            if upstream == "broker":
+                c._sample_broker = lambda now, c=c: "down" if state["down"] else "running"
+            await c._on_render_tick(None)
+            await hass.async_block_till_done()
+
+    arm()
+    await minutes(8)
+    for eid in (value, battery):
+        hass.states.async_set(eid, "unavailable")
+    await minutes(6)
+    assert _kinds(entry.runtime_data, device.id) == ["low_battery", "unavailable"]
+    rows_before = len(entry.runtime_data.data[DATA_INCIDENTS])
+    bus.clear()
+    # The upstream goes as Home Assistant restarts, so this run finds
+    # it down from its start.
+    state["graced"] = False
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    state["down"] = True
+    if upstream == "integration":
+        source.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    freezer.tick(120)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    c = entry.runtime_data
+    if upstream == "bridge":
+        c._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_DOWN)
+        c._stack_for_device = lambda d: STACK_Z2M if d == device.id else None
+        c._upstream_from_start.add(STACK_Z2M)
+        c._bridge_down_at[STACK_Z2M] = c._run_start()
+    await minutes(10)
+    during = _kinds(entry.runtime_data, device.id)
+    state["down"] = False
+    if upstream == "integration":
+        source.mock_state(hass, ConfigEntryState.LOADED)
+    await minutes(15)
+    rows = [(r["kind"], r["event"]) for r in entry.runtime_data.data[DATA_INCIDENTS][rows_before:]]
+    assert during == ["low_battery", "unavailable"], during
+    assert "recovered" not in bus, bus
+    assert "fault" not in bus, bus
+    assert not rows, rows
+
+async def test_a_real_return_still_ends_the_problem(hass: HomeAssistant, freezer):
+    """The hold is for a device still judged down; one that reports
+    clears as before."""
+    coord = await setup_coordinator(hass)
+    held = coord._hold_the_worst({"unavailable": 1.0, "low_battery": 2.0}, {"low_battery": 2.0}, None)
+    assert held == {"low_battery": 2.0}

@@ -1,7 +1,7 @@
 """What survives a save, a stop, and a load, for this week's fields.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_round_trip.py, Version: 0.13.8 (2026-08-13)
+# File: test_round_trip.py, Version: 0.23.16 (2026-09-29)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -13,6 +13,8 @@ that does not round trip is not a crash; it is a day of statistics
 quietly starting over, which is the failure this project keeps
 finding late.
 """
+
+import json
 
 from homeassistant.core import HomeAssistant
 
@@ -29,6 +31,7 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_PSQ_VALUE,
     DEV_SIGNAL_READS,
 )
+from custom_components.device_sentinel.records import _new_device_record
 
 from .helpers import register_device, setup_coordinator
 
@@ -134,3 +137,33 @@ async def test_the_set_aside_stamp_is_cold_and_survives(
     saved = coord._data_to_save()
 
     assert saved[DATA_DEVICES][device.id][DEV_SET_ASIDE_SINCE] == 1000.0
+
+
+# A newer version's fields survive an older release (#189, amended).
+
+
+def test_a_newer_versions_field_survives_the_reconciler():
+    from custom_components.device_sentinel.store import StorageMixin
+
+    record = _new_device_record("2026-09-28T00:00:00+00:00", None)
+    record["firmware_history_v2"] = [{"version": "1.2"}]
+    record["signal_sum"] = 5.0
+    removed, _filled = StorageMixin._reconcile_records({"d": record}, "2026-09-28T00:00:00+00:00")
+    assert record["firmware_history_v2"] == [{"version": "1.2"}]
+    assert "signal_sum" not in record and removed == 1
+
+async def test_a_newer_versions_field_survives_a_load_and_a_save(hass: HomeAssistant, hass_storage):
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "keep", name="Keep")
+    coord._rebuild_registry_view()
+    coord.data[DATA_DEVICES][device.id]["a_newer_versions_field"] = {"kept": [1, 2, 3]}
+    coord._dirty = True
+    await coord._save_main()
+    from custom_components.device_sentinel.const import DOMAIN
+
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    again = entry.runtime_data
+    assert again.data[DATA_DEVICES][device.id].get("a_newer_versions_field") == {"kept": [1, 2, 3]}
+    assert json.dumps(hass_storage).count("a_newer_versions_field") >= 1

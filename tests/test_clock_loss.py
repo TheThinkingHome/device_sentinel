@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_clock_loss.py, Version: 0.22.28 (2026-09-23)
+# File: tests/test_clock_loss.py, Version: 0.23.16 (2026-09-29)
 
 """A lost clocks file, and a startup grace that holds everything.
 
@@ -37,6 +37,7 @@ from custom_components.device_sentinel.const import (
     CONF_HIGH_PRIORITY_TARGETS,
     DATA_DEVICES,
     DATA_INCIDENTS,
+    DATA_SYSTEM_EVENTS,
     DATA_TODO_ITEMS,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
@@ -53,14 +54,20 @@ from custom_components.device_sentinel.const import (
     INC_EVENT,
     INC_KIND,
     INCIDENT_RESOLVED,
+    REPAIR_CLOCK_RESET,
     REPAIR_CLOCKS_RESET,
     STARTUP_GRACE_SECONDS,
     STORAGE_CLOCKS_KEY,
+    SYS_CLOCK_RESET,
+    SYS_DURATION,
+    SYS_KIND,
     TODO_KINDS,
     TODO_SORT_NAME,
 )
 
 from .helpers import record_events, register_device, setup_entry
+from .test_bridge_hold import _house as _hold_house
+from .test_bridge_hold import _minutes
 
 HOUR = 3600.0
 FAST = "Fast Plug"
@@ -325,3 +332,91 @@ async def test_a_whole_clocks_file_raises_no_card(
         await _tick(hass, freezer)
     registry = ir.async_get(hass)
     assert registry.async_get_issue(DOMAIN, REPAIR_CLOCKS_RESET) is None
+
+
+# A clock reset or a paused system restarts the clocks, with a Repair card (#538).
+
+
+async def _stepped(hass, freezer, seconds: float):
+    """A house whose wall clock steps by `seconds` between two checks,
+    the monotonic clock standing still for the step."""
+    coord, device, value, seen, heard, phone, bus = await _hold_house(hass, freezer)
+    mono = {"now": 1000.0}
+    coord._monotonic = lambda: mono["now"]  # type: ignore[method-assign]
+    record = coord.data[DATA_DEVICES][device.id]
+    hass.states.async_set(seen, dt_util.utcnow().isoformat())
+    await hass.async_block_till_done()
+    freezer.tick(60)
+    mono["now"] += 60
+    await coord._on_render_tick(None)
+    await hass.async_block_till_done()
+    freezer.tick(60 + seconds)
+    mono["now"] += 60
+    await coord._on_render_tick(None)
+    await hass.async_block_till_done()
+    return coord, device, record, bus
+
+@pytest.mark.parametrize("seconds", [2 * HOUR, -2 * HOUR], ids=["forward", "backward"])
+async def test_a_clock_reset_restarts_the_clocks_with_a_repair_card(hass: HomeAssistant, freezer, seconds):
+    coord, device, record, bus = await _stepped(hass, freezer, seconds)
+    now = dt_util.utcnow().timestamp()
+    assert abs(record[DEV_LAST_ACTIVITY] - now) < 5, "the clock did not restart at the reset"
+    assert record[DEV_FROZEN_CATEGORY] is None, "a healthy device was judged on time that did not pass"
+    assert not [b for b in bus if b[0] == "fault"], bus
+    events = [e for e in coord.data[DATA_SYSTEM_EVENTS] if e.get(SYS_KIND) == SYS_CLOCK_RESET]
+    assert len(events) == 1 and abs(events[0][SYS_DURATION] - abs(seconds)) < 5, events
+    assert ("+" if seconds > 0 else "-") in str(events[0].get("detail")), events
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, REPAIR_CLOCK_RESET)
+    assert issue is not None and issue.translation_placeholders and "shift" in issue.translation_placeholders
+
+async def test_a_small_correction_is_not_a_reset(hass: HomeAssistant, freezer):
+    coord, device, record, bus = await _stepped(hass, freezer, 120.0)
+    assert not [e for e in coord.data[DATA_SYSTEM_EVENTS] if e.get(SYS_KIND) == SYS_CLOCK_RESET]
+    assert ir.async_get(hass).async_get_issue(DOMAIN, REPAIR_CLOCK_RESET) is None
+
+async def test_a_frozen_device_stays_frozen_through_a_reset(hass: HomeAssistant, freezer):
+    coord, device, value, seen, heard, phone, bus = await _hold_house(hass, freezer)
+    mono = {"now": 1000.0}
+    coord._monotonic = lambda: mono["now"]  # type: ignore[method-assign]
+    await _minutes(hass, coord, freezer, 3)
+    record = coord.data[DATA_DEVICES][device.id]
+    assert record[DEV_FROZEN_CATEGORY] == "frozen"
+    mono["now"] += 60
+    await coord._on_render_tick(None)
+    freezer.tick(60 - 2 * HOUR)
+    mono["now"] += 60
+    await coord._on_render_tick(None)
+    await hass.async_block_till_done()
+    assert record[DEV_FROZEN_CATEGORY] == "frozen"
+    assert not [b for b in bus if b[0] == "recovered"], bus
+    await _minutes(hass, coord, freezer, 3)
+    assert record[DEV_FROZEN_CATEGORY] == "frozen"
+
+async def test_a_dead_device_is_caught_after_a_backward_step(hass: HomeAssistant, freezer):
+    """On 0.23.15 the catch came a step late: 155 minutes after a
+    two-hour step, against 35 with none."""
+    coord, device, record, bus = await _stepped(hass, freezer, -2 * HOUR)
+    window = coord._freeze_window(record)
+    await _minutes(hass, coord, freezer, int(window // 60) + 3)
+    assert record[DEV_FROZEN_CATEGORY] == "frozen", "still blind after the step"
+
+@pytest.mark.parametrize("seconds", [2 * HOUR, -2 * HOUR], ids=["forward", "backward"])
+async def test_running_windows_keep_their_real_time_through_a_reset(hass: HomeAssistant, freezer, seconds):
+    """The startup grace and a maintenance window are held as wall-clock
+    moments; a reset must not stretch them by its size or end them."""
+    coord, device, value, seen, heard, phone, bus = await _hold_house(hass, freezer)
+    mono = {"now": 1000.0}
+    coord._monotonic = lambda: mono["now"]  # type: ignore[method-assign]
+    await coord._on_render_tick(None)
+    now = dt_util.utcnow().timestamp()
+    coord._grace_until = now + 200.0
+    await coord.async_toggle_maintenance(30)
+    maintenance_left = coord._maintenance_until - now
+    freezer.tick(60 + seconds)
+    mono["now"] += 60
+    await coord._on_render_tick(None)
+    await hass.async_block_till_done()
+    now = dt_util.utcnow().timestamp()
+    assert abs((coord._grace_until - now) - 140.0) < 2, coord._grace_until - now
+    assert coord._maintenance_until is not None, "the maintenance window closed early"
+    assert abs((coord._maintenance_until - now) - (maintenance_left - 60)) < 2, coord._maintenance_until - now

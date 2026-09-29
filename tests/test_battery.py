@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery.py, Version: 0.22.4 (2026-09-19)
+# File: tests/test_battery.py, Version: 0.23.16 (2026-09-29)
 
 """Battery detection: the low verdict and the discharge recorder.
 
@@ -18,32 +18,32 @@ records only, the velocity flag waits on the soak.
 """
 
 import homeassistant.util.dt as dt_util
+import pytest
 from homeassistant.core import HomeAssistant
-
-from custom_components.device_sentinel.detect_battery import BatteryMixin
-from custom_components.device_sentinel.detect_signal import SignalMixin
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
-    DEV_BATTERY_DAILY_PREVIOUS,
-    DEV_BATTERY_REPLACED_AT,
-    DEV_BATTERY_REPLACED_PENDING,
-    SYS_BATTERY_REPLACED,
-    DATA_SYSTEM_EVENTS,
     CONF_LOW_THRESHOLD,
-    DEFAULT_LOW_THRESHOLD,
     DATA_DEVICES,
+    DATA_SYSTEM_EVENTS,
+    DEFAULT_LOW_THRESHOLD,
     DEFAULT_RETENTION_DAYS,
     DEV_BATTERY_DAILY,
+    DEV_BATTERY_DAILY_PREVIOUS,
     DEV_BATTERY_LOW,
+    DEV_BATTERY_REPLACED_AT,
+    DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
+    SYS_BATTERY_REPLACED,
 )
-
+from custom_components.device_sentinel.detect_battery import BatteryMixin
+from custom_components.device_sentinel.detect_signal import SignalMixin
 from tests.helpers import setup_coordinator, setup_entry
+
+from .helpers import register_device
 
 DOMAIN = "device_sentinel"
 
@@ -760,3 +760,36 @@ async def test_a_replacement_clears_a_standing_low(hass: HomeAssistant):
 
     assert record[DEV_BATTERY_LOW] is False
     assert record[DEV_BATTERY_SINCE] is None
+
+
+# A battery reading outside 0 to 100% is ignored (#540, amended).
+
+
+@pytest.mark.parametrize("reading", ["1e308", "-1e308", "150", "-5", "100.5"])
+async def test_an_impossible_battery_reading_is_ignored(hass: HomeAssistant, caplog, reading):
+    """#540 amended: a battery reports a percentage."""
+    device, (value, battery) = register_device(hass, "b", name="Remote", entity_count=2)
+    er.async_get(hass).async_update_entity(battery, original_device_class="battery")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(battery, "60", {"unit_of_measurement": "%", "device_class": "battery"})
+    await hass.async_block_till_done()
+    coord._evaluate_all_batteries()
+    record = coord.data[DATA_DEVICES][device.id]
+    assert record["battery_value"] == 60.0
+    hass.states.async_set(battery, reading, {"unit_of_measurement": "%", "device_class": "battery"})
+    await hass.async_block_till_done()
+    coord._evaluate_all_batteries()
+    assert record["battery_value"] == 60.0, "the impossible reading was taken"
+    assert "outside 0 to 100%" in caplog.text
+
+async def test_the_edges_of_the_battery_scale_are_levels(hass: HomeAssistant):
+    device, (value, battery) = register_device(hass, "b", name="Remote", entity_count=2)
+    er.async_get(hass).async_update_entity(battery, original_device_class="battery")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    for reading in ("0", "100", "37.5"):
+        hass.states.async_set(battery, reading, {"unit_of_measurement": "%", "device_class": "battery"})
+        await hass.async_block_till_done()
+        coord._evaluate_all_batteries()
+        assert coord.data[DATA_DEVICES][device.id]["battery_value"] == float(reading), reading

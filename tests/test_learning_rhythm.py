@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_learning_rhythm.py, Version: 0.23.12 (2026-09-27)
+# File: test_learning_rhythm.py, Version: 0.23.16 (2026-09-29)
 
 """How the integration learns each device's reporting rhythm.
 
@@ -29,7 +29,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
-
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
@@ -39,6 +38,7 @@ from custom_components.device_sentinel.const import (
     DATA_DEVICES,
     DATA_INCIDENTS,
     DATA_STATS_EPOCH,
+    DATA_SYSTEM_EVENTS,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FROZEN_CATEGORY,
@@ -57,11 +57,16 @@ from custom_components.device_sentinel.const import (
     STORAGE_KEY,
     STORM_DEVICE_THRESHOLD,
     STORM_EXEMPT_PER_HOUR,
+    SYS_DURATION,
+    SYS_KIND,
+    SYS_RESTART,
+    SYS_SCOPE,
+    SYS_WHEN,
     TAINT_FLOOR_MINUTES,
 )
-
 from tests.helpers import register_fleet, setup_coordinator, setup_entry
 
+from .test_bridge_hold import _house
 
 # --------------------------------------------------- storm exemption
 
@@ -943,3 +948,70 @@ async def test_grace_recovery_consumes_taint(hass: HomeAssistant, freezer):
     assert rec[DEV_TODAY_MAX] == pytest.approx(140, abs=1), (
         "the first gap between two of the device's own reports is learned"
     )
+
+
+# A gap is learned minus the time Device Sentinel was stopped (#541).
+
+
+HOUR = 3600.0
+
+def _restart(when: float, downtime: float) -> dict:
+    return {SYS_KIND: SYS_RESTART, SYS_SCOPE: "system", SYS_WHEN: when, "detail": None, SYS_DURATION: downtime}
+
+async def test_a_gap_is_learned_minus_the_time_stopped(hass: HomeAssistant, freezer):
+    """24 September on the reference rig: a 16.5-minute clean stop,
+    learned as 25 devices' longest gap of the day."""
+    coord, device, value, seen, heard, phone, bus = await _house(hass, freezer)
+    now = dt_util.utcnow()
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_LAST_ACTIVITY] = (now - timedelta(hours=2)).timestamp()
+    record[DEV_TODAY_MAX] = None
+    coord._downtime = 0.0
+    # Stopped from 90 minutes ago until 30 minutes ago, the restart
+    # row written at the start of this run.
+    coord.data[DATA_SYSTEM_EVENTS] = [_restart(now.timestamp() - 30 * 60, HOUR)]
+    hass.states.async_set(seen, now.isoformat())
+    await hass.async_block_till_done()
+    assert record[DEV_TODAY_MAX] is not None
+    assert abs(record[DEV_TODAY_MAX] - HOUR) < 2, f"learned {record[DEV_TODAY_MAX]}, the stop included"
+
+async def test_several_stops_in_one_gap_are_all_taken_out(hass: HomeAssistant, freezer):
+    coord, device, value, seen, heard, phone, bus = await _house(hass, freezer)
+    now = dt_util.utcnow()
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_LAST_ACTIVITY] = (now - timedelta(hours=10)).timestamp()
+    record[DEV_TODAY_MAX] = None
+    coord._downtime = 0.0
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        _restart(now.timestamp() - 8 * HOUR, HOUR),
+        _restart(now.timestamp() - 4 * HOUR, 2 * HOUR),
+        _restart(now.timestamp() - 20 * HOUR, HOUR),  # before the gap: not inside it
+    ]
+    hass.states.async_set(seen, now.isoformat())
+    await hass.async_block_till_done()
+    assert abs(record[DEV_TODAY_MAX] - 7 * HOUR) < 2, record[DEV_TODAY_MAX]
+
+async def test_the_current_runs_stop_counts_before_its_row_is_written(hass: HomeAssistant, freezer):
+    coord, device, value, seen, heard, phone, bus = await _house(hass, freezer)
+    now = dt_util.utcnow()
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_LAST_ACTIVITY] = (now - timedelta(hours=2)).timestamp()
+    record[DEV_TODAY_MAX] = None
+    coord.data[DATA_SYSTEM_EVENTS] = []
+    coord._last_alive = now.timestamp() - 90 * 60
+    coord._downtime = HOUR
+    hass.states.async_set(seen, now.isoformat())
+    await hass.async_block_till_done()
+    assert abs(record[DEV_TODAY_MAX] - HOUR) < 2, record[DEV_TODAY_MAX]
+
+async def test_a_gap_with_no_stop_inside_is_learned_whole(hass: HomeAssistant, freezer):
+    coord, device, value, seen, heard, phone, bus = await _house(hass, freezer)
+    now = dt_util.utcnow()
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_LAST_ACTIVITY] = (now - timedelta(hours=2)).timestamp()
+    record[DEV_TODAY_MAX] = None
+    coord._downtime = 0.0
+    coord.data[DATA_SYSTEM_EVENTS] = [_restart(now.timestamp() - 5 * HOUR, HOUR)]
+    hass.states.async_set(seen, now.isoformat())
+    await hass.async_block_till_done()
+    assert abs(record[DEV_TODAY_MAX] - 2 * HOUR) < 2, record[DEV_TODAY_MAX]

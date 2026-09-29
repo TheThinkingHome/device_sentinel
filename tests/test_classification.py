@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_classification.py, Version: 0.22.13 (2026-09-21)
+# File: test_classification.py, Version: 0.23.16 (2026-09-29)
 
 """How devices are counted and attributed to integrations.
 
@@ -19,20 +19,23 @@ file holds that classification behaviour, the combined table, and the
 coverage sensors.
 """
 
+import os
+
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
-    SET_ASIDE_DUPLICATE_COORDINATOR,
-    SET_ASIDE_SERVICE,
+    CLASSIFICATION_SETTLED_TRIGGER,
     CONF_MUTED_DEVICES,
     DATA_DEVICES,
+    REPORT_CLASSIFICATION,
+    REPORT_DIR,
+    SET_ASIDE_DUPLICATE_COORDINATOR,
+    SET_ASIDE_SERVICE,
 )
-
 from tests.helpers import (
     MULTI_OWNER_GONE,
     MULTI_OWNER_POSSIBLE,
@@ -362,3 +365,16 @@ async def test_the_classification_row_keeps_its_columns(
     assert len(cells) == 6
     assert cells[4] == "service"
     assert cells[5] == ""
+
+
+# The classification report is written again when the startup grace closes.
+
+
+async def test_the_classification_is_written_again_when_the_grace_closes(hass: HomeAssistant):
+    coord = await setup_coordinator(hass)
+    coord._on_grace_closed(None)
+    await hass.async_block_till_done()
+    path = os.path.join(hass.config.path(REPORT_DIR), REPORT_CLASSIFICATION)
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    assert f"({CLASSIFICATION_SETTLED_TRIGGER})" in text

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_wording.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_outage_wording.py, Version: 0.23.16 (2026-09-29)
 
 """What a bridge's row says, down and recovering (rulings #442, #443).
 
@@ -29,8 +29,8 @@ from custom_components.device_sentinel.const import (
     STACK_Z2M,
     UPSTREAM_KIND,
 )
-from tests.test_bridge_pairing import _Stub, _device
 from tests.helpers import setup_coordinator
+from tests.test_bridge_pairing import _device, _Stub
 
 
 async def _bridge_back_with(hass, freezer, down: int, back: int):
@@ -120,4 +120,19 @@ async def test_one_device_left_of_several_reads_in_the_singular(
     assert summary == (
         "Zigbee2MQTT recovering: 1 of the 3 devices that went down "
         "remains unavailable"
+    )
+
+
+# An outage is told from its start until its return.
+
+
+async def test_an_outage_is_told_from_its_start_until_its_return(hass: HomeAssistant):
+    await hass.config.async_set_time_zone("America/Guayaquil")
+    coord = await setup_coordinator(hass)
+    back = dt_util.as_utc(dt_util.parse_datetime("2026-09-28T07:37:49-05:00")).timestamp()
+    sentence = coord._outage_span_sentence("The Zigbee2MQTT bridge", {"when": back, "duration": 14146.0})
+    assert sentence.startswith("The Zigbee2MQTT bridge was down for 3.9h, from ")
+    assert "3:42" in sentence and "until 7:37" in sentence, sentence
+    assert coord._outage_span_sentence("The MQTT broker", {"when": back, "duration": None}).startswith(
+        "The MQTT broker came back at "
     )

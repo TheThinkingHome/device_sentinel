@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal.py, Version: 0.20.5 (2026-09-05)
+# File: test_signal.py, Version: 0.23.16 (2026-09-29)
 
 """Signal detection: the floor line and the rail.
 
@@ -17,40 +17,42 @@ holds the floor line and how it renders, the rail detector, signal
 muting as recorded-not-reported.
 """
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
-    DEV_SIGNAL_ALT,
-    DEV_SIGNAL_READS,
-    DEV_SIGNAL_SCALE,
-    SIGNAL_SCALE_LQI,
-    SIGNAL_SCALE_RSSI,
     CONF_SIGNAL_MUTED_DEVICES,
     CONF_SIGNAL_MUTED_INTEGRATIONS,
     CONF_SIGNAL_MUTED_LABELS,
+    DATA_DEVICES,
+    DEV_SIGNAL_ALT,
     DEV_SIGNAL_DAILY_COUNT,
     DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_LAST_CHANGE,
+    DEV_SIGNAL_READS,
+    DEV_SIGNAL_SCALE,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
+    SIGNAL_SCALE_LQI,
+    SIGNAL_SCALE_RSSI,
+)
+from custom_components.device_sentinel.coordinator import (
+    _new_device_record,
 )
 from custom_components.device_sentinel.detect_signal import (
     SignalMixin,
     scale_of,
     signal_bucket,
 )
-from custom_components.device_sentinel.coordinator import (
-    _new_device_record,
-)
-
 from tests.helpers import setup_coordinator, setup_coordinator_flat_line, setup_entry
+
+from .helpers import register_device
 
 DOMAIN = "device_sentinel"
 
@@ -714,3 +716,32 @@ async def test_a_long_series_with_gaps_and_rails(hass: HomeAssistant):
     line = coord._danger_line(record)
     assert line is not None
     assert 70.0 <= line <= 81.0, line
+
+
+# A signal reading outside its scale's physical range is ignored (#540).
+
+
+@pytest.mark.parametrize("reading", ["1e308", "-1e308", "300", "-200", "1e200"])
+async def test_an_impossible_signal_reading_is_ignored(hass: HomeAssistant, caplog, reading):
+    device, (value, lqi) = register_device(hass, "s", name="Sensor", entity_count=2)
+    er.async_get(hass).async_update_entity(lqi, original_device_class="signal_strength")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    hass.states.async_set(lqi, "200", {"state_class": "measurement"})
+    await hass.async_block_till_done()
+    record = coord.data[DATA_DEVICES][device.id]
+    assert record[DEV_SIGNAL_VALUE] == 200.0
+    hass.states.async_set(lqi, reading, {"state_class": "measurement"})
+    await hass.async_block_till_done()
+    assert record[DEV_SIGNAL_VALUE] == 200.0, "the impossible reading was taken"
+    assert "outside any signal scale" in caplog.text
+
+async def test_the_edges_of_the_scales_are_readings(hass: HomeAssistant):
+    device, (value, lqi) = register_device(hass, "s", name="Sensor", entity_count=2)
+    er.async_get(hass).async_update_entity(lqi, original_device_class="signal_strength")
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+    for reading in ("255", "0", "-128", "-130"):
+        hass.states.async_set(lqi, reading, {"state_class": "measurement"})
+        await hass.async_block_till_done()
+        assert record[DEV_SIGNAL_VALUE] == float(reading), reading

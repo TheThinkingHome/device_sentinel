@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_bridge_pairing.py, Version: 0.12.12 (2026-08-07)
+# File: test_bridge_pairing.py, Version: 0.23.16 (2026-09-29)
 
 """Coordinator stacks, the Z2M bridge, and the pairing override.
 
@@ -27,51 +27,54 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
-
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
-
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
 
-from custom_components.device_sentinel.stack_z2m import Z2MBridgeReader
 from custom_components.device_sentinel.const import (
     BRIDGE_BINDING,
     BRIDGE_DOWN,
-    DEV_FROZEN_SINCE,
-    DEV_FROZEN_CATEGORY,
     BRIDGE_HANDBACK_SECONDS,
     BRIDGE_RUNNING,
     BRIDGE_UNKNOWN,
     DATA_DEVICES,
     DATA_EPISODES,
-    TAINT_FLOOR_MINUTES,
+    DATA_SYSTEM_EVENTS,
     DEV_DAILY_MAX,
+    DEV_FROZEN_CATEGORY,
+    DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     DEV_TAINTED,
     DEV_TODAY_MAX,
     EP_LEARNED,
     EP_TAINT_SECONDS,
     FREEZE_ARMING_DAYS,
+    LEARNING_MIN_DAYS,
+    RECOVERY_BY_INTERVENTION,
+    RECOVERY_CAUSE_PAIRING,
     STACK_MATTER,
-    DATA_SYSTEM_EVENTS,
     STACK_Z2M,
+    STACK_ZHA,
+    STACK_ZWAVE,
+    STARTUP_GRACE_SECONDS,
     SYS_BRIDGE_DOWN,
     SYS_BRIDGE_UP,
     SYS_KIND,
     SYS_PAIRING_CLOSED,
     SYS_PAIRING_OPEN,
     SYS_SCOPE,
-    STACK_ZHA,
-    STACK_ZWAVE,
-    STARTUP_GRACE_SECONDS,
+    TAINT_FLOOR_MINUTES,
 )
-
+from custom_components.device_sentinel.events import resolved_by
+from custom_components.device_sentinel.stack_z2m import Z2MBridgeReader
 from tests.helpers import setup_coordinator
+
+from .helpers import register_device
 
 DOMAIN = "device_sentinel"
 
@@ -817,3 +820,35 @@ async def test_the_z2m_reader_does_not_wait_for_absent_mqtt(
     elapsed = time.monotonic() - started
     assert STACK_Z2M in coord._stacks
     assert elapsed < 10.0, f"setup took {elapsed:.1f}s waiting for MQTT"
+
+
+# A pairing window is stored with the recovery it brings (#535).
+
+
+HOUR = 3600.0
+
+def _event(kind, scope, when, duration=None):
+    return {"kind": kind, "scope": scope, "when": when, "duration": duration, "detail": None}
+
+async def _one(hass):
+    device, _ = register_device(hass, "d", name="Probe")
+    coord = await setup_coordinator(hass)
+    coord._watched[device.id] = "mqtt"
+    coord._stack_for_device = lambda d: STACK_Z2M
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_DAILY_MAX] = [3000.0] * (LEARNING_MIN_DAYS + 5)
+    return coord, device, record
+
+def test_a_pairing_window_is_an_intervention_on_the_bus():
+    assert resolved_by(RECOVERY_CAUSE_PAIRING) == RECOVERY_BY_INTERVENTION
+
+async def test_a_recovery_inside_a_pairing_window_stores_the_credit(hass: HomeAssistant):
+    """Switch Hall Living, 11:51 on 28 September."""
+    coord, device, record = await _one(hass)
+    now = dt_util.utcnow().timestamp()
+    coord.data[DATA_SYSTEM_EVENTS] = [_event("pairing_open", STACK_Z2M, now - 15)]
+    assert coord._recovery_cause(device.id, now - 4 * HOUR) == RECOVERY_CAUSE_PAIRING
+
+async def test_the_brief_reads_the_stored_credit_as_revived(hass: HomeAssistant):
+    coord = await setup_coordinator(hass)
+    assert coord._recovery_tail({"cause": RECOVERY_CAUSE_PAIRING}) == ", revived by a pairing window"

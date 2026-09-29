@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_credit.py, Version: 0.23.15 (2026-09-28)
+# File: tests/test_outage_credit.py, Version: 0.23.16 (2026-09-29)
 
 """An outage is not a device's silence (#536).
 
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -220,3 +221,77 @@ async def test_the_gap_across_an_outage_is_not_learned(hass: HomeAssistant, free
     await hass.async_block_till_done()
     assert record[DEV_LAST_ACTIVITY] > before
     assert record[DEV_TODAY_MAX] is None, "the four-hour gap was learned as the device's rhythm"
+
+
+# Stored outages with a corrupt or missing duration, and the rig's own night of 28 September.
+
+
+def _event_15(kind, scope, when, duration=None):
+    return {"kind": kind, "scope": scope, "when": when, "duration": duration, "detail": None}
+
+async def _one_15(hass):
+    device, _ = register_device(hass, "d", name="Probe")
+    coord = await setup_coordinator(hass)
+    coord._watched[device.id] = "mqtt"
+    coord._stack_for_device = lambda d: STACK_Z2M
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_DAILY_MAX] = [3000.0] * (LEARNING_MIN_DAYS + 5)
+    return coord, device, record
+
+async def test_a_corrupt_duration_does_not_clear_a_frozen_device(hass: HomeAssistant):
+    """The real harm: a device frozen for days, credited back under its
+    window by one bad duration, would read as recovered unheard."""
+    coord, device, record = await _one_15(hass)
+    now = dt_util.utcnow().timestamp()
+    record[DEV_LAST_ACTIVITY] = now - 3 * 24 * HOUR
+    window = coord._freeze_window(record)
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        _event_15("bridge_down", STACK_Z2M, now - 2 * HOUR),
+        _event_15("bridge_up", STACK_Z2M, now - 60, 10 ** 9),
+    ]
+    silence = coord._observed_silence(record, now, device.id, window)
+    assert silence > window
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [_event_15("bridge_up", STACK_Z2M, 0, float("inf"))],
+        [_event_15("bridge_up", STACK_Z2M, 0, float("nan"))],
+        ["not a row", 42, None],
+        [_event_15("bridge_up", STACK_Z2M, float("inf"), 60)],
+    ],
+    ids=["infinite duration", "nan duration", "not rows", "infinite time"],
+)
+async def test_malformed_stored_outages_are_skipped(hass: HomeAssistant, rows):
+    coord, device, record = await _one_15(hass)
+    now = dt_util.utcnow().timestamp()
+    record[DEV_LAST_ACTIVITY] = now - 2 * HOUR
+    for row in rows:
+        if isinstance(row, dict) and row["when"] == 0:
+            row["when"] = now - 60
+    coord.data[DATA_SYSTEM_EVENTS] = rows
+    window = coord._freeze_window(record)
+    assert coord._observed_silence(record, now, device.id, window) >= 2 * HOUR - 3600
+
+async def test_a_return_with_no_recorded_fall_is_credited_an_hour_at_most(hass: HomeAssistant):
+    """Its four hours claimed, one credited: the device, heard 90 minutes
+    ago and within its window when the hour began, is silent 30 minutes."""
+    coord, device, record = await _one_15(hass)
+    now = dt_util.utcnow().timestamp()
+    record[DEV_LAST_ACTIVITY] = now - 90 * 60
+    coord.data[DATA_SYSTEM_EVENTS] = [_event_15("bridge_up", STACK_Z2M, now - 60, 4 * HOUR)]
+    silence = coord._observed_silence(record, now, device.id, coord._freeze_window(record))
+    assert abs(silence - 30 * 60) < 2, silence
+
+async def test_the_rigs_own_outage_is_credited_whole(hass: HomeAssistant):
+    """Dated from the start of the run, 3:42, its fall recorded at 3:47."""
+    coord, device, record = await _one_15(hass)
+    back = dt_util.utcnow().timestamp() - 300
+    began = back - 14146
+    record[DEV_LAST_ACTIVITY] = began - 600
+    coord.data[DATA_SYSTEM_EVENTS] = [
+        _event_15("bridge_down", STACK_Z2M, began + 305),
+        _event_15("bridge_up", STACK_Z2M, back, 14146),
+    ]
+    silence = coord._observed_silence(record, back + 300, device.id, coord._freeze_window(record))
+    assert abs(silence - 900) < 2

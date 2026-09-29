@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_exclusions.py, Version: 0.21.11 (2026-09-16)
+# File: test_exclusions.py, Version: 0.23.16 (2026-09-29)
 
 """Exclusion: watched and recorded, but not judged or reported.
 
@@ -25,14 +25,16 @@ dead option keys that no code reads.
 from datetime import timedelta
 
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
-
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
+    async_mock_service,
 )
 
 from custom_components.device_sentinel.config_flow import (
@@ -40,33 +42,40 @@ from custom_components.device_sentinel.config_flow import (
     _devices_covered_by,
 )
 from custom_components.device_sentinel.const import (
+    ACTION_MUTED,
+    CONF_BADDAY_BASELINE_DAYS,
+    CONF_BADDAY_DROP_LQI,
+    CONF_BADDAY_DROP_RSSI,
+    CONF_BADDAY_SENSITIVITY,
     CONF_BATTERY_MUTED_DEVICES,
     CONF_BATTERY_MUTED_INTEGRATIONS,
     CONF_BATTERY_MUTED_LABELS,
-    CONF_MUTED_DEVICES,
-    CONF_MUTED_INTEGRATIONS,
     CONF_EXCLUDED_INTEGRATIONS,
-    CONF_MUTED_LABELS,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
     CONF_FREEZE_MUTED_DEVICES,
     CONF_FREEZE_MUTED_INTEGRATIONS,
     CONF_FREEZE_MUTED_LABELS,
+    CONF_HIGH_PRIORITY_TARGETS,
+    CONF_MUTED_DEVICES,
+    CONF_MUTED_INTEGRATIONS,
+    CONF_MUTED_LABELS,
     CONF_SIGNAL_MUTED_DEVICES,
     CONF_SIGNAL_MUTED_INTEGRATIONS,
     CONF_SIGNAL_MUTED_LABELS,
-    CONF_BADDAY_BASELINE_DAYS,
-    CONF_BADDAY_DROP_LQI,
-    CONF_BADDAY_DROP_RSSI,
-    CONF_BADDAY_SENSITIVITY,
     DATA_DEVICES,
+    DATA_INCIDENTS,
     DEAD_OPTION_KEYS,
+    DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
+    DEV_FROZEN_CATEGORY,
     DEV_LAST_ACTIVITY,
+    INCIDENT_ACTION,
+    LEARNING_MIN_DAYS,
     STARTUP_GRACE_SECONDS,
+    TODO_KINDS,
 )
 from custom_components.device_sentinel.coordinator import _new_device_record
-
 from tests.helpers import (
     MULTI_OWNER_GONE,
     MULTI_OWNER_POSSIBLE,
@@ -74,6 +83,8 @@ from tests.helpers import (
     setup_coordinator,
     setup_entry,
 )
+
+from .test_bridge_hold import _house, _minutes
 
 DOMAIN = "device_sentinel"
 
@@ -1499,3 +1510,113 @@ async def test_muting_and_unmuting_around_an_open_fault(
     await hass.async_block_till_done()
     coord._rebuild_registry_view()
     assert coord.battery_low_count == 1
+
+
+# A mute is a person's act, not a recovery (#537).
+
+
+MUTES = {
+    "muted_devices": "dev", "muted_integrations": "dom", "muted_labels": "lab",
+    "freeze_muted_devices": "dev", "freeze_muted_integrations": "dom", "freeze_muted_labels": "lab",
+    "battery_muted_devices": "dev", "battery_muted_integrations": "dom", "battery_muted_labels": "lab",
+}
+
+def _kinds(coord, device_id):
+    for item in coord.todo_items:
+        if item.get("device_id") == device_id:
+            return sorted(item.get(TODO_KINDS) or {})
+    return []
+
+@pytest.mark.parametrize("option", list(MUTES))
+async def test_a_mute_is_not_a_recovery(hass: HomeAssistant, freezer, option):
+    """S73 on the second house's person's week: muted while frozen,
+    announced recovered. Every mute setting, every surface silent."""
+    source = MockConfigEntry(domain="zwave_js", title="zwave_js")
+    source.add_to_hass(hass)
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    label = lr.async_get(hass).async_create("Quiet")
+    reg = dr.async_get(hass)
+    device = reg.async_get_or_create(config_entry_id=source.entry_id, identifiers={("zwave_js", "p")}, name="Probe")
+    reg.async_update_device(device.id, labels={label.label_id})
+    sibling = reg.async_get_or_create(config_entry_id=source.entry_id, identifiers={("zwave_js", "s")}, name="Sibling")
+    ents = er.async_get(hass)
+    ents.async_get_or_create("sensor", "zwave_js", "s", device_id=sibling.id, config_entry=source)
+    value = ents.async_get_or_create("sensor", "zwave_js", "v", device_id=device.id, config_entry=source).entity_id
+    battery = ents.async_get_or_create(
+        "sensor", "zwave_js", "b", device_id=device.id, config_entry=source, original_device_class="battery"
+    ).entity_id
+    battery_only = option.startswith("battery")
+    hass.states.async_set(value, "40")
+    hass.states.async_set(battery, "5", {"unit_of_measurement": "%", "device_class": "battery"})
+    bus: list[tuple[str, object]] = []
+    for name in ("device_sentinel_fault", "device_sentinel_recovered", "device_sentinel_withdrawn"):
+        hass.bus.async_listen(
+            name, lambda e, n=name: bus.append((n.rsplit("_", 1)[-1], e.data.get("kinds") or e.data.get("kind"), e.data.get("reason")))
+        )
+    phone = async_mock_service(hass, "notify", "phone")
+    entry = await setup_entry(hass, {CONF_HIGH_PRIORITY_TARGETS: ["notify.phone"]})
+    heard = dt_util.utcnow() - timedelta(hours=10)
+
+    def arm():
+        c = entry.runtime_data
+        c._grace_until = 0.0
+        record = c.data[DATA_DEVICES][device.id]
+        record[DEV_EVENT_COUNT] = 5000
+        if len(record.get(DEV_DAILY_MAX) or []) < LEARNING_MIN_DAYS + 5:
+            record[DEV_DAILY_MAX] = [600.0] * (LEARNING_MIN_DAYS + 5)
+        if not battery_only:
+            record[DEV_LAST_ACTIVITY] = min(record.get(DEV_LAST_ACTIVITY) or 9e18, heard.timestamp())
+        return c
+
+    async def minutes(count):
+        for _ in range(count):
+            freezer.tick(60)
+            c = arm()
+            c._evaluate_all_batteries()
+            await c._on_render_tick(None)
+            await hass.async_block_till_done()
+
+    await minutes(6)
+    coord = entry.runtime_data
+    listed = _kinds(coord, device.id)
+    assert "low_battery" in listed, listed
+    if not battery_only:
+        assert "frozen" in listed, listed
+    rows_before = len(coord.data[DATA_INCIDENTS])
+    bus.clear()
+    phone.clear()
+    chosen = {"dev": [device.id], "dom": ["zwave_js"], "lab": [label.label_id]}[MUTES[option]]
+    hass.config_entries.async_update_entry(entry, options={**entry.options, option: chosen})
+    await hass.async_block_till_done()
+    await minutes(3)
+    coord = entry.runtime_data
+    rows = [
+        (r["kind"], r["event"], r.get("cause"))
+        for r in coord.data[DATA_INCIDENTS][rows_before:]
+        if r.get("device_id") == device.id
+    ]
+    assert not [b for b in bus if b[0] == "recovered"], bus
+    # Only what the mute sends: a storage notice an earlier test in the
+    # same run leaves behind reaches the same phone and is not ours.
+    about_it = [
+        c.data.get("message")
+        for c in phone
+        if "Probe" in str(c.data.get("message")) or "recover" in str(c.data.get("message")).lower()
+    ]
+    assert not about_it, about_it
+    assert rows and all(event == INCIDENT_ACTION and cause == ACTION_MUTED for _k, event, cause in rows), rows
+    assert [b for b in bus if b[0] == "withdrawn"] and all(b[2] == "muted" for b in bus if b[0] == "withdrawn"), bus
+    if option.startswith("freeze"):
+        assert _kinds(coord, device.id) == ["low_battery"]
+    else:
+        assert _kinds(coord, device.id) == []
+
+async def test_a_genuine_recovery_still_announces(hass: HomeAssistant, freezer):
+    """The control: the same device, unmuted, reporting again."""
+    coord, device, value, seen, heard, phone, bus = await _house(hass, freezer)
+    await _minutes(hass, coord, freezer, 3)
+    assert coord.data[DATA_DEVICES][device.id][DEV_FROZEN_CATEGORY] == "frozen"
+    bus.clear()
+    hass.states.async_set(seen, dt_util.utcnow().isoformat())
+    await _minutes(hass, coord, freezer, 2)
+    assert ("recovered", "frozen") in bus, bus
