@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_tables.py, Version: 0.17.5 (2026-08-24)
+# File: test_storage_tables.py, Version: 0.23.18 (2026-09-29)
 
 """The half of the file the shape check never read (ruling #332).
 
@@ -302,17 +302,22 @@ def test_every_row_defining_stamp_is_required():
     """The same rule across every table that carries one."""
     from custom_components.device_sentinel.normalise import (
         EPISODE_SHAPE,
+        REAL_MOMENT,
         REAL_NUMBER,
+        REAL_SPAN,
         STORM_SHAPE,
         STRESS_SHAPE,
         SYSTEM_EVENT_SHAPE,
     )
 
-    assert SYSTEM_EVENT_SHAPE["when"] == REAL_NUMBER
-    assert STORM_SHAPE["at"] == REAL_NUMBER
-    assert STRESS_SHAPE["at"] == REAL_NUMBER
-    for field in ("since", "basis", "window"):
-        assert EPISODE_SHAPE[field] == REAL_NUMBER
+    # Required, and since 0.23.18 held to what is possible: a moment
+    # between 2020 and 2100, a span within 360 days (ruling #544).
+    assert SYSTEM_EVENT_SHAPE["when"] == REAL_MOMENT
+    assert STORM_SHAPE["at"] == REAL_MOMENT
+    assert STRESS_SHAPE["at"] == REAL_MOMENT
+    assert EPISODE_SHAPE["since"] == REAL_MOMENT
+    for field in ("basis", "window"):
+        assert EPISODE_SHAPE[field] == REAL_SPAN
     # And the ones that legitimately stay nullable. An episode's `at`
     # was in the list above until 0.19.4 and did not belong there:
     # `since` is what defines an episode row, and `at` is when it

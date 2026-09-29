@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_worst.py, Version: 0.23.12 (2026-09-27)
+# File: tests/test_outage_worst.py, Version: 0.23.18 (2026-09-29)
 
 """The daily brief tells an outage by its worst moment (ruling #442).
 
@@ -37,6 +37,10 @@ from tests.helpers import setup_coordinator
 from tests.test_outage_wording import _bridge_back_with
 from tests.test_wifi_outage import _declared, _fall, _house, _rise
 from tests.test_wifi_recovery import _tick
+
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
 
 
 def _last(coord, kind):
@@ -83,6 +87,7 @@ async def test_a_bridge_outage_records_its_worst_moment(
 async def test_a_new_outage_starts_its_count_again(
     hass: HomeAssistant, freezer
 ):
+
     """The worst moment belongs to one outage, not to the upstream."""
     coord = await setup_coordinator(hass)
     coord._upstream_peak["z2m"] = 40
@@ -158,10 +163,10 @@ def test_the_storage_check_knows_the_worst_field():
         fill_missing_row_fields,
     )
 
-    good = {SYS_WHEN: 1.0, SYS_KIND: SYS_WIFI_UP, SYS_SCOPE: "wifi",
+    good = {SYS_WHEN: TIME_BASE + 1.0, SYS_KIND: SYS_WIFI_UP, SYS_SCOPE: "wifi",
             SYS_DURATION: 5.0, "detail": None, SYS_DEVICES: 74,
             SYS_WORST: 56}
-    old = {SYS_WHEN: 1.0, SYS_KIND: SYS_WIFI_UP, SYS_SCOPE: "wifi",
+    old = {SYS_WHEN: TIME_BASE + 1.0, SYS_KIND: SYS_WIFI_UP, SYS_SCOPE: "wifi",
            SYS_DURATION: 5.0, "detail": None, SYS_DEVICES: 74}
     bad = dict(good, **{SYS_WORST: "fifty-six"})
     data = {DATA_SYSTEM_EVENTS: [good, old, bad]}

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_model_groups.py, Version: 0.23.9 (2026-09-26)
+# File: tests/test_model_groups.py, Version: 0.23.18 (2026-09-29)
 
 """Model groups, the backbone (0.23.4).
 
@@ -58,6 +58,10 @@ from custom_components.device_sentinel.report_battery import BatteryReportMixin
 from tests.conftest import fleet_param
 from .helpers import setup_entry
 
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
+
 DAY = 86400.0
 
 
@@ -101,6 +105,7 @@ def test_a_new_record_starts_with_no_firmware():
 async def test_the_firmware_a_device_gives_is_recorded_at_the_start(
     hass: HomeAssistant,
 ):
+
     source = _source(hass)
     panel = _device(hass, source, "panel", manufacturer="Sonoff", model="NSPanel Pro", sw_version="2.3.0")
     entry = await setup_entry(hass)
@@ -176,14 +181,14 @@ async def test_a_record_stored_before_the_field_is_filled_and_noted(
     the field and records the version the registry gives."""
     source = _source(hass)
     panel = _device(hass, source, "panel", manufacturer="Sonoff", model="NSPanel Pro", sw_version="3.4.0")
-    stored = _new_device_record("2026-07-01T00:00:00+00:00", 1000.0)
+    stored = _new_device_record("2026-07-01T00:00:00+00:00", TIME_BASE + 1000.0)
     del stored[DEV_FIRMWARE_HISTORY]
     hass_storage[STORAGE_KEY] = {
         "version": 1,
         "data": {
             DATA_DEVICES: {panel.id: stored},
             DATA_STATS_EPOCH: STATS_EPOCH,
-            DATA_SAVED_AT: 1000.0,
+            DATA_SAVED_AT: TIME_BASE + 1000.0,
         },
     }
     entry = await setup_entry(hass)
@@ -194,7 +199,7 @@ async def test_a_record_stored_before_the_field_is_filled_and_noted(
 def test_the_shape_check_refuses_a_damaged_history():
     """Guard: the field is checked like every other."""
     good = _new_device_record("", None)
-    good[DEV_FIRMWARE_HISTORY] = [["1.0", 1000.0]]
+    good[DEV_FIRMWARE_HISTORY] = [["1.0", TIME_BASE + 1000.0]]
     assert not [f for f in check_records({"a": good}) if f[1] == DEV_FIRMWARE_HISTORY]
     for damage in ("1.0", [["", 1.0]], [["1.0"]], [["1.0", "yesterday"]]):
         bad = _new_device_record("", None)

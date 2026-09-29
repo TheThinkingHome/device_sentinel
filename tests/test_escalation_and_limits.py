@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_escalation_and_limits.py, Version: 0.23.10 (2026-09-26)
+# File: tests/test_escalation_and_limits.py, Version: 0.23.18 (2026-09-29)
 
 """A worse problem replacing a lesser one, and lines a person reads.
 
@@ -47,6 +47,10 @@ from custom_components.device_sentinel.normalise import check_records
 from custom_components.device_sentinel.records import _new_device_record
 
 from .helpers import register_device, setup_coordinator
+
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
 
 HOUR = 3600.0
 
@@ -163,7 +167,7 @@ async def test_a_battery_outside_a_percentage_is_not_drawn_as_one(
 def test_a_negative_gap_is_refused_at_the_boundary():
     """A negative today_max folded into the day's series at midnight
     and had the whole record refused on the next load."""
-    record = _new_device_record("2026-09-23T00:00:00+00:00", 1.0)
+    record = _new_device_record("2026-09-23T00:00:00+00:00", TIME_BASE)
     record["today_max"] = -50.0
     faults = check_records({"a" * 32: record})
     assert faults and faults[0][1] == "today_max"

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_escalation_read.py, Version: 0.22.27 (2026-09-23)
+# File: tests/test_escalation_read.py, Version: 0.23.18 (2026-09-29)
 
 """What 0.22.26 wrote and no reader read.
 
@@ -54,6 +54,10 @@ from custom_components.device_sentinel.normalise import (
 )
 
 from .helpers import register_device, setup_coordinator
+
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
 
 HOUR = 3600.0
 
@@ -108,6 +112,7 @@ async def test_in_short_tells_the_escalation_as_a_change(hass: HomeAssistant):
 async def test_the_table_tells_one_change_and_counts_nothing_ended(
     hass: HomeAssistant,
 ):
+
     coordinator, _device = await _escalate(hass)
     table = _section(await _brief(hass, coordinator), "## Last 24 Hours")
     assert "| marked unavailable from frozen |" in table
@@ -205,10 +210,10 @@ def test_a_silence_is_not_a_worse_signal():
     """Guard: only the same family pairs."""
     rows = [
         {"device_id": "a", "name": "A", "kind": TODO_KIND_FROZEN,
-         "event": INCIDENT_OPENED, "when": 100.0, "cause": None,
+         "event": INCIDENT_OPENED, "when": TIME_BASE + 100.0, "cause": None,
          "duration": None},
         {"device_id": "a", "name": "A", "kind": TODO_KIND_RAILED_SIGNAL,
-         "event": INCIDENT_RESOLVED, "when": 100.0, "cause": None,
+         "event": INCIDENT_RESOLVED, "when": TIME_BASE + 100.0, "cause": None,
          "duration": 9.0, "superseded": True},
     ]
     assert fold(rows) == rows
@@ -217,21 +222,21 @@ def test_a_silence_is_not_a_worse_signal():
 def test_the_fold_pairs_within_a_family_and_keeps_its_distance():
     rows = [
         {"device_id": "a", "name": "A", "kind": TODO_KIND_UNAVAILABLE,
-         "event": INCIDENT_OPENED, "when": 100.0, "cause": None,
+         "event": INCIDENT_OPENED, "when": TIME_BASE + 100.0, "cause": None,
          "duration": None},
         {"device_id": "a", "name": "A", "kind": TODO_KIND_LOW_BATTERY,
-         "event": INCIDENT_RESOLVED, "when": 100.0, "cause": None,
+         "event": INCIDENT_RESOLVED, "when": TIME_BASE + 100.0, "cause": None,
          "duration": 5.0, "superseded": True},
         {"device_id": "a", "name": "A", "kind": TODO_KIND_FROZEN,
-         "event": INCIDENT_RESOLVED, "when": 100.0, "cause": None,
+         "event": INCIDENT_RESOLVED, "when": TIME_BASE + 100.0, "cause": None,
          "duration": 9.0, "superseded": True},
         # Another device in the same second is not part of it.
         {"device_id": "b", "name": "B", "kind": TODO_KIND_FROZEN,
-         "event": INCIDENT_RESOLVED, "when": 100.0, "cause": None,
+         "event": INCIDENT_RESOLVED, "when": TIME_BASE + 100.0, "cause": None,
          "duration": 9.0, "superseded": True},
         # The same device an hour later is not part of it either.
         {"device_id": "a", "name": "A", "kind": TODO_KIND_UNAVAILABLE,
-         "event": INCIDENT_OPENED, "when": 3700.0, "cause": None,
+         "event": INCIDENT_OPENED, "when": TIME_BASE + 3700.0, "cause": None,
          "duration": None},
     ]
     before = [dict(row) for row in rows]
@@ -251,7 +256,7 @@ def test_the_fold_pairs_within_a_family_and_keeps_its_distance():
 def test_the_storage_check_reads_the_mark():
     row = {
         "device_id": "a" * 32, "name": "A", "kind": TODO_KIND_FROZEN,
-        "event": INCIDENT_RESOLVED, "when": 100.0, "cause": None,
+        "event": INCIDENT_RESOLVED, "when": TIME_BASE + 100.0, "cause": None,
         "duration": 9.0,
     }
     assert row_damage(DATA_INCIDENTS, row) is None, "an older row is refused"
@@ -292,7 +297,7 @@ def test_a_row_written_before_the_mark_survives_the_load():
     data = {
         DATA_INCIDENTS: [
             {"device_id": "a" * 32, "name": "A", "kind": TODO_KIND_FROZEN,
-             "event": INCIDENT_RESOLVED, "when": 100.0, "cause": "reboot",
+             "event": INCIDENT_RESOLVED, "when": TIME_BASE + 100.0, "cause": "reboot",
              "duration": 9.0},
         ]
     }

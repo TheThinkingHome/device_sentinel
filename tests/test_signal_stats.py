@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.23.5 (2026-09-25)
+# File: test_signal_stats.py, Version: 0.23.18 (2026-09-29)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -75,6 +75,10 @@ from custom_components.device_sentinel.diagnostics import (
 
 from .helpers import register_device, setup_coordinator, setup_entry
 
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
+
 
 def _brief_path(hass: HomeAssistant) -> str:
     return os.path.join(hass.config.path(REPORT_DIR), REPORT_BRIEF_HTML)
@@ -116,6 +120,7 @@ async def test_the_accumulators_live_in_the_clock_fields():
 async def test_readings_accumulate_and_rails_do_not(
     hass: HomeAssistant,
 ):
+
     """Welford's mean, M2, count, and the day's maximum track real readings.
 
     A rail value is the type's fill value, not a measurement, so it
@@ -787,9 +792,9 @@ async def test_an_episode_carries_its_signal_snapshot(
     episode = {
         EP_DEVICE_ID: device.id,
         EP_NAME: "Stressed Link",
-        EP_SINCE: 1000.0,
+        EP_SINCE: TIME_BASE + 1000.0,
         EP_ENDED: "resumed",
-        EP_AT: 5000.0,
+        EP_AT: TIME_BASE + 5000.0,
         EP_SIGNAL: snapshot,
     }
     coord._fold_signal_stress(episode, 5000.0)
@@ -798,7 +803,7 @@ async def test_an_episode_carries_its_signal_snapshot(
     assert rows[0][EP_SIGNAL][EP_SIG_VALUE] == 136.0
 
     # A row older than the retention window is trimmed by the fold.
-    old_row = dict(episode, **{EP_SINCE: 5000.0 - 400 * 86400.0})
+    old_row = dict(episode, **{EP_SINCE: TIME_BASE + 5000.0 - 400 * 86400.0})
     coord.data[DATA_SIGNAL_STRESS].append(old_row)
     coord._fold_signal_stress(episode, 5000.0)
     assert all(

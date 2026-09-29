@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery.py, Version: 0.23.16 (2026-09-29)
+# File: tests/test_battery.py, Version: 0.23.18 (2026-09-29)
 
 """Battery detection: the low verdict and the discharge recorder.
 
@@ -793,3 +793,115 @@ async def test_the_edges_of_the_battery_scale_are_levels(hass: HomeAssistant):
         await hass.async_block_till_done()
         coord._evaluate_all_batteries()
         assert coord.data[DATA_DEVICES][device.id]["battery_value"] == float(reading), reading
+
+
+# Zigbee's raw battery scale (ruling #545), marked conservatively.
+
+
+async def _raw_house(hass):
+    from homeassistant.helpers import entity_registry as er
+
+    from .helpers import setup_entry
+
+    device, (value, battery) = register_device(hass, "lux", name="LUX Outdoors", entity_count=2)
+    er.async_get(hass).async_update_entity(battery, original_device_class="battery")
+    entry = await setup_entry(hass)
+    return entry.runtime_data, device, battery
+
+
+def _read(hass, coord, battery, reading):
+    hass.states.async_set(battery, reading, {"unit_of_measurement": "%", "device_class": "battery"})
+
+
+async def test_a_raw_device_is_marked_on_its_second_day(hass, freezer):
+    """LUX Outdoors read 200 down to 178 under a "%" unit."""
+    freezer.move_to("2026-09-29 15:00:00+00:00")
+    coord, device, battery = await _raw_house(hass)
+    record = coord.data["devices"][device.id]
+    _read(hass, coord, battery, "180")
+    await hass.async_block_till_done()
+    coord._evaluate_all_batteries()
+    assert record["battery_raw_scale"] is False
+    assert record["battery_value"] is None, "a first reading over 100 is still ignored"
+    record["battery_daily_value"] = [96.0, 95.0]  # stored before the proof, on the raw scale
+    freezer.move_to("2026-09-30 15:00:00+00:00")
+    _read(hass, coord, battery, "178")
+    await hass.async_block_till_done()
+    coord._evaluate_all_batteries()
+    assert record["battery_raw_scale"] is True
+    assert record["battery_value"] == 89.0
+    assert record["battery_daily_value"] == [48.0, 47.5]
+
+
+@pytest.mark.parametrize("reading", ["101", "105", "110"])
+async def test_a_glitch_over_100_never_marks_a_device(hass, freezer, reading):
+    freezer.move_to("2026-09-29 15:00:00+00:00")
+    coord, device, battery = await _raw_house(hass)
+    record = coord.data["devices"][device.id]
+    for day in ("2026-09-29", "2026-09-30", "2026-10-01"):
+        freezer.move_to(f"{day} 15:00:00+00:00")
+        _read(hass, coord, battery, reading)
+        await hass.async_block_till_done()
+        coord._evaluate_all_batteries()
+    assert record["battery_raw_scale"] is False
+
+
+def test_stored_raw_history_needs_two_days_to_convert():
+    from custom_components.device_sentinel.detect_battery import raw_battery_history
+    from custom_components.device_sentinel.records import _new_device_record
+
+    record = _new_device_record("2026-09-01T00:00:00+00:00", None)
+    record["battery_daily_value"] = [180.0]
+    assert raw_battery_history(record) is False
+    record["battery_daily_value"] = [186.0, 184.0, 178.0]
+    assert raw_battery_history(record) is True
+    record["battery_daily_value"] = [186.0, 184.0, 250.0]
+    assert raw_battery_history(record) is False, "past 200 is not the raw scale"
+
+
+async def test_a_battery_change_measures_the_scale_again(hass, freezer):
+    """The raw mark lasts until the next battery change (ruling #545,
+    amended): the new cell proves its scale afresh."""
+    freezer.move_to("2026-09-29 15:00:00+00:00")
+    coord, device, battery = await _raw_house(hass)
+    record = coord.data["devices"][device.id]
+    record["battery_raw_scale"] = True
+    record["battery_daily_value"] = [31.0, 30.0, 29.0]
+    record["battery_value"] = 100.0  # the new cell, halved from 200
+    coord._roll_battery(record, device.id)
+    assert record["battery_raw_scale"] is True, "one day's rise is not yet a change"
+    coord._roll_battery(record, device.id)
+    assert record["battery_replaced_at"] is not None
+    assert record["battery_raw_scale"] is False
+    assert record["battery_raw_first_day"] is None
+
+
+async def test_a_firmware_update_measures_the_scale_again(hass, freezer):
+    from homeassistant.helpers import device_registry as dr
+
+    freezer.move_to("2026-09-29 15:00:00+00:00")
+    coord, device, battery = await _raw_house(hass)
+    record = coord.data["devices"][device.id]
+    now = dt_util.utcnow().timestamp()
+    record["battery_raw_scale"] = True
+    record["firmware_history"] = [["1.0", now - 86400.0]]
+    dr.async_get(hass).async_update_device(device.id, sw_version="2.0")
+    coord._firmware_candidates[device.id] = ("2.0", now - 3600.0)
+    coord._confirm_firmware(now)
+    assert [v for v, _ in record["firmware_history"]] == ["1.0", "2.0"]
+    assert record["battery_raw_scale"] is False
+
+
+async def test_a_first_firmware_on_record_is_not_an_update(hass, freezer):
+    from homeassistant.helpers import device_registry as dr
+
+    freezer.move_to("2026-09-29 15:00:00+00:00")
+    coord, device, battery = await _raw_house(hass)
+    record = coord.data["devices"][device.id]
+    now = dt_util.utcnow().timestamp()
+    record["battery_raw_scale"] = True
+    record["firmware_history"] = []
+    dr.async_get(hass).async_update_device(device.id, sw_version="1.0")
+    coord._firmware_candidates[device.id] = ("1.0", now - 3600.0)
+    coord._confirm_firmware(now)
+    assert record["battery_raw_scale"] is True

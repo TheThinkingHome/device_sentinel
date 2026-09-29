@@ -1,7 +1,7 @@
 """Reporting an upstream outage as one fault, not seventy-six.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_upstream_reporting.py, Version: 0.23.12 (2026-09-27)
+# File: test_upstream_reporting.py, Version: 0.23.18 (2026-09-29)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -33,13 +33,17 @@ from custom_components.device_sentinel.const import (
 
 from .helpers import register_device, setup_coordinator
 
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
+
 
 def _on_the_broker(coord):
     for device_id in list(coord._watched):
         coord._watched[device_id] = "mqtt"
 
 
-def _down(coord, device_id, category="unavailable", since=1000.0):
+def _down(coord, device_id, category="unavailable", since=TIME_BASE + 1000.0):
     record = coord.data[DATA_DEVICES][device_id]
     record[DEV_FROZEN_CATEGORY] = category
     record[DEV_FROZEN_SINCE] = since
@@ -56,9 +60,9 @@ async def test_devices_are_not_reported_while_their_broker_is_down(
     # These devices reach Home Assistant through the broker; since
     # 0.23.12 a broker outage is upstream only to such devices.
     _on_the_broker(coord)
-    _down(coord, first.id, since=2000.0)
-    _down(coord, second.id, since=2000.0)
-    coord._broker_down_at = 1500.0
+    _down(coord, first.id, since=TIME_BASE + 2000.0)
+    _down(coord, second.id, since=TIME_BASE + 2000.0)
+    coord._broker_down_at = TIME_BASE + 1500.0
 
     assert coord.reportable_down_rows == []
     assert coord.suppressed_down_counts == {BROKER_LABEL: 2}
@@ -79,9 +83,9 @@ async def test_a_device_broken_before_the_outage_keeps_its_row(
     # These devices reach Home Assistant through the broker; since
     # 0.23.12 a broker outage is upstream only to such devices.
     _on_the_broker(coord)
-    _down(coord, old.id, since=1000.0)
-    _down(coord, new.id, since=2000.0)
-    coord._broker_down_at = 1500.0
+    _down(coord, old.id, since=TIME_BASE + 1000.0)
+    _down(coord, new.id, since=TIME_BASE + 2000.0)
+    coord._broker_down_at = TIME_BASE + 1500.0
 
     names = [row["name"] for row in coord.reportable_down_rows]
 
@@ -118,8 +122,8 @@ async def test_a_device_still_down_after_recovery_is_reported(
     # These devices reach Home Assistant through the broker; since
     # 0.23.12 a broker outage is upstream only to such devices.
     _on_the_broker(coord)
-    _down(coord, device.id, since=2000.0)
-    coord._broker_down_at = 1500.0
+    _down(coord, device.id, since=TIME_BASE + 2000.0)
+    coord._broker_down_at = TIME_BASE + 1500.0
     assert coord.reportable_down_rows == []
 
     coord._broker_down_at = None
@@ -140,7 +144,7 @@ async def test_an_outage_settles_before_it_is_announced(
     # These devices reach Home Assistant through the broker; since
     # 0.23.12 a broker outage is upstream only to such devices.
     _on_the_broker(coord)
-    _down(coord, device.id, since=2000.0)
+    _down(coord, device.id, since=TIME_BASE + 2000.0)
     from homeassistant.util import dt as dt_util
 
     coord._broker_down_at = dt_util.utcnow().timestamp()
@@ -204,7 +208,7 @@ async def test_the_upstream_row_reads_like_a_sentence(
     # These devices reach Home Assistant through the broker; since
     # 0.23.12 a broker outage is upstream only to such devices.
     _on_the_broker(coord)
-    _down(coord, device.id, since=2000.0)
+    _down(coord, device.id, since=TIME_BASE + 2000.0)
     coord._bridge_down_at["z2m"] = 1500.0
     coord._watched[device.id] = "mqtt"
 
@@ -249,8 +253,8 @@ async def test_the_count_changes_and_the_stamp_does_not(
     # These devices reach Home Assistant through the broker; since
     # 0.23.12 a broker outage is upstream only to such devices.
     _on_the_broker(coord)
-    coord._broker_down_at = 1500.0
-    _down(coord, first.id, since=2000.0)
+    coord._broker_down_at = TIME_BASE + 1500.0
+    _down(coord, first.id, since=TIME_BASE + 2000.0)
 
     coord._sync_problem_list()
     row = next(
@@ -260,7 +264,7 @@ async def test_the_count_changes_and_the_stamp_does_not(
     )
     first_summary, first_since = row["summary"], row["kinds"]["upstream"]
 
-    _down(coord, second.id, since=2100.0)
+    _down(coord, second.id, since=TIME_BASE + 2100.0)
     coord._sync_problem_list()
     row = next(
         item
@@ -341,7 +345,7 @@ async def test_an_impossible_onset_is_refused(hass: HomeAssistant):
     # 0.23.12 a broker outage is upstream only to such devices.
     _on_the_broker(coord)
     coord._watched[device.id] = STACK_ZHA
-    _down(coord, device.id, since=2000.0)
+    _down(coord, device.id, since=TIME_BASE + 2000.0)
 
     class _Reader:
         down_since = None

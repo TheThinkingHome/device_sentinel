@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_device_page.py, Version: 0.12.12 (2026-08-07)
+# File: test_device_page.py, Version: 0.23.18 (2026-09-29)
 
 """The device page a person actually reads, and its diagnostics journal.
 
@@ -47,6 +47,10 @@ from custom_components.device_sentinel.diagnostics import (
 
 from tests.helpers import setup_entry
 
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
+
 DOMAIN = "device_sentinel"
 
 
@@ -65,7 +69,7 @@ def _register(hass, uid, name):
     return device, ent.entity_id
 
 
-def _freeze(coord, device_id, since=1_000_000.0):
+def _freeze(coord, device_id, since=TIME_BASE):
     record = coord.data["devices"][device_id]
     record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
     record[DEV_LAST_ACTIVITY] = since - 10.0

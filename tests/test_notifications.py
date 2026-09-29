@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.23.10 (2026-09-26)
+# File: test_notifications.py, Version: 0.23.18 (2026-09-29)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -782,7 +782,7 @@ def _phone_capture(hass, service="phone"):
     return calls
 
 
-def _learned_freeze(coord, device_id, gap=3600.0, since=1_000_000.0):
+def _learned_freeze(coord, device_id, gap=3600.0, since=1_780_000_000.0):
     """Give a device a learned reporting gap and a freeze verdict."""
     record = coord.data[DATA_DEVICES][device_id]
     record[DEV_DAILY_MAX] = [gap] * (FREEZE_ARMING_DAYS + 2)

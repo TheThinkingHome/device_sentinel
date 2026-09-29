@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.15.8 (2026-08-18)
+# File: test_storage_split.py, Version: 0.23.18 (2026-09-29)
 
 """The two files: the shadow, the merge, and the stamps.
 
@@ -70,6 +70,11 @@ from custom_components.device_sentinel.coordinator import (
     _new_device_record,
 )
 from tests.helpers import setup_coordinator, setup_entry
+
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
+
 
 _RECENT = time.time() - 3600.0
 
@@ -217,7 +222,7 @@ async def test_nothing_reads_the_shadow(
     coord = entry.runtime_data
     hass.states.async_set(entity_id, "1")
     await hass.async_block_till_done()
-    coord.data[DATA_DEVICES][device.id][DEV_LAST_ACTIVITY] = 1234.0
+    coord.data[DATA_DEVICES][device.id][DEV_LAST_ACTIVITY] = 1_780_001234.0
     await coord._save_now()
 
     hass_storage[STORAGE_CLOCKS_KEY]["data"] = {"clocks": "nonsense"}
@@ -227,7 +232,7 @@ async def test_nothing_reads_the_shadow(
     reloaded = entry.runtime_data
     assert reloaded.data[DATA_DEVICES][device.id][
         DEV_LAST_ACTIVITY
-    ] == 1234.0
+    ] == 1_780_001234.0
 
 
 async def test_the_shadow_exists_from_the_first_moment(
@@ -259,14 +264,14 @@ async def test_the_hot_file_supplies_the_clocks(
     else, so the load has to take them from here or lose them."""
     device, _eid = _register(hass, "hot1", "Hot Device")
     _cold(hass_storage, {device.id: _new_device_record(
-        "2026-07-11T00:00:00+00:00", 1000.0)}, saved_at=1000.0)
+        "2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)}, saved_at=TIME_BASE + 1000.0)
     _hot(hass_storage, {device.id: {
-        DEV_LAST_ACTIVITY: 9000.0, DEV_EVENT_COUNT: 42,
-    }}, saved_at=9000.0)
+        DEV_LAST_ACTIVITY: 1_780_009000.0, DEV_EVENT_COUNT: 42,
+    }}, saved_at=1_780_009000.0)
 
     entry = await setup_entry(hass)
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
-    assert record[DEV_LAST_ACTIVITY] == 9000.0
+    assert record[DEV_LAST_ACTIVITY] == 1_780_009000.0
     assert record[DEV_EVENT_COUNT] == 42
 
 
@@ -355,8 +360,8 @@ async def test_an_unstamped_pair_is_left_alone(
     files were written together, so the main file is already current
     and a merge it cannot date is a merge it should not make."""
     device, _eid = _register(hass, "hot3", "Unstamped Device")
-    old = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
-    old[DEV_LAST_ACTIVITY] = 5000.0
+    old = _new_device_record("2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)
+    old[DEV_LAST_ACTIVITY] = 1_780_005000.0
     hass_storage[STORAGE_KEY] = {
         "version": 1,
         "data": {DATA_DEVICES: {device.id: old},
@@ -364,12 +369,12 @@ async def test_an_unstamped_pair_is_left_alone(
     }
     hass_storage[STORAGE_CLOCKS_KEY] = {
         "version": 1,
-        "data": {"clocks": {device.id: {DEV_LAST_ACTIVITY: 1.0}}},
+        "data": {"clocks": {device.id: {DEV_LAST_ACTIVITY: TIME_BASE + 1.0}}},
     }
 
     entry = await setup_entry(hass)
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
-    assert record[DEV_LAST_ACTIVITY] == 5000.0
+    assert record[DEV_LAST_ACTIVITY] == 1_780_005000.0
 
 
 async def test_a_device_only_the_hot_file_knows_is_skipped(
@@ -379,15 +384,15 @@ async def test_a_device_only_the_hot_file_knows_is_skipped(
     has never heard of is not invented here."""
     device, _eid = _register(hass, "hot4", "Known Device")
     _cold(hass_storage, {device.id: _new_device_record(
-        "2026-07-11T00:00:00+00:00", 1000.0)}, saved_at=1000.0)
+        "2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)}, saved_at=TIME_BASE + 1000.0)
     _hot(hass_storage, {
-        device.id: {DEV_LAST_ACTIVITY: 9000.0},
-        "a-device-that-is-not-in-the-main-file": {DEV_LAST_ACTIVITY: 9000.0},
-    }, saved_at=9000.0)
+        device.id: {DEV_LAST_ACTIVITY: 1_780_009000.0},
+        "a-device-that-is-not-in-the-main-file": {DEV_LAST_ACTIVITY: 1_780_009000.0},
+    }, saved_at=1_780_009000.0)
 
     entry = await setup_entry(hass)
     devices = entry.runtime_data.data[DATA_DEVICES]
-    assert devices[device.id][DEV_LAST_ACTIVITY] == 9000.0
+    assert devices[device.id][DEV_LAST_ACTIVITY] == 1_780_009000.0
     assert "a-device-that-is-not-in-the-main-file" not in devices
 
 
@@ -404,7 +409,7 @@ async def test_the_epoch_wipe_still_has_the_last_word(
     So the taint flag is reset here and the signal reading is not.
     """
     device, _eid = _register(hass, "hot5", "Epoch Device")
-    stale = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    stale = _new_device_record("2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)
     hass_storage[STORAGE_KEY] = {
         "version": 1,
         "data": {
@@ -415,7 +420,7 @@ async def test_the_epoch_wipe_still_has_the_last_word(
             # fire here and this test asks only what it means to
             # ask: what an epoch wipe keeps.
             DATA_SIGNAL_WEIGHTING: SIGNAL_WEIGHTING_MARK,
-            DATA_SAVED_AT: 1000.0,
+            DATA_SAVED_AT: TIME_BASE + 1000.0,
         },
     }
     # A current-form taint reason, not the pre-#164 boolean flag: a
@@ -424,7 +429,7 @@ async def test_the_epoch_wipe_still_has_the_last_word(
     # about could run.
     _hot(hass_storage, {device.id: {
         DEV_SIGNAL_VALUE: 42.0, DEV_TAINTED: TAINT_UNAVAILABLE,
-    }}, saved_at=9000.0)
+    }}, saved_at=1_780_009000.0)
 
     entry = await setup_entry(hass)
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
@@ -629,7 +634,7 @@ async def test_an_older_record_gains_the_fields_this_version_adds(
     present after setup, whichever branch the load took.
     """
     device, _eid = _register(hass, "older1", "Older Device")
-    stored = _new_device_record("2026-07-01T00:00:00+00:00", 1000.0)
+    stored = _new_device_record("2026-07-01T00:00:00+00:00", TIME_BASE + 1000.0)
     for key in (
         "signal_count",
         "signal_mean_run",
@@ -674,7 +679,7 @@ async def test_an_epoch_wipe_keeps_what_cannot_be_rebuilt(
     months both survive a rhythm rule changing.
     """
     device, _eid = _register(hass, "ep2", "Soaking Device")
-    stale = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    stale = _new_device_record("2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)
     stale[DEV_DAILY_MAX] = [600.0, 700.0]
     stale[DEV_SIGNAL_DAILY_P5] = [120.0, 116.0]
     stale[DEV_SIGNAL_DAILY_MEAN] = [147.7]
@@ -690,7 +695,7 @@ async def test_an_epoch_wipe_keeps_what_cannot_be_rebuilt(
             # the one-shot clearing does not fire and this
             # test asks only what an epoch wipe keeps.
             DATA_SIGNAL_WEIGHTING: SIGNAL_WEIGHTING_MARK,
-            DATA_SAVED_AT: 1000.0,
+            DATA_SAVED_AT: TIME_BASE + 1000.0,
         },
     }
 
@@ -736,14 +741,14 @@ async def test_nothing_is_wiped_without_a_backup(
     """A wipe cannot be undone, so a backup that will not take is a
     stop rather than a warning (ruling #204)."""
     device, _eid = _register(hass, "ep3", "Guarded Device")
-    stale = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    stale = _new_device_record("2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)
     stale[DEV_DAILY_MAX] = [600.0]
     hass_storage[STORAGE_KEY] = {
         "version": 1,
         "data": {
             DATA_DEVICES: {device.id: stale},
             DATA_STATS_EPOCH: "an-older-epoch",
-            DATA_SAVED_AT: 1000.0,
+            DATA_SAVED_AT: TIME_BASE + 1000.0,
         },
     }
 
@@ -816,7 +821,7 @@ async def test_an_upgrade_converts_the_day_before_the_reconciler_runs(
     survived with its real mean rather than restarting at zero.
     """
     device, _eid = _register(hass, "mig1", "Upgraded Device")
-    stored = _new_device_record("2026-07-01T00:00:00+00:00", 1000.0)
+    stored = _new_device_record("2026-07-01T00:00:00+00:00", TIME_BASE + 1000.0)
     readings = [120.0, 128.0, 112.0, 124.0]
     stored["signal_count"] = len(readings)
     stored["signal_sum"] = sum(readings)
@@ -861,7 +866,7 @@ async def test_a_mixed_signal_history_is_cleared_at_load(
     mixed, _eid = _register(hass, "mix1", "ZHA Toilet Leak")
     clean, _eid2 = _register(hass, "cln1", "Zigbee2MQTT Door")
 
-    bad = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    bad = _new_device_record("2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)
     bad[const.DEV_SIGNAL_DAILY_P5] = [-66.0, 215.0, -70.0, 247.0]
     bad[const.DEV_SIGNAL_DAILY_MEAN] = [90.5, -68.0]
     bad[const.DEV_SIGNAL_VALUE] = 247.0
@@ -870,7 +875,7 @@ async def test_a_mixed_signal_history_is_cleared_at_load(
     bad[DEV_DAILY_MAX] = [120.0, 130.5]
     bad[DEV_FIRST_OBSERVED] = "2026-07-11T00:00:00+00:00"
 
-    good = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    good = _new_device_record("2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)
     good[const.DEV_SIGNAL_DAILY_P5] = [200.0, 0.0, 255.0]
     good[const.DEV_SIGNAL_VALUE] = 214.0
     good[DEV_EVENT_COUNT] = 88
@@ -925,7 +930,7 @@ async def test_the_clear_does_not_run_twice(
     """A second start must find nothing to do, so a device is not
     re-cleared every restart once it has been dealt with."""
     device, _eid = _register(hass, "mix2", "Cleared Once")
-    bad = _new_device_record("2026-07-11T00:00:00+00:00", 1000.0)
+    bad = _new_device_record("2026-07-11T00:00:00+00:00", TIME_BASE + 1000.0)
     bad[const.DEV_SIGNAL_DAILY_P5] = [-70.0, 215.0]
     hass_storage[STORAGE_KEY] = {
         "version": 1,

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_trim.py, Version: 0.16.7 (2026-08-20)
+# File: test_trim.py, Version: 0.23.18 (2026-09-29)
 
 """The trim choosers: erasing one device's history on purpose."""
 from __future__ import annotations
@@ -34,19 +34,23 @@ from custom_components.device_sentinel.const import (
 
 from tests.helpers import register_device, setup_entry
 
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
+
 
 def _furnish(coord, device_id: str, name: str) -> None:
     """Give a device every kind of history a trim must remove."""
     record = coord.data[DATA_DEVICES][device_id]
     record[DEV_SIGNAL_DAILY_P5] = [120.0, 118.0]
     coord.data.setdefault(DATA_EPISODES, []).append(
-        {INC_DEVICE_ID: device_id, "name": name, "since": 1.0,
+        {INC_DEVICE_ID: device_id, "name": name, "since": TIME_BASE + 1.0,
          "basis": 60.0, "window": 120.0, "ended": None, "at": None,
          "lag": None, "learned": None, "taint_seconds": None,
          "signal": None}
     )
     coord.data.setdefault(DATA_INCIDENTS, []).append(
-        {INC_DEVICE_ID: device_id, "name": name, "when": 1.0,
+        {INC_DEVICE_ID: device_id, "name": name, "when": TIME_BASE + 1.0,
          "kind": "frozen", "event": "opened", "cause": None,
          "duration": None}
     )
@@ -68,6 +72,7 @@ async def _save_options(hass: HomeAssistant, entry, **changes) -> None:
 async def test_a_device_trim_removes_its_history_and_nothing_else(
     hass: HomeAssistant,
 ):
+
     """Records, episodes, incidents and list items go; the other
     device keeps all four (ruling #307)."""
     entry = await setup_entry(hass)

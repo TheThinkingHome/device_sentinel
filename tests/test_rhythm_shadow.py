@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_rhythm_shadow.py, Version: 0.23.17 (2026-09-29)
+# File: tests/test_rhythm_shadow.py, Version: 0.23.18 (2026-09-29)
 
 """The clipped rhythm, computed beside the trimmed maximum (ruling #542).
 
@@ -222,3 +222,59 @@ async def test_the_shadow_changes_no_verdict(hass: HomeAssistant, freezer):
         await hass.config_entries.async_unload(coord.entry.entry_id)
         await hass.async_block_till_done(wait_background_tasks=True)
     assert verdicts[0] == verdicts[1]
+
+
+# 0.23.18: what the adversarial round of 29 September found in the shadow.
+
+
+def test_the_rule_returns_nothing_rather_than_overflowing():
+    """Days near 10^308 overflowed the final step and stopped the
+    report writer. The range check keeps such days out of storage
+    (#544); the rule stands behind it."""
+    assert clipped_rhythm([1e308] * 21 + [1e290] * 21) is None
+
+
+async def test_the_rhythm_is_worked_out_once_until_the_days_change(hass, freezer, monkeypatch):
+    coord, device, record, seen = await _armed_house(hass, freezer, LEAK)
+    from custom_components.device_sentinel import rhythm_shadow
+
+    calls = []
+    real = rhythm_shadow.clipped_rhythm
+    monkeypatch.setattr(rhythm_shadow, "clipped_rhythm", lambda days: calls.append(1) or real(days))
+    for _ in range(5):
+        coord.clipped_window(record, device.id)
+    assert len(calls) == 1
+    record[DEV_DAILY_MAX] = [*record[DEV_DAILY_MAX], 240.0]
+    coord.clipped_window(record, device.id)
+    assert len(calls) == 2, "a new day did not recompute it"
+
+
+async def test_a_clock_reset_is_not_the_device_speaking(hass, freezer):
+    coord, device, record, seen = await _armed_house(hass, freezer, LEAK)
+    await _minutes(hass, coord, freezer, int(coord.clipped_window(record) // 60) + 2)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert device.id in coord._shadow_open
+    mono = {"now": 1000.0}
+    coord._monotonic = lambda: mono["now"]  # type: ignore[method-assign]
+    await coord._on_render_tick(None)
+    freezer.tick(60 + 7200)
+    mono["now"] += 60
+    await coord._on_render_tick(None)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    closed = [line for line in _shadow_lines(hass) if "| closed |" in line]
+    assert closed and "the clocks restarted" in closed[-1], closed
+
+
+async def test_a_removed_device_keeps_its_name_in_the_closing_line(hass, freezer):
+    from homeassistant.helpers import device_registry as dr
+
+    coord, device, record, seen = await _armed_house(hass, freezer, LEAK)
+    await _minutes(hass, coord, freezer, int(coord.clipped_window(record) // 60) + 2)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    name = coord._shadow_open[device.id][3]
+    dr.async_get(hass).async_remove_device(device.id)
+    await hass.async_block_till_done()
+    await _minutes(hass, coord, freezer, 2)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    closed = [line for line in _shadow_lines(hass) if "| closed |" in line]
+    assert closed and f"| {name} |" in closed[-1] and "Unknown" not in closed[-1], closed

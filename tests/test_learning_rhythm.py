@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_learning_rhythm.py, Version: 0.23.16 (2026-09-29)
+# File: test_learning_rhythm.py, Version: 0.23.18 (2026-09-29)
 
 """How the integration learns each device's reporting rhythm.
 
@@ -1015,3 +1015,62 @@ async def test_a_gap_with_no_stop_inside_is_learned_whole(hass: HomeAssistant, f
     hass.states.async_set(seen, now.isoformat())
     await hass.async_block_till_done()
     assert abs(record[DEV_TODAY_MAX] - 2 * HOUR) < 2, record[DEV_TODAY_MAX]
+
+
+# A gap is learned at most as long as the retention (ruling #543).
+
+
+async def test_a_gap_longer_than_the_retention_is_learned_as_the_retention(hass, freezer):
+    """The FJ40 on the reference rig sat 42.9 days. On a house keeping
+    30, that day is learned as 30 and reported as more than 30."""
+    coord, device, value, seen, heard, phone, bus = await _house(hass, freezer)
+    from homeassistant.util import dt as dt_util
+
+    record = coord.data["devices"][device.id]
+    cap = coord.gap_cap()
+    now = dt_util.utcnow()
+    record["last_activity"] = now.timestamp() - cap - 5 * 86400.0
+    record["today_max"] = None
+    coord._downtime = 0.0
+    coord.data["system_events"] = []
+    hass.states.async_set(seen, now.isoformat())
+    await hass.async_block_till_done()
+    assert record["today_max"] == pytest.approx(cap)
+
+
+def test_a_held_gap_reads_as_more_than_the_retention():
+    class _Reports:
+        retention_days = 180
+
+        def gap_cap(self):
+            return 180 * 86400.0
+
+    from custom_components.device_sentinel.reports import ReportWritingMixin
+
+    text = ReportWritingMixin._fmt_gap(_Reports(), 180 * 86400.0)
+    assert text == "more than 180 days"
+    assert ReportWritingMixin._fmt_gap(_Reports(), 3600.0) == "1.00h"
+
+
+async def test_stored_gaps_past_the_retention_are_held_at_load(hass, hass_storage):
+    from custom_components.device_sentinel.const import STORAGE_KEY
+
+    from .helpers import register_device, setup_entry
+
+    device, _ = register_device(hass, "long", name="Long Sleeper")
+    entry = await setup_entry(hass, {"history_days": 30})
+    coord = entry.runtime_data
+    record = coord.data["devices"][device.id]
+    # Watched since January, so the watched-time bound (#403) is not
+    # what limits it: only the retention is.
+    record["first_observed"] = "2026-01-01T00:00:00+00:00"
+    record["daily_max"] = [600.0] * 10 + [42.9 * 86400.0]
+    await coord._save_now()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    series = entry.runtime_data.data["devices"][device.id]["daily_max"]
+    assert series[-1] == pytest.approx(30 * 86400.0), series[-3:]
+    assert series[:10] == [600.0] * 10
+    assert hass_storage[STORAGE_KEY] is not None

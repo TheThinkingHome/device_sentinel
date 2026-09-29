@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.23.17 (2026-09-29)
+# File: test_reports.py, Version: 0.23.18 (2026-09-29)
 
 """The diagnostic files: telemetry and classification.
 
@@ -127,7 +127,7 @@ def _telemetry_row(hass, name):
     return next(line for line in text.splitlines() if name in line)
 
 
-def _freeze(coord, device_id, since=1_000_000.0):
+def _freeze(coord, device_id, since=1_780_000_000.0):
     record = coord.data["devices"][device_id]
     record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
     record[DEV_LAST_ACTIVITY] = since - 10.0
@@ -1104,3 +1104,22 @@ async def test_diagnostics_redact_the_brief_targets(hass: HomeAssistant):
     result = await async_get_config_entry_diagnostics(hass, entry)
     assert result["entry_options"][CONF_BRIEF_TARGETS] == "**REDACTED**"
     assert "someone_gmail_com" not in str(result)
+
+
+async def test_one_failing_report_never_stops_the_rest(hass, caplog, monkeypatch):
+    """0.23.17 stopped every report after telemetry, and the brief, on
+    one impossible stored value (ruling #544)."""
+    coord, _ = await _marks_coordinator(hass)
+
+    def boom(*args, **kwargs):
+        raise OverflowError("math range error")
+
+    monkeypatch.setattr(coord, "_write_telemetry", boom)
+    for name in ("classification.md", "silence_episodes.md", "daily_brief.md"):
+        path = hass.config.path(f"device_sentinel/{name}")
+        if os.path.exists(path):
+            os.remove(path)
+    await hass.async_add_executor_job(coord._write_reports)
+    for name in ("classification.md", "silence_episodes.md"):
+        assert os.path.exists(hass.config.path(f"device_sentinel/{name}")), name
+    assert "could not write device_telemetry.md" in caplog.text

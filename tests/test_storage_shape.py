@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.23.17 (2026-09-29)
+# File: test_storage_shape.py, Version: 0.23.18 (2026-09-29)
 
 """The shape check reports and touches nothing; last-good follows it.
 
@@ -88,6 +88,11 @@ from tests.helpers import setup_coordinator
 
 from .helpers import register_device, setup_entry
 
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
+
+
 
 @pytest.fixture(autouse=True)
 def _clean_storage_files(hass: HomeAssistant):
@@ -138,7 +143,7 @@ def test_a_fresh_record_has_no_faults():
 def test_a_learned_record_has_no_faults():
     """A record shaped as the estimators actually write it: p5 state as a
     list, count and rail series as ints, everything else float."""
-    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     rec[DEV_DAILY_MAX] = [60.0, 61.5, 59.0]
     rec[DEV_TODAY_MAX] = 62.0
     rec[DEV_EVENT_COUNT] = 4321
@@ -153,7 +158,7 @@ def test_a_learned_record_has_no_faults():
 
 def test_every_planted_corruption_is_named():
     """The faults the adversarial pass planted, and a few more."""
-    good = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    good = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     cases = {
         "series_none": (DEV_DAILY_MAX, None),
         "series_string": (DEV_DAILY_MAX, "sixty"),
@@ -183,7 +188,7 @@ def test_a_missing_and_a_retired_field_are_both_named():
     """A retired field is damage; a newer version's field is not (#189,
     amended 28 September 2026): it is kept, unread, so going back a
     release and forward again loses nothing."""
-    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     del rec[DEV_TAINTED]
     rec["signal_sum"] = 1
     rec["a_newer_versions_field"] = {"kept": True}
@@ -196,7 +201,7 @@ def test_a_missing_and_a_retired_field_are_both_named():
 
 def test_the_check_changes_nothing():
     """The whole point of the first release."""
-    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     rec[DEV_DAILY_MAX] = None
     rec[DEV_TODAY_MAX] = math.nan
     before = json.dumps(rec, sort_keys=True, default=str)
@@ -283,6 +288,18 @@ async def test_the_reference_fleet_is_clean():
             del record[field]
         for field, blank in template.items():
             record.setdefault(field, blank)
+    # The load converts a device on Zigbee's raw battery scale before
+    # the boundary (ruling #545), and so does this: LUX Outdoors read
+    # 200 down to 178 under a "%" unit. It is the one device converted.
+    from custom_components.device_sentinel.detect_battery import (
+        mark_raw_battery,
+        raw_battery_history,
+    )
+
+    raw = [did for did, record in devices.items() if raw_battery_history(record)]
+    for did in raw:
+        mark_raw_battery(devices[did])
+    assert len(raw) == 1, raw
     assert check_records(devices) == []
 
 
@@ -291,7 +308,7 @@ async def test_a_second_scale_block_is_checked_inside():
     exactly the same field count and nothing became optional
     (ruling #286). What is inside it is checked by the same table
     that checks the primary."""
-    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     assert rec[DEV_SIGNAL_ALT] is None
     assert check_records({"d1": rec}) == []
 
@@ -338,7 +355,7 @@ def test_every_taint_reason_passes_the_check():
     than costing a boot its last-good copy.
     """
     for reason in TAINT_REASONS:
-        rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+        rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
         rec[DEV_TAINTED] = reason
         assert check_records({"d1": rec}) == [], f"{reason} reported"
 
@@ -346,7 +363,7 @@ def test_every_taint_reason_passes_the_check():
 def test_the_exact_record_that_fired_on_17_august():
     """Temperature Outdoors, tainted 'unknown' at 04:22 and still
     tainted when the 08:14 load checked it."""
-    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     rec[DEV_TAINTED] = "unknown"
     assert check_records({"efb080fd7ba6963b0c93eedd78dde4f8": rec}) == []
 
@@ -360,7 +377,7 @@ def test_a_clean_record_is_false_and_not_merely_falsy():
     one place it should be caught, and the existing bool_as_int case
     above is the same assertion from the other side.
     """
-    rec = _new_device_record("2026-08-17T00:00:00+00:00", 1.0)
+    rec = _new_device_record("2026-08-17T00:00:00+00:00", TIME_BASE)
     assert rec[DEV_TAINTED] is False
     assert check_records({"d1": rec}) == []
     for wrong in (0, 1, True, "", "sometimes", None, ["unknown"]):
@@ -1538,7 +1555,7 @@ def test_the_shape_check_and_the_boundary_agree_on_clean_data():
     a damaged row is faulted by the check and named by the walk."""
     clean = {"incidents": [
         {"device_id": "a", "name": "n", "kind": "k", "event": "opened",
-         "when": 1.0, "cause": None, "duration": None}
+         "when": TIME_BASE + 1.0, "cause": None, "duration": None}
     ]}
     assert check_storage(clean) == []
     assert damaged_rows(clean) == {}
@@ -1673,3 +1690,138 @@ async def test_a_damaged_record_is_repaired_at_load(
     assert not failures, "\n".join(failures)
     written = await coord2.async_regenerate_reports()
     assert written, "reports did not render with a held record present"
+
+
+# Every stored value held to what is possible (ruling #544).
+
+
+@pytest.mark.parametrize(
+    ("field", "good", "bad"),
+    [
+        ("last_activity", TIME_BASE, 1.0),
+        ("last_activity", TIME_BASE, 9.2e18),
+        ("frozen_since", TIME_BASE, 4.2e9),
+        ("battery_value", 55.0, 178.0),
+        ("battery_value", 0.0, -5.0),
+        ("signal_value", -80.0, -1e308),
+        ("signal_value", 255.0, 300.0),
+        ("today_max", 3600.0, 400 * 86400.0),
+        ("event_count", 3_300_000, -1),
+        ("event_count", 3_300_000, 10**13),
+    ],
+)
+def test_a_value_outside_its_kind_is_a_fault(field, good, bad):
+    """Found on 29 September 2026: a finite value no device and no
+    clock can produce passed the type check and failed later, turned
+    into a date or raised to a power."""
+    record = _new_device_record("2026-09-01T00:00:00+00:00", TIME_BASE)
+    record[field] = good
+    assert not [f for f in check_records({"d": record}) if f[1] == field]
+    record[field] = bad
+    faults = [f for f in check_records({"d": record}) if f[1] == field]
+    assert faults, f"{field} = {bad!r} passed"
+
+
+@pytest.mark.parametrize(
+    ("field", "bad"),
+    [
+        ("daily_max", [3600.0, 400 * 86400.0]),
+        ("battery_daily_value", [80.0, 250.0]),
+        ("signal_daily_p5", [-70.0, -1e308]),
+        ("signal_daily_sd", [3.0, 1e9]),
+        ("flap_drops", [TIME_BASE, 1.0]),
+        ("signal_daily_count", [10, -3]),
+    ],
+)
+def test_a_series_with_one_impossible_day_is_a_fault(field, bad):
+    record = _new_device_record("2026-09-01T00:00:00+00:00", TIME_BASE)
+    record[field] = bad
+    assert [f for f in check_records({"d": record}) if f[1] == field]
+
+
+def test_the_edges_of_every_range_pass():
+    from custom_components.device_sentinel.normalise import (
+        MOMENT_HIGHEST,
+        MOMENT_LOWEST,
+        SPAN_HIGHEST,
+    )
+
+    record = _new_device_record("2026-09-01T00:00:00+00:00", MOMENT_LOWEST)
+    record["frozen_since"] = MOMENT_HIGHEST
+    record["today_max"] = SPAN_HIGHEST
+    record["daily_max"] = [0.0, SPAN_HIGHEST]
+    record["battery_value"] = 100.0
+    record["battery_daily_value"] = [0.0, 100.0]
+    record["signal_value"] = -130.0
+    record["signal_daily_p50"] = [-130.0, 255.0, None]
+    assert check_records({"d": record}) == []
+
+
+# The adversarial round's map, 29 September 2026: an impossible value
+# in these stored places stopped Device Sentinel starting, or broke the
+# brief, the reports or a dashboard page. Each is planted in turn in a
+# small house with every table populated, which must start and write
+# its reports.
+_PLANTED = [
+    ("incidents", "when"), ("incidents", "duration"),
+    ("silence_episodes", "at"), ("silence_episodes", "since"),
+    ("system_events", "when"), ("system_events", "duration"),
+    ("todo_items", "kinds"), ("devices", "last_activity"),
+    ("devices", "battery_value"), ("devices", "signal_daily_p5"),
+    ("devices", "daily_max"), ("devices", "battery_daily_value"),
+]
+
+
+@pytest.mark.parametrize("value", [1e308, 9.2e18, -9.2e18])
+@pytest.mark.parametrize(("table", "field"), _PLANTED)
+async def test_an_impossible_stored_value_never_stops_a_start(hass, hass_storage, freezer, table, field, value):
+    from custom_components.device_sentinel.const import (
+        DATA_DEVICES,
+        STORAGE_CLOCKS_KEY,
+        STORAGE_KEY,
+    )
+
+    device, (entity_id,) = register_device(hass, "fz", name="Fuzz Probe")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    now = dt_util.utcnow().timestamp()
+    record = coord.data[DATA_DEVICES][device.id]
+    record["daily_max"] = [600.0] * 30
+    record["battery_value"] = 50.0
+    record["battery_daily_value"] = [60.0, 55.0, 50.0]
+    record["signal_daily_p5"] = [-80.0, -79.0, -81.0]
+    coord.data["incidents"] = [{"device_id": device.id, "name": "Fuzz Probe", "kind": "frozen", "event": "opened", "when": now - 3600, "cause": None, "duration": None, "superseded": None}]
+    coord.data["silence_episodes"] = [{"device_id": device.id, "name": "Fuzz Probe", "since": now - 7200, "basis": 600.0, "window": 900.0, "at": now - 3600, "ended": "resumed", "lag": None, "learned": "yes", "taint_seconds": None, "signal": None}]
+    coord.data["system_events"] = [{"kind": "restart", "when": now - 600, "scope": "system", "detail": None, "duration": 30.0}]
+    coord.data["todo_items"] = [{"uid": "u1", "device_id": device.id, "summary": "Fuzz Probe: frozen", "description": None, "status": "needs_action", "acked_at": None, "sort_name": "Fuzz Probe", "kinds": {"frozen": now - 3600}}]
+    await coord._save_now()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    data = hass_storage[STORAGE_KEY]["data"]
+    if table == "devices":
+        stored = data["devices"][device.id]
+        if field == "last_activity":
+            hass_storage[STORAGE_CLOCKS_KEY]["data"]["clocks"][device.id][field] = value
+        elif isinstance(stored.get(field), list):
+            stored[field] = [*stored[field][:-1], value]
+        else:
+            stored[field] = value
+    else:
+        row = data[table][0]
+        row[field] = {"frozen": value} if field == "kinds" else value
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert entry.state.name == "LOADED", f"{table}.{field} = {value:g} stopped the start"
+    coord = entry.runtime_data
+    coord._grace_until = 0.0
+    freezer.tick(60)
+    await coord._on_render_tick(None)
+    await coord._on_midnight(None)
+    await hass.async_add_executor_job(coord._write_reports)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    json.dumps(coord.dashboard_device(device.id), default=str)
+    json.dumps(coord.dashboard_status(), default=str)
+    json.dumps(coord.battery_trends(), default=str)
+    json.dumps(coord.dashboard_integrations(), default=str)

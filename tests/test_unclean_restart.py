@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_unclean_restart.py, Version: 0.20.16 (2026-09-11)
+# File: test_unclean_restart.py, Version: 0.23.18 (2026-09-29)
 
 """What a restart with no clean-stop marker does to the clocks (#163).
 
@@ -80,6 +80,10 @@ from custom_components.device_sentinel.const import (
 )
 
 from .helpers import register_device, setup_entry
+
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
 
 # The cut, in the clock the integration stores. Anchored to the run
 # rather than to a calendar date. These fixtures have to sit inside
@@ -212,7 +216,7 @@ async def test_a_device_on_the_problem_list_keeps_its_clock(
             "status": "needs_action",
             "acked_at": None,
             "sort_name": "Flagged",
-            "kinds": {"frozen": 1.0},
+            "kinds": {"frozen": ANCHOR - 900000.0},
         }],
     )
 
@@ -481,7 +485,7 @@ async def test_an_unstamped_file_is_left_alone(
     hass_storage[STORAGE_KEY] = {
         "version": 1,
         "data": {
-            DATA_DEVICES: {device.id: _record(5000.0)},
+            DATA_DEVICES: {device.id: _record(TIME_BASE + 5000.0)},
             DATA_STATS_EPOCH: STATS_EPOCH,
         },
     }
@@ -489,7 +493,7 @@ async def test_an_unstamped_file_is_left_alone(
     entry = await setup_entry(hass)
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
 
-    assert record[DEV_LAST_ACTIVITY] == 5000.0
+    assert record[DEV_LAST_ACTIVITY] == TIME_BASE + 5000.0
 
 
 async def test_the_marker_is_cleared_on_load(

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_events_hostile.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_events_hostile.py, Version: 0.23.18 (2026-09-29)
 
 """The bus events under conditions that should not happen.
 
@@ -35,6 +35,10 @@ from custom_components.device_sentinel.const import (
 )
 from tests.helpers import record_events, setup_entry
 
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
+
 
 def _register(hass, uid, name):
     source = MockConfigEntry(domain="test", title="Source")
@@ -56,7 +60,7 @@ def _freeze(coord, device_id):
     record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
     record[DEV_LAST_ACTIVITY] = 999_990.0
     record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
-    record[DEV_FROZEN_SINCE] = 1_000_000.0
+    record[DEV_FROZEN_SINCE] = TIME_BASE
 
 
 async def test_the_sync_survives_a_bus_that_refuses(

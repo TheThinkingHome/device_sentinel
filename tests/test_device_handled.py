@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_handled.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_device_handled.py, Version: 0.23.18 (2026-09-29)
 
 # Tests for 0.19.2, attributing a recovery to a person (ruling #362).
 #
@@ -26,6 +26,11 @@ from custom_components.device_sentinel.const import (
 )
 
 from .helpers import register_device, setup_coordinator
+
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
+
 
 
 def _event(device_id, when, kind="device_fully_initialized"):
@@ -103,7 +108,7 @@ def test_an_event_naming_no_device_is_ignored():
         row = {
             SYS_KIND: SYS_DEVICE_HANDLED,
             SYS_SCOPE: STACK_ZHA,
-            SYS_WHEN: 1000.0,
+            SYS_WHEN: TIME_BASE + 1000.0,
             SYS_DETAIL: detail,
         }
         assert attribution.windows([row]) == []
@@ -198,9 +203,9 @@ async def test_a_second_handling_later_is_its_own_event(
             return_value=datetime.fromtimestamp(t, tz=timezone.utc),
         )
 
-    with _at(1000.0):
+    with _at(TIME_BASE + 1000.0):
         coord._record_device_handled(device.id, "device_joined")
-    with _at(1000.0 + ZHA_HANDLED_TAIL_SECONDS + 1):
+    with _at(TIME_BASE + 1000.0 + ZHA_HANDLED_TAIL_SECONDS + 1):
         coord._record_device_handled(device.id, "device_joined")
 
     events = [

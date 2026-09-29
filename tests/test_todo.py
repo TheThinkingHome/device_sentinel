@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.23.17 (2026-09-29)
+# File: test_todo.py, Version: 0.23.18 (2026-09-29)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -65,6 +65,10 @@ from custom_components.device_sentinel.const import (
 from custom_components.device_sentinel.normalise import repair_tables
 from tests.helpers import record_events, register_device, setup_coordinator, setup_entry
 
+# A real moment for the fixtures' stamps: the storage check refuses
+# a time before 2020 as impossible (ruling #544).
+TIME_BASE = 1_780_000_000.0
+
 DOMAIN = "device_sentinel"
 LIST_ENTITY = "todo.device_sentinel_problem_list"
 
@@ -99,7 +103,7 @@ def _register_device(hass, uid: str, name: str, battery: bool = False):
     return device, entity_ids
 
 
-def _freeze(coord, device_id, since=1_000_000.0,
+def _freeze(coord, device_id, since=1_780_000_000.0,
             category=FREEZE_CATEGORY_FROZEN):
     """Plant a stored down verdict the sync reads as a freeze-family
     input, with an armed rhythm and a past clock so a reload's
@@ -288,7 +292,7 @@ async def test_items_survive_reload(hass: HomeAssistant):
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     hass.states.async_set(eids["plain"], "7")
-    _freeze(coord, device.id, since=2_000_000.0)
+    _freeze(coord, device.id, since=TIME_BASE + 2_000_000.0)
     coord._sync_problem_list()
     await hass.async_block_till_done()
     uid = coord.todo_items[0]["uid"]
@@ -304,7 +308,7 @@ async def test_items_survive_reload(hass: HomeAssistant):
     record = coord2.todo_items[0]
     assert record["status"] == "completed"
     assert record["device_id"] == device.id
-    assert record["kinds"][FREEZE_CATEGORY_FROZEN] == 2_000_000.0
+    assert record["kinds"][FREEZE_CATEGORY_FROZEN] == TIME_BASE + 2_000_000.0
     # The entity state counts open items, so a list whose only item
     # is acknowledged reads zero: nothing needs action.
     assert hass.states.get(LIST_ENTITY).state == "0"
@@ -326,7 +330,7 @@ async def test_detection_adds_and_recovery_deletes(hass: HomeAssistant):
     assert item["summary"] == "Presence Guest: frozen"
     assert item["sort_name"] == "Presence Guest"
     assert item["status"] == "needs_action"
-    assert item["kinds"] == {FREEZE_CATEGORY_FROZEN: 1_000_000.0}
+    assert item["kinds"] == {FREEZE_CATEGORY_FROZEN: 1_780_000_000.0}
 
     _clear_freeze(coord, device.id)
     coord._sync_problem_list()
@@ -809,7 +813,7 @@ async def test_nothing_fires_during_the_startup_grace(hass: HomeAssistant):
     coord._grace_until = 0.0
     _clear_freeze(coord, device.id)
     coord._sync_problem_list()
-    _freeze(coord, device.id, since=2_000_000.0)
+    _freeze(coord, device.id, since=TIME_BASE + 2_000_000.0)
     coord._sync_problem_list()
     await hass.async_block_till_done()
     assert len(faults) == 1, faults
