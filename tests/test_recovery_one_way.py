@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recovery_one_way.py, Version: 0.23.16 (2026-09-29)
+# File: tests/test_recovery_one_way.py, Version: 0.23.17 (2026-09-29)
 
 """A recovery goes one way, and what else 0.23.12 settles (#529 to #533).
 
@@ -398,7 +398,7 @@ async def test_a_silent_device_missing_from_the_source_is_not_retired(
 ):
     """Whatever keeps a still-silent device's problem out of the source
     for a moment, its item stays and no recovery is announced (#529)."""
-    from .test_fourth_fleet_fixes import _never_reported, _resolved
+    from .test_upstream_loading import _never_reported, _resolved
 
     coord, device = await _never_reported(hass)
     fired = []

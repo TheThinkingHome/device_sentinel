@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_study.py, Version: 0.20.10 (2026-09-06)
+# File: tests/test_study.py, Version: 0.23.17 (2026-09-29)
 
 """Volunteered hardware study (#393).
 
@@ -20,14 +20,12 @@ from __future__ import annotations
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     CONF_STUDY_HARDWARE,
     STUDY_SHAPE_CAP,
 )
-
 from tests.helpers import setup_coordinator
 
 UNIFI = "Router: UniFi"
@@ -326,3 +324,31 @@ async def test_a_study_still_running_survives_the_fold(
 
     coord.study_fold()
     assert len(_shapes(coord)) == 1
+
+
+# The study snapshot names a Bluetooth-only device's integration.
+
+
+async def test_the_study_snapshot_names_a_bluetooth_devices_integration(hass: HomeAssistant):
+    """SwitchBot devices carry only a Bluetooth connection, no identifier,
+    and the fourth fleet's snapshot listed them with no integration."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.device_sentinel.const import CONF_STUDY_HARDWARE
+
+    entry = MockConfigEntry(domain="switchbot", title="SwitchBot")
+    entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        connections={("bluetooth", "E5:42:03:2B:51:AA")},
+        name="Dining Room Curtain",
+    )
+    er.async_get(hass).async_get_or_create(
+        "cover", "switchbot", "curtain", device_id=device.id, config_entry=entry
+    )
+    coord = await setup_coordinator(hass, {CONF_STUDY_HARDWARE: ["Z-Wave"]})
+    rows = coord.study_snapshot()["watched_devices"]
+    curtain = next(row for row in rows if row["name"] == "Dining Room Curtain")
+    assert curtain["integration"] == "switchbot"

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_brief.py, Version: 0.22.19 (2026-09-21)
+# File: tests/test_dashboard_brief.py, Version: 0.23.17 (2026-09-29)
 
 """The Daily Brief tab, and stepping back through the days.
 
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -41,7 +42,6 @@ from custom_components.device_sentinel.const import (
     TODO_KIND_LOW_BATTERY,
     TODO_KIND_UNAVAILABLE,
 )
-
 from tests.helpers import register_device, setup_coordinator
 
 
@@ -217,3 +217,51 @@ async def test_the_last_hour_of_a_long_day_is_shown_once(
     assert first["counts"]["resolved"] == 0
     assert second["counts"]["opened"] == 0
     assert second["counts"]["resolved"] == 1
+
+
+# The dashboard's Daily Brief tab shows the repeat rows as rows, from Tim Plas's review of 0.22.25.
+
+
+@pytest.fixture
+def _mid_afternoon(freezer):
+    freezer.move_to("2026-09-24T20:00:00+00:00")
+
+def _twice_unavailable(device_id: str, name: str, now: float) -> list[dict]:
+    rows = []
+    for index in range(2):
+        at = now - 40000.0 - index * 90000.0
+        base = {INC_DEVICE_ID: device_id, INC_NAME: name, INC_KIND: TODO_KIND_UNAVAILABLE}
+        rows.append({**base, INC_EVENT: INCIDENT_OPENED, INC_WHEN: at, INC_DURATION: None})
+        rows.append({**base, INC_EVENT: INCIDENT_RESOLVED, INC_WHEN: at + 720.0, INC_DURATION: 720.0})
+    return rows
+
+@pytest.mark.usefixtures("_mid_afternoon")
+async def test_the_tab_gets_the_repeat_rows_not_markdown(hass: HomeAssistant):
+    device, _entities = register_device(hass, "rp1", name="Closet Switch")
+    coordinator = await setup_coordinator(hass)
+    coordinator._rebuild_registry_view()
+    now = dt_util.utcnow().timestamp()
+    coordinator.data[DATA_INCIDENTS] = _twice_unavailable(device.id, "Closet Switch", now)
+    coordinator.data[DATA_SYSTEM_EVENTS] = []
+    day = coordinator.dashboard_brief(dt_util.now().date())
+    repeat = day["repeat"]
+    assert "lines" not in repeat
+    assert [row["name"] for row in repeat["rows"]] == ["Closet Switch"]
+    row = repeat["rows"][0]
+    assert row["device_id"] == device.id and row["times"] == 2
+    assert not any("|" in str(value) for value in row.values())
+    assert repeat["paragraph"].startswith("This table lists repeat offenders.")
+
+@pytest.mark.usefixtures("_mid_afternoon")
+async def test_the_file_keeps_its_table(hass: HomeAssistant):
+    """Guard: the written brief still carries the Markdown table."""
+    device, _entities = register_device(hass, "rp2", name="Closet Switch")
+    coordinator = await setup_coordinator(hass)
+    coordinator._rebuild_registry_view()
+    now = dt_util.utcnow().timestamp()
+    coordinator.data[DATA_INCIDENTS] = _twice_unavailable(device.id, "Closet Switch", now)
+    coordinator.data[DATA_SYSTEM_EVENTS] = []
+    await hass.async_add_executor_job(coordinator._write_reports, "test")
+    assert "| DEVICE | WHAT HAPPENED | TIMES | WHEN | TYPICAL | WITH |" in (
+        coordinator._last_brief_text
+    )

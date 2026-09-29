@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_telemetry_signal_columns.py, Version: 0.22.16 (2026-09-21)
+# File: tests/test_telemetry_signal_columns.py, Version: 0.23.17 (2026-09-29)
 
 """device_telemetry.md reads signal the way the judge does.
 
@@ -56,8 +56,11 @@ async def test_the_floor_columns_give_way_to_the_bad_day_model(hass: HomeAssista
     _coord, _record, _text_, header, row = await _written(hass)
     assert "FLOOR/WK" not in header
     assert "MEAN\u00b1SD" not in header
-    assert header[6:8] == ["ITS NORMAL", "BAD-DAY LINE"]
-    assert len(header) == len(row) == 9
+    # Read by name, beside SIGNAL: the six rhythm columns of 0.23.17
+    # (ruling #542) sit before CLOCK and moved every position after them.
+    at = header.index("ITS NORMAL")
+    assert header[at - 1 : at + 2] == ["SIGNAL", "ITS NORMAL", "BAD-DAY LINE"]
+    assert len(header) == len(row) == 15
 
 
 async def test_its_normal_and_line_are_the_judges_own(hass: HomeAssistant):

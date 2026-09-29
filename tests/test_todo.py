@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.23.6 (2026-09-25)
+# File: test_todo.py, Version: 0.23.17 (2026-09-29)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -18,17 +18,16 @@ in the bounded journal and fires the dispatcher signal. This file holds
 the entity surface, the sync lifecycle, and the real-plumbing wiring.
 """
 
-import pytest
-
+import random
 from datetime import timedelta
 
+import pytest
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
-
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
@@ -39,32 +38,32 @@ from custom_components.device_sentinel.const import (
     DATA_INCIDENTS,
     DATA_TODO_JOURNAL,
     DEV_BATTERY_DAILY,
+    DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
+    DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
-    FREEZE_ARMING_DAYS,
     EVENT_ACKNOWLEDGED,
     EVENT_FAULT,
     EVENT_RECOVERED,
+    FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
-    DEV_BATTERY_LOW,
-    DEV_BATTERY_VALUE,
-    TODO_KIND_FROZEN,
-    TODO_KIND_UNAVAILABLE,
-    UNASSIGNED_AREA,
     FREEZE_CATEGORY_UNAVAILABLE,
-    INCIDENT_OPENED,
     INC_EVENT,
+    INCIDENT_OPENED,
     SIGNAL_PROBLEM_ADDITION,
     STARTUP_GRACE_SECONDS,
     TODO_JOURNAL_KEEP,
-    TODO_KIND_LOW_BATTERY,
     TODO_KIND_FALLING_BATTERY,
+    TODO_KIND_FROZEN,
+    TODO_KIND_LOW_BATTERY,
+    TODO_KIND_UNAVAILABLE,
+    UNASSIGNED_AREA,
 )
-
-from tests.helpers import record_events, setup_coordinator, setup_entry
+from custom_components.device_sentinel.normalise import repair_tables
+from tests.helpers import record_events, register_device, setup_coordinator, setup_entry
 
 DOMAIN = "device_sentinel"
 LIST_ENTITY = "todo.device_sentinel_problem_list"
@@ -1031,3 +1030,64 @@ async def test_a_low_cell_then_the_device_vanishes(hass: HomeAssistant):
     ]
     assert faults[1]["battery_level"] == 4.0
     assert recovered == [], "nothing recovered, it got worse"
+
+
+# The sync survives hostile stored items.
+
+
+@pytest.mark.parametrize("seed", range(40))
+async def test_the_sync_survives_hostile_persisted_items(
+    hass: HomeAssistant, seed
+):
+    rng = random.Random(seed)
+    device, _ = register_device(hass, f"s{seed}")
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+    hostile_items = []
+    for _ in range(rng.randint(1, 8)):
+        item = {
+            "uid": rng.choice(["a", None, 7, ""]),
+            "device_id": rng.choice([device.id, "ghost", None, 7, ""]),
+            "summary": rng.choice(["s", None, 7]),
+            "description": rng.choice(["d", None]),
+            "status": rng.choice(["needs_action", "completed", "junk", None, 7]),
+            "acked_at": rng.choice([None, 1.0, "x"]),
+            "sort_name": rng.choice(["n", None, 7]),
+            "kinds": rng.choice(
+                [{"never_reported": 1.0}, {}, None, "junk", 7,
+                 {"frozen": None}, {7: 1.0}, {"never_reported": "x"}]
+            ),
+        }
+        if rng.random() < 0.2:
+            item = rng.choice(["not an item", 7, None, [1]])
+        hostile_items.append(item)
+    coord.data["todo_items"] = hostile_items
+    hostile_incidents = []
+    for _ in range(rng.randint(0, 10)):
+        hostile_incidents.append(
+            {
+                "device_id": rng.choice([device.id, "ghost", None]),
+                "name": rng.choice(["n", None, 7]),
+                "kind": rng.choice(["never_reported", "frozen", None, 7]),
+                "event": rng.choice(["opened", "resolved", "action", None, 7]),
+                "when": rng.choice([1_788_000_000.0, None, "x", -1]),
+                "cause": rng.choice([None, "set_aside", "readded", 7]),
+                "duration": rng.choice([None, 30.0, "x"]),
+            }
+        )
+    coord.data["incidents"] = hostile_incidents
+    # The gate repairs a damaged table at the moment it is found
+    # (ruling #370); hostile persisted rows arrive only through a
+    # load, so the load-style repair runs before any consumer.
+    repair_tables(coord.data)
+    try:
+        coord._judge_all_devices()
+        coord._sync_problem_list()
+        await hass.async_block_till_done()
+        # And once more with the device gone, which is the retire.
+        coord._watched.pop(device.id, None)
+        coord._sync_problem_list()
+        await hass.async_block_till_done()
+    except (KeyError, TypeError, ValueError, AttributeError) as err:
+        pytest.fail(f"sync raised on hostile persisted rows: {err!r}")

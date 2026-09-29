@@ -3,12 +3,12 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_boundary.py, Version: 0.22.20 (2026-09-21)
+# File: tests/test_outage_boundary.py, Version: 0.23.17 (2026-09-29)
 
 """0.21.12's stored data at the storage boundary (rulings #279, #370).
 
 0.21.12 writes one new field, an ended outage's worst figure, and two
-new event kinds. The wide fuzz in `test_campaign_boundary_hostile.py`
+new event kinds. The wide fuzz in `test_storage_shape.py`
 damages the fields a fleet file already holds, and no fleet file holds
 these yet, so on its own it would never touch them: the gap #279 was
 ruled against, where a check was read off one file's values rather
@@ -43,16 +43,16 @@ from custom_components.device_sentinel.const import (
 from custom_components.device_sentinel.normalise import damaged_rows
 from tests.conftest import fleet_param
 from tests.helpers import register_device, setup_coordinator
-from tests.test_campaign_boundary_hostile import (
+from tests.test_forward_outage_shape import _synthesize
+from tests.test_storage_shape import (
     FLEETS,
     POISONS,
     _boot,
     _clean,
     _clocks,
     _fleet,
-    _plant,
 )
-from tests.test_forward_outage_shape import _synthesize
+from tests.test_storage_shape import _plant_hostile as _plant
 
 _EVENT_FIELDS = (SYS_WORST, SYS_DEVICES, SYS_KIND)
 

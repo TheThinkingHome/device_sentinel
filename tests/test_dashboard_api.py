@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_api.py, Version: 0.22.13 (2026-09-21)
+# File: tests/test_dashboard_api.py, Version: 0.23.17 (2026-09-29)
 
 """The dashboard's data layer: status, actions and the change marker.
 
@@ -16,14 +16,16 @@ asking on a timer.
 
 from __future__ import annotations
 
+import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     DEFAULT_MAINTENANCE_MINUTES,
     SYS_RESTART,
 )
-
 from tests.helpers import setup_coordinator
 
 
@@ -197,7 +199,9 @@ async def test_an_unchanged_problem_list_leaves_the_marker(hass: HomeAssistant):
 
 
 async def test_nothing_loaded_is_an_error_not_a_crash(hass: HomeAssistant, hass_ws_client):
-    from custom_components.device_sentinel.dashboard_api import async_register_dashboard_api
+    from custom_components.device_sentinel.dashboard_api import (
+        async_register_dashboard_api,
+    )
 
     async_register_dashboard_api(hass)
     client = await hass_ws_client(hass)
@@ -250,3 +254,55 @@ async def test_classification_names_the_mute_and_the_reason_set_aside(hass: Home
         "watched": False, "muted": "", "muted_global": "",
         "set_aside": "excluded (integration: tplink_router)", "copies": 1,
     }
+
+
+# ZHA is called ZHA, and MQTT's page lists the Tasmota devices that reach Home Assistant through its broker, from Tim Plas's review of 0.22.25.
+
+
+@pytest.fixture
+def _mid_afternoon(freezer):
+    freezer.move_to("2026-09-24T20:00:00+00:00")
+
+def _device(hass, domain: str, key: str, name: str):
+    entry = MockConfigEntry(domain=domain, title=name)
+    entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={(domain, key)}, name=name
+    )
+    er.async_get(hass).async_get_or_create(
+        "sensor", domain, key, device_id=device.id, config_entry=entry
+    )
+    return device
+
+@pytest.mark.usefixtures("_mid_afternoon")
+async def test_zha_is_called_zha(hass: HomeAssistant):
+    coordinator = await setup_coordinator(hass)
+    assert coordinator._integration_title("zha") == "ZHA"
+
+@pytest.mark.usefixtures("_mid_afternoon")
+async def test_other_integrations_keep_home_assistants_name(hass: HomeAssistant):
+    """Guard: only a name the status boxes already give is replaced."""
+    coordinator = await setup_coordinator(hass)
+    assert coordinator._integration_title("no_such_integration") == "no_such_integration"
+
+@pytest.mark.usefixtures("_mid_afternoon")
+async def test_mqtts_page_lists_tasmota_devices(hass: HomeAssistant):
+    _device(hass, "mqtt", "m1", "Door Laundry")
+    relay = _device(hass, "tasmota", "t1", "Stove Vent Relays")
+    coordinator = await setup_coordinator(hass)
+    coordinator._rebuild_registry_view()
+    page = coordinator.dashboard_integration("mqtt")
+    assert [row["name"] for row in page["devices"]] == ["Door Laundry"]
+    riders = page["behind_broker"]
+    assert [row["name"] for row in riders] == ["Stove Vent Relays"]
+    assert riders[0]["device_id"] == relay.id
+    assert riders[0]["integration"]
+
+@pytest.mark.usefixtures("_mid_afternoon")
+async def test_other_pages_list_no_riders(hass: HomeAssistant):
+    """Guard: the section belongs to MQTT's page alone."""
+    _device(hass, "tasmota", "t2", "Stove Vent Relays")
+    coordinator = await setup_coordinator(hass)
+    coordinator._rebuild_registry_view()
+    page = coordinator.dashboard_integration("tasmota")
+    assert page["behind_broker"] == []

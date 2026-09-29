@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze.py, Version: 0.22.28 (2026-09-23)
+# File: test_freeze.py, Version: 0.23.17 (2026-09-29)
 
 """The freeze, unavailable, unknown, and never-reported detector.
 
@@ -25,25 +25,25 @@ is judged without crashing the sweep. This file holds that detector.
 
 import json
 import pathlib
+import random
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
-
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
-    DATA_DEVICES,
-    DATA_SAVED_AT,
-    FREEZE_UNAVAILABLE_DEBOUNCE,
+    CLOCK_FIELDS,
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
     CONF_FREEZE_MUTED_DEVICES,
+    DATA_DEVICES,
+    DATA_SAVED_AT,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
@@ -56,9 +56,10 @@ from custom_components.device_sentinel.const import (
     FREEZE_CATEGORY_UNAVAILABLE,
     FREEZE_CATEGORY_UNKNOWN,
     FREEZE_NOT_REPORTED_SECONDS,
+    FREEZE_UNAVAILABLE_DEBOUNCE,
 )
 from custom_components.device_sentinel.coordinator import _new_device_record
-
+from tests.conftest import fleet_path
 from tests.helpers import register_device, setup_coordinator
 
 DOMAIN = "device_sentinel"
@@ -828,3 +829,87 @@ async def test_an_unstamped_pair_credits_nothing(
     coord._note_downtime({}, {})
     assert coord._last_alive is None
     assert coord._downtime == 0.0
+
+
+# The freeze sweep survives hostile records.
+
+
+JAMES = fleet_path("reference", "device_sentinel.storage")
+
+TIM = fleet_path("second", "2026-08-26", "device_sentinel_storage.json")
+
+CLOCKS_FOR = {
+    "device_sentinel.storage": "device_sentinel.clocks",
+    "device_sentinel_storage.json": "device_sentinel_clocks.json",
+}
+
+POISONS = [None, "junk", [1, 2], {"x": 1}, True, -7, float("nan"), 4.1e18, ""]
+
+def _held(path: Path) -> bool:
+    """Whether this fleet is here, by both files `_fleet` opens.
+
+    The guard used to ask whether the reference fleet existed and then
+    open whichever fleet the seed chose, so a directory holding one of
+    them raised `FileNotFoundError` instead of falling back. A fleet
+    can go missing on its own: captures are replaced as houses move
+    forward, and the second fleet's 26 August set is already gone. The
+    clocks file is checked too, because `_fleet` merges it in.
+    """
+    return path.exists() and (path.parent / CLOCKS_FOR[path.name]).exists()
+
+def _fleet(path: Path) -> list[dict]:
+    with open(path, encoding="utf-8") as handle:
+        devices = json.load(handle)["data"]["devices"]
+    with open(path.parent / CLOCKS_FOR[path.name], encoding="utf-8") as h:
+        clocks = json.load(h)["data"].get("clocks") or {}
+    out = []
+    for device_id, record in devices.items():
+        if not isinstance(record, dict):
+            continue
+        merged = dict(record)
+        for field in CLOCK_FIELDS:
+            if field in (clocks.get(device_id) or {}):
+                merged[field] = clocks[device_id][field]
+        out.append(merged)
+    return out
+
+@pytest.mark.parametrize("seed", range(30))
+async def test_the_sweep_survives_hostile_records(hass: HomeAssistant, seed):
+    """A hostile record in memory can only arrive through a load,
+    and the load repairs what the check cannot vouch for
+    (ruling #370). The repair is run here the way the gate runs it,
+    then the sweep must finish on the repaired fleet, and a
+    never-reported verdict must still only land on a device that
+    owns an entity."""
+    rng = random.Random(seed)
+    chosen = JAMES if seed % 2 else TIM
+    records = _fleet(chosen) if _held(chosen) else [{}]
+    devices = [register_device(hass, f"j{seed}_{i}")[0] for i in range(6)]
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    coord._rebuild_registry_view()
+    for device in devices:
+        record = dict(rng.choice(records))
+        for field in rng.sample(list(record) or ["daily_max"], k=min(3, len(record) or 1)):
+            record[field] = rng.choice(POISONS)
+        if rng.random() < 0.4:
+            record[DEV_EVENT_COUNT] = 0
+            record[DEV_LAST_ACTIVITY] = None
+            record[DEV_FIRST_OBSERVED] = rng.choice(
+                ["2026-07-08T00:00:00+00:00", "yesterday", None, 7, ""]
+            )
+        coord.data[DATA_DEVICES][device.id] = record
+    # Repaired the way the gate repairs at load (ruling #370):
+    # non-records dropped, damaged fields reset to defaults.
+    coord._repair_records()
+    for _ in range(5):
+        try:
+            coord._judge_all_devices()
+            coord._sync_problem_list()
+            await hass.async_block_till_done()
+        except (KeyError, TypeError, ValueError, AttributeError) as err:
+            pytest.fail(f"the sweep raised on a hostile record: {err!r}")
+    for device in devices:
+        record = coord.data[DATA_DEVICES][device.id]
+        if record.get("frozen_category") == FREEZE_CATEGORY_NEVER_REPORTED:
+            assert device.id in coord._devices_with_entities

@@ -1,7 +1,7 @@
 """Tests for setting disabled devices aside.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_set_aside.py, Version: 0.23.16 (2026-09-29)
+# File: test_set_aside.py, Version: 0.23.17 (2026-09-29)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -490,3 +490,79 @@ async def test_the_brief_counts_a_set_aside_as_neither(
     assert "1 problem started, 0 ended" in text or "1 problem started, 0 ended" in text.replace("problems", "problem"), (
         [line for line in text.splitlines() if "started" in line][:2]
     )
+
+
+# The rebuilt registry view keeps exactly the watched devices' entities.
+
+
+@pytest.mark.parametrize("seed", range(30))
+async def test_the_rebuild_keeps_the_entity_set_honest(
+    hass: HomeAssistant, seed
+):
+    """Random registries: devices with entities, disabled entities,
+    none, and integrations in every state. The retained entity set
+    must equal what the registry actually holds for watched devices."""
+    rng = random.Random(seed)
+    registry = dr.async_get(hass)
+    entities = er.async_get(hass)
+    owners = []
+    for i in range(3):
+        entry = MockConfigEntry(domain=f"stack{seed}_{i}", title="S")
+        entry.add_to_hass(hass)
+        if rng.random() < 0.5:
+            entry.mock_state(hass, ConfigEntryState.LOADED)
+        owners.append(entry)
+    expected: set[str] = set()
+    made = []
+    for i in range(rng.randint(3, 14)):
+        owner = rng.choice(owners)
+        device = registry.async_get_or_create(
+            config_entry_id=owner.entry_id,
+            identifiers={(owner.domain, f"d{seed}-{i}")},
+            name=f"Device {seed} {i}",
+        )
+        made.append(device)
+        count = rng.choice([0, 0, 1, 3])
+        for n in range(count):
+            entities.async_get_or_create(
+                "sensor", owner.domain, f"u{seed}-{i}-{n}",
+                device_id=device.id,
+                disabled_by=(
+                    er.RegistryEntryDisabler.USER if rng.random() < 0.3 else None
+                ),
+            )
+        if count:
+            expected.add(device.id)
+    coord = await setup_coordinator(hass)
+    coord._grace_until = (
+        dt_util.utcnow().timestamp() + 300.0 if rng.random() < 0.5 else 0.0
+    )
+    coord._rebuild_registry_view()
+    watched_made = {d.id for d in made if d.id in coord._watched}
+    for did in watched_made:
+        assert (did in coord._devices_with_entities) == (did in expected), (
+            f"entity set wrong for {did}"
+        )
+    # Outside grace, a watched device with no entities is impossible.
+    if coord._grace_until == 0.0:
+        assert not (watched_made - expected), (
+            "an entity-less device stayed watched outside grace"
+        )
+
+
+# The diagnostics name a set-aside device's integration.
+
+
+async def test_diagnostics_names_a_set_aside_devices_integration(hass: HomeAssistant):
+    from custom_components.device_sentinel.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
+
+    device, _ = register_device(hass, "sp", name="Repairs")
+    coord = await setup_coordinator(hass)
+    domain = coord._watched.pop(device.id)
+    coord._set_aside = {device.id: ("Repairs", "spook", "excluded")}
+    diagnostics = await async_get_config_entry_diagnostics(hass, coord.entry)
+    row = diagnostics["devices"][device.id]
+    assert row["integration"] == "spook"
+    assert domain != "spook", "the watched map did not answer"

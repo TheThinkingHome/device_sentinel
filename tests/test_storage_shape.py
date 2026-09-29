@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.23.15 (2026-09-28)
+# File: test_storage_shape.py, Version: 0.23.17 (2026-09-29)
 
 """The shape check reports and touches nothing; last-good follows it.
 
@@ -33,39 +33,58 @@ for a test.
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 import os
+import random
 from pathlib import Path
 
+import pytest
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.storage import STORAGE_DIR
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     BACKUP_LAST_GOOD_SUFFIX,
+    CLOCK_FIELDS,
     DATA_DEVICES,
     DATA_SYSTEM_EVENTS,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
-    DEV_TAINTED,
-    DEV_TODAY_MAX,
-    STORAGE_CLOCKS_KEY,
-    STORAGE_KEY,
-    SYS_KIND,
-    SYS_STORAGE_SHAPE,
-    SYS_STORAGE_REPAIR,
-    TAINT_REASONS,
+    DEV_FIRST_OBSERVED,
+    DEV_FROZEN_CATEGORY,
+    DEV_FROZEN_SINCE,
+    DEV_LAST_ACTIVITY,
     DEV_SIGNAL_ALT,
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_READS,
     DEV_SIGNAL_VALUE,
+    DEV_TAINTED,
+    DEV_TODAY_MAX,
     SIGNAL_SCALE_LQI,
+    STORAGE_CLOCKS_KEY,
+    STORAGE_KEY,
+    SYS_KIND,
+    SYS_STORAGE_REPAIR,
+    SYS_STORAGE_SHAPE,
+    TAINT_REASONS,
 )
 from custom_components.device_sentinel.detect_signal import _new_alt_block
-from custom_components.device_sentinel.normalise import check_records
+from custom_components.device_sentinel.normalise import (
+    TABLES,
+    check_containers,
+    check_records,
+    check_storage,
+    damaged_rows,
+)
 from custom_components.device_sentinel.records import _new_device_record
-
-import pytest
+from custom_components.device_sentinel.store import StorageMixin
+from tests.conftest import FLEET_ABSENT, fleet_param, fleet_path
+from tests.helpers import setup_coordinator
 
 from .helpers import register_device, setup_entry
 
@@ -439,3 +458,1218 @@ async def test_the_shape_check_runs_after_every_migration_step(
             f"{step} now runs after the gate, so an unmigrated "
             "file would be judged"
         )
+
+
+# Damage anywhere in the stored document, the repair gates, and a restore from last-good (0.19.x campaign).
+
+
+FLEETS = [
+    fleet_param(
+        "reference", "device_sentinel.storage", id="james",
+        clocks=("reference", "device_sentinel.clocks"),
+    ),
+    fleet_param(
+        "second", "device_sentinel_storage.json", id="tim",
+        clocks=("second", "device_sentinel_clocks.json"),
+    ),
+    fleet_param(
+        "fourth", "device_sentinel_storage.json", id="fourth",
+        clocks=("fourth", "device_sentinel_clocks.json"),
+    ),
+]
+
+POISONS = [None, "junk", [1, 2], {"x": 1}, True, -7, 4.1e18, "", 3.5, [], {}]
+
+def _fleet(path: Path) -> dict:
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)["data"]
+
+def _clocks(path: Path) -> dict:
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)["data"]
+
+def _plant_hostile(hass_storage, data: dict, clocks: dict | None = None) -> None:
+    hass_storage[STORAGE_KEY] = {
+        "version": 1, "minor_version": 1, "key": STORAGE_KEY, "data": data,
+    }
+    if clocks is not None:
+        hass_storage[STORAGE_CLOCKS_KEY] = {
+            "version": 1, "minor_version": 1,
+            "key": STORAGE_CLOCKS_KEY, "data": clocks,
+        }
+
+async def _boot(hass, entry) -> object:
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry.runtime_data if entry.state is ConfigEntryState.LOADED else None
+
+def _clean(coord) -> tuple[bool, str]:
+    """The whole promise, asked of a running coordinator."""
+    rows = damaged_rows(coord.data)
+    if rows:
+        return False, f"damaged rows in the working document: {rows}"
+    faults = check_records(coord.data.get(DATA_DEVICES))
+    if faults:
+        return False, f"damaged records in the working document: {faults[:3]}"
+    out = coord._data_to_save()
+    rows = damaged_rows(out)
+    if rows:
+        return False, f"damaged rows in the outgoing document: {rows}"
+    return True, ""
+
+async def test_two_records_damaged_in_the_same_field_do_not_share_it(
+    hass: HomeAssistant, hass_storage
+):
+    """Would catch: the repair handing every damaged record the same
+    default object, so two repaired records share one list and a
+    write into one appears in the other.
+
+    Registered devices rather than fleet ids, because a record whose
+    device the registry does not carry is pruned at load and the
+    assertion would never reach the repair.
+    """
+    first_device, _ = register_device(hass, "share_one")
+    second_device, _ = register_device(hass, "share_two")
+    coord = await setup_coordinator(hass)
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    stored = hass_storage.get(STORAGE_KEY)["data"]
+    ids = [first_device.id, second_device.id]
+    for device_id in ids:
+        assert isinstance(stored[DATA_DEVICES].get(device_id), dict)
+        stored[DATA_DEVICES][device_id]["daily_max"] = "rotten"
+
+    coord = await _boot(hass, entry)
+    assert coord is not None, "setup died"
+
+    first = coord.data[DATA_DEVICES][ids[0]]["daily_max"]
+    second = coord.data[DATA_DEVICES][ids[1]]["daily_max"]
+    assert first == [] and second == []
+    assert first is not second, (
+        "two repaired records share one default object: a value "
+        "written into one appears in the other"
+    )
+    first.append(1.0)
+    assert coord.data[DATA_DEVICES][ids[1]]["daily_max"] == [], (
+        "writing into one repaired record changed another"
+    )
+
+@pytest.mark.parametrize("path,clocks_path", FLEETS)
+async def test_a_record_damaged_in_many_fields_is_repaired_in_one_pass(
+    hass: HomeAssistant, hass_storage, path, clocks_path
+):
+    """Would catch: a repair that fixes one fault per record and
+    leaves the rest, so the gate never converges."""
+    data = copy.deepcopy(_fleet(path))
+    device_id = next(
+        d for d, r in data[DATA_DEVICES].items() if isinstance(r, dict)
+    )
+    record = data[DATA_DEVICES][device_id]
+    for field in list(record)[:8]:
+        record[field] = {"not": "valid"}
+    _plant_hostile(hass_storage, data, _clocks(clocks_path))
+    coord = await setup_coordinator(hass)
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    _plant_hostile(hass_storage, data, _clocks(clocks_path))
+    coord = await _boot(hass, entry)
+    assert coord is not None, "setup died"
+    ok, why = _clean(coord)
+    assert ok, why
+
+@pytest.mark.parametrize("path,clocks_path", FLEETS)
+async def test_the_devices_map_itself_destroyed(
+    hass: HomeAssistant, hass_storage, path, clocks_path
+):
+    """Would catch: the devices key replaced by something that is not
+    a map, which every reader walks."""
+    for shape in ("garbage", [1, 2, 3], 7, None):
+        data = copy.deepcopy(_fleet(path))
+        data[DATA_DEVICES] = shape
+        _plant_hostile(hass_storage, data, _clocks(clocks_path))
+        coord = await setup_coordinator(hass)
+        entry = coord.entry
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        _plant_hostile(hass_storage, data, _clocks(clocks_path))
+        coord = await _boot(hass, entry)
+        assert coord is not None, f"setup died on devices={shape!r}"
+        ok, why = _clean(coord)
+        assert ok, f"devices={shape!r}: {why}"
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+@pytest.mark.parametrize("path,clocks_path", FLEETS)
+async def test_every_table_replaced_by_something_that_is_not_a_list(
+    hass: HomeAssistant, hass_storage, path, clocks_path
+):
+    """Would catch: a table key holding a string or a map, which the
+    row walk would iterate as characters or keys."""
+    data = copy.deepcopy(_fleet(path))
+    for index, table in enumerate(TABLES):
+        data[table] = ["junk", {"a": 1}, 7, None][index % 4]
+    _plant_hostile(hass_storage, data, _clocks(clocks_path))
+    coord = await setup_coordinator(hass)
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    _plant_hostile(hass_storage, data, _clocks(clocks_path))
+    coord = await _boot(hass, entry)
+    assert coord is not None, "setup died"
+    ok, why = _clean(coord)
+    assert ok, why
+
+@pytest.mark.parametrize("path,clocks_path", FLEETS)
+async def test_a_damaged_last_good_does_not_loop_or_win(
+    hass: HomeAssistant, hass_storage, path, clocks_path
+):
+    """Would catch: restoring from a copy that is itself damaged and
+    either looping forever or accepting the damage."""
+    data = copy.deepcopy(_fleet(path))
+    coord = await setup_coordinator(hass)
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    directory = hass.config.path(".storage")
+    os.makedirs(directory, exist_ok=True)
+    live = os.path.join(directory, "device_sentinel.storage")
+    copy_path = live + ".last-good"
+    broken = copy.deepcopy(data)
+    broken.setdefault("incidents", []).insert(0, "not a row")
+    broken[DATA_DEVICES] = dict(broken.get(DATA_DEVICES) or {})
+    for device_id in list(broken[DATA_DEVICES])[:3]:
+        if isinstance(broken[DATA_DEVICES][device_id], dict):
+            broken[DATA_DEVICES][device_id]["daily_max"] = "rotten"
+    with open(copy_path, "w", encoding="utf-8") as handle:
+        json.dump({"version": 1, "key": STORAGE_KEY, "data": broken}, handle)
+    with open(live, "w", encoding="utf-8") as handle:
+        json.dump({"version": 1, "key": STORAGE_KEY, "data": broken}, handle)
+
+    _plant_hostile(hass_storage, broken, _clocks(clocks_path))
+    coord = await _boot(hass, entry)
+    assert coord is not None, "setup died with a damaged last-good copy"
+    ok, why = _clean(coord)
+    assert ok, why
+
+async def test_a_crash_between_the_rename_and_the_write(
+    hass: HomeAssistant, real_disk
+):
+    """The one window the rotation opens, on the real disk.
+
+    The live file is renamed to last-good and the process dies
+    before the new one is written, so the next start finds a copy
+    and no live file. Measured for finding 4: the missing-file
+    restore answers it, no record is lost, and the first save writes
+    the live file again.
+    """
+    device, _ = register_device(hass, "crash_dev")
+    coord = await setup_coordinator(hass)
+    coord._rotation_armed = True
+    await coord._save_main()
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    live = os.path.join(real_disk, "device_sentinel.storage")
+    copy_path = live + ".last-good"
+    with open(live, encoding="utf-8") as handle:
+        devices_before = set(json.load(handle)["data"].get(DATA_DEVICES) or {})
+    os.replace(live, copy_path)  # the rename lands, then the crash
+    assert not os.path.exists(live)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED, (
+        "setup died after a crash mid-rotation"
+    )
+    coord2 = entry.runtime_data
+    assert device.id in coord2.data[DATA_DEVICES], "the device record was lost"
+    assert devices_before <= set(coord2.data[DATA_DEVICES]), "records were lost"
+    assert coord2._restored_from is not None, "the copy was not restored from"
+    ok, why = _clean(coord2)
+    assert ok, why
+    assert os.path.exists(live), "the first save did not re-create the live file"
+
+async def test_a_crash_with_the_copy_damaged(hass: HomeAssistant, real_disk):
+    """The worst case of the window: the crash lands and the only file
+    left is damaged. Setup must still come up: restore, then gate 1."""
+    register_device(hass, "crash_bad")
+    coord = await setup_coordinator(hass)
+    coord._rotation_armed = True
+    await coord._save_main()
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    live = os.path.join(real_disk, "device_sentinel.storage")
+    copy_path = live + ".last-good"
+    os.replace(live, copy_path)
+    with open(copy_path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    payload["data"]["incidents"] = "garbage"
+    with open(copy_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED, (
+        "setup died with only a damaged copy on disk"
+    )
+    coord2 = entry.runtime_data
+    assert coord2._container_notice, "gate 1 did not repair the damaged copy"
+    ok, why = _clean(coord2)
+    assert ok, why
+
+@pytest.mark.parametrize("path,clocks_path", FLEETS)
+async def test_repeated_damage_and_repair_converges(
+    hass: HomeAssistant, hass_storage, path, clocks_path
+):
+    """Would catch: a repair that leaves the document dirtier than it
+    found it, or a rotation that eventually copies damage forward."""
+    _plant_hostile(hass_storage, copy.deepcopy(_fleet(path)), _clocks(clocks_path))
+    coord = await setup_coordinator(hass)
+    rng = random.Random(4242)
+    tables = [t for t in TABLES if isinstance(coord.data.get(t), list)]
+    for round_number in range(25):
+        table = rng.choice(tables)
+        coord.data.setdefault(table, []).insert(
+            0, rng.choice(["junk", 7, None, {"bad": 1}, []])
+        )
+        known = list(coord.data[DATA_DEVICES])
+        if not known:
+            # The fuzz emptied the fleet, which is a legitimate
+            # outcome of a repair rather than a case to skip.
+            await coord._save_main()
+            ok, why = _clean(coord)
+            assert ok, f"round {round_number}: {why}"
+            continue
+        device_id = rng.choice(known)
+        if isinstance(coord.data[DATA_DEVICES][device_id], dict):
+            field = rng.choice(list(coord.data[DATA_DEVICES][device_id]))
+            coord.data[DATA_DEVICES][device_id][field] = rng.choice(POISONS)
+        await coord._save_main()
+        ok, why = _clean(coord)
+        assert ok, f"round {round_number}: {why}"
+
+@pytest.mark.parametrize("path,clocks_path", FLEETS)
+async def test_the_repair_keeps_every_good_row(
+    hass: HomeAssistant, hass_storage, path, clocks_path
+):
+    """Would catch: a repair that drops good rows alongside the bad,
+    which would quietly erase a person's history.
+
+    The true invariant, measured for finding 3: after a repair a
+    table holds every good row it had, plus the one system event
+    that records the repair. The first draft of this test required
+    the count to be level, which was the test asking the wrong
+    question; the extra row is the log doing its job.
+    """
+    data = copy.deepcopy(_fleet(path))
+    _plant_hostile(hass_storage, data, _clocks(clocks_path))
+    coord = await setup_coordinator(hass)
+    before = {
+        t: len(coord.data[t])
+        for t in TABLES
+        if isinstance(coord.data.get(t), list)
+    }
+    populated = [t for t, n in before.items() if n]
+    if not populated:
+        pytest.skip("this fleet snapshot has no populated tables")
+    good_rows = {t: list(coord.data[t]) for t in populated}
+    for table in populated:
+        coord.data[table].insert(0, "junk")
+    await coord._save_main()
+    for table in populated:
+        after = coord.data[table]
+        for row in good_rows[table]:
+            assert row in after, f"{table}: a good row was dropped by the repair"
+        expected = before[table] + (1 if table == "system_events" else 0)
+        assert len(after) == expected, (
+            f"{table}: {before[table]} good rows became {len(after)}; "
+            "only system_events may grow, by the repair's own event"
+        )
+
+async def test_a_repair_at_save_leaves_the_copy_alone(
+    hass: HomeAssistant, monkeypatch
+):
+    """Would catch: the worst outcome the design exists to prevent,
+    a repaired or damaged file overwriting the good copy."""
+    from custom_components.device_sentinel import store as smod
+
+    rotations: list[int] = []
+
+    async def spy(_hass):
+        rotations.append(1)
+        return True
+
+    monkeypatch.setattr(smod, "async_rotate_last_good", spy)
+    coord = await setup_coordinator(hass)
+    for cycle in range(6):
+        rotations.clear()
+        coord.data.setdefault("incidents", []).insert(0, "junk")
+        await coord._save_main()
+        assert rotations == [], (
+            f"cycle {cycle}: a save that repaired rotated into last-good"
+        )
+        await coord._save_main()
+        assert rotations == [1], (
+            f"cycle {cycle}: the clean save after a repair did not rotate"
+        )
+
+@pytest.mark.parametrize("path,clocks_path", FLEETS)
+async def test_a_destroyed_clocks_file_never_takes_the_load_down(
+    hass: HomeAssistant, hass_storage, path, clocks_path
+):
+    """Would catch: the clocks file discarded badly, or a shape the
+    merge walks into."""
+    shapes = [
+        {"clocks": "garbage"},
+        {"clocks": {"a": "garbage"}},
+        {"clocks": [1, 2, 3]},
+        {"clocks": {"a": {"event_count": "many"}}},
+        {},
+    ]
+    data = _fleet(path)
+    for shape in shapes:
+        _plant_hostile(hass_storage, copy.deepcopy(data), shape)
+        coord = await setup_coordinator(hass)
+        entry = coord.entry
+        assert coord is not None, f"setup died on clocks={shape!r}"
+        ok, why = _clean(coord)
+        assert ok, f"clocks={shape!r}: {why}"
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+@pytest.mark.parametrize("path,clocks_path", FLEETS)
+@pytest.mark.parametrize("seed", range(12))
+async def test_wide_fuzz_through_the_real_load(
+    hass: HomeAssistant, hass_storage, path, clocks_path, seed
+):
+    """Damage anywhere in the document, then drive every reader.
+
+    Would catch: any shape the gate misses, any reader that crashes
+    on what the gate lets through, any repair that does not hold.
+    """
+    rng = random.Random(70_000 + seed)
+    data = copy.deepcopy(_fleet(path))
+    for _ in range(rng.randint(3, 20)):
+        target = rng.random()
+        if target < 0.4:
+            table = rng.choice(list(TABLES))
+            rows = data.get(table)
+            if isinstance(rows, list) and rows:
+                index = rng.randrange(len(rows))
+                if rng.random() < 0.4:
+                    rows[index] = rng.choice(POISONS)
+                elif isinstance(rows[index], dict) and rows[index]:
+                    field = rng.choice(list(rows[index]))
+                    if rng.random() < 0.5:
+                        rows[index][field] = rng.choice(POISONS)
+                    else:
+                        del rows[index][field]
+            else:
+                data[table] = rng.choice(["junk", 7, {}, None])
+        elif target < 0.9:
+            devices = data.get(DATA_DEVICES) or {}
+            if devices:
+                device_id = rng.choice(list(devices))
+                record = devices[device_id]
+                if rng.random() < 0.2 or not isinstance(record, dict):
+                    devices[device_id] = rng.choice(POISONS)
+                elif record:
+                    field = rng.choice(list(record))
+                    if rng.random() < 0.7:
+                        record[field] = rng.choice(POISONS)
+                    else:
+                        del record[field]
+        else:
+            key = rng.choice(
+                ["setup_count", "first_installed", "stats_epoch", "saved_at"]
+            )
+            data[key] = rng.choice(POISONS)
+
+    register_device(hass, f"fuzz{seed}")
+    _plant_hostile(hass_storage, data, _clocks(clocks_path))
+    coord = await setup_coordinator(hass)
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    _plant_hostile(hass_storage, data, _clocks(clocks_path))
+    coord = await _boot(hass, entry)
+    assert coord is not None, f"seed {seed}: setup died"
+    coord._grace_until = 0.0
+
+    ok, why = _clean(coord)
+    assert ok, f"seed {seed}: {why}"
+
+    coord._judge_all_devices()
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    for name in (
+        "learning_buckets", "recording_depth", "todo_items",
+        "frozen_devices_list", "battery_low_list", "signal_problem_list",
+        "classification_breakdown", "set_aside_count",
+    ):
+        getattr(coord, name)
+    assert await coord.async_regenerate_reports(), (
+        f"seed {seed}: the reports died on a repaired document"
+    )
+    await coord._save_main()
+    ok, why = _clean(coord)
+    assert ok, f"seed {seed}, after the save: {why}"
+
+async def test_gate_one_raises_its_own_notice(hass: HomeAssistant, hass_storage):
+    """Would catch: gate 1 repairing silently, or borrowing gate 2's
+    card so a person cannot tell which question was answered."""
+    from homeassistant.helpers import issue_registry as ir
+
+    from custom_components.device_sentinel.const import (
+        DOMAIN,
+        REPAIR_CONTAINERS_REPAIRED,
+    )
+
+    device, _ = register_device(hass, "notice_dev")
+    coord = await setup_coordinator(hass)
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    hass_storage.get(STORAGE_KEY)["data"][DATA_DEVICES][device.id][
+        "daily_max"
+    ] = "rotten"
+    coord = await _boot(hass, entry)
+    assert coord is not None
+    assert coord._container_notice, "gate 1 repaired without a notice"
+    assert coord._repair_notice is None, (
+        "gate 2 also raised, so the two gates are not separable"
+    )
+    coord._grace_until = 0.0
+    coord._evaluate_repairs("grace")
+    await hass.async_block_till_done()
+    issue = ir.async_get(hass).async_get_issue(
+        DOMAIN, REPAIR_CONTAINERS_REPAIRED
+    )
+    assert issue is not None, "gate 1's card was never raised"
+    assert issue.translation_placeholders["what"]
+    assert issue.translation_placeholders["where"]
+
+async def test_gate_one_is_silent_on_a_healthy_file(hass: HomeAssistant):
+    """Would catch: the one real risk, gate 1 firing on a healthy
+    file and repairing data nobody damaged."""
+    coord = await setup_coordinator(hass)
+    assert coord._container_notice is None
+    assert not check_containers(coord.data)
+
+@pytest.mark.parametrize("path,clocks_path", FLEETS)
+def test_gate_one_is_silent_on_the_real_fleets(path, clocks_path):
+    """The same claim against the files themselves, both fleets."""
+    data = _fleet(path)
+    before = json.dumps(data, sort_keys=True, default=str)
+    assert check_containers(data) == []
+    from custom_components.device_sentinel.normalise import repair_containers
+
+    assert repair_containers(data) == {}
+    assert json.dumps(data, sort_keys=True, default=str) == before
+
+async def test_control_gate_one_can_fail(hass: HomeAssistant, hass_storage):
+    """With gate 1 blinded, the load-time steps crash as they did
+    before ruling #371. Proves the gate is what prevents it."""
+    from custom_components.device_sentinel import coordinator as cmod
+
+    register_device(hass, "ctl_g1")
+    coord = await setup_coordinator(hass)
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    hass_storage.get(STORAGE_KEY)["data"][DATA_DEVICES] = "garbage"
+    original = cmod.check_containers
+    cmod.check_containers = lambda _data: []
+    try:
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entry.state is not ConfigEntryState.LOADED, (
+            "the control passed with gate 1 off, so the test proves nothing"
+        )
+    finally:
+        cmod.check_containers = original
+        await hass.config_entries.async_remove(entry.entry_id)
+        await hass.async_block_till_done()
+
+async def test_gate_two_repair_does_not_share_a_template_object(
+    hass: HomeAssistant,
+):
+    """Would catch: gate 2's record repair assigning the template's
+    own list to several records, which finding 2 named. Gate 1 owns
+    the nine container fields, so this drives gate 2's path directly
+    on a field gate 1 does not check, by making the check see it as
+    damaged through a type the schema refuses."""
+    from custom_components.device_sentinel.normalise import check_records
+
+    first, _ = register_device(hass, "tmpl_one")
+    second, _ = register_device(hass, "tmpl_two")
+    coord = await setup_coordinator(hass)
+    ids = [first.id, second.id]
+    # The tainted field takes False or a reason string; an int is a
+    # gate 2 fault and not a container fault, so gate 1 leaves it.
+    for device_id in ids:
+        coord.data[DATA_DEVICES][device_id]["tainted"] = 7
+    assert check_records(coord.data[DATA_DEVICES])
+    dropped, reset = coord._repair_records()
+    assert not dropped
+    assert {d for d, _f in reset} == set(ids)
+    # For a scalar default the object identity cannot matter; the
+    # claim is proven on a list-valued field by driving the same
+    # path with the series faulted through a wrong element type.
+    for device_id in ids:
+        coord.data[DATA_DEVICES][device_id]["daily_max"] = ["x"]
+    faults = check_records(coord.data[DATA_DEVICES])
+    assert any(f[1] == "daily_max" for f in faults), "the series was not faulted"
+    coord._repair_records()
+    one = coord.data[DATA_DEVICES][ids[0]]["daily_max"]
+    two = coord.data[DATA_DEVICES][ids[1]]["daily_max"]
+    assert one == [] and two == []
+    assert one is not two, "gate 2 handed two records the same list"
+    one.append(1.0)
+    assert coord.data[DATA_DEVICES][ids[1]]["daily_max"] == []
+
+async def test_gate_one_restores_from_the_copy_rather_than_emptying(
+    hass: HomeAssistant, real_disk
+):
+    """Ruling #372: a damaged devices map with a usable copy is
+    answered by restoring, not by emptying. Would catch the 0.19.10
+    behaviour, where every record was lost to a repair while the copy
+    one save back held them all."""
+    device, _ = register_device(hass, "restore_first")
+    coord = await setup_coordinator(hass)
+    coord._rotation_armed = True
+    await coord._save_main()
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    live = os.path.join(real_disk, "device_sentinel.storage")
+    copy_path = live + ".last-good"
+    assert os.path.exists(copy_path), "no copy to restore from"
+    with open(live, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    payload["data"][DATA_DEVICES] = "garbage"
+    with open(live, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    coord2 = entry.runtime_data
+    assert coord2._restored_from is not None, "gate 1 repaired instead"
+    assert device.id in coord2.data[DATA_DEVICES], (
+        "the record was lost; the copy held it"
+    )
+    ok, why = _clean(coord2)
+    assert ok, why
+
+async def test_gate_one_repairs_when_the_copy_carries_the_same_fault(
+    hass: HomeAssistant, real_disk
+):
+    """The other half of #372: a copy checked and refused. Restoring
+    to the same fault would cost a file copy and prove nothing, so
+    the repair runs instead."""
+    register_device(hass, "same_fault")
+    coord = await setup_coordinator(hass)
+    coord._rotation_armed = True
+    await coord._save_main()
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    live = os.path.join(real_disk, "device_sentinel.storage")
+    copy_path = live + ".last-good"
+    for path in (live, copy_path):
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+        payload["data"]["incidents"] = "garbage"
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    coord2 = entry.runtime_data
+    assert coord2._restored_from is None, (
+        "gate 1 restored to a copy carrying the same fault"
+    )
+    assert coord2._container_notice, "gate 1 neither restored nor repaired"
+    ok, why = _clean(coord2)
+    assert ok, why
+
+async def test_gate_one_repairs_when_there_is_no_copy(
+    hass: HomeAssistant, real_disk
+):
+    """A first install with no copy yet: repair in place, as before."""
+    register_device(hass, "no_copy")
+    coord = await setup_coordinator(hass)
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    live = os.path.join(real_disk, "device_sentinel.storage")
+    copy_path = live + ".last-good"
+    if os.path.exists(copy_path):
+        os.remove(copy_path)
+    with open(live, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    payload["data"]["incidents"] = "garbage"
+    with open(live, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    coord2 = entry.runtime_data
+    assert coord2._restored_from is None
+    assert coord2._container_notice
+    ok, why = _clean(coord2)
+    assert ok, why
+
+
+# The writers and the shape check agree on the real fleets.
+
+
+JAMES = fleet_path("reference", "device_sentinel.storage")
+
+TIM = fleet_path("second", "2026-08-26", "device_sentinel_storage.json")
+
+OBSERVED = "2026-07-08T00:00:00+00:00"
+
+STEPS = 60
+
+CLOCKS_FOR = {
+    "device_sentinel.storage": "device_sentinel.clocks",
+    "device_sentinel_storage.json": "device_sentinel_clocks.json",
+}
+
+def _fleet_checker(path: Path) -> list[dict]:
+    """The fleet's records as the load path presents them: the main
+    file with the companion clocks merged in."""
+    with open(path, encoding="utf-8") as handle:
+        devices = json.load(handle)["data"]["devices"]
+    with open(path.parent / CLOCKS_FOR[path.name], encoding="utf-8") as h:
+        clocks = json.load(h)["data"].get("clocks") or {}
+    merged_all: dict[str, dict] = {}
+    for device_id, record in devices.items():
+        if not isinstance(record, dict):
+            continue
+        merged = dict(record)
+        fields = clocks.get(device_id) or {}
+        for field in CLOCK_FIELDS:
+            if field in fields:
+                merged[field] = fields[field]
+        merged_all[device_id] = merged
+    # The load path reconciles every stored record against the
+    # current schema before anything reads it, filling fields a
+    # newer version added and dropping ones it retired. A fleet file
+    # from an earlier release is what the reconciler exists for, and
+    # a campaign that skipped it would fail on every field added
+    # since the file was written (ruling #397 added two).
+    StorageMixin._reconcile_records(merged_all, "")
+    return list(merged_all.values())
+
+def _faults(coord) -> list:
+    """Every fault the check would raise on the live document."""
+    return check_records(coord.data.get(DATA_DEVICES)) + check_storage(
+        coord.data
+    )
+
+async def _campaign(hass: HomeAssistant, path: Path, seed: int) -> dict:
+    rng = random.Random(seed)
+    records = _fleet_checker(path)
+    owner = MockConfigEntry(domain="campaign_stack", title="Campaign")
+    owner.add_to_hass(hass)
+    registry = dr.async_get(hass)
+
+    # A dozen watched devices with entities and learned rhythms, two
+    # with no entities at all, all carrying real fleet records.
+    watched = []
+    for index in range(12):
+        device, _ = register_device(hass, f"c{seed}_{index}")
+        watched.append(device)
+    bare = [
+        registry.async_get_or_create(
+            config_entry_id=owner.entry_id,
+            identifiers={("campaign_stack", f"bare-{seed}-{i}")},
+            name=f"Bare {seed} {i}",
+        )
+        for i in range(2)
+    ]
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    now = dt_util.utcnow().timestamp()
+    for index, device in enumerate(watched):
+        base = dict(rng.choice(records))
+        base[DEV_DAILY_MAX] = [float(rng.randint(600, 7200))] * 14
+        base[DEV_EVENT_COUNT] = rng.randint(1, 500)
+        base[DEV_LAST_ACTIVITY] = now - rng.uniform(0, 300)
+        base[DEV_FROZEN_CATEGORY] = None
+        base[DEV_FROZEN_SINCE] = None
+        coord.data[DATA_DEVICES][device.id] = base
+    for device in bare:
+        rec = coord.data[DATA_DEVICES].setdefault(device.id, {})
+        rec[DEV_EVENT_COUNT] = 0
+        rec[DEV_LAST_ACTIVITY] = None
+        rec[DEV_FIRST_OBSERVED] = OBSERVED
+    for index, record in enumerate(records[:80]):
+        coord.data[DATA_DEVICES].setdefault(f"bg{seed}_{index}", dict(record))
+    coord._rebuild_registry_view()
+
+    operations = 0
+    worst = 0
+    for step in range(STEPS):
+        op = rng.choice(
+            [
+                "silent", "resume", "restart_open", "restart_close",
+                "leave", "rejoin", "ack", "delete", "fold", "judge",
+                "battery", "sweep",
+            ]
+        )
+        device = rng.choice(watched)
+        rec = coord.data[DATA_DEVICES][device.id]
+        if op == "silent":
+            rec[DEV_LAST_ACTIVITY] = (
+                dt_util.utcnow().timestamp()
+                - rng.uniform(1.5, 6.0) * rec[DEV_DAILY_MAX][0]
+            )
+        elif op == "resume":
+            coord._record_activity(device.id, coord.entry.entry_id)
+        elif op == "restart_open":
+            coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+            coord._rebuild_registry_view()
+        elif op == "restart_close":
+            coord._grace_until = 0.0
+            coord._rebuild_registry_view()
+        elif op == "leave":
+            coord._watched.pop(device.id, None)
+            coord._clear_verdicts_for_set_aside(
+                {device.id: ("n", "campaign", "x")}
+            )
+        elif op == "rejoin":
+            coord._watched[device.id] = "campaign_stack"
+        elif op == "ack":
+            for item in coord.data.get("todo_items", []):
+                if item["device_id"] == device.id:
+                    item["status"] = "completed"
+        elif op == "delete":
+            coord.data["todo_items"] = [
+                i for i in coord.data.get("todo_items", [])
+                if i["device_id"] != device.id
+            ]
+            coord._hand_deleted.add(device.id)
+        elif op == "fold":
+            coord._note_silences(dt_util.utcnow().timestamp())
+            coord._trim_episodes(dt_util.utcnow().timestamp())
+        elif op == "battery":
+            rec["battery_value"] = rng.choice([100.0, 45.0, 8.0, None])
+        elif op == "sweep":
+            coord._note_silences(dt_util.utcnow().timestamp())
+        coord._judge_all_devices()
+        coord._sync_problem_list()
+        await hass.async_block_till_done()
+        operations += 1
+        faults = _faults(coord)
+        worst = max(worst, len(faults))
+        assert faults == [], (
+            f"seed {seed} step {step} op {op}: the check disagrees with "
+            f"the writer: {faults[:3]}"
+        )
+    return {"seed": seed, "operations": operations, "worst": worst}
+
+@pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
+@pytest.mark.parametrize("seed", range(25))
+async def test_writer_and_checker_agree_james(hass: HomeAssistant, seed):
+    await _campaign(hass, JAMES, 30_000 + seed)
+
+@pytest.mark.skipif(not TIM.exists(), reason=FLEET_ABSENT)
+@pytest.mark.parametrize("seed", range(25))
+async def test_writer_and_checker_agree_tim(hass: HomeAssistant, seed):
+    await _campaign(hass, TIM, 40_000 + seed)
+
+
+# The save seam: every writer goes through it, and a fault is repaired at the moment it is made.
+
+
+POISONS_boundary = [None, "junk", [1, 2], {"x": 1}, True, -7, 4.1e18, "", 3.5]
+
+ROUNDS = 40
+
+def _fleet_tables(path: Path) -> dict:
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)["data"]
+    return {key: data.get(key) for key in TABLES if isinstance(data.get(key), list)}
+
+def _damage(tables: dict, rng: random.Random) -> tuple[dict, int]:
+    """Damage a random handful of rows across the tables. Returns the
+    damaged copy and how many rows were made unusable."""
+    doc = copy.deepcopy(tables)
+    hits = 0
+    for key, rows in doc.items():
+        if not rows:
+            continue
+        for _ in range(rng.randint(0, 3)):
+            index = rng.randrange(len(rows))
+            choice = rng.random()
+            if choice < 0.2:
+                rows[index] = rng.choice(["not a row", 7, None, [1]])
+            elif isinstance(rows[index], dict) and rows[index]:
+                field = rng.choice(list(rows[index]))
+                if choice < 0.6:
+                    rows[index][field] = rng.choice(POISONS_boundary)
+                else:
+                    del rows[index][field]
+    for key, rows in doc.items():
+        hits += len(damaged_rows({key: rows}).get(key, []))
+    return doc, hits
+
+async def _round(hass, hass_storage, path: Path, seed: int) -> dict:
+    rng = random.Random(seed)
+    tables = _fleet_tables(path)
+    damaged, expected_hits = _damage(tables, rng)
+
+    register_device(hass, f"b{seed}")
+    coord = await setup_coordinator(hass)
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    stored = hass_storage.get(STORAGE_KEY)
+    for key, rows in damaged.items():
+        stored["data"][key] = rows
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED, f"seed {seed}: setup died"
+    coord2 = entry.runtime_data
+    coord2._grace_until = 0.0
+
+    # 1. No reader meets a damaged row or record: the gate repaired.
+    assert damaged_rows(coord2.data) == {}, (
+        f"seed {seed}: damaged rows reached the working document"
+    )
+    assert not check_records(coord2.data.get("devices")), (
+        f"seed {seed}: a damaged record reached the working document"
+    )
+    if expected_hits:
+        assert coord2.storage_load_faulty, (
+            f"seed {seed}: damage was repaired without latching"
+        )
+        assert coord2._repair_notice or coord2._restored_from is not None, (
+            f"seed {seed}: damage was answered with neither a repair "
+            "notice nor a restore"
+        )
+
+    # 2. Readers, sensors and reports run on the repaired document.
+    coord2._judge_all_devices()
+    coord2._sync_problem_list()
+    await hass.async_block_till_done()
+    for name in ("learning_buckets", "recording_depth", "todo_items",
+                 "frozen_devices_list", "battery_low_list",
+                 "signal_problem_list", "classification_breakdown"):
+        getattr(coord2, name)
+    assert await coord2.async_regenerate_reports()
+
+    # 3. The save through the seam writes a clean document. The
+    # no-rotation rule for a repaired session is proven by the
+    # dedicated rotation tests below, where the rename is spied on.
+    out = coord2._data_to_save()
+    assert damaged_rows(out) == {}, (
+        f"seed {seed}: the outgoing document carries damage"
+    )
+    return {"seed": seed, "damaged": expected_hits}
+
+@pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
+@pytest.mark.parametrize("seed", range(ROUNDS))
+async def test_boundary_james(hass: HomeAssistant, hass_storage, seed):
+    await _round(hass, hass_storage, JAMES, 80_000 + seed)
+
+@pytest.mark.skipif(not TIM.exists(), reason=FLEET_ABSENT)
+@pytest.mark.parametrize("seed", range(ROUNDS))
+async def test_boundary_tim(hass: HomeAssistant, hass_storage, seed):
+    await _round(hass, hass_storage, TIM, 90_000 + seed)
+
+async def test_a_fault_at_save_is_repaired_at_that_moment(
+    hass: HomeAssistant,
+):
+    """An in-place edit the seam never saw is caught by the save
+    check and repaired then (ruling #370): the row is dropped, the
+    event and the notice say so, and last-good is left alone."""
+    coord = await setup_coordinator(hass)
+    events_before = len(coord.data.get("system_events") or [])
+    coord.data.setdefault("incidents", []).append(
+        {"device_id": "x", "name": "n", "kind": "frozen",
+         "event": "opened", "when": "not a moment", "cause": None,
+         "duration": None}
+    )
+    coord._rotation_armed = True
+    await coord._save_main()
+    assert damaged_rows(coord.data) == {}, "the fault survived the save"
+    assert not any(
+        isinstance(r, dict) and r.get("when") == "not a moment"
+        for r in coord.data["incidents"]
+    ), "the damaged row is still in the working table"
+    events = coord.data.get("system_events") or []
+    assert len(events) > events_before, "the repair wrote no system event"
+    assert coord._repair_notice, "the repair raised no notice"
+    # The save that repaired arms the next rotation, because the
+    # file it wrote is the repaired, clean one.
+    assert coord._rotation_armed
+
+async def test_a_repaired_save_does_not_rotate(
+    hass: HomeAssistant, monkeypatch
+):
+    """A save that repaired something writes the live file and
+    leaves last-good alone (ruling #370)."""
+    from custom_components.device_sentinel import store as smod
+
+    rotations = []
+
+    async def spy(_hass):
+        rotations.append(True)
+        return True
+
+    monkeypatch.setattr(smod, "async_rotate_last_good", spy)
+    coord = await setup_coordinator(hass)
+    rotations.clear()  # setup's own clean save legitimately rotated
+    coord._rotation_armed = True
+    coord.data.setdefault("incidents", []).append("junk")
+    await coord._save_main()
+    assert rotations == [], "a repaired save rotated into last-good"
+    # The next save is clean, the live file was written clean by the
+    # repair, and the rotation runs.
+    await coord._save_main()
+    assert rotations == [True], "the clean save after a repair did not rotate"
+
+async def test_a_clean_save_rotates_only_from_a_clean_live_file(
+    hass: HomeAssistant, monkeypatch
+):
+    """The first save after a load that needed repair writes without
+    rotating, because the live file on disk at that moment is the
+    damaged original (ruling #370)."""
+    from custom_components.device_sentinel import store as smod
+
+    rotations = []
+
+    async def spy(_hass):
+        rotations.append(True)
+        return True
+
+    monkeypatch.setattr(smod, "async_rotate_last_good", spy)
+    coord = await setup_coordinator(hass)
+    rotations.clear()  # setup's own clean save legitimately rotated
+    coord._rotation_armed = False
+    await coord._save_main()
+    assert rotations == [], "an unarmed save rotated"
+    assert coord._rotation_armed, "a clean save did not arm the rotation"
+    await coord._save_main()
+    assert rotations == [True]
+
+async def test_a_clean_save_holds_nothing_and_records_nothing(
+    hass: HomeAssistant,
+):
+    coord = await setup_coordinator(hass)
+    coord._judge_all_devices()
+    coord._sync_problem_list()
+    before = len(coord.data.get("system_events") or [])
+    await coord._save_main()
+    assert len(coord.data.get("system_events") or []) == before
+    assert coord._repair_notice is None
+
+class TestControlGateOff:
+    """The control run, in its own class so the lingering-timer
+    waiver reaches it alone: when setup dies mid-way on purpose,
+    the render tick it registered before dying has no unload to
+    cancel it. That leak belongs to the crash the gate prevents,
+    not to this release."""
+
+    @pytest.fixture
+    def expected_lingering_timers(self) -> bool:
+        return True
+
+    async def test_control_the_load_gate_catches_what_it_claims(
+        self, hass: HomeAssistant, hass_storage, monkeypatch
+    ):
+        """With the load gate blinded, a damaged row reaches the working
+        document. Proves the gate is what keeps them out."""
+        from custom_components.device_sentinel import coordinator as cmod
+        from custom_components.device_sentinel import store as smod
+
+        monkeypatch.setattr(cmod, "damaged_rows", lambda _data: {})
+        monkeypatch.setattr(smod, "damaged_rows", lambda _data: {})
+        register_device(hass, "ctl")
+        coord = await setup_coordinator(hass)
+        entry = coord.entry
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        hass_storage.get(STORAGE_KEY)["data"]["incidents"] = [
+            {"device_id": "x", "name": "n", "kind": "k", "event": "opened",
+             "when": "x", "cause": None, "duration": None}
+        ]
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        from custom_components.device_sentinel.normalise import (
+            damaged_rows as real_damaged_rows,
+        )
+        # With the gate off, the attack must succeed one way or the
+        # other: either setup died on the damage, which is what the
+        # reference run produced when the brief compared a string
+        # timestamp, or the damage sits in the working document where a
+        # reader will meet it.
+        if entry.state is ConfigEntryState.LOADED:
+            coord2 = entry.runtime_data
+            assert real_damaged_rows(coord2.data) != {}, (
+                "the control run passed with the gate off, so the test "
+                "proves nothing"
+            )
+        else:
+            # Setup died on the damage, which is the control succeeding.
+            # The entry is removed so teardown does not trip over a
+            # setup-error state this test created on purpose.
+            await hass.config_entries.async_remove(entry.entry_id)
+            await hass.async_block_till_done()
+
+def test_the_shape_check_and_the_boundary_agree_on_clean_data():
+    """A document with no faults repairs to itself; a document with
+    a damaged row is faulted by the check and named by the walk."""
+    clean = {"incidents": [
+        {"device_id": "a", "name": "n", "kind": "k", "event": "opened",
+         "when": 1.0, "cause": None, "duration": None}
+    ]}
+    assert check_storage(clean) == []
+    assert damaged_rows(clean) == {}
+    dirty = copy.deepcopy(clean)
+    dirty["incidents"][0]["when"] = "x"
+    assert check_storage(dirty) != []
+    assert damaged_rows(dirty) == {"incidents": [0]}
+
+@pytest.mark.parametrize("seed", range(30))
+async def test_a_writer_fault_is_dropped_the_instant_it_is_made(
+    hass: HomeAssistant, seed
+):
+    """Random bad rows pushed through every writer seam: none reaches
+    the working table, each is dropped at once with the notice
+    raised, and the writer keeps running."""
+    rng = random.Random(100_000 + seed)
+    coord = await setup_coordinator(hass)
+    tables = list(TABLES)
+    refused = 0
+    for _ in range(25):
+        table = rng.choice(tables)
+        shape, _opt = TABLES[table]
+        row = {field: rng.choice(POISONS_boundary) for field in shape}
+        if rng.random() < 0.2:
+            row = rng.choice(["junk", 7, None])
+        ok = coord._append_row(table, row)
+        if not ok:
+            refused += 1
+            assert row not in (coord.data.get(table) or []), (
+                f"seed {seed}: a refused {table} row reached the working table"
+            )
+    assert refused, "the attack never produced a refused row"
+    assert damaged_rows(coord.data) == {}, "damage reached the working document"
+    assert coord._repair_notice, "a writer fault raised no notice"
+    # The writer is still alive: a good row goes straight in.
+    good = {"device_id": "d", "name": "n", "kind": "k", "event": "opened",
+            "when": 1_788_000_000.0, "cause": None, "duration": None}
+    assert coord._append_row("incidents", good)
+    assert good in coord.data["incidents"]
+
+async def test_every_real_writer_goes_through_the_seam(hass: HomeAssistant):
+    """Drive the real writers and require every row they produce to
+    fit its shape, which is what the seam demands of them."""
+    device, _ = register_device(hass, "seam_dev")
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    notice_before = coord._repair_notice
+    rec = coord.data["devices"].setdefault(device.id, {})
+    rec["event_count"] = 0
+    rec["last_activity"] = None
+    rec["first_observed"] = "2026-07-08T00:00:00+00:00"
+    coord._judge_all_devices()
+    coord._sync_problem_list()
+    coord._record_system_event("restart", duration=3.0)
+    coord._watched.pop(device.id, None)
+    coord._sync_problem_list()
+    await hass.async_block_till_done()
+    assert coord._repair_notice == notice_before, (
+        "a real writer produced a row the shape refuses: "
+        f"{coord._repair_notice}"
+    )
+    assert damaged_rows(coord.data) == {}
+
+
+# A damaged record is repaired at load (#370).
+
+
+SENSOR_PROPERTIES = [
+    "awaiting_enable_counts", "battery_falling_count", "battery_falling_list",
+    "battery_low_count", "battery_low_list", "battery_tracked_count",
+    "battery_tracked_list", "bridge_stacks",
+    "broker_attributes", "broker_state", "classification_breakdown",
+    "deviceless_count", "freeze_tracked_count", "freeze_tracked_list",
+    "frozen_devices_count", "frozen_devices_list", "last_good_taken",
+    "learning_buckets", "recording_depth", "set_aside_count",
+    "signal_problem_count", "signal_problem_list",
+    "signal_tracked", "signal_tracked_count", "signal_weak_count",
+    "signal_weak_list", "storage_healthy", "storage_load_faulty",
+    "todo_items", "watched_count",
+]
+
+HELD_POISONS = [
+    ("daily_max", None), ("daily_max", "rotten"), ("daily_max", {"x": 1}),
+    ("signal_daily_p5", "x"),
+    ("battery_daily_value", None), ("signal_daily_count", -1),
+    ("first_observed", 7),
+]
+
+@pytest.mark.parametrize("field,poison", HELD_POISONS)
+async def test_a_damaged_record_is_repaired_at_load(
+    hass: HomeAssistant, hass_storage, field, poison
+):
+    """The #370 rule through the real load path: a damaged record
+    field is repaired at the gate, every surface then runs on the
+    repaired fleet, and the field itself checks clean afterwards."""
+    from custom_components.device_sentinel.const import STORAGE_KEY
+    from custom_components.device_sentinel.normalise import check_records
+
+    device, _ = register_device(hass, "held_surface")
+    coord = await setup_coordinator(hass)
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    stored = hass_storage.get(STORAGE_KEY)
+    stored["data"][DATA_DEVICES][device.id][field] = poison
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coord2 = entry.runtime_data
+    assert coord2.storage_load_faulty, f"{field}={poison!r} not repaired"
+    assert not check_records(coord2.data[DATA_DEVICES]), (
+        f"{field}={poison!r} still faulty after the gate"
+    )
+    # Either gate may be the one that answers, depending on the
+    # field: gate 1 owns the container fields, gate 2 the rest
+    # (ruling #371).
+    assert coord2._repair_notice or coord2._container_notice, (
+        "the repair raised no notice"
+    )
+    failures = []
+    for name in SENSOR_PROPERTIES:
+        try:
+            value = getattr(coord2, name)
+            if callable(value):
+                value = value()
+        except Exception as err:  # noqa: BLE001 - reporting every failure
+            failures.append(f"{name}: {err!r}")
+    for stack in coord2.bridge_stacks:
+        try:
+            coord2.bridge_state(stack)
+        except Exception as err:  # noqa: BLE001
+            failures.append(f"bridge_state({stack}): {err!r}")
+    assert not failures, "\n".join(failures)
+    written = await coord2.async_regenerate_reports()
+    assert written, "reports did not render with a held record present"

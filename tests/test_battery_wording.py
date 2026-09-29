@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_wording.py, Version: 0.23.5 (2026-09-25)
+# File: tests/test_battery_wording.py, Version: 0.23.17 (2026-09-29)
 
 """What the brief says when a battery level jumps.
 
@@ -22,14 +22,20 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
     DATA_SYSTEM_EVENTS,
+    DEV_BATTERY_VALUE,
+    INC_DEVICE_ID,
+    INC_DURATION,
+    INC_KIND,
+    INC_NAME,
     SYS_BATTERY_REPLACED,
     SYS_DETAIL,
     SYS_KIND,
     SYS_SCOPE,
     SYS_SCOPE_SYSTEM,
     SYS_WHEN,
+    TODO_KIND_FALLING_BATTERY,
+    TODO_KIND_LOW_BATTERY,
 )
-
 from tests.helpers import register_device, setup_coordinator
 
 
@@ -77,3 +83,47 @@ async def test_the_written_brief_never_claims_a_replacement(hass: HomeAssistant)
     assert "replaced or recharged" in text
     assert "battery replaced (" not in text
     assert "had its battery replaced at" not in text
+
+
+# A repeated battery problem is told once, and what a level says when it moves.
+
+
+def _flap(kind, duration):
+    return [
+        ({INC_KIND: kind, INC_NAME: "Christopher's iPhone", INC_DEVICE_ID: "p"},
+         {INC_DURATION: duration}),
+        ({INC_KIND: kind, INC_NAME: "Christopher's iPhone", INC_DEVICE_ID: "p"},
+         {INC_DURATION: duration}),
+    ]
+
+async def test_a_repeated_low_battery_is_told_as_one(hass: HomeAssistant):
+    coord = await setup_coordinator(hass)
+    sentence = coord._compose_flapping(_flap(TODO_KIND_LOW_BATTERY, 810.0))
+    assert "battery read low twice and recovered each time, low for 27m in total" in sentence
+    assert "silent" not in sentence
+
+async def test_a_repeated_falling_battery_is_told_as_one(hass: HomeAssistant):
+    coord = await setup_coordinator(hass)
+    sentence = coord._compose_flapping(_flap(TODO_KIND_FALLING_BATTERY, 600.0))
+    assert "battery fell twice" in sentence
+    assert "silent" not in sentence
+
+async def test_a_battery_still_low_says_its_level(hass: HomeAssistant):
+    device, _ = register_device(hass, "cell", name="Door Sensor")
+    coord = await setup_coordinator(hass)
+    coord.data["devices"][device.id][DEV_BATTERY_VALUE] = 8.0
+    assert coord._battery_phrase(device.id, False) == "battery fell to 8%"
+
+async def test_a_battery_back_up_says_recovered(hass: HomeAssistant):
+    device, _ = register_device(hass, "cell", name="Door Sensor")
+    coord = await setup_coordinator(hass)
+    coord.data["devices"][device.id][DEV_BATTERY_VALUE] = 55.0
+    assert coord._battery_phrase(device.id, False) == "battery read low, since recovered"
+
+async def test_a_battery_near_full_says_replaced_or_recharged(hass: HomeAssistant):
+    device, _ = register_device(hass, "cell", name="Door Sensor")
+    coord = await setup_coordinator(hass)
+    coord.data["devices"][device.id][DEV_BATTERY_VALUE] = 100.0
+    assert coord._battery_phrase(device.id, False) == (
+        "battery read low, since replaced or recharged"
+    )

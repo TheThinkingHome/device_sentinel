@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_loading.py, Version: 0.23.1 (2026-09-24)
+# File: tests/test_upstream_loading.py, Version: 0.23.17 (2026-09-29)
 
 """An upstream that has not loaded yet is loading, not down (#445).
 
@@ -36,16 +36,30 @@ from custom_components.device_sentinel import stack_zha
 from custom_components.device_sentinel.const import (
     BRIDGE_DOWN,
     BRIDGE_RUNNING,
+    DATA_INCIDENTS,
     DATA_SYSTEM_EVENTS,
+    DATA_TODO_ITEMS,
+    DEV_EVENT_COUNT,
+    DEV_FIRST_OBSERVED,
+    DEV_FROZEN_CATEGORY,
+    DEV_FROZEN_SINCE,
+    DEV_LAST_ACTIVITY,
+    FREEZE_CATEGORY_NEVER_REPORTED,
+    INC_DEVICE_ID,
+    INC_EVENT,
+    INCIDENT_OPENED,
+    INCIDENT_RESOLVED,
     INTEGRATION_DOWN_DWELL_SECONDS,
     STARTUP_GRACE_SECONDS,
     SYS_BRIDGE_DOWN,
     SYS_BRIDGE_UP,
     SYS_INTEGRATION_DOWN,
     SYS_KIND,
+    TODO_KIND_NEVER_REPORTED,
+    TODO_KINDS,
     ZHA_DOWN_DWELL_SECONDS,
 )
-from tests.helpers import setup_coordinator
+from tests.helpers import register_device, setup_coordinator
 
 
 def _kinds(coord):
@@ -256,3 +270,63 @@ async def test_a_reader_that_faults_saying_is_taken_as_established(
     coord._bridge_readers["z2m"] = _Faulty()
     coord._sample_bridges()
     assert "z2m" in coord.upstreams_loaded_after
+
+
+# A device held while its integration loads keeps its problem, and a real recovery still closes it (the fourth fleet's restart).
+
+
+async def _never_reported(hass):
+    device, _ = register_device(hass, "aqara", name="0x00158d000806884c")
+    coord = await setup_coordinator(hass)
+    # Past the startup grace, so the problem is raised (ruling #369).
+    coord._grace_until = 0.0
+    record = coord.data["devices"][device.id]
+    record[DEV_EVENT_COUNT] = 0
+    record[DEV_LAST_ACTIVITY] = None
+    record[DEV_FIRST_OBSERVED] = "2026-09-17T23:55:26+00:00"
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_NEVER_REPORTED
+    record[DEV_FROZEN_SINCE] = dt_util.utcnow().timestamp() - 2 * 86400
+    coord._sync_problem_list()
+    items = coord.data[DATA_TODO_ITEMS]
+    assert len(items) == 1 and TODO_KIND_NEVER_REPORTED in items[0][TODO_KINDS]
+    return coord, device
+
+def _resolved(coord, device_id):
+    return [
+        row for row in coord.data.get(DATA_INCIDENTS) or []
+        if row.get(INC_DEVICE_ID) == device_id and row.get(INC_EVENT) == INCIDENT_RESOLVED
+    ]
+
+def _opened(coord, device_id):
+    return [
+        row for row in coord.data.get(DATA_INCIDENTS) or []
+        if row.get(INC_DEVICE_ID) == device_id and row.get(INC_EVENT) == INCIDENT_OPENED
+    ]
+
+async def test_a_device_held_while_its_integration_loads_keeps_its_problem(
+    hass: HomeAssistant, monkeypatch
+):
+    """The fourth fleet's restart, step by step: held, then released."""
+    coord, device = await _never_reported(hass)
+    opened_before = len(_opened(coord, device.id))
+
+    monkeypatch.setattr(coord, "loading_held", lambda: {device.id})
+    coord._sync_problem_list()
+    items = coord.data[DATA_TODO_ITEMS]
+    assert len(items) == 1, "held is not recovered"
+    assert TODO_KIND_NEVER_REPORTED in items[0][TODO_KINDS]
+    assert _resolved(coord, device.id) == []
+
+    monkeypatch.setattr(coord, "loading_held", lambda: set())
+    coord._sync_problem_list()
+    assert len(coord.data[DATA_TODO_ITEMS]) == 1
+    assert len(_opened(coord, device.id)) == opened_before, "not raised a second time"
+
+async def test_a_real_recovery_still_closes_the_problem(hass: HomeAssistant):
+    coord, device = await _never_reported(hass)
+    record = coord.data["devices"][device.id]
+    record[DEV_FROZEN_CATEGORY] = None
+    record[DEV_FROZEN_SINCE] = None
+    coord._sync_problem_list()
+    assert coord.data[DATA_TODO_ITEMS] == []
+    assert len(_resolved(coord, device.id)) == 1

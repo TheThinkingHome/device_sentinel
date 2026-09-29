@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_clock_loss.py, Version: 0.23.16 (2026-09-29)
+# File: tests/test_clock_loss.py, Version: 0.23.17 (2026-09-29)
 
 """A lost clocks file, and a startup grace that holds everything.
 
@@ -21,14 +21,20 @@ These tests replay that start. The ones that are not guards fail on
 
 from __future__ import annotations
 
+import json
 import logging
+import random
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
     async_fire_time_changed,
     async_mock_service,
 )
@@ -47,6 +53,7 @@ from custom_components.device_sentinel.const import (
     DEV_LAST_ACTIVITY,
     DOMAIN,
     EVENT_FAULT,
+    EVENT_RECOVERED,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     FREEZE_CATEGORY_NEVER_REPORTED,
@@ -64,6 +71,8 @@ from custom_components.device_sentinel.const import (
     TODO_KINDS,
     TODO_SORT_NAME,
 )
+from tests.conftest import FLEET_ABSENT, fleet_path
+from tests.helpers import setup_coordinator
 
 from .helpers import record_events, register_device, setup_entry
 from .test_bridge_hold import _house as _hold_house
@@ -420,3 +429,278 @@ async def test_running_windows_keep_their_real_time_through_a_reset(hass: HomeAs
     assert abs((coord._grace_until - now) - 140.0) < 2, coord._grace_until - now
     assert coord._maintenance_until is not None, "the maintenance window closed early"
     assert abs((coord._maintenance_until - now) - (maintenance_left - 60)) < 2, coord._maintenance_until - now
+
+
+# The startup grace attacked: no device without entities judged never reported, nothing listed inside the grace, and a set-aside retire makes no sound.
+
+
+JAMES = fleet_path("reference", "device_sentinel.storage")
+
+TIM = fleet_path("second", "2026-08-26", "device_sentinel_storage.json")
+
+OBSERVED = "2026-07-08T00:00:00+00:00"
+
+ROUNDS = 150
+
+def _fleet(path: Path | None) -> list[dict]:
+    if path is None or not path.exists():
+        return [{} for _ in range(40)]
+    with open(path, encoding="utf-8") as handle:
+        return [
+            r for r in json.load(handle)["data"]["devices"].values()
+            if isinstance(r, dict)
+        ]
+
+class _House:
+    """One randomized house around one or more restarts."""
+
+    def __init__(self, hass: HomeAssistant, coord, rng: random.Random):
+        self.hass = hass
+        self.coord = coord
+        self.rng = rng
+        self.registry = dr.async_get(hass)
+        self.entities = er.async_get(hass)
+        self.pushes: list[tuple] = []
+        self.recoveries: list[dict] = record_events(hass, EVENT_RECOVERED)
+        real_collect = coord._collect_event
+
+        def spy(kind, name, recovery, device_id, **kw):
+            self.pushes.append((device_id, kind, recovery))
+            return real_collect(kind, name, recovery, device_id, **kw)
+
+        coord._collect_event = spy
+        self.owner = MockConfigEntry(domain="attack_stack", title="Attack")
+        self.owner.add_to_hass(hass)
+        self.entityless: set[str] = set()
+        self.silent_with_entities: set[str] = set()
+        self.recovering: set[str] = set()
+        self.counter = 0
+
+    def _device(self, name: str):
+        self.counter += 1
+        return self.registry.async_get_or_create(
+            config_entry_id=self.owner.entry_id,
+            identifiers={("attack_stack", f"{name}-{self.counter}")},
+            name=f"{name} {self.counter}",
+        )
+
+    def add_entityless(self):
+        device = self._device("Coordinator")
+        self.entityless.add(device.id)
+        return device
+
+    def add_silent_with_entities(self):
+        device = self._device("Silent")
+        self.entities.async_get_or_create(
+            "sensor", "attack_stack", f"uid-{self.counter}",
+            device_id=device.id,
+        )
+        self.silent_with_entities.add(device.id)
+        return device
+
+    def seed(self, device_id: str):
+        record = self.coord.data[DATA_DEVICES].setdefault(device_id, {})
+        record[DEV_EVENT_COUNT] = 0
+        record[DEV_LAST_ACTIVITY] = None
+        record[DEV_FIRST_OBSERVED] = OBSERVED
+        record[DEV_FROZEN_CATEGORY] = None
+        record[DEV_FROZEN_SINCE] = None
+
+    def open_grace(self):
+        self.coord._grace_until = dt_util.utcnow().timestamp() + 300.0
+
+    def close_grace(self):
+        self.coord._grace_until = 0.0
+
+    def rebuild(self):
+        self.coord._rebuild_registry_view()
+
+    def judge_and_sync(self):
+        self.coord._judge_all_devices()
+        self.coord._sync_problem_list()
+
+    def speak(self, device_id: str):
+        record = self.coord.data[DATA_DEVICES][device_id]
+        record[DEV_EVENT_COUNT] = record.get(DEV_EVENT_COUNT, 0) + 1
+        record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp()
+        record[DEV_FROZEN_CATEGORY] = None
+        record[DEV_FROZEN_SINCE] = None
+        self.recovering.add(device_id)
+
+    def items_for(self, device_id: str) -> list[dict]:
+        return [
+            i for i in self.coord.data.get("todo_items", [])
+            if i.get("device_id") == device_id
+        ]
+
+    def check_invariants(self, step: str) -> None:
+        for device_id in self.entityless:
+            assert not self.items_for(device_id), (
+                f"[{step}] INVARIANT A: entity-less device listed"
+            )
+            assert not [p for p in self.pushes if p[0] == device_id], (
+                f"[{step}] INVARIANT B: entity-less device pushed"
+            )
+            assert not [
+                r for r in self.recoveries if r.get("device_id") == device_id
+            ], f"[{step}] INVARIANT B: entity-less device recovered"
+
+async def _run_round(hass: HomeAssistant, records: list[dict], seed: int):
+    rng = random.Random(seed)
+    coord = await setup_coordinator(hass)
+    for index, record in enumerate(records[:60]):
+        coord.data[DATA_DEVICES].setdefault(f"bg{seed}_{index}", dict(record))
+    house = _House(hass, coord, rng)
+
+    n_less = rng.randint(1, 8)
+    n_silent = rng.randint(0, 3)
+    entityless = [house.add_entityless() for _ in range(n_less)]
+    silent = [house.add_silent_with_entities() for _ in range(n_silent)]
+    for device in entityless + silent:
+        house.seed(device.id)
+
+    restarts = rng.randint(1, 3)
+    for restart in range(restarts):
+        # The restart: grace opens, the rebuild runs while the owner
+        # may or may not have finished loading, the judge runs some
+        # number of times inside the window.
+        house.open_grace()
+        house.rebuild()
+        house.check_invariants(f"r{restart} rebuild-in-grace")
+        for _ in range(rng.randint(1, 4)):
+            house.judge_and_sync()
+            await hass.async_block_till_done()
+            house.check_invariants(f"r{restart} judge-in-grace")
+            if silent and rng.random() < 0.2:
+                house.speak(rng.choice(silent).id)
+        # Sometimes a device gains entities mid-window, the case #260
+        # protects: it must then be judged normally after grace.
+        if entityless and rng.random() < 0.3:
+            device = rng.choice(entityless)
+            house.entities.async_get_or_create(
+                "sensor", "attack_stack", f"late-{seed}-{restart}",
+                device_id=device.id,
+            )
+            house.entityless.discard(device.id)
+            house.silent_with_entities.add(device.id)
+            silent.append(device)
+            entityless.remove(device)
+        # Grace closes: rebuild sets aside what has no entities.
+        house.close_grace()
+        house.rebuild()
+        house.judge_and_sync()
+        await hass.async_block_till_done()
+        house.check_invariants(f"r{restart} grace-closed")
+        for _ in range(rng.randint(1, 3)):
+            house.judge_and_sync()
+            await hass.async_block_till_done()
+            house.check_invariants(f"r{restart} steady")
+
+    # Invariant C: silent devices with entities are listed after
+    # grace, exactly once each, unless they spoke.
+    for device in silent:
+        items = house.items_for(device.id)
+        if device.id in house.recovering:
+            assert not items, "a device that spoke is still listed"
+        else:
+            assert len(items) == 1, (
+                f"INVARIANT C: silent device has {len(items)} item(s)"
+            )
+    # Invariant D and E: each speaking device recovered exactly once
+    # per listing, never more.
+    for device_id in house.recovering:
+        mine = [
+            r for r in house.recoveries if r.get("device_id") == device_id
+        ]
+        assert len(mine) <= 1, f"INVARIANT E: {len(mine)} recoveries"
+    return {
+        "entityless": n_less,
+        "silent": n_silent,
+        "restarts": restarts,
+        "recoveries": len(house.recoveries),
+        "pushes": len(house.pushes),
+    }
+
+@pytest.mark.parametrize("seed", range(ROUNDS))
+async def test_attack_synthetic(hass: HomeAssistant, seed: int) -> None:
+    await _run_round(hass, _fleet(None), seed)
+
+@pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)
+@pytest.mark.parametrize("seed", range(40))
+async def test_attack_james_fleet(hass: HomeAssistant, seed: int) -> None:
+    await _run_round(hass, _fleet(JAMES), 10_000 + seed)
+
+@pytest.mark.skipif(not TIM.exists(), reason=FLEET_ABSENT)
+@pytest.mark.parametrize("seed", range(40))
+async def test_attack_tim_fleet(hass: HomeAssistant, seed: int) -> None:
+    await _run_round(hass, _fleet(TIM), 20_000 + seed)
+
+
+# A lost clocks file and a device with no learned day, found in the simulation of 23 September.
+
+
+@pytest.fixture
+def _mid_afternoon_fixes(freezer):
+    freezer.move_to("2026-09-24T20:00:00+00:00")
+
+async def _lose_clocks(hass, hass_storage, freezer, entry):
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    del hass_storage[STORAGE_CLOCKS_KEY]
+    freezer.tick(60)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry.runtime_data
+
+async def _settle(hass, freezer, minutes: int) -> None:
+    for _ in range(minutes):
+        freezer.tick(60)
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+
+@pytest.mark.usefixtures("_mid_afternoon_fixes")
+async def test_a_device_that_reported_without_a_learned_day_keeps_a_clock(
+    hass: HomeAssistant, hass_storage, freezer
+):
+    """The fourth fleet's case: 22 events, three days old, no fold yet."""
+    device, entities = register_device(hass, "nc1", name="Pico Remote")
+    hass.states.async_set(entities[0] if isinstance(entities, list) else entities, "1")
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+    record[DEV_DAILY_MAX] = []
+    record[DEV_FIRST_OBSERVED] = (dt_util.utcnow() - timedelta(days=3)).isoformat()
+    record[DEV_EVENT_COUNT] = 22
+    record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - 3600
+    coordinator = await _lose_clocks(hass, hass_storage, freezer, entry)
+    assert coordinator.data[DATA_DEVICES][device.id][DEV_LAST_ACTIVITY] is not None
+    await _settle(hass, freezer, int(STARTUP_GRACE_SECONDS // 60) + 2)
+    assert coordinator.data[DATA_DEVICES][device.id].get(DEV_FROZEN_CATEGORY) != (
+        FREEZE_CATEGORY_NEVER_REPORTED
+    )
+
+@pytest.mark.usefixtures("_mid_afternoon_fixes")
+async def test_a_device_stored_as_never_reported_stays_so(
+    hass: HomeAssistant, hass_storage, freezer
+):
+    """Guard: the verdict it carries is kept, and so is its empty clock."""
+    device, _entities = register_device(hass, "nc2", name="Dead On Arrival")
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+    record[DEV_DAILY_MAX] = []
+    record[DEV_FIRST_OBSERVED] = (dt_util.utcnow() - timedelta(days=5)).isoformat()
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_NEVER_REPORTED
+    coordinator = await _lose_clocks(hass, hass_storage, freezer, entry)
+    assert coordinator.data[DATA_DEVICES][device.id][DEV_LAST_ACTIVITY] is None
+
+@pytest.mark.usefixtures("_mid_afternoon_fixes")
+async def test_a_young_device_keeps_no_clock(
+    hass: HomeAssistant, hass_storage, freezer
+):
+    """Guard: under 48 hours it still has its whole window to speak."""
+    device, _entities = register_device(hass, "nc3", name="New Sensor")
+    entry = await setup_entry(hass)
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+    record[DEV_DAILY_MAX] = []
+    record[DEV_FIRST_OBSERVED] = (dt_util.utcnow() - timedelta(hours=10)).isoformat()
+    coordinator = await _lose_clocks(hass, hass_storage, freezer, entry)
+    assert coordinator.data[DATA_DEVICES][device.id][DEV_LAST_ACTIVITY] is None

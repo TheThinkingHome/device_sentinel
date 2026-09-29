@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.22.28 (2026-09-23)
+# File: test_reports.py, Version: 0.23.17 (2026-09-29)
 
 """The diagnostic files: telemetry and classification.
 
@@ -37,22 +37,21 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
-
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
 
 from custom_components.device_sentinel.const import (
-    DEFAULT_LOW_THRESHOLD,
     CONF_BATTERY_MUTED_DEVICES,
     CONF_BRIEF_TARGETS,
-    CONF_MUTED_DEVICES,
     CONF_FREEZE_MUTED_DEVICES,
     CONF_HIGH_PRIORITY_TARGETS,
+    CONF_MUTED_DEVICES,
     CONF_SIGNAL_MUTED_DEVICES,
     DATA_EPISODES,
     DEFAULT_FREEZE_DELTA_HIGH_HR,
+    DEFAULT_LOW_THRESHOLD,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
@@ -63,9 +62,6 @@ from custom_components.device_sentinel.const import (
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_P5,
-    EPISODE_ENDED_REBOOT,
-    EPISODE_ENDED_RESUMED,
-    EPISODE_OPEN_SHARE,
     EP_AT,
     EP_BASIS,
     EP_DEVICE_ID,
@@ -75,6 +71,9 @@ from custom_components.device_sentinel.const import (
     EP_NAME,
     EP_SINCE,
     EP_WINDOW,
+    EPISODE_ENDED_REBOOT,
+    EPISODE_ENDED_RESUMED,
+    EPISODE_OPEN_SHARE,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     FREEZE_DELTA_HIGH_HR_MAX,
@@ -87,8 +86,12 @@ from custom_components.device_sentinel.coordinator import (
 from custom_components.device_sentinel.diagnostics import (
     async_get_config_entry_diagnostics,
 )
-
-from tests.helpers import register_device, setup_coordinator, setup_coordinator_flat_line, setup_entry
+from tests.helpers import (
+    register_device,
+    setup_coordinator,
+    setup_coordinator_flat_line,
+    setup_entry,
+)
 
 OPEN_TAG = "[\u25cb open]"
 ACKED_TAG = "[\u2713 acknowledged]"
@@ -391,13 +394,18 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     assert "| ITS NORMAL | BAD-DAY LINE |" in header
 
     # Every data row must have exactly as many cells as the header,
-    # nine since 0.17.1 dropped DWELL% (ruling #322), so a dropped column can never
-    # leave the rows misaligned.
+    # so a dropped or added column can never leave the rows misaligned.
     def _cells(line: str) -> int:
         return len([c for c in line.strip().strip("|").split("|")])
 
+    # Fifteen since 0.23.17: today's basis and window and the clipped
+    # rhythm's four beside them, shown in shadow (ruling #542).
+    assert (
+        "| BASIS | WINDOW | CLIPPED BASIS | CLIPPED WINDOW | "
+        "DAYS READ / CLIPPED | TYPICAL / SPREAD |" in header
+    )
     header_cells = _cells(header)
-    assert header_cells == 9, header_cells
+    assert header_cells == 15, header_cells
     data_rows = [
         line
         for line in text.splitlines()

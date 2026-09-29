@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_burst_hold.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_wifi_burst_hold.py, Version: 0.23.17 (2026-09-29)
 
 """A burst of tied devices waits for the router (ruling #446).
 
@@ -32,12 +32,25 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
+    DATA_INCIDENTS,
+    DATA_TODO_ITEMS,
+    DEV_EVENT_COUNT,
+    DEV_FIRST_OBSERVED,
+    DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
+    DEV_LAST_ACTIVITY,
+    FREEZE_CATEGORY_NEVER_REPORTED,
+    INC_DEVICE_ID,
+    INC_EVENT,
+    INCIDENT_RESOLVED,
+    TODO_KIND_NEVER_REPORTED,
+    TODO_KINDS,
     WIFI_BURST_HOLD_SECONDS,
     WIFI_BURST_WINDOW_SECONDS,
     WIFI_HOLD_SECONDS,
     WIFI_LOOKBACK_SECONDS,
 )
+from tests.helpers import register_device, setup_coordinator
 from tests.test_wifi_outage import _declared, _house
 from tests.test_wifi_row import _judge
 
@@ -151,3 +164,36 @@ async def test_a_late_tracker_still_waits_after_the_declaration(
     # The outage ends without its tracker leaving: its own problem now.
     coord._wifi_restore(dt_util.utcnow().timestamp())
     assert devices[4].id in _listed(coord)
+
+
+# A device held in a Wi-Fi burst keeps its problem.
+
+
+async def _never_reported(hass):
+    device, _ = register_device(hass, "aqara", name="0x00158d000806884c")
+    coord = await setup_coordinator(hass)
+    # Past the startup grace, so the problem is raised (ruling #369).
+    coord._grace_until = 0.0
+    record = coord.data["devices"][device.id]
+    record[DEV_EVENT_COUNT] = 0
+    record[DEV_LAST_ACTIVITY] = None
+    record[DEV_FIRST_OBSERVED] = "2026-09-17T23:55:26+00:00"
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_NEVER_REPORTED
+    record[DEV_FROZEN_SINCE] = dt_util.utcnow().timestamp() - 2 * 86400
+    coord._sync_problem_list()
+    items = coord.data[DATA_TODO_ITEMS]
+    assert len(items) == 1 and TODO_KIND_NEVER_REPORTED in items[0][TODO_KINDS]
+    return coord, device
+
+def _resolved(coord, device_id):
+    return [
+        row for row in coord.data.get(DATA_INCIDENTS) or []
+        if row.get(INC_DEVICE_ID) == device_id and row.get(INC_EVENT) == INCIDENT_RESOLVED
+    ]
+
+async def test_a_device_held_in_a_wifi_burst_keeps_its_problem(hass: HomeAssistant, monkeypatch):
+    coord, device = await _never_reported(hass)
+    monkeypatch.setattr(coord, "wifi_burst_held", lambda: {device.id})
+    coord._sync_problem_list()
+    assert len(coord.data[DATA_TODO_ITEMS]) == 1
+    assert _resolved(coord, device.id) == []
