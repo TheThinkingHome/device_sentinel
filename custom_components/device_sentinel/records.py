@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.23.15 (2026-09-28)
+# File: records.py, Version: 0.23.16 (2026-09-28)
 
 """The device record shape, and the two helpers that read it.
 
@@ -77,6 +77,11 @@ from .const import (
 )
 
 BAD_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
+
+
+def _shift(seconds: float) -> str:
+    """A signed span for a clock that moved: '+2.0h', '-3m'."""
+    return ("+" if seconds >= 0 else "-") + _span(abs(seconds))
 
 
 def _span(seconds: float) -> str:

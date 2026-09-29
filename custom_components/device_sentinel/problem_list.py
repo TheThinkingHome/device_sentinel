@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.23.15 (2026-09-28)
+# File: problem_list.py, Version: 0.23.16 (2026-09-28)
 
 """The problem list: the single memory every channel renders.
 
@@ -49,6 +49,7 @@ from .const import (
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
+    ACTION_MUTED,
     ACTION_SET_ASIDE,
     ACTION_UNACKNOWLEDGED,
     DATA_DEVICES,
@@ -85,6 +86,7 @@ from .const import (
     UPSTREAM_KIND,
     WIFI_KEY,
     UPSTREAM_SETTLE_SECONDS,
+    WITHDRAWN_REASON_MUTED,
     WITHDRAWN_REASON_SET_ASIDE,
 )
 
@@ -807,6 +809,28 @@ class ProblemListMixin:
             },
         )
 
+    def _kind_muted(self, device_id: str, kind: str) -> bool:
+        """Whether a person's mute is what silenced this kind.
+
+        A mute is a person's act, not a recovery (ruling #537): an item
+        or a kind that leaves the list because its device, its freeze
+        or its battery was muted, by device, integration or label, has
+        nothing to announce. Read per kind, because a freeze mute takes
+        only the down kinds and a battery mute only the battery kinds,
+        and the other family on the same item may still be a genuine
+        recovery. A whole-device mute takes every kind.
+        """
+        if device_id in getattr(self, "_muted_devices", {}):
+            return True
+        family = TODO_KIND_FAMILIES.get(kind)
+        if family == "down":
+            return bool(self._freeze_muted(device_id))  # type: ignore[attr-defined]
+        if family == "battery":
+            return bool(self._battery_muted(device_id))  # type: ignore[attr-defined]
+        if family == "signal":
+            return bool(self._signal_muted(device_id))  # type: ignore[attr-defined]
+        return False
+
     def _still_judged_down(self, device_id: str | None) -> bool:
         """Whether a device's own verdict still says it is not reporting.
 
@@ -1137,8 +1161,14 @@ class ProblemListMixin:
         now: float,
         *,
         announce: bool = True,
+        muted: set[str] | None = None,
     ) -> None:
         """Close every kind on an item that is going away.
+
+        `muted` names the kinds a person's mute silenced (ruling #537).
+        Each leaves as that person's action, with no recovery fired
+        and no resolution written, the way an unwatched device's kinds
+        leave; the kinds not in it, if any, resolve as before.
 
         The item itself is dropped by the caller; this closes the
         incident timeline first, so the brief can tell the end of the
@@ -1192,7 +1222,23 @@ class ProblemListMixin:
         # therefore fire more than one recovery in the same instant,
         # which was ruled the lesser evil: an automation pairing
         # faults to recoveries stays balanced (ruling #289).
-        for kind in sort_kinds([k for k in kinds if k != UPSTREAM_KIND]):
+        silenced = sort_kinds(
+            [k for k in kinds if k != UPSTREAM_KIND and k in (muted or ())]
+        )
+        for kind in silenced:
+            cancel = self._held_events.pop((device_id, kind), None)
+            if cancel is not None:
+                cancel()
+            self._record_incident(
+                device_id, name, kind, INCIDENT_ACTION, cause=ACTION_MUTED
+            )
+        if silenced:
+            self.fire_withdrawn(
+                device_id, name, silenced, WITHDRAWN_REASON_MUTED
+            )
+        for kind in sort_kinds(
+            [k for k in kinds if k != UPSTREAM_KIND and k not in silenced]
+        ):
             # The incident being closed is what this recovery is
             # about, so its opening is what the duration measures.
             # The item's own stamp is a fallback and no longer the
@@ -1297,6 +1343,19 @@ class ProblemListMixin:
                 opened, (int, float)
             ):
                 opened = None
+            if self._kind_muted(device_id, kind):
+                # A person muted it; nothing recovered (ruling #537).
+                cancel = self._held_events.pop((device_id, kind), None)
+                if cancel is not None:
+                    cancel()
+                self._record_incident(
+                    device_id, problem["name"], kind, INCIDENT_ACTION,
+                    cause=ACTION_MUTED,
+                )
+                self.fire_withdrawn(
+                    device_id, problem["name"], [kind], WITHDRAWN_REASON_MUTED
+                )
+                continue
             # A recovery goes one way (#529): a kind leaving while
             # another of the down family still stands is the device
             # still not reporting, said differently, and no surface
@@ -1542,8 +1601,17 @@ class ProblemListMixin:
                 # every restart. Eight devices do it on the tester's
                 # fleet (ruling #368).
                 watched = device_id in self._watched
+                muted = (
+                    {
+                        kind
+                        for kind in record.get(TODO_KINDS, {})
+                        if self._kind_muted(device_id, kind)
+                    }
+                    if watched
+                    else None
+                )
                 self._retire_item(
-                    record, device_id, now, announce=watched
+                    record, device_id, now, announce=watched, muted=muted
                 )
                 changed = True
                 continue

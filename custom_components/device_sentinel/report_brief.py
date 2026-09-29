@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.23.15 (2026-09-28)
+# File: report_brief.py, Version: 0.23.16 (2026-09-28)
 
 """The daily brief: the one report written for a person.
 
@@ -62,6 +62,7 @@ from .const import (
     ACTION_ACKNOWLEDGED,
     ACTION_DELETED,
     ACTION_READDED,
+    ACTION_MUTED,
     ACTION_SET_ASIDE,
     ACTION_UNACKNOWLEDGED,
     CONF_REMINDER_TIME,
@@ -99,6 +100,7 @@ from .const import (
     SYS_BROKER_UP,
     SYS_DETAIL,
     SYS_DURATION,
+    SYS_CLOCK_RESET,
     SYS_EPOCH_RESET,
     SYS_KIND,
     SYS_OPTIONS_CHANGED,
@@ -332,6 +334,7 @@ class BriefMixin:
                 # stopped. Saying so keeps the table from claiming an
                 # acknowledgment nobody made (ruling #369).
                 ACTION_SET_ASIDE: "set aside, no longer watched",
+                ACTION_MUTED: "muted",
             }.get(row.get(INC_CAUSE) or "", "acknowledged")
         if event == INCIDENT_ACKNOWLEDGED:
             # Legacy rows only, removable after 2026-08-11.
@@ -649,6 +652,16 @@ class BriefMixin:
         if kind == SYS_EPOCH_RESET:
             extra = f" for {detail}" if detail else ""
             return f"Learned statistics were reset at {when}{extra}."
+        if kind == SYS_CLOCK_RESET:
+            # A person set the system clock (ruling #538). Every
+            # device clock restarted then, so the brief says why the
+            # day's silences begin at that moment.
+            extra = f" ({detail})" if detail else ""
+            return (
+                f"The system clock was reset, or the system paused, at "
+                f"{when}{extra}; every device's activity clock "
+                f"restarted then."
+            )
         if kind == SYS_OPTIONS_CHANGED:
             extra = f": {detail}" if detail else ""
             return f"Settings changed at {when}{extra}."
@@ -815,6 +828,12 @@ class BriefMixin:
             return f"battery replaced or recharged{levels}"
         if kind == SYS_EPOCH_RESET:
             return f"learned statistics reset ({detail})" if detail else "learned statistics reset"
+        if kind == SYS_CLOCK_RESET:
+            return (
+                f"system clock reset or paused ({detail})"
+                if detail
+                else "system clock reset or paused"
+            )
         if kind == SYS_OPTIONS_CHANGED:
             return f"settings changed ({detail})" if detail else "settings changed"
         if kind == SYS_TRIMMED:

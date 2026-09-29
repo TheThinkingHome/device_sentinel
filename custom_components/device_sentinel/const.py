@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.15 (2026-09-28)
+# File: const.py, Version: 0.23.16 (2026-09-28)
 
 """Constants for the Device Sentinel integration."""
 
@@ -205,6 +205,12 @@ LEARNED_DISABLED = "no (disabled)"
 # should say what actually happened: nobody opened a pairing window
 # on this stack, somebody handled this device.
 LEARNED_HANDLED = "no (handled)"
+# The learned-column value for a gap learned with Device Sentinel's own
+# stops taken out of it (ruling #541). Learned, and marked, the way a
+# truncated gap is marked under #169, so a rhythm built on it is
+# auditable from the row: the figure is the silence that was watched,
+# never the time nobody was listening.
+LEARNED_DOWNTIME_OUT = "yes (downtime out)"
 
 # The maintenance window (rulings #225 and #238): a button-declared span in
 # which any recovery is attributed to the person's hands rather than
@@ -489,6 +495,15 @@ DATA_STATS_EPOCH = "stats_epoch"
 # record schema nothing. Absent on a file written by an older
 # version, which reads as an upgrade, which it is.
 DATA_LAST_VERSION = "last_version"
+# The local day whose brief was last closed and sent, as an ISO date.
+# Daylight saving is Device Sentinel's to handle (ruling #539): Home
+# Assistant's time tracker fires twice for a brief time inside the
+# hour the change repeats and never for one inside the hour it skips.
+# The day closed is remembered here, so a second firing on the same
+# day sends nothing, and the minute check closes a day whose brief
+# time the clock skipped. Stored, so a restart cannot make either
+# guard forget.
+DATA_BRIEF_CLOSED_DAY = "brief_closed_day"
 
 # The Data sensors read each area's depth from its own series
 # (ruling #258), so nothing here names a version and nothing has to
@@ -1698,6 +1713,24 @@ CONF_FREEZE_MUTED_LABELS = "freeze_muted_labels"
 # re-interview or re-bind); removal from tracking is manual only.
 SIGNAL_RAIL_LQI = 255.0
 SIGNAL_RAIL_RSSI = -128.0
+# The physical range of the two scales (ruling #540). LQI is a byte,
+# 0 to 255; RSSI is received power in dBm, and nothing a Zigbee, Z-Wave
+# or Wi-Fi radio reports sits below about -130. A finite reading
+# outside the range is not a reading and is ignored, never brought
+# into range: the edge of each scale is the rail value #60 and #66 read
+# as a stale reading, so a clamped value would raise a false rail
+# problem. Readings near 1e308 passed #407's finite check and
+# overflowed the day's running mean into NaN, found by the adversarial
+# round of 28 September 2026.
+SIGNAL_LQI_HIGHEST = 255.0
+SIGNAL_RSSI_LOWEST = -130.0
+# The same rule for a battery (#540, amended 29 September 2026): an
+# entity of device class battery reports a percentage, so a finite
+# reading outside 0 to 100 is not a level and is ignored, the last
+# verdict holding. A reading near 1e308 overflowed the day's battery
+# average to infinity, found by the adversarial round on 0.23.16.
+BATTERY_LEVEL_LOWEST = 0.0
+BATTERY_LEVEL_HIGHEST = 100.0
 
 # A signal is railed when its daily low sits at the fill value (255,
 # -128) for this many consecutive days, which is how a rail is
@@ -2022,6 +2055,7 @@ EVENT_ACKNOWLEDGED = "device_sentinel_acknowledged"
 # (ruling #370).
 EVENT_WITHDRAWN = "device_sentinel_withdrawn"
 WITHDRAWN_REASON_SET_ASIDE = "set_aside"
+WITHDRAWN_REASON_MUTED = "muted"
 
 # The upstream pair. A stopped broker or bridge silences every device
 # behind it deliberately (rulings #264, #266), so until now the one
@@ -2290,6 +2324,10 @@ ACTION_READDED = "readded"
 # stopped. Recorded so the timeline says what happened rather than
 # claiming an ending (ruling #368).
 ACTION_SET_ASIDE = "set_aside"
+# A kind a person muted away, by device, integration or label. A mute
+# is a person's act, not a recovery: nothing is pushed, no recovery
+# reaches the bus, and the brief never says "recovered" (ruling #537).
+ACTION_MUTED = "muted"
 
 # The kinds whose recovery can name a cause. Only a silence has a
 # lever to credit: a battery rising or a rail clearing has no
@@ -2426,6 +2464,9 @@ SYS_DETAIL = "detail"
 SYS_DURATION = "duration"
 
 SYS_RESTART = "restart"
+# The system clock moved while Device Sentinel ran (ruling #538): the
+# detail says how far and which way, the duration is the size.
+SYS_CLOCK_RESET = "clock_reset"
 SYS_INTEGRATION_DOWN = "integration_down"
 SYS_INTEGRATION_UP = "integration_up"
 SYS_BRIDGE_DOWN = "bridge_down"
@@ -2474,7 +2515,7 @@ SYS_WORST = "worst"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 462
+HIGHEST_RULING = 541
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's
@@ -2632,6 +2673,10 @@ REPAIR_STORAGE_RESTORED = "storage_restored"
 # device's clock was restarted (0.22.28). A notice: nothing is left to
 # decide, and it clears at the next start that loads the file whole.
 REPAIR_CLOCKS_RESET = "clocks_reset"
+# The system clock moved while Device Sentinel ran (ruling #538). A
+# clock reset is a person's act: the device clocks restart at the
+# moment it is noticed, and this card names the moment and the size.
+REPAIR_CLOCK_RESET = "clock_reset"
 REPAIRS_ALL = (
     REPAIR_STORAGE_REPAIRED,
     REPAIR_CONTAINERS_REPAIRED,
@@ -2640,7 +2685,16 @@ REPAIRS_ALL = (
     REPAIR_NO_DELIVERY,
     REPAIR_STORAGE_RESTORED,
     REPAIR_CLOCKS_RESET,
+    REPAIR_CLOCK_RESET,
 )
+
+# How far the wall clock may disagree with a clock nobody can set,
+# between one minute check and the next, before the difference is a
+# reset rather than drift (ruling #538). Time synchronisation corrects
+# by seconds and is harmless; a step of two minutes was measured
+# harmless; a step of two hours backward left detection blind for two
+# hours, and forward listed 70 healthy devices frozen in one check.
+CLOCK_RESET_THRESHOLD_SECONDS = 300.0
 
 # The two moments a Repair is evaluated (ruling #300, amended by
 # #309): when the startup grace closes, and when the daily brief is

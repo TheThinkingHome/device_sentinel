@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.23.0 (2026-09-24)
+# File: repairs.py, Version: 0.23.16 (2026-09-28)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -88,6 +88,7 @@ from .const import (
     WIKI_LINK_NOTIFICATIONS,
     WIKI_LINK_REPAIRS,
     REPAIR_STORAGE_RESTORED,
+    REPAIR_CLOCK_RESET,
     REPAIR_CLOCKS_RESET,
     STORAGE_KEY,
 )
@@ -491,6 +492,31 @@ def _evaluate_clocks_reset(hass: HomeAssistant, reset_at: str | None) -> None:
     )
 
 
+def _evaluate_clock_reset(
+    hass: HomeAssistant, reset: tuple[str, str] | None
+) -> None:
+    """Raise or clear the clock-reset notice (ruling #538).
+
+    The system clock moved while Device Sentinel ran, so every device
+    clock was restarted at that moment. A person set the clock or let
+    something set it, so the card says what happened and when, and
+    asks nothing. Not persistent (ruling #297): the next start clears
+    it.
+    """
+    if reset is None:
+        _clear(hass, REPAIR_CLOCK_RESET)
+        return
+    at, shift = reset
+    _raise(
+        hass,
+        REPAIR_CLOCK_RESET,
+        severity=ir.IssueSeverity.WARNING,
+        is_fixable=False,
+        learn_more_url=WIKI_LINK_REPAIRS,
+        placeholders={"time": at, "shift": shift},
+    )
+
+
 def async_evaluate(
     hass: HomeAssistant,
     entry: Any,
@@ -504,6 +530,7 @@ def async_evaluate(
     version_changed: bool,
     namer: Any,
     clocks_reset: str | None = None,
+    clock_reset: tuple[str, str] | None = None,
 ) -> None:
     """Reconcile every issue against the conditions as they stand now.
 
@@ -533,6 +560,7 @@ def async_evaluate(
     _evaluate_storage_repaired(hass, repair_notice, entry.entry_id)
     _evaluate_containers_repaired(hass, container_notice, entry.entry_id)
     _evaluate_clocks_reset(hass, clocks_reset)
+    _evaluate_clock_reset(hass, clock_reset)
     # The identifier the retired three-option card used. Cleared
     # unconditionally so an install upgraded mid-issue does not
     # carry a card whose flow no longer exists (ruling #370).

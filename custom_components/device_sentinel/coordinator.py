@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.15 (2026-09-28)
+# File: coordinator.py, Version: 0.23.16 (2026-09-28)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -47,6 +47,7 @@ from __future__ import annotations
 import copy
 import math
 import threading
+import time
 from collections import Counter, deque
 from collections.abc import Callable
 from datetime import timedelta
@@ -108,7 +109,9 @@ from .const import (
     FREEZE_CATEGORY_UNAVAILABLE,
     DEFAULT_RETENTION_DAYS,
     CONF_RETENTION_DAYS,
+    CLOCK_RESET_THRESHOLD_SECONDS,
     REPAIR_MOMENT_BRIEF,
+    REPAIR_MOMENT_GRACE,
     SYS_STORAGE_SHAPE,
     SYS_STORAGE_REPAIR,
     AREA_BATTERY,
@@ -143,6 +146,7 @@ from .const import (
     DATA_SAVED_AT,
     DATA_SIGNAL_DAY_REPAIR,
     DATA_SIGNAL_WEIGHTING,
+    DATA_BRIEF_CLOSED_DAY,
     DATA_LAST_VERSION,
     CONF_TRIM_DEVICES,
     CONF_TRIM_INTEGRATIONS,
@@ -175,6 +179,7 @@ from .const import (
     LEARNED_DISABLED,
     LEARNED_MAINTENANCE,
     LEARNED_HANDLED,
+    LEARNED_DOWNTIME_OUT,
     LEARNED_PAIRING,
     LEARNING_MIN_DAYS,
     LEGACY_CAUSE_UNOBSERVED,
@@ -194,6 +199,8 @@ from .const import (
     SIGNAL_ARMING_DAYS,
     SIGNAL_DAY_REPAIR_MARK,
     SIGNAL_DAYS_KEEP,
+    SIGNAL_LQI_HIGHEST,
+    SIGNAL_RSSI_LOWEST,
     SIGNAL_WEIGHTING_MARK,
     STARTUP_GRACE_SECONDS,
     TRIM_BACKUP_DIR,
@@ -207,6 +214,7 @@ from .const import (
     SYS_MAINTENANCE_CLOSED,
     SYS_MAINTENANCE_OPEN,
     SYS_OPTIONS_CHANGED,
+    SYS_CLOCK_RESET,
     SYS_RESTART,
     SYS_TRIMMED,
     SYS_UNCLEAN_RESTART,
@@ -240,7 +248,13 @@ from .messenger import MessengerMixin
 from .narrative import NarrativeMixin
 from .notifier import NotifierMixin
 from .problem_list import ProblemListMixin
-from .records import BAD_STATES, _new_device_record, _reset_signal_day, _span
+from .records import (
+    BAD_STATES,
+    _new_device_record,
+    _reset_signal_day,
+    _shift,
+    _span,
+)
 from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
 from .stacks import device_key, is_plumbing, radio_owner
@@ -657,6 +671,11 @@ class DeviceSentinelCoordinator(
         # When this start restarted the clocks of a lost clocks file,
         # for the Repair card raised when the grace closes (0.22.28).
         self._clocks_reset_at: float | None = None
+        # The last minute check's wall clock and a clock nobody can
+        # set, and the reset the two last disagreed on (ruling #538).
+        self._tick_wall: float | None = None
+        self._tick_mono: float | None = None
+        self._clock_reset: tuple[float, float] | None = None
         self._orphan_episodes: dict[str, Any] = {}
         self._options_seen: dict[str, Any] = dict(entry.options)
         # What the last shape check found, held for the Repairs pass
@@ -2597,6 +2616,18 @@ class DeviceSentinelCoordinator(
                     state,
                 )
                 value = None
+            if value is not None and not (
+                SIGNAL_RSSI_LOWEST <= value <= SIGNAL_LQI_HIGHEST
+            ):
+                # Finite, and still not a reading: no radio reports
+                # it (ruling #540). Ignored, never brought into range.
+                LOGGER.info(
+                    "device_sentinel: %s reported %s, which is outside "
+                    "any signal scale; ignored",
+                    entity_id,
+                    state,
+                )
+                value = None
             if value is not None and self._device_is_speaking(
                 device_id, record, now
             ):
@@ -2652,10 +2683,19 @@ class DeviceSentinelCoordinator(
             if any(end > last and start < stamp for start, end in outage):
                 tainted = TAINT_UPSTREAM_DOWN
         capped_note: str | None = None
+        downtime_note: str | None = None
         learned_gap: float | None = None
         if not tainted and last is not None:
             gap = stamp - last
             learned_gap = gap
+            # Take the downtime out (ruling #541): the stops of Device
+            # Sentinel itself inside the gap are not the device's
+            # silence, so the gap is learned without them, and the
+            # episode says so.
+            stopped = self._stopped_within(last, stamp)
+            if stopped > 0.0:
+                learned_gap = max(0.0, gap - stopped)
+                downtime_note = LEARNED_DOWNTIME_OUT
             # The resurrection cap (ruling #166): a gap completing while the
             # device stands convicted of a freeze may be a hand-fix
             # nothing can see, so it teaches at most rhythm plus the
@@ -2666,7 +2706,7 @@ class DeviceSentinelCoordinator(
             # largest.
             if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_FROZEN:
                 cap = self._resurrection_cap(record)
-                if cap is not None and gap > cap:
+                if cap is not None and learned_gap > cap:
                     learned_gap = cap
                     capped_note = (
                         f"capped ({_span(gap)} -> {_span(cap)})"
@@ -2691,7 +2731,11 @@ class DeviceSentinelCoordinator(
         # it, and for a device without one they were discarding the
         # only evidence there was, which is what kept the quiet
         # devices' baselines describing half a night.
-        learned = f"no ({tainted})" if tainted else (capped_note or "yes")
+        learned = (
+            f"no ({tainted})"
+            if tainted
+            else (capped_note or downtime_note or "yes")
+        )
         # A recovery during a pairing window is a hand re-pair, not a
         # self-recovery, so its gap is discarded whatever the taint
         # decided (ruling #145). This overrides the debounce because pairing
@@ -2826,7 +2870,27 @@ class DeviceSentinelCoordinator(
         a regenerate or a midnight rewrite produces an in-progress
         document, and mailing one of those would deliver the same
         day several times, each incomplete.
+
+        Once a day (ruling #539): when clocks fall back, a brief time
+        inside the repeated hour fires twice, and the second firing
+        would close and mail the same day again. The day closed is
+        stored, and a firing for that day sends nothing.
         """
+        today = dt_util.now().date().isoformat()
+        if self.data.get(DATA_BRIEF_CLOSED_DAY) == today:
+            LOGGER.info(
+                "device_sentinel: the brief for %s was already sent; "
+                "a second firing in a repeated hour sends nothing "
+                "(ruling #539)",
+                today,
+            )
+            return
+        # Dirty, not critical: the day is read again an hour later at
+        # the earliest, in the repeated hour, and a routine save writes
+        # it long before then. Forcing a write here raced the minute
+        # check's own save when both fell on the brief minute.
+        self.data[DATA_BRIEF_CLOSED_DAY] = today
+        self._dirty = True
         text = await self._write_reports_guarded(BRIEF_TRIGGER)
         if text is not None:
             await self.async_send_brief(text)
@@ -2835,6 +2899,170 @@ class DeviceSentinelCoordinator(
         # (ruling #309). The fold keeps the storage shape check,
         # the copy, and the heal; only the judging moved.
         self._evaluate_repairs(REPAIR_MOMENT_BRIEF)
+
+    @staticmethod
+    def _monotonic() -> float:
+        """A clock nobody can set, read here so a test can stand in."""
+        return time.monotonic()
+
+    async def _detect_clock_reset(self) -> None:
+        """Notice the system clock being moved, and restart the clocks.
+
+        A clock reset is a person's act (ruling #538), and a system
+        paused or suspended reads the same way, because the monotonic
+        clock stops with it: a virtual machine paused for a backup
+        comes back with its wall clock ahead. Nobody was watching in
+        either case, so both restart the clocks, and the card names
+        both. Between one
+        minute check and the next the wall clock and a monotonic clock
+        advance together; when they disagree by more than the
+        threshold, the wall clock was set. Backward, every report is
+        stamped before its device's clock and ignored until real time
+        catches up, so a device that dies is invisible for the size of
+        the step (155 minutes after a two-hour step on the reference
+        house). Forward, every device looks silent for the size of the
+        step, and the first check lists the fast ones frozen: 70 on
+        the reference house after two hours. So the check comes first,
+        before anything is judged, and every device's clock restarts
+        at this moment the way a lost clocks file restarts them (#468),
+        a frozen device keeping its verdict. The time before is
+        unwatched, and the next gap each device completes is measured
+        from here.
+        """
+        wall = dt_util.utcnow().timestamp()
+        mono = self._monotonic()
+        previous_wall, previous_mono = self._tick_wall, self._tick_mono
+        self._tick_wall, self._tick_mono = wall, mono
+        if previous_wall is None or previous_mono is None:
+            return
+        drift = (wall - previous_wall) - (mono - previous_mono)
+        if abs(drift) < CLOCK_RESET_THRESHOLD_SECONDS:
+            return
+        restarted = 0
+        for record in self.data[DATA_DEVICES].values():
+            if not isinstance(record, dict):
+                continue
+            if record.get(DEV_LAST_ACTIVITY) is None:
+                continue
+            since = record.get(DEV_FROZEN_SINCE)
+            if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_FROZEN and (
+                isinstance(since, (int, float)) and not isinstance(since, bool)
+            ):
+                # Clearly past its window, so the verdict holds on
+                # this check and every one after it (#468's shape).
+                record[DEV_LAST_ACTIVITY] = (
+                    wall - self._lost_clock_window(record) - 60.0
+                )
+                record[DEV_FROZEN_SINCE] = min(float(since), wall)
+            else:
+                record[DEV_LAST_ACTIVITY] = wall
+            record[DEV_TAINTED] = False
+            restarted += 1
+        self._shift_moments(drift)
+        self._clock_reset = (wall, drift)
+        self._record_system_event(
+            SYS_CLOCK_RESET,
+            detail=f"{_shift(drift)}, {restarted} clocks restarted",
+            duration=abs(drift),
+        )
+        LOGGER.warning(
+            "device_sentinel: the system clock moved %s between two "
+            "minute checks; %d device clocks restarted and a Repair "
+            "card raised (ruling #538)",
+            _shift(drift),
+            restarted,
+        )
+        self._critical = True
+        self._evaluate_repairs(REPAIR_MOMENT_GRACE)
+
+    # The moments the coordinator holds in memory as wall-clock times,
+    # each the start or the end of a window still running. A clock
+    # reset moves them by its size (ruling #538), so each window keeps
+    # the time that really passed: after a backward step of two hours
+    # the startup grace would otherwise hold every announcement for up
+    # to two hours, and a maintenance window would run two hours long;
+    # forward, both would close early. Stored history is not moved.
+    _MOMENTS = (
+        "_grace_until",
+        "_maintenance_until",
+        "_maintenance_opened_at",
+        "_broker_down_at",
+        "_wifi_down_at",
+        "_wifi_recovering_at",
+        "_wifi_scan_gone_at",
+        "_wifi_scan_down_at",
+    )
+    _MOMENT_MAPS = (
+        "_bridge_down_at",
+        "_entry_down_at",
+        "_bridge_recovering_at",
+        "_integration_recovering_at",
+        "_pairing_open_at",
+        "_handled_at",
+        "_taint_consumed_at",
+    )
+    _MOMENT_PAIRS = (
+        "_bridge_handback",
+        "_integration_handback",
+        "_wifi_handback",
+    )
+
+    def _shift_moments(self, drift: float) -> None:
+        """Move every in-memory wall-clock moment by a reset's size."""
+
+        def moved(value: Any) -> Any:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return value
+            return float(value) + drift
+
+        for name in self._MOMENTS:
+            if hasattr(self, name):
+                setattr(self, name, moved(getattr(self, name)))
+        for name in self._MOMENT_MAPS:
+            held = getattr(self, name, None)
+            if isinstance(held, dict):
+                for key, value in list(held.items()):
+                    held[key] = moved(value)
+        for name in self._MOMENT_PAIRS:
+            held = getattr(self, name, None)
+            if isinstance(held, dict):
+                for key, value in list(held.items()):
+                    if isinstance(value, tuple):
+                        held[key] = tuple(moved(v) for v in value)
+
+    async def _close_brief_if_skipped(self) -> None:
+        """Send a brief whose time the clock skipped (ruling #539).
+
+        When clocks spring forward, a brief time inside the skipped
+        hour never comes, Home Assistant's tracker never fires, and
+        that day's window is never closed or mailed. Read on the
+        minute check: when today's brief time does not exist in local
+        time, the moment has passed and today is not yet closed, the
+        brief closes now. A brief time that exists is left to the
+        tracker, so an ordinary day never sends twice and a day the
+        system was down at the brief hour is not sent late.
+        """
+        local_now = dt_util.now()
+        hour, minute = self._brief_hour_minute()
+        target = local_now.replace(
+            hour=hour, minute=minute, second=0, microsecond=0
+        )
+        exists = (
+            target.astimezone(dt_util.UTC).astimezone(target.tzinfo)
+            == target
+        )
+        if exists or local_now.timestamp() < target.timestamp():
+            return
+        if self.data.get(DATA_BRIEF_CLOSED_DAY) == local_now.date().isoformat():
+            return
+        LOGGER.info(
+            "device_sentinel: the brief time %02d:%02d does not exist "
+            "today, the clock skipped it; closing the brief now "
+            "(ruling #539)",
+            hour,
+            minute,
+        )
+        await self._on_brief_time(None)
 
     @property
     def _excluded_device_ids(self) -> set[str]:
@@ -3185,6 +3413,11 @@ class DeviceSentinelCoordinator(
             clocks_reset=(
                 self._clock(self._clocks_reset_at)
                 if self._clocks_reset_at is not None
+                else None
+            ),
+            clock_reset=(
+                (self._clock(self._clock_reset[0]), _shift(self._clock_reset[1]))
+                if self._clock_reset is not None
                 else None
             ),
         )
@@ -3545,6 +3778,7 @@ class DeviceSentinelCoordinator(
         # The radio sweep, where a network was chosen and an adapter
         # found. It reads the Supervisor, so it is awaited here rather
         # than run inside the synchronous judgment below.
+        await self._detect_clock_reset()
         await self.async_sweep_wifi()
         self._sweep_storms(dt_util.utcnow().timestamp())
         self.probe_tick(dt_util.utcnow().timestamp())
@@ -3553,6 +3787,7 @@ class DeviceSentinelCoordinator(
         if not self._in_startup_grace():
             self._confirm_firmware(dt_util.utcnow().timestamp())
         self._expire_maintenance(dt_util.utcnow().timestamp())
+        await self._close_brief_if_skipped()
         self._sample_bridges()
         self._judge_all_devices()
         self._wifi_backdate()

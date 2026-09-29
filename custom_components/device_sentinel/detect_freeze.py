@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.23.15 (2026-09-28)
+# File: detect_freeze.py, Version: 0.23.16 (2026-09-28)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -58,6 +58,8 @@ from .const import (
     SYS_BROKER_UP,
     SYS_BROKER_DOWN,
     SYS_INTEGRATION_UP,
+    SYS_RESTART,
+    SYS_UNCLEAN_RESTART,
     SYS_INTEGRATION_DOWN,
     SYS_BRIDGE_UP,
     SYS_BRIDGE_DOWN,
@@ -753,6 +755,58 @@ class FreezeMixin:
             returned[slot] = max(float(when), returned.get(slot, float(when)))
         self._outage_cache = (key, spans)
         return spans
+
+    def _stop_spans(self) -> list[tuple[float, float]]:
+        """Every stop of Device Sentinel itself, from the stored restarts.
+
+        Each restart row carries the moment this run began and how long
+        the previous run had been down, so a stop spans from that
+        moment less its duration to that moment. Read from storage the
+        way the upstream outages are (#536), so several stops inside
+        one long gap are all found, and the current run's own stop is
+        added from memory in case its row is not yet written.
+        """
+        events = self.data.get(DATA_SYSTEM_EVENTS) or []
+        last = events[-1] if events else None
+        key = (len(events), last.get(SYS_WHEN) if isinstance(last, dict) else repr(last))
+        cached = getattr(self, "_stop_cache", None)
+        if cached is None or cached[0] != key:
+            spans: list[tuple[float, float]] = []
+            for row in events:
+                if not isinstance(row, dict) or row.get(SYS_KIND) not in (
+                    SYS_RESTART, SYS_UNCLEAN_RESTART
+                ):
+                    continue
+                when, duration = row.get(SYS_WHEN), row.get(SYS_DURATION)
+                if (
+                    not isinstance(when, (int, float))
+                    or isinstance(when, bool)
+                    or not math.isfinite(when)
+                    or not isinstance(duration, (int, float))
+                    or isinstance(duration, bool)
+                    or not math.isfinite(duration)
+                    or duration <= 0
+                ):
+                    continue
+                spans.append((float(when) - float(duration), float(when)))
+            self._stop_cache = (key, spans)
+            cached = self._stop_cache
+        spans = list(cached[1])
+        if self._downtime > 0.0 and self._last_alive is not None:
+            spans.append((self._last_alive, self._last_alive + self._downtime))
+        return spans
+
+    def _stopped_within(self, start: float, end: float) -> float:
+        """How much of [start, end] Device Sentinel was stopped for.
+
+        Take the downtime out (ruling #541): a completed gap is learned
+        minus the time Device Sentinel was stopped, because a device
+        that reported while nobody was listening was not silent, and a
+        gap measuring the stop teaches every device it is slower than
+        it is. The reference rig learned 17 minutes on 24 September
+        from a 16.5-minute stop, on 25 devices at once.
+        """
+        return _covered(self._stop_spans(), start, end)
 
     @property
     def freeze_tracked_count(self) -> int:
