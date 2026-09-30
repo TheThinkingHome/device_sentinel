@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_set_aside_verdict.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_set_aside_verdict.py, Version: 0.23.19 (2026-09-30)
 
 """The stale verdict of a set-aside device, and what it cost.
 
@@ -61,10 +61,6 @@ def _set_aside(coord, device_id: str) -> None:
     """Take a device out of the watched set, as grace closing does
     to a device with no entities."""
     coord._watched.pop(device_id, None)
-
-
-def _watch_again(coord, device_id: str, integration: str = "zha") -> None:
-    coord._watched[device_id] = integration
 
 
 async def test_the_sweep_alone_leaves_a_set_aside_verdict_standing(

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.23.18 (2026-09-29)
+# File: test_storage_shape.py, Version: 0.23.19 (2026-09-30)
 
 """The shape check reports and touches nothing; last-good follows it.
 
@@ -1625,14 +1625,12 @@ async def test_every_real_writer_goes_through_the_seam(hass: HomeAssistant):
 
 SENSOR_PROPERTIES = [
     "awaiting_enable_counts", "battery_falling_count", "battery_falling_list",
-    "battery_low_count", "battery_low_list", "battery_tracked_count",
-    "battery_tracked_list", "bridge_stacks",
+    "battery_low_count", "battery_low_list", "bridge_stacks",
     "broker_attributes", "broker_state", "classification_breakdown",
-    "deviceless_count", "freeze_tracked_count", "freeze_tracked_list",
-    "frozen_devices_count", "frozen_devices_list", "last_good_taken",
+    "deviceless_count", "frozen_devices_count", "frozen_devices_list", "last_good_taken",
     "learning_buckets", "recording_depth", "set_aside_count",
     "signal_problem_count", "signal_problem_list",
-    "signal_tracked", "signal_tracked_count", "signal_weak_count",
+    "signal_weak_count",
     "signal_weak_list", "storage_healthy", "storage_load_faulty",
     "todo_items", "watched_count",
 ]
@@ -1825,3 +1823,29 @@ async def test_an_impossible_stored_value_never_stops_a_start(hass, hass_storage
     json.dumps(coord.dashboard_status(), default=str)
     json.dumps(coord.battery_trends(), default=str)
     json.dumps(coord.dashboard_integrations(), default=str)
+
+
+async def test_a_retired_signal_clock_leaves_a_stored_record(hass, hass_storage):
+    """signal_last_change, the dwell timer's clock, retired in 0.23.19
+    as ruling #310 scheduled: a record written before loses it at load,
+    in its own fields and in a second scale's block, and a field a newer
+    version wrote is still kept (#189, amended)."""
+    from custom_components.device_sentinel.const import DATA_DEVICES, STORAGE_KEY
+
+    device, _ = register_device(hass, "old", name="Written By 0.23.18")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    record = coord.data[DATA_DEVICES][device.id]
+    await coord._save_now()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    stored = hass_storage[STORAGE_KEY]["data"]["devices"][device.id]
+    stored["signal_last_change"] = TIME_BASE
+    stored["signal_alt"] = {"signal_scale": "rssi", "signal_last_change": TIME_BASE}
+    stored["a_field_from_a_newer_version"] = 1
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+    assert "signal_last_change" not in record
+    assert "signal_last_change" not in (record.get("signal_alt") or {})
+    assert record.get("a_field_from_a_newer_version") == 1

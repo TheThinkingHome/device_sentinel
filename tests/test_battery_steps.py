@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_steps.py, Version: 0.23.6 (2026-09-25)
+# File: tests/test_battery_steps.py, Version: 0.23.19 (2026-09-30)
 
 """A battery that reports in coarse steps is not forecast.
 
@@ -47,10 +47,6 @@ async def _cell(hass, series, key="c1", name="Office Temp/Humid"):
     record[DEV_BATTERY_DAILY] = list(series)
     record[DEV_BATTERY_VALUE] = series[-1]
     return coord, device, record
-
-
-def _falling_names(coord) -> list[str]:
-    return [row["name"] for row in coord.battery_falling_list]
 
 
 async def test_one_step_withholds_the_forecast(hass: HomeAssistant):

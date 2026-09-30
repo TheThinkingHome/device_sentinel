@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_own_connection.py, Version: 0.23.1 (2026-09-24)
+# File: tests/test_own_connection.py, Version: 0.23.19 (2026-09-30)
 
 """A device whose own connection fails is listed as itself.
 
@@ -37,7 +37,6 @@ from custom_components.device_sentinel.const import (
     DATA_TODO_ITEMS,
     FREEZE_UNAVAILABLE_DEBOUNCE,
     INC_EVENT,
-    INC_NAME,
     INCIDENT_RESOLVED,
     STARTUP_GRACE_SECONDS,
     SYS_DETAIL,
@@ -193,7 +192,3 @@ async def test_a_paired_old_outage_is_still_shown(hass: HomeAssistant):
     shown = coord.integration_outages().get("zwave_js", [])
     assert len(shown) == 1 and shown[0]["open"] is False
 
-
-def _unused() -> None:
-    """Names kept for readers of this file."""
-    _ = INC_NAME

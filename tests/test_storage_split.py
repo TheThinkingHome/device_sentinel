@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.23.18 (2026-09-29)
+# File: test_storage_split.py, Version: 0.23.19 (2026-09-30)
 
 """The two files: the shadow, the merge, and the stamps.
 
@@ -63,7 +63,6 @@ from custom_components.device_sentinel.const import (
     SIGNAL_WEIGHTING_MARK,
     STATS_EPOCH,
     STORAGE_CLOCKS_KEY,
-    STORAGE_COALESCE_SECONDS,
     STORAGE_KEY,
 )
 from custom_components.device_sentinel.coordinator import (
@@ -114,13 +113,10 @@ class _StoreSpy:
     def _delay(self, data_func, delay):
         self.delays += 1
         self.last_delay = delay
-        # Two legitimate windows from 0.10.1: the coalesce window a
-        # routine clock write uses, and the shorter cold debounce the
-        # main file uses. Anything else means a delay was passed by
-        # accident rather than chosen.
-        assert delay in (
-            STORAGE_COALESCE_SECONDS,
-                )
+        # Nothing schedules a save through async_delay_save since the
+        # single deadline on the minute tick replaced it (ruling #165),
+        # so reaching here is a fault.
+        raise AssertionError(f"async_delay_save was called with {delay}")
         self._real_delay(data_func, delay)
 
 

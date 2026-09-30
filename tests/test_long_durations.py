@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_long_durations.py, Version: 0.22.25 (2026-09-22)
+# File: tests/test_long_durations.py, Version: 0.23.19 (2026-09-30)
 
 """Figures a person can read: long spans, a running silence, a scale.
 
@@ -78,7 +78,7 @@ async def test_a_report_reads_a_long_duration_in_words(hass: HomeAssistant):
     assert coord._human_span(62 * DAY) == "8 and a half weeks"
     assert coord._human_span(17.4 * HOUR) == "17.4h"
     assert coord._episode_duration(43 * DAY) == "6 weeks"
-    assert coord._episode_duration(9 * HOUR) == "9.00h"
+    assert coord._episode_duration(9 * HOUR) == "9.0h"
 
 
 async def test_a_running_silence_shows_the_whole_silence(hass: HomeAssistant):
@@ -97,8 +97,8 @@ async def test_a_running_silence_shows_the_whole_silence(hass: HomeAssistant):
         hass.config.path("device_sentinel", "silence_episodes.md")
     ).read_text(encoding="utf-8")
     row = [line for line in text.splitlines() if "Watering Kit" in line][0]
-    assert "| 19.30h |" in row, row
-    assert "not yet, 11.13h since the reboot" in row, row
+    assert "| 19.3h |" in row, row
+    assert "not yet, 11.1h since the reboot" in row, row
     assert "8.17h" not in row, "the truncated lower bound is gone"
 
     page = coord.dashboard_device(device.id)
@@ -123,7 +123,7 @@ async def test_a_resumed_silence_keeps_its_own_length(hass: HomeAssistant):
         ).read_text(encoding="utf-8").splitlines()
         if "Door Entryway" in line
     ][0]
-    assert "| 2.00h |" in row, row
+    assert "| 2.0h |" in row, row
     assert "still silent" not in row
 
 
@@ -146,3 +146,38 @@ def test_the_chart_draws_a_day_beyond_the_scale_at_the_top():
     text = PANEL.read_text(encoding="utf-8")
     assert "page.rhythm.scale" in text
     assert "a day beyond the scale, drawn at the top." in text
+
+
+def test_the_compact_format_at_every_boundary():
+    """Ruling #546: seconds below ninety, minutes below ninety, hours
+    below two days, days below two weeks, then weeks."""
+    from custom_components.device_sentinel.durations import compact_span
+
+    assert compact_span(0) == "0s"
+    assert compact_span(45) == "45s"
+    assert compact_span(89) == "89s"
+    assert compact_span(90) == "2m"
+    assert compact_span(1062) == "18m"
+    assert compact_span(90 * 60) == "1.5h"
+    assert compact_span(2 * 86400) == "2.0d"
+    assert compact_span(14 * 86400) == "2.0w"
+    assert compact_span(30 * 86400, cap=30 * 86400) == "more than 30 days"
+    assert compact_span(float("nan")) == "?"
+
+
+def test_the_one_compact_format_at_its_boundaries():
+    """Ruling #546: seconds below ninety, then minutes below ninety,
+    hours below two days, days below two weeks, then weeks; "more than"
+    at a cap; unknown for what is not a number."""
+    from custom_components.device_sentinel.durations import compact_span
+
+    cases = {
+        0: "0s", 22: "22s", 89: "89s", 90: "2m", 1062: "18m",
+        89 * 60: "89m", 90 * 60: "1.5h", 4 * 3600: "4.0h",
+        2 * 86400: "2.0d", 5.5 * 86400: "5.5d", 14 * 86400: "2.0w",
+        42.9 * 86400: "6.1w", -5: "0s",
+    }
+    for seconds, shown in cases.items():
+        assert compact_span(seconds) == shown, (seconds, compact_span(seconds))
+    assert compact_span(200 * 86400, cap=180 * 86400) == "more than 180 days"
+    assert compact_span(float("nan")) == "?"

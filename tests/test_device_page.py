@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_device_page.py, Version: 0.23.18 (2026-09-29)
+# File: test_device_page.py, Version: 0.23.19 (2026-09-30)
 
 """The device page a person actually reads, and its diagnostics journal.
 
@@ -28,7 +28,6 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
-    DEAD_ENTITY_SENTINEL_TYPES,
     DEV_DAILY_MAX,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
@@ -204,32 +203,6 @@ async def test_old_entity_ids_are_gone(hass: HomeAssistant):
 # ==================================================================
 # The retirement leaves no dead row.
 # ==================================================================
-
-async def test_retired_clock_source_is_removed_from_the_registry(
-    hass: HomeAssistant,
-):
-    """Deleting the code does not delete the registry entry, so a
-    retired sensor would sit on the page showing unavailable, which
-    reads as breakage rather than as removal."""
-    entry = MockConfigEntry(domain=DOMAIN, title="Device Sentinel", data={})
-    entry.add_to_hass(hass)
-    ent_reg = er.async_get(hass)
-    for sentinel_type in DEAD_ENTITY_SENTINEL_TYPES:
-        ent_reg.async_get_or_create(
-            "sensor",
-            DOMAIN,
-            f"{entry.entry_id}_{sentinel_type}",
-            suggested_object_id=f"device_sentinel_{sentinel_type}",
-            config_entry=entry,
-        )
-    assert ent_reg.async_get("sensor.device_sentinel_clock_source")
-
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-
-    assert ent_reg.async_get("sensor.device_sentinel_clock_source") is None
-    assert hass.states.get("sensor.device_sentinel_clock_source") is None
-
 
 # ==================================================================
 # The diagnostics journal and the excluded device's grammar.

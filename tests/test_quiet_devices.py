@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_quiet_devices.py, Version: 0.22.25 (2026-09-22)
+# File: tests/test_quiet_devices.py, Version: 0.23.19 (2026-09-30)
 
 """What the surfaces say about a device that is not speaking.
 
@@ -144,8 +144,8 @@ async def test_a_truncated_silence_still_running_says_so(hass: HomeAssistant):
     ).read()
     assert "1 still silent" in text
     # The whole silence, and what the lag counts from (0.22.25).
-    assert "| 18.00h | intervention (reboot) |" in text
-    assert "| not yet, 9.00h since the reboot |" in text
+    assert "| 18.0h | intervention (reboot) |" in text
+    assert "| not yet, 9.0h since the reboot |" in text
 
     page = coord.dashboard_device(device.id)
     assert page["silences"][0]["still_silent"] is True

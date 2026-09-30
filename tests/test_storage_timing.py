@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_timing.py, Version: 0.22.28 (2026-09-23)
+# File: test_storage_timing.py, Version: 0.23.19 (2026-09-30)
 
 """When a save happens: coalescing, and what forces one.
 
@@ -38,12 +38,11 @@ from custom_components.device_sentinel.const import (
     DEV_LAST_ACTIVITY,
     EP_ENDED,
     EPISODE_ENDED_RESUMED,
-    EPISODE_OPEN_SHARE,
+    EPISODE_SHARE_PCT,
     FREEZE_ARMING_DAYS,
     INCIDENT_OPENED,
     STARTUP_GRACE_SECONDS,
     DATA_SAVED_AT,
-    STORAGE_COALESCE_SECONDS,
 )
 
 
@@ -85,13 +84,10 @@ class _StoreSpy:
     def _delay(self, data_func, delay):
         self.delays += 1
         self.last_delay = delay
-        # Two legitimate windows from 0.10.1: the coalesce window a
-        # routine clock write uses, and the shorter cold debounce the
-        # main file uses. Anything else means a delay was passed by
-        # accident rather than chosen.
-        assert delay in (
-            STORAGE_COALESCE_SECONDS,
-                )
+        # Nothing schedules a save through async_delay_save since the
+        # single deadline on the minute tick replaced it (ruling #165),
+        # so reaching here is a fault.
+        raise AssertionError(f"async_delay_save was called with {delay}")
         self._real_delay(data_func, delay)
 
 
@@ -110,7 +106,7 @@ def _armed_and_silent(coord, device_id, basis_hours, share):
     )
     window = coord._freeze_window(record)
     basis = basis_hours * 3600.0
-    opens_at = basis + EPISODE_OPEN_SHARE * (window - basis)
+    opens_at = basis + EPISODE_SHARE_PCT / 100.0 * (window - basis)
     silence = opens_at + share * (window - opens_at)
     record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - silence
     return record

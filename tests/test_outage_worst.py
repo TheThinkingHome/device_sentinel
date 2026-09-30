@@ -140,7 +140,7 @@ async def test_an_outage_that_took_nothing_says_so(hass: HomeAssistant):
            SYS_KIND: SYS_BRIDGE_UP, SYS_SCOPE: "z2m",
            SYS_DEVICES: 77, SYS_WORST: 0}
     assert coord._system_event_sentence(row).endswith(
-        "after 1m. None of its 77 devices went down."
+        "after 60s. None of its 77 devices went down."
     )
 
 

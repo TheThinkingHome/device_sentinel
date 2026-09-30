@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.23.5 (2026-09-25)
+# File: test_hardening.py, Version: 0.23.19 (2026-09-30)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -56,17 +56,10 @@ from custom_components.device_sentinel.const import (
     LOW_THRESHOLD_MIN,
     WIKI_BASE_URL,
     WIKI_LINK_BATTERY,
-    WIKI_LINK_BATTERY_REPORT,
-    WIKI_LINK_DEVICE_PAGE,
     WIKI_LINK_EXCLUSIONS,
-    WIKI_LINK_FAQ,
     WIKI_LINK_FREEZE,
     WIKI_LINK_HOME,
-    WIKI_LINK_INSTALLATION,
-    WIKI_LINK_LEARNING,
-    WIKI_LINK_MAINTENANCE,
     WIKI_LINK_NOTIFICATIONS,
-    WIKI_LINK_PROBLEM_LIST,
     WIKI_LINK_REPORTS,
     WIKI_LINK_SIGNAL,
 )
@@ -232,7 +225,7 @@ async def test_future_since_prints_zero_age(hass: HomeAssistant):
     _freeze(coord, device.id, since=dt_util.utcnow().timestamp() + 3600)
     coord._sync_problem_list()
     text = "\n".join(coord._reporting_lines())
-    assert "for 0m" in text
+    assert "for 0s" in text
     assert "-" not in text.split("for ")[1].split(" ")[0]
 
 
@@ -349,23 +342,16 @@ def test_filled_lists_are_not_shared_between_devices():
 
 
 def test_dead_types_tuple_is_the_sweep_source():
-    """The sweep reads its targets from the dead-types tuple. The
-    0.4.8 entries were removed at 0.4.12 once every install was past
-    them (ruling 82); the mechanism stays, holding the clock-source
-    type it still needs."""
-    from custom_components.device_sentinel.const import (
-        SENTINEL_TYPE_CLOCK_SOURCE,
-    )
-    assert SENTINEL_TYPE_CLOCK_SOURCE in DEAD_ENTITY_SENTINEL_TYPES
-    # The satisfied 0.4.8 entries are gone, not lingering as dead
-    # weight.
-    for gone in (
-        "signal_frozen",
-        "battery_low_count",
-        "battery_low_list",
-        "signal_tracked",
-    ):
-        assert gone not in DEAD_ENTITY_SENTINEL_TYPES
+    """The sweep reads its targets from the dead-types tuple (ruling
+    #82): the mechanism is permanent, its entries go once satisfied.
+    Emptied in 0.23.19 after the reference rig's start removed nothing,
+    so the tuple exists, holds nothing, and the sweep still runs."""
+    import inspect
+
+    from custom_components.device_sentinel import _drop_dead_entities
+
+    assert DEAD_ENTITY_SENTINEL_TYPES == ()
+    assert "DEAD_ENTITY_SENTINEL_TYPES" in inspect.getsource(_drop_dead_entities)
 
 
 async def test_setup_prunes_stored_legacy_fields(hass: HomeAssistant):
@@ -384,16 +370,20 @@ async def test_setup_prunes_stored_legacy_fields(hass: HomeAssistant):
     assert filled >= 0
 
 
-async def test_retired_ghost_entity_is_removed(hass: HomeAssistant):
+async def test_retired_ghost_entity_is_removed(hass: HomeAssistant, monkeypatch):
     """A registry entity under a retired unique id is gone after
-    setup."""
+    setup. The tuple is empty since 0.23.19 (ruling #82), so the test
+    retires a type of its own to prove the sweep still works."""
+    monkeypatch.setattr(
+        "custom_components.device_sentinel.DEAD_ENTITY_SENTINEL_TYPES",
+        ("retired_for_test",),
+    )
     entry = MockConfigEntry(domain=DOMAIN, title="Device Sentinel", data={})
     entry.add_to_hass(hass)
     reg = er.async_get(hass)
-    # Pre-create a ghost under a type still in the sweep tuple.
     ghost = reg.async_get_or_create(
-        "sensor", DOMAIN, f"{entry.entry_id}_clock_source",
-        suggested_object_id="device_sentinel_clock_source",
+        "sensor", DOMAIN, f"{entry.entry_id}_retired_for_test",
+        suggested_object_id="device_sentinel_retired_for_test",
     )
     assert reg.async_get(ghost.entity_id) is not None
 
@@ -435,14 +425,7 @@ ALL_LINKS = {
     "WIKI_LINK_BATTERY": WIKI_LINK_BATTERY,
     "WIKI_LINK_SIGNAL": WIKI_LINK_SIGNAL,
     "WIKI_LINK_FREEZE": WIKI_LINK_FREEZE,
-    "WIKI_LINK_MAINTENANCE": WIKI_LINK_MAINTENANCE,
-    "WIKI_LINK_INSTALLATION": WIKI_LINK_INSTALLATION,
-    "WIKI_LINK_BATTERY_REPORT": WIKI_LINK_BATTERY_REPORT,
-    "WIKI_LINK_LEARNING": WIKI_LINK_LEARNING,
-    "WIKI_LINK_DEVICE_PAGE": WIKI_LINK_DEVICE_PAGE,
-    "WIKI_LINK_PROBLEM_LIST": WIKI_LINK_PROBLEM_LIST,
     "WIKI_LINK_REPORTS": WIKI_LINK_REPORTS,
-    "WIKI_LINK_FAQ": WIKI_LINK_FAQ,
 }
 
 

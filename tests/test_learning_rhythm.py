@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_learning_rhythm.py, Version: 0.23.18 (2026-09-29)
+# File: test_learning_rhythm.py, Version: 0.23.19 (2026-09-30)
 
 """How the integration learns each device's reporting rhythm.
 
@@ -198,12 +198,15 @@ async def test_markdown_render_marks_trim(hass: HomeAssistant):
         hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     row = next(line for line in text.splitlines() if "Markdown Device" in line)
-    assert "~~2.50h~~" in row          # the 9000 s spike, set aside
-    assert "**600s**" in row           # the operative rhythm, bold
+    assert "~~2.5h~~" in row          # the 9000 s spike, set aside
+    assert "**10m**" in row           # the operative rhythm, bold
     # WINDOW BASIS was dropped at 0.4.4: the operative rhythm now
     # shows only as the bold value inside the GAPS series.
-    # Newest first: the newest value (560) appears before the oldest (500).
-    assert row.index("560s") < row.index("500s")
+    # Newest first: the newest value (560 s) leads and the oldest
+    # (500 s) ends the cell. Read as a list since 0.23.19, when both
+    # became whole minutes and "9m" occurs more than once.
+    gaps = [g.strip() for g in row.split(" | ")[2].split(",")]
+    assert gaps[0] == "9m" and gaps[-1] == "8m", gaps
 
 
 def _md_device(hass):
@@ -1049,7 +1052,7 @@ def test_a_held_gap_reads_as_more_than_the_retention():
 
     text = ReportWritingMixin._fmt_gap(_Reports(), 180 * 86400.0)
     assert text == "more than 180 days"
-    assert ReportWritingMixin._fmt_gap(_Reports(), 3600.0) == "1.00h"
+    assert ReportWritingMixin._fmt_gap(_Reports(), 3600.0) == "60m"
 
 
 async def test_stored_gaps_past_the_retention_are_held_at_load(hass, hass_storage):

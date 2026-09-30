@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_maintenance.py, Version: 0.15.8 (2026-08-18)
+# File: tests/test_maintenance.py, Version: 0.23.19 (2026-09-30)
 
 """Maintenance mode and the surfaces that shipped beside it.
 
@@ -50,11 +50,6 @@ from custom_components.device_sentinel.const import (
 )
 
 from tests.helpers import register_device, setup_coordinator, setup_entry
-
-
-def _event_kinds(coord) -> list[str]:
-    """Return the recorded system event kinds, oldest first."""
-    return [row[SYS_KIND] for row in coord.data.get(DATA_SYSTEM_EVENTS, [])]
 
 
 def _maintenance_rows(coord) -> list[dict]:

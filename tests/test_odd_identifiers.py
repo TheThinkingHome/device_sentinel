@@ -99,7 +99,10 @@ async def test_every_odd_shape_sets_up_ticks_and_downloads(hass: HomeAssistant, 
     if studied:
         watched = _found(report, "watched_devices")
         told = {row["name"]: row["identifiers"] for row in watched}
-        assert told["Odd 0"] == ["a4cf12b3c4d5:washing_machine"]
+        # Every part kept (issue #16); the MAC in the middle is the
+        # appliance's own, so the download carries its stand-in
+        # rather than the address itself (0.23.19).
+        assert told["Odd 0"] == ["A4:CF:12:MAC-01:washing_machine"]
 
 
 async def test_a_mac_in_a_third_part_still_ties_the_device(hass: HomeAssistant):

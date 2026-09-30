@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entity_defaults.py, Version: 0.23.5 (2026-09-25)
+# File: tests/test_entity_defaults.py, Version: 0.23.19 (2026-09-30)
 
 """Which entities a first install presents, and what deletion leaves.
 
@@ -190,3 +190,82 @@ async def test_the_count_sensors_split_found_from_watched(
         assert (
             reg.async_get(eid).entity_category == EntityCategory.DIAGNOSTIC
         ), key
+
+
+# Bulky and fixed attributes stay live and leave the recorder (0.23.19).
+
+
+def test_lists_and_setting_mirrors_are_kept_out_of_history():
+    from custom_components.device_sentinel import sensor as s
+
+    expected = {
+        s.DeviceSentinelClassificationSensor: {"by_integration"},
+        s.DeviceSentinelSignalRailsSensor: {"devices"},
+        s.DeviceSentinelSignalWeakSensor: {"devices", "drop_lqi", "drop_rssi", "sensitivity"},
+        s.DeviceSentinelLowBatteriesSensor: {"devices", "clear_margin", "low_threshold"},
+        s.DeviceSentinelFallingBatteriesSensor: {"devices", "days_till_empty"},
+        s.DeviceSentinelFrozenDevicesSensor: {"devices"},
+    }
+    for cls, keys in expected.items():
+        assert cls._unrecorded_attributes == frozenset(keys), cls.__name__
+    # The small counts keep their history.
+    assert not getattr(s.DeviceSentinelCoverageSensor, "_unrecorded_attributes", frozenset())
+
+
+async def test_an_unrecorded_list_is_still_live(hass):
+    from .helpers import setup_entry
+
+    # The listing sensors are off by default (#239); a person who
+    # enables one for an automation reads its list from the state.
+    entry = await setup_entry(hass)
+    reg = er.async_get(hass)
+    frozen = next(
+        e for e in er.async_entries_for_config_entry(reg, entry.entry_id)
+        if e.unique_id.endswith("frozen_devices")
+    )
+    reg.async_update_entity(frozen.entity_id, disabled_by=None)
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert "devices" in hass.states.get(frozen.entity_id).attributes
+
+
+# Every entity's name lives in strings.json since 0.23.19 (Home
+# Assistant's entity-translations practice); the ids do not change.
+
+
+def test_every_translation_key_has_its_name():
+    import json
+
+    from custom_components.device_sentinel import sensor
+    from custom_components.device_sentinel.const import BRIDGE_TRANSLATION_KEYS
+
+    root = Path(sensor.__file__).parent
+    strings = json.loads((root / "strings.json").read_text())["entity"]
+    english = json.loads((root / "translations" / "en.json").read_text())["entity"]
+    assert strings == english
+    source = (root / "sensor.py").read_text() + (root / "todo.py").read_text()
+    import re
+
+    keys = set(re.findall(r'_attr_translation_key = "([a-z_]+)"', source))
+    keys |= set(BRIDGE_TRANSLATION_KEYS.values())
+    named = set(strings["sensor"]) | set(strings["todo"])
+    assert keys <= named, keys - named
+    assert set(re.findall(r'key="([a-z_]+)"', (root / "button.py").read_text())) == set(strings["button"])
+    assert strings["sensor"]["bridge_zigbee2mqtt"]["name"] == "Bridge: Zigbee2MQTT"
+    assert strings["sensor"]["bridge_zha"]["name"] == "Bridge: ZHA"
+    # No entity is named in code any more.
+    for platform in ("sensor.py", "button.py", "todo.py"):
+        assert not re.search(r'_attr_name = "', (root / platform).read_text()), platform
+
+
+async def test_a_bridge_sensor_takes_its_translated_name(hass):
+    from custom_components.device_sentinel.const import STACK_Z2M, STACK_ZHA
+    from custom_components.device_sentinel.sensor import DeviceSentinelBridgeSensor
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    for stack, key in ((STACK_Z2M, "bridge_zigbee2mqtt"), (STACK_ZHA, "bridge_zha")):
+        sensor = DeviceSentinelBridgeSensor(coord, stack)
+        assert sensor.translation_key == key
+    other = DeviceSentinelBridgeSensor(coord, "zwave_js")
+    assert other.translation_key is None and other.name == "zwave_js Bridge"

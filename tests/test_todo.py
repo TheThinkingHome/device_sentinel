@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.23.18 (2026-09-29)
+# File: test_todo.py, Version: 0.23.19 (2026-09-30)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -22,11 +22,10 @@ import random
 from datetime import timedelta
 
 import pytest
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -53,7 +52,6 @@ from custom_components.device_sentinel.const import (
     FREEZE_CATEGORY_UNAVAILABLE,
     INC_EVENT,
     INCIDENT_OPENED,
-    SIGNAL_PROBLEM_ADDITION,
     STARTUP_GRACE_SECONDS,
     TODO_JOURNAL_KEEP,
     TODO_KIND_FALLING_BATTERY,
@@ -448,25 +446,15 @@ async def test_display_order_two_blocks(hass: HomeAssistant):
     assert names == ["Mango Sensor", "Zebra Sensor", "Apple Sensor"]
 
 
-async def test_journal_and_dispatcher_on_addition(hass: HomeAssistant):
-    """Every addition lands in the journal and fires the signal: the
-    Step 8 contract."""
+async def test_journal_on_addition(hass: HomeAssistant):
+    """Every addition lands in the journal, once. (It also fired a
+    dispatcher signal for a planned engine until 0.23.19; nothing ever
+    listened, and the engine was built on the sync's own events.)"""
     device, eids = _register_device(hass, "s6", "Porch Motion",
                                     battery=True)
     entry = await setup_entry(hass)
     coord = entry.runtime_data
     hass.states.async_set(eids["plain"], "on")
-    heard = []
-
-    @callback
-    def _hear(payload):
-        # A callback, so it runs on the loop in the order the signals
-        # were sent. A bare heard.append is run in an executor thread,
-        # and two of those can land in either order: this test failed
-        # about once in thirty runs on that race alone.
-        heard.append(payload)
-
-    async_dispatcher_connect(hass, SIGNAL_PROBLEM_ADDITION, _hear)
 
     _freeze(coord, device.id)
     coord._sync_problem_list()
@@ -478,9 +466,6 @@ async def test_journal_and_dispatcher_on_addition(hass: HomeAssistant):
     kinds = [(e["name"], e["kind"]) for e in journal]
     assert ("Porch Motion", FREEZE_CATEGORY_FROZEN) in kinds
     assert ("Porch Motion", TODO_KIND_LOW_BATTERY) in kinds
-    assert [h["kind"] for h in heard] == [
-        FREEZE_CATEGORY_FROZEN, TODO_KIND_LOW_BATTERY,
-    ]
     # A clean pass adds nothing.
     before = len(journal)
     coord._sync_problem_list()

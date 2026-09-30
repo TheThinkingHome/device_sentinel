@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.23.18 (2026-09-29)
+# File: test_notifications.py, Version: 0.23.19 (2026-09-30)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -339,6 +339,17 @@ class _Harness(NotifierMixin):
 
         self.hass.services.async_call = async_call
 
+    # The card is raised through Home Assistant's own helpers since
+    # 0.23.19; recorded here in the shape a service call had, so each
+    # test reads it as before.
+    def _card_show(self, message):
+        self.sent.append(("persistent_notification", "create", {
+            "notification_id": NOTIFY_CARD_ID, "title": "Device Sentinel", "message": message,
+        }))
+
+    def _card_dismiss(self):
+        self.sent.append(("persistent_notification", "dismiss", {"notification_id": NOTIFY_CARD_ID}))
+
     def _acknowledged_devices(self):
         return self._acknowledged
 
@@ -521,16 +532,11 @@ async def test_full_path_battery_fault_fires_and_updates_card(hass, freezer):
 
     # Register real mock services so the engine's calls are captured.
     pushes = []
-    cards = []
 
     async def _phone(call):
         pushes.append(call.data)
 
-    async def _card(call):
-        cards.append(call.data)
-
     hass.services.async_register("notify", "phone", _phone)
-    hass.services.async_register("persistent_notification", "create", _card)
 
     # Battery drops below threshold, which the event-driven battery
     # evaluation judges immediately and syncs onto the list.
@@ -541,7 +547,9 @@ async def test_full_path_battery_fault_fires_and_updates_card(hass, freezer):
 
     assert pushes, "expected a high-priority battery push"
     assert "Battery X" in pushes[0]["message"]
-    assert cards, "expected the persistent card to refresh"
+    from tests.helpers import card_message
+
+    assert "Battery X" in (card_message(hass) or ""), "expected the persistent card to refresh"
 
 
 def test_signal_summary_says_railed_not_low():
@@ -1052,13 +1060,15 @@ async def test_card_failed_write_is_tried_again():
     h = _Harness(["notify.phone"])
     calls = []
 
-    async def failing(domain, service, payload, blocking=False):
-        calls.append(service)
-        if len(calls) == 1:
-            raise RuntimeError("service not ready")
-        h.sent.append((domain, service, payload))
+    record = h._card_show
 
-    h.hass.services.async_call = failing
+    def failing(message):
+        calls.append("create")
+        if len(calls) == 1:
+            raise RuntimeError("the card could not be written")
+        record(message)
+
+    h._card_show = failing
     await h.async_update_card()
     await h.async_update_card()
     assert calls == ["create", "create"]

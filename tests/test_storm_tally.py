@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storm_tally.py, Version: 0.22.0 (2026-09-18)
+# File: test_storm_tally.py, Version: 0.23.19 (2026-09-30)
 
 """The storm tally and the flood sentence (rulings #320, #321).
 
@@ -225,3 +225,54 @@ async def test_the_midnight_roll_dates_the_day_that_ended(
     await coord._on_midnight(midnight)
     rows = coord.data[DATA_STORM_DAYS]
     assert [row[STORM_DAY_DATE] for row in rows] == ["2026-09-16"]
+
+
+# The storm detector's distinct-device count, kept as changes enter and
+# leave its window since 0.23.19, must equal the count of the window.
+
+
+async def test_the_running_count_matches_the_window(hass):
+    import random
+
+    from custom_components.device_sentinel.const import STORM_WINDOW_SECONDS
+
+    from .helpers import setup_entry
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._is_polling_integration = lambda entry_id, now: False
+    rng = random.Random(5)
+    now = 1_790_000_000.0
+    for _ in range(3000):
+        now += rng.choice((0.01, 0.1, 0.5, 1.0, 3.0))
+        coord._storm_feed("entry-a", f"device-{rng.randrange(40)}", now)
+        queue = coord._storm_feed_q["entry-a"]
+        window = {dev for when, dev in queue if when >= now - STORM_WINDOW_SECONDS}
+        assert len(coord._storm_feed_counts["entry-a"]) == len(window)
+    # A quiet spell empties the counts with the window.
+    coord._storm_feed("entry-a", "device-0", now + 10 * STORM_WINDOW_SECONDS)
+    assert coord._storm_feed_counts["entry-a"] == {"device-0": 1}
+
+
+async def test_a_burst_costs_the_same_per_change(hass):
+    """Ten thousand changes in one window: 0.23.18 rebuilt a set of the
+    whole window on each, so the burst cost its square."""
+    import time
+
+    from .helpers import setup_entry
+
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._is_polling_integration = lambda entry_id, now: False
+    coord._grace_until = float("inf")  # a burst inside the grace records nothing
+    now = 1_790_000_000.0
+
+    def burst(size, entry_id):
+        start = time.process_time()
+        for i in range(size):
+            coord._storm_feed(entry_id, f"device-{i % 500}", now)
+        return time.process_time() - start
+
+    small = burst(1000, "small")
+    large = burst(10000, "large")
+    assert large < small * 40, (small, large)

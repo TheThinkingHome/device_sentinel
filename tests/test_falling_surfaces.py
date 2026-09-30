@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_falling_surfaces.py, Version: 0.23.10 (2026-09-26)
+# File: tests/test_falling_surfaces.py, Version: 0.23.19 (2026-09-30)
 
 """The falling battery on the phone and the card, and the crossing.
 
@@ -30,7 +30,6 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
-    async_mock_service,
 )
 
 from custom_components.device_sentinel.const import (
@@ -52,7 +51,7 @@ from custom_components.device_sentinel.const import (
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
 )
-from tests.helpers import setup_coordinator
+from tests.helpers import card_message, setup_coordinator
 
 # Every kind, and the list row that puts it on the card. Iterated
 # against TODO_KINDS_ALL below, so a kind added without a route to
@@ -231,10 +230,8 @@ async def test_the_card_names_a_falling_cell(hass: HomeAssistant):
     _seed(coord, device.id, 24.0)
     coord._sync_problem_list()
 
-    calls = async_mock_service(hass, "persistent_notification", "create")
     await coord.async_update_card()
-    assert calls
-    message = calls[-1].data["message"]
+    message = card_message(hass)
     # Since 0.23.10 a card that lists anything ends with a link to the
     # Problem List.
     assert message == (
@@ -328,6 +325,5 @@ async def test_an_acknowledged_falling_cell_leaves_the_card(
         item["status"] = "completed"
         item["acked_at"] = "2026-08-05T00:00:00+00:00"
 
-    calls = async_mock_service(hass, "persistent_notification", "create")
     await coord.async_update_card()
-    assert calls[-1].data["message"] == "All devices reporting."
+    assert card_message(hass) == "All devices reporting."

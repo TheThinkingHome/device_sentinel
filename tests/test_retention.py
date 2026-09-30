@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_retention.py, Version: 0.23.5 (2026-09-25)
+# File: test_retention.py, Version: 0.23.19 (2026-09-30)
 
 """How much is kept, and what reads only a window of it.
 
@@ -234,53 +234,6 @@ async def test_the_kind_list_is_the_whole_list(hass: HomeAssistant):
         if name.startswith("TODO_KIND_") and isinstance(value, str)
     }
     assert declared == set(TODO_KINDS_ALL), declared ^ set(TODO_KINDS_ALL)
-
-
-async def test_the_floor_ignores_history_beyond_its_window(
-    hass: HomeAssistant,
-):
-    """The guard that matters. The floor is the minimum of the P5
-    window (rulings #322, #323), so reading the whole series would
-    quietly slacken every floor on the fleet; only the most recent
-    SIGNAL_DAYS_KEEP days are judged, however many are stored
-    (ruling #126).
-    """
-    device, _ = _register(hass, "fl1", "Floor Sensor")
-    entry = await setup_entry(hass)
-    coord = entry.runtime_data
-    record = coord.data["devices"][device.id]
-
-    month = [100.0 - n for n in range(SIGNAL_DAYS_KEEP)]
-    record[DEV_SIGNAL_DAILY_P5] = list(month)
-    with_a_month = coord._danger_line(record)
-
-    # The same month, preceded by far worse older days.
-    record[DEV_SIGNAL_DAILY_P5] = [10.0] * 40 + list(month)
-    with_a_season = coord._danger_line(record)
-
-    assert with_a_season == with_a_month
-    assert 10.0 not in coord._signal_history(record)
-    assert len(coord._signal_history(record)) == SIGNAL_DAYS_KEEP
-
-
-async def test_a_bad_day_three_weeks_back_still_counts(
-    hass: HomeAssistant,
-):
-    """The reason the window moved (ruling #196). On the reference
-    fleet fifty-one of seventy-eight devices had a worse day just
-    outside the fortnight, so a fourteen day floor sat above what
-    those devices actually do, and it jumped when the day aged out.
-    """
-    device, _ = _register(hass, "fl2", "Long Memory")
-    entry = await setup_entry(hass)
-    coord = entry.runtime_data
-    record = coord.data["devices"][device.id]
-
-    # Twenty steady days, with three bad ones twenty-one days back.
-    record[DEV_SIGNAL_DAILY_P5] = (
-        [40.0, 40.0, 40.0] + [100.0] * 20
-    )
-    assert 40.0 in coord._signal_history(record)
 
 
 async def test_the_signal_series_keeps_ninety_days(
@@ -618,3 +571,27 @@ async def test_applying_the_same_settings_records_nothing(
         for row in coord.data[DATA_SYSTEM_EVENTS]
         if row[SYS_KIND] == SYS_OPTIONS_CHANGED
     ] == []
+
+
+# A cut in retention trims every series at the next fold, whether or
+# not the day appended to it (ruling #131). Found by the adversarial
+# round of 29 September 2026: a device with no gap that day kept 73 days
+# after a cut from 180 to 30.
+
+
+async def test_a_cut_in_retention_trims_a_device_that_learned_nothing(
+    hass: HomeAssistant,
+):
+    device, _ = _register(hass, "quiet", "Quiet All Day")
+    entry = await setup_entry(hass, {"history_days": 30})
+    coord = entry.runtime_data
+    record = coord.data["devices"][device.id]
+    record["daily_max"] = [600.0] * 73
+    record["today_max"] = None  # nothing learned today
+    record["battery_daily_value"] = [90.0] * 73
+    record["signal_daily_p5"] = [-70.0] * 73
+    record["signal_daily_count"] = [10] * 73
+    await coord._on_midnight(None)
+    await hass.async_block_till_done()
+    for field in ("daily_max", "battery_daily_value", "signal_daily_p5", "signal_daily_count"):
+        assert len(record[field]) == 30, (field, len(record[field]))

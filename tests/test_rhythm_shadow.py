@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_rhythm_shadow.py, Version: 0.23.18 (2026-09-29)
+# File: tests/test_rhythm_shadow.py, Version: 0.23.19 (2026-09-30)
 
 """The clipped rhythm, computed beside the trimmed maximum (ruling #542).
 
@@ -278,3 +278,17 @@ async def test_a_removed_device_keeps_its_name_in_the_closing_line(hass, freezer
     await hass.async_block_till_done(wait_background_tasks=True)
     closed = [line for line in _shadow_lines(hass) if "| closed |" in line]
     assert closed and f"| {name} |" in closed[-1] and "Unknown" not in closed[-1], closed
+
+
+async def test_the_file_exists_from_the_start(hass):
+    """Until 0.23.19 the file appeared only with its first line, so a
+    person could not tell "nothing to report" from "not running"."""
+    from .helpers import setup_entry
+
+    await setup_entry(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    path = hass.config.path(os.path.join(REPORT_DIR, REPORT_RHYTHM_SHADOW))
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    assert "Rhythm Shadow" in text and "| WHEN | EVENT |" in text
+    assert _shadow_lines(hass) == []

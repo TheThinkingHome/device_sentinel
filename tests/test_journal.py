@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_journal.py, Version: 0.22.25 (2026-09-22)
+# File: test_journal.py, Version: 0.23.19 (2026-09-30)
 
 """The forensic record: incidents, episodes, and system events.
 
@@ -54,7 +54,6 @@ from custom_components.device_sentinel.const import (
     EP_WINDOW,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
-    INCIDENT_ACKNOWLEDGED,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
@@ -301,7 +300,9 @@ async def test_acknowledgement_is_recorded(hass: HomeAssistant):
     uid = coord.todo_items[0]["uid"]
     await coord.async_todo_update(uid=uid, status="completed")
     assert len(_causes(coord, ACTION_ACKNOWLEDGED)) == 1
-    assert _events(coord, INCIDENT_ACKNOWLEDGED) == []
+    # The event this replaced, retired in 0.10.4 and its constant
+    # removed in 0.23.19, must not come back.
+    assert _events(coord, "acknowledged") == []
 
 
 async def test_unacknowledgement_is_recorded_too(hass: HomeAssistant):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_signal_badday.py, Version: 0.23.5 (2026-09-25)
+# File: tests/test_signal_badday.py, Version: 0.23.19 (2026-09-30)
 
 """The bad signal day detector (ruling #310).
 
@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import pathlib
 import statistics
 from fractions import Fraction
@@ -33,7 +32,6 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
-    REPORT_WWW_DIR,
     CONF_BADDAY_BASELINE_DAYS,
     CONF_BADDAY_DROP_LQI,
     CONF_BADDAY_SENSITIVITY,
@@ -244,23 +242,6 @@ async def test_the_approved_slider_words_are_pinned(hass: HomeAssistant):
 
 
 # 0.19.14: the signal report release (ruling #380).
-
-
-def _mk(hass, count, prefix):
-    """Register `count` signal devices and return them."""
-    return [
-        register_device(hass, f"{prefix}{index}", f"{prefix.upper()} {index}")[0]
-        for index in range(count)
-    ]
-
-
-def _signal_page(hass):
-    """Return the signal report as written to www."""
-    path = os.path.join(
-        hass.config.path(REPORT_WWW_DIR), "signal_report.html"
-    )
-    with open(path, encoding="utf-8") as handle:
-        return handle.read()
 
 
 # ==================================================================

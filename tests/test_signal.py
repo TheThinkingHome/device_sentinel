@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal.py, Version: 0.23.16 (2026-09-29)
+# File: test_signal.py, Version: 0.23.19 (2026-09-30)
 
 """Signal detection: the floor line and the rail.
 
@@ -32,7 +32,6 @@ from custom_components.device_sentinel.const import (
     DEV_SIGNAL_DAILY_COUNT,
     DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_RAIL,
-    DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_READS,
     DEV_SIGNAL_SCALE,
     DEV_SIGNAL_TODAY_MIN,
@@ -50,7 +49,7 @@ from custom_components.device_sentinel.detect_signal import (
     scale_of,
     signal_bucket,
 )
-from tests.helpers import setup_coordinator, setup_coordinator_flat_line, setup_entry
+from tests.helpers import setup_coordinator, setup_entry
 
 from .helpers import register_device
 
@@ -81,14 +80,6 @@ def _record(daily_p5):
     return record
 
 
-def _railed_record(counts, rails):
-    """A record seeded with the rail evidence pair (ruling #322)."""
-    record = _new_device_record("2026-07-11T00:00:00+00:00", None)
-    record[DEV_SIGNAL_DAILY_COUNT] = list(counts)
-    record[DEV_SIGNAL_DAILY_RAIL] = list(rails)
-    return record
-
-
 def _armed_lqi_record(floor_days=None):
     """A record with an established LQI floor of 80."""
     return _record(floor_days or [80, 96, 88, 80, 104, 92, 80])
@@ -115,48 +106,11 @@ async def _rail_coordinator(hass):
         suggested_object_id="rail48_linkquality",
         device_id=device.id, config_entry=source,
     )
-    coord = await setup_coordinator_flat_line(hass)
+    coord = await setup_coordinator(hass)
     return coord, device.id
 
 
 # ------------------------------------------- the line is the floor (#66)
-
-
-async def test_lqi_line_is_the_floor(hass: HomeAssistant):
-    """The floor is the plain minimum of the P5 window (ruling
-    #323): P5 already discards the worst five percent of every day
-    by time, so no cross-day trim sits on top of it."""
-    coord = await setup_coordinator_flat_line(hass)
-    record = _armed_lqi_record()
-    line = coord._danger_line(record)
-    assert line == 80
-
-
-async def test_rssi_line_is_the_floor(hass: HomeAssistant):
-    """Same rule as LQI, no offset: below the floor is below the
-    floor whichever sign the scale carries."""
-    coord = await setup_coordinator_flat_line(hass)
-    record = _armed_rssi_record()
-    line = coord._danger_line(record)
-    assert line == -70
-
-
-async def test_line_lives_from_the_first_day(hass: HomeAssistant):
-    """The line is the plain lowest P5 from the first recorded day;
-    there is no arming wait to sit out."""
-    coord = await setup_coordinator_flat_line(hass)
-    record = _new_device_record("2026-07-11T00:00:00+00:00", None)
-    record[DEV_SIGNAL_DAILY_P5] = [80, 96, 88]
-    assert coord._danger_line(record) == 80
-
-
-async def test_a_null_day_is_skipped_by_the_floor(hass: HomeAssistant):
-    """A rail-only day records null statistics (ruling #305), and
-    the floor skips the null rather than crashing or reading it as
-    zero."""
-    coord = await setup_coordinator_flat_line(hass)
-    record = _record([90.0, None, 84.0, None])
-    assert coord._danger_line(record) == 84.0
 
 
 async def test_line_in_report(hass: HomeAssistant):
@@ -178,7 +132,7 @@ async def test_line_in_report(hass: HomeAssistant):
         suggested_object_id="sig31_linkquality",
         device_id=device.id, config_entry=source,
     )
-    coord = await setup_coordinator_flat_line(hass)
+    coord = await setup_coordinator(hass)
 
     coord.data["devices"][device.id][DEV_SIGNAL_DAILY_P5] = [
         120.0, 118.0, None, 119.0, 121.0, 117.0,
@@ -197,60 +151,41 @@ async def test_line_in_report(hass: HomeAssistant):
     assert "**117** 121 119 - 118 120" in row
 
 
-# -------------------------------------- the rail-filtered floor (0.4.3)
-
-async def test_rail_history_does_not_poison_the_floor(hass: HomeAssistant):
-    """Door Laundry sat at rail for a week, then read a real 172.
-    Rail-only days record null P5 (ruling #305), the floor skips
-    them, and the one real day is the floor."""
-    coord = await setup_coordinator_flat_line(hass)
-    record = _record([None] * 7 + [172.0])
-    assert coord._danger_line(record) == 172.0
-
-
-async def test_all_rail_history_has_no_floor(hass: HomeAssistant):
-    """A device whose entire history is rail has no floor at all,
-    rather than a false one at the rail value."""
-    coord = await setup_coordinator_flat_line(hass)
-    record = _record([None] * 5)
-    assert coord._danger_line(record) is None
-
-
 # ------------------------------------- the rails and stuck detector (#60)
 
 async def test_rail_feeds_neither_floor_nor_estimators(hass: HomeAssistant):
     """A rail value is not a measurement: it never touches today's
-    minimum or the estimators. But it is still a reading, so it
-    stamps the signal value and starts the frozen clock like any
-    other."""
-    coord = await setup_coordinator_flat_line(hass)
+    minimum or the estimators. It is still a reading, so it stamps
+    the signal value like any other."""
+    coord = await setup_coordinator(hass)
     record = _armed_lqi_record()
     coord._feed_signal(record, SIGNAL_RAIL_LQI, 1000.0)
     assert record[DEV_SIGNAL_TODAY_MIN] is None
     assert record[DEV_SIGNAL_VALUE] == SIGNAL_RAIL_LQI
-    assert record[DEV_SIGNAL_LAST_CHANGE] == 1000.0
+    assert "signal_last_change" not in record
 
 
 async def test_rssi_rail_does_not_poison_the_floor(hass: HomeAssistant):
     """James S24+ hit -128 once inside real readings; that spike must
-    not feed the floor. It is still a reading for the frozen clock."""
-    coord = await setup_coordinator_flat_line(hass)
+    not feed today's statistics."""
+    coord = await setup_coordinator(hass)
     record = _armed_rssi_record()
     coord._feed_signal(record, SIGNAL_RAIL_RSSI, 1000.0)
     assert record[DEV_SIGNAL_TODAY_MIN] is None
     assert record[DEV_SIGNAL_VALUE] == SIGNAL_RAIL_RSSI
 
 
-async def test_a_changed_reading_moves_the_frozen_clock(
+async def test_a_real_reading_after_a_rail_counts(
     hass: HomeAssistant,
 ):
     """The recovered-by-hand case: the moment a revived sensor sends a
-    different value, last_change advances and it is no longer flat."""
-    coord = await setup_coordinator_flat_line(hass)
+    real value, it is the reading and it feeds the day. (The frozen
+    clock this once checked, last_change, retired with dwell's
+    recording in 0.23.19, as ruling #310 scheduled.)"""
+    coord = await setup_coordinator(hass)
     record = _armed_lqi_record()
     coord._feed_signal(record, SIGNAL_RAIL_LQI, 1000.0)
     coord._feed_signal(record, 116.0, 2000.0)
-    assert record[DEV_SIGNAL_LAST_CHANGE] == 2000.0
     assert record[DEV_SIGNAL_VALUE] == 116.0
     assert record[DEV_SIGNAL_TODAY_MIN] == 116.0
 
@@ -322,7 +257,7 @@ async def test_short_history_is_not_a_rail(hass: HomeAssistant):
 # ------------------------------------ exclusion: recorded, not reported
 
 async def test_excluded_device_by_device_id(hass: HomeAssistant):
-    coord = await setup_coordinator_flat_line(hass, {CONF_SIGNAL_MUTED_DEVICES: ["dev-plug"]})
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MUTED_DEVICES: ["dev-plug"]})
     assert coord._signal_muted("dev-plug") is True
     assert coord._signal_muted("dev-other") is False
 
@@ -361,13 +296,13 @@ async def test_excluded_device_still_records_but_is_not_reported(
         suggested_object_id="plug_linkquality",
         device_id=device.id, config_entry=source,
     )
-    coord = await setup_coordinator_flat_line(hass, {CONF_SIGNAL_MUTED_DEVICES: [device.id]})
+    coord = await setup_coordinator(hass, {CONF_SIGNAL_MUTED_DEVICES: [device.id]})
     record = coord.data["devices"][device.id]
     record[DEV_SIGNAL_DAILY_P5] = [80.0, 96.0, 88.0]
     record[DEV_SIGNAL_VALUE] = 80.0
 
-    # Still observed: the floor is computed, history is intact.
-    assert coord._danger_line(record) == 80.0
+    # Still observed: its history is kept.
+    assert record[DEV_SIGNAL_DAILY_P5] == [80.0, 96.0, 88.0]
     # Not judged: absent from the frozen list regardless of state.
     assert all(
         row["name"] != "LR Router Plug"
@@ -655,45 +590,6 @@ def test_routing_is_stable_however_the_readings_interleave():
 # ------------------------------------------- a series past its window
 
 
-async def test_the_floor_reads_only_the_window_it_is_given(
-    hass: HomeAssistant,
-):
-    """A long series does not drag an old regime forward.
-
-    The floor reads the most recent thirty days (SIGNAL_DAYS_KEEP,
-    widened by #196), and a device that has been running for months
-    holds more than that. A link that was poor in its first month and
-    steady since must be judged on the month it is in, or every
-    device that ever had a bad patch carries it as a permanent
-    excuse.
-    """
-    coord = await setup_coordinator_flat_line(hass)
-    record = _new_device_record("2026-06-01T00:00:00+00:00", None)
-    # Sixty days at a poor floor, then thirty steady and high.
-    record[DEV_SIGNAL_DAILY_P5] = [40.0] * 60 + [88.0] * 30
-    assert coord._danger_line(record) == 88.0
-
-    # And the reverse: a link that has just gone bad is judged bad,
-    # however good its history was.
-    record[DEV_SIGNAL_DAILY_P5] = [95.0] * 60 + [52.0] * 30
-    assert coord._danger_line(record) == 52.0
-
-
-async def test_the_floor_at_the_window_boundary(hass: HomeAssistant):
-    """Exactly thirty days in, and one day past it.
-
-    The day the oldest reading leaves the window is the day the line
-    can move without anything about the device changing, which is the
-    one moment a person would call the reading wrong.
-    """
-    coord = await setup_coordinator_flat_line(hass)
-    record = _new_device_record("2026-06-01T00:00:00+00:00", None)
-    record[DEV_SIGNAL_DAILY_P5] = [30.0] + [90.0] * 29
-    assert coord._danger_line(record) == 30.0
-    record[DEV_SIGNAL_DAILY_P5] = [30.0] + [90.0] * 30
-    assert coord._danger_line(record) == 90.0
-
-
 async def test_a_long_series_with_gaps_and_rails(hass: HomeAssistant):
     """Ninety days of real shape: null days, rail days, and a floor.
 
@@ -702,7 +598,7 @@ async def test_a_long_series_with_gaps_and_rails(hass: HomeAssistant):
     zero. Over three months a device collects both, and the floor has
     to survive the mixture.
     """
-    coord = await setup_coordinator_flat_line(hass)
+    coord = await setup_coordinator(hass)
     record = _new_device_record("2026-06-01T00:00:00+00:00", None)
     series = []
     for day in range(90):
@@ -713,9 +609,13 @@ async def test_a_long_series_with_gaps_and_rails(hass: HomeAssistant):
         else:
             series.append(70.0 + (day % 11))
     record[DEV_SIGNAL_DAILY_P5] = series
-    line = coord._danger_line(record)
-    assert line is not None
-    assert 70.0 <= line <= 81.0, line
+    # The bad-day judgment reads the mixture day by day: a null day is
+    # no reading, and no day raises (the floor this once tested was the
+    # dwell line's, retired in 0.23.19 as ruling #310 scheduled).
+    readings = [coord.signal_badday(record, day) for day in range(len(series))]
+    assert readings[0] is None
+    judged = [r for r in readings if r is not None]
+    assert judged and all(70.0 <= r["baseline"] <= 255.0 for r in judged)
 
 
 # A signal reading outside its scale's physical range is ignored (#540).

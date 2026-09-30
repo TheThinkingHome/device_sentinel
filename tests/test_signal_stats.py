@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.23.18 (2026-09-29)
+# File: test_signal_stats.py, Version: 0.23.19 (2026-09-30)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -60,7 +60,6 @@ from custom_components.device_sentinel.const import (
     EP_DEVICE_ID,
     EP_ENDED,
     EP_NAME,
-    EP_SIG_LINE,
     EP_SIG_MEAN,
     EP_SIG_VALUE,
     EP_SIGNAL,
@@ -68,9 +67,6 @@ from custom_components.device_sentinel.const import (
     REPORT_BRIEF_HTML,
     REPORT_DIR,
     SIGNAL_RAIL_LQI,
-)
-from custom_components.device_sentinel.diagnostics import (
-    async_get_config_entry_diagnostics,
 )
 
 from .helpers import register_device, setup_coordinator, setup_entry
@@ -87,17 +83,6 @@ def _brief_path(hass: HomeAssistant) -> str:
 def _brief_text(hass: HomeAssistant) -> str:
     with open(_brief_path(hass), encoding="utf-8") as handle:
         return handle.read()
-
-
-def _trimmed(coordinator, depth):
-    """Return the coordinator with a chosen trim depth.
-
-    The trim is a constant since ruling #311, so a test
-    that needs a different depth patches the accessor
-    rather than saving an option nothing reads.
-    """
-    coordinator._signal_trim = lambda: depth
-    return coordinator
 
 
 async def test_the_accumulators_live_in_the_clock_fields():
@@ -448,123 +433,6 @@ def _seed_signal(coord, device_id, p5_days, mean, sd):
     return record
 
 
-async def test_the_line_can_never_cross_into_the_normal_readings(
-    hass: HomeAssistant,
-):
-    """Ruling #193, from Window Dining Room Right on 2026-08-03.
-
-    Its floor was 240, so a 5 percent margin was 12 points and put
-    the line at 252, above its own mean of 246.2. A device whose
-    line sits above its average reading is below that line nearly
-    all day by arithmetic, and it read 97 percent while running one
-    of the strongest links on the fleet. LQI stops at 255, so a
-    percentage of a high floor is the widest margin exactly where
-    there is least room for it.
-    """
-    coord = await setup_coordinator(hass)
-    device, _ = register_device(hass, "gs1", "Strong Link")
-    record = _seed_signal(
-        coord,
-        device.id,
-        [240.0, 240.0, 240.0, 248.0, 244.0, 244.0, 236.0,
-         248.0, 244.0, 224.0, 248.0, 248.0, 240.0, 244.0],
-        246.21,
-        4.41,
-    )
-
-    line = coord._danger_line(record)
-    assert line is not None
-    # The plain-minimum floor (ruling #323) is 224, the margin is
-    # 5 percent of the distance from perfect, and the unbounded
-    # line sits at 225.55, under the ceiling of 238.21 (the mean
-    # less the LQI clearance, ruling #244). The ceiling no longer
-    # binds this device; it stays as the cap for one whose floor
-    # climbs toward its mean.
-    assert line == pytest.approx(225.55, abs=0.01)
-    assert line < 246.21
-    assert coord._line_is_bounded(record) is False
-
-
-async def test_a_device_with_room_is_left_alone(
-    hass: HomeAssistant,
-):
-    """The guard must not touch the fleet it was not written for.
-
-    Door Gate Garage: floor 124, so the anchored margin is 6.55
-    points (five percent of the 131-point headroom) and the line
-    130.55, while its mean is 192.8. The ceiling sits far above the
-    line and never fires.
-    """
-    coord = await setup_coordinator(hass)
-    device, _ = register_device(hass, "gs2", "Ordinary Link")
-    record = _seed_signal(
-        coord,
-        device.id,
-        [124.0] * 7 + [160.0, 180.0, 200.0, 200.0, 208.0, 212.0, 216.0],
-        192.8,
-        16.41,
-    )
-
-    assert coord._danger_line(record) == pytest.approx(130.55, abs=0.01)
-    assert coord._line_is_bounded(record) is False
-
-
-async def test_the_margin_becomes_a_maximum_on_a_bounded_device(
-    hass: HomeAssistant,
-):
-    """What the change does to the setting, pinned so it is not a
-    surprise later: past the point where the ceiling bites, moving
-    the slider does nothing to that device."""
-    coord = await setup_coordinator(hass)
-    device, _ = register_device(hass, "gs3", "Bounded Link")
-    record = _seed_signal(
-        coord, device.id, [240.0] * 14, 246.21, 4.41
-    )
-
-    lines = []
-    for pct in (0, 2, 5, 10):
-        coord._signal_margin = lambda pct=pct: pct / 100.0
-        lines.append(coord._danger_line(record))
-    # This device's floor (240) sits within the LQI clearance of its
-    # mean (246.21), so the ceiling (238.21, ruling #244) is below the
-    # floor itself and holds at every slider position, zero included.
-    # A floor inside the noise band is exactly what the clearance
-    # exists to keep the line out of, and min() only ever makes a
-    # device less sensitive.
-    assert lines[0] == lines[1] == lines[2] == lines[3]
-    assert lines[0] == pytest.approx(238.21, abs=0.01)
-
-
-async def test_no_statistics_means_no_ceiling(
-    hass: HomeAssistant,
-):
-    """A fresh install has no mean and deviation yet, so nothing is
-    bounded and the line is the anchored formula alone: floor 240
-    plus five percent of the 15-point headroom."""
-    coord = await setup_coordinator(hass)
-    device, _ = register_device(hass, "gs4", "New Link")
-    record = coord.data[DATA_DEVICES][device.id]
-    record[DEV_SIGNAL_DAILY_P5] = [240.0] * 14
-    record[DEV_SIGNAL_DAILY_MEAN] = []
-    record[DEV_SIGNAL_DAILY_SD] = []
-
-    assert coord._danger_line(record) == pytest.approx(240.75, abs=0.01)
-    assert coord._line_is_bounded(record) is False
-
-
-async def test_the_diagnostics_say_whether_the_line_was_bounded(
-    hass: HomeAssistant,
-):
-    """Recorded rather than derived, so a download answers it."""
-    coord = await setup_coordinator(hass)
-    device, _ = register_device(hass, "gs5", "Strong Link")
-    _seed_signal(coord, device.id, [240.0] * 14, 246.21, 4.41)
-
-    payload = await async_get_config_entry_diagnostics(hass, coord.entry)
-    row = payload["devices"][device.id]
-    assert row["signal_line_bounded"] is True
-
-
 # ------------------------------- the window and the ladder (#196)
 
 async def test_weak_links_are_counted_apart_from_rails(
@@ -687,51 +555,6 @@ async def test_the_retired_signal_problems_sensor_is_swept(
     )
 
 
-async def test_the_clearance_frees_a_near_constant_device(
-    hass: HomeAssistant,
-):
-    """Ruling #244, from Master City Blinds on 2026-08-07.
-
-    A motion-blind holding an RSSI inside 2 dB for days: mean -50.92,
-    deviation 1.43. Half a deviation put the ceiling at -51.64,
-    inside the two values the device alternates between, and a day
-    of ordinary -50/-52 chatter read 94.89 percent dwell. With the
-    3 dB RSSI clearance the ceiling sits at -53.92 and both readings
-    are healthy.
-    """
-    coord = await setup_coordinator(hass)
-    device, _ = register_device(hass, "gs5", "Near Constant Blind")
-    record = _seed_signal(
-        coord, device.id, [-54.0] * 14, -50.92, 1.43
-    )
-
-    line = coord._danger_line(record)
-    assert line is not None
-    assert line == pytest.approx(-53.92, abs=0.01)
-    assert -52.0 > line
-    assert coord._line_is_bounded(record) is True
-
-
-async def test_a_zero_deviation_day_cannot_put_the_line_on_the_mean(
-    hass: HomeAssistant,
-):
-    """Dining Shades: deviation exactly 0.00 across a whole day.
-
-    Half of zero is zero, so before ruling #244 the ceiling was the mean
-    itself, and dwell counts at-or-below: a device reading its own
-    mean all day read 100 percent. The clearance makes zero
-    deviation the strongest case rather than the degenerate one.
-    """
-    coord = await setup_coordinator(hass)
-    device, _ = register_device(hass, "gs6", "Constant Shade")
-    record = _seed_signal(coord, device.id, [-64.0] * 14, -60.0, 0.0)
-
-    line = coord._danger_line(record)
-    assert line is not None
-    assert line == pytest.approx(-63.0, abs=0.01)
-    assert -60.0 > line
-
-
 async def test_the_fold_records_count_line_and_rail(
     hass: HomeAssistant,
 ):
@@ -787,7 +610,9 @@ async def test_an_episode_carries_its_signal_snapshot(
     # for no time yet, so the day's mean is 140 rather than the
     # average of the two readings (ruling #259).
     assert snapshot[EP_SIG_MEAN] == pytest.approx(140.0, abs=0.01)
-    assert snapshot[EP_SIG_LINE] is not None
+    # No line since 0.23.19: the reading and the good state are what
+    # #172 needs; the dwell line is retired from recording (#310).
+    assert "line" not in snapshot
 
     episode = {
         EP_DEVICE_ID: device.id,
@@ -946,14 +771,13 @@ async def test_the_fold_records_p5_and_p50_and_resets(
 async def test_a_rail_day_does_not_crash_the_readers(
     hass: HomeAssistant,
 ):
-    """The ceiling, the line, and the reports survive a null day.
+    """The readers and the reports survive a null day.
 
     The 20 August outage: the first fold under the #305 guard wrote a
-    rail-only row with null statistics, exactly as designed, and
-    _good_state_ceiling read means[-1] unguarded, so the morning
-    report write took the whole integration down. The ceiling now
-    rests on the most recent day that has statistics, and a record
-    whose every day is rail-only has no ceiling rather than a crash.
+    rail-only row with null statistics, exactly as designed, and a
+    reader took the whole integration down on it. The good-state
+    ceiling that crashed went with the dwell line in 0.23.19; the
+    guard that matters, every reader surviving the row, stays.
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "st8", "Railed All Day")
@@ -964,17 +788,14 @@ async def test_a_rail_day_does_not_crash_the_readers(
     coord._feed_signal(record, 180.0, 1000.0)
     coord._feed_signal(record, 184.0, 2000.0)
     coord._roll_signal_stats(record, 86400.0)
-    ceiling_before = coord._good_state_ceiling(record)
-    assert ceiling_before is not None
 
     # Day two: nothing but rails, the row the outage was made of.
     coord._feed_signal(record, 255.0, 86400.0 + 1000.0)
     coord._roll_signal_stats(record, 2 * 86400.0)
     assert (record.get(DEV_SIGNAL_DAILY_MEAN) or [])[-1] is None
 
-    # The readers all survive, and the ceiling rests on day one.
-    assert coord._good_state_ceiling(record) == ceiling_before
-    coord._danger_line(record)
+    # The bad-day judgment reads the null day as no reading.
+    assert coord.signal_badday(record) is None
 
     # Every reader at once: the whole report pipeline renders over
     # the null day. The outage had two readers with the same fault
@@ -988,10 +809,10 @@ async def test_a_rail_day_does_not_crash_the_readers(
     ).read()
     assert "Railed All Day" in telemetry
 
-    # A record that has only ever railed has no ceiling.
+    # A record that has only ever railed has no reading either.
     other, _ = register_device(hass, "st9", "Born Railed")
     fresh = coord.data[DATA_DEVICES][other.id]
     fresh[DEV_SIGNAL_SCALE] = "lqi"
     coord._feed_signal(fresh, 255.0, 1000.0)
     coord._roll_signal_stats(fresh, 86400.0)
-    assert coord._good_state_ceiling(fresh) is None
+    assert coord.signal_badday(fresh) is None

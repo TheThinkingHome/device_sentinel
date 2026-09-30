@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: helpers.py, Version: 0.23.9 (2026-09-26)
+# File: helpers.py, Version: 0.23.19 (2026-09-30)
 
 """Shared test helpers, one canonical version of each.
 
@@ -170,23 +170,6 @@ def register_fleet(
     return fleet
 
 
-async def setup_coordinator_flat_line(
-    hass: HomeAssistant, options: dict | None = None
-):
-    """Return a coordinator whose danger line sits on the floor.
-
-    Many signal tests want the line to equal the floor so the floor's
-    own arithmetic can be asserted without the margin's share of the
-    band in the way. Until ruling #311 they got that by saving a
-    margin of zero; the margin is a constant now, so they patch the
-    accessor instead. The patch is the smallest thing that keeps
-    those tests asking what they were written to ask.
-    """
-    coordinator = await setup_coordinator(hass, options)
-    coordinator._signal_margin = lambda: 0.0
-    return coordinator
-
-
 def flat_schema(schema) -> dict:
     """Return a form's fields with section nesting removed.
 
@@ -327,3 +310,21 @@ def probe_lines(coord, node=None):
         if node is None or row[PROBE_NODE] == node:
             rows.append(row)
     return rows
+
+
+def card_message(hass):
+    """The state card's message as Home Assistant holds it, or None.
+
+    The card is raised through Home Assistant's own persistent
+    notification helpers since 0.23.19, not a service call, so a test
+    reads it from where it lives rather than from a mocked service.
+    """
+    from homeassistant.components.persistent_notification import (
+        _async_get_or_create_notifications,
+    )
+
+    from custom_components.device_sentinel.const import NOTIFY_CARD_ID
+
+    card = _async_get_or_create_notifications(hass).get(NOTIFY_CARD_ID)
+    return card["message"] if card else None
+

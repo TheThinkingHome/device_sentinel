@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_naming.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_naming.py, Version: 0.23.19 (2026-09-30)
 
 """A device with no registry name is never shown as its id (ruling #402)."""
 
@@ -88,3 +88,38 @@ def test_never_a_bare_hash():
         Dev(manufacturer="A", model="B", connections=_mac()), None,
     ):
         assert not HEX32.match(display_name(dev, "unifi", DEVICE_ID))
+
+
+# A name of any length stops at NAME_LENGTH_MAX (0.23.19).
+
+
+def test_a_real_name_is_never_cut():
+    """The longest real name on the five houses measured, 54 characters,
+    on the second house."""
+    from custom_components.device_sentinel.naming import _fit
+
+    longest = "TP-LINK_Power Strip_36D8 Grumpy Desk light enable (p1)"
+    assert _fit(longest) == longest
+
+
+def test_a_name_past_the_limit_is_cut_and_marked():
+    from custom_components.device_sentinel.const import NAME_LENGTH_MAX
+    from custom_components.device_sentinel.naming import _fit
+
+    cut = _fit("N" * 10_000)
+    assert len(cut) == NAME_LENGTH_MAX
+    assert cut.endswith("\u2026")
+    assert _fit("x" * NAME_LENGTH_MAX) == "x" * NAME_LENGTH_MAX
+
+
+async def test_a_long_registry_name_reaches_no_report_whole(hass):
+    from .helpers import register_device, setup_entry
+
+    device, _ = register_device(hass, "long", name="L" * 10_000)
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    assert len(coord._device_name(device.id)) == 60
+    await hass.async_add_executor_job(coord._write_reports)
+    with open(hass.config.path("device_sentinel/device_telemetry.md")) as fh:
+        longest = max(len(line) for line in fh)
+    assert longest < 1000, longest

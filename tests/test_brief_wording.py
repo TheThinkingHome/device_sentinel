@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.23.12 (2026-09-27)
+# File: test_brief_wording.py, Version: 0.23.19 (2026-09-30)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -337,7 +337,7 @@ async def test_brief_opens_with_prose(hass: HomeAssistant):
 
     assert text.index("## In Short") < text.index("## Now")
     assert "Prose Sensor stopped reporting at " in text   # history
-    assert "Prose Sensor stopped reporting 1.0h ago." in text  # standing
+    assert "Prose Sensor stopped reporting 60m ago." in text  # standing
     assert "Right now:" in text
 
 
@@ -641,7 +641,7 @@ async def test_the_recovery_clock_time_is_dropped_from_a_pair(
     await hass.async_add_executor_job(coord._write_reports, "test")
     prose = read_brief(hass)
     prose = prose[prose.index("## In Short"): prose.index("## Now")]
-    assert "and recovered 1.0h later." in prose
+    assert "and recovered 60m later." in prose
     assert "recovered at" not in prose
 
 
@@ -699,7 +699,7 @@ async def test_two_breaks_in_one_window_give_two_episodes(
     assert "went silent twice" in prose
     assert "3.0h in total" in prose
     rows = text[text.index("## Last 24 Hours"):]
-    assert "1.0h" in rows
+    assert "60m" in rows
     assert "2.0h" in rows
 
 
@@ -1861,3 +1861,28 @@ async def test_a_flood_with_a_cause_is_one_sentence(
     short = text[text.index("In Short"):text.index("Now")]
     assert short.count("Flood ") < 5, short.count("Flood ")
     assert "200 devices" in text
+
+
+async def test_a_refused_row_is_not_told_as_unchanged(hass):
+    """Since #370 a storage-check event means the write seam refused a
+    row and dropped it, and its detail says so. The sentence once ended
+    "Nothing was changed.", the pre-#370 wording, and read against the
+    detail as a contradiction (found in the 0.23.19 reading pass)."""
+    from custom_components.device_sentinel.const import (
+        SYS_DETAIL,
+        SYS_KIND,
+        SYS_STORAGE_SHAPE,
+        SYS_WHEN,
+    )
+
+    coord = await setup_coordinator(hass)
+    row = {
+        SYS_KIND: SYS_STORAGE_SHAPE,
+        SYS_WHEN: dt_util.utcnow().timestamp(),
+        SYS_DETAIL: "a incidents row written by 0.23.19 was refused by the "
+        "shape check and dropped (when: not a moment); this is a fault in "
+        "the writer, not in the file",
+    }
+    sentence = coord._system_event_sentence(row)
+    assert "dropped" in sentence
+    assert "Nothing was changed" not in sentence
