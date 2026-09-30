@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.23.13 (2026-09-27)
+# File: router_ties.py, Version: 0.23.19 (2026-09-30)
 
 """Router ties: which watched devices a router says have left.
 
@@ -16,9 +16,10 @@ than listed. Whether the network itself is up is a different question
 with a different source, answered from the host without any router
 integration at all, and it belongs in `wifi.py`.
 
-Everything below is unchanged from the file this replaces, including
-the `wifi` upstream kind and the `Bridge: WiFi` sensor, because both
-are a published contract and the rename does not touch them.
+The rename changed no behaviour, and kept the `wifi` upstream kind and
+the `Bridge: WiFi` sensor under their names, because both are a
+published contract. The file has grown since: the medium judgment
+(rulings #415 to #434) and the router-integration exclusion (#420).
 
 The Wi-Fi outage: a capability, deliberately not a stack.
 
@@ -134,13 +135,6 @@ WIRED_MARKERS = (
     ("connection_type", "lan"),
 )
 
-# Positive wireless confirmation, again only where published: an
-# SSID exists for a wireless client and not for a wired one. Unifi
-# spells it `essid` and Fritz `ssid`. Recorded in the diagnostics
-# rather than acted on: no measured case needs it, and a tie the
-# exclusion already kept does not need a second reason to stay.
-SSID_KEYS = ("essid", "ssid")
-
 # What a router states outright about a client's medium, read as
 # stated (ruling #417). UniFi carries `essid`, `radio` and `ap_mac`
 # on a wireless client. TP-Link carries none of those and instead
@@ -166,20 +160,19 @@ MEDIUM_MINORITY_SHARE = 0.10
 # And a minority overrules nothing until there is this much evidence
 # behind it (ruling #432).
 #
-# This is the whole of the answer to the stripped reading found on
-# 14 September, and the only one available. When a client leaves,
-# TP-Link strips its network name and band and reports it as wired,
-# which is byte for byte what it publishes for a genuine wired
-# client. A tie rebuild landing between the attribute update and the
-# state update reads `home` carrying that shape. Refusing the shape
-# was tried and reverted: it turns every real wired device on the
-# fleet into unknown. The two cases cannot be told apart from one
-# reading, so they are told apart by how often each occurs. The share was measured over ten days,
-# where the tightest contradiction on either fleet was 2 against 22.
-# On six samples one bad reading is sixteen percent: on 14 September
-# three known-wireless devices went to unknown on a single stripped
-# reading each, hours after a fresh install. A share means nothing
-# until there are enough samples for it to be a share of anything.
+# This is the whole of the answer to the stripped reading found on 14
+# September, and the only one available. When a client leaves, TP-Link strips
+# its network name and band and reports it as wired, which is byte for byte
+# what it publishes for a genuine wired client. A tie rebuild landing between
+# the attribute update and the state update reads `home` carrying that shape.
+# Refusing the shape was tried and reverted: it turns every real wired device
+# on the fleet into unknown. The two cases cannot be told apart from one
+# reading, so they are told apart by how often each occurs. The share was
+# measured over ten days, where the tightest contradiction on either fleet was
+# 2 against 22. On six samples one bad reading is sixteen percent: on 14
+# September three known-wireless devices went to unknown on a single stripped
+# reading each, hours after a fresh install. A share means nothing until there
+# are enough samples for it to be a share of anything.
 MEDIUM_MINORITY_FLOOR = 20
 
 
@@ -927,8 +920,7 @@ class RouterTiesMixin:
         if back >= fell:
             # Every member of the fallen set is home, so there is
             # provably nothing left to wait for (ruling #430).
-            # Checked before the
-            # announce, because a recovery that is already complete
+            # Checked before the announce, because a recovery that is already complete
             # has nothing to settle: announcing and then serving out
             # two quiet ticks would hold the outage open for two
             # minutes over devices that are all back.
@@ -1009,7 +1001,6 @@ class RouterTiesMixin:
         self._wifi_quiet_ticks = 0
         self._wifi_settle_losses = 0
         self._wifi_recovering_at = None
-        self._wifi_recovered_seen = {}
 
     def _wifi_declare(self, now: float, still_gone: int) -> None:
         """Declare the outage, dated from the first fall."""
@@ -1037,7 +1028,8 @@ class RouterTiesMixin:
         )
 
     def _wifi_restore(self, now: float) -> None:
-        """Close the outage once fewer than the floor remain gone."""
+        """Close the outage: called when every fallen tracker is home
+        (ruling #430) or when the recovery has settled (#423, #424)."""
         since = self._wifi_down_at
         # Read before the outage is cleared, or there is nothing left
         # to ask: whatever it was claiming keeps that claim for a

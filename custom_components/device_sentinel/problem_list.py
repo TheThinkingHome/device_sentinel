@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.23.16 (2026-09-28)
+# File: problem_list.py, Version: 0.23.19 (2026-09-30)
 
 """The problem list: the single memory every channel renders.
 
@@ -36,7 +36,6 @@ from __future__ import annotations
 import uuid
 from typing import Any
 from homeassistant.core import callback
-from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import (
     async_call_later,
 )
@@ -64,7 +63,6 @@ from .const import (
     LOGGER,
     NOTIFY_FAMILY_FREEZE,
     NOTIFY_KIND_FAMILY,
-    SIGNAL_PROBLEM_ADDITION,
     STACK_DISPLAY_NAMES,
     TODO_ACKED_AT,
     TODO_DESCRIPTION,
@@ -153,14 +151,12 @@ class ProblemListMixin:
     def todo_items(self) -> list[dict[str, Any]]:
         """Return the stored problem items in display order.
 
-        Only rows a consumer can use. The store may hold a row the
-        shape check has named and Verify left untouched (ruling
-        #278); the to-do entity, the sensors and the brief all read
-        through here, so this is the one line that keeps such a row
-        off every surface, the way watched_records does for a
-        device record (rulings #257, #357). The row stays in the
-        store, still named on the card, until a restore or a trim
-        (ruling #369).
+        Only rows a consumer can use. A damaged row is repaired out of
+        the store at the boundary (ruling #370), so this filter is the
+        readers' own safety for a row made some other way; the to-do
+        entity, the sensors and the brief all read through here, the
+        way every record surface reads through watched_records
+        (rulings #257, #357).
         """
         return [
             record
@@ -186,10 +182,10 @@ class ProblemListMixin:
         """
         def order(record: Any) -> tuple[int, str]:
             # A row the sorter cannot read sorts last and sorts by
-            # nothing, rather than raising and taking the sync down:
-            # the shape check has named it, and it is carried through
-            # untouched (ruling #369). Every key is a string so no
-            # two rows can be incomparable.
+            # nothing, rather than raising and taking the sync down
+            # (ruling #369). The boundary repairs such a row (ruling
+            # #370); this is the sorter's own safety. Every key is a
+            # string so no two rows can be incomparable.
             if not isinstance(record, dict):
                 return 2, ""
             acknowledged = record.get(TODO_STATUS) == "completed"
@@ -214,8 +210,8 @@ class ProblemListMixin:
         """Apply a user edit to one item.
 
         A status of completed is the acknowledgment: the item stays on
-        the list, marked done, and Step 8 will send nothing about a
-        device while its item sits acknowledged. The check time is
+        the list, marked done, and nothing is sent about a device
+        while its item sits acknowledged. The check time is
         stamped because it orders the acknowledged block. Only a full
         recovery deletes the item; unchecking simply reopens it. Text
         edits do not stick: the sync owns the wording and rewrites it
@@ -306,8 +302,8 @@ class ProblemListMixin:
 
         Deleting an item whose device is still detected is the hard
         un-acknowledge: the next sync re-adds it fresh, and that
-        re-add lands in the journal like any other, so Step 8 will
-        announce it again.
+        re-add lands in the journal like any other, so it is
+        announced again.
 
         Both halves reach the timeline now. Without the deletion on
         the record, a reader saw the same device detected twice with
@@ -338,14 +334,15 @@ class ProblemListMixin:
     def _current_problems(self) -> dict[str, dict[str, Any]]:
         """Return every detected problem, one entry per device.
 
-        Reads the same three properties the Problems sensors publish
-        (frozen_devices_list, battery_low_list, signal_problem_list),
-        so the todo can never disagree with the sensors: one source,
-        two readers. The freeze category string is the kind itself; a
-        device carries at most one freeze kind but may stack battery
-        and signal on top. since is normalized to epoch seconds where
-        the detection has one; a rail has none, so the sync stamps the
-        moment the kind first appears on the item instead.
+        Reads the same properties the family sensors publish
+        (frozen_devices_list, battery_low_list, battery_falling_list,
+        signal_problem_list), with the upstream rows and the flapping_list
+        beside them, so the list can never disagree with the sensors: one
+        source, two readers. The freeze category string is the kind itself; a
+        device carries at most one freeze kind but may stack battery and signal
+        on top. since is normalized to epoch seconds where the detection has
+        one; a rail has none, so the sync stamps the moment the kind first
+        appears on the item instead.
         """
         problems: dict[str, dict[str, Any]] = {}
 
@@ -395,8 +392,8 @@ class ProblemListMixin:
             )
             entry["level"] = row.get("level")
 
-        # A falling cell, from the battery report's own rows so the
-        # list, the report, the brief and the sensor cannot disagree
+        # A falling cell, from the battery rows Battery Trends shows, so
+        # the list, that page, the brief and the sensor cannot disagree
         # about which cells are near the end (ruling #213). Cells
         # already low are absent from that source, so a device never
         # carries both kinds at once from here; where one follows the
@@ -779,12 +776,13 @@ class ProblemListMixin:
     def _journal_addition(
         self, device_id: str, name: str, kind: str
     ) -> None:
-        """Record one addition and announce it on the dispatcher.
+        """Record one addition to the list in the journal.
 
-        The journal plus the signal is the whole Step 8 contract: an
-        addition to the list is the notification trigger, so the
-        engine to come subscribes here and never re-derives newness
-        from raw detections.
+        The journal is the record of what was added and when. It once
+        also announced each addition on a dispatcher signal for a
+        notification engine that was to subscribe here; the engine was
+        built on the sync's own events instead (`_collect_event`), the
+        signal reached nothing, and it went in 0.23.19.
         """
         when = dt_util.utcnow().isoformat()
         self._append_row(
@@ -798,16 +796,6 @@ class ProblemListMixin:
         )
         journal = self.data.setdefault(DATA_TODO_JOURNAL, [])
         del journal[:-TODO_JOURNAL_KEEP]
-        async_dispatcher_send(
-            self.hass,
-            SIGNAL_PROBLEM_ADDITION,
-            {
-                "device_id": device_id,
-                "name": name,
-                "kind": kind,
-                "when": when,
-            },
-        )
 
     def _kind_muted(self, device_id: str, kind: str) -> bool:
         """Whether a person's mute is what silenced this kind.
@@ -1255,10 +1243,11 @@ class ProblemListMixin:
             if isinstance(opened, bool) or not isinstance(
                 opened, (int, float)
             ):
-                # A stamp that is not a moment times nothing. The
-                # row it came from is named on the card and carried
-                # through; the recovery still fires, with no duration
-                # rather than with a crash (ruling #369).
+                # A stamp that is not a moment times nothing: the
+                # recovery still fires, with no duration rather than
+                # with a crash (ruling #369). The boundary repairs
+                # such a row (ruling #370); this is the reader's own
+                # safety.
                 opened = None
             # This path is the device leaving the list altogether, so
             # nothing replaced anything: every kind here really did
@@ -1566,7 +1555,8 @@ class ProblemListMixin:
                 # Verify changes nothing (ruling #278), and a reader
                 # that raises on it takes the whole list down with
                 # it. The same rule #363 set for system events
-                # (ruling #369).
+                # (ruling #369), kept as the reader's safety behind
+                # #370's repair at the storage boundary.
                 kept.append(record)
                 continue
             device_id = record.get(TODO_DEVICE_ID)

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.21.12 (2026-09-17)
+# File: stack_zha.py, Version: 0.23.19 (2026-09-30)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -30,12 +30,13 @@ thirty-second resolution on a live ZHA at Home Assistant 2026.8.3:
    entirely. That is why this reader is never polled on a schedule,
    and why it holds a dwell before it will say down.
 
-WHAT IS NOT BUILT. Pairing. `pairing_open` is always False here, so
-a ZHA house falls to the per-device debounce for interventions
-exactly as it did before (ruling #138). Pairing is expected to be
-observable through the `zha.permit` service call, but expected is
-not measured, and a pairing window claimed wrongly discards real
-silences (rulings #142, #218).
+WHAT IS NOT BUILT. A pairing window. `pairing_open` is always False
+here: ZHA keeps no window state anywhere, and a pairing window
+claimed wrongly discards real silences (rulings #142, #218). What is
+built instead is the join observer below: ZHA announces each device
+that joins or is reconfigured, and that device's recovery is
+credited to a person's hand (ruling #362). Anything else falls to the
+per-device debounce (ruling #138).
 
 WHAT IS UNPROVEN, AND SHIPS SAYING SO. The dwell of sixty seconds
 comes from one radio, one fleet of two devices, and two outage runs.
@@ -98,8 +99,9 @@ def detects(domain: str, device: dr.DeviceEntry) -> bool:
 def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
     """Return whether this device is the stack itself, not hardware.
 
-    No for ZHA (ruling #400). ZHA's coordinator carries no entities and is already set
-    aside for that reason on both fleets that have one.
+    No for ZHA (ruling #400). ZHA's coordinator carries no entities
+    and is already set aside for that reason on both fleets that have
+    one.
 
     Every stack module answers this question so the walk can ask it
     without knowing which stacks exist (ruling #218). The signature

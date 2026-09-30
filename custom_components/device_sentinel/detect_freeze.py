@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.23.16 (2026-09-28)
+# File: detect_freeze.py, Version: 0.23.19 (2026-09-30)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -93,7 +93,6 @@ from .const import (
     FREEZE_REF_RHYTHM_FAST,
     FREEZE_REF_RHYTHM_SLOW,
     FREEZE_UNAVAILABLE_DEBOUNCE,
-    LEARNING_MIN_DAYS,
     LOGGER,
     PAIRING_GRACE_SECONDS_DEFAULT,
     RATCHET_FAST_ALLOWANCE,
@@ -116,10 +115,10 @@ class FreezeMixin:
     ) -> tuple[float | None, set[int]]:
         """Return (operative rhythm, indices of set-aside outliers).
 
-        The trimmed maximum is the Step 4 window rhythm, previewed
-        here for display: the top TRIM_TOP_K daily maxima are set
-        aside as suspected anomalies, and the rhythm is the maximum
-        of the survivors. One anomalous day therefore moves nothing,
+        The trimmed maximum is the rhythm every freeze window is built
+        from: the top TRIM_TOP_K daily maxima are set aside as
+        suspected anomalies, and the rhythm is the maximum of the
+        survivors. One anomalous day therefore moves nothing,
         while a spike that recurs leaves a second high value among
         the survivors and correctly raises the rhythm. Below
         TRIM_MIN_SAMPLES days nothing is trimmed: with so few samples
@@ -127,13 +126,14 @@ class FreezeMixin:
 
         Only the most recent DAILY_MAX_KEEP days are read, however
         many are stored (ruling #131). The trimmed maximum of ninety
-        days
-        is higher than of fourteen, because more days mean more
+        days is higher than of fourteen, because more days mean more
         chances at a long gap, so reading the whole series would
         quietly widen every freeze window on the fleet. Sliced here,
         in the one place the rhythm is computed, so no caller can
         forget; the two callers that use the returned indices to
-        style a cell slice their own copy to match.
+        style a cell slice their own copy to match. The clipped rhythm
+        is computed beside it in shadow and changes no verdict
+        (ruling #542, `rhythm_shadow.py`).
         """
         daily_maximum_gaps = daily_maximum_gaps[-DAILY_MAX_KEEP:]
         if not daily_maximum_gaps:
@@ -282,12 +282,9 @@ class FreezeMixin:
         """Return the unavailable a device tolerates before a taint.
 
         Short absences are mesh blips and the silence around them is
-        still learned; a long one is real downtime and its gap is
-        discarded (ruling #137).
-
-        A blip under this is a hiccup and the surrounding silence is
-        learned; an unavailable at or over it is real downtime and
-        the completed gap is discarded. The value is a floor plus a
+        still learned; an unavailable at or over this is real downtime
+        and the completed gap is discarded (ruling #137). The value is
+        a floor plus a
         share of the device's own freeze window, so a fast device
         keeps the floor while a slow one earns proportionally more
         patience. An unarmed device has no window yet, so it falls
@@ -310,7 +307,7 @@ class FreezeMixin:
     ) -> str | None:
         """Return the down category for a device, or None if alive.
 
-        The rule (#device-level): if any live entity is fresh, the
+        The device-level rule: if any live entity is fresh, the
         device is alive, whatever its other entities read. A device is
         down only when nothing on it is reporting. Then the category
         is read from what the entities show, and a mix resolves to the
@@ -442,12 +439,11 @@ class FreezeMixin:
         because its window already is the wait.
         """
         category = self._device_down_category(device_id, record, now)
-        # Records written before the freeze family existed predate
-        # these fields, and the storage
-        # prune removes unknown keys but never adds missing ones, so
-        # such a record arrives here without them. Default them before
-        # reading, or the direct read raises KeyError and, with the
-        # sweep's per-device guard, that record is skipped.
+        # A record missing these fields is filled at load (ruling
+        # #189), so this is the sweep's own guard for a record made
+        # some other way: default them before reading, or the direct
+        # read raises KeyError and, with the sweep's per-device guard,
+        # that record is skipped.
         record.setdefault(DEV_FROZEN_CATEGORY, None)
         record.setdefault(DEV_FROZEN_SINCE, None)
         current = record[DEV_FROZEN_CATEGORY]
@@ -809,46 +805,14 @@ class FreezeMixin:
         return _covered(self._stop_spans(), start, end)
 
     @property
-    def freeze_tracked_count(self) -> int:
-        """Return how many devices are eligible for freeze detection.
-
-        A device with a learned rhythm (an established reporting
-        cadence) is freeze-judgeable, minus the global device
-        muting. This counts the set freeze detection judges; the
-        per-section freeze mute narrows it further.
-        """
-        return sum(
-            1
-            for device_id, record in self.watched_records()
-            if len(record.get(DEV_DAILY_MAX) or []) >= LEARNING_MIN_DAYS
-            and device_id not in self._muted_devices
-        )
-
-    @property
-    def freeze_tracked_list(self) -> list[dict[str, Any]]:
-        """Return the freeze-eligible devices, for the attribute."""
-        return sorted(
-            (
-                {"name": self._display_names.get(device_id)}
-                for device_id, record in self.data.get(
-                    DATA_DEVICES, {}
-                ).items()
-                if len(record.get(DEV_DAILY_MAX) or []) >= LEARNING_MIN_DAYS
-                and device_id not in self._muted_devices
-            ),
-            key=lambda row: row["name"] or "",
-        )
-
-    @property
     def frozen_devices_list(self) -> list[dict[str, Any]]:
         """Return devices judged frozen, unknown, or unavailable.
 
-        The Device: Frozen problem sensor. One row per down device,
-        carrying its category (the
-        worst of what its entities show) and the UTC time the verdict
-        began, so a person sees what is down, how, and for how long.
-        Muted devices are suppressed from the report but keep their
-        verdict, so undoing a mute shows them again at once.
+        The Device: Frozen problem sensor. One row per down device, carrying its
+        category (the worst of what its entities show) and the UTC time the
+        verdict began, so a person sees what is down, how, and for how long.
+        Muted devices are suppressed from the report but keep their verdict, so
+        undoing a mute shows them again at once.
         """
         rows: list[dict[str, Any]] = []
         for device_id, record in self.watched_records():

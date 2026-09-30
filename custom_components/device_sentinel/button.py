@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: button.py, Version: 0.20.11 (2026-09-08)
+# File: button.py, Version: 0.23.19 (2026-09-30)
 
 """Button platform for the Device Sentinel integration.
 
@@ -66,35 +66,30 @@ async def async_setup_entry(
             DeviceSentinelActionButton(
                 coordinator,
                 key="enable_signal_entities",
-                name="Enable Signals",
                 icon="mdi:signal",
                 action=coordinator.async_enable_signal_entities,
             ),
             DeviceSentinelActionButton(
                 coordinator,
                 key="enable_last_seen_entities",
-                name="Enable Last Seen",
                 icon="mdi:clock-check-outline",
                 action=coordinator.async_enable_last_seen_entities,
             ),
             DeviceSentinelActionButton(
                 coordinator,
                 key="enable_battery_entities",
-                name="Enable Battery",
                 icon="mdi:battery-heart-variant",
                 action=coordinator.async_enable_battery_entities,
             ),
             DeviceSentinelActionButton(
                 coordinator,
                 key="regenerate_reports",
-                name="Regenerate Reports",
                 icon="mdi:file-refresh-outline",
                 action=coordinator.async_regenerate_reports,
             ),
             DeviceSentinelActionButton(
                 coordinator,
                 key="maintenance_mode",
-                name="Maintenance Mode",
                 icon="mdi:progress-wrench",
                 action=coordinator.async_toggle_maintenance,
             ),
@@ -122,14 +117,13 @@ class DeviceSentinelActionButton(ButtonEntity):
         self,
         coordinator: DeviceSentinelCoordinator,
         key: str,
-        name: str,
         icon: str,
         action: Callable[[], Awaitable[dict[str, int]]],
     ) -> None:
-        """Initialize one enable button around its coordinator action."""
+        """Initialize one button around its coordinator action."""
         self._coordinator = coordinator
         self._action = action
-        self._attr_name = name
+        self._attr_translation_key = key
         self._attr_icon = icon
         self._attr_unique_id = f"{coordinator.entry.entry_id}_{key}"
         self._attr_device_info = DeviceInfo(
@@ -145,5 +139,5 @@ class DeviceSentinelActionButton(ButtonEntity):
         }
 
     async def async_press(self) -> None:
-        """Run this button's enable assist."""
+        """Run this button's action."""
         await self._action()

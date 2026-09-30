@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.23.16 (2026-09-28)
+# File: narrative.py, Version: 0.23.19 (2026-09-30)
 
 """How to say what happened: the composer.
 
@@ -43,7 +43,6 @@ from .const import (
     ACTION_UNACKNOWLEDGED,
     DATA_DEVICES,
     DEV_BATTERY_VALUE,
-    INCIDENT_ACKNOWLEDGED,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
@@ -73,7 +72,7 @@ from .escalation import ESCALATED_FROM, state_word
 
 
 class NarrativeMixin:
-    """The memory and the words for the coordinator.
+    """The words for the coordinator: rows read back as sentences.
 
     Mixed into DeviceSentinelCoordinator; every attribute reached for
     here belongs to that class.
@@ -312,9 +311,9 @@ class NarrativeMixin:
     def _compose_event(self, row: dict[str, Any]) -> str:
         """Return one incident as a sentence of history.
 
-        Used by the log today, and by the brief and a future spoken
-        answer later: one composer, so the same event can never be
-        described three different ways by three different renderers.
+        Used by the log and the brief, and meant for a spoken answer
+        later: one composer, so the same event can never be described
+        three different ways by three different renderers.
         """
         name = self._told_name(row)
         kind = row[INC_KIND]
@@ -322,9 +321,6 @@ class NarrativeMixin:
         event = row[INC_EVENT]
         if event == INCIDENT_ACTION:
             return self._action_sentence(name, row.get(INC_CAUSE), when)
-        if event == INCIDENT_ACKNOWLEDGED:
-            # Legacy rows only, removable after 2026-08-11.
-            return f"{name} acknowledged at {when}."
         if event == INCIDENT_RESOLVED:
             span = self._human_span(row.get(INC_DURATION))
             tail = self._recovery_tail(row)
@@ -382,12 +378,10 @@ class NarrativeMixin:
 
         A stop and its recovery are one thing that happened, so the
         prose tells them together and leaves strict chronology to the
-        table, where a reader is looking a time up (ruling #134).
-
-        A device stopping and the same device recovering are one
-        thing that happened, and telling them in strict time order
-        put two unrelated sentences between them in a live brief.
-        The recovery's clock time is dropped because the opening
+        table, where a reader is looking a time up (ruling #134):
+        told in strict time order, they had two unrelated sentences
+        between them in a live brief. The recovery's clock time is
+        dropped because the opening
         time plus the span already gives it, and the table below
         carries exact times for anyone looking one up.
 

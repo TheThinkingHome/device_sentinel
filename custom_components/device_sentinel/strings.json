@@ -133,7 +133,7 @@
       },
       "signal": {
         "title": "Signal Strength",
-        "description": "Controls how the integration catches failing radio links. The system defines a bad signal day by measuring a drop against the hardware's own recent baseline, ensuring steady and jittery sensors are evaluated fairly. [Signal Strength on the Wiki]({wiki_link})",
+        "description": "Controls how the integration catches failing radio links. A bad signal day is a drop measured against the device's own recent normal, so a steady sensor and a jittery one are each judged by their own standard. [Signal Strength on the Wiki]({wiki_link})",
         "data": {
           "badday_drop_lqi": "Bad Day Drop, LQI",
           "badday_drop_rssi": "Bad Day Drop, RSSI",
@@ -340,6 +340,74 @@
             "description": "Part of the storage file held the wrong kind of value and would have stopped Device Sentinel from starting. It was repaired automatically before anything else ran. What was repaired: {what}. Where the originals are: {where}. Nothing is asked of you; pressing Submit records that you have read this."
           }
         }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Status"
+      },
+      "devices_watched": {
+        "name": "Devices: Watched"
+      },
+      "devices_learned": {
+        "name": "Devices: Learned"
+      },
+      "devices_set_aside": {
+        "name": "Devices: Set Aside"
+      },
+      "signal_rails": {
+        "name": "Signal: Rails"
+      },
+      "signal_weak": {
+        "name": "Signal: Weak"
+      },
+      "battery_low": {
+        "name": "Battery: Low"
+      },
+      "device_frozen": {
+        "name": "Device: Frozen"
+      },
+      "maintenance_ends": {
+        "name": "Maintenance: Ends"
+      },
+      "broker": {
+        "name": "Broker: MQTT"
+      },
+      "bridge_wifi": {
+        "name": "Bridge: WiFi"
+      },
+      "bridge_zigbee2mqtt": {
+        "name": "Bridge: Zigbee2MQTT"
+      },
+      "bridge_zha": {
+        "name": "Bridge: ZHA"
+      },
+      "falling_batteries": {
+        "name": "Battery: Falling"
+      }
+    },
+    "button": {
+      "enable_signal_entities": {
+        "name": "Enable Signals"
+      },
+      "enable_last_seen_entities": {
+        "name": "Enable Last Seen"
+      },
+      "enable_battery_entities": {
+        "name": "Enable Battery"
+      },
+      "regenerate_reports": {
+        "name": "Regenerate Reports"
+      },
+      "maintenance_mode": {
+        "name": "Maintenance Mode"
+      }
+    },
+    "todo": {
+      "problem_list": {
+        "name": "Problem List"
       }
     }
   }

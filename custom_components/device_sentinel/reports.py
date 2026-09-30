@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.23.18 (2026-09-29)
+# File: reports.py, Version: 0.23.19 (2026-09-30)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -16,16 +16,17 @@ fifth of it, cohesive and almost entirely read-only, so they were the
 honest first cut.
 
 What lives here now is the shared half: the formatters every report
-uses, the link helper, and the orchestrator that calls the writers. Each report is its own module beside
-this one (ruling #199), because the file had grown past two thousand
-lines and held every report the integration writes.
+uses, the link helper, and the orchestrator that calls the writers.
+Each report is its own module beside this one (ruling #199), because
+the file had grown past two thousand lines and held every report the
+integration writes.
 
 The seam is the report rather than the audience. A split into
 maintainer files and human files was considered first and does not
 survive contact with the code: one orchestrator writes both kinds,
-the address resolver and the cell escaper serve both, and the column
-showing how fast a signal floor is moving is a maintainer column
-computed from the same data the person-facing chart draws.
+the address resolver and the cell escaper serve both, and the
+telemetry's signal columns, a maintainer's view, come from the same
+bad-day judgment the person-facing dashboard draws.
 
 The composition is inheritance rather than delegation because that is
 what the whole file already was. These are mixins on the coordinator,
@@ -62,7 +63,7 @@ from .const import (
     REPORT_STALE_FILES,
     REPORT_TELEMETRY,
 )
-from .durations import LONG_SPAN_SECONDS, long_span
+from .durations import compact_span, LONG_SPAN_SECONDS, long_span
 
 
 from .report_battery import BatteryReportMixin
@@ -140,14 +141,7 @@ class ReportWritingMixin(
         """
         if seconds is None:
             return "-"
-        cap = self.gap_cap()  # type: ignore[attr-defined]
-        if isinstance(seconds, (int, float)) and seconds >= cap:
-            return f"more than {cap / 86400.0:.0f} days"
-        if seconds >= 3600:
-            return f"{seconds / 3600:.2f}h"
-        return f"{seconds:.0f}s"
-
-    # ------------------------------------------------------ freeze margin
+        return compact_span(float(seconds), cap=self.gap_cap())  # type: ignore[attr-defined]
 
     @staticmethod
     def _human_span(seconds: float | None) -> str:
@@ -157,20 +151,18 @@ class ReportWritingMixin(
         seconds = max(0.0, seconds)
         if seconds >= LONG_SPAN_SECONDS:
             return long_span(seconds)
-        if seconds >= 3600:
-            return f"{seconds / 3600:.1f}h"
-        if seconds >= 60:
-            return f"{seconds / 60:.0f}m"
-        return f"{seconds:.0f}s"
+        return compact_span(seconds)
 
 
     def _device_area(self, device_id: str) -> str:
         """Return the device's area name, or an empty string.
 
-        The chart labels carry the room (ruling #176) because the
-        pattern that pays for the whole page is several weak links
-        clustering in one room, and a reader should see that in the
-        bars themselves rather than only in the anomaly table.
+        Shown in brackets beside a device's name in the brief's and the
+        reports' tables, so a reader sees where to go. The room on every
+        label was first ruled for the dwell chart (#176), because weak
+        links clustering in one room is the pattern worth seeing; the
+        chart retired with dwell (#310) and the room beside the name
+        outlived it.
         """
         from homeassistant.helpers import area_registry as ar
 
@@ -307,7 +299,7 @@ class ReportWritingMixin(
         when more than one applies.
 
         A todo icon lived here for one release and moved to the
-        Reporting Devices section: the same state shown twice was
+        Devices With A Fault section: the same state shown twice was
         redundant and confusing, and that section is where a fault's
         whole story reads, list state included.
         """

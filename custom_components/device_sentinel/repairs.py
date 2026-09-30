@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.23.16 (2026-09-28)
+# File: repairs.py, Version: 0.23.19 (2026-09-30)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -24,9 +24,9 @@ The rest of the rules, in the order they bite:
 
 One issue per class, keyed by a stable identifier (ruling #293). Ten
 bridge flaps in a day are one issue that comes and goes, not ten rows.
-The identifier is stable across releases, which is what lets
-`storage_shape` gain a fix flow later without becoming a different
-issue and orphaning the one a person already has open.
+The identifier is stable across releases, which is what lets an issue
+gain a fix flow in a later release without becoming a different issue
+and orphaning the one a person already has open.
 
 An issue is deleted the moment its condition clears (ruling #294).
 Nothing outlives its cause, because a badge lit with nothing behind it
@@ -35,9 +35,13 @@ hides the next real issue inside it.
 Severity is `warning` by default; `error` is reserved for setup and
 storage; `critical` is never used (ruling #295).
 
-An issue is fixable only where a fix flow exists (ruling #296).
-`storage_shape` has none in this release because Heal is not built
-yet, so it carries a link and says plainly that the repair is coming.
+An issue is fixable only where a fix flow exists (ruling #296): the
+three storage notices (repaired containers, a repaired record, a
+restored file), disabled entities and a missing notify target have
+one; no delivery and the two clock notices have none, because
+what they ask is the person's own to do. `storage_shape` is no longer
+raised: storage is repaired where the fault is found since #370, and
+the identifier is only cleared, for installs that raised it before.
 
 Issues are not persistent (ruling #297). They live in memory and are
 re-raised on load if the condition still holds, which makes the
@@ -176,11 +180,14 @@ def delivery_is_configured(entry: Any) -> bool:
     """Is there any target at all for a push or the daily brief?
 
     The persistent card is deliberately not counted here (ruling
-    #301). It defaults on, so counting it would mean this never fired
-    on a system that had been left exactly as installed, which is the
-    system it exists for. What the card does is said in the issue's
-    own words instead, so nothing tells the person their card is off
-    when it is on.
+    #301, a rule #309 kept when it moved #301's timing). A card is
+    read only by someone already looking, so it reaches nobody who is
+    away; and when it defaulted on, counting it would have meant this
+    never fired on a system left exactly as installed, the system it
+    exists for. It has defaulted off since 0.22.5 (ruling #462) and
+    the rule stands. What the card does is said in the issue's own
+    words, so nothing tells the person their card is off when it is
+    on.
     """
     for key in (
         CONF_HIGH_PRIORITY_TARGETS,
@@ -411,8 +418,8 @@ def _evaluate_notify_targets(
 
     Fixable, because removing a target that cannot exist is safe:
     there is nothing behind it to lose. If removing it empties every
-    list, the no-delivery issue takes over at the next fold and says
-    so, which is the correct chain rather than a silence.
+    list, the no-delivery issue takes over at the next brief time and
+    says so, which is the correct chain rather than a silence.
     """
     if not missing:
         _clear(hass, REPAIR_NOTIFY_TARGET_MISSING)
@@ -438,9 +445,10 @@ def _evaluate_no_delivery(
 ) -> None:
     """Raise or clear the nothing-configured issue.
 
-    Evaluated at the fold alone and only once the install is old
-    enough (ruling #301). A person setting the integration up should
-    not be interrupted on their first evening by a badge telling them
+    Evaluated at the brief's send alone (ruling #309, which moved it
+    from the fold) and only once the install is old enough (ruling
+    #301's floor, which #309 kept). A person setting the integration
+    up should not be interrupted on their first evening by a badge telling them
     they have not finished, and the seven days are the same week
     freeze detection already asks for: by then they have had seven
     daily briefs they never received, which is the evidence that this
@@ -540,15 +548,15 @@ def async_evaluate(
     back into the coordinator for them, which keeps the rules here and
     the measurements where they are taken.
 
-    Two of the four are narrower than the two moments (ruling #303).
+    Two of the checks are narrower than the two moments (ruling #303).
     Disabled entities are judged when the brief is sent, and
-    additionally on the first start after Device Sentinel's own
+    also on the first start after Device Sentinel's own
     version changed, because that is when an integration update
     re-ships its diagnostics turned off and it is the only way the
     state arrives. Judging it at every grace close meant a person who
     restarted seven times in a day met the same badge seven times
     over a condition that had not moved. Nothing configured is the
-    brief moment alone (ruling #301).
+    brief moment alone (ruling #309, which moved #301's fold moment).
 
     Both were the fold's until ruling #309 moved them. A card raised
     at midnight is read by nobody, and an install that reboots

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.23.12 (2026-09-27)
+# File: events.py, Version: 0.23.19 (2026-09-30)
 
 """What Device Sentinel says on the Home Assistant bus.
 
@@ -11,13 +11,16 @@ Until now the integration only listened. An automation could not react
 to a device going frozen except by polling an entity's state, which is
 the one thing a monitoring integration ought to make easy.
 
-Every fire call lives here, the same way every Repair call will live in
-one place, so the payload shape is decided once rather than in each of
-the three modules that has a transition to announce.
+Every fire call lives here, the same way every Repair call lives in
+`repairs.py`, so the payload shape is decided once rather than in each
+module that has a transition to announce.
 
-Three event types with separate names rather than one type carrying an
-action field, because an automation triggers on event_type and a
-distinct name is what a person types into the trigger box.
+Six event types, each with its own name rather than one type carrying
+an action field, because an automation triggers on event_type and a
+distinct name is what a person types into the trigger box (ruling
+#289): a fault, its recovery, an acknowledgment, a withdrawal when a
+device leaves the watched set without recovering (ruling #370), and
+an upstream going down and coming back.
 
 Where they fire is the whole design (ruling #289). A device earns an
 event when its line is added to the problem list, when a kind leaves
@@ -27,11 +30,14 @@ carries the per-device debounce (#117) and the multi-fault collapse
 thirty-second blips, one event for a device with two faults, and
 nothing at all during the startup grace (#291).
 
-What is deliberately absent: an event for a coordinator outage. #264
-suppresses the cascade at the problem list itself, so the devices
-behind a downed bridge never become rows and nothing fires. A person
-watching a coordinator has its own availability entity, which is
-simpler and more direct than anything this could offer.
+An outage upstream, a broker or bridge, fires its own pair rather
+than one event per device: #264 suppresses the cascade at the problem
+list, so the devices behind a downed bridge never become rows and
+never fire. It was once left out altogether, on the grounds that a
+coordinator has its own availability entity; but a stopped broker or
+bridge silences a whole house deliberately, and an automation could
+not see the one failure that takes a house quiet, so the pair was
+added.
 """
 
 from __future__ import annotations
@@ -102,7 +108,7 @@ def resolved_by(cause: str | None) -> str:
 
 
 class EventMixin:
-    """Fire the three bus events. Mixed into the coordinator."""
+    """Fire the bus events. Mixed into the coordinator."""
 
     hass: HomeAssistant
 
@@ -215,13 +221,15 @@ class EventMixin:
     def fire_withdrawn(
         self, device_id: str, name: str, kinds, reason: str
     ) -> None:
-        """One event when a line leaves because nobody is watching.
+        """One event when a line leaves without a recovery.
 
-        Not a recovery: the device did not come back, the watching
-        stopped. An automation that paired a fault with this line
-        gets its closing event here, carrying every kind the line
-        held and why it went, and never hears "recovered" for a
-        device that was never away (ruling #370).
+        The device was set aside, so nobody watches it (ruling #370),
+        or a person muted it, which is their own act and leaves
+        silently (ruling #537); the reason says which. Not a recovery:
+        the device did not come back. An automation that paired a fault
+        with this line gets its closing event here, carrying every kind
+        the line held, and never hears "recovered" for a device that
+        was never away.
         """
         self._fire(
             EVENT_WITHDRAWN,

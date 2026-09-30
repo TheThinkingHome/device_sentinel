@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: naming.py, Version: 0.22.18 (2026-09-21)
+# File: naming.py, Version: 0.23.19 (2026-09-30)
 
 """What a device is called, when the registry does not say.
 
@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from homeassistant.helpers import device_registry as dr
 
-from .const import STACK_DISPLAY_NAMES
+from .const import NAME_LENGTH_MAX, STACK_DISPLAY_NAMES
 from .device_fields import device_field
 
 ID_TAIL = 8
@@ -67,20 +67,37 @@ def integration_label(domain: str | None) -> str:
     return STACK_DISPLAY_NAMES.get(domain, domain)
 
 
+def _fit(name: str) -> str:
+    """A name cut to NAME_LENGTH_MAX characters, the cut marked (ruling
+    #547).
+
+    Measured on 29 September 2026 across the five houses: the longest
+    real name is 54 characters (a TP-Link power strip outlet on the
+    second house), so the cut reaches no real name; it stops a name of
+    any length, which a registry allows, from reaching every report,
+    page and message whole. An adversarial 10,000-character name made
+    a 10,409-character telemetry row.
+    """
+    if len(name) <= NAME_LENGTH_MAX:
+        return name
+    return name[: NAME_LENGTH_MAX - 1].rstrip() + "\u2026"
+
+
 def display_name(
     device: dr.DeviceEntry | None, domain: str | None, device_id: str
 ) -> str:
-    """Return what to call this device, never its raw id (ruling #402)."""
+    """Return what to call this device, never its raw id (ruling #402),
+    and never longer than NAME_LENGTH_MAX characters."""
     if device is not None:
         named = _clean(device.name_by_user) or _clean(device.name)
         if named:
-            return named
+            return _fit(named)
         mac = _first_mac(device)
         make = _clean(device_field(device, "manufacturer"))
         model = _clean(device_field(device, "model"))
         if mac and make and model:
-            return f"{make} {model} {mac}"
+            return _fit(f"{make} {model} {mac}")
         if mac:
-            return f"{integration_label(domain)} {mac}"
+            return _fit(f"{integration_label(domain)} {mac}")
     tail = device_id[-ID_TAIL:] if device_id else "unknown"
-    return f"{integration_label(domain)}-{tail}"
+    return _fit(f"{integration_label(domain)}-{tail}")

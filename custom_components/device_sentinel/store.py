@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.23.15 (2026-09-28)
+# File: store.py, Version: 0.23.19 (2026-09-30)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -135,12 +135,15 @@ class StorageMixin:
     ) -> tuple[int, int]:
         """Bring stored records into line with the schema, both ways.
 
-        _new_device_record is the one authoritative field set. Any
-        key a stored record carries that a fresh one does not was
-        written by a past version and is dead, like the frozen fields
-        the rail rework dropped; any key a fresh record carries that
-        a stored one does not belongs to a version newer than the
-        file and has to arrive with a value.
+        _new_device_record is the one authoritative field set. A key a
+        fresh record carries that a stored one does not belongs to a
+        version newer than the file and has to arrive with a value. A
+        key a stored record carries that a fresh one does not is either
+        retired, written by a past version and named in
+        RETIRED_DEVICE_FIELDS, like the frozen fields the rail rework
+        dropped, and removed; or written by a newer version, and kept
+        untouched, so a house can go back a release and forward again
+        without losing it (#189, amended 28 September 2026).
 
         Only the removing half existed until 0.10.22, and the filling
         half was a hand-maintained list of setdefault calls in the
@@ -449,8 +452,8 @@ class StorageMixin:
         (ruling #101), unconditionally: they are the hot file's job,
         written every interval, and the copies the main file once
         carried existed only as a net during the transition, which is
-        over (ruling #241). The strip is a filtered view built for the write
-        rather than a mutation, because the live records must keep
+        over (ruling #241). The strip is a filtered view built for the
+        write rather than a mutation, because the live records must keep
         their clocks for every reader in this process; only the file
         sheds them.
         """
@@ -485,8 +488,8 @@ class StorageMixin:
         The hot file is used whatever its age, because a slightly
         stale clock self-heals on the device's next report while no
         clock at all is a fleet-wide reset. A device the main file has
-        never heard of is skipped, because nine fields cannot rebuild
-        a record. Returns how many devices took their clocks from
+        never heard of is skipped, because the clock fields alone cannot
+        rebuild a record. Returns how many devices took their clocks from
         here.
         """
         devices = loaded.get(DATA_DEVICES) or {}
@@ -539,8 +542,8 @@ class StorageMixin:
         job: the render tick's scheduler reads it when the storage
         write interval closes and takes the main file along with the
         hot one, main file first so the hot stamp is always the newer
-        of the pair (ruling #165). Nothing here schedules a write of its own.
-        The old arrangement did, on its own debounce with its own cap,
+        of the pair (ruling #165). Nothing here schedules a write of its
+        own. The old arrangement did, on its own debounce with its own cap,
         and two independent schedules against one pair of files is the
         race that produced a main file newer than the clocks file, the
         state the final phase of the storage split cannot survive.
@@ -555,8 +558,8 @@ class StorageMixin:
     def _clocks_to_save(self) -> dict[str, Any]:
         """Return only the fields an ordinary report changes.
 
-        Nine of them, taken from what _record_activity and the signal
-        path actually write. Everything else is cold and stays in the
+        The fields CLOCK_FIELDS names, taken from what _record_activity
+        and the signal path actually write. Everything else is cold and stays in the
         main file.
         """
         clocks: dict[str, Any] = {}

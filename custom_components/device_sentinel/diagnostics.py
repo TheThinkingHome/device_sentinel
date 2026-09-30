@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.23.10 (2026-09-26)
+# File: diagnostics.py, Version: 0.23.19 (2026-09-30)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -18,14 +18,18 @@ rather than description.
 It complements device_telemetry.md rather than repeating it: the
 Markdown file is human triage for the owner, this is the complete
 machine-readable record for the maintainer. Device names are included
-because a report without them is unreadable; nothing here is
-sensitive, but the config entry is redacted as a matter of course
-since it carries the user's notification targets.
+because a report without them is unreadable. Network addresses are
+not: testers attach this file to public issues, so every MAC address
+keeps only its maker's half and every home-network address becomes a
+stand-in, the same one throughout the file (0.23.19). The config entry
+is redacted as a matter of course, since it carries the user's
+notification targets.
 """
 
 from __future__ import annotations
 
 import inspect
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -228,6 +232,89 @@ async def _studied(read: Callable[[], Any]) -> dict[str, Any]:
     return result if isinstance(result, dict) else {}
 
 
+
+# Network addresses are redacted from the download (ruling #548): testers
+# attach it to public GitHub issues, and the reference rig's carried 23
+# MAC addresses and the router's address. Each distinct address gets a
+# numbered stand-in, the same wherever it appears, so a device still
+# reads as the same device in every section and a fault can still be
+# traced. A MAC keeps its first half, which names only the maker
+# (20:F8:3B is Espressif) and often tells what a device is.
+_MAC = re.compile(r"\b([0-9A-Fa-f]{2})([:-])([0-9A-Fa-f]{2})\2([0-9A-Fa-f]{2})(?:\2[0-9A-Fa-f]{2}){3}\b")
+# The same address without separators, and in the dotted form, as some
+# integrations register a device: the study snapshot's identifiers
+# carried eight bare MACs on the reference rig and nine on the second
+# house (the 0.23.19 adversarial round). A bare token counts only with
+# a letter A to F in it, so a plain run of digits is never taken for
+# one.
+_MAC_BARE = re.compile(r"(?<![0-9A-Za-z])[0-9A-Fa-f]{12}(?![0-9A-Za-z])")
+_MAC_DOTTED = re.compile(r"(?<![0-9A-Za-z.])[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}(?![0-9A-Za-z.])")
+# Only a home network's addresses, or the host of a web address: four
+# dotted numbers are also how some firmware spells a version (six on the
+# second house, 12.4.0.3 and 45.0.7.6 among them), and a version is the
+# first thing a fault report needs.
+_OCTET = r"(?:25[0-5]|2[0-4]\d|1?\d?\d)"
+_IPV4 = re.compile(
+    r"(?:(?<=://)" + _OCTET + r"(?:\." + _OCTET + r"){3}"
+    r"|\b(?:10|127)(?:\." + _OCTET + r"){3}"
+    r"|\b172\.(?:1[6-9]|2\d|3[01])(?:\." + _OCTET + r"){2}"
+    r"|\b192\.168(?:\." + _OCTET + r"){2}"
+    r"|\b169\.254(?:\." + _OCTET + r"){2})\b"
+)
+
+
+def _redact_addresses(payload: Any) -> Any:
+    """Return the payload with every MAC address and every home-network
+    or web-host IPv4 address replaced; a version that looks like an
+    address is left alone."""
+    macs: dict[str, str] = {}
+    ips: dict[str, str] = {}
+
+    def stand_in(hex12: str) -> str:
+        """Every spelling of one address gets the one stand-in."""
+        whole = ":".join(hex12[i:i + 2] for i in range(0, 12, 2)).upper()
+        if whole not in macs:
+            macs[whole] = f"MAC-{len(macs) + 1:02d}"
+        return f"{whole[:8]}:{macs[whole]}"
+
+    def mac(match: re.Match[str]) -> str:
+        return stand_in(re.sub(r"[:-]", "", match.group(0)))
+
+    def mac_bare(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if not re.search(r"[A-Fa-f]", token):
+            return token
+        return stand_in(token)
+
+    def mac_dotted(match: re.Match[str]) -> str:
+        return stand_in(match.group(0).replace(".", ""))
+
+    def ip(match: re.Match[str]) -> str:
+        whole = match.group(0)
+        if whole not in ips:
+            ips[whole] = f"IP-{len(ips) + 1:02d}"
+        return ips[whole]
+
+    def text(value: str) -> str:
+        value = _MAC.sub(mac, value)
+        value = _MAC_DOTTED.sub(mac_dotted, value)
+        value = _MAC_BARE.sub(mac_bare, value)
+        return _IPV4.sub(ip, value)
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, str):
+            return text(value)
+        if isinstance(value, dict):
+            return {
+                (text(k) if isinstance(k, str) else k): walk(v)
+                for k, v in value.items()
+            }
+        if isinstance(value, (list, tuple, set)):
+            return [walk(v) for v in value]
+        return value
+
+    return walk(payload)
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: DeviceSentinelConfigEntry
 ) -> dict[str, Any]:
@@ -246,11 +333,6 @@ async def async_get_config_entry_diagnostics(
         window_basis, set_aside_indices = coordinator._trimmed_maximum(
             daily_maximum_gaps
         )
-        # The line: the P5 floor (rulings #322, #323) plus the
-        # sensitivity margin. The signal_floor duplicate that was
-        # kept for older readers is dropped (ruling #322): 0.17.0
-        # reset who the readers are.
-        signal_line = coordinator._danger_line(record)
         devices[device_id] = {
             "name": (
                 (device.name_by_user or device.name)
@@ -308,17 +390,6 @@ async def async_get_config_entry_diagnostics(
             ),
             "window_basis": window_basis,
             "set_aside_indices": sorted(set_aside_indices),
-            "signal_danger_line": signal_line,
-            # Whether the good-state ceiling is what set that
-            # line, rather than the margin (ruling #193).
-            # Recorded rather than left to be derived, so the
-            # next device that reads oddly says for itself
-            # whether the bound was holding it. A guard that
-            # fires often is also the measurement of how badly
-            # a percentage of the floor fits a diverse fleet.
-            "signal_line_bounded": coordinator._line_is_bounded(
-                record
-            ),
             "signal_muted": coordinator._signal_muted(device_id),
             # A rail is a reading stuck at the protocol's fill value
             # (LQI 255, RSSI -128), which is a dead reading rather
@@ -356,7 +427,7 @@ async def async_get_config_entry_diagnostics(
         if isinstance(cold_at, (int, float)) and isinstance(hot_at, (int, float))
         else None
     )
-    return {
+    payload = {
         "version": coordinator.version,
         "entry_options": async_redact_data(dict(entry.options), TO_REDACT),
         "infrastructure": _infrastructure(hass, coordinator),
@@ -406,10 +477,6 @@ async def async_get_config_entry_diagnostics(
             # detector attaches only where its stack appears here
             # (ruling #143).
             "stacks": sorted(coordinator._stacks),
-            # Each detected bridge's current state (running, binding,
-            # down, unknown), so a gap discarded as a pairing is
-            # auditable from a diagnostics download and not only from
-            # the live sensor, which is off by default (ruling #149).
             "storms": len(coordinator.data.get(DATA_STORMS) or []),
             "broker_state": coordinator.broker_state,
             "wifi": coordinator.wifi_diagnostics,
@@ -440,6 +507,10 @@ async def async_get_config_entry_diagnostics(
                 else {}
             ),
             "broker": coordinator.broker_attributes,
+            # Each detected bridge's current state (running, binding,
+            # down, unknown), so a gap discarded as a pairing is
+            # auditable from a diagnostics download and not only from
+            # the live sensor, which is off by default (ruling #149).
             "bridge_state": {
                 stack: coordinator.bridge_state(stack)
                 for stack in coordinator.bridge_stacks
@@ -549,3 +620,4 @@ async def async_get_config_entry_diagnostics(
         },
         "devices": devices,
     }
+    return _redact_addresses(payload)

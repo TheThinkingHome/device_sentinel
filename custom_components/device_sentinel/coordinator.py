@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.18 (2026-09-29)
+# File: coordinator.py, Version: 0.23.19 (2026-09-30)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -13,12 +13,15 @@ bus handlers that record activity, the schedulers, and the entity
 properties the sensors read.
 
 Everything with a subject of its own lives beside this file and is
-mixed in (ruling #201). Six modules, chosen by measuring which
+mixed in (ruling #201). The first six were chosen by measuring which
 methods call which rather than by taste: detect_signal, detect_battery
 and detect_freeze for the three detectors, problem_list for the single
 memory every channel renders, store for the two files and the merge,
-and interventions for bridge state, pairing windows and storms. Four
-more predate them: reports, narrative, messenger and notifier.
+and interventions for the upstreams and a person's hand. Reports,
+narrative, messenger and notifier predate them, and many have joined
+since, each with a subject of its own: journal, events, flapping,
+router_ties and wifi, rhythm_shadow, study, model_groups, the dashboard
+and the report modules among them.
 
 A file split rather than a boundary. Every one of those modules is a
 mixin reading this class's state freely, so a method moves between
@@ -26,8 +29,10 @@ them without changing how it runs, and none of them can be
 instantiated or tested alone.
 
 Core rules implemented here, all ruled in the project document:
-- Service-type devices are classified out entirely (no clocks, no
-  statistics, no storage), with a startup audit log naming them.
+- A device with nothing to watch, a service device among them, is
+  set aside: never judged or reported, and named in a startup audit
+  log. It keeps what it had learned (ruling #257), so being watched
+  again costs nothing.
 - The completed-gap principle: learning ingests only finished gaps.
 - The startup grace and the storm detector count the bursts a
   restart or a reconnect produces. Neither mutes anything from
@@ -104,6 +109,7 @@ from .backup import (
     _last_good_holds_devices,
 )
 from .const import (
+    DAILY_SERIES_FIELDS,
     TAINT_UPSTREAM_DOWN,
     FETCHING_INTEGRATIONS,
     FREEZE_CATEGORY_UNAVAILABLE,
@@ -436,6 +442,7 @@ class DeviceSentinelCoordinator(
         # load, which suppresses the missed-day fold (#406, #204).
         self._epoch_wiped: bool = False
         self._storm_feed_q: dict[str, deque[tuple[float, str]]] = {}
+        self._storm_feed_counts: dict[str, dict[str, int]] = {}
         self._storm_active: dict[str, dict[str, Any]] = {}
         # The day's closed storms per domain, memory only, folded
         # into DATA_STORM_DAYS at midnight (ruling #320).
@@ -683,14 +690,12 @@ class DeviceSentinelCoordinator(
         self._options_seen: dict[str, Any] = dict(entry.options)
         # What the last shape check found, held for the Repairs pass
         # because the load check runs inside the grace and the issue
-        # is raised when the grace closes (ruling #300).
+        # is raised when the grace closes (ruling #309, keeping #300's
+        # grace moment).
         # The latch (ruling #341): set when a load verifies faulty or
         # a fold produces a fault, cleared only by a restart that
         # loads clean, which is a new coordinator.
         self._load_faulty: bool = False
-        # Records that were not dicts at load, set aside so nothing
-        # iterating the record set crashes on them, kept so Heal can
-        # answer them and the check can keep naming them (#353).
         # The faults a discarded clocks file carried (#356), kept for
         # the load report; they never reach the card.
         self._clocks_discarded: list[tuple[str, str, str]] = []
@@ -739,8 +744,9 @@ class DeviceSentinelCoordinator(
         cause (ruling #327). It is now stated: setup stops with a
         sentence a person can act on, and stops permanently rather
         than retrying, because a corrupt file does not repair itself
-        between attempts. The last-good copy beside it is untouched
-        and is what the Restore flow will read when it ships.
+        between attempts. Before stopping, it restores the last-good
+        copy beside it and starts from that (ruling #345); it stops
+        only where there is no copy, or the copy will not load either.
         """
         try:
             loaded = await self._store.async_load()
@@ -990,10 +996,10 @@ class DeviceSentinelCoordinator(
             # speaks one vocabulary rather than two.
             for entry in loaded.get(DATA_INCIDENTS) or []:
                 if not isinstance(entry, dict):
-                    # Named by the shape check, left for the card. A
-                    # migration that raised on it stopped setup, which
-                    # is the #357 class at the one moment nothing can
-                    # yet hold it (ruling #369).
+                    # Damage, which the gate repairs after the
+                    # migrations (ruling #370). A migration that raised
+                    # on it stopped setup, which is the #357 class at
+                    # the one moment nothing can yet hold it (#369).
                     continue
                 if entry.get(INC_CAUSE) == LEGACY_CAUSE_UNOBSERVED:
                     entry[INC_CAUSE] = RECOVERY_CAUSE_UNOBSERVED
@@ -1029,7 +1035,7 @@ class DeviceSentinelCoordinator(
                 record.setdefault(TODO_KINDS, {})
                 record.setdefault(TODO_ACKED_AT, None)
             # The hot file is merged here, and the position is
-            # deliberate. Three of the thirteen clock fields are among
+            # deliberate. Three of the clock fields are among
             # what the statistics epoch below wipes, so merging after it
             # would hand those fields straight back and a declared epoch
             # would quietly fail to take. Merging first means the wipe
@@ -1210,8 +1216,8 @@ class DeviceSentinelCoordinator(
             loaded.pop("pre_split_backup_taken", None)
             loaded.pop("phase_b_backup_taken", None)
             # Before the reconciler, which is the last moment the legacy
-            # signal accumulators exist: it removes any key the schema
-            # has dropped (ruling #256).
+            # signal accumulators exist: it removes the retired fields,
+            # these among them (RETIRED_DEVICE_FIELDS, ruling #256).
             repair = loaded.get(DATA_SIGNAL_DAY_REPAIR) != SIGNAL_DAY_REPAIR_MARK
             converted, day_reset = self._migrate_signal_accumulators(
                 loaded[DATA_DEVICES], repair
@@ -1681,6 +1687,9 @@ class DeviceSentinelCoordinator(
             self.deviceless_count,
         )
         await self._write_reports_guarded("setup")
+        # The rhythm shadow's file exists from the start, header only
+        # until its first line (0.23.19).
+        await self.hass.async_add_executor_job(self._shadow_write, [])
 
 
     async def _write_reports_guarded(
@@ -2325,7 +2334,7 @@ class DeviceSentinelCoordinator(
         None means we have such a clock and it has not moved, or the
         entity itself is unavailable, which is information rather
         than a missing value: Door Master's read unavailable for the
-        ten hours it was wedged, and falling back to arrival time
+        ten hours it was hung, and falling back to arrival time
         there would have erased the evidence.
 
         A device with no such entity falls back to arrival time
@@ -2874,9 +2883,6 @@ class DeviceSentinelCoordinator(
         # nine-hour silence.
         self._clear_freeze_verdict(device_id, record)
 
-    # ----------------------------------------------------------- storms
-
-
     # ------------------------------------------------------------ timers
 
 
@@ -2956,8 +2962,8 @@ class DeviceSentinelCoordinator(
         clock stops with it: a virtual machine paused for a backup
         comes back with its wall clock ahead. Nobody was watching in
         either case, so both restart the clocks, and the card names
-        both. Between one
-        minute check and the next the wall clock and a monotonic clock
+        both. Between one minute check and the next the wall clock and
+        a monotonic clock
         advance together; when they disagree by more than the
         threshold, the wall clock was set. Backward, every report is
         stamped before its device's clock and ignored until real time
@@ -3466,8 +3472,9 @@ class DeviceSentinelCoordinator(
     def _evaluate_repairs(self, moment: str) -> None:
         """Reconcile the Repairs panel against how things stand now.
 
-        Two moments and no tick (ruling #300): the startup grace
-        closing, and the midnight fold. Nothing is announced inside
+        Two moments and no tick (ruling #309, which kept #300's grace
+        moment and moved its fold moment): the startup grace closing,
+        and the brief's scheduled send. Nothing is announced inside
         the grace (ruling #291), which is why the load-time shape
         check stores its result rather than raising from where it
         runs, and why this is the first chance a fault found at load
@@ -3691,7 +3698,13 @@ class DeviceSentinelCoordinator(
         await self._on_midnight(None)
 
     async def _on_midnight(self, _now: Any) -> None:
-        """Roll today's maxima into the bounded daily set."""
+        """The midnight fold: close the day for every device.
+
+        Today's gaps, signal statistics and battery level join their
+        daily series, every series is held to the retention (#131),
+        the day's storm tally and the shadow's daily line are
+        written, and the reports are rewritten for the new day.
+        """
         now = dt_util.utcnow().timestamp()
         self._discard_excluded_records()
         # Study readings for hardware no longer volunteered go here,
@@ -3717,6 +3730,22 @@ class DeviceSentinelCoordinator(
             self._roll_dwell(record, now)
             self._roll_battery(record, device_id)
             self._prune_firmware(record, now)
+        # Every daily series held to the retention, whether or not the
+        # day appended to it (ruling #131). Each series trimmed only on
+        # the branch that appended to it, so a device silent all day,
+        # or with no battery or signal reading that day, kept its old
+        # history past a cut in retention until it next learned a day:
+        # on the reference rig cut from 180 days to 30, one device
+        # still held 73 after the fold (0.23.19).
+        keep = self.retention_days
+        for record in self.data[DATA_DEVICES].values():
+            for bucket in (record, record.get(DEV_SIGNAL_ALT)):
+                if not isinstance(bucket, dict):
+                    continue
+                for field in DAILY_SERIES_FIELDS:
+                    series = bucket.get(field)
+                    if isinstance(series, list) and len(series) > keep:
+                        del series[:-keep]
         # The day's storm tally, one row per domain (ruling #320),
         # written before the save that carries it. Dated by the day
         # that just ended: the roll runs at local midnight, when today
@@ -3813,13 +3842,13 @@ class DeviceSentinelCoordinator(
 
     @property
     def episode_share(self) -> float:
-        """Return the configured episode-opening share, as a fraction.
+        """Return the episode-opening share, as a fraction.
 
-        Live from options (ruling #117): a silence opens an episode once it
-        has spent this much of the distance from the device's rhythm
-        to its freeze line. Clamped to the same band the screen
-        offers, so a hand-edited entry cannot produce a threshold
-        that records everything or nothing.
+        A silence opens an episode once it has spent this much of the
+        distance from the device's rhythm to its freeze line. A
+        constant since 0.20.11 (ruling #394), which retired the option
+        #117 had made live; it shapes one forensic file and nothing a
+        person is alerted about.
         """
         return EPISODE_SHARE_PCT / 100.0
 
@@ -3838,14 +3867,13 @@ class DeviceSentinelCoordinator(
         immediately, which keeps the first window from silently
         starting a full interval long.
 
-        The split (ruling #101): routine churn is nine fields per
-        device, so the ordinary window writes the hot file alone, 45
-        KB rather than 335 KB on this fleet. The main file goes first
-        and only when a forensic row is waiting (an episode, an
-        incident, a system event, a registry change), which keeps the
-        hot stamp the newer of the pair. Anything judgment-bearing
-        never reaches here: it is critical and wrote both files
-        within the tick that detected it (ruling #100).
+        The split (ruling #101): routine churn is the clock fields alone
+        (CLOCK_FIELDS), so the ordinary window writes the hot file alone, 45 KB
+        rather than 335 KB on the fleet measured. The main file goes first and
+        only when a forensic row is waiting (an episode, an incident, a system
+        event, a registry change), which keeps the hot stamp the newer of the
+        pair. Anything judgment-bearing never reaches here: it is critical and
+        wrote both files within the tick that detected it (ruling #100).
         """
         now_mono = self.hass.loop.time()
         if now_mono >= self._next_routine_save:
@@ -3938,7 +3966,7 @@ class DeviceSentinelCoordinator(
 
     @property
     def set_aside_count(self) -> int:
-        """Return the number of service devices set aside."""
+        """Return the number of devices set aside, for any reason."""
         return len(self._set_aside)
 
     def _clear_reading_weighted_series(
@@ -3952,8 +3980,7 @@ class DeviceSentinelCoordinator(
         any later analysis, and the September formula work reads
         exactly these series. Cleared once, under a marker, so a
         restart cannot throw away days recorded since. Nothing else
-        goes: the minima, the percentiles, the dwell, and the lines
-        mean today what they meant yesterday.
+        goes: the percentiles mean today what they meant yesterday.
         """
         if loaded.get(DATA_SIGNAL_WEIGHTING) == SIGNAL_WEIGHTING_MARK:
             return
@@ -4433,11 +4460,10 @@ class DeviceSentinelCoordinator(
     def watched_device_rows(self) -> list[dict[str, Any]]:
         """Return every watched device, for the muting picker.
 
-        Service-type devices are absent because they were never
-        watched, so the list cannot offer a muting that would do
-        nothing. Muted devices are present: the list is what is
-        being judged, and a muted device is still a device you
-        may want to un-mute.
+        Set-aside devices are absent because they are not watched, so the list
+        cannot offer a muting that would do nothing. Muted devices are present:
+        the list is what is being judged, and a muted device is still a device
+        you may want to un-mute.
         """
         rows = [
             {
@@ -4539,8 +4565,8 @@ class DeviceSentinelCoordinator(
     ) -> None:
         """Say what signal units this fleet actually publishes.
 
-        Written because the next release has to classify the two
-        scales apart, and nothing anywhere records what unit a
+        Written when the two scales were still to be classified apart
+        (#284, #285), and kept because nothing else records what unit a
         Zigbee2MQTT linkquality entity carries or a ZHA LQI sensor
         carries. Guessing was the alternative and #283 rejected it.
 
@@ -4607,8 +4633,8 @@ class DeviceSentinelCoordinator(
         For a person hunting a problem: fix a frozen device, press
         this, and the report reflects the fix at once rather than at
         the next tick or the nightly write. Judgment runs first so the
-        down-devices section and the verdicts are current, then both
-        files are written with a fresh timestamp that confirms the run.
+        down-devices section and the verdicts are current, then every
+        report is written with a fresh timestamp that confirms the run.
         """
         self._judge_all_devices()
         await self._write_reports_guarded("manual")

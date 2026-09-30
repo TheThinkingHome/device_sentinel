@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.22.20 (2026-09-21)
+# File: detect_signal.py, Version: 0.23.19 (2026-09-30)
 
-"""Signal: the learned floor, the line, and the rails.
+"""Signal: the day's statistics, the bad-day judgment, and the rails.
 
 Every device is judged against its own history and never against a
 fixed number or against another device: a sensor two rooms away
@@ -75,7 +75,6 @@ from .const import (
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_DAILY_SD,
-    DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_M2,
     DEV_SIGNAL_MEAN_RUN,
     DEV_SIGNAL_P5_STATE,
@@ -87,28 +86,18 @@ from .const import (
     DEV_SIGNAL_TODAY_MAX,
     DEV_SIGNAL_TODAY_MIN,
     DEV_SIGNAL_VALUE,
-    GOOD_STATE_CEILING_SD,
     LOGGER,
     RAIL_CONFIRM_DAYS,
-    SIGNAL_CEILING_CLEARANCE_LQI,
-    SIGNAL_CEILING_CLEARANCE_RSSI,
-    SIGNAL_DAYS_KEEP,
-    SIGNAL_LQI_DEAD,
-    SIGNAL_LQI_PERFECT,
     SIGNAL_ALT_FIELDS,
     SIGNAL_NAME_TERMS,
     SIGNAL_REFUSED_UNITS,
     SIGNAL_SCALE_LQI,
     TODO_KIND_RAILED_SIGNAL,
-    SIGNAL_LIFT,
-    SIGNAL_MARGIN,
     SIGNAL_SCALE_RSSI,
     DEV_SIGNAL_ALT,
     DEV_SIGNAL_SCALE,
     SIGNAL_RAIL_LQI,
     SIGNAL_RAIL_RSSI,
-    SIGNAL_RSSI_DEAD,
-    SIGNAL_RSSI_PERFECT,
     TODO_DEVICE_ID,
     TODO_KINDS,
 )
@@ -258,8 +247,48 @@ def _is_percentage(ent: er.RegistryEntry) -> bool:
     return _entity_unit(ent) in SIGNAL_REFUSED_UNITS
 
 
+
+def _badday_of(
+    days: tuple[Any, ...],
+    today_raw: Any,
+    stored_scale: str | None,
+    drop_rssi: float,
+    drop_other: float,
+    sensitivity: float,
+) -> dict[str, float] | None:
+    """One device-day's bad-day reading, from the days before it and
+    the settings (ruling #310). Pure: the same inputs always give the
+    same reading. See `signal_badday` for the rule itself."""
+    today = _usable(today_raw)
+    if today is None:
+        return None
+    base = [value for value in (_usable(entry) for entry in days) if value is not None]
+    if len(base) < BADDAY_MIN_BASELINE:
+        return None
+    if min(base) < 0 <= max(base):
+        return None
+    if (today < 0) is not (base[0] < 0):
+        return None
+    middle = statistics.median(base)
+    spread = _spread(base)
+    if spread < BADDAY_MIN_SPREAD:
+        spread = BADDAY_MIN_SPREAD
+    fall = middle - float(today)
+    scale = stored_scale if stored_scale is not None else scale_of(middle)
+    drop = drop_rssi if scale == SIGNAL_SCALE_RSSI else drop_other
+    deviations = fall / spread
+    return {
+        "today": float(today),
+        "baseline": float(middle),
+        "spread": float(spread),
+        "fall": float(fall),
+        "deviations": float(deviations),
+        "drop_gate": float(drop),
+        "bad": bool(fall >= drop and deviations >= sensitivity),
+    }
+
 class SignalMixin:
-    """Signal: the learned floor, the line, and the rails."""
+    """Signal: the day's statistics, the bad-day judgment, and the rails."""
 
     def _roll_dwell(self, record: dict[str, Any], now: float) -> None:
         """Fold the day's signal statistics.
@@ -431,25 +460,17 @@ class SignalMixin:
     def _feed_signal(
         self, record: dict[str, Any], value: float, now: float
     ) -> None:
-        """Route one signal reading, and track whether it moves.
+        """Route one signal reading to the device's statistics.
 
-        The floor and the dwell timer see only real readings; a rail
-        value (255, -128) is the type's fill value, not a measurement,
-        so it feeds neither. But every reading,
-        rail or real, updates the frozen clock, because a signal that
-        never changes is not reporting whatever value it is frozen at.
-        last_change advances only when the value actually differs, so
-        the gap since last_change is how long the signal has been
-        flat while the device kept reporting.
+        Only real readings feed the day's statistics; a rail value
+        (255, -128) is the type's fill value, not a measurement, so it
+        is counted as a rail instead, which the rail detector reads.
         """
         # Which of the device's scales this reading belongs to. The
         # primary is the record itself; a second scale is its own
         # block, recorded and never judged (rulings #284, #285).
         bucket = signal_bucket(record, scale_of(value))
 
-        previous = bucket.get(DEV_SIGNAL_VALUE)
-        if previous is None or value != previous:
-            bucket[DEV_SIGNAL_LAST_CHANGE] = now
         bucket[DEV_SIGNAL_VALUE] = value
 
         if value in (SIGNAL_RAIL_LQI, SIGNAL_RAIL_RSSI):
@@ -515,8 +536,8 @@ class SignalMixin:
         stays on the clock rather than being dropped, so no time is
         lost across feeds. Rails never arrive here (the caller
         returns before the accumulators on a rail), and the held
-        value keeps accruing through silence, matching how dwell
-        reads a silent link.
+        value keeps accruing through silence, as a time-weighted
+        percentile should read a silent link.
         """
         held = record.get(DEV_SIGNAL_PSQ_VALUE)
         ts = record.get(DEV_SIGNAL_PSQ_TS)
@@ -554,214 +575,6 @@ class SignalMixin:
                 record[DEV_SIGNAL_PSQ_TS] = now
             record[DEV_SIGNAL_PSQ_VALUE] = float(new_value)
 
-    def _danger_line(self, record: dict[str, Any]) -> float | None:
-        """Return this device's line: its trimmed floor plus the
-        sensitivity margin, or None with no history.
-
-        The floor is the trimmed minimum. Rail
-        values never feed it: a device whose whole history is rail has
-        no floor at all rather than a false one, which was the Door
-        Laundry bug (a floor of 255 from the stuck period made a
-        garbage line).
-
-        The trim ladder grows with the soak: under a week nothing is
-        dropped and the floor is the lowest real reading, so the line
-        exists from the first day; thereafter one lowest reading is
-        dropped per full week held, so the share discarded stays near
-        a seventh however long the window is (ruling #196). The
-        anomaly trim
-        setting shifts k, clamped so at least one reading always
-        survives to be the floor. Dropping the LOWEST values is the
-        opposite of the rhythm trim, which drops the highest, because
-        for signal the spuriously bad reading is the anomaly to set
-        aside.
-
-        The line sits a margin above that floor rather
-        than on it, so a link hovering just above its own baseline
-        registers instead of reading zero all day. The margin is the
-        sensitivity percentage of the distance from perfect plus the
-        flat lift (rulings #250, #252): widest at the dropout point,
-        dead at perfect, identical in shape on both scales. Dwell
-        counts strictly below the line (ruling #251), so a zero
-        margin at perfect means never, and a device sitting on its
-        own floor no longer reads as dwelling there.
-
-        The margin is then bounded by the device's own spread, and
-        the line can never sit higher than the mean of its readings
-        less half a standard deviation (ruling #193). A percentage of
-        the floor is the largest number of points where there is the
-        least room for it, because LQI stops at 255: a device whose
-        floor is already near the ceiling gets a margin wide enough
-        to swallow its whole operating range. That is not theory. It
-        put a line of 252 on a device averaging 246.2, which read as
-        below its line for 97 percent of the day while running one of
-        the strongest links on the fleet. Two of 71 devices are
-        bounded at the default setting and five at the maximum, so
-        for almost every device the setting still does exactly what
-        it says; on a bounded device it becomes a maximum rather than
-        an amount.
-
-        min is right on both scales. The line is a lower bound
-        whichever way the numbers run, so taking the smaller value
-        always makes a device less sensitive rather than more.
-
-        Where the device has no mean and deviation yet, nothing is
-        bounded and the behaviour is unchanged, so a fresh install
-        behaves as it did before the first midnight roll.
-        """
-        history = self._signal_history(record)
-        if not history:
-            return None
-        floor = min(history)
-        line = floor + self._anchored_margin(floor)
-        ceiling = self._good_state_ceiling(record)
-        if ceiling is not None:
-            return min(line, ceiling)
-        return line
-
-    @staticmethod
-    def _good_state_ceiling(record: dict[str, Any]) -> float | None:
-        """Return the highest the line may sit, or None if unknown.
-
-        The mean of yesterday's readings less half a deviation, from
-        the good-state statistics #174 has been recording since
-        0.10.15. This is the first thing that reads them to decide
-        something rather than to print it.
-
-        Half a deviation is a constant rather than a setting. It is a
-        guard rather than a preference, and the screen has enough
-        sliders on it already. It sits close under the mean on
-        purpose: the fault it stops is a line crossing into the
-        readings a healthy device makes every day, so the bound has
-        to bite before that happens rather than long after.
-
-        The deviation is used only as a boundary here, which is why
-        one day of it is enough. #172's successor makes it the scale
-        the whole judgment is drawn from, and that needs weeks rather
-        than a day.
-        """
-        means = record.get(DEV_SIGNAL_DAILY_MEAN) or []
-        sds = record.get(DEV_SIGNAL_DAILY_SD) or []
-        # The most recent day that has statistics at all. A rail-only
-        # day writes null into both series on purpose (ruling #305),
-        # and the ceiling's job is to bound the line by the device's
-        # real behaviour, so it rests on the last day that had any.
-        # Reading [-1] unguarded took the integration down on the
-        # first fleet where a device railed a whole day: the fold
-        # wrote the row exactly as designed and this reader was the
-        # one that had not learned to read it (#279, applied to
-        # readers: accept what the code can write).
-        mean = sd = None
-        for index in range(len(means) - 1, -1, -1):
-            if index < len(sds) and means[index] is not None and sds[
-                index
-            ] is not None:
-                mean = means[index]
-                sd = sds[index]
-                break
-        if mean is None or sd is None:
-            return None
-        # Half a deviation, but never less than one comfortable step
-        # of the scale (ruling #244). On a device whose whole operating
-        # range spans a quantization step or two, half a deviation is
-        # a fraction of a step and the ceiling lands inside the
-        # readings a healthy device makes every hour, which read
-        # three steady blinds as 52 to 95 percent dwell in one day.
-        clearance = (
-            SIGNAL_CEILING_CLEARANCE_RSSI
-            if mean < 0
-            else SIGNAL_CEILING_CLEARANCE_LQI
-        )
-        return mean - max(GOOD_STATE_CEILING_SD * sd, clearance)
-
-    def _line_is_bounded(self, record: dict[str, Any]) -> bool:
-        """Return whether the good-state ceiling is what set the line.
-
-        Recorded in the diagnostics rather than derived from them, so
-        the next time a device reads oddly the download says whether
-        the bound was holding it (ruling #193). It is also the
-        measurement of how badly the percentage fits: a guard that
-        fires often is evidence for #172 rather than against it.
-        """
-        history = self._signal_history(record)
-        if not history:
-            return False
-        ceiling = self._good_state_ceiling(record)
-        if ceiling is None:
-            return False
-        floor = min(history)
-        return floor + self._anchored_margin(floor) > ceiling
-
-    @staticmethod
-    def _signal_history(record: dict[str, Any]) -> list[float]:
-        """Return the device's daily P5 window, nulls skipped.
-
-        The floor reads the time-weighted 5th percentile rather than
-        the retired one-packet daily minimum (rulings #322, #323):
-        P5 already discards the worst five percent of every day by
-        time, so no cross-day trim is applied and the floor is the
-        plain minimum of this window. Rail-only days recorded null
-        statistics (ruling #305) and are skipped, so a device whose
-        whole history is rail has no floor rather than a false one.
-        Only the most recent SIGNAL_DAYS_KEEP days are read, however
-        many are stored; storage and judgment stay separate
-        (ruling #126).
-        """
-        return [
-            value
-            for value in (record.get(DEV_SIGNAL_DAILY_P5) or [])[
-                -SIGNAL_DAYS_KEEP:
-            ]
-            if value is not None
-        ]
-
-    def _signal_margin(self) -> float:
-        """Return the sensitivity as a fraction of the working band.
-
-        A constant since ruling #311, held at the value that was its
-        default, so a fleet on the defaults records exactly what it
-        recorded before. One that had moved it steps once, which is
-        accepted: the comparison this history exists for was made and
-        written into ruling #310 before the change.
-        """
-        return SIGNAL_MARGIN / 100.0
-
-    def _signal_lift(self) -> float:
-        """Return the flat lift added to every line, in scale units.
-
-        The second sensitivity control (ruling #252): where the
-        percentage sets the line's slope, the lift raises the whole
-        line by the same amount at every floor, so it survives even
-        where the margin has died to nothing at perfect. One value
-        serves both scales because a quarter unit is deliberately
-        small on each.
-
-        A constant since ruling #311, held at its former default of
-        zero, for the reason given on the margin above it.
-        """
-        return SIGNAL_LIFT
-
-    def _anchored_margin(self, floor: float) -> float:
-        """Return the margin above this floor, in scale units.
-
-        The sensitivity percentage of the distance from perfect
-        (ruling #250): widest at the dropout point, held at that
-        width through the dropout zone below it, dead at perfect.
-        The old margin was a percentage of the floor itself, which
-        measures distance from zero, and zero is dead on LQI but
-        perfect on RSSI: one formula, two opposite behaviours, and
-        the widest bands on the fleet's strongest LQI links. Anchors
-        are the working band, not the scale ends: no working link
-        lives at LQI 0 or RSSI -100, and none reads LQI 255 (the
-        rail) or RSSI 0.
-        """
-        if floor < 0:
-            dead, perfect = SIGNAL_RSSI_DEAD, SIGNAL_RSSI_PERFECT
-        else:
-            dead, perfect = SIGNAL_LQI_DEAD, SIGNAL_LQI_PERFECT
-        span = max(0.0, perfect - max(floor, dead))
-        return self._signal_margin() * span + self._signal_lift()
-
     def _badday_setting(
         self, key: str, default: float, low: float, high: float
     ) -> float:
@@ -785,7 +598,8 @@ class SignalMixin:
 
         Scale-native rather than a share, because a share of an RSSI
         number is meaningless: a link at -60 dBm losing a real 6 dB
-        reads as ten percent (ruling #310, following #250).
+        reads as ten percent (ruling #310, keeping the lesson of #250,
+        which was rescinded with dwell).
         """
         if scale == SIGNAL_SCALE_RSSI:
             return self._badday_setting(
@@ -841,60 +655,23 @@ class SignalMixin:
         position = index if index >= 0 else len(series) + index
         if position < 0 or position >= len(series):
             return None
-        today = _usable(series[position])
-        if today is None:
+        if _usable(series[position]) is None:
             return None
         window = self._badday_baseline_days()
-        base = [
-            value
-            for value in (
-                _usable(entry)
-                for entry in series[max(0, position - window):position]
-            )
-            if value is not None
-        ]
-        if len(base) < BADDAY_MIN_BASELINE:
-            return None
-        # A baseline holding both signs is two scales in one series,
-        # which a ZHA reset can produce mid-life. Its median is a
-        # number with no meaning and its spread is the distance
-        # between two measuring systems, so the day is left unjudged
-        # rather than judged from nonsense. Storage clears such a
-        # series at the next fold; until then this is the guard.
-        if min(base) < 0 <= max(base):
-            return None
-        if (today < 0) is not (base[0] < 0):
-            return None
-        middle = statistics.median(base)
-        spread = _spread(base)
-        if spread < BADDAY_MIN_SPREAD:
-            spread = BADDAY_MIN_SPREAD
-        fall = middle - float(today)
-        # The record's scale field is the first source and the
-        # readings are the fallback, because the field can be absent
-        # while the series is full: a 16 August snapshot of the
-        # reference fleet carries a P5 series on 79 devices and a
-        # scale on none of them, seven of those devices negative. A
-        # missing field there would put the LQI gate on an RSSI
-        # device and demand a 25 dB fall, which is deafness rather
-        # than caution. The sign decides, the same rule the recorder
-        # uses (ruling #284).
-        scale = record.get(DEV_SIGNAL_SCALE)
-        if scale is None:
-            scale = scale_of(middle)
-        drop = self._badday_drop(scale)
-        deviations = fall / spread
-        return {
-            "today": float(today),
-            "baseline": float(middle),
-            "spread": float(spread),
-            "fall": float(fall),
-            "deviations": float(deviations),
-            "drop_gate": float(drop),
-            "bad": bool(
-                fall >= drop and deviations >= self._badday_sensitivity()
-            ),
-        }
+        # The arithmetic is a pure function of the window and the
+        # settings. It is not cached: kept for every day of every
+        # device, the answers held 29.5 MB on the second house to save
+        # Signal Trends a tenth of a second off the loop (measured in
+        # the 0.23.19 adversarial round).
+        found = _badday_of(
+            tuple(series[max(0, position - window):position]),
+            series[position],
+            record.get(DEV_SIGNAL_SCALE),
+            self._badday_drop(SIGNAL_SCALE_RSSI),
+            self._badday_drop(None),
+            self._badday_sensitivity(),
+        )
+        return found
 
     def signal_railed(self, record: dict[str, Any]) -> bool:
         """Return whether this device's signal is stuck at the rail.
@@ -942,13 +719,13 @@ class SignalMixin:
     def _is_signal(ent: er.RegistryEntry) -> bool:
         """Recognize a signal-strength entity from registry fields.
 
-        The foreign-radio name test of ruling #248 was deleted here.
-        A phone's bars are not a mesh link, but no name distinguishes
-        them: the test caught an ESPHome node's own RSSI, whose
-        sensor is called WiFi Signal, and missed the phone's cellular
-        radio, whose sensor is not called cellular. A phone arrives on
-        an integration the exclude list refuses whole, so nothing that
-        reaches here is another device's radio.
+        By device class first; where there is none, by the words a
+        signal entity's name carries, with the unit deciding (ruling
+        #283). What is never done is refusing an entity by its name
+        (ruling #267, replacing #248's word lists of refused terms): no
+        word tells a phone's bars from a mesh link, and a phone arrives
+        on an integration the exclude list refuses whole, so nothing
+        that reaches here is another device's radio.
         """
         if str(ent.original_device_class) == "signal_strength" or str(
             getattr(ent, "device_class", None)
@@ -968,61 +745,22 @@ class SignalMixin:
         # carrying that class reaches this line.
         return not _is_percentage(ent)
 
-    @property
-    def signal_tracked(self) -> dict[str, int]:
-        """Return counts of devices with a learned signal floor.
-
-        Tracked means the device has a floor and so a live line: the
-        signal analogue of Devices: Learned. Split by scale for the
-        curious; the dwell rule is identical for both. Learning counts
-        devices that report signal but have no floor yet, which since
-        the floor exists from the first recorded day means a device
-        whose history is entirely rail values (a floor of nothing
-        rather than a false one). Muted devices still count here:
-        muting suppresses judgment, not observation.
-        """
-        counts = {"lqi": 0, "rssi": 0, "learning": 0}
-        for _device_id, record in self.watched_records():
-            line = self._danger_line(record)
-            if line is None:
-                if record.get(DEV_SIGNAL_VALUE) is not None:
-                    counts["learning"] += 1
-                continue
-            if line >= 0:
-                counts["lqi"] += 1
-            else:
-                counts["rssi"] += 1
-        return counts
-
-    @property
-    def signal_tracked_count(self) -> int:
-        """Return how many devices have a signal line, after muting.
-
-        The state for Tracked Signals: devices with a floor that are
-        not signal-muted. Muting suppresses judgment, so an
-        muted device is not something we are watching for signal.
-        """
-        counts = self.signal_tracked
-        watched = counts["lqi"] + counts["rssi"]
-        muted: int = sum(
-            1
-            for device_id, record in self.watched_records()
-            if self._danger_line(record) is not None
-            and self._signal_muted(device_id)
-        )
-        return watched - muted
-
     def _todo_signal_since(self, device_id: str) -> float | None:
         """Return when a device's signal fault was added to the list.
 
-        A rail carries no physical start time (it is derived from the
-        daily-low series), so its age is measured from the todo item's
-        signal-kind stamp, the moment the sync first listed it. This
+        A rail carries no physical start time (it is confirmed from
+        the daily rail column, #322), so its age is measured from the
+        list item's stamp, the moment the sync first listed it. This
         keeps the section consistent with the list it mirrors.
         """
         for record in self.todo_items:
             if record.get(TODO_DEVICE_ID) == device_id:
-                return (record.get(TODO_KINDS) or {}).get("signal")
+                # By the kind's name since the kinds took one vocabulary
+                # (ruling #299). The lookup kept the old name, "signal",
+                # so every signal fault read "for ?" with its start
+                # stored beside it; found on the reference rig's two
+                # rails (0.23.19).
+                return (record.get(TODO_KINDS) or {}).get(TODO_KIND_RAILED_SIGNAL)
         return None
 
     @property
@@ -1041,7 +779,7 @@ class SignalMixin:
         so a rail is the one signal condition solid enough to
         interrupt somebody. Weak links are a live reading that moves
         day to day and live on signal_weak_list, which notifies
-        nothing (rulings #59 and #211).
+        nothing (rulings #59, kept by #310, and #211).
 
         Signal-muted devices are observed but never judged, so
         they stay off this list until re-included by hand.
@@ -1061,14 +799,15 @@ class SignalMixin:
                 )
         # Rails only, and deliberately. This list feeds the problem
         # list, which feeds the todo entity, the card and the phone,
-        # so anything added here becomes a notification. Dwell has no
-        # day-to-day persistence to notify on: on the reference fleet
+        # so anything added here becomes a notification. A weak day has
+        # no day-to-day persistence to notify on: measured when dwell
+        # was the judge, on the reference fleet
         # only three of twelve device-days above twenty percent were
         # still above it the next morning, so a low arriving here
         # would push tonight and clear tomorrow. Signal reports and
-        # does not push (ruling #59), and the low kind lives on
-        # signal_weak_list below, which nothing notifies from
-        # (ruling #211).
+        # does not push (ruling #59, kept by #310), and the low kind
+        # lives on signal_weak_list below, which nothing notifies
+        # from (ruling #211).
         # Rail problems first, then by name: a rail is a fault and a
         # low is a weak link.
         problems.sort(key=lambda row: (row["kind"] != TODO_KIND_RAILED_SIGNAL, row["name"] or ""))
@@ -1094,7 +833,7 @@ class SignalMixin:
         Nothing notifies from this. A device drops off the next
         morning its signal holds, with no acknowledgment and no
         record, because it is a reading rather than an incident
-        (ruling #59).
+        (ruling #59, kept by #310).
         """
         railed = {row["device_id"] for row in self.signal_problem_list}
         weak = []
@@ -1134,7 +873,7 @@ class SignalMixin:
         """Return whether a device is muted from signal judgment
         only. The same broad-to-narrow ladder as battery. Muting
         suppresses judgment, not observation: the device keeps
-        recording its floor and dwell in storage, so re-inclusion is
+        recording its readings and daily statistics, so re-inclusion is
         instant and arrives with history; it simply stops being
         reported. This is the manual removal from tracking the
         frozen-signal ruling requires, for a device that resists

@@ -3,9 +3,11 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_stacks.py, Version: 0.23.13 (2026-09-27)
+# File: study_stacks.py, Version: 0.23.19 (2026-09-30)
 
-"""Z-Wave and Matter, gathered so their support can be built.
+"""What six stacks say about their devices, gathered so their support
+can be built: Z-Wave and Matter in depth, and Hue, SmartThings, Tuya
+and Lutron for the stack probe.
 
 Device Sentinel learns a rhythm and judges silence against it, which
 is the only way to read a stack that says nothing about itself.
@@ -25,6 +27,12 @@ download teaches the next release what the wild actually holds:
 which attributes exist in which versions, what a healthy fleet's
 numbers look like, and what a sick one's look like. That is the
 evidence the detectors will be built on.
+
+The same readings feed the stack probe (0.23.8): `probe_rows`, the
+node listeners of `zwave_nodes` and the controller counters of
+`zwave_health` let `study.py` write each change to `stack_probe.md`
+beside Device Sentinel's own view of the device, the readers in shadow.
+They too detect nothing.
 
 Everything is read defensively. A library that renames an attribute,
 or a version that never had it, is recorded as absent rather than

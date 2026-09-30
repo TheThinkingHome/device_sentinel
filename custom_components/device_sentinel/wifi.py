@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: wifi.py, Version: 0.22.0 (2026-09-18)
+# File: wifi.py, Version: 0.23.19 (2026-09-30)
 
 """Is the WiFi network up? Asked of the host's own radio.
 
@@ -52,7 +52,6 @@ from .const import (
     CONF_WIFI_NETWORKS,
     DEFAULT_WIFI_CONFIRM_SECONDS,
     LOGGER,
-    WIFI_SCAN_SECONDS,
 )
 
 SUPERVISOR = "hassio"
@@ -274,5 +273,3 @@ class WifiScanMixin:
             ),
         }
 
-
-WIFI_SWEEP_SECONDS = WIFI_SCAN_SECONDS

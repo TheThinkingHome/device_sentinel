@@ -3,10 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.23.18 (2026-09-29)
+# File: normalise.py, Version: 0.23.19 (2026-09-30)
 
-"""Check every stored record against its expected shape. Report, and
-touch nothing.
+"""Check every stored record against its expected shape, and name
+what is wrong so the storage boundary can repair it (ruling #370).
 
 Why this exists (ruling #278). An adversarial pass on 0.15.1 planted a
 storage file whose devices key was a string, and setup raised rather
@@ -17,22 +17,25 @@ after it, silently, so one bad field cost the fleet a night of
 statistics. Both are the same fault: the code trusts the shape of what
 it loads from disk one level deeper than it should.
 
-Why it only reports. The obvious fix is to repair on load, and that
-was rejected for the first release. If a check is wrong, a repairing
+Why it first only reported. The obvious fix is to repair on load, and
+that was rejected for the first release. If a check is wrong, a repairing
 normaliser silently damages a good record and leaves a warning nobody
 reads for days. A reporting one costs nothing when it is wrong: the
 worst outcome of a false positive is that the last-good backup is not
-written that boot. So this release watches, on the reference fleet and
-on a volunteer's, and only when a week of loads and folds has reported
-nothing on good data does the next release give the checks the power
-to change anything. The order is deliberate: observe first, act on
-what was observed.
+written that boot. So the checks first only watched, on the reference
+fleet and on a volunteer's, and were given the power to change
+anything only after a week of loads and folds reported nothing on good
+data (#370). The order was deliberate: observe first, act on what was
+observed.
 
-Why the checks are types and nothing else. Every check here is a type
-test or a NaN test, and none depends on what a field means. A record
-holding a plausible but wrong number passes, on purpose. The one
-thing this must never do is fire on good data, and a value judgment is
-the kind of check that does.
+Why the checks are of type and possibility, and nothing else. A check
+here is a type test, a NaN test, or since 0.23.18 a test of what is
+possible at all (ruling #544): a moment between 2020 and 2100, a span
+of at most 360 days, a battery level from 0 to 100. None depends on
+what a field means for the device. A record holding a plausible but
+wrong number passes, on purpose: the one thing this must never do is
+fire on good data, and a judgment of plausibility is the kind of check
+that does.
 
 Why the shapes come from the file and not only the template. The
 template in records.py says signal_p5_state is None, and on every
@@ -92,7 +95,6 @@ from .const import (
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_DAILY_SD,
-    DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_M2,
     DEV_SIGNAL_MEAN_RUN,
     DEV_SIGNAL_P5_STATE,
@@ -268,7 +270,6 @@ EXPECTED: dict[str, str] = {
     DEV_SIGNAL_DAILY_COUNT: INT_SERIES,
     DEV_SIGNAL_DAILY_RAIL: INT_SERIES,
     DEV_SIGNAL_RAIL_COUNT: INTEGER,
-    DEV_SIGNAL_LAST_CHANGE: MOMENT,
     DEV_BATTERY_LOW: BOOLEAN,
     DEV_BATTERY_SINCE: STRING,
     DEV_BATTERY_VALUE: LEVEL,
@@ -523,9 +524,10 @@ def check_records(devices: Any) -> list[tuple[str, str, str]]:
     """Return every shape fault as (device_id, field, description).
 
     An empty list means every record holds every expected field in its
-    expected shape and nothing it should not. Nothing is changed. The
-    caller decides what a non-empty list means; this release logs it
-    and withholds the last-good backup, and nothing more.
+    expected shape and nothing it should not. Nothing is changed here.
+    The callers act on the list: at load and at save the storage
+    boundary repairs each record it names (ruling #370), and a save
+    whose repair did not prove out does not rotate into last-good.
     """
     faults: list[tuple[str, str, str]] = []
     if not isinstance(devices, dict):

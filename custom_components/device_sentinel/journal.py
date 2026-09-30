@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.23.15 (2026-09-28)
+# File: journal.py, Version: 0.23.19 (2026-09-30)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -51,7 +51,6 @@ from .const import (
     EP_LAG,
     EP_LEARNED,
     EP_NAME,
-    EP_SIG_LINE,
     EP_SIG_MEAN,
     EP_SIG_SD,
     EP_SIG_VALUE,
@@ -205,10 +204,9 @@ class JournalMixin:
 
         The threshold is basis plus a share of that device's grace:
         the silence has spent that share of the distance from the
-        rhythm to the freeze line (ruling #105, and a person may set
-        the share since ruling #117). Basis alone, which is what the
-        first version shipped, was too sensitive at the fast end,
-        where a
+        rhythm to the freeze line (ruling #105; a setting under #117,
+        a constant since #394). Basis alone, which is what the first
+        version shipped, was too sensitive at the fast end, where a
         rhythm of seconds is exceeded constantly and trivial silences
         filled the file, while the same rule was properly selective
         for a device measured in hours. A share of grace scales with
@@ -217,8 +215,7 @@ class JournalMixin:
         both a clear distance short of judgment.
 
         Devices whose freeze judgment is suppressed are skipped
-        (ruling #106). Muting suppresses judgment and reporting
-        while
+        (ruling #106). Muting suppresses judgment and reporting while
         observation continues, and this file exists to explain
         verdicts: a device that can never be judged frozen has no
         verdict to explain, so its silences are noise here. A device
@@ -286,14 +283,14 @@ class JournalMixin:
     ) -> dict[str, Any] | None:
         """Return the device's signal context at this moment, or None.
 
-        Captured when an episode opens (ruling #246): the last reading,
-        the day's running mean and deviation so far, and the line in
-        effect. The anchor #172 waits on is the correlation between
-        signal level and rhythm stress, and the join must be taken
-        when the silence begins, because the statistics have moved on
-        by the time anyone analyzes them. None where the device
-        reports no signal, which the analysis reads as no evidence
-        rather than as a zero.
+        Captured when an episode opens (ruling #246): the last reading, and the
+        day's running mean and deviation so far. (The dwell line in effect rode
+        here until its recording retired in 0.23.19, as ruling #310 scheduled.)
+        The anchor #172 waits on is the correlation between signal level and
+        rhythm stress, and the join must be taken when the silence begins,
+        because the statistics have moved on by the time anyone analyzes them.
+        None where the device reports no signal, which the analysis reads as no
+        evidence rather than as a zero.
         """
         value = record.get(DEV_SIGNAL_VALUE)
         if value is None:
@@ -303,12 +300,14 @@ class JournalMixin:
         if count > 0:
             mean = round(run, 2)
             sd = round(max(0.0, m2 / count) ** 0.5, 2)
-        line = self._danger_line(record)
+        # The reading and the device's good state (#172): what the
+        # Bayesian anchor needs. The dwell danger line that rode here
+        # was retired from recording in 0.23.19, as ruling #310
+        # scheduled; episodes saved before keep theirs.
         return {
             EP_SIG_VALUE: value,
             EP_SIG_MEAN: mean,
             EP_SIG_SD: sd,
-            EP_SIG_LINE: round(line, 2) if line is not None else None,
         }
 
     def _close_episode(
@@ -325,7 +324,7 @@ class JournalMixin:
         says whether its gap reached the statistics. An episode
         already stamped by an intervention gains only its lag, the
         time from the lever to the first genuine report, which is the
-        column that separates a wedge (seconds) from a device that
+        column that separates a hang (seconds) from a device that
         was merely quiet (hours).
         """
         episode = self._open_episode_for(device_id)
@@ -419,8 +418,8 @@ class JournalMixin:
     def _trim_episodes(self, now: float) -> None:
         """Drop episodes older than the statistics window.
 
-        Fourteen days by timestamp, matching the daily-maxima series
-        the file exists to explain. An episode still awaiting its lag
+        Fourteen days by timestamp, matching the fourteen days the rhythm the
+        file exists to explain is judged over. An episode still awaiting its lag
         survives the boundary: an unfinished story is not old news.
         """
         cutoff = now - EPISODE_KEEP_DAYS * 86400.0
@@ -681,10 +680,14 @@ class JournalMixin:
     ) -> str | None:
         """Return how a device's silence ended, if the record says.
 
-        Borrowed from the episode record rather than guessed: an
-        episode closed by an intervention names the lever, and one
-        the device closed itself says so. Only silences carry a
-        cause; a battery or a rail recovering has no lever to name.
+        Two sources, in order. A person's pairing window open at the
+        return, found by the same attribution the brief uses (#535).
+        Then the device's own episode, bounded to this incident so an
+        episode days old cannot answer it (#228): one closed by a
+        person's act names that act, one the device closed itself says
+        so, and a restart or an outage earns no credit (#535). Only
+        silences carry a cause; a battery or a rail recovering has no
+        lever to name.
         """
         # A person's pairing window open at the return is credited here
         # as the brief credits it, from the same attribution (#535), so
@@ -750,7 +753,7 @@ class JournalMixin:
         """Close one problem on the incident timeline.
 
         Carries the duration, computed from the matching opening, and
-        the cause where the episode record knows it. A resolution
+        the cause where the record knows it (`_recovery_cause`). A resolution
         with no opening behind it (a problem that predates the log)
         is still recorded, simply without a duration.
         """

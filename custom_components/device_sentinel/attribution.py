@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: attribution.py, Version: 0.23.12 (2026-09-27)
+# File: attribution.py, Version: 0.23.19 (2026-09-30)
 
 """Which recorded event explains an incident, and which do not.
 
@@ -21,7 +21,9 @@ merely inconsistent (ruling #228).
 WHAT REPLACES IT. An incident is explained by a recorded intervention
 whose window overlaps it and whose scope covers the device. Nothing
 else. Where no intervention covers it, the device recovered on its
-own and the brief says so rather than naming a lever.
+own and the brief says so rather than naming a lever. A restart or an
+outage is found like any window but credited with no recovery: it
+says nothing about the devices (#535, amending #228).
 
 AN EXPLANATION MUST HAVE BEEN IN EFFECT WHEN THE SILENCE BEGAN. That
 is the whole selection rule, and it separates a cause from its own
@@ -239,13 +241,11 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
     """
     found: list[Window] = []
     pending: dict[tuple[Any, Any, str | None], Window] = {}
-    # A corrupted event must not take the builder down. Storage can
-    # hold a log row whose kind or timestamp is the wrong type: the
-    # shape check names such damage on the repair card but removes
-    # nothing, and the held-record protection covers device records,
-    # not this log, so the crash would land here on the brief's next
-    # read. A row the builder cannot use is skipped instead, which
-    # costs one attribution and nothing else; the timestamp test is
+    # A corrupted event must not take the builder down. A log row
+    # whose kind or timestamp is the wrong type is repaired or removed
+    # at the storage boundary (ruling #370); a row that reaches here
+    # anyway, from a path that never touched a file, is skipped, which
+    # costs one attribution and nothing else. The timestamp test is
     # the same real-moment test the outage onset uses (ruling #363).
     usable = [
         row
@@ -273,7 +273,8 @@ def windows(events: list[dict[str, Any]]) -> list[Window]:
             # A duration of the wrong type reads as zero, exactly as
             # a missing one does: the window then covers the restart
             # moment itself rather than crashing the arithmetic
-            # (ruling #363).
+            # (ruling #363, kept as the reader's safety behind #370's
+            # repair at the storage boundary).
             span = row.get(SYS_DURATION) or 0.0
             if isinstance(span, bool) or not isinstance(
                 span, (int, float)
@@ -354,10 +355,11 @@ def attribute(
     devices return, and the outage is the cause of both.
 
     Second choice, only where nothing was in effect at the opening,
-    is a window covering the recovery. A device that had been silent
-    for hours before an outage was not silenced by it, but it may
-    well have been revived when everything else came back, and
-    saying so is more useful than saying nothing.
+    is a window covering the recovery. Finding it is not crediting
+    it: only a person's own act, a pairing window or a device
+    handled, is credited with a recovery (`credits`, #535), and a
+    recovery inside a restart or an outage is told as happening
+    during it, never as caused by it.
     """
     reach = [
         window

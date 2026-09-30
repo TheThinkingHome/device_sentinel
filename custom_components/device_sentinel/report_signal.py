@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_signal.py, Version: 0.23.5 (2026-09-25)
+# File: report_signal.py, Version: 0.23.19 (2026-09-30)
 
 """The signal cells of the telemetry, and the bad-day judgment.
 
@@ -17,8 +17,9 @@ device was sitting near its own floor, and the floor descends to
 meet a degraded device, so a link that broke on 18 August read 68,
 then 96, then 30 percent while its P5 sat flat at its new lower
 level. Give that arrangement a week and a permanently broken link
-reads its way back to healthy. The page now asks the question a
-person can act on: did this device just get worse than it has been.
+reads its way back to healthy. The judgment asks the question a
+person can act on instead: did this device just get worse than it has
+been.
 
 Still a file split rather than a boundary (ruling #199). These
 methods are mixed into the coordinator and read its state freely,
@@ -47,7 +48,7 @@ class SignalReportMixin:
         """Return the level a day must fall below to be a bad day.
 
         Its normal less the larger of the fixed drop and the sensitivity
-        times its own spread. One formula, read by the report's chart
+        times its own spread. One formula, read by the telemetry report
         and by the dashboard, so the two cannot draw different lines.
         """
         return reading["baseline"] - max(
@@ -59,9 +60,9 @@ class SignalReportMixin:
         self, record: dict[str, Any], index: int
     ) -> dict[str, Any] | None:
         """Return one day's judgment: its normal, its line, and whether
-        it was a bad day. Recalculated from the daily history whenever
-        asked, so a past day always reads with today's settings and
-        nothing new is stored.
+        it was a bad day. Worked out from the daily history, once per
+        window of days and settings (0.23.19), so a past day always
+        reads with today's settings and nothing new is stored.
         """
         reading = self.signal_badday(record, index)
         if reading is None:

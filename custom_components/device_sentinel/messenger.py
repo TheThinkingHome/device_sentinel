@@ -3,20 +3,20 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.23.5 (2026-09-25)
+# File: messenger.py, Version: 0.23.19 (2026-09-30)
 
-"""Sending the daily brief, and nothing else yet.
+"""Sending the daily brief, and the notice after a storage restore.
 
 The third file split out of the coordinator, and the first that
-speaks outward. Ruling 126 holds the event-triggered engine closed
-until the detection formulas are settled; ruling 132 lets the
-document channel open now, because emailing the brief repeats a
-report the person already reads on a schedule they set, and makes no
-claim in the moment about a device that just broke. When the push
-engine is built it belongs here beside this, which is why the file
-exists rather than another method on the coordinator.
+spoke outward. Ruling #126 held the event-triggered engine closed
+until the detection formulas were settled, and ruling #132 opened the
+document channel first, because emailing the brief repeats a report
+the person already reads on a schedule they set, and makes no claim
+in the moment about a device that just broke. The engine that pushes
+about devices was built later, in `notifier.py`; this file keeps the
+two messages that are documents and notices rather than alerts.
 
-One job now. This module chooses the targets and sends; the
+This module chooses the targets and sends; the
 rendering lives with the reports, which is where the document is
 written, so the email and the file are one string rather than two
 renderings that agree by inspection. This file used to hold a second
@@ -26,11 +26,9 @@ compared an email against a file, turned out to be exactly what
 happened (ruling #188).
 
 The sender reads the settings already stored and composes nothing
-new. That is what lets it ship while the event-triggered engine is
-still held shut: mailing a document a person already reads asserts
-nothing the file did not already assert, where a push says this
-device is wrong now and inherits the formula behind it
-(ruling #132).
+new: mailing a document a person already reads asserts nothing the
+file did not already assert, where a push says this device is wrong
+now and inherits the formula behind it (ruling #132).
 """
 
 from __future__ import annotations
@@ -211,17 +209,13 @@ class MessengerMixin:
     ) -> int:
         """Send the restore notice everywhere, ignoring quiet hours.
 
-        Ruling #345. Three surfaces: the daily-brief targets, which
-        is where a person's email lives; the high-priority targets,
-        which is the phone; and a persistent notification carrying an
-        id of its own.
-
-        The id matters. The three standing surfaces each overwrite
-        themselves by design, and a restore notice sharing one of
-        those ids would be gone by the next brief. This one has its
-        own, so it sits in the panel until it is dismissed, which
-        makes it the most durable of the three channels rather than
-        the most fragile.
+        Ruling #345. Two surfaces here: the daily-brief targets,
+        which is where a person's email lives, and the high-priority
+        targets, which is the phone. The durable third is a Repair
+        card the caller raises (ruling #350), which replaced the
+        persistent notification this once posted: it sits where a
+        person looks for things needing attention, survives a
+        restart, and carries a severity.
 
         Quiet hours do not apply. A device flapping at three in the
         morning should stay quiet; a storage file that could not be

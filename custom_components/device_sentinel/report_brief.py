@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.23.16 (2026-09-29)
+# File: report_brief.py, Version: 0.23.19 (2026-09-30)
 
 """The daily brief: the one report written for a person.
 
@@ -72,7 +72,6 @@ from .const import (
     DEV_BATTERY_VALUE,
     DEV_FROZEN_SINCE,
     FREEZE_KINDS_FOR_CAUSE,
-    INCIDENT_ACKNOWLEDGED,
     INCIDENT_ACTION,
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
@@ -336,9 +335,6 @@ class BriefMixin:
                 ACTION_SET_ASIDE: "set aside, no longer watched",
                 ACTION_MUTED: "muted",
             }.get(row.get(INC_CAUSE) or "", "acknowledged")
-        if event == INCIDENT_ACKNOWLEDGED:
-            # Legacy rows only, removable after 2026-08-11.
-            return "acknowledged"
         if kind == TODO_KIND_LOW_BATTERY:
             # Borrowed from the composer so the table and the prose
             # cannot disagree about the same event: one composer
@@ -359,7 +355,7 @@ class BriefMixin:
     def _brief_falling_text(self, device_id: str) -> str:
         """Return the falling clause with its time left where known.
 
-        Read from the same rows the report and the sensor use, so a
+        Read from the same rows Battery Trends and the sensor use, so a
         person cannot be told two different times for one cell
         (ruling #215).
         """
@@ -378,8 +374,7 @@ class BriefMixin:
         absent because this is a report, and so are acknowledged ones
         (ruling #123): acknowledgment silences every human-facing
         channel, and the brief is a notification that happens to be a
-        file,
-        and acknowledging a problem is the statement that the person
+        file, and acknowledging a problem is the statement that the person
         knows about it and does not want reminding. The diagnostics
         keep every acknowledged fault, which is where an audit
         belongs.
@@ -691,14 +686,17 @@ class BriefMixin:
         if kind == SYS_STORAGE_SHAPE:
             # The check writes what it found rather than a count on
             # its own, because a person reading this cannot act on a
-            # number and can act on a field name. It touches nothing
-            # (ruling #278), so the sentence says so: this is a
-            # report, not damage, and the reader should not go
-            # looking for what was changed.
+            # number and can act on a field name. Until #370 it only
+            # reported (ruling #278) and the sentence ended "Nothing was
+            # changed."; since #370 the event means the write seam
+            # refused a row a writer made, and its detail says the row
+            # was dropped. Rows of both kinds can still be in the log,
+            # so the sentence says only what is true of both, and the
+            # detail says the rest.
             extra = f" ({detail})" if detail else ""
             return (
                 f"The storage check found a record that does not fit "
-                f"at {when}{extra}. Nothing was changed."
+                f"at {when}{extra}."
             )
         return f"{kind} at {when}."
 
@@ -2235,16 +2233,14 @@ class BriefMixin:
     ) -> list[str]:
         """Return the brief's opening prose.
 
-        The same composer that will speak to a phone, read as
-        paragraphs (ruling #122): history first, then what is
-        standing right now. History is told as episodes rather than
-        events (ruling #134), so a device stopping and the same device
-        recovering are one sentence, ordered by when each episode
-        began. The tables below stay for scanning and for exact times;
-        this is for reading. Every
-        sentence comes from the composer, so the prose, the tables,
-        and a future notification cannot describe one event three
-        ways.
+        The same composer that will speak to a phone, read as paragraphs (ruling
+        #122): history first, then what is standing right now. History is told
+        as episodes rather than events (ruling #134), so a device stopping and
+        the same device recovering are one sentence, ordered by when each
+        episode began. The tables below stay for scanning and for exact times;
+        this is for reading. Every sentence comes from the composer, so the
+        prose, the tables, and a future notification cannot describe one event
+        three ways.
         """
         # Every event, not only the window's. An outage that began
         # before the window still explains an incident inside it, and
@@ -2315,8 +2311,7 @@ class BriefMixin:
         The text comes back only for a completed brief, which is the
         one the email carries, since mailing an unfinished document
         would deliver the same day several times (ruling #135).
-        Returning it rather than
-        re-reading the file guarantees the document sent is the
+        Returning it rather than re-reading the file guarantees the document sent is the
         document written, byte for byte, with no second read that
         could catch a half-written file.
 
@@ -2467,14 +2462,14 @@ class BriefMixin:
         # bad signal days yet either: the detector that replaces
         # dwell is on its own page first, and joins this brief only
         # once its thresholds have earned it.
-        # The battery report answers what the threshold cannot: which
+        # Battery Trends answers what the threshold cannot: which
         # cells are going to be low rather than which are (ruling
         # #194). It shipped with nothing pointing at it, so a person
         # who did not know the file existed had no way to find it.
         # Named here on the same footing as the chart, and under the
         # same reasoning that lets signal appear in a brief while
-        # never pushing (ruling #59): a document read at an hour a
-        # person chose is not an alert.
+        # never pushing (ruling #59, kept by #310): a document read at
+        # an hour a person chose is not an alert.
         #
         # Only what is close. The report lists every cell measurably
         # falling, which is a third of a real fleet and most of them

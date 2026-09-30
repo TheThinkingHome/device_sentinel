@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.23.5 (2026-09-25)
+# File: __init__.py, Version: 0.23.19 (2026-09-30)
 
 """The Device Sentinel integration.
 
@@ -12,11 +12,10 @@ batteries, and weak radio links, with per-device freeze windows
 learned from each device's own reporting rhythm rather than
 hand-assigned tiers.
 
-Battery detection is live. The telemetry recorder learns rhythms and
-signal baselines continuously. Freeze and unavailability detection,
-signal detection, and the notification engine arrive in later steps;
-their configuration surfaces and the problem list are already built
-and inert.
+It tells a person through a problem list, a dashboard, pushes and a
+daily brief, raises Repairs for what needs their hand, and fires bus
+events an automation can trigger on. This file sets it up, migrates a
+stored entry's options, and cleans up after it when it is deleted.
 """
 
 from __future__ import annotations

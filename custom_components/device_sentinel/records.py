@@ -3,12 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.23.18 (2026-09-29)
+# File: records.py, Version: 0.23.19 (2026-09-30)
 
-"""The device record shape, and the two helpers that read it.
+"""The device record shape, and the small helpers that go with it.
 
-Small on purpose. These three names are the only module-level ones
-the coordinator split left needing a home of their own: the record
+Small on purpose. The record's template, the day's signal reset and the
+compact span are the module-level names the coordinator split left
+needing a home of their own: the record
 schema is the authority both the core and the storage module read,
 and putting it in either would have made the other import from it
 and closed a circle (ruling #201).
@@ -60,7 +61,6 @@ from .const import (
     DEV_SIGNAL_DAILY_P50,
     DEV_SIGNAL_DAILY_RAIL,
     DEV_SIGNAL_DAILY_SD,
-    DEV_SIGNAL_LAST_CHANGE,
     DEV_SIGNAL_M2,
     DEV_SIGNAL_MEAN_RUN,
     DEV_SIGNAL_P5_STATE,
@@ -77,6 +77,7 @@ from .const import (
     DEV_TAINTED,
     DEV_TODAY_MAX,
 )
+from .durations import compact_span
 
 BAD_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
 
@@ -87,20 +88,13 @@ def _shift(seconds: float) -> str:
 
 
 def _span(seconds: float) -> str:
-    """A compact human span for the capped label: 74m, 4.1h, 2.3d.
+    """A compact span for a label: 74m, 4.1h, 2.3d, 3.5w.
 
-    The label the resurrection cap prints when it holds a gap down
-    (ruling #166).
-
-    Minutes under ninety, hours under two days, days beyond, one
-    decimal where the unit is coarse. The label is read in a table
-    cell, so compactness beats precision.
+    First written for the label the resurrection cap prints when it
+    holds a gap down (ruling #166); since 0.23.19 it is the one compact
+    format, `durations.compact_span`, which every table uses.
     """
-    if seconds < 90 * 60:
-        return f"{seconds / 60:.0f}m"
-    if seconds < 48 * 3600:
-        return f"{seconds / 3600:.1f}h"
-    return f"{seconds / 86400:.1f}d"
+    return compact_span(seconds)
 
 
 def _reset_signal_day(record: dict[str, Any]) -> None:
@@ -156,7 +150,6 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_SIGNAL_DAILY_COUNT: [],
         DEV_SIGNAL_DAILY_RAIL: [],
         DEV_SIGNAL_RAIL_COUNT: 0,
-        DEV_SIGNAL_LAST_CHANGE: None,
         DEV_BATTERY_LOW: False,
         DEV_BATTERY_SINCE: None,
         DEV_BATTERY_DAILY_PREVIOUS: [],
@@ -175,3 +168,20 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_FROZEN_CATEGORY: None,
         DEV_FROZEN_SINCE: None,
     }
+
+
+# The battery memos' size: fingerprints kept, oldest dropped first.
+SERIES_MEMO_SIZE = 1024
+
+
+def series_key(series: Any) -> tuple[Any, ...]:
+    """A small fingerprint of a daily series, for the battery memos.
+
+    The series itself as a key held every version of every cell's
+    history until the memo filled, about 7 MB of days nobody would
+    ask about again (the 0.23.19 adversarial round). Its length, its
+    hash and its last three values name it as surely at a fraction of
+    the size: two different series agreeing on all three is not a case
+    the arithmetic can meet."""
+    values = tuple(series)
+    return (len(values), hash(values), values[-3:])

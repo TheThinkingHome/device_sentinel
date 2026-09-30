@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: durations.py, Version: 0.22.26 (2026-09-23)
+# File: durations.py, Version: 0.23.19 (2026-09-30)
 
-"""A long duration in the words a person reads.
+"""A duration in the words a person reads, and in a table cell.
 
 Hours carried past the point of meaning: a battery flat since July
 read "1485.3h" in one report and "61.9d" in another, and a device's
@@ -19,8 +19,9 @@ so the number is never larger than the truth (0.22.25).
     43 days    6 weeks
     62 days    8 and a half weeks
 
-Below two days nothing changes: the reports keep their hours, minutes
-and seconds, which is the scale a rhythm is read at.
+Below two days a table cell reads in the compact form, minutes then
+hours (`compact_span`, 0.23.19), which is the scale a rhythm is read
+at; a sentence keeps the words above.
 """
 
 from __future__ import annotations
@@ -61,3 +62,36 @@ def long_span(seconds: float) -> str:
     if seconds >= WEEK_SPAN_SECONDS:
         return _halves(seconds / WEEK, "week")
     return _halves(seconds / DAY, "day")
+
+
+def compact_span(seconds: float, cap: float | None = None) -> str:
+    """A duration for a table cell: 45s, 74m, 4.1h, 2.3d, 3.5w.
+
+    The one compact format (ruling #546), after six formatters in five
+    files had printed the same length as "1062s", "18m" and "0.3h". It
+    is the format the owner asked for with the resurrection cap's label
+    (ruling #166), extended both ways: seconds mean nothing to a person
+    past ninety of them, minutes past ninety, hours past two days, and
+    days past two weeks. Seconds below ninety were ruled in after the
+    adversarial round, where "<1m" left a Bluetooth device's fourteen
+    daily gaps reading the same. One decimal where the unit is coarse.
+
+    A gap held at the retention (ruling #543) reads "more than" it
+    when the cap is given. A value that is not a real number reads as
+    unknown rather than raising.
+    """
+    if not isfinite(seconds):
+        return "?"
+    seconds = max(0.0, seconds)
+    if cap is not None and seconds >= cap:
+        return f"more than {cap / DAY:.0f} days"
+    if seconds < 90:
+        return f"{seconds:.0f}s"
+    if seconds < 90 * 60:
+        return f"{seconds / 60:.0f}m"
+    if seconds < 2 * DAY:
+        return f"{seconds / 3600:.1f}h"
+    if seconds < 2 * WEEK:
+        return f"{seconds / DAY:.1f}d"
+    return f"{seconds / WEEK:.1f}w"
+

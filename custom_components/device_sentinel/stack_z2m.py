@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.23.13 (2026-09-27)
+# File: stack_z2m.py, Version: 0.23.19 (2026-09-30)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -18,8 +18,9 @@ the same three. Does this device prove the stack is present
 (`detects`). Does this stack own a device on that integration domain
 (`owns_domain`). Give me a reader for it, or None (`make_reader`).
 
-Z2M is the stack this project was developed against and the only one
-with a reader today. It is the clean case: two retained MQTT topics,
+Z2M is the stack this project was developed against, the first with a
+reader (ZHA's followed in 0.19.0), and the only one that publishes a
+pairing window. It is the clean case: two retained MQTT topics,
 bridge/state (online or offline) and bridge/info (which carries
 permit_join and the absolute permit_join_end). Retained means the
 current state arrives the moment we subscribe, so a restart in the

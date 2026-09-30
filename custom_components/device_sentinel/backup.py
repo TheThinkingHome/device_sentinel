@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.19.11 (2026-08-31)
+# File: backup.py, Version: 0.23.19 (2026-09-30)
 
 """A one-shot copy of both storage files, taken before a release removes
 something it cannot put back.
@@ -18,12 +18,12 @@ up with an activity time hours or days stale. So the release that
 strips takes a copy of what it is about to change, before it changes
 it.
 
-Why it ships inert. The mechanism that did this for the earlier phases
-was removed in 0.10.1 once its one-shot copies had been taken, which
-left the ruled requirement with nothing behind it. Rebuilding it in the
-release that also strips would mean the backup's first exercise is the
-one run that matters. It is therefore built, tested and shipped here
-with no caller, so the strip release adds only the call.
+It first shipped with no caller, built and tested ahead of the release
+that would need it, so that the backup's first exercise was not the one
+run that mattered. Its caller is the statistics epoch: a bump wipes
+learned data with nothing behind it, so it takes a copy first, under a
+suffix naming the epoch, and wipes nothing if the copy fails (ruling
+#204, on the mechanism of #130).
 
 The copy is deliberately a byte copy of the files on disk rather than a
 serialization of what is in memory. What a rollback needs is the file

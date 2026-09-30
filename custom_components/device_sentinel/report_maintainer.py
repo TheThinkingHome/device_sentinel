@@ -3,9 +3,11 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.23.17 (2026-09-29)
+# File: report_maintainer.py, Version: 0.23.19 (2026-09-30)
 
-"""The three Markdown files written for whoever maintains the system.
+"""The Markdown files written for whoever maintains the system:
+device telemetry, silence episodes, classification, and the stack
+probe.
 
 One of the four report modules split out of reports.py, which
 had grown past two thousand lines and held every report the
@@ -92,12 +94,11 @@ from .const import (
     TRIM_TOP_K,
     WIKI_LINK_REPORTS,
 )
-from .rhythm_shadow import clipped_rhythm
-from .durations import LONG_SPAN_SECONDS, long_span
+from .durations import compact_span, LONG_SPAN_SECONDS, long_span
 
 
 class MaintainerReportMixin:
-    """The three Markdown files written for whoever maintains the system."""
+    """The Markdown files written for whoever maintains the system."""
 
     # Set in the coordinator; whether stack_probe.md has refused a
     # write this start (0.23.10).
@@ -105,17 +106,14 @@ class MaintainerReportMixin:
 
     @staticmethod
     def _episode_duration(seconds: float | None) -> str:
-        """Return a duration in the report's mixed units."""
+        """Return a duration: the compact form below two days, words
+        beyond (0.23.19)."""
         if seconds is None:
             return ""
         seconds = max(0.0, seconds)
         if seconds >= LONG_SPAN_SECONDS:
             return long_span(seconds)
-        if seconds >= 3600:
-            return f"{seconds / 3600:.2f}h"
-        if seconds >= 60:
-            return f"{seconds / 60:.0f}m"
-        return f"{seconds:.0f}s"
+        return compact_span(seconds)
 
     def _episode_stamp(self, epoch: float | None) -> str:
         """Return a local timestamp for an episode column."""
@@ -133,7 +131,7 @@ class MaintainerReportMixin:
         recording what no other report can: whether a long
         silence ended because the device chose to speak or because
         something made it speak. That distinction is the difference
-        between a rhythm the statistics should learn and a wedge no
+        between a rhythm the statistics should learn and a hang no
         amount of patience would have fixed, and it is invisible in
         any per-device summary because a device produces one episode
         per occurrence, not one number.
@@ -373,14 +371,16 @@ class MaintainerReportMixin:
             f"{since_what}"
         )
 
-    def _rhythm_cells(self, record: dict[str, Any]) -> list[str]:
+    def _rhythm_cells(self, record: dict[str, Any], device_id: str) -> list[str]:
         """Six cells: today's basis and window, the clipped ones, and
         the clipped rhythm's working (ruling #542)."""
         daily = record.get(DEV_DAILY_MAX) or []
         basis, _ = self._trimmed_maximum(daily)  # type: ignore[attr-defined]
         window = self._freeze_window(record)  # type: ignore[attr-defined]
-        found = clipped_rhythm(daily)
-        clipped_window = self.clipped_window(record)  # type: ignore[attr-defined]
+        # Through the shadow's cache, worked out once until the days
+        # change, rather than twice more for every report.
+        found = self.clipped_for(device_id, daily)  # type: ignore[attr-defined]
+        clipped_window = self.clipped_window(record, device_id)  # type: ignore[attr-defined]
         gap = self._fmt_gap  # type: ignore[attr-defined]
         if found is None:
             young = f"under {CLIP_START_DAYS} days"
@@ -448,7 +448,7 @@ class MaintainerReportMixin:
 
         Age source per family: freeze from its frozen-since, battery
         from its below-threshold-since, signal from when the sync
-        listed it (a rail has no stored start of its own).
+        listed it, the stamp stored with the list item.
         """
         now = dt_util.utcnow().timestamp()
         as_of = self._format_report_time(dt_util.now())
@@ -456,12 +456,7 @@ class MaintainerReportMixin:
         def _elapsed(seconds: float | None) -> str:
             if seconds is None:
                 return "?"
-            # Clamped: a since ahead of the clock (an NTP correction
-            # after an offline boot) must not print a negative age.
-            seconds = max(0.0, seconds)
-            if seconds >= 3600:
-                return f"{seconds / 3600:.1f}h"
-            return f"{seconds / 60:.0f}m"
+            return compact_span(seconds)
 
         def _age_from_epoch(since: float | None) -> str:
             return _elapsed(now - since if since is not None else None)
@@ -560,8 +555,8 @@ class MaintainerReportMixin:
         daily-maxima history (newest first), the trimmed-maximum
         preview of its window basis, its clock source, and the
         tunables in effect, so the tuning knobs get set against real
-        numbers. The trim shown here is display-only during the soak;
-        the detection engine adopts the same rule at Step 4.
+        numbers. The trim shown here is the one the freeze window is
+        built from.
         """
         sample_note = (
             f"k={TRIM_TOP_K} once a device has {TRIM_MIN_SAMPLES} "
@@ -647,12 +642,13 @@ class MaintainerReportMixin:
             f"CLOCK | EVENTS | SIGNAL | "
             f"ITS NORMAL | BAD-DAY LINE | "
             f"BAT LEVEL (floor {self.low_threshold:g}%) |",
-            # Nine cells, matching the header and every data row. The
-            # Dwell column left all three when the dwell chart went,
-            # except this line, which kept its tenth cell and made
-            # every renderer print the table as plain text. Reported
-            # against 0.19.14 on 15 September; the fault reached
-            # 0.21.9 unnoticed because nothing counted the pipes.
+            # One cell per column, matching the header and every data
+            # row: fifteen since the rhythm shadow's six (0.23.17). A
+            # separator one cell too long makes every renderer print
+            # the table as plain text, which is what happened when the
+            # Dwell column left the header and the rows but not this
+            # line (reported against 0.19.14 on 15 September); a test
+            # counts the pipes now.
             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
         ]
         rows = []
@@ -668,7 +664,7 @@ class MaintainerReportMixin:
                     device_label,
                     self._device_status(device_id),
                     self._format_maxima_cell(daily_maximum_gaps),
-                    self._rhythm_cells(record),
+                    self._rhythm_cells(record, device_id),
                     "seen"
                     if device_id in self._last_seen_entity
                     else "clock",
@@ -690,8 +686,8 @@ class MaintainerReportMixin:
         # Alphabetical by the device label, case-insensitive: the table
         # is a reference chart a person scans by name, so strict
         # alphabetical is what they expect (the descending-gap order
-        # that suited the soak is gone; the Reporting Devices section
-        # above already surfaces what is in trouble).
+        # that suited the soak is gone; the Devices With A Fault
+        # section above already surfaces what is in trouble).
         rows.sort(key=lambda row: row[0].lower())
         for (
             device_label,
@@ -883,10 +879,10 @@ class MaintainerReportMixin:
         Every watched device is recorded; muting only suppresses
         judgment and reporting, so a muted device still carries a
         Watched check, with the reason alongside it. COPIES flags a
-        name shared by more than one registry device. Section muting
-        (battery, signal, freeze) are not shown here; they live in the
-        telemetry STATUS column, because a section-muted device is
-        still judged for everything else and is not muted wholesale.
+        name shared by more than one registry device. The MUTED cell
+        holds every mute on a device, global first and then freeze,
+        battery and signal, each with its source (0.22.13), in the
+        same words `classification_rows` gives the dashboard.
         """
 
         rows = [

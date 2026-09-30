@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.23.9 (2026-09-26)
+# File: dashboard.py, Version: 0.23.19 (2026-09-30)
 
 """What the dashboard reads from the coordinator.
 
@@ -673,8 +673,8 @@ class DeviceViewMixin:
         (name, manufacturer, model, model id, hardware version, area,
         connections), because nothing of it is stored. The model id and
         hardware version are the fields a battery library matches on
-        beside manufacturer and model; the battery type itself arrives
-        with that lookup.
+        beside manufacturer and model. No library is built yet, so the
+        page's battery type stays empty until one is.
         """
         records = self.data.get(DATA_DEVICES) or {}
         record = records.get(device_id)
@@ -821,9 +821,9 @@ class DeviceViewMixin:
     def _page_battery(self, record: dict[str, Any]) -> dict[str, Any]:
         """The battery history and the report's own figures for it.
 
-        The windows, the blocks, the reading and the time left are the
-        battery report's, from the report's own functions, so the page
-        and the report say the same thing about the same cell.
+        The windows, the blocks, the reading and the time left come
+        from the same battery rows Battery Trends is built from, so the
+        two pages say the same thing about the same cell.
         """
         level = record.get(DEV_BATTERY_VALUE)
         series = [
@@ -832,8 +832,9 @@ class DeviceViewMixin:
         ]
         # A percentage runs from nothing to full: a reading outside
         # that is a raw sensor value, whichever end it is outside at
-        # (0.22.26). LUX Outdoors reports 186; a cell reporting below
-        # zero would have been drawn against your threshold.
+        # (0.22.26). LUX Outdoors reported 186 until #545 read it on
+        # Zigbee's raw scale and halved it; a cell reporting below zero
+        # would have been drawn against your threshold.
         readable = (
             isinstance(level, (int, float))
             and 0.0 <= float(level) <= BATTERY_READABLE_MAX

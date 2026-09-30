@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: rhythm_shadow.py, Version: 0.23.18 (2026-09-29)
+# File: rhythm_shadow.py, Version: 0.23.19 (2026-09-30)
 
 """A second rhythm, computed beside the one judgment uses (ruling #542).
 
@@ -68,6 +68,7 @@ from .const import (
     REPORT_DIR,
     REPORT_RHYTHM_SHADOW,
 )
+from .durations import compact_span
 
 # The two rules' names as the file writes them.
 _TODAY = "trimmed maximum"
@@ -81,7 +82,8 @@ def clipped_rhythm(daily: list[Any]) -> dict[str, Any] | None:
     maximum is the only rhythm, as it will stay after the switch. A day
     that is not a positive number is not read, as it is not by the
     trimmed maximum. Returns the rhythm in seconds and the figures it
-    was built from, so the report can show its working.
+    was built from, so the report can show its working; None too where
+    the arithmetic would overflow (ruling #544).
     """
     days = [
         float(v)
@@ -138,7 +140,8 @@ class RhythmShadowMixin:
         """The shadow's state, held in memory only.
 
         device_id -> (which rule alone would list it, since when, carried
-        over a restart). A disagreement standing at a restart is written
+        over a restart, the device's name when the line opened). A
+        disagreement standing at a restart is written
         again on the first check after it, marked as carried, so the
         daily count does not take it for a new one.
         """
@@ -209,8 +212,8 @@ class RhythmShadowMixin:
         upstreams' outages already taken out (#160, #536), so the only
         difference is the window. A device muted from freeze, held by
         its upstream, or with no clipped rhythm yet is not compared.
-        Runs after the sweep, inside it the startup grace holds every
-        verdict and the shadow holds too.
+        Runs after the sweep. The startup grace holds every verdict, and
+        the shadow holds with it.
         """
         if self._in_startup_grace():  # type: ignore[attr-defined]
             return
@@ -370,10 +373,7 @@ class RhythmShadowMixin:
 
     @staticmethod
     def _shadow_span(seconds: float) -> str:
-        minutes = seconds / 60.0
-        if minutes < 90:
-            return f"{minutes:.0f}m"
-        return f"{minutes / 60.0:.1f}h"
+        return compact_span(seconds)
 
     def _shadow_line(  # noqa: PLR0913 - one row, one call
         self,
@@ -455,7 +455,12 @@ class RhythmShadowMixin:
         try:
             with self._probe_lock:  # type: ignore[attr-defined]
                 os.makedirs(directory, exist_ok=True)
-                body = "\n".join(lines) + "\n"
+                # An empty write adds nothing to a file that exists and
+                # writes only the header to one that does not: the start
+                # makes one, so the file is there from the first minute
+                # and "nothing to report" reads differently from "not
+                # running" (0.23.19).
+                body = "\n".join(lines) + "\n" if lines else ""
                 with contextlib.suppress(OSError):
                     if (
                         os.path.getsize(path) + len(body.encode("utf-8"))
@@ -467,6 +472,8 @@ class RhythmShadowMixin:
                                 os.replace(older, f"{path}.{rung}")
                 if not os.path.exists(path):
                     body = "\n".join(self._shadow_header()) + "\n" + body
+                if not body:
+                    return
                 with open(path, "a", encoding="utf-8") as handle:
                     handle.write(body)
         except Exception as err:  # noqa: BLE001

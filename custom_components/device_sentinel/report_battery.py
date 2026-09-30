@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.23.6 (2026-09-25)
+# File: report_battery.py, Version: 0.23.19 (2026-09-30)
 
 """Which cells are going to be low: the rows, rates and forecast.
 
@@ -30,6 +30,7 @@ from datetime import date, timedelta
 from typing import Any
 
 
+from .records import SERIES_MEMO_SIZE, series_key
 from .const import (
     BATTERY_FALLING_MIN_PACE,
     BATTERY_FALLING_WEEK_DROP,
@@ -107,6 +108,31 @@ def _least_squares(columns: list[list[float]], y: list[float]) -> tuple[list[flo
 
 
 def battery_knee(series: list[float]) -> dict[str, Any] | None:
+    """The knee fit for a series, worked out once per series.
+
+    A cell's daily series changes only at the midnight fold or a
+    replacement, but its knee was asked for every minute: twice by the
+    problem list, again by the notification card, and by every report
+    and screen. On the second house with a year of history per device
+    that was most of the minute check (0.23.19). Kept by the series'
+    values, so any change to them is a new entry; the caller gets its
+    own copy.
+    """
+    key = series_key(series)
+    found = _KNEE_MEMO.get(key)
+    if found is None and key not in _KNEE_MEMO:
+        found = _battery_knee_of(tuple(series))
+        _KNEE_MEMO[key] = found
+        while len(_KNEE_MEMO) > SERIES_MEMO_SIZE:
+            _KNEE_MEMO.pop(next(iter(_KNEE_MEMO)))
+    return dict(found) if found is not None else None
+
+
+# The knee memo: a fingerprint and its answer, oldest dropped first.
+_KNEE_MEMO: dict[tuple[Any, ...], dict[str, Any] | None] = {}
+
+
+def _battery_knee_of(series: tuple[float, ...]) -> dict[str, Any] | None:
     """Fit the last six weeks with one line and with two joined lines.
 
     The standard way to find where a slope changed (segmented
@@ -173,8 +199,9 @@ def battery_trend(series: list[float], level: float, smooth: bool) -> dict[str, 
 
     Falling: the last week averages at least a point below the week
     before, and once four weeks are held, the six-week fitted line is
-    going down at least half a point a week. Accelerating: the knee fit finds a join where the pace
-    became at least two points a week and at least twice what it was.
+    going down at least half a point a week. Accelerating: the knee fit
+    finds a join where the pace became at least two points a week and
+    at least twice what it was.
     Either needs a cell that reports in small steps (a coarse cell is
     judged against the low threshold alone, 0.23.1) with charge left.
     The pace a cell is projected on is the fitted one: after the knee
@@ -265,7 +292,7 @@ class BatteryReportMixin:
         return (slopes[middle - 1] + slopes[middle]) / 2.0
 
     def _battery_rows(self) -> dict[str, list[dict[str, Any]]]:
-        """Sort every watched cell into what the report has to say.
+        """Sort every watched cell into what Battery Trends has to say.
 
         Five groups, because five different things are true and one
         table cannot hold them: falling with a projection, low

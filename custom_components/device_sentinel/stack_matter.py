@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_matter.py, Version: 0.21.3 (2026-09-14)
+# File: stack_matter.py, Version: 0.23.19 (2026-09-30)
 
 """Matter: everything Device Sentinel knows about this stack.
 
@@ -30,11 +30,19 @@ outage watcher, one row naming the integration with its devices
 counted; what is missing here is the commissioning window and any
 reading of the stack while it runs.
 
-WHAT IS KNOWN AND UNVERIFIED. Nothing is known beyond the domain.
+WHAT IS KNOWN AND UNVERIFIED. Nothing is verified beyond the domain.
 Whether commissioning is observable from Home Assistant, what a
 Matter device's availability looks like, and whether a fabric has any
 coordinator-wide state worth reading, are all open questions rather
 than unverified answers.
+
+WHAT IS GATHERED. Not judged, only recorded. With Extended Diagnostics
+on, the study in `study_stacks.py` gathers what Matter says about its
+server and nodes: whether a node is available and which network it is
+on (0.22.26), and the stack probe writes each change to
+`stack_probe.md` beside Device Sentinel's own view of the same device,
+the readers in shadow (0.23.9). Neither changes a verdict; both are
+the evidence a reader would be built on.
 
 THE ASK. This file stays as it is until somebody with Matter hardware
 runs the named commands and attaches the output. Its first question
@@ -78,8 +86,8 @@ def detects(domain: str, device: dr.DeviceEntry) -> bool:
 def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
     """Return whether this device is the stack itself, not hardware.
 
-    No for Matter (ruling #400). Matter has no reader yet, and nothing here is known to be
-    plumbing rather than hardware. Answering no is the honest
+    No for Matter (ruling #400). Matter has no reader yet, and nothing here
+    is known to be plumbing rather than hardware. Answering no is the honest
     default: a stack that cannot say costs nothing.
 
     Every stack module answers this question so the walk can ask it
@@ -104,8 +112,9 @@ def device_key(device: dr.DeviceEntry) -> None:
 def make_reader(hass: object) -> None:
     """Return None: this stack has no reader yet.
 
-    Not a placeholder for something half-built. Nothing reads a
-    Matter fabric's state today, and the caller treats a None reader
-    as a stack that cannot report on itself, which is exactly true.
+    Not a placeholder for something half-built. Nothing judges from a
+    Matter fabric's state today (the stack probe only records it), and
+    the caller treats a None reader as a stack that cannot report on
+    itself, which is exactly true.
     """
     return None

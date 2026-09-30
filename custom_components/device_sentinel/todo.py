@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: todo.py, Version: 0.20.18 (2026-09-12)
+# File: todo.py, Version: 0.23.19 (2026-09-30)
 
 """Todo platform for the Device Sentinel integration.
 
@@ -13,19 +13,18 @@ and falling batteries, and railed signals. Three families, and any
 wording written for a reader names all three.
 
 The list also carries what is wrong above the devices. When a
-coordinator, the broker, the Wi-Fi network or a whole integration
-goes down, the devices behind it do not each take a line: one row
-names the cause and counts them, reading like `Zigbee2MQTT down: 74
-of 77 devices unavailable` (ruling #401), and it clears itself when
-the cause returns.
-Two devices keep their own row through such an outage, the one
-already broken before it began and the one still down after it
-clears, because those are the two the outage does not explain. One item per device, keyed by its
-registry id, so a device with two problems carries two kinds on one
-line rather than appearing twice. The sync in the coordinator owns
-the list: items appear the moment a detection fires, follow the
-problems as they come and go, and are deleted the moment the last
-one clears.
+coordinator, the broker, the Wi-Fi network or a whole integration goes
+down, the devices behind it do not each take a line: one row names the
+cause and counts them, reading like `Zigbee2MQTT down: 74 of 77 devices
+unavailable` (ruling #401), and it clears itself when the cause returns.
+Two devices keep their own row through such an outage, the one already
+broken before it began and the one still down after it clears, because
+those are the two the outage does not explain. One item per device,
+keyed by its registry id, so a device with two problems carries two
+kinds on one line rather than appearing twice. The sync in the
+coordinator owns the list: items appear the moment a detection fires,
+follow the problems as they come and go, and are deleted the moment the
+last one clears.
 
 The acknowledgment lifecycle, carried from Sentinel Notify:
 
@@ -97,7 +96,7 @@ class DeviceSentinelTodoList(TodoListEntity):
     # Named rather than inheriting the device name: an unnamed
     # entity renders as "Device Sentinel" on the device page, which
     # tells a user nothing about what the row holds.
-    _attr_name = "Problem List"
+    _attr_translation_key = "problem_list"
     _attr_icon = "mdi:clipboard-alert-outline"
     _attr_should_poll = False
     # No CREATE: the sync alone maintains the list, so the card shows

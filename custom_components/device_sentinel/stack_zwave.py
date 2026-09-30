@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zwave.py, Version: 0.21.3 (2026-09-14)
+# File: stack_zwave.py, Version: 0.23.19 (2026-09-30)
 
 """Z-Wave JS: everything Device Sentinel knows about this stack.
 
@@ -49,6 +49,14 @@ replug and clear, with no false device faults in the window and the
 folded statistics of all seventeen Z-Wave devices unchanged. What is
 missing is the running controller, not the outage.
 
+WHAT IS GATHERED. Not judged, only recorded. With Extended Diagnostics
+on, the study in `study_stacks.py` gathers what Z-Wave JS says about
+its nodes: alive, asleep, dead or unknown, and whether each listens,
+sleeps or wakes briefly (0.22.26), and the stack probe writes each
+change to `stack_probe.md` beside Device Sentinel's own view of the
+same device, the readers in shadow (0.23.9). Neither changes a
+verdict; both are the evidence a reader would be built on.
+
 THE ASK. This file stays as it is until somebody with Z-Wave hardware
 runs the named commands and attaches the output. The wiki page for
 this stack carries what is known, what is unverified, the exact
@@ -91,10 +99,10 @@ def detects(domain: str, device: dr.DeviceEntry) -> bool:
 def is_plumbing(domain: str, device: dr.DeviceEntry) -> bool:
     """Return whether this device is the stack itself, not hardware.
 
-    No for Z-Wave JS (ruling #400). A Z-Wave controller reports through its own entities like any
-    other device: the reference tester's Aeotec Z-Stick speaks every
-    204 seconds and carries a real signal series, so watching it is
-    right.
+    No for Z-Wave JS (ruling #400). A Z-Wave controller reports through its
+    own entities like any other device: the reference tester's Aeotec
+    Z-Stick speaks every 204 seconds and carries a real signal series, so
+    watching it is right.
 
     Every stack module answers this question so the walk can ask it
     without knowing which stacks exist (ruling #218). The signature
@@ -118,9 +126,9 @@ def device_key(device: dr.DeviceEntry) -> None:
 def make_reader(hass: object) -> None:
     """Return None: this stack has no reader yet.
 
-    Not a placeholder for something half-built. Nothing reads a
-    Z-Wave controller's state today, and the caller treats a None
-    reader as a stack that cannot report on itself, which is exactly
-    true.
+    Not a placeholder for something half-built. Nothing judges from a
+    Z-Wave controller's state today (the stack probe only records it),
+    and the caller treats a None reader as a stack that cannot report
+    on itself, which is exactly true.
     """
     return None

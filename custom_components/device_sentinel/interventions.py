@@ -3,9 +3,11 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.23.15 (2026-09-28)
+# File: interventions.py, Version: 0.23.19 (2026-09-30)
 
-"""Interventions: bridge state, pairing windows, and storms.
+"""Interventions and upstreams: the broker, the bridges and the integrations
+above the devices, their outages and recoveries, a person's hand on a
+device, pairing windows, and storms.
 
 One of six subject modules split out of coordinator.py, which
 had reached four thousand lines. The seam is the subject, chosen
@@ -172,7 +174,7 @@ def _reader_loaded(reader: Any) -> bool:
         return True
 
 class InterventionMixin:
-    """Interventions: bridge state, pairing windows, and storms."""
+    """Interventions and upstreams, mixed into the coordinator."""
 
     async def _start_broker_reader(self) -> None:
         """Start the one broker watch, where MQTT is present at all.
@@ -211,12 +213,13 @@ class InterventionMixin:
             self._bridge_readers[stack] = reader
             await reader.async_start()
 
-        # The join observers (ruling #360). An instrument: it logs
-        # what a stack says when a device joins and changes nothing.
-        # It exists because a pairing window opened from the Home
-        # Assistant UI is invisible outside the process, so the rig
-        # could not answer whether the join itself is observable and
-        # only code running here can. Which stacks have one is the
+        # The join observers (ruling #360). Built first as an
+        # instrument that only logged what a stack says when a device
+        # joins, because a pairing window opened from the Home
+        # Assistant UI is invisible outside the process and only code
+        # running here could answer whether the join is observable. It
+        # was, and since #362 a join is recorded as a person handling
+        # that device (`_record_device_handled`). Which stacks have one is the
         # registry's question, not this file's (ruling #218), and a
         # stack without one costs nothing at all.
         for stack in sorted(self._stacks):
@@ -942,11 +945,14 @@ class InterventionMixin:
         reporting layer asks this before it speaks so a person is
         told the cause rather than the casualty list.
 
-        The broker outranks any bridge, because a broker that is down
-        takes every bridge with it and two problems for one fault is
-        the same noise in a smaller font. A device on a stack with no
-        reader, or on no stack at all, has no upstream anyone can see
-        and is always reported on its own.
+        The rungs, in order. The broker outranks everything, because a
+        broker that is down takes every bridge with it and two problems
+        for one fault is the same noise in a smaller font. A device on
+        a stack is then asked about its bridge, and for a while after
+        the bridge returns, while its devices rejoin (#436). A device
+        on no stack is asked about the Wi-Fi network it is tied to,
+        then about its own integration's config entry (#382). A device
+        none of these covers is reported on its own.
         """
         broker_since = self._broker_down_at
         if broker_since is not None and self._rides_the_broker(device_id):
@@ -1190,7 +1196,8 @@ class InterventionMixin:
         """Return when a named upstream went down, or None if it is up.
 
         The name is what a row or a push carries: the broker label, a
-        bridge's stack, or an integration's domain (#382). The domain
+        bridge's stack, the Wi-Fi key, or an integration's domain
+        (#382). The domain
         branch exists because the to-do row's stamp and the settle
         gate on the push both ask this by name, and a name that does
         not resolve leaves the row undated and the push unsent. A
@@ -1524,11 +1531,25 @@ class InterventionMixin:
         if polling:
             self._announce_polling(entry_id)
         queue = self._storm_feed_q.setdefault(entry_id, deque())
+        # How many times each device is in the window, kept as changes
+        # enter and leave it, so the count of distinct devices costs
+        # the same whatever the burst (0.23.19). Rebuilding a set of
+        # the whole window on every change cost the square of a
+        # burst: 20,000 changes in one window cost 300 microseconds
+        # each, and a coordinator replaying ten thousand states would
+        # have held the event loop for seconds.
+        counts = self._storm_feed_counts.setdefault(entry_id, {})
         queue.append((now, device_id))
+        counts[device_id] = counts.get(device_id, 0) + 1
         cutoff = now - STORM_WINDOW_SECONDS
         while queue and queue[0][0] < cutoff:
-            queue.popleft()
-        distinct = len({dev for _, dev in queue})
+            _, gone = queue.popleft()
+            left = counts.get(gone, 0) - 1
+            if left > 0:
+                counts[gone] = left
+            else:
+                counts.pop(gone, None)
+        distinct = len(counts)
 
         storm = self._storm_active.get(entry_id)
         if distinct >= STORM_DEVICE_THRESHOLD:
@@ -1569,7 +1590,7 @@ class InterventionMixin:
                 }
                 self._storm_active[entry_id] = storm
                 # A storm is a radio-level event, most often a bridge
-                # or hub reconnecting: it can revive a wedged device,
+                # or hub reconnecting: it can revive a hung device,
                 # so any silence running now is truncated, not
                 # completed, exactly as a reboot truncates one. Inside
                 # startup grace the storm is the restart itself, and
@@ -1725,8 +1746,9 @@ class InterventionMixin:
         """Drop storms past the person's retention.
 
         The series is kept on the retention setting rather than the
-        judgment window, because nothing judges by it yet and its
-        whole purpose is to be looked back over.
+        judgment window. The polling rule reads only its last hour
+        (`_is_polling_integration`); the rest is kept to be looked back
+        over, which is what the series is for.
         """
         storms = self.data.get(DATA_STORMS) or []
         # Two days, not the retention setting. The only thing that
@@ -1939,11 +1961,11 @@ class InterventionMixin:
             # report five minutes later is still true.
             self.hass.async_create_task(self._announce_restore())
         LOGGER.debug(
-            # Same correction as the storm line: the grace window
-            # mutes nothing from learning and has not since taint
-            # became the only surviving muting (rulings #124 and
-            # #125, the second reversed by #535). The count is the reports that arrived inside the
-            # window, which is worth one line at every start.
+            # Same correction as the storm line: the grace window mutes nothing
+            # from learning and has not since taint became the only surviving
+            # muting (rulings #124 and #125, the second reversed by #535). The
+            # count is the reports that arrived inside the window, which is
+            # worth one line at every start.
             "Startup grace closed after %d s: %d report(s) across %d "
             "device(s) inside the window; %d boot-blip taints "
             "aggregated",

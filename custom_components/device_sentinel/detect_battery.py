@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.23.18 (2026-09-29)
+# File: detect_battery.py, Version: 0.23.19 (2026-09-30)
 
 """Battery: the level threshold and what is tracked.
 
@@ -17,7 +17,8 @@ a month. A projection landing inside the chosen horizon is flagged
 while the number still looks comfortable.
 
 Time left is said in words rather than a count of days on purpose.
-The projection assumes the last week continues, which a failing cell
+The projection assumes the fitted pace continues (the six-week line,
+or the line after its knee, 0.23.6 and 0.23.7), which a failing cell
 often does not, so it is a ranking of which cell to replace first
 rather than a date.
 
@@ -77,7 +78,7 @@ from .const import (
     DEV_BATTERY_VALUE,
     LOGGER,
 )
-from .records import BAD_STATES
+from .records import BAD_STATES, SERIES_MEMO_SIZE, series_key
 
 
 
@@ -156,6 +157,35 @@ def raw_battery_history(record: dict[str, Any]) -> bool:
     )
     return proving_days >= 2
 
+
+# The steps memo: a series' fingerprint and stored count, and the answer.
+_STEPS_MEMO: dict[tuple[Any, ...], str] = {}
+
+
+def _battery_steps_of(series: tuple[float, ...], stored: int) -> str:
+    """How a cell reports, worked out once per series (0.23.19).
+
+    Asked for every battery device every minute by the problem list
+    and the notification card; its answer changes only when the
+    series or the stored count does.
+    """
+    big_drops = 0
+    smooth = False
+    for before, after in zip(series, series[1:]):
+        change = after - before
+        if change == 0:
+            continue
+        if abs(change) < BATTERY_COARSE_STEP:
+            smooth = True
+        elif change <= -BATTERY_COARSE_STEP:
+            big_drops += 1
+    if smooth:
+        return BATTERY_STEPS_SMOOTH
+    drops = max(stored, big_drops)
+    if drops >= BATTERY_COARSE_CONFIRM:
+        return BATTERY_STEPS_COARSE
+    return BATTERY_STEPS_UNKNOWN
+
 class BatteryMixin:
     """Battery: the level threshold and what is tracked."""
 
@@ -167,9 +197,8 @@ class BatteryMixin:
         80, 65) and a missed midnight leaves a gap the velocity flag
         can later divide across rather than a false cliff. Only records
         when there is a level to record, so a device without a battery
-        keeps an empty series. The velocity judgment waits until this
-        history has depth, the way the dwell danger line waited on the
-        floor; today this only records.
+        keeps an empty series. The trend is judged from this series:
+        falling, accelerating and the time left (0.23.6).
         """
         level = record.get(DEV_BATTERY_VALUE)
         if level is None:
@@ -280,33 +309,22 @@ class BatteryMixin:
         first has aged out; the history's own count covers a cell
         whose steps were recorded before the count existed.
         """
-        series = [
+        series = tuple(
             value
             for value in (record.get(DEV_BATTERY_DAILY) or [])
             if isinstance(value, (int, float))
-        ]
-        big_drops = 0
-        smooth = False
-        for before, after in zip(series, series[1:]):
-            change = after - before
-            if change == 0:
-                continue
-            if abs(change) < BATTERY_COARSE_STEP:
-                smooth = True
-            elif change <= -BATTERY_COARSE_STEP:
-                big_drops += 1
+        )
         stored = record.get(DEV_BATTERY_COARSE_DROPS)
-        stored = stored if isinstance(stored, int) and not isinstance(stored, bool) else 0
-        # Any smaller change in the retained history is a smooth cell,
-        # however large its other falls: Door 2nd Bedroom on the
-        # reference rig fell 10 and 9 points in 68 days among 44
-        # smaller changes, a sag, not a step.
-        if smooth:
-            return BATTERY_STEPS_SMOOTH
-        drops = max(stored, big_drops)
-        if drops >= BATTERY_COARSE_CONFIRM:
-            return BATTERY_STEPS_COARSE
-        return BATTERY_STEPS_UNKNOWN
+        if not isinstance(stored, int) or isinstance(stored, bool):
+            stored = 0
+        key = (series_key(series), stored)
+        found = _STEPS_MEMO.get(key)
+        if found is None:
+            found = _battery_steps_of(series, stored)
+            _STEPS_MEMO[key] = found
+            while len(_STEPS_MEMO) > SERIES_MEMO_SIZE:
+                _STEPS_MEMO.pop(next(iter(_STEPS_MEMO)))
+        return found
 
     @staticmethod
     def _battery_replaced(previous: float, level: float) -> bool:
@@ -334,9 +352,9 @@ class BatteryMixin:
         binary low flags are binary_sensors with device_class battery.
         Chargers, battery_charging flags, and the like carry other
         device classes and are correctly ignored. The foreign
-        batteries ruling #248 filtered by name, a phone's car and its
-        paired watch, arrive on an integration the exclude list now
-        refuses whole, so no name test is left here.
+        batteries ruling #248 filtered by name (replaced by #267), a
+        phone's car and its paired watch, arrive on an integration the
+        exclude list now refuses whole, so no name test is left here.
         """
         if str(ent.original_device_class or ent.device_class) != "battery":
             return False
@@ -369,8 +387,8 @@ class BatteryMixin:
         storage, so it survives restarts by construction.
 
         An unavailable or unknown battery value changes nothing: the
-        last verdict holds, because liveness is Step 4's job and a
-        dead reading is not a level reading.
+        last verdict holds, because liveness is the freeze detector's
+        job and a dead reading is not a level reading.
         """
         election = self._battery_entity.get(device_id)
         record = self.data[DATA_DEVICES].get(device_id)
@@ -586,8 +604,8 @@ class BatteryMixin:
         percent dropping steadily can have less life left than one
         sitting at 30 that has not moved in a month (ruling #209).
 
-        Read from the battery report's own rows, so the sensor, the
-        report and the daily brief cannot disagree about which cells
+        Read from the battery rows Battery Trends shows, so the sensor,
+        that page and the daily brief cannot disagree about which cells
         are near the end or how long they have. Cells already low are
         absent: they have their own count, and one thing should be
         counted once.
@@ -639,32 +657,6 @@ class BatteryMixin:
         ):
             return True
         return device_id in options.get(CONF_BATTERY_MUTED_DEVICES, [])
-
-    @property
-    def battery_tracked_count(self) -> int:
-        """Return how many devices we watch for battery, after muting.
-
-        A device is battery-tracked when a battery entity was elected
-        for it and it is not battery-muted. The battery analogue of
-        Tracked Signals.
-        """
-        return sum(
-            1
-            for device_id in self._battery_entity
-            if not self._battery_muted(device_id)
-        )
-
-    @property
-    def battery_tracked_list(self) -> list[dict[str, Any]]:
-        """Return the devices watched for battery, for the attribute."""
-        return sorted(
-            (
-                {"name": self._display_names.get(device_id)}
-                for device_id in self._battery_entity
-                if not self._battery_muted(device_id)
-            ),
-            key=lambda row: row["name"] or "",
-        )
 
     @property
     def detected_batteries(self) -> list[dict[str, Any]]:

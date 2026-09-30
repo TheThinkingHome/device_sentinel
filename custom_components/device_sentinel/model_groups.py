@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: model_groups.py, Version: 0.23.18 (2026-09-29)
+# File: model_groups.py, Version: 0.23.19 (2026-09-30)
 
 """Devices read as groups of the same maker, model and hardware (0.23.4).
 
@@ -18,9 +18,10 @@ anything is built on it.
 
 Two things are recorded. Each device's firmware history is stored,
 because Home Assistant keeps only the current version and a change is
-otherwise lost. Everything else is worked out when the diagnostics are
-downloaded, from the device registry and the records already kept, and
-stored nowhere.
+otherwise lost. One behaviour reads it since 0.23.18: a recorded update
+has a device's battery scale measured again (ruling #545). Everything
+else is worked out when the diagnostics are downloaded, from the device
+registry and the records already kept, and stored nowhere.
 
 What makes a group, as ruled: the maker, the model (Home Assistant's
 model id where the device gives one, since it is finer than the

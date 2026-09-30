@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.23.0 (2026-09-24)
+# File: config_flow.py, Version: 0.23.19 (2026-09-30)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -12,25 +12,17 @@ single_config_entry flag makes Home Assistant itself refuse a second
 entry, so the flow carries no duplicate guard of its own.
 
 The options flow is a menu that branches to each configuration
-surface, so it grows without becoming one long form. The menu runs
-in the order a new installation is best worked through:
+surface, so it grows without becoming one long form. Eight screens,
+in this order: Notifications and Daily Brief (where messages go, the
+quiet hours, the brief), Exclusions and Muting (what is never
+watched, and what is watched but never judged), then one screen per
+family, Low Battery, Signal Strength and Freeze Detection, each with
+its own settings and its own muting; WiFi; Advanced; and Extended
+Diagnostics, where a person volunteers what their hardware says
+(ruling #393).
 
-- Muting: what is never judged or reported. It leads because
-  narrowing the field costs nothing to undo and every later family
-  inherits the result.
-- Battery: the low threshold and the battery-only muting. The
-  threshold is a UI knob rather than a constant because batteries
-  drift slowly, and proving detection live means sliding the
-  threshold above a real cell's level and watching it flag.
-- Notifications: the backbone of the Step 5 engine, built ahead of
-  it because the configuration surface is self-contained and touches
-  no detection path. Discovered notify targets, the quiet-hours
-  window, the daily-reminder time, and whether high-priority items
-  pierce quiet hours. These settings are stored and inert until the
-  engine reads them.
-
-Both muting screens run one priority ladder, broadest first:
-integration, label, device, entity (Battery stops at device). Each
+Every muting picker runs one priority ladder, broadest first:
+integration, label, device. Each
 picker lists only what the kinds above it have not already caught,
 and a pick a broader kind covers is pruned from stored options on
 save. Pruning is silent and permanent by ruling: the screens warn
@@ -162,9 +154,6 @@ from .const import (
     RETENTION_DAYS_MAX,
     RETENTION_DAYS_MIN,
     RETENTION_DAYS_STEP,
-    SHARE_PCT_MAX,
-    SHARE_PCT_MIN,
-    SHARE_PCT_STEP,
     BADDAY_BASELINE_DAYS_MAX,
     BADDAY_BASELINE_DAYS_MIN,
     BADDAY_DROP_LQI_MAX,
@@ -369,8 +358,9 @@ def _link_choices(hass) -> list[selector.SelectOptionDict]:
 
     Ruling #453. Home Assistant's own names for its two addresses,
     with the address itself beside each one, so nobody picks blind or
-    picks one that is not set. The labels are built here rather than translated, because
-    what makes them useful is an address this house holds right now.
+    picks one that is not set. The labels are built here rather than
+    translated, because what makes them useful is an address this house
+    holds right now.
     """
     return [
         selector.SelectOptionDict(
@@ -481,8 +471,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     ) -> dict[str, Any]:
         """Return the options with every superseded pick removed.
 
-        The ladder has four rungs, integration, label, device and
-        entity, with Battery stopping at device. They were only ever
+        The ladder has three rungs, integration, label and device,
+        with the exclusion above them all. They were only ever
         settled along one axis: within a screen, a device pick went
         when that screen's own integration or label pick covered it. Nothing
         ever settled the rungs against each other, so excluding an
@@ -858,16 +848,15 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     async def async_step_signal(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """The signal section: sensitivity and the signal-only
-        muting, together, the family pattern.
+        """The signal section: the bad-day settings and the
+        signal-only muting, together, the family pattern.
 
-        The sensitivity is a whole-fleet setting, one slider for LQI
-        and RSSI alike, and it applies to readings going forward
-        only: time already counted against the old floor stays
-        counted, so its true effect shows after a full clean day.
-        That forward-only nature is why it lives here rather than as
-        a live entity, which would promise an immediacy the setting
-        cannot deliver.
+        Four settings shape the bad signal day (ruling #310): the drop
+        a day needs in the device's own units, one for LQI and one for
+        RSSI, how many of its own spreads the fall must clear, and how
+        many days form its normal. Each past day is judged again with
+        today's settings, so a change reads across the whole history at
+        once; nothing is stored against the old values.
 
         The muting lists run the same priority ladder as battery,
         broadest first: integration, label, device. Muting
@@ -1088,8 +1077,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         multiple fits both ends; it follows a curve the two deltas
         shape, generous where the rhythm is fast and tight where it
         is slow (ruling #85). delta-low is the grace a fast device
-        gets, the
-        floor in minutes, so a device reporting every few seconds is
+        gets, the floor in minutes, so a device reporting every few seconds is
         not called dead for missing a couple of reports. delta-high
         is the grace a slow device gets, the ceiling in hours, so the
         slowest devices are still caught in a bounded time. The two
@@ -1275,7 +1263,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
     async def async_step_exclusions(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """The mute surface: the exclude list and four mute
+        """The mute surface: the exclude list and three mute
         selectors, every way of narrowing attention in one place.
 
         Two different verbs live on this screen and the distinction is
@@ -1290,8 +1278,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         at all. Changes apply live on save through the options update
         listener, no restart.
 
-        The four kinds are a priority ladder, broadest first:
-        integration, label, device, entity. Each picker lists only
+        The three kinds are a priority ladder, broadest first:
+        integration, label, device. Each picker lists only
         what the ones above it have not already caught, and a pick the
         ladder supersedes is pruned on save rather than lingering
         invisibly under a parent.
@@ -1385,9 +1373,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             description_placeholders={"wiki_link": WIKI_LINK_EXCLUSIONS},
             data_schema=vol.Schema(
                 {
-                    # The screen splits by verb (ruling #315), and
+                    # The screen splits by verb (ruling #314), and
                     # both halves are sections so both carry a
-                    # heading and an explanation above their picker.
+                    # heading and an explanation above their picker
+                    # (ruling #315).
                     # A loose field gets its label above the input
                     # and its help below it, which put the exclude
                     # list's explanation underneath the chooser while
@@ -1856,18 +1845,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         trim_integration_options = sorted(
             {row["integration"] for row in trim_rows}
         )
-
-        def share_selector() -> selector.NumberSelector:
-            """A ten-to-ninety percent slider in steps of ten."""
-            return selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=SHARE_PCT_MIN,
-                    max=SHARE_PCT_MAX,
-                    step=SHARE_PCT_STEP,
-                    unit_of_measurement="%",
-                    mode=selector.NumberSelectorMode.SLIDER,
-                )
-            )
 
         return self.async_show_form(
             step_id="advanced",

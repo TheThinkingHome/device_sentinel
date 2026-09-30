@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.23.10 (2026-09-26)
+# File: notifier.py, Version: 0.23.19 (2026-09-30)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -46,6 +46,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.components import persistent_notification
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -77,9 +78,6 @@ from .const import (
     TODO_KIND_RAILED_SIGNAL,
     TODO_KIND_UNAVAILABLE,
     TODO_KIND_UNKNOWN,
-    PERSISTENT_CREATE,
-    PERSISTENT_DISMISS,
-    PERSISTENT_TARGET,
     STACK_DISPLAY_NAMES,
 )
 
@@ -170,7 +168,7 @@ class NotifierMixin:
     def _family_summary(self, family: str) -> str:
         """Return a one-line current-state summary for a family.
 
-        Reads the same list properties the Problems sensors publish, so
+        Reads the same list properties the family sensors publish, so
         the summary can never disagree with what is detected, then drops
         the devices a person has acknowledged: an acknowledged problem
         is invisible to humans everywhere, the card and pushes
@@ -449,6 +447,26 @@ class NotifierMixin:
         for family, (line, recovery) in latest.items():
             await self._push_family_event(family, line, recovery)
 
+    def _card_show(self, message: str) -> None:
+        """Raise or replace the state card, under its one fixed id.
+
+        Through Home Assistant's own helpers for an integration's own
+        card (0.23.19), rather than a call through the service layer,
+        which fails with "Action not found" wherever the service has
+        not been registered. A card chosen as a push target still goes
+        through the service, as every target does.
+        """
+        persistent_notification.async_create(
+            self.hass,
+            message,
+            title="Device Sentinel",
+            notification_id=NOTIFY_CARD_ID,
+        )
+
+    def _card_dismiss(self) -> None:
+        """Take the state card down."""
+        persistent_notification.async_dismiss(self.hass, NOTIFY_CARD_ID)
+
     async def async_update_card(self) -> None:
         """Rewrite the persistent card to the current home state.
 
@@ -475,12 +493,7 @@ class NotifierMixin:
             CONF_PERSISTENT_ENABLED, DEFAULT_PERSISTENT_ENABLED
         ):
             try:
-                await self.hass.services.async_call(
-                    PERSISTENT_TARGET,
-                    PERSISTENT_DISMISS,
-                    {"notification_id": NOTIFY_CARD_ID},
-                    blocking=True,
-                )
+                self._card_dismiss()
             except Exception as err:  # noqa: BLE001 - dismiss must never raise
                 LOGGER.warning(
                     "Device Sentinel could not dismiss the state card: %s",
@@ -506,16 +519,7 @@ class NotifierMixin:
         if message == getattr(self, "_card_written", None):
             return
         try:
-            await self.hass.services.async_call(
-                PERSISTENT_TARGET,
-                PERSISTENT_CREATE,
-                {
-                    "notification_id": NOTIFY_CARD_ID,
-                    "title": "Device Sentinel",
-                    "message": message,
-                },
-                blocking=True,
-            )
+            self._card_show(message)
         except Exception as err:  # noqa: BLE001 - card write must never raise
             self._card_written = None
             LOGGER.warning(

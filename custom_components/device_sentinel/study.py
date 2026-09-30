@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.23.13 (2026-09-27)
+# File: study.py, Version: 0.23.19 (2026-09-30)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -40,6 +40,14 @@ keys the stored one lacked or values where it held nulls.
 **It ends when the person ends it.** Collection stops the moment a
 toggle goes off, and what was collected is dropped at the next fold,
 the same way everything else here ages out.
+
+**The stack probe lives here too** (0.23.8). For a studied stack,
+Z-Wave, Matter, Hue, SmartThings, Tuya or Lutron, each minute compares
+what the stack says about a node with Device Sentinel's own view of
+the same device, and writes a line to `stack_probe.md` when either
+changes: the readers in shadow, which judge nothing. That file is not
+dropped at the fold; it is kept and rolled at its cap like the other
+reports.
 """
 
 from __future__ import annotations
@@ -374,7 +382,7 @@ class StudyMixin:
             })
         return {"trackers": trackers, "watched_devices": watched}
 
-    # ------------------------------------------- the probe, 0.22.26
+    # -------------------------------------------- the probe, 0.23.8
 
     def _probe_views(self, row: dict[str, Any], now: float) -> dict[str, Any]:
         """The stack's view of a node beside Device Sentinel's (0.23.8).

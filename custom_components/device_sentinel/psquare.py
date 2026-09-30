@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: psquare.py, Version: 0.13.8 (2026-08-13)
+# File: psquare.py, Version: 0.23.19 (2026-09-30)
 
 """Streaming percentiles in constant memory: the P-Square estimator.
 
@@ -30,9 +30,6 @@ are stored as floats for JSON simplicity; they hold integer values.
 """
 
 from __future__ import annotations
-
-STATE_LEN = 11  # count, five heights, five positions
-
 
 def psquare_new() -> list[float]:
     """Return an empty estimator state."""
