@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/panel_checks/capture_reference_fleet.py, Version: 0.22.20 (2026-09-21)
+# File: tools/panel_checks/capture_reference_fleet.py, Version: 0.23.19 (2026-09-30)
 
 """Capture every dashboard reply from the reference fleet.
 
@@ -12,7 +12,7 @@ Copy it into tests/, run it, and delete the copy. It reads the committed
 anonymized fleet by default, and its output then carries no real name;
 run with DEVICE_SENTINEL_FLEET_DIR pointed at real files only to
 diagnose, and never commit that output. Writes payloads_fleet.json,
-which check_0_22_17.js reads. Do not freeze the clock here: freezing
+which check_tables_hold_columns.js reads. Do not freeze the clock here: freezing
 breaks the WebSocket's sign-in.
 """
 import json
