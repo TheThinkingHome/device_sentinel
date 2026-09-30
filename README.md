@@ -122,7 +122,7 @@ Device Sentinel's settings are designed to be set once and forgotten. For comple
 | Area | Status | Notes |
 |---|---|---|
 | **Dashboard** | Working | Everything Device Sentinel knows, one click apart, with a page for each device. Administrators only. |
-| **Freeze Detection** | Stable | Catches frozen, unavailable and flapping devices, each on its own rhythm. |
+| **Freeze Detection** | Stable | Catches frozen, unavailable and flapping devices, each on its own rhythm. A steadier rhythm for devices with four or more weeks of history is coming. |
 | **Battery** | Stable | Warns on low batteries and on batteries falling or speeding up. |
 | **Storage** | Stable | Survives power cuts and restores itself from a backup. |
 | **Zigbee2MQTT** | Working | A bridge outage is one alert, and your re-pairs are never mistaken for faults. |
@@ -130,8 +130,8 @@ Device Sentinel's settings are designed to be set once and forgotten. For comple
 | **ZHA** | Working | A coordinator outage is one alert, and your re-pairs are recognized. |
 | **Signal** | Experimental | Weak links shown on the dashboard; stuck readings alert. |
 | **WiFi** | Experimental | A Wi-Fi outage is one alert. Needs a wireless adapter on your server or a supported router. |
-| **Z-Wave** | Basic Detection | Devices watched; an integration outage is one alert. Controller support is being built. |
-| **Matter** | Basic Detection | Devices watched; an integration outage is one alert. Controller support is being built. |
+| **Z-Wave** | Basic Detection | Devices watched; an integration outage is one alert. Next: reading Z-Wave JS's own report of a dead device. |
+| **Matter** | Basic Detection | Devices watched; an integration outage is one alert. Next: a Thread network outage as one alert. |
 
 ## AI Disclosure
 
