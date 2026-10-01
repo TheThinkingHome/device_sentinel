@@ -11,7 +11,7 @@
 
 **Your dashboard cannot tell a quiet device from a dead one. Device Sentinel can, and it catches failing batteries and dropping radio links before they take your smart home down.**
 
-> **Pre-Release.** This integration is under rapid development. 
+> **Pre-Release.** This integration is under rapid development. Expect breaking changes.
 
 &nbsp;
 &nbsp;
