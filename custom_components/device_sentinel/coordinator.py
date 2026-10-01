@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.19 (2026-09-30)
+# File: coordinator.py, Version: 0.23.20 (2026-10-01)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -1796,19 +1796,55 @@ class DeviceSentinelCoordinator(
 
     # ---------------------------------------------------- registry view
 
+    @staticmethod
+    def _owner_candidates(device: dr.DeviceEntry) -> list[str]:
+        """Return the config entry ids that may own a device, owner first.
+
+        Home Assistant 2026.8 gave every device a single config entry,
+        named by `config_entry_id`, and 2026.10 reports any read of
+        the two attributes it replaced, `primary_config_entry` and
+        `config_entries`, as deprecated. Where `config_entry_id`
+        exists it is the whole answer, and the old attributes are
+        never touched, so nothing is reported. Where it does not,
+        Home Assistant 2026.5 to 2026.7, the old order stands: the
+        primary first, then every entry sorted, so the pick is
+        deterministic. On 2026.8 and later the two give the same
+        owner, because there the old primary is `config_entry_id`.
+
+        One exception keeps the old order on new versions: a restored
+        composite, the stand-in Home Assistant builds when asked for a
+        device id from before the 2026.8 split. It can still list
+        several entries, its old attributes report nothing, and the
+        old order lets it fall back to another entry when its owner's
+        has gone, as 0.23.19 did.
+        """
+        owner = getattr(device, "config_entry_id", None)
+        if owner is not None and not getattr(device, "is_composite_device", False):
+            return [owner]
+        candidates: list[str] = []
+        primary = getattr(device, "primary_config_entry", None)
+        if primary is not None:
+            candidates.append(primary)
+        candidates.extend(sorted(getattr(device, "config_entries", ()) or ()))
+        return candidates
+
     def _primary_entry(self, device: dr.DeviceEntry) -> str | None:
         """Return the config entry id that owns this device.
 
         The same order the domain is read in, so the entry whose state
         is watched is the entry whose domain the device is filed
-        under. A device with several entries is answered by its
-        primary, which is what Home Assistant itself considers the
-        owner.
+        under. The owner Home Assistant names, `config_entry_id` from
+        2026.8 or the primary before it, is returned as it stands;
+        only a device with neither, before 2026.8, is answered by the
+        first of its entries that still exists.
         """
+        owner = getattr(device, "config_entry_id", None)
+        if owner is not None:
+            return owner
         primary = getattr(device, "primary_config_entry", None)
         if primary is not None:
             return primary
-        for entry_id in sorted(device.config_entries):
+        for entry_id in sorted(getattr(device, "config_entries", ()) or ()):
             if self.hass.config_entries.async_get_entry(entry_id):
                 return entry_id
         return None
@@ -1816,17 +1852,13 @@ class DeviceSentinelCoordinator(
     def _primary_domain(self, device: dr.DeviceEntry) -> str:
         """Return the integration domain owning a device.
 
-        Multi-homed devices (known to their own integration and to a
-        network tracker at once) attribute to the registry's
-        primary_config_entry, the entry that created the device, with
+        The owner is the registry's own: `config_entry_id` from Home
+        Assistant 2026.8, and before that a multi-homed device (known
+        to its own integration and to a network tracker at once) is
+        filed under its primary entry, the one that created it, with
         a sorted fallback so the pick is deterministic either way.
         """
-        entry_ids: list[str] = []
-        primary = getattr(device, "primary_config_entry", None)
-        if primary is not None:
-            entry_ids.append(primary)
-        entry_ids.extend(sorted(device.config_entries))
-        for entry_id in entry_ids:
+        for entry_id in self._owner_candidates(device):
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry is not None:
                 return entry.domain
