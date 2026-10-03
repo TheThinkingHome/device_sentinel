@@ -858,7 +858,7 @@ class StorageMixin:
         same sense a hand on the battery is.
 
         The silence a reset device had accumulated before the cut is
-        not learned (0.24.1, replacing the banking of #163 and #399).
+        not learned (#549, replacing the banking of #163 and #399).
         Nobody was listening between the last save and the stop, so it
         cannot be trusted, and a gap is learned only if Device Sentinel
         could have heard the device for all of it: on the reference rig
@@ -899,7 +899,7 @@ class StorageMixin:
             last = record.get(DEV_LAST_ACTIVITY)
             if not isinstance(last, (int, float)):
                 continue
-            # Nothing is banked (0.24.1, replacing the banking of #163
+            # Nothing is banked (#549, replacing the banking of #163
             # and #399): nobody was listening between the last save and
             # the stop, so the silence before it cannot be trusted, and
             # a gap is learned only if Device Sentinel could have heard

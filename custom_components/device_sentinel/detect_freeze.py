@@ -839,7 +839,7 @@ class FreezeMixin:
         """Why a gap ending now cannot be learned, or None (0.24.1).
 
         A gap is learned only if Device Sentinel could trust all of it
-        (James, 3 October 2026). Two things break that trust here.
+        (ruling #549, 3 October 2026). Two things break that trust here.
 
         An upstream outage on the device's path that the device could
         have reported into. An outage shorter than the device's rhythm

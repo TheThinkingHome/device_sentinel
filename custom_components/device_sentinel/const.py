@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.24.1 (2026-10-03)
+# File: const.py, Version: 0.24.2 (2026-10-03)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2361,7 +2361,19 @@ SYS_WORST = "worst"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 548
+HIGHEST_RULING = 549
+
+# How long a registry rebuild waits after the last one before the next
+# (0.24.2). Every device, entity or label change rebuilt Device
+# Sentinel's whole view of the registry on Home Assistant's main loop,
+# where nothing else runs meanwhile: on a house of 1,500 devices one
+# rebuild took about 45 ms, 100 changes held the loop about 4.5 s, and
+# one press of Enable Last Seen on 1,500 entities held it over a
+# minute. A change rebuilds at once when no rebuild ran in the last
+# this-many seconds, and otherwise once when they end, so a burst costs
+# two rebuilds and a steady stream at most one per cooldown, about 2%
+# of the loop on that house. Found after Frank_Beetz's forum report.
+REGISTRY_REBUILD_COOLDOWN_SECONDS = 2.0
 
 DATA_STORMS = "storms"
 # How long a raw storm row is kept. Two days rather than the person's

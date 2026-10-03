@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.24.1 (2026-10-03)
+# File: coordinator.py, Version: 0.24.2 (2026-10-03)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -69,6 +69,7 @@ from homeassistant.exceptions import ConfigEntryError, HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
+from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_time_change,
@@ -233,6 +234,7 @@ from .const import (
     TODO_ACKED_AT,
     TODO_DEVICE_ID,
     TODO_KINDS,
+    REGISTRY_REBUILD_COOLDOWN_SECONDS,
 )
 from .detect_battery import BatteryMixin, mark_raw_battery, raw_battery_history
 from .flapping import FlapMixin
@@ -349,6 +351,9 @@ class DeviceSentinelCoordinator(
         self._hand_deleted: set[str] = set()
 
         self._entity_map: dict[str, tuple[str, str | None]] = {}
+        # Rebuilds the registry view at most once per cooldown during a
+        # burst of registry changes (0.24.2); made in setup.
+        self._registry_debouncer: Debouncer[None] | None = None
         # Every watched device that owns at least one registered
         # entity, disabled or not. A device with none has nothing
         # that could report (ruling #369).
@@ -1555,6 +1560,18 @@ class DeviceSentinelCoordinator(
                 event_filter=self._event_filter,
             )
         )
+        # One rebuild for a burst of registry changes, not one per
+        # change: at once when none ran in the last cooldown, otherwise
+        # once when it ends (0.24.2). Shut down with the listeners, so
+        # no rebuild runs after the entry is gone.
+        self._registry_debouncer = Debouncer(
+            self.hass,
+            LOGGER,
+            cooldown=REGISTRY_REBUILD_COOLDOWN_SECONDS,
+            immediate=True,
+            function=self._rebuild_and_notify,
+        )
+        self._unsubs.append(self._registry_debouncer.async_shutdown)
         self._unsubs.append(
             self.hass.bus.async_listen(
                 dr.EVENT_DEVICE_REGISTRY_UPDATED, self._on_registry_updated
@@ -2412,9 +2429,24 @@ class DeviceSentinelCoordinator(
 
     @callback
     def _on_registry_updated(self, event: Event[Any]) -> None:
-        """Rebuild the registry view when devices or entities change."""
+        """Rebuild the registry view when devices, entities or labels change.
+
+        Through the debouncer (0.24.2): at once when no rebuild ran in the
+        last cooldown, otherwise once when it ends, so a burst of changes
+        costs two rebuilds rather than one each. Naming a removed device
+        that carried a muting stays immediate, because its name exists
+        only until the removal completes.
+        """
         if event.data.get("action") == "remove":
             self._log_removed_muting(event.data.get("device_id"))
+        if self._registry_debouncer is None:
+            self._rebuild_and_notify()
+            return
+        self._registry_debouncer.async_schedule_call()
+
+    @callback
+    def _rebuild_and_notify(self) -> None:
+        """Rebuild the registry view, then tell the entities."""
         self._rebuild_registry_view()
         self._notify()
 
@@ -2753,7 +2785,7 @@ class DeviceSentinelCoordinator(
                 )
         if not tainted and last is not None:
             # A gap is learned only if Device Sentinel could trust all
-            # of it (0.24.1): see `_gap_untrusted` for the rule.
+            # of it (#549): see `_gap_untrusted` for the rule.
             tainted = self._gap_untrusted(device_id, record, last, stamp)
         capped_note: str | None = None
         downtime_note: str | None = None
