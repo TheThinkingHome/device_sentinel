@@ -6,9 +6,6 @@
         "title": "Device Sentinel",
         "description": "Device Sentinel installs with working defaults and starts watching immediately. Configuration lives in the options after setup."
       }
-    },
-    "abort": {
-      "single_instance_allowed": "Device Sentinel is already configured. Only a single instance is supported."
     }
   },
   "options": {
