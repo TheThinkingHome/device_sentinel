@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.23.19 (2026-09-30)
+# File: interventions.py, Version: 0.24.0 (2026-10-02)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -42,6 +42,7 @@ from .stacks import (
 from .transport_mqtt import MQTTBrokerReader
 
 from .const import (
+    DEV_LOGNORMAL_DAYS,
     FLAP_CHECK_WORDS,
     SYS_DETAIL,
     DATA_SYSTEM_EVENTS,
@@ -256,6 +257,14 @@ class InterventionMixin:
         """
         if device_id not in self._watched:
             return
+        # A re-pair or a removal starts the device's rhythm again: the
+        # Log-Normal Percentile counts from here (#542, amended in
+        # 0.24.0). Set on every message of the handling, before the
+        # refresh below returns early, which is harmless: zero is zero.
+        record = self.data[DATA_DEVICES].get(device_id)
+        if record is not None:
+            record[DEV_LOGNORMAL_DAYS] = 0
+            self._mark_cold_dirty()
         now = dt_util.utcnow().timestamp()
         last = self._handled_at.get(device_id)
         self._handled_at[device_id] = now

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.23.19 (2026-09-30)
+# File: journal.py, Version: 0.24.0 (2026-10-02)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -33,6 +33,9 @@ from homeassistant.util import dt as dt_util
 from .normalise import row_damage
 from . import attribution
 from .const import (
+    DATA_DEVICES,
+    FREEZE_CATEGORY_UNAVAILABLE,
+    INC_SIGNAL,
     SYS_PAIRING_OPEN,
     RECOVERY_CAUSE_PAIRING,
     RECOVERY_CAUSES_RESTART,
@@ -481,6 +484,16 @@ class JournalMixin:
             INC_SUPERSEDED: superseded,
             INC_DURATION: duration,
         }
+        if kind == FREEZE_CATEGORY_UNAVAILABLE and event == INCIDENT_OPENED:
+            # The device's signal the moment it dropped out (0.24.0).
+            # Link failures surface as a device going unavailable, not
+            # as a freeze silence, so without this the evidence #172
+            # waits on never reaches the record. Its outcome is the
+            # resolved row that closes it.
+            record = self.data.get(DATA_DEVICES, {}).get(device_id)
+            entry[INC_SIGNAL] = (
+                self._signal_snapshot(record) if record is not None else None
+            )
         incidents = self.data.setdefault(DATA_INCIDENTS, [])
         if self._reopens_a_closing_episode(incidents, entry):
             return

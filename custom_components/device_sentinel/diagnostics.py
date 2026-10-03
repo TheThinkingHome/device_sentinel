@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.23.19 (2026-09-30)
+# File: diagnostics.py, Version: 0.24.0 (2026-10-02)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -41,6 +41,7 @@ from homeassistant.helpers import entity_registry as er
 
 from . import DeviceSentinelConfigEntry
 from .const import (
+    DATA_SIGNAL_STRESS,
     BROKER_SCOPE,
     INFRASTRUCTURE_DEVICE_CAP,
     ROUTER_DOMAINS,
@@ -572,6 +573,11 @@ async def async_get_config_entry_diagnostics(
         # are all renderings over it, and none derives its own truth
         # (ruling #107).
         "incidents": coordinator.data.get(DATA_INCIDENTS, []),
+        # The signal stress table (0.24.0): each silence's signal when
+        # it opened and how it ended (#246). With the signal now taken
+        # when a device goes unavailable, on the incident rows above,
+        # this is the evidence #172 needs, carried in testers' files.
+        "signal_stress": coordinator.data.get(DATA_SIGNAL_STRESS, []),
         # What the engine would have said, composed but never sent
         # while the dry run lasts. One composer serves every channel,
         # so an event cannot be described differently by two of them

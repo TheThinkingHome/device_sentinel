@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.23.19 (2026-09-30)
+# File: report_maintainer.py, Version: 0.24.0 (2026-10-02)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -76,7 +76,6 @@ from .const import (
     PROBE_WAS,
     PROBE_WHEN,
     REPORT_DIR,
-    REPORT_RHYTHM_SHADOW,
     REPORT_STACK_PROBE,
     REPORT_EPISODES,
     REPORT_TELEMETRY,
@@ -372,30 +371,39 @@ class MaintainerReportMixin:
         )
 
     def _rhythm_cells(self, record: dict[str, Any], device_id: str) -> list[str]:
-        """Six cells: today's basis and window, the clipped ones, and
-        the clipped rhythm's working (ruling #542)."""
-        daily = record.get(DEV_DAILY_MAX) or []
-        basis, _ = self._trimmed_maximum(daily)  # type: ignore[attr-defined]
+        """Six cells: both rules' rhythms, the rule in use and its
+        window, and the Log-Normal Percentile's working (#542, amended
+        in 0.24.0)."""
+        found = self._freeze_rhythm(record)  # type: ignore[attr-defined]
         window = self._freeze_window(record)  # type: ignore[attr-defined]
-        # Through the shadow's cache, worked out once until the days
-        # change, rather than twice more for every report.
-        found = self.clipped_for(device_id, daily)  # type: ignore[attr-defined]
-        clipped_window = self.clipped_window(record, device_id)  # type: ignore[attr-defined]
         gap = self._fmt_gap  # type: ignore[attr-defined]
         if found is None:
-            young = f"under {CLIP_START_DAYS} days"
+            return ["-", "-", "not armed", "-", "-", "-"]
+        rule = self.rule_label(found)  # type: ignore[attr-defined]
+        if found["lognormal"] is None:
             return [
-                gap(basis) if basis is not None else "-",
+                gap(found["trimmed"]),
+                f"under {CLIP_START_DAYS} days",
+                rule,
                 gap(window) if window is not None else "-",
-                young, "-", "-", "-",
+                "-",
+                "-",
             ]
+        fit = found.get("fit")
+        working = (
+            [
+                f"{fit['days']} / {len(fit['set_aside'])}",
+                f"{gap(fit['typical'])} / {100 * (math.exp(fit['spread']) - 1):.0f}%",
+            ]
+            if fit is not None
+            else ["-", "-"]
+        )
         return [
-            gap(basis) if basis is not None else "-",
+            gap(found["trimmed"]),
+            gap(found["lognormal"]),
+            rule,
             gap(window) if window is not None else "-",
-            gap(found["basis"]),
-            gap(clipped_window) if clipped_window is not None else "-",
-            f"{found['read']} / {found['clipped']}",
-            f"{gap(found['typical'])} / {100 * (math.exp(found['spread']) - 1):.0f}%",
+            *working,
         ]
 
     def _format_maxima_cell(self, daily_maximum_gaps: list[float]) -> str:
@@ -598,29 +606,29 @@ class MaintainerReportMixin:
             "A muted device keeps recording; muting suppresses "
             "judgment, not observation.",
             "",
-            f"Rule: the window basis is the **trimmed maximum** of "
-            f"the rolling daily maxima: the top {TRIM_TOP_K} value(s) "
-            f"are ~~set aside~~ as suspected anomalies and the basis "
-            f"is the max of the survivors. {sample_note} BASIS and "
-            f"WINDOW are what judgment uses today; the window is the "
-            f"basis plus the grace margin.",
+            f"Rule: a device's freeze window is the shorter of two "
+            f"rhythms, plus the grace margin (ruling #542, amended in "
+            f"0.24.0). TRIMMED is the **Trimmed Maximum**: of the last "
+            f"{DAILY_MAX_KEEP} days' longest gaps, the top {TRIM_TOP_K} "
+            f"are ~~set aside~~ and the longest of the rest is the "
+            f"rhythm. {sample_note}",
             "",
-            f"The CLIPPED rhythm is computed beside it and changes "
-            f"nothing yet (ruling #542): from a device's "
-            f"{CLIP_START_DAYS}th day, over up to its last "
-            f"{CLIP_MAX_DAYS}, it works on the logarithm of each day's "
-            f"longest gap, sets aside every day more than "
-            f"{CLIP_DEVIATIONS:g} spreads above the mean, again until "
-            f"none is, and takes the mean of the rest plus "
-            f"{CLIP_TARGET_DEVIATIONS:g} spreads, the same "
-            f"90th-percentile day the trimmed maximum aims at. The "
-            f"spread never reads below {CLIP_SPREAD_FLOOR:g}. DAYS READ "
-            f"/ CLIPPED is how many days it read and how many it set "
-            f"aside; TYPICAL is the device's usual longest gap and "
-            f"SPREAD how far its days scatter around it, as a share. "
-            f"Where the two rules would disagree about a device is "
-            f"recorded in {REPORT_RHYTHM_SHADOW}.",
+            f"LOG-NORMAL is the **Log-Normal "
+            f"Percentile**: from a device's {CLIP_START_DAYS}th day, over "
+            f"up to its last {CLIP_MAX_DAYS}, it works on the logarithm "
+            f"of each day's longest gap, sets aside every day more than "
+            f"{CLIP_DEVIATIONS:g} spreads above or below the mean, again "
+            f"until none is, and takes the mean of the rest plus "
+            f"{CLIP_TARGET_DEVIATIONS:g} spreads, the 90th-percentile day; "
+            f"the spread never reads below {CLIP_SPREAD_FLOOR:g}. A "
+            f"firmware update, a battery change or a re-pair starts its "
+            f"days again. RULE IN USE names the shorter, with the days it "
+            f"read; WINDOW is the wait judgment uses. DAYS READ / SET "
+            f"ASIDE and TYPICAL / SPREAD are the Log-Normal Percentile's "
+            f"working: TYPICAL is the device's usual longest gap and "
+            f"SPREAD how far its days scatter around it, as a share.",
             "",
+            *([self.rule_day_line, ""] if getattr(self, "rule_day_line", None) else []),
             f"Tunables: grace {STARTUP_GRACE_SECONDS} s, storm "
             f"{STORM_DEVICE_THRESHOLD} devices/"
             f"{STORM_WINDOW_SECONDS:g} s (exempt at "
@@ -637,8 +645,8 @@ class MaintainerReportMixin:
             "## Learned Statistics",
             "",
             f"| DEVICE (INTEGRATION) | STATUS | GAPS (K={TRIM_TOP_K}) | "
-            f"BASIS | WINDOW | CLIPPED BASIS | CLIPPED WINDOW | "
-            f"DAYS READ / CLIPPED | TYPICAL / SPREAD | "
+            f"TRIMMED | LOG-NORMAL | RULE IN USE | WINDOW | "
+            f"DAYS READ / SET ASIDE | TYPICAL / SPREAD | "
             f"CLOCK | EVENTS | SIGNAL | "
             f"ITS NORMAL | BAD-DAY LINE | "
             f"BAT LEVEL (floor {self.low_threshold:g}%) |",

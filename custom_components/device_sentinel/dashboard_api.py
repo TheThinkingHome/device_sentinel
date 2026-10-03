@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.22.20 (2026-09-21)
+# File: dashboard_api.py, Version: 0.24.0 (2026-10-02)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -82,6 +82,7 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_integration)
     websocket_api.async_register_command(hass, ws_devices)
     websocket_api.async_register_command(hass, ws_device)
+    websocket_api.async_register_command(hass, ws_use_trimmed_maximum)
     websocket_api.async_register_command(hass, ws_brief)
     websocket_api.async_register_command(hass, ws_battery_trends)
     websocket_api.async_register_command(hass, ws_signal_trends)
@@ -382,6 +383,32 @@ def ws_device(
         connection.send_error(msg["id"], "not_found", "Device Sentinel has no record of that device")
         return
     connection.send_result(msg["id"], page)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/use_trimmed_maximum",
+        vol.Required("device_id"): str,
+    }
+)
+@callback
+def ws_use_trimmed_maximum(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """The device page's button: start a device's Log-Normal Percentile
+    count again, as a firmware update does (0.24.0). Admin only, as
+    every act on the dashboard is."""
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    if not coordinator.use_trimmed_maximum(msg["device_id"]):
+        connection.send_error(msg["id"], "not_found", "Device Sentinel has no record of that device")
+        return
+    connection.send_result(msg["id"], {})
 
 
 @websocket_api.require_admin

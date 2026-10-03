@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.23.19 (2026-09-30)
+# File: detect_freeze.py, Version: 0.24.0 (2026-10-02)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -47,7 +47,11 @@ from homeassistant.util import dt as dt_util
 from .records import BAD_STATES
 from .stacks import reader_for_domain
 
+from .rhythm_rules import lognormal_days, lognormal_rhythm
 from .const import (
+    DEV_LOGNORMAL_DAYS,
+    RULE_LOGNORMAL,
+    RULE_TRIMMED,
     BROKER_SCOPE,
     SYS_DURATION,
     SYS_WHEN,
@@ -133,7 +137,7 @@ class FreezeMixin:
         forget; the two callers that use the returned indices to
         style a cell slice their own copy to match. The clipped rhythm
         is computed beside it in shadow and changes no verdict
-        (ruling #542, `rhythm_shadow.py`).
+        (ruling #542, amended in 0.24.0: `_freeze_rhythm` below).
         """
         daily_maximum_gaps = daily_maximum_gaps[-DAILY_MAX_KEEP:]
         if not daily_maximum_gaps:
@@ -202,34 +206,223 @@ class FreezeMixin:
         handling. None means the device is unarmed, and an unarmed
         device can never stand convicted, so no cap is needed.
         """
-        daily = record[DEV_DAILY_MAX]
-        if len(daily) < FREEZE_ARMING_DAYS:
+        found = self._freeze_rhythm(record)
+        if found is None:
             return None
-        rhythm, _ = self._trimmed_maximum(daily)
-        if rhythm is None or rhythm <= 0:
-            return None
+        rhythm = found["rhythm"]
         p = math.log(RATCHET_SLOW_ALLOWANCE / RATCHET_FAST_ALLOWANCE) / math.log(
             RATCHET_SLOW_RHYTHM / RATCHET_FAST_RHYTHM
         )
         a = RATCHET_FAST_ALLOWANCE / (RATCHET_FAST_RHYTHM**p)
         return rhythm + a * (rhythm**p)
 
+    def _freeze_rhythm(self, record: dict[str, Any]) -> dict[str, Any] | None:
+        """Return the rhythm in use for a device, kept in memory (0.24.0).
+
+        Worked out once each time its inputs change and read from memory
+        every other time (James, 2 October 2026): the minute check asks
+        for every device's wait every minute, but the wait changes only
+        when a day folds in, a reset is made, the Freeze Detection
+        settings change, or the record is loaded afresh. Each kept
+        result carries a stamp of what it was built from: the day list
+        itself, its length and newest day, the count since a reset, and
+        the two settings. The fold's append and trim change the length
+        and the newest day; every other writer replaces the list. A
+        stamp that no longer matches means the inputs moved, and the
+        wait is worked out again; nothing has to remember to clear it.
+        Nothing is written to disk.
+        """
+        daily = record.get(DEV_DAILY_MAX)
+        if not isinstance(daily, list):
+            return self._compute_freeze_rhythm(record)
+        since = record.get(DEV_LOGNORMAL_DAYS)
+        stamp = (
+            len(daily),
+            daily[-1] if daily else None,
+            since if isinstance(since, (int, float, type(None))) else repr(since),
+            self._freeze_deltas(),
+        )
+        # One entry per device record, which lives as long as the device:
+        # a replaced day list overwrites the device's entry rather than
+        # leaving the old list behind (found by the 0.24.0 adversarial
+        # round: twenty devices had left forty entries). The store is
+        # cleared if it ever holds more than twice the house's devices,
+        # so records for deleted devices cannot build up.
+        memo = self._rhythm_memo
+        kept = memo.get(id(record))
+        if (
+            kept is not None
+            and kept[0] is record
+            and kept[1] is daily
+            and kept[2] == stamp
+        ):
+            return kept[3]
+        found = self._compute_freeze_rhythm(record)
+        if found is not None:
+            found["window"] = found["rhythm"] + self._freeze_grace(found["rhythm"])
+        if len(memo) > 2 * len(self.data.get(DATA_DEVICES) or {}) + 64:
+            memo.clear()
+        memo[id(record)] = (record, daily, stamp, found)
+        return found
+
+    def _compute_freeze_rhythm(self, record: dict[str, Any]) -> dict[str, Any] | None:
+        """Work out the rhythm in use for a device, and both rules' figures.
+
+        The rhythm in use is the shorter of the Trimmed Maximum and the
+        Log-Normal Percentile (#542, amended in 0.24.0). After bad days
+        the Trimmed Maximum is stretched and the Log-Normal Percentile,
+        which sets them aside, is shorter; after a device starts
+        reporting more often, the Trimmed Maximum follows within 14
+        days while the Log-Normal Percentile, reading up to 42, lags.
+        The grace margin rises with the rhythm, so the shorter rhythm
+        always gives the shorter wait. A tie goes to the Trimmed
+        Maximum, the rule a device has from its first armed day.
+
+        None where the device is not armed (#27). The Log-Normal
+        Percentile is None before 28 days, or 28 days since a reset,
+        and the Trimmed Maximum is then the only rule. Each rule's
+        days are the days it read, bad days included, as its name
+        gives them: "14-Day Trimmed Maximum", "37-Day Log-Normal
+        Percentile".
+        """
+        daily = record.get(DEV_DAILY_MAX) or []
+        if len(daily) < FREEZE_ARMING_DAYS:
+            return None
+        trimmed, _ = self._trimmed_maximum(daily)
+        if trimmed is None or trimmed <= 0:
+            return None
+        found: dict[str, Any] = {
+            "trimmed": trimmed,
+            "trimmed_days": min(len(daily), DAILY_MAX_KEEP),
+            "lognormal": None,
+            "lognormal_days": None,
+            "rule": RULE_TRIMMED,
+            "rhythm": trimmed,
+        }
+        fit = lognormal_rhythm(daily, lognormal_days(record))
+        # The fit itself rides along, so the fold's slowdown check reads
+        # it rather than working the rule out a second time.
+        found["fit"] = fit
+        if fit is not None:
+            found["lognormal"] = fit["rhythm"]
+            found["lognormal_days"] = fit["days"]
+            if fit["rhythm"] < trimmed:
+                found["rule"] = RULE_LOGNORMAL
+                found["rhythm"] = fit["rhythm"]
+        found["days"] = (
+            found["lognormal_days"]
+            if found["rule"] == RULE_LOGNORMAL
+            else found["trimmed_days"]
+        )
+        return found
+
+    def _init_rule_counts(self) -> None:
+        """Start the day's counts of the two freeze rules (#542, amended).
+
+        Held in memory and begun again at a restart, as the rhythm
+        shadow's were; the line they make is written into the
+        Telemetry report at each fold. `_lognormal_listed` remembers,
+        for each device listed while the Log-Normal Percentile was in
+        use, when it was listed and how much longer the Trimmed Maximum
+        would have waited, so its recovery can say whether the Trimmed
+        Maximum would ever have listed it.
+        """
+        self._rule_counts_since: float = dt_util.utcnow().timestamp()
+        # Each device's wait, kept until its inputs change (0.24.0).
+        self._rhythm_memo: dict[int, tuple[Any, Any, Any, Any]] = {}
+        self._lognormal_listings = 0
+        self._lognormal_only = 0
+        self._lognormal_listed: dict[str, tuple[float, float]] = {}
+        self.rule_day_line: str | None = None
+
+    def _note_frozen_listing(self, device_id: str, record: dict[str, Any], now: float) -> None:
+        """Count a frozen listing made while the Log-Normal Percentile decided."""
+        found = self._freeze_rhythm(record)
+        if not found or found["rule"] != RULE_LOGNORMAL:
+            return
+        lead = (
+            found["trimmed"] + self._freeze_grace(found["trimmed"])
+            - found["rhythm"] - self._freeze_grace(found["rhythm"])
+        )
+        self._lognormal_listings += 1
+        self._lognormal_listed[device_id] = (now, lead)
+
+    def _note_frozen_cleared(self, device_id: str, now: float) -> None:
+        """Count a recovery the Trimmed Maximum would never have listed."""
+        listed = self._lognormal_listed.pop(device_id, None)
+        if listed is not None and now - listed[0] < listed[1]:
+            self._lognormal_only += 1
+
+    def rule_counts_fold(self, now: float) -> None:
+        """Write the day's line of the two rules and begin the counts again."""
+        trimmed = lognormal = 0
+        for record in self.data[DATA_DEVICES].values():
+            found = self._freeze_rhythm(record)
+            if not found:
+                continue
+            if found["rule"] == RULE_LOGNORMAL:
+                lognormal += 1
+            else:
+                trimmed += 1
+        since = dt_util.as_local(dt_util.utc_from_timestamp(self._rule_counts_since))
+        self.rule_day_line = (
+            f"From {since:%b %d %H:%M}: {trimmed} device(s) waited on the "
+            f"{RULE_TRIMMED} and {lognormal} on the {RULE_LOGNORMAL} at the "
+            f"fold; {self._lognormal_listings} frozen listing(s) were made "
+            f"under the {RULE_LOGNORMAL}, {self._lognormal_only} of them "
+            f"by a device that spoke again before the {RULE_TRIMMED} would "
+            f"have listed it."
+        )
+        self._rule_counts_since = now
+        self._lognormal_listings = 0
+        self._lognormal_only = 0
+
+    def use_trimmed_maximum(self, device_id: str) -> bool:
+        """Start a device's Log-Normal Percentile count again, by hand.
+
+        The dashboard's button (James, 2 October 2026): the same act a
+        firmware update, a battery change or a re-pair performs, for a
+        change Device Sentinel cannot see. The device waits on the
+        Trimmed Maximum until it has 28 new days. False for a device
+        with no record.
+        """
+        record = self.data[DATA_DEVICES].get(device_id)
+        if record is None:
+            return False
+        record[DEV_LOGNORMAL_DAYS] = 0
+        self._mark_cold_dirty()
+        self._mark_changed()
+        LOGGER.info(
+            "%s set to the %s by hand, until it has 28 new days",
+            self._device_name(device_id),
+            RULE_TRIMMED,
+        )
+        return True
+
+    @staticmethod
+    def rule_label(found: dict[str, Any] | None) -> str | None:
+        """The rule in use as people read it: "37-Day Log-Normal Percentile"."""
+        if not found:
+            return None
+        return f"{found['days']}-Day {found['rule']}"
+
     def _freeze_window(self, record: dict[str, Any]) -> float | None:
         """Return the freeze window for a device, in seconds, or None.
 
-        The window is the learned rhythm plus the grace margin. None
+        The window is the rhythm in use plus the grace margin. None
         means the device is not yet armed for freeze: it has too few
         learned days for a trustworthy rhythm (the arming gate, ruling #27),
         so it is watched for unavailable and unknown but never called
-        frozen, because there is no window to miss.
+        frozen, because there is no window to miss. The rhythm in use
+        is the shorter of the two rules (`_freeze_rhythm`).
         """
-        daily = record[DEV_DAILY_MAX]
-        if len(daily) < FREEZE_ARMING_DAYS:
+        found = self._freeze_rhythm(record)
+        if found is None:
             return None
-        rhythm, _ = self._trimmed_maximum(daily)
-        if rhythm is None or rhythm <= 0:
-            return None
-        return rhythm + self._freeze_grace(rhythm)
+        window = found.get("window")
+        if window is None:
+            window = found["rhythm"] + self._freeze_grace(found["rhythm"])
+        return window
 
     def _recovered_during_pairing(self, device_id: str, now: float) -> bool:
         """Return whether this device recovered during a pairing window.
@@ -491,6 +684,10 @@ class FreezeMixin:
             return False
 
         record[DEV_FROZEN_CATEGORY] = category
+        if category == FREEZE_CATEGORY_FROZEN and current != FREEZE_CATEGORY_FROZEN:
+            self._note_frozen_listing(device_id, record, now)
+        elif current == FREEZE_CATEGORY_FROZEN:
+            self._note_frozen_cleared(device_id, now)
         if category is None:
             record[DEV_FROZEN_SINCE] = None
         elif current is None:
@@ -515,6 +712,8 @@ class FreezeMixin:
         moment a frozen device speaks, it leaves the report.
         """
         if record.get(DEV_FROZEN_CATEGORY) is not None:
+            if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_FROZEN:
+                self._note_frozen_cleared(device_id, dt_util.utcnow().timestamp())
             record[DEV_FROZEN_CATEGORY] = None
             record[DEV_FROZEN_SINCE] = None
             self._dirty = True

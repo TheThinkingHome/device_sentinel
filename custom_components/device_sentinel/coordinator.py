@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.23.20 (2026-10-01)
+# File: coordinator.py, Version: 0.24.0 (2026-10-02)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -20,7 +20,7 @@ memory every channel renders, store for the two files and the merge,
 and interventions for the upstreams and a person's hand. Reports,
 narrative, messenger and notifier predate them, and many have joined
 since, each with a subject of its own: journal, events, flapping,
-router_ties and wifi, rhythm_shadow, study, model_groups, the dashboard
+router_ties and wifi, study, model_groups, the dashboard
 and the report modules among them.
 
 A file split rather than a boundary. Every one of those modules is a
@@ -108,7 +108,12 @@ from .backup import (
     async_copy_corrupt_evidence,
     _last_good_holds_devices,
 )
+from .rhythm_rules import lognormal_days, slowed_down
 from .const import (
+    CLIP_MAX_DAYS,
+    DEV_LOGNORMAL_DAYS,
+    RULE_TRIMMED,
+    SLOWDOWN_DAYS,
     DAILY_SERIES_FIELDS,
     TAINT_UPSTREAM_DOWN,
     FETCHING_INTEGRATIONS,
@@ -233,7 +238,6 @@ from .const import (
 from .detect_battery import BatteryMixin, mark_raw_battery, raw_battery_history
 from .flapping import FlapMixin
 from .model_groups import ModelGroupMixin
-from .rhythm_shadow import RhythmShadowMixin
 from .detect_freeze import FreezeMixin
 from .detect_signal import SignalMixin, _entity_unit, _is_percentage
 from .device_fields import child_devices, device_field
@@ -280,7 +284,6 @@ class DeviceSentinelCoordinator(
     FreezeMixin,
     FlapMixin,
     ModelGroupMixin,
-    RhythmShadowMixin,
     ProblemListMixin,
     StorageMixin,
     InterventionMixin,
@@ -649,7 +652,7 @@ class DeviceSentinelCoordinator(
         self._probe_failed: set[str] = set()
         self._probe_write_failed = False
         self._probe_lock = threading.Lock()
-        self._init_rhythm_shadow()
+        self._init_rule_counts()
         # Whether Device Sentinel's Wi-Fi outage was open at the last
         # probe tick; None until the first tick (0.23.8).
         self._probe_wifi_down: bool | None = None
@@ -1687,9 +1690,6 @@ class DeviceSentinelCoordinator(
             self.deviceless_count,
         )
         await self._write_reports_guarded("setup")
-        # The rhythm shadow's file exists from the start, header only
-        # until its first line (0.23.19).
-        await self.hass.async_add_executor_job(self._shadow_write, [])
 
 
     async def _write_reports_guarded(
@@ -3750,6 +3750,30 @@ class DeviceSentinelCoordinator(
                 del record[DEV_DAILY_MAX][:-self.retention_days]
                 record[DEV_TODAY_MAX] = None
                 pushed += 1
+                # A day since the last reset, for the Log-Normal
+                # Percentile (#542, amended). Back to None once it
+                # covers every day the rule can read.
+                since = record.get(DEV_LOGNORMAL_DAYS)
+                if isinstance(since, (int, float)) and not isinstance(since, bool):
+                    since = int(since) + 1
+                    record[DEV_LOGNORMAL_DAYS] = (
+                        None if since >= CLIP_MAX_DAYS else since
+                    )
+                # Three long days in a row are a new habit, not bad
+                # days: the Log-Normal Percentile starts again and the
+                # Trimmed Maximum carries the device (James, 2 October).
+                found = self._freeze_rhythm(record)
+                if found is not None and slowed_down(
+                    record[DEV_DAILY_MAX], lognormal_days(record), found.get("fit")
+                ):
+                    record[DEV_LOGNORMAL_DAYS] = 0
+                    LOGGER.info(
+                        "%s has reported more slowly for %d days in a row; "
+                        "its wait follows the %s until it has 28 new days",
+                        self._device_name(device_id),
+                        SLOWDOWN_DAYS,
+                        RULE_TRIMMED,
+                    )
             # The day's low, for the primary and for a second scale
             # if the device has one (ruling #285).
             for bucket in (record, record.get(DEV_SIGNAL_ALT)):
@@ -3789,7 +3813,7 @@ class DeviceSentinelCoordinator(
             dt_util.utcnow() - timedelta(minutes=1)
         ).date()
         self._fold_storm_days(ended.isoformat())
-        self.shadow_fold(now)
+        self.rule_counts_fold(now)
         # A new day's figures are something the dashboard should offer.
         self._mark_changed()
         # The roll is what confirms a rail (three consecutive days
@@ -3942,9 +3966,6 @@ class DeviceSentinelCoordinator(
         await self._close_brief_if_skipped()
         self._sample_bridges()
         self._judge_all_devices()
-        # The clipped rhythm beside the one judgment used, the same
-        # minute and the same silence (ruling #542). Changes nothing.
-        self.shadow_check(dt_util.utcnow().timestamp())
         self._wifi_backdate()
         self._note_upstream_peaks()
         # The sync follows the sweep every tick, so a freeze the

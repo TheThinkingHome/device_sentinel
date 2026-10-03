@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.23.19 (2026-09-30)
+# File: dashboard.py, Version: 0.24.0 (2026-10-02)
 
 """What the dashboard reads from the coordinator.
 
@@ -33,6 +33,7 @@ from datetime import date, timedelta
 
 from .report_battery import battery_month_drop, battery_sentence, battery_trend
 from .const import (
+    DEV_LOGNORMAL_DAYS,
     CONNECTS_WORDS,
     BATTERY_STEPS_SMOOTH,
     BATTERY_WEEK_DAYS,
@@ -601,6 +602,62 @@ class DeviceViewMixin:
         rhythm, set_aside = self._trimmed_maximum(gaps)
         return rhythm, sorted(set_aside)
 
+    def _rhythm_history(self, record: dict[str, Any]) -> dict[str, list[Any]]:
+        """Each day's two waits, the rule in use, and the Trimmed
+        Maximum's deciding and set-aside days (0.24.0).
+
+        Worked out from the days before each day, as the detector
+        worked them out then. The count since a reset is worked back
+        from today's: a reset more than 42 days old has let go of its
+        count, so days before it are drawn as if none happened, which
+        changes only how old days are drawn, never today's wait.
+        """
+        # Worked out on each request and kept nowhere (James, 2 October
+        # 2026): a device page asks only while it is open, once a minute,
+        # and everyday running matters more than browsing. A year of
+        # history costs about 71 ms per request; with no page open it
+        # costs nothing, and no history sits in memory.
+        source = record.get(DEV_DAILY_MAX)
+        since = record.get(DEV_LOGNORMAL_DAYS)
+        daily = list(source or [])
+        out: dict[str, list[Any]] = {
+            "windows": [], "trimmed": [], "lognormal": [], "rule": [],
+            "deciding": [], "aside": [],
+        }
+        for index in range(len(daily)):
+            prefix = daily[:index]
+            back = len(daily) - index
+            then = (
+                None
+                if not isinstance(since, (int, float)) or isinstance(since, bool)
+                else max(0, int(since) - back)
+            )
+            found = (
+                self._compute_freeze_rhythm({DEV_DAILY_MAX: prefix, DEV_LOGNORMAL_DAYS: then})
+                if index
+                else None
+            )
+            if found is None:
+                for key in out:
+                    out[key].append(None)
+                continue
+            out["windows"].append(found["rhythm"] + self._freeze_grace(found["rhythm"]))
+            out["trimmed"].append(found["trimmed"] + self._freeze_grace(found["trimmed"]))
+            out["lognormal"].append(
+                found["lognormal"] + self._freeze_grace(found["lognormal"])
+                if found["lognormal"] is not None
+                else None
+            )
+            out["rule"].append(self.rule_label(found))
+            window = prefix[-DAILY_MAX_KEEP:]
+            offset = len(prefix) - len(window)
+            _rhythm, aside = self._trimmed_maximum(window)
+            survivors = [i for i in range(len(window)) if i not in aside]
+            deciding = max(survivors, key=lambda i: window[i]) if survivors else None
+            out["deciding"].append(None if deciding is None else deciding + offset)
+            out["aside"].append(sorted(i + offset for i in aside))
+        return out
+
     def _rhythm_scale(self, record: dict[str, Any]) -> float | None:
         """The tallest figure worth drawing a rhythm chart against."""
         daily = [
@@ -788,6 +845,9 @@ class DeviceViewMixin:
                 "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
                 "rhythm": rhythm,
                 "window": self._freeze_window(record),
+                # The rule in use, as people read it: "37-Day
+                # Log-Normal Percentile" (0.24.0).
+                "rule": self.rule_label(self._freeze_rhythm(record)),
             },
             "rhythm": {
                 "gaps": list((record.get(DEV_DAILY_MAX) or [])[-DAILY_MAX_KEEP:]),
@@ -802,11 +862,11 @@ class DeviceViewMixin:
                 # worked out from the days before it as the detector
                 # worked it out then.
                 "daily": list(record.get(DEV_DAILY_MAX) or []),
-                "windows": [
-                    self._freeze_window({DEV_DAILY_MAX: (record.get(DEV_DAILY_MAX) or [])[:index]})
-                    if index else None
-                    for index in range(len(record.get(DEV_DAILY_MAX) or []))
-                ],
+                # Each day's window in use ("windows"), both rules'
+                # waits each day, the rule in use, and the
+                # days that set and were set aside by the Trimmed
+                # Maximum, for the chart's marks (0.24.0).
+                **self._rhythm_history(record),
             },
             "silences": silences,
             "battery": self._page_battery(record),

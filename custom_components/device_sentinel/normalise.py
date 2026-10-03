@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.23.19 (2026-09-30)
+# File: normalise.py, Version: 0.24.0 (2026-10-02)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (ruling #370).
@@ -64,6 +64,7 @@ from typing import Any
 
 from .records import _new_device_record
 from .const import (
+    DEV_LOGNORMAL_DAYS,
     RETIRED_DEVICE_FIELDS,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_LOW,
@@ -244,6 +245,7 @@ VERSION_HISTORY = "list of [version, first seen] pairs"
 EXPECTED: dict[str, str] = {
     DEV_LAST_ACTIVITY: MOMENT,
     DEV_DAILY_MAX: GAP_SERIES,
+    DEV_LOGNORMAL_DAYS: NONNEGATIVE,
     DEV_TODAY_MAX: GAP,
     DEV_FIRST_OBSERVED: STRING,
     DEV_EVENT_COUNT: INTEGER,
@@ -587,6 +589,9 @@ INCIDENT_SHAPE: dict[str, str] = {
     # reader depends on it; a row written before 0.22.26 omits it and
     # the load fills None, which reads as not replaced.
     "superseded": NULLABLE_BOOLEAN,
+    # The signal when a device went unavailable (0.24.0), on opening
+    # rows only; absent from every other row and every older one.
+    "signal": NULLABLE_MAPPING,
 }
 
 EPISODE_SHAPE: dict[str, str] = {
@@ -684,7 +689,7 @@ PROBE_SHAPE: dict[str, str] = {
 TABLES: dict[str, tuple[dict[str, str], frozenset[str]]] = {
     # The replaced-by-worse mark (0.22.27): absent from every row
     # written before 0.22.26, which is not damage.
-    DATA_INCIDENTS: (INCIDENT_SHAPE, frozenset({"superseded"})),
+    DATA_INCIDENTS: (INCIDENT_SHAPE, frozenset({"superseded", "signal"})),
     DATA_EPISODES: (EPISODE_SHAPE, frozenset()),
     DATA_SIGNAL_STRESS: (STRESS_SHAPE, frozenset()),
     # The shadow readers' two keys (0.23.8): absent from every line

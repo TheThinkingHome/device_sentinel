@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.23.19 (2026-09-30)
+# File: const.py, Version: 0.24.0 (2026-10-02)
 
 """Constants for the Device Sentinel integration."""
 
@@ -430,6 +430,27 @@ DATA_DEVICES = "devices"
 # Per-device storage field names.
 DEV_LAST_ACTIVITY = "last_activity"
 DEV_DAILY_MAX = "daily_max"
+# Days the Log-Normal Percentile may read since the last reset (a
+# firmware update, a battery replacement, a re-pair), or None when no
+# reset limits it (#542, amended in 0.24.0). Every record written
+# before 0.24.0 carries None, so its whole history counts. A reset
+# sets 0, each fold adds one, and at CLIP_MAX_DAYS it returns to None,
+# since the rule never reads further back than that.
+DEV_LOGNORMAL_DAYS = "lognormal_days"
+# The two freeze rules, by the names the device page and the reports
+# give them, each preceded by the days it read: "14-Day Trimmed
+# Maximum", "37-Day Log-Normal Percentile" (James, 2 October 2026).
+RULE_TRIMMED = "Trimmed Maximum"
+RULE_LOGNORMAL = "Log-Normal Percentile"
+# Days in a row the Log-Normal Percentile may set aside as longer than
+# a device's usual before they count as a new habit rather than bad
+# days (James, 2 October 2026). On the third, its count starts again,
+# as after a firmware update, and the Trimmed Maximum, which has
+# followed the slower habit within two days, carries the device until
+# 28 new days. Two bad days are still set aside. Found by the chaos
+# week: without it a device that slowed for good was listed frozen
+# again and again for about two weeks.
+SLOWDOWN_DAYS = 3
 DEV_TODAY_MAX = "today_max"
 DEV_FIRST_OBSERVED = "first_observed"
 DEV_EVENT_COUNT = "event_count"
@@ -1231,7 +1252,6 @@ REPORT_STACK_PROBE = "stack_probe.md"
 # The clipped rhythm in shadow (ruling #542): a line when it and the
 # trimmed maximum disagree about a device, and one a day. Written and
 # rolled the way stack_probe.md is.
-REPORT_RHYTHM_SHADOW = "rhythm_shadow.md"
 REPORT_STALE_FILES = ("device_telemetry.txt", "classification.txt")
 
 # The trimmed maximum: the rhythm every freeze window is built from,
@@ -2123,6 +2143,10 @@ INC_CAUSE = "cause"
 # 0.22.26 carries no flag and reads as it did.
 INC_SUPERSEDED = "superseded"
 INC_DURATION = "duration"
+# The device's signal when it went unavailable, on the opening row only
+# (0.24.0): the reading and the day's mean and spread so far, the same
+# snapshot a silence episode takes (#246), for the evidence #172 needs.
+INC_SIGNAL = "signal"
 # Event types: a problem opening and a problem resolving. What a
 # person does to the list is an ACTION, below.
 INCIDENT_OPENED = "opened"

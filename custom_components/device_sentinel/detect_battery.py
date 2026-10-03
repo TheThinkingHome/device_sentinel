@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.23.19 (2026-09-30)
+# File: detect_battery.py, Version: 0.24.0 (2026-10-02)
 
 """Battery: the level threshold and what is tracked.
 
@@ -45,6 +45,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    DEV_LOGNORMAL_DAYS,
     BATTERY_REPLACED_LANDS,
     BATTERY_REPLACED_FROM_BELOW,
     BATTERY_REPLACED_RISE,
@@ -79,7 +80,6 @@ from .const import (
     LOGGER,
 )
 from .records import BAD_STATES, SERIES_MEMO_SIZE, series_key
-
 
 
 def mark_raw_battery(record: dict[str, Any]) -> bool:
@@ -247,6 +247,9 @@ class BatteryMixin:
             carried = series[-1:]
             record[DEV_BATTERY_DAILY_PREVIOUS] = list(series[:-1])
             record[DEV_BATTERY_REPLACED_AT] = dt_util.utcnow().isoformat()
+            # A fresh cell can change how often a device reports, so the
+            # Log-Normal Percentile counts again from here (#542, amended).
+            record[DEV_LOGNORMAL_DAYS] = 0
             # A new battery is measured afresh (ruling #545, amended
             # 29 September 2026): the raw mark lasts until the next
             # battery change, and the new cell proves its scale again.
