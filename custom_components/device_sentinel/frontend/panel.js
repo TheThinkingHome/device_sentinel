@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: frontend/panel.js, Version: 0.23.10 (2026-09-26)
+// File: panel.js, Version: 0.24.0 (2026-10-02)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1764,8 +1764,22 @@ class DeviceSentinelPanel extends HTMLElement {
       ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
       // What Device Sentinel counts as this device speaking.
       ["Heartbeat", who.clock === "last_seen" ? "its Last Seen entity" : "updates from its entities"],
+      // The freeze rule in use today and its wait (0.24.0): the
+      // shorter of the Trimmed Maximum and the Log-Normal Percentile.
+      ...(status.rule ? [["Wait rule", `${status.rule}, ${span(status.window)}`]] : []),
     ];
     const idTable = el("table", { class: "kv" }, el("tbody", {}, ...identity.map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", {}, v)))));
+    // The button beside the wait rule (0.24.0): starts the Log-Normal
+    // Percentile's count again by hand, as a firmware update does, for
+    // a change Device Sentinel cannot see.
+    const useTrimmed = status.rule ? el("div", { class: "use-trimmed", style: "display:flex;gap:12px;align-items:center;margin:8px 0" },
+      el("button", { class: "chip", type: "button", onclick: async () => {
+        try {
+          await this._call({ type: "device_sentinel/use_trimmed_maximum", device_id: who.device_id });
+          this._paintDevicePage();
+        } catch (err) { /* the next refresh shows the rule as it stands */ }
+      } }, "Use the 14-Day Trimmed Maximum"),
+      el("span", { class: "small muted" }, "Until this device has 28 new days.")) : null;
     const gaps = page.rhythm.gaps;
     const top = Math.max(...gaps, status.window || 0, 1);
     const gapBars = el("div", { class: "gaps", role: "img", "aria-label": "Longest gap each day, last 14 days" },
@@ -1803,7 +1817,7 @@ class DeviceSentinelPanel extends HTMLElement {
     this._pane.replaceChildren(back, head, statusBox,
       el("h3", { class: "section" }, "Live readings ", el("span", { class: "small" }, "update the moment they change")),
       this._readingsBox,
-      el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable), rhythm),
+      el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable, useTrimmed), rhythm),
       el("h3", { class: "section" }, "Silences, last 14 days"), silences,
       this._graphs(page),
       el("p", { class: "muted", style: "margin:0;font-size:13px" },
@@ -1893,6 +1907,7 @@ class DeviceSentinelPanel extends HTMLElement {
       const gap = at(gaps, back);
       if (gap != null) parts.push(`longest gap ${hours(gap)}${at(wins, back) ? `, window ${hours(at(wins, back))}` : ""}`);
       readout.textContent = `${fmt(dayOf(back))}: ${parts.concat(outagesOn(back)).join("; ")}`;
+      if (this._rhythmMarks) this._rhythmMarks(back);
     };
     const frame = (low, high, labels, label) => {
       const y = (v) => 190 - ((v - low) / (high - low)) * 170;
@@ -1924,6 +1939,7 @@ class DeviceSentinelPanel extends HTMLElement {
           onmouseenter: () => setHover(b), onclick: () => setHover(b) }));
       }
     };
+    const LOGNORMAL_COLOUR = "#2a78d6";
     const key = (colour, text, dashed, dot) => el("span", {},
       dot ? el("span", { class: "swatch", style: `width:10px;height:10px;border-radius:5px;background:${colour}` })
         : el("span", { class: "swatch", style: `border-top:2px ${dashed ? "dashed" : "solid"} ${colour}` }), text);
@@ -1964,7 +1980,7 @@ class DeviceSentinelPanel extends HTMLElement {
       // crowd the history (the owner, 25 September, as the old slope
       // lines were drawn). Counted back from the newest day, as the
       // rules count them; a week partly off the left edge is cut there.
-      const legend = [el("span", {}, "Daily level (solid).")];
+      const legend = [key("var(--primary-color)", "Daily level")];
       const WEEK = "#E8A33D";
       if (days <= 30) {
         let drawn = 0;
@@ -2120,13 +2136,16 @@ class DeviceSentinelPanel extends HTMLElement {
       signalCard = card("Signal", page.signal.scale === "lqi" ? "link quality" : "signal", figures,
         el("p", { class: "small", style: "margin:0;line-height:1.5" }, words), sig.g,
         el("div", { class: "legend" },
-          el("span", {}, "Daily median (solid), low end of each day (dashed)."),
+          key("var(--primary-color)", "Daily median"), key("var(--primary-color)", "low end of each day", true),
           key("var(--secondary-text-color)", "its normal"), key("var(--error-color, #db4437)", "bad-day line", true),
           key("var(--error-color, #db4437)", "a bad day", false, true)));
     }
 
     // ----------------------------------------------------------------- rhythm
     let rhythmCard;
+    // Set only when this page draws a rhythm chart, so the shared
+    // pointer never moves a previous page's marks.
+    this._rhythmMarks = null;
     if (!gaps.length) {
       rhythmCard = el("p", { class: "muted", style: "margin:0" }, "No reporting history for this device.");
     } else {
@@ -2150,8 +2169,14 @@ class DeviceSentinelPanel extends HTMLElement {
       const rhy = frame(0, highG, [[highG, mark(highG)], [highG / 2, mark(highG / 2)], [0, inMinutes ? "0m" : "0h"]],
         `Longest gap between reports each day for ${days} days, with its window`);
       const cap = (hours) => (hours == null ? null : Math.min(hours, highG));
-      rhy.g.append(svg("polyline", { points: pts(wins.map((w) => (w ? cap(w / 3600) : null)), rhy.y).join(" "), fill: "none",
+      // Both rules' waits (0.24.0): the Trimmed Maximum in red, the
+      // Log-Normal Percentile in blue; the shorter is the one in use.
+      const trimmedWins = page.rhythm.trimmed || wins;
+      const lognormalWins = page.rhythm.lognormal || [];
+      rhy.g.append(svg("polyline", { points: pts(trimmedWins.map((w) => (w ? cap(w / 3600) : null)), rhy.y).join(" "), fill: "none",
         stroke: "var(--error-color, #db4437)", "stroke-width": 1.4, "stroke-dasharray": "5 4" }),
+      svg("polyline", { points: pts(lognormalWins.map((w) => (w ? cap(w / 3600) : null)), rhy.y).join(" "), fill: "none",
+        stroke: LOGNORMAL_COLOUR, "stroke-width": 1.4, "stroke-dasharray": "2 3" }),
       svg("polyline", { points: pts(gaps.map((g) => cap(g / 3600)), rhy.y).join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 1.4 }));
       let over = 0;
       gaps.forEach((g, i) => {
@@ -2170,14 +2195,47 @@ class DeviceSentinelPanel extends HTMLElement {
             "text-anchor": "middle", fill: "var(--error-color, #db4437)" }, "\u25B2"));
         }
       });
+      // The day that set the Trimmed Maximum's wait (a ring) and the
+      // day it set aside (a cross), for the day under the pointer,
+      // resting on today; and a line naming that day's rule in use.
+      const ring = svg("circle", { r: 8, fill: "none", stroke: "var(--primary-text-color)", "stroke-width": 2, opacity: 0 });
+      const cross = svg("text", { class: "axis", "text-anchor": "middle", fill: "var(--primary-text-color)", opacity: 0 }, "\u2715");
+      rhy.g.append(ring, cross);
+      const ruleLine = el("p", { class: "small rule-line", style: "margin:0;line-height:1.5" }, "");
+      const deciding = page.rhythm.deciding || [];
+      const asideAt = page.rhythm.aside || [];
+      const rules = page.rhythm.rule || [];
+      const place = (node, index, dy) => {
+        const back = index == null ? null : gaps.length - 1 - index;
+        if (back == null || back < 0 || back >= days || gaps[index] == null) { node.setAttribute("opacity", 0); return; }
+        node.setAttribute(node.tagName === "circle" ? "cx" : "x", x(back));
+        node.setAttribute(node.tagName === "circle" ? "cy" : "y", rhy.y(cap(gaps[index] / 3600)) + dy);
+        node.setAttribute("opacity", 1);
+      };
+      this._rhythmMarks = (back) => {
+        const i = gaps.length - 1 - back;
+        if (i < 0 || !rules[i]) { place(ring, null, 0); place(cross, null, 0); ruleLine.textContent = `${fmt(dayOf(back))}: too few days for a wait yet.`; return; }
+        place(ring, deciding[i], 0);
+        place(cross, (asideAt[i] || [])[0], 5);
+        const other = lognormalWins[i] && trimmedWins[i]
+          ? `; Trimmed Maximum ${hours(trimmedWins[i])}, Log-Normal Percentile ${hours(lognormalWins[i])}` : "";
+        const by = deciding[i] != null ? `; the trimmed wait set by ${fmt(dayOf(gaps.length - 1 - deciding[i]))}` : "";
+        const off = (asideAt[i] || []).length ? `, ${fmt(dayOf(gaps.length - 1 - asideAt[i][0]))} set aside` : "";
+        ruleLine.textContent = `${fmt(dayOf(back))}: waiting ${hours(wins[i])} on the ${rules[i]}${other}${by}${off}.`;
+      };
+      this._rhythmMarks(0);
       addHover(rhy.g);
       rhythmCard = card("Rhythm", `longest gap between reports each day, in ${inMinutes ? "minutes" : "hours"}`,
+        ruleLine,
         el("p", { class: "small", style: "margin:0;line-height:1.5" }, over
           ? `${over} ${over === 1 ? "day" : "days"} in this range had a gap longer than its window.`
           : "No day in this range had a gap longer than its window."),
         rhy.g,
-        el("div", { class: "legend" }, el("span", {}, "Longest gap each day (dots)."),
-          key("var(--error-color, #db4437)", "its window that day", true),
+        el("div", { class: "legend" }, key("var(--primary-color)", "Longest gap each day", false, true),
+          key("var(--error-color, #db4437)", "Trimmed Maximum wait", true),
+          key(LOGNORMAL_COLOUR, "Log-Normal Percentile wait", true),
+          el("span", {}, el("span", { class: "swatch", style: "width:10px;height:10px;border-radius:6px;border:2px solid var(--primary-text-color)" }), "the day that set the trimmed wait"),
+          el("span", {}, el("span", { class: "swatch", style: "border:none;width:auto" }, "\u2715"), "set aside"),
           key("var(--error-color, #db4437)", "a gap longer than its window", false, true),
           clipped ? el("span", {}, "\u25B2 a day beyond the scale, drawn at the top.") : null));
     }
