@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_unclean_restart.py, Version: 0.23.18 (2026-09-29)
+# File: test_unclean_restart.py, Version: 0.24.1 (2026-10-03)
 
 """What a restart with no clean-stop marker does to the clocks (#163).
 
@@ -59,7 +59,6 @@ from custom_components.device_sentinel.const import (
     DEV_TAINTED,
     DEV_TODAY_MAX,
     EPISODE_ENDED_UNCLEAN,
-    EPISODE_LEARNED_TRUNCATED,
     EP_AT,
     EP_BASIS,
     EP_DEVICE_ID,
@@ -227,15 +226,16 @@ async def test_a_device_on_the_problem_list_keeps_its_clock(
     assert devices[ordinary.id][DEV_LAST_ACTIVITY] > ANCHOR
 
 
-async def test_the_pre_cut_silence_is_banked_as_a_lower_bound(
+async def test_the_pre_cut_silence_is_not_learned(
     hass: HomeAssistant, hass_storage
 ):
     """Window Living Room Left, the device that proved the second half.
 
-    It had been quiet 50 minutes when it resumed, and learned all of
-    it. Under the reset it learns only what was measured before the
-    lights went out, which is a lower bound on the true gap and can
-    only move the day's maximum toward the truth.
+    It had been quiet 50 minutes when it resumed. Until 0.24.1 the reset
+    banked what was measured before the lights went out as a lower
+    bound; nobody was listening between the last save and the stop, so
+    that silence cannot be trusted, and nothing is learned from it (the
+    banking of #163, replaced 3 October 2026).
     """
     device, _ = register_device(hass, "wlrl", "Window Living Room Left")
     _on_disk(hass_storage, {device.id: _record(WINDOW_LIVING_LEFT)})
@@ -243,8 +243,7 @@ async def test_the_pre_cut_silence_is_banked_as_a_lower_bound(
     entry = await setup_entry(hass)
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
 
-    assert record[DEV_TODAY_MAX] == ANCHOR - WINDOW_LIVING_LEFT
-    assert record[DEV_TODAY_MAX] < 3009.0
+    assert record[DEV_TODAY_MAX] is None, "the silence before the stop was banked"
 
 
 async def test_a_larger_maximum_already_earned_is_not_lowered(
@@ -268,7 +267,7 @@ async def test_a_larger_maximum_already_earned_is_not_lowered(
     assert record[DEV_TODAY_MAX] == 2400.0
 
 
-async def test_a_protocol_clock_older_than_the_watch_banks_only_the_watch(
+async def test_a_protocol_clock_older_than_the_watch_banks_nothing(
     hass: HomeAssistant, hass_storage
 ):
     """D01 (spare) Range Extender, from the second fleet (ruling #399).
@@ -277,7 +276,8 @@ async def test_a_protocol_clock_older_than_the_watch_banks_only_the_watch(
     on 2026-08-17, and ruling #124 makes that the device's clock. The
     raw truncation was 1,020.43 days, banked, folded, and turned into
     a freeze window wider than the whole install. Six devices on that
-    fleet carried one. The bank now stops where the watch began.
+    fleet carried one. #399 stopped the bank where the watch began;
+    since 0.24.1 nothing is banked at all.
     """
     device, _ = register_device(hass, "d01", "D01 (spare) Range Extender")
     watched = ANCHOR - _iso_seconds(FIRST_OBSERVED)
@@ -287,36 +287,29 @@ async def test_a_protocol_clock_older_than_the_watch_banks_only_the_watch(
     entry = await setup_entry(hass)
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
 
-    assert record[DEV_TODAY_MAX] == watched
-    assert record[DEV_TODAY_MAX] < 1020.43 * 86400.0
+    assert watched < 1020.43 * 86400.0
+    assert record[DEV_TODAY_MAX] is None, "a protocol clock older than the watch banked a gap"
 
 
-async def test_a_clock_inside_the_watch_banks_the_whole_truncation(
+async def test_a_clock_inside_the_watch_banks_nothing_either(
     hass: HomeAssistant, hass_storage
 ):
-    """The bound touches nothing it was not built for.
-
-    A silence that fits inside the observation window is a real lower
-    bound and is banked whole, which is the control on the case above.
-    """
+    """A silence inside the observation window, the control on the case
+    above, is not banked either since 0.24.1: it is as untrusted."""
     device, _ = register_device(hass, "inside", "Door Terrace Dining")
     _on_disk(hass_storage, {device.id: _record(ANCHOR - 7200.0)})
 
     entry = await setup_entry(hass)
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
 
-    assert record[DEV_TODAY_MAX] == 7200.0
+    assert record[DEV_TODAY_MAX] is None, "the silence before the stop was banked"
 
 
-async def test_a_record_with_no_first_observed_stamp_banks_as_before(
+async def test_a_record_with_no_first_observed_stamp_banks_nothing(
     hass: HomeAssistant, hass_storage
 ):
-    """No stamp, no bound.
-
-    The bound is measured from first-observed, so a record that does
-    not carry one keeps the behaviour it had rather than losing a
-    bank it earned.
-    """
+    """A record without a first-observed stamp, which once escaped
+    #399's bound, banks nothing like every other since 0.24.1."""
     device, _ = register_device(hass, "nostamp", "Switch Kitchen")
     record_on_disk = _record(ANCHOR - 7200.0)
     del record_on_disk[DEV_FIRST_OBSERVED]
@@ -325,7 +318,7 @@ async def test_a_record_with_no_first_observed_stamp_banks_as_before(
     entry = await setup_entry(hass)
     record = entry.runtime_data.data[DATA_DEVICES][device.id]
 
-    assert record[DEV_TODAY_MAX] == 7200.0
+    assert record[DEV_TODAY_MAX] is None, "the silence before the stop was banked"
 
 
 async def test_the_learned_series_and_identity_are_untouched(
@@ -403,7 +396,9 @@ async def test_an_open_episode_closes_as_a_power_loss(
 
     assert stored[EP_ENDED] == EPISODE_ENDED_UNCLEAN
     assert stored[EP_AT] == ANCHOR
-    assert stored[EP_LEARNED] == EPISODE_LEARNED_TRUNCATED
+    # Its LEARNED cell waits for the device's next report (0.24.1):
+    # nothing was banked, so there is no truncated gap to name.
+    assert stored[EP_LEARNED] is None
 
 
 async def test_a_closed_episode_is_not_restamped(
