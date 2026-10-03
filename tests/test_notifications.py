@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.23.19 (2026-09-30)
+# File: test_notifications.py, Version: 0.24.2 (2026-10-03)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -71,7 +71,7 @@ from custom_components.device_sentinel.notifier import (
     _in_quiet_hours,
 )
 
-from tests.helpers import register_device, setup_coordinator, setup_entry
+from tests.helpers import registry_settled, register_device, setup_coordinator, setup_entry
 
 DOMAIN = "device_sentinel"
 STORAGE_KEY = f"{DOMAIN}.storage"
@@ -988,6 +988,7 @@ async def test_the_earliest_stamp_survives_a_missing_one(
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "r4a", "Half Stamped")
+    await registry_settled(hass)
     record = coord.data["devices"][device.id]
     record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_UNAVAILABLE
     record[DEV_FROZEN_SINCE] = T0

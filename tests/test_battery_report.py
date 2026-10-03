@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.23.6 (2026-09-25)
+# File: test_battery_report.py, Version: 0.24.2 (2026-10-03)
 
 """Which cells are going to be low (ruling #194).
 
@@ -40,7 +40,7 @@ from custom_components.device_sentinel.const import (
     REPORT_DIR,
 )
 
-from .helpers import register_device, setup_coordinator
+from .helpers import registry_settled, register_device, setup_coordinator
 
 # The dying cell, exactly as recorded: flat, then the sag and rebound,
 # then the fall.
@@ -95,6 +95,7 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
     coord = await setup_coordinator(hass)
     dying, _ = register_device(hass, "bat1", "Door 2nd Bedroom")
     healthy, _ = register_device(hass, "bat2", "Soil Moisture")
+    await registry_settled(hass)
     _seed(coord, dying.id, DYING, 12.0, low=True,
           since="2026-08-03T06:41:02+00:00")
     _seed(coord, healthy.id, HEALTHY, 82.0)
@@ -132,6 +133,7 @@ async def test_a_falling_cell_raises_nothing(
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "bat6", "Door 2nd Bedroom")
+    await registry_settled(hass)
     _seed(coord, device.id, DYING, 12.0)
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
@@ -176,6 +178,7 @@ async def test_the_falling_sensor_is_a_different_set_from_low(
     low, _ = register_device(hass, "fs1", "Already Low")
     soon, _ = register_device(hass, "fs2", "Nearly Out")
     far, _ = register_device(hass, "fs3", "Months Away")
+    await registry_settled(hass)
     _seed(coord, low.id, DYING, 12.0, low=True)
     _seed(coord, soon.id,
           [40.0, 38.5, 37.0, 35.5, 34.0, 32.5, 31.0, 29.5,
@@ -227,6 +230,7 @@ async def test_a_steady_cell_is_not_projected(hass: HomeAssistant):
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "bat3", "Motion Hall")
+    await registry_settled(hass)
     _seed(coord, device.id, STEADY, 100.0)
 
     rows = coord._battery_rows()
@@ -242,6 +246,7 @@ async def test_a_reading_above_100_is_called_unreadable(hass: HomeAssistant):
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "bat4", "LUX Outdoors")
+    await registry_settled(hass)
     _seed(coord, device.id, [196.0] * 16, 186.0)
 
     rows = coord._battery_rows()
@@ -257,6 +262,7 @@ async def test_a_device_with_no_battery_is_counted_not_listed_as_zero(
     """
     coord = await setup_coordinator(hass)
     register_device(hass, "bat5", "Wired Thing")
+    await registry_settled(hass)
 
     rows = coord._battery_rows()
     assert _names(rows["absent"]) == ["Wired Thing"]
@@ -270,6 +276,7 @@ async def test_the_brief_names_a_cell_that_is_nearly_out(hass: HomeAssistant):
     """
     coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
     device, _ = register_device(hass, "brf1", "Door 2nd Bedroom")
+    await registry_settled(hass)
     _seed(coord, device.id, DYING, 12.0)
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
@@ -289,6 +296,7 @@ async def test_the_brief_leaves_out_what_nobody_can_act_on(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     near, _ = register_device(hass, "brf2", "Nearly Out")
     far, _ = register_device(hass, "brf3", "Months Away")
+    await registry_settled(hass)
     _seed(coord, near.id, DYING, 12.0)
     _seed(coord, far.id, HEALTHY, 82.0)
 
@@ -305,6 +313,7 @@ async def test_a_cell_already_low_is_not_said_twice(hass: HomeAssistant):
     """It has a row in Now already. One document, one mention."""
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "brf4", "Door 2nd Bedroom")
+    await registry_settled(hass)
     _seed(coord, device.id, DYING, 12.0, low=True,
           since="2026-08-03T06:41:02+00:00")
 
@@ -316,6 +325,7 @@ async def test_a_quiet_fleet_adds_no_line(hass: HomeAssistant):
     """Nothing to say means nothing said."""
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "brf5", "Motion Hall")
+    await registry_settled(hass)
     _seed(coord, device.id, STEADY, 100.0)
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
@@ -328,6 +338,7 @@ async def test_the_horizon_is_the_persons_to_set(hass: HomeAssistant):
     """
     coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
     device, _ = register_device(hass, "hz1", "Two Weeks Out")
+    await registry_settled(hass)
     _seed(coord, device.id, TWO_WEEKS, 20.0)
 
     await hass.async_add_executor_job(coord._write_reports, "manual")

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_trend.py, Version: 0.23.6 (2026-09-25)
+# File: tests/test_battery_trend.py, Version: 0.24.2 (2026-10-03)
 
 """The battery trend by the week, and the knee (0.23.6).
 
@@ -196,7 +196,7 @@ from custom_components.device_sentinel.diagnostics import (  # noqa: E402
     async_get_config_entry_diagnostics,
 )
 
-from .helpers import register_device, setup_coordinator  # noqa: E402
+from .helpers import registry_settled, register_device, setup_coordinator  # noqa: E402
 
 # S63's shape carried down to 21.5 percent, so it is projected empty
 # inside a month: the case the owner ruled belongs on the Problem List.
@@ -215,6 +215,7 @@ async def test_every_surface_reads_the_same_trend(hass: HomeAssistant):
     fast, _ = register_device(hass, "bw1", "Garage Door")
     even, _ = register_device(hass, "bw2", "Radar Presence")
     wobble, _ = register_device(hass, "bw3", "Door Master Shower")
+    await registry_settled(hass)
     _seed(coord, fast.id, S63_LOW)
     _seed(coord, even.id, S91)
     _seed(coord, wobble.id, DOOR_MASTER_SHOWER)
@@ -253,6 +254,7 @@ async def test_every_surface_reads_the_same_trend(hass: HomeAssistant):
 async def test_the_diagnostics_carry_each_cells_weeks(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     fast, _ = register_device(hass, "bw4", "Garage Door")
+    await registry_settled(hass)
     _seed(coord, fast.id, S63)
     diagnostics = await async_get_config_entry_diagnostics(hass, coord.entry)
     trend = diagnostics["devices"][fast.id]["battery_trend"]

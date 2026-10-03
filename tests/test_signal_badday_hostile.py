@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_signal_badday_hostile.py, Version: 0.23.5 (2026-09-25)
+# File: tests/test_signal_badday_hostile.py, Version: 0.24.2 (2026-10-03)
 
 """What the bad-day detector does with data it should never see.
 
@@ -36,7 +36,7 @@ from custom_components.device_sentinel.const import (
     SIGNAL_SCALE_RSSI,
 )
 
-from .helpers import register_device, setup_coordinator
+from .helpers import registry_settled, register_device, setup_coordinator
 
 STEADY = [160.0, 162.0, 158.0, 161.0, 160.0, 159.0]
 
@@ -204,6 +204,7 @@ async def test_a_hostile_fleet_still_draws_signal_trends(
     }
     for key, series in poisons.items():
         device, _ = register_device(hass, key, f"Poison {key}")
+        await registry_settled(hass)
         coord.data[DATA_DEVICES][device.id][DEV_SIGNAL_DAILY_P5] = series
 
     await hass.async_add_executor_job(coord._write_reports, "manual")

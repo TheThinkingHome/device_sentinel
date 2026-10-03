@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_clock_loss.py, Version: 0.23.17 (2026-09-29)
+# File: tests/test_clock_loss.py, Version: 0.24.2 (2026-10-03)
 
 """A lost clocks file, and a startup grace that holds everything.
 
@@ -72,7 +72,7 @@ from custom_components.device_sentinel.const import (
     TODO_SORT_NAME,
 )
 from tests.conftest import FLEET_ABSENT, fleet_path
-from tests.helpers import setup_coordinator
+from tests.helpers import registry_settled, setup_coordinator
 
 from .helpers import record_events, register_device, setup_entry
 from .test_bridge_hold import _house as _hold_house
@@ -556,6 +556,9 @@ async def _run_round(hass: HomeAssistant, records: list[dict], seed: int):
     n_silent = rng.randint(0, 3)
     entityless = [house.add_entityless() for _ in range(n_less)]
     silent = [house.add_silent_with_entities() for _ in range(n_silent)]
+    # Device Sentinel's view catches up with the new devices before
+    # anything reads them, as it does within 2 seconds (0.24.2).
+    await registry_settled(hass)
     for device in entityless + silent:
         house.seed(device.id)
 

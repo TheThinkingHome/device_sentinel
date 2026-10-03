@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_signal_stats.py, Version: 0.23.19 (2026-09-30)
+# File: test_signal_stats.py, Version: 0.24.2 (2026-10-03)
 
 """The good-state statistics and the dwell chart (0.10.15).
 
@@ -69,7 +69,7 @@ from custom_components.device_sentinel.const import (
     SIGNAL_RAIL_LQI,
 )
 
-from .helpers import register_device, setup_coordinator, setup_entry
+from .helpers import registry_settled, register_device, setup_coordinator, setup_entry
 
 # A real moment for the fixtures' stamps: the storage check refuses
 # a time before 2020 as impossible (ruling #544).
@@ -113,6 +113,7 @@ async def test_readings_accumulate_and_rails_do_not(
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "st1", "Stats Device")
+    await registry_settled(hass)
     record = coord.data[DATA_DEVICES][device.id]
 
     # A minute apart, because the mean and deviation weigh minutes
@@ -146,6 +147,7 @@ async def test_the_roll_produces_mean_deviation_and_maximum(
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "st2", "Stats Device")
+    await registry_settled(hass)
     record = coord.data[DATA_DEVICES][device.id]
     # A minute each, so the three weigh equally (ruling #259): the
     # fold feeds the last value's minute itself, which is why the
@@ -170,6 +172,7 @@ async def test_a_day_with_no_readings_appends_nothing(
     """The series stay aligned with each other rather than padded."""
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "st3", "Quiet Device")
+    await registry_settled(hass)
     record = coord.data[DATA_DEVICES][device.id]
 
     coord._roll_signal_stats(record, 86400.0)
@@ -194,6 +197,7 @@ async def test_a_held_value_cannot_fabricate_a_day(
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "st4", "Once Device")
+    await registry_settled(hass)
     record = coord.data[DATA_DEVICES][device.id]
 
     # One real reading on day one.
@@ -223,6 +227,7 @@ async def test_a_rail_only_day_writes_the_rail_and_nulls(
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "st5", "Railed Device")
+    await registry_settled(hass)
     record = coord.data[DATA_DEVICES][device.id]
     record[DEV_SIGNAL_SCALE] = "lqi"
 
@@ -321,6 +326,7 @@ async def test_the_brief_carries_no_signal_anomaly_line(
     """
     coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "b1", "Anomalous Device")
+    await registry_settled(hass)
     record = coord.data[DATA_DEVICES][device.id]
     record[DEV_SIGNAL_DAILY_P5] = [
         160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
@@ -343,6 +349,7 @@ async def test_the_brief_is_a_page_in_the_reports_folder(
     """
     coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "bh1", "Anomalous Device")
+    await registry_settled(hass)
     record = coord.data[DATA_DEVICES][device.id]
     record[DEV_BATTERY_VALUE] = 40.0
     # Falling in small steps: a cell that falls only in steps of five
@@ -451,6 +458,7 @@ async def test_weak_links_are_counted_apart_from_rails(
     coord = await setup_coordinator(hass, {})
     weak, _ = register_device(hass, "sp1", "Weak Link")
     fine, _ = register_device(hass, "sp2", "Fine Link")
+    await registry_settled(hass)
     coord.data[DATA_DEVICES][weak.id][DEV_SIGNAL_DAILY_P5] = [
         160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
     ]
@@ -481,6 +489,7 @@ async def test_a_signal_muted_device_is_not_counted_low(
         hass, {CONF_SIGNAL_MUTED_DEVICES: []}
     )
     weak, _ = register_device(hass, "sp3", "Excluded Link")
+    await registry_settled(hass)
     coord.data[DATA_DEVICES][weak.id][DEV_SIGNAL_DAILY_P5] = [
         160.0, 162.0, 158.0, 161.0, 160.0, 159.0, 100.0,
     ]
@@ -505,6 +514,7 @@ async def test_a_low_clears_the_moment_its_dwell_falls_back(
     """
     coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "sp4", "Recovering Link")
+    await registry_settled(hass)
     record = coord.data[DATA_DEVICES][device.id]
 
     record[DEV_SIGNAL_DAILY_P5] = [
@@ -529,6 +539,7 @@ async def test_a_railed_device_is_not_counted_twice(
     """
     coord = await setup_coordinator(hass, {})
     device, _ = register_device(hass, "sp5", "Railed Link")
+    await registry_settled(hass)
     record = coord.data[DATA_DEVICES][device.id]
     record[DEV_SIGNAL_DAILY_COUNT] = [0] * 4
     record[DEV_SIGNAL_DAILY_RAIL] = [7] * 4
@@ -567,6 +578,7 @@ async def test_the_fold_records_count_line_and_rail(
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "gs7", "Recorded Link")
+    await registry_settled(hass)
     record = _seed_signal(
         coord, device.id, [100.0] * 14, 140.0, 20.0
     )
@@ -597,6 +609,7 @@ async def test_an_episode_carries_its_signal_snapshot(
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "gs8", "Stressed Link")
+    await registry_settled(hass)
     record = _seed_signal(
         coord, device.id, [100.0] * 14, 140.0, 20.0
     )
@@ -781,6 +794,7 @@ async def test_a_rail_day_does_not_crash_the_readers(
     """
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "st8", "Railed All Day")
+    await registry_settled(hass)
     record = coord.data[DATA_DEVICES][device.id]
     record[DEV_SIGNAL_SCALE] = "lqi"
 
@@ -811,6 +825,7 @@ async def test_a_rail_day_does_not_crash_the_readers(
 
     # A record that has only ever railed has no reading either.
     other, _ = register_device(hass, "st9", "Born Railed")
+    await registry_settled(hass)
     fresh = coord.data[DATA_DEVICES][other.id]
     fresh[DEV_SIGNAL_SCALE] = "lqi"
     coord._feed_signal(fresh, 255.0, 1000.0)

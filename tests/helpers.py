@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: helpers.py, Version: 0.23.19 (2026-09-30)
+# File: helpers.py, Version: 0.24.2 (2026-10-03)
 
 """Shared test helpers, one canonical version of each.
 
@@ -73,6 +73,10 @@ async def setup_entry(
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    # Device Sentinel's own setup registers its entities, which opens a
+    # registry cooldown (0.24.2). On a real server time passes before
+    # anything else happens, so the view is let catch up here.
+    await registry_settled(hass)
     return entry
 
 
@@ -328,3 +332,27 @@ def card_message(hass):
     card = _async_get_or_create_notifications(hass).get(NOTIFY_CARD_ID)
     return card["message"] if card else None
 
+
+
+async def registry_settled(hass: HomeAssistant) -> None:
+    """Let Device Sentinel's view of the registry catch up, as 2 seconds would.
+
+    Since 0.24.2 a registry change rebuilds the view at once only when no
+    rebuild ran in the last cooldown, and otherwise when the cooldown ends.
+    A test that changes the registry and then reads the view calls this
+    between the two. It runs any rebuild the debouncer is holding and
+    clears the cooldown, which is what happens on a real server once the
+    cooldown passes, without moving Home Assistant's clock, so no other
+    timer fires.
+    """
+    await hass.async_block_till_done()
+    for entry in hass.config_entries.async_entries("device_sentinel"):
+        coord = getattr(entry, "runtime_data", None)
+        debouncer = getattr(coord, "_registry_debouncer", None)
+        if debouncer is None:
+            continue
+        pending = debouncer._execute_at_end_of_timer
+        debouncer.async_cancel()
+        if pending:
+            coord._rebuild_and_notify()
+    await hass.async_block_till_done()
