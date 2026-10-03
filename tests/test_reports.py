@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.23.19 (2026-09-30)
+# File: test_reports.py, Version: 0.24.0 (2026-10-02)
 
 """The diagnostic files: telemetry and classification.
 
@@ -175,7 +175,7 @@ async def test_reports_written_at_setup_and_midnight(
     clas_text = open(clas).read()
     assert "Report Device" in tele_text
     assert "Tunables:" in tele_text
-    assert "trimmed maximum" in tele_text
+    assert "Trimmed Maximum" in tele_text
     assert "| COPIES |" in clas_text
     assert "Report Device" in clas_text
     assert "Service Thing" in clas_text
@@ -396,11 +396,12 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
     def _cells(line: str) -> int:
         return len([c for c in line.strip().strip("|").split("|")])
 
-    # Fifteen since 0.23.17: today's basis and window and the clipped
-    # rhythm's four beside them, shown in shadow (ruling #542).
+    # Fifteen since 0.23.17, the same count since 0.24.0: both rules'
+    # rhythms, the rule in use and its window, and the Log-Normal
+    # Percentile's working (ruling #542, amended).
     assert (
-        "| BASIS | WINDOW | CLIPPED BASIS | CLIPPED WINDOW | "
-        "DAYS READ / CLIPPED | TYPICAL / SPREAD |" in header
+        "| TRIMMED | LOG-NORMAL | RULE IN USE | WINDOW | "
+        "DAYS READ / SET ASIDE | TYPICAL / SPREAD |" in header
     )
     header_cells = _cells(header)
     assert header_cells == 15, header_cells

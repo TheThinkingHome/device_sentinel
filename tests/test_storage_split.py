@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_split.py, Version: 0.23.19 (2026-09-30)
+# File: test_storage_split.py, Version: 0.24.0 (2026-10-02)
 
 """The two files: the shadow, the merge, and the stamps.
 
@@ -720,9 +720,13 @@ def test_the_kept_set_and_the_wipe_partition_the_schema():
     kept = set(EPOCH_KEPT)
     assert kept <= schema, sorted(kept - schema)
     wiped = schema - kept
-    assert len(wiped) == 6, sorted(wiped)
+    # lognormal_days (0.24.0) counts days since a reset against
+    # daily_max, and an epoch wipe clears daily_max, so it is wiped
+    # with it: back to None, the whole (empty) history.
+    assert len(wiped) == 7, sorted(wiped)
     assert wiped == {
         "daily_max",
+        "lognormal_days",
         "today_max",
         "event_count",
         "tainted",
