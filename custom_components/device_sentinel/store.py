@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.23.19 (2026-09-30)
+# File: store.py, Version: 0.24.1 (2026-10-03)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -77,14 +77,11 @@ from .const import (
     FREEZE_NOT_REPORTED_SECONDS,
     DEV_LAST_ACTIVITY,
     DEV_TAINTED,
-    DEV_TODAY_MAX,
     EPISODE_ENDED_REBOOT,
     EPISODE_ENDED_UNCLEAN,
-    EPISODE_LEARNED_TRUNCATED,
     EP_AT,
     EP_DEVICE_ID,
     EP_ENDED,
-    EP_LEARNED,
     EP_SINCE,
     LOGGER,
     RETENTION_DAYS_MAX,
@@ -860,20 +857,16 @@ class StorageMixin:
         router and the coordinator together is an intervention in the
         same sense a hand on the battery is.
 
-        The silence a reset device had genuinely accumulated before
-        the cut is banked rather than thrown away. It is a lower bound
-        and not a measurement, but the day's maximum keeps the larger
-        of what it holds and what arrives, so a lower bound can only
-        move that figure toward the truth and never past it;
-        discarding it leaves the maximum lower than the device
-        actually earned. What the bank cannot do is reach back past
-        the moment this device came under watch, because a clock read
-        from the protocol can be years older than the install and the
-        difference would then be silence nobody was here for
-        (ruling #399). Only the clock fields move: the event count,
-        the learned series, the first-observed stamp, and every
-        battery and signal field are what the device earned and are
-        untouched.
+        The silence a reset device had accumulated before the cut is
+        not learned (0.24.1, replacing the banking of #163 and #399).
+        Nobody was listening between the last save and the stop, so it
+        cannot be trusted, and a gap is learned only if Device Sentinel
+        could have heard the device for all of it: on the reference rig
+        on 1 October the bank took the Zigbee bridge's outage as every
+        Zigbee device's own silence. Only the clock fields move: the
+        event count, the learned series, the first-observed stamp, and
+        every battery and signal field are what the device earned and
+        are untouched.
         """
         now = dt_util.utcnow().timestamp()
         anchor = self._last_alive
@@ -899,39 +892,20 @@ class StorageMixin:
             for item in loaded.get(DATA_TODO_ITEMS) or []
             if item.get(TODO_DEVICE_ID)
         }
-        installed = loaded.get(DATA_FIRST_INSTALLED)
         reset = 0
-        bankers: set[str] = set()
         for device_id, record in (loaded.get(DATA_DEVICES) or {}).items():
             if not isinstance(record, dict) or device_id in protected:
                 continue
             last = record.get(DEV_LAST_ACTIVITY)
             if not isinstance(last, (int, float)):
                 continue
-            if anchor is not None and anchor > last:
-                truncated = anchor - last
-                watched = _watched_seconds(record, anchor, installed)
-                if watched is not None and truncated > watched:
-                    # The bound of ruling #399. A clock carried from
-                    # the protocol rather than from arrival (rulings
-                    # #124; #125 as reversed by #535) is the coordinator's own record of
-                    # contact and can predate the install by years: a
-                    # Z-Wave JS last_seen reading 2023 on a fleet set
-                    # up in 2026. Banking the raw difference invents a
-                    # silence measured across time nobody was
-                    # watching, and the fold turns it into a freeze
-                    # window wider than the device's whole history,
-                    # which is a window no silence can ever close.
-                    # Six devices on the second fleet carried one, the
-                    # largest reading 1,020 days against 25 days of
-                    # observation. Silence we did not observe is not a
-                    # lower bound on anything, so the bank stops at
-                    # the moment we began watching this device.
-                    truncated = watched
-                current = record.get(DEV_TODAY_MAX)
-                if current is None or truncated > current:
-                    record[DEV_TODAY_MAX] = truncated
-                    bankers.add(device_id)
+            # Nothing is banked (0.24.1, replacing the banking of #163
+            # and #399): nobody was listening between the last save and
+            # the stop, so the silence before it cannot be trusted, and
+            # a gap is learned only if Device Sentinel could have heard
+            # the device for all of it. On the reference rig on 1
+            # October the power cut banked 190 minutes for every Zigbee
+            # device, the bridge's outage counted as their own silence.
             record[DEV_LAST_ACTIVITY] = now
             # A clock that no longer describes a real report cannot
             # go on carrying a taint earned before it, because the
@@ -941,31 +915,24 @@ class StorageMixin:
 
         # Open episodes close at the last known-alive moment, so the
         # episode record and the clock cannot contradict each other.
-        # A row whose device banked a truncated gap says so in the
-        # LEARNED cell, so a widened rhythm traceable to a lower bound
-        # is auditable from the row rather than looking like an
-        # ordinary measurement.
+        # Their LEARNED cell is filled when the device next reports,
+        # promoted to the unclean shutdown that ended them.
         stamped = 0
         for episode in loaded.get(DATA_EPISODES) or []:
             if episode.get(EP_ENDED) is not None:
                 continue
             episode[EP_ENDED] = EPISODE_ENDED_UNCLEAN
             episode[EP_AT] = anchor
-            if episode.get(EP_DEVICE_ID) in bankers:
-                episode[EP_LEARNED] = EPISODE_LEARNED_TRUNCATED
             stamped += 1
-        banked = len(bankers)
 
         self._pending_unclean = reset
         LOGGER.warning(
             "Unclean restart: no clean-stop marker on the storage file, "
             "so %d device clock(s) were reset to this start and %d kept "
-            "for devices already on the problem list. %d banked a "
-            "truncated pre-cut gap; %d open silence episode(s) closed as "
-            "an unclean shutdown",
+            "for devices already on the problem list; %d open silence "
+            "episode(s) closed as an unclean shutdown",
             reset,
             len(protected),
-            banked,
             stamped,
         )
 

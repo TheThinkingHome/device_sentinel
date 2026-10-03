@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.24.0 (2026-10-02)
+# File: coordinator.py, Version: 0.24.1 (2026-10-03)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -115,7 +115,6 @@ from .const import (
     RULE_TRIMMED,
     SLOWDOWN_DAYS,
     DAILY_SERIES_FIELDS,
-    TAINT_UPSTREAM_DOWN,
     FETCHING_INTEGRATIONS,
     FREEZE_CATEGORY_UNAVAILABLE,
     DEFAULT_RETENTION_DAYS,
@@ -2753,15 +2752,9 @@ class DeviceSentinelCoordinator(
                     stamp - last,
                 )
         if not tainted and last is not None:
-            # The gap across an upstream's outage is not learned (#536):
-            # the device may have spoken and not been heard. Read from
-            # the stored outages, so a restart in the middle of one
-            # cannot let a four-hour gap in as the device's rhythm, as
-            # the in-memory record of unavailable entities did on the
-            # reference rig on 28 September.
-            outage = self._outage_spans_for(device_id, last, None)
-            if any(end > last and start < stamp for start, end in outage):
-                tainted = TAINT_UPSTREAM_DOWN
+            # A gap is learned only if Device Sentinel could trust all
+            # of it (0.24.1): see `_gap_untrusted` for the rule.
+            tainted = self._gap_untrusted(device_id, record, last, stamp)
         capped_note: str | None = None
         downtime_note: str | None = None
         learned_gap: float | None = None

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.24.0 (2026-10-02)
+# File: detect_freeze.py, Version: 0.24.1 (2026-10-03)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -107,6 +107,9 @@ from .const import (
     TRIM_MIN_SAMPLES,
     TRIM_TOP_K,
     WIFI_KEY,
+    TAINT_UPSTREAM_DOWN,
+    TAINT_CLOCK_JUMP,
+    CLOCK_RESET_THRESHOLD_SECONDS,
 )
 
 
@@ -829,6 +832,72 @@ class FreezeMixin:
         if device_id is not None:
             spans.extend(self._outage_spans_for(device_id, last, window))
         return max(0.0, (now - last) - _covered(spans, last, now))
+
+    def _gap_untrusted(
+        self, device_id: str, record: dict[str, Any], last: float, stamp: float
+    ) -> str | None:
+        """Why a gap ending now cannot be learned, or None (0.24.1).
+
+        A gap is learned only if Device Sentinel could trust all of it
+        (James, 3 October 2026). Two things break that trust here.
+
+        An upstream outage on the device's path that the device could
+        have reported into. An outage shorter than the device's rhythm
+        and lying wholly inside it, from the last report to the end of
+        the rhythm, could only have swallowed a report the device was
+        not yet due to send: a lost report there ends the gap at the
+        next one, still within the device's normal range, so the gap is
+        learned whole. An outage that reaches past the rhythm, into the
+        grace when the device was due, or is as long as the rhythm,
+        pollutes the gap, and it is forgotten. The outages are the
+        stored ones (#536) and any still open, by the ladder the holds
+        read (`upstream_down_since`), counted as running to this
+        report: an upstream's return is stored at the next minute
+        check, and Zigbee2MQTT's devices report the moment the bridge is
+        back. A device with no rhythm yet forgets any gap an outage
+        touched. Before this rule every outage forgot the gap, so a
+        three-minute nightly restart cost slow reporters their longest
+        gap of the night; and an outage still open forgot nothing, so a
+        four-hour one was learned as the fast reporters' silence.
+
+        A jump of the system clock since the last minute check, which
+        that check restarts every clock for, but only after this gap
+        has been measured across it.
+        """
+        spans = [
+            (begun, ended)
+            for begun, ended in self._outage_spans_for(device_id, last, None)
+            if ended > last and begun < stamp
+        ]
+        held = self.upstream_down_since(device_id)
+        if held is not None and held[1] < stamp:
+            spans.append((held[1], stamp))
+        if spans:
+            found = self._freeze_rhythm(record)
+            rhythm = found["rhythm"] if found else None
+            if not (
+                isinstance(rhythm, (int, float))
+                and not isinstance(rhythm, bool)
+                and math.isfinite(rhythm)
+                and rhythm > 0
+            ):
+                # No usable rhythm: nothing to judge the outage against,
+                # so the safe side, forgetting the gap.
+                rhythm = None
+            for begun, ended in spans:
+                if (
+                    rhythm is None
+                    or ended - begun >= rhythm
+                    or begun < last
+                    or ended > last + rhythm
+                ):
+                    return TAINT_UPSTREAM_DOWN
+        wall, mono = self._tick_wall, self._tick_mono
+        if wall is not None and mono is not None:
+            drift = (dt_util.utcnow().timestamp() - wall) - (self._monotonic() - mono)
+            if abs(drift) >= CLOCK_RESET_THRESHOLD_SECONDS:
+                return TAINT_CLOCK_JUMP
+        return None
 
     def _outage_spans_for(
         self, device_id: str, last: float, window: float | None

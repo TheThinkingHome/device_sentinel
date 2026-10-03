@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.24.0 (2026-10-02)
+# File: const.py, Version: 0.24.1 (2026-10-03)
 
 """Constants for the Device Sentinel integration."""
 
@@ -259,6 +259,9 @@ TAINT_BRIDGE_DOWN = "bridge down"
 # integration or network (#536). Only ever a learning label; never
 # stored as a device's taint.
 TAINT_UPSTREAM_DOWN = "upstream down"
+# A completed gap measured across a jump of the system clock that the
+# minute check had not yet seen (0.24.1). Only ever a learning label.
+TAINT_CLOCK_JUMP = "clock jump"
 # The widest cause of all, and the one the reason field reserved a
 # place for before anything could detect it (ruling #164): the system
 # stopped without being asked to, so the device was not silent,
