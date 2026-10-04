@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.24.4 (2026-10-04)
+# File: const.py, Version: 0.24.5 (2026-10-04)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2358,6 +2358,9 @@ SYS_DEVICES = "devices"
 # reached at its peak, so the brief tells an outage by its worst
 # moment rather than by a count taken partway through.
 SYS_WORST = "worst"
+# The device an act from its page names (0.24.5); absent on every
+# other system event.
+SYS_DEVICE_ID = "device_id"
 
 # The per-integration storm series, kept on the person's retention
 # rather than the judgment window, because its purpose is to be
@@ -2465,6 +2468,11 @@ SYS_MAINTENANCE_OPEN = "maintenance_open"
 SYS_MAINTENANCE_CLOSED = "maintenance_closed"
 SYS_EPOCH_RESET = "epoch_reset"
 SYS_OPTIONS_CHANGED = "options_changed"
+# A person acted on a device from its page (0.24.5): renamed it, moved
+# it, labelled it, switched on its Last Seen, or muted it. The one
+# system event that names a device, so the brief puts it on that
+# device's line.
+SYS_DEVICE_PAGE = "device_page"
 
 # A person deliberately erased a device's or an integration's learned
 # history from the Advanced screen (ruling #307). Recorded because it

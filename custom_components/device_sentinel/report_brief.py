@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.23.19 (2026-09-30)
+# File: report_brief.py, Version: 0.24.5 (2026-10-04)
 
 """The daily brief: the one report written for a person.
 
@@ -133,6 +133,8 @@ from .const import (
     TODO_KIND_UNKNOWN,
     TODO_SORT_NAME,
     TODO_STATUS,
+    SYS_DEVICE_PAGE,
+    SYS_DEVICE_ID,
 )
 from .outage_detail import FAILED, parse_detail
 
@@ -660,6 +662,11 @@ class BriefMixin:
         if kind == SYS_OPTIONS_CHANGED:
             extra = f": {detail}" if detail else ""
             return f"Settings changed at {when}{extra}."
+        if kind == SYS_DEVICE_PAGE:
+            # An act from a device's page (0.24.5), with the device it
+            # names: "Button Randy Night Table: battery muted, from its
+            # device page, at 9:14 AM."
+            return f"{self._system_event_who(row)}: {detail or 'changed from its device page'}, at {when}."
         if kind == SYS_TRIMMED:
             # The one destructive act performed on a person's
             # instruction, so the brief carries it even though the
@@ -700,8 +707,20 @@ class BriefMixin:
             )
         return f"{kind} at {when}."
 
+    def _system_event_who(self, row: dict[str, Any]) -> str:
+        """Whose line a system event goes on: its device's, for an act
+        from a device's page (0.24.5), else the system's."""
+        device_id = row.get(SYS_DEVICE_ID)
+        if device_id:
+            return str(self._device_name(device_id))  # type: ignore[attr-defined]
+        return "The system"
+
     def _system_event_phrase(self, row: dict[str, Any]) -> str:
         """The same event as a table cell rather than a sentence."""
+        if row.get(SYS_KIND) == SYS_DEVICE_PAGE:
+            # Its detail is already the cell (0.24.5): "battery muted,
+            # from its device page".
+            return str(row.get(SYS_DETAIL) or "changed from its device page")
         scope = row.get(SYS_SCOPE) or SYS_SCOPE_SYSTEM
         detail = row.get(SYS_DETAIL)
         span = row.get(SYS_DURATION)
@@ -1556,6 +1575,9 @@ class BriefMixin:
             SYS_STORM_OPEN,
             SYS_STORM_CLOSED,
             SYS_OPTIONS_CHANGED,
+            # A person's act on one device belongs to that device's
+            # line in the table, not the house summary (0.24.5).
+            SYS_DEVICE_PAGE,
         }
         return [
             self._system_event_sentence(row)
@@ -2535,7 +2557,7 @@ class BriefMixin:
                  self._brief_phrase(row))
                 for row in shown
             ] + [
-                (row[SYS_WHEN], "The system",
+                (row[SYS_WHEN], self._system_event_who(row),
                  self._system_event_phrase(row))
                 for row in sys_events
             ]

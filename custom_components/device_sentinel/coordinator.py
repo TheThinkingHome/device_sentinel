@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.24.4 (2026-10-04)
+# File: coordinator.py, Version: 0.24.5 (2026-10-04)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -120,6 +120,7 @@ from .daily_dates import (
     trimmed_to,
     FAMILY_SIGNAL_ALT,
 )
+from .device_actions import DeviceActionsMixin
 from .const import (
     CLIP_MAX_DAYS,
     DEV_LOGNORMAL_DAYS,
@@ -288,6 +289,7 @@ from .store import StorageMixin, _watched_seconds
 
 
 class DeviceSentinelCoordinator(
+    DeviceActionsMixin,
     EventMixin,
     ReportWritingMixin,
     NarrativeMixin,
@@ -367,6 +369,10 @@ class DeviceSentinelCoordinator(
         self._entity_map: dict[str, tuple[str, str | None]] = {}
         # The day a fold is folding, and the one a catch-up fold sets
         # for it (0.24.4): the daily histories' new entries take it.
+        # Options a device-page mute just wrote (0.24.5): the update
+        # listener leaves them out of its "Settings changed" row, since
+        # the act records its own (ruling #307's rule for the trim).
+        self._page_option_keys: set[str] = set()
         self._folding_day: date | None = None
         self._fold_day_override: date | None = None
         # Rebuilds the registry view at most once per cooldown during a
@@ -4551,7 +4557,10 @@ class DeviceSentinelCoordinator(
             # three rows in the brief for one deed and told a reader
             # that a setting had changed when none had (ruling #307).
             and key not in (CONF_TRIM_DEVICES, CONF_TRIM_INTEGRATIONS)
+            # A mute set on a device's page records its own row there.
+            and key not in self._page_option_keys
         )
+        self._page_option_keys.clear()
         if moved:
             # Which setting moved, not merely that one did. A row
             # saying something changed cannot answer, months later,
@@ -4655,6 +4664,7 @@ class DeviceSentinelCoordinator(
         self,
         matches: Callable[[er.RegistryEntry], bool],
         kind: str,
+        device_id: str | None = None,
     ) -> dict[str, int]:
         """Enable every disabled entity a matcher recognizes.
 
@@ -4687,6 +4697,10 @@ class DeviceSentinelCoordinator(
         by_hand = 0
         for ent in list(ent_reg.entities.values()):
             if ent.device_id not in self._watched:
+                continue
+            # One device's, from its page (0.24.5); every device's
+            # from the house-wide button.
+            if device_id is not None and ent.device_id != device_id:
                 continue
             if not matches(ent):
                 continue

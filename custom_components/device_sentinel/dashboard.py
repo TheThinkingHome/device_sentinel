@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.24.4 (2026-10-04)
+# File: dashboard.py, Version: 0.24.5 (2026-10-04)
 
 """What the dashboard reads from the coordinator.
 
@@ -138,6 +138,7 @@ from .const import (
     BROKER_SENSOR_NAME,
     WIFI_KEY,
     WIFI_SENSOR_NAME,
+    SYS_DEVICE_ID,
 )
 from .escalation import fold
 from .outage_detail import pair_key
@@ -866,6 +867,11 @@ class DeviceViewMixin:
                 "watched": device_id in self._watched,
                 "set_aside": (self._set_aside.get(device_id) or (None, None, ""))[2],
                 "muted": self.mute_text(device_id),
+                # What the page's actions need (0.24.5): the area's id,
+                # the person's name and the integration's, the labels
+                # with their meanings, a switched-off Last Seen, and
+                # each kind of mute with its source.
+                "actions": self.page_actions(device_id),
                 # Filled by the battery library lookup, when it arrives.
                 "battery_type": None,
                 # How the cell reports, in the words Battery Trends
@@ -1215,8 +1221,8 @@ class BriefViewMixin:
         ] + [
             {
                 "when": _iso(row[SYS_WHEN]),
-                "who": "The system",
-                "device_id": None,
+                "who": self._system_event_who(row),
+                "device_id": row.get(SYS_DEVICE_ID),
                 "what": self._system_event_phrase(row),
             }
             for row in system

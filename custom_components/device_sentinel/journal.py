@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.24.0 (2026-10-02)
+# File: journal.py, Version: 0.24.5 (2026-10-04)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -94,6 +94,7 @@ from .const import (
     TAINT_UNKNOWN,
     TODO_DEVICE_ID,
     TODO_STATUS,
+    SYS_DEVICE_ID,
 )
 
 # The taint labels a promotion may replace. A taint carries the
@@ -610,6 +611,7 @@ class JournalMixin:
         when: float | None = None,
         devices: int | None = None,
         worst: int | None = None,
+        device_id: str | None = None,
     ) -> None:
         """Append one thing that happened to the house, not a device.
 
@@ -650,6 +652,9 @@ class JournalMixin:
                 # (ruling #442).
                 **({SYS_DEVICES: devices} if devices is not None else {}),
                 **({SYS_WORST: worst} if worst is not None else {}),
+                # The one event that names a device: an act from its
+                # page (0.24.5), shown on that device's line.
+                **({SYS_DEVICE_ID: device_id} if device_id is not None else {}),
             },
         )
         events = self.data.setdefault(DATA_SYSTEM_EVENTS, [])

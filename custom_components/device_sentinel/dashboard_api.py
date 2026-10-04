@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.24.0 (2026-10-02)
+# File: dashboard_api.py, Version: 0.24.5 (2026-10-04)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -18,15 +18,18 @@ command is added with its tab.
 from __future__ import annotations
 
 from datetime import date
+from collections.abc import Callable
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
+from .device_actions import NameInUse
 from .report_brief import RECOMMENDATIONS_CLOSING
 from .const import (
     DOMAIN,
@@ -40,6 +43,7 @@ from .const import (
     MAINTENANCE_MINUTES_MIN,
     MAINTENANCE_MINUTES_STEP,
     SET_ASIDE_MEANINGS,
+    TODO_KIND_FAMILIES,
 )
 
 _REGISTERED = f"{DOMAIN}_dashboard_api"
@@ -83,6 +87,13 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_devices)
     websocket_api.async_register_command(hass, ws_device)
     websocket_api.async_register_command(hass, ws_use_trimmed_maximum)
+    # The device page's actions (0.24.5).
+    websocket_api.async_register_command(hass, ws_device_choices)
+    websocket_api.async_register_command(hass, ws_device_rename)
+    websocket_api.async_register_command(hass, ws_device_area)
+    websocket_api.async_register_command(hass, ws_device_label)
+    websocket_api.async_register_command(hass, ws_device_last_seen)
+    websocket_api.async_register_command(hass, ws_device_mute)
     websocket_api.async_register_command(hass, ws_brief)
     websocket_api.async_register_command(hass, ws_battery_trends)
     websocket_api.async_register_command(hass, ws_signal_trends)
@@ -248,6 +259,12 @@ def ws_problem_list(
             "problem": problem,
             "since": dt_util.utc_from_timestamp(since).isoformat() if since is not None else None,
             "acknowledged": item.get(TODO_STATUS) == "completed",
+            # The mute beside each problem (0.24.5): the one that
+            # matches it, by the kinds' families.
+            "mutes": [
+                mute for family, mute in (("down", "freeze"), ("battery", "battery"), ("signal", "signal"))
+                if any(TODO_KIND_FAMILIES.get(kind) == family for kind in kinds)
+            ],
         })
     connection.send_result(msg["id"], {"rows": rows})
 
@@ -409,6 +426,141 @@ def ws_use_trimmed_maximum(
         connection.send_error(msg["id"], "not_found", "Device Sentinel has no record of that device")
         return
     connection.send_result(msg["id"], {})
+
+
+def _page_act(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+    act: Callable[[Any], Any],
+) -> None:
+    """Run one device-page act and answer the page (0.24.5).
+
+    An unknown device answers not_found; a name another device shows
+    answers name_in_use with the sentence the page shows; anything Home
+    Assistant refuses answers refused with its own reason, which the
+    page shows under the row, keeping the row's old value.
+    """
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    try:
+        result = act(coordinator)
+    except KeyError:
+        connection.send_error(msg["id"], "not_found", "Device Sentinel has no record of that device")
+        return
+    except NameInUse as clash:
+        where = f" (in the {clash.area})" if clash.area else ""
+        connection.send_error(
+            msg["id"], "name_in_use", f"Another device is already named {clash.name}{where}."
+        )
+        return
+    except (HomeAssistantError, ValueError) as err:
+        connection.send_error(msg["id"], "refused", str(err) or "Home Assistant refused the change")
+        return
+    connection.send_result(msg["id"], result if isinstance(result, dict) else {})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): "device_sentinel/device_choices"})
+@callback
+def ws_device_choices(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The areas and labels a picker offers, each label with its meaning."""
+    _page_act(hass, connection, msg, lambda c: c.page_choices())
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_rename",
+        vol.Required("device_id"): str,
+        vol.Optional("name"): vol.Any(str, None),
+        vol.Optional("confirm", default=False): bool,
+    }
+)
+@callback
+def ws_device_rename(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Rename a device; an empty name resets it to the integration's."""
+    _page_act(
+        hass, connection, msg,
+        lambda c: c.page_rename(msg["device_id"], msg.get("name"), msg["confirm"]),
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_area",
+        vol.Required("device_id"): str,
+        vol.Optional("area_id"): vol.Any(str, None),
+    }
+)
+@callback
+def ws_device_area(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Move a device to an area, or to none."""
+    _page_act(hass, connection, msg, lambda c: c.page_set_area(msg["device_id"], msg.get("area_id")))
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_label",
+        vol.Required("device_id"): str,
+        vol.Required("label_id"): str,
+        vol.Required("add"): bool,
+    }
+)
+@callback
+def ws_device_label(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Put a label on a device or take it off; never deletes the label."""
+    _page_act(
+        hass, connection, msg,
+        lambda c: c.page_label(msg["device_id"], msg["label_id"], msg["add"]),
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): "device_sentinel/device_last_seen", vol.Required("device_id"): str}
+)
+@callback
+def ws_device_last_seen(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Switch on one device's Last Seen entity."""
+    _page_act(
+        hass, connection, msg,
+        lambda c: {"enabled": c.page_enable_last_seen(msg["device_id"])},
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_mute",
+        vol.Required("device_id"): str,
+        vol.Required("kind"): vol.In(["everything", "freeze", "battery", "signal"]),
+        vol.Required("on"): bool,
+    }
+)
+@callback
+def ws_device_mute(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Set or lift one kind of mute on a device, as Settings does."""
+    _page_act(
+        hass, connection, msg,
+        lambda c: c.page_set_mute(msg["device_id"], msg["kind"], msg["on"]),
+    )
 
 
 @websocket_api.require_admin
