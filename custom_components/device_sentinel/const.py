@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.24.2 (2026-10-03)
+# File: const.py, Version: 0.24.4 (2026-10-04)
 
 """Constants for the Device Sentinel integration."""
 
@@ -205,8 +205,8 @@ LEARNED_DISABLED = "no (disabled)"
 # on this stack, somebody handled this device.
 LEARNED_HANDLED = "no (handled)"
 # The learned-column value for a gap learned with Device Sentinel's own
-# stops taken out of it (ruling #541). Learned, and marked, the way a
-# truncated gap is marked under #169, so a rhythm built on it is
+# stops taken out of it (ruling #541). Learned, and marked, as truncated
+# gaps were before #549, so a rhythm built on it is
 # auditable from the row: the figure is the silence that was watched,
 # never the time nobody was listening.
 LEARNED_DOWNTIME_OUT = "yes (downtime out)"
@@ -1252,22 +1252,24 @@ REPORT_EPISODES = "silence_episodes.md"
 # while a stack is studied (0.22.26), so "send me the files in
 # config/device_sentinel" covers it.
 REPORT_STACK_PROBE = "stack_probe.md"
-# The clipped rhythm in shadow (ruling #542): a line when it and the
-# trimmed maximum disagree about a device, and one a day. Written and
-# rolled the way stack_probe.md is.
-REPORT_STALE_FILES = ("device_telemetry.txt", "classification.txt")
+# Files an older release wrote that nothing writes now, deleted at
+# startup: the .txt reports, and rhythm_shadow.md, the clipped rhythm's
+# shadow, retired in 0.24.0 when the rhythm went into practice (#542
+# amended; added here in 0.24.4).
+REPORT_STALE_FILES = ("device_telemetry.txt", "classification.txt", "rhythm_shadow.md")
 
-# The trimmed maximum: the rhythm every freeze window is built from,
-# and shown in the telemetry report. The top
+# The trimmed maximum: one of the two rhythms a freeze window is built
+# from (the other is the Log-Normal Percentile; the wait is the shorter,
+# #542 amended), and shown in the telemetry report. The top
 # TRIM_TOP_K daily maxima are set aside as suspected anomalies and
 # the operative rhythm is the maximum of the survivors, so one
 # anomalous day moves nothing while a recurring high value counts.
 # Below TRIM_MIN_SAMPLES days there are too few samples to spare
 # any, so nothing is trimmed. Both were settled on the soak.
 TRIM_TOP_K = 1
-# The clipped rhythm, computed in shadow beside the trimmed maximum
-# (ruling #542) and fixed for the shadow run, since the run exists to
-# judge exactly these. Settled on the reference rig's 80 days and the
+# The Log-Normal Percentile, once the clipped rhythm computed in shadow
+# (ruling #542) and in use since 0.24.0 (#542 amended). The values are
+# those the shadow run settled on. Settled on the reference rig's 80 days and the
 # second house's 39 on 29 September 2026. From the 28th usable day,
 # over up to the last 42, on the logarithm of each day's longest gap:
 # days more than 2.5 spreads above the mean are set aside, repeatedly,
@@ -1330,6 +1332,12 @@ DEV_BATTERY_VALUE = "battery_value"
 # than only the delta, because it is cheap and makes the series
 # self-describing and gap-tolerant. Kept for the retention, like every
 # daily series.
+# The dates of a device's daily histories (0.24.4, issue #18): per
+# family, the newest entry's date, how many entries the dates cover,
+# and the days skipped, as ranges. See daily_dates.py. Kept through an
+# epoch wipe, which drops only the gap family's dates with the gap
+# history it clears.
+DEV_DAILY_DATES = "daily_dates"
 DEV_BATTERY_DAILY = "battery_daily_value"
 # Every per-day series a record keeps, each held to the retention at
 # the fold whatever the day appended (ruling #131, 0.23.19). The
@@ -1407,6 +1415,7 @@ DEV_FROZEN_SINCE = "frozen_since"
 # (ruling #397). The comment sits outside the tuple because a guard
 # reads the tuple's lines as names.
 EPOCH_KEPT = (
+    DEV_DAILY_DATES,
     DEV_SIGNAL_SCALE,
     DEV_SIGNAL_ALT,
     DEV_BATTERY_DAILY_PREVIOUS,
@@ -2716,16 +2725,11 @@ EPISODE_ENDED_RESTART = "intervention (restart)"
 # intervention but not a reason a gap goes unlearned.
 EPISODE_ENDED_UNCLEAN = "intervention (unclean shutdown)"
 
-# What a truncated pre-cut gap reads in the LEARNED cell
-# (ruling #169). It
-# is a lower bound rather than a measurement: the device was silent
-# at least this long before the lights went out, and how much longer
-# it would have stayed quiet is unknowable. Banked rather than
-# discarded because the day's maximum keeps the larger of what it
-# holds and what arrives, so a lower bound can only move the figure
-# toward the truth and never past it. Labelled so a widened rhythm
-# traceable to one is auditable from the row, in the same family as
-# the taint reasons (ruling #164).
+# What a truncated pre-cut gap read in the LEARNED cell (ruling #169)
+# while an unclean stop banked the silence before it (#163, #399).
+# Nothing is banked since 0.24.1 (ruling #549): nobody was listening
+# between the last save and the stop. The label remains for rows
+# written before, in the same family as the taint reasons (ruling #164).
 EPISODE_LEARNED_TRUNCATED = "yes (truncated)"
 
 TAINT_PROMOTIONS = {

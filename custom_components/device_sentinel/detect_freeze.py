@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.24.1 (2026-10-03)
+# File: detect_freeze.py, Version: 0.24.4 (2026-10-04)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -138,9 +138,10 @@ class FreezeMixin:
         quietly widen every freeze window on the fleet. Sliced here,
         in the one place the rhythm is computed, so no caller can
         forget; the two callers that use the returned indices to
-        style a cell slice their own copy to match. The clipped rhythm
-        is computed beside it in shadow and changes no verdict
-        (ruling #542, amended in 0.24.0: `_freeze_rhythm` below).
+        style a cell slice their own copy to match. The Log-Normal
+        Percentile is computed beside it, and the wait is the shorter
+        of the two (ruling #542, amended in 0.24.0: `_freeze_rhythm`
+        below).
         """
         daily_maximum_gaps = daily_maximum_gaps[-DAILY_MAX_KEEP:]
         if not daily_maximum_gaps:

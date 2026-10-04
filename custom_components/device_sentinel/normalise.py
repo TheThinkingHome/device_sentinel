@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.24.0 (2026-10-02)
+# File: normalise.py, Version: 0.24.4 (2026-10-04)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (ruling #370).
@@ -145,6 +145,7 @@ from .const import (
     DATA_SYSTEM_EVENTS,
     DATA_TODO_ITEMS,
     DATA_TODO_JOURNAL,
+    DEV_DAILY_DATES,
 )
 
 # The kinds a field may hold. Each is a plain predicate over one value.
@@ -246,6 +247,7 @@ EXPECTED: dict[str, str] = {
     DEV_LAST_ACTIVITY: MOMENT,
     DEV_DAILY_MAX: GAP_SERIES,
     DEV_LOGNORMAL_DAYS: NONNEGATIVE,
+    DEV_DAILY_DATES: NULLABLE_MAPPING,
     DEV_TODAY_MAX: GAP,
     DEV_FIRST_OBSERVED: STRING,
     DEV_EVENT_COUNT: INTEGER,

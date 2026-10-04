@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.24.0 (2026-10-02)
+# File: detect_battery.py, Version: 0.24.4 (2026-10-04)
 
 """Battery: the level threshold and what is tracked.
 
@@ -35,6 +35,8 @@ coordinator throughout and nothing here stands alone.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import math
 
 from typing import Any
@@ -44,6 +46,13 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
+from .daily_dates import (
+    FAMILY_BATTERY,
+    FAMILY_BATTERY_PREVIOUS,
+    dates_for,
+    day_appended,
+    set_dates,
+)
 from .const import (
     DEV_LOGNORMAL_DAYS,
     BATTERY_REPLACED_LANDS,
@@ -78,6 +87,7 @@ from .const import (
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
     LOGGER,
+    DEV_LAST_ACTIVITY,
 )
 from .records import BAD_STATES, SERIES_MEMO_SIZE, series_key
 
@@ -203,6 +213,31 @@ class BatteryMixin:
         level = record.get(DEV_BATTERY_VALUE)
         if level is None:
             return
+        day = getattr(self, "_folding_day", None)
+        if day is not None:
+            # A day the device was not heard measured nothing (0.24.4,
+            # issue #18): the level held is yesterday's, and writing it
+            # again invented a flat day and then a cliff. The day is
+            # left out, and its date reads as skipped.
+            heard = record.get(DEV_LAST_ACTIVITY)
+            start = dt_util.start_of_local_day(day).timestamp()
+            if not isinstance(heard, (int, float)) or isinstance(heard, bool) or heard < start:
+                return
+        before = len(record.get(DEV_BATTERY_DAILY) or [])
+        replaced_before = record.get(DEV_BATTERY_REPLACED_AT)
+        try:
+            self._roll_battery_level(record, device_id, level)
+        finally:
+            after = len(record.get(DEV_BATTERY_DAILY) or [])
+            if record.get(DEV_BATTERY_REPLACED_AT) != replaced_before:
+                # A new cell: its history restarted at the one carried
+                # entry, whose date the split already wrote.
+                before = 1
+            if day is not None and after != before:
+                day_appended(record, FAMILY_BATTERY, before, after, day)
+
+    def _roll_battery_level(self, record: dict[str, Any], device_id: str, level: Any) -> None:
+        """The battery roll proper, once the day has a level to record."""
         series = record.setdefault(DEV_BATTERY_DAILY, [])
         previous = next(
             (v for v in reversed(series) if isinstance(v, (int, float))),
@@ -246,6 +281,14 @@ class BatteryMixin:
             # discarded as though it never happened.
             carried = series[-1:]
             record[DEV_BATTERY_DAILY_PREVIOUS] = list(series[:-1])
+            # The dates split as the entries do (0.24.4): the old cell's
+            # go with its history, the new cell's first day stays.
+            day = getattr(self, "_folding_day", None) or dt_util.now().date()
+            # Today's level is not in the series yet: its newest entry
+            # is the day the rise first appeared, the previous fold.
+            dates = dates_for(record, FAMILY_BATTERY, len(series), day - timedelta(days=1))
+            set_dates(record, FAMILY_BATTERY_PREVIOUS, dates[:-1])
+            set_dates(record, FAMILY_BATTERY, dates[-1:])
             record[DEV_BATTERY_REPLACED_AT] = dt_util.utcnow().isoformat()
             # A fresh cell can change how often a device reports, so the
             # Log-Normal Percentile counts again from here (#542, amended).

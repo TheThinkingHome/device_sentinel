@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.23.19 (2026-09-30)
+# File: report_battery.py, Version: 0.24.4 (2026-10-04)
 
 """Which cells are going to be low: the rows, rates and forecast.
 
@@ -31,6 +31,9 @@ from typing import Any
 
 
 from .records import SERIES_MEMO_SIZE, series_key
+from homeassistant.util import dt as dt_util
+
+from .daily_dates import FAMILY_BATTERY, on_calendar
 from .const import (
     BATTERY_FALLING_MIN_PACE,
     BATTERY_FALLING_WEEK_DROP,
@@ -59,7 +62,7 @@ from .const import (
 )
 
 
-def battery_weeks(series: list[float], count: int = BATTERY_WEEKS_SHOWN) -> list[float]:
+def battery_weeks(series: list[float | None], count: int = BATTERY_WEEKS_SHOWN) -> list[float | None]:
     """Return the average level of each of the last whole weeks,
     oldest first, at most count of them (0.23.6).
 
@@ -67,11 +70,15 @@ def battery_weeks(series: list[float], count: int = BATTERY_WEEKS_SHOWN) -> list
     always the seven days just folded. A week not yet whole is left
     out rather than averaged over fewer days.
     """
-    weeks: list[float] = []
+    weeks: list[float | None] = []
     end = len(series)
     while end >= BATTERY_WEEK_DAYS and len(weeks) < count:
         week = series[end - BATTERY_WEEK_DAYS:end]
-        weeks.append(sum(week) / BATTERY_WEEK_DAYS)
+        # The series is laid out one slot a day (0.24.4, issue #18): a
+        # day the device was not heard is None, and a week averages the
+        # days it measured, or has no average at all.
+        measured = [v for v in week if isinstance(v, (int, float)) and not isinstance(v, bool)]
+        weeks.append(sum(measured) / len(measured) if measured else None)
         end -= BATTERY_WEEK_DAYS
     weeks.reverse()
     return weeks
@@ -146,23 +153,32 @@ def _battery_knee_of(series: tuple[float, ...]) -> dict[str, Any] | None:
     was fitted rather than fitting again.
     """
     window = series[-BATTERY_KNEE_WINDOW_DAYS:]
-    n = len(window)
+    # Only the days the device was heard are fitted, each at its own day
+    # (0.24.4, issue #18): a fall from 84 to 81 across three silent days
+    # is a fall over four days, not one.
+    span = len(window)
+    pairs = [
+        (float(i), float(v)) for i, v in enumerate(window)
+        if isinstance(v, (int, float)) and not isinstance(v, bool)
+    ]
+    n = len(pairs)
     if n < BATTERY_KNEE_MIN_DAYS:
         return None
-    t = [float(i) for i in range(n)]
+    t = [p[0] for p in pairs]
+    values = [p[1] for p in pairs]
     ones = [1.0] * n
-    single = _least_squares([ones, t], window)
+    single = _least_squares([ones, t], values)
     if single is None:
         return None
     (a1, b1), sse1 = single
     best = None
-    for join in range(BATTERY_KNEE_EDGE_DAYS, n - BATTERY_KNEE_AFTER_DAYS):
+    for join in range(BATTERY_KNEE_EDGE_DAYS, span - BATTERY_KNEE_AFTER_DAYS):
         hinge = [max(0.0, i - join) for i in t]
-        fitted = _least_squares([ones, t, hinge], window)
+        fitted = _least_squares([ones, t, hinge], values)
         if fitted is not None and (best is None or fitted[1] < best[2]):
             best = (join, fitted[0], fitted[1])
     one_pace = -b1 * BATTERY_WEEK_DAYS
-    last = n - 1
+    last = span - 1
     result: dict[str, Any] = {
         "knee": False,
         "pace": one_pace,
@@ -194,6 +210,15 @@ def _battery_knee_of(series: tuple[float, ...]) -> dict[str, Any] | None:
     return result
 
 
+def battery_calendar(record: dict[str, Any]) -> list[Any]:
+    """A device's battery history laid out one slot a day, ending
+    yesterday (0.24.4, issue #18): a day the device was not heard is an
+    empty slot, so a fall is measured over the days it really took.
+    The one way every reader gets a battery series."""
+    end = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
+    return on_calendar(record, FAMILY_BATTERY, list(record.get(DEV_BATTERY_DAILY) or []), end)
+
+
 def battery_trend(series: list[float], level: float, smooth: bool) -> dict[str, Any]:
     """Everything the screens and the rules say about a cell's trend.
 
@@ -215,9 +240,12 @@ def battery_trend(series: list[float], level: float, smooth: bool) -> dict[str, 
         "pace": None,
         "fit": None,
     }
-    if not smooth or level <= 0 or len(weeks) < 2:
+    # A week the device was never heard has no average; the comparison
+    # steps over it to the nearest weeks that have one (0.24.4).
+    averaged = [w for w in weeks if w is not None]
+    if not smooth or level <= 0 or len(averaged) < 2:
         return trend
-    week_drop = weeks[-2] - weeks[-1]
+    week_drop = averaged[-2] - averaged[-1]
     if knee is not None and knee["knee"]:
         trend.update(reading=READING_ACCELERATING, pace=knee["pace"], fit=knee)
     elif week_drop >= BATTERY_FALLING_WEEK_DROP and (
@@ -234,7 +262,10 @@ def battery_month_drop(series: list[float]) -> float | None:
     weeks = battery_weeks(series, 4)
     if len(weeks) < 4:
         return None
-    return weeks[0] - weeks[-1]
+    averaged = [w for w in weeks if w is not None]
+    if len(averaged) < 2:
+        return None
+    return averaged[0] - averaged[-1]
 
 
 def battery_sentence(trend: dict[str, Any], last_day: date | None = None) -> str:
@@ -334,11 +365,7 @@ class BatteryReportMixin:
             if row["level"] > BATTERY_READABLE_MAX:
                 unreadable.append(row)
                 continue
-            series = [
-                level
-                for level in (record.get(DEV_BATTERY_DAILY) or [])
-                if isinstance(level, (int, float))
-            ]
+            series = battery_calendar(record)
             row["series"] = series
             # A cell that reports in coarse steps, or has fallen by one
             # such step and not yet shown which it is, is not
@@ -380,7 +407,7 @@ class BatteryReportMixin:
         level = record.get(DEV_BATTERY_VALUE)
         if not isinstance(level, (int, float)) or not 0 <= level <= BATTERY_READABLE_MAX:
             return None
-        series = [v for v in (record.get(DEV_BATTERY_DAILY) or []) if isinstance(v, (int, float))]
+        series = battery_calendar(record)
         trend = battery_trend(
             series, float(level), self.battery_steps(record) == BATTERY_STEPS_SMOOTH  # type: ignore[attr-defined]
         )

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.24.3 (2026-10-04)
+# File: coordinator.py, Version: 0.24.4 (2026-10-04)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -55,7 +55,7 @@ import threading
 import time
 from collections import Counter, deque
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -110,6 +110,16 @@ from .backup import (
     _last_good_holds_devices,
 )
 from .rhythm_rules import lognormal_days, slowed_down
+from .daily_dates import (
+    FAMILY_BATTERY,
+    FAMILY_BATTERY_PREVIOUS,
+    FAMILY_GAP,
+    FAMILY_SIGNAL,
+    day_appended,
+    entry_removed,
+    trimmed_to,
+    FAMILY_SIGNAL_ALT,
+)
 from .const import (
     CLIP_MAX_DAYS,
     DEV_LOGNORMAL_DAYS,
@@ -235,6 +245,10 @@ from .const import (
     TODO_DEVICE_ID,
     TODO_KINDS,
     REGISTRY_REBUILD_COOLDOWN_SECONDS,
+    DEV_BATTERY_DAILY,
+    DEV_BATTERY_DAILY_PREVIOUS,
+    DEV_SIGNAL_DAILY_COUNT,
+    DEV_DAILY_DATES,
 )
 from .detect_battery import BatteryMixin, mark_raw_battery, raw_battery_history
 from .flapping import FlapMixin
@@ -351,6 +365,10 @@ class DeviceSentinelCoordinator(
         self._hand_deleted: set[str] = set()
 
         self._entity_map: dict[str, tuple[str, str | None]] = {}
+        # The day a fold is folding, and the one a catch-up fold sets
+        # for it (0.24.4): the daily histories' new entries take it.
+        self._folding_day: date | None = None
+        self._fold_day_override: date | None = None
         # Rebuilds the registry view at most once per cooldown during a
         # burst of registry changes (0.24.2); made in setup.
         self._registry_debouncer: Debouncer[None] | None = None
@@ -1178,10 +1196,18 @@ class DeviceSentinelCoordinator(
                         for field, value in fresh.items():
                             if field not in EPOCH_KEPT:
                                 record[field] = value
+                        # The gap history was just cleared, so its dates
+                        # go with it; the battery and signal histories
+                        # survive the wipe with theirs (0.24.4).
+                        blocks = record.get(DEV_DAILY_DATES)
+                        if isinstance(blocks, dict):
+                            blocks.pop(FAMILY_GAP, None)
+                            if not blocks:
+                                record[DEV_DAILY_DATES] = None
                         wiped += 1
                     loaded[DATA_STATS_EPOCH] = STATS_EPOCH
                     # A wiped fleet has no missed day to fold: the
-                    # banked maximum the fold would append belongs to
+                    # day's longest gap so far, which the fold would append, belongs to
                     # the rhythm this wipe just declared invalid, and
                     # appending it hands back what the wipe removed
                     # (ruling #406, bounded by #204).
@@ -1468,8 +1494,8 @@ class DeviceSentinelCoordinator(
         if capped[0]:
             LOGGER.info(
                 "%d learned gap(s) on %d device(s) exceeded the time the "
-                "device has been watched and were bounded to it "
-                "(ruling #403)",
+                "device has been watched and were forgotten (rulings "
+                "#403 and #549)",
                 capped[0], capped[1],
             )
         self._orphan_episodes = self._count_orphan_episodes(loaded)
@@ -3443,15 +3469,20 @@ class DeviceSentinelCoordinator(
     def _cap_gap_series(
         self, devices: dict[str, Any], loaded: dict[str, Any]
     ) -> tuple[int, int]:
-        """Bound every learned gap at the device's observation window.
+        """Forget every learned gap longer than the device has been watched.
 
-        The #399 bound, applied at load rather than only at banking
-        (ruling #403). A daily maximum larger than the time the device
-        has been watched cannot be a silence anybody observed, and
-        left in the series it becomes a freeze window no silence can
-        ever close. Bounded rather than dropped, for the same reason
-        #399 bounds: a lower bound on silence is still information.
-        Returns how many elements were bounded and on how many devices.
+        A daily maximum larger than the time the device has been
+        watched cannot be a silence anybody observed (ruling #403),
+        and left in the series it becomes a freeze window no silence
+        can ever close. It is forgotten, not cut down to the watch:
+        a gap is learned only if Device Sentinel could have heard the
+        device for all of it (ruling #549), and nobody was listening
+        for the part before the watch began. Until 0.24.4 it was
+        bounded to the watch instead, under #399's reasoning that a
+        lower bound on silence is still information; #549 rescinded
+        #399. The forgotten day reads as skipped in the history's
+        dates. Returns how many elements were forgotten and on how
+        many devices.
         """
         installed = loaded.get(DATA_FIRST_INSTALLED)
         now = dt_util.utcnow().timestamp()
@@ -3469,8 +3500,10 @@ class DeviceSentinelCoordinator(
             over = [i for i, gap in enumerate(series) if gap > watched]
             if not over:
                 continue
-            for i in over:
-                series[i] = watched
+            end = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
+            for i in reversed(over):
+                entry_removed(record, FAMILY_GAP, len(series), i, end)
+                del series[i]
             elements += len(over)
             touched += 1
         return elements, touched
@@ -3502,7 +3535,7 @@ class DeviceSentinelCoordinator(
     def _bank_damaged_clocks(
         self, faults: list[tuple[str, str, str]]
     ) -> int:
-        """Repair damaged activity clocks by banking, not by reading.
+        """Repair damaged activity clocks by restarting them, not by reading.
 
         A damaged `last_activity` cannot be reconstructed: the entity
         registry's idea of last-changed is the restart moment for
@@ -3546,8 +3579,8 @@ class DeviceSentinelCoordinator(
             self._record_system_event(
                 SYS_STORAGE_REPAIR,
                 detail=(
-                    f"banked a damaged activity clock on {holder}: "
-                    "set to now, taint cleared, nothing banked from "
+                    f"restarted a damaged activity clock on {holder}: "
+                    "set to now, taint cleared, nothing learned from "
                     "a value carrying no information"
                 ),
             )
@@ -3768,7 +3801,7 @@ class DeviceSentinelCoordinator(
         if self._epoch_wiped:
             # The statistics epoch changed at this load and every
             # rhythm was wiped (#204). There is nothing to fold into
-            # and the day's banked maximum is pre-wipe evidence.
+            # and the day's longest gap so far is pre-wipe evidence.
             return
         saved_at = self._loaded_saved_at
         if saved_at is None:
@@ -3787,6 +3820,8 @@ class DeviceSentinelCoordinator(
             last.isoformat(),
             today.isoformat(),
         )
+        # The missed day is the day of the last save (0.24.4).
+        self._fold_day_override = last
         await self._on_midnight(None)
 
     async def _on_midnight(self, _now: Any) -> None:
@@ -3798,6 +3833,15 @@ class DeviceSentinelCoordinator(
         written, and the reports are rewritten for the new day.
         """
         now = dt_util.utcnow().timestamp()
+        # The day being folded (0.24.4, issue #18): the day that just
+        # ended at midnight, or the day of the last save when a missed
+        # midnight is folded at startup. Every daily history's new
+        # entry takes this date.
+        day = self._fold_day_override or dt_util.as_local(
+            dt_util.utcnow() - timedelta(minutes=1)
+        ).date()
+        self._fold_day_override = None
+        self._folding_day = day
         self._discard_excluded_records()
         # Study readings for hardware no longer volunteered go here,
         # with everything else that ages out at the fold (#393).
@@ -3806,8 +3850,10 @@ class DeviceSentinelCoordinator(
         pushed = 0
         for device_id, record in self.data[DATA_DEVICES].items():
             if record[DEV_TODAY_MAX] is not None:
+                before = len(record[DEV_DAILY_MAX])
                 record[DEV_DAILY_MAX].append(record[DEV_TODAY_MAX])
                 del record[DEV_DAILY_MAX][:-self.retention_days]
+                day_appended(record, FAMILY_GAP, before, len(record[DEV_DAILY_MAX]), day)
                 record[DEV_TODAY_MAX] = None
                 pushed += 1
                 # A day since the last reset, for the Log-Normal
@@ -3858,6 +3904,19 @@ class DeviceSentinelCoordinator(
             for bucket in (record, record.get(DEV_SIGNAL_ALT)):
                 if not isinstance(bucket, dict):
                     continue
+                # Each family's dates are trimmed with the series that
+                # carries its length (0.24.4).
+                for family, anchor in (
+                    ((FAMILY_GAP, DEV_DAILY_MAX),
+                     (FAMILY_BATTERY, DEV_BATTERY_DAILY),
+                     (FAMILY_BATTERY_PREVIOUS, DEV_BATTERY_DAILY_PREVIOUS),
+                     (FAMILY_SIGNAL, DEV_SIGNAL_DAILY_COUNT))
+                    if bucket is record
+                    else ((FAMILY_SIGNAL_ALT, DEV_SIGNAL_DAILY_COUNT),)
+                ):
+                    series = bucket.get(anchor)
+                    if isinstance(series, list) and len(series) > keep:
+                        trimmed_to(record, family, len(series), keep, day)
                 for field in DAILY_SERIES_FIELDS:
                     series = bucket.get(field)
                     if isinstance(series, list) and len(series) > keep:

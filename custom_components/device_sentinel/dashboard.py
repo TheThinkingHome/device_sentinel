@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.24.0 (2026-10-02)
+# File: dashboard.py, Version: 0.24.4 (2026-10-04)
 
 """What the dashboard reads from the coordinator.
 
@@ -31,7 +31,13 @@ from homeassistant.util import dt as dt_util
 
 from datetime import date, timedelta
 
-from .report_battery import battery_month_drop, battery_sentence, battery_trend
+from .daily_dates import FAMILY_GAP, FAMILY_SIGNAL, dates_for, on_calendar
+from .report_battery import (
+    battery_calendar,
+    battery_month_drop,
+    battery_sentence,
+    battery_trend,
+)
 from .const import (
     DEV_LOGNORMAL_DAYS,
     CONNECTS_WORDS,
@@ -602,6 +608,43 @@ class DeviceViewMixin:
         rhythm, set_aside = self._trimmed_maximum(gaps)
         return rhythm, sorted(set_aside)
 
+    def _rhythm_on_days(self, record: dict[str, Any]) -> dict[str, list[Any]]:
+        """The rhythm chart's history laid out one slot a day (0.24.4).
+
+        Issue #18: the gap history writes nothing on a day with no
+        learned gap, so the chart, which reads by position, drew those
+        days away. Each entry moves to its day's slot, with an empty
+        slot for a skipped day, and the deciding and set-aside marks,
+        which are positions in the history, move with their entries.
+        """
+        out = dict(self._rhythm_history(record))
+        out["daily"] = list(record.get(DEV_DAILY_MAX) or [])
+        daily = out["daily"]
+        end = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
+        dates = dates_for(record, FAMILY_GAP, len(daily), end)
+        if not dates:
+            return out
+        start = min(dates[0], end)
+        span = (end - start).days + 1
+        slot = [(when - start).days for when in dates]
+
+        def moved(values: list[Any]) -> list[Any]:
+            laid: list[Any] = [None] * span
+            for index, value in enumerate(values[: len(slot)]):
+                if 0 <= slot[index] < span:
+                    laid[slot[index]] = value
+            return laid
+
+        laid = {key: moved(values) for key, values in out.items() if key not in ("deciding", "aside")}
+        laid["deciding"] = moved(
+            [None if d is None or not 0 <= d < len(slot) else slot[d] for d in out.get("deciding") or []]
+        )
+        laid["aside"] = moved(
+            [[slot[j] for j in (a or []) if 0 <= j < len(slot)] for a in out.get("aside") or []]
+        )
+        laid["aside"] = [a if a is not None else [] for a in laid["aside"]]
+        return laid
+
     def _rhythm_history(self, record: dict[str, Any]) -> dict[str, list[Any]]:
         """Each day's two waits, the rule in use, and the Trimmed
         Maximum's deciding and set-aside days (0.24.0).
@@ -865,8 +908,9 @@ class DeviceViewMixin:
                 # Each day's window in use ("windows"), both rules'
                 # waits each day, the rule in use, and the
                 # days that set and were set aside by the Trimmed
-                # Maximum, for the chart's marks (0.24.0).
-                **self._rhythm_history(record),
+                # Maximum, for the chart's marks (0.24.0), laid out one
+                # slot a day (0.24.4).
+                **self._rhythm_on_days(record),
             },
             "silences": silences,
             "battery": self._page_battery(record),
@@ -886,10 +930,9 @@ class DeviceViewMixin:
         two pages say the same thing about the same cell.
         """
         level = record.get(DEV_BATTERY_VALUE)
-        series = [
-            value for value in (record.get(DEV_BATTERY_DAILY) or [])
-            if isinstance(value, (int, float))
-        ]
+        # Laid out one slot a day (0.24.4, issue #18), for the fit and
+        # the chart alike.
+        series = battery_calendar(record)
         # A percentage runs from nothing to full: a reading outside
         # that is a raw sensor value, whichever end it is outside at
         # (0.22.26). LUX Outdoors reported 186 until #545 read it on
@@ -900,7 +943,7 @@ class DeviceViewMixin:
             and 0.0 <= float(level) <= BATTERY_READABLE_MAX
         )
         page: dict[str, Any] = {
-            "daily": list(record.get(DEV_BATTERY_DAILY) or []),
+            "daily": battery_calendar(record),
             "now": level,
             "threshold": self.low_threshold,
             "readable": readable,
@@ -926,6 +969,11 @@ class DeviceViewMixin:
         })
         return page
 
+    def _signal_on_days(self, record: dict[str, Any], values: list[Any]) -> list[Any]:
+        """A signal list laid out one slot a day, ending yesterday (0.24.4)."""
+        end = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
+        return on_calendar(record, FAMILY_SIGNAL, values, end)
+
     def _page_signal(self, record: dict[str, Any]) -> dict[str, Any]:
         """The signal history and each day's judgment, as the report
         makes it."""
@@ -939,12 +987,14 @@ class DeviceViewMixin:
             ordered = sorted(counts)
             middle = (ordered[len(counts) // 2 - 1] + ordered[len(counts) // 2]) / 2
         return {
-            "p5": p5,
-            "p50": list(record.get(DEV_SIGNAL_DAILY_P50) or []),
-            "railed_days": list(record.get(DEV_SIGNAL_DAILY_RAIL) or []),
+            "p5": self._signal_on_days(record, p5),
+            "p50": self._signal_on_days(record, list(record.get(DEV_SIGNAL_DAILY_P50) or [])),
+            "railed_days": self._signal_on_days(record, list(record.get(DEV_SIGNAL_DAILY_RAIL) or [])),
             "scale": record.get(DEV_SIGNAL_SCALE),
             "now": record.get(DEV_SIGNAL_VALUE),
-            "judged": [self.signal_day_judgment(record, index) for index in range(len(p5))],
+            "judged": self._signal_on_days(
+                record, [self.signal_day_judgment(record, index) for index in range(len(p5))]
+            ),
             "readings_a_day": round(middle) if middle is not None else None,
         }
 
@@ -1366,12 +1416,16 @@ class TrendsViewMixin:
                 for index in range(len(record.get(DEV_SIGNAL_DAILY_P5) or []))
             ]
             bad = 0
+            # Each bad day on its own date (0.24.4, issue #18): a day
+            # with no reading writes no row, so counting back from
+            # today put every bad day before it on the wrong date.
+            dated = dates_for(record, FAMILY_SIGNAL, len(judged), today - timedelta(days=1))
             for index, day in enumerate(judged):
                 if not day or not day["bad"]:
                     continue
-                back = len(judged) - 1 - index
-                when = (today - timedelta(days=back + 1)).isoformat()
-                bad_by_day[when] = bad_by_day.get(when, 0) + 1
+                when = dated[index]
+                back = (today - when).days - 1
+                bad_by_day[when.isoformat()] = bad_by_day.get(when.isoformat(), 0) + 1
                 if back < DAILY_MAX_KEEP:
                     bad += 1
             counts = [

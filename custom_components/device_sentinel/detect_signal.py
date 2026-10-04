@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.23.19 (2026-09-30)
+# File: detect_signal.py, Version: 0.24.4 (2026-10-04)
 
 """Signal: the day's statistics, the bad-day judgment, and the rails.
 
@@ -37,6 +37,8 @@ coordinator throughout and nothing here stands alone.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import math
 import statistics
 
@@ -44,6 +46,9 @@ from typing import Any
 
 from homeassistant.helpers import entity_registry as er
 
+from homeassistant.util import dt as dt_util
+
+from .daily_dates import FAMILY_SIGNAL, FAMILY_SIGNAL_ALT, dates_for, day_appended
 from .const import (
     CONF_SIGNAL_MUTED_DEVICES,
     CONF_SIGNAL_MUTED_INTEGRATIONS,
@@ -303,11 +308,24 @@ class SignalMixin:
     def _roll_signal_stats(
         self, record: dict[str, Any], fold_now: float
     ) -> None:
-        """Fold the primary, then the second scale if there is one."""
-        self._roll_one_scale(record, fold_now, judged=True)
-        alt = record.get(DEV_SIGNAL_ALT)
-        if alt is not None:
-            self._roll_one_scale(alt, fold_now, judged=False)
+        """Fold the primary, then the second scale if there is one.
+
+        Each scale's row is dated with the day being folded (0.24.4,
+        issue #18): a day with no reading writes no row, and its date
+        is recorded as skipped, so the history keeps its calendar.
+        """
+        day = getattr(self, "_folding_day", None)
+        for bucket, judged, family in (
+            (record, True, FAMILY_SIGNAL),
+            (record.get(DEV_SIGNAL_ALT), False, FAMILY_SIGNAL_ALT),
+        ):
+            if bucket is None:
+                continue
+            before = len(bucket.get(DEV_SIGNAL_DAILY_COUNT) or [])
+            self._roll_one_scale(bucket, fold_now, judged=judged)
+            after = len(bucket.get(DEV_SIGNAL_DAILY_COUNT) or [])
+            if day is not None and after != before:
+                day_appended(record, family, before, after, day)
 
     def _roll_one_scale(
         self, record: dict[str, Any], fold_now: float, judged: bool = True
@@ -687,11 +705,13 @@ class SignalMixin:
         recorded after 0.12.15, because rails stopped reaching the
         minimum and rail-only days appended nothing to it, so its
         tail was the last three speaking days rather than the last
-        three days (ruling #324). A silent day and a railed day both
-        carry a zero count and differ only in the rail entry, which
-        is why the rail column is the evidence. A rail that comes
-        and goes within a day never confirms, while one that holds
-        across days does.
+        three days (ruling #324). A railed day writes a row with a zero
+        count and a real rail entry; a silent day writes no row at all
+        (see `_roll_one_scale`), so the rail column is the evidence. The
+        three rows must fall on three consecutive calendar days (0.24.4,
+        issue #18): a rail broken by a silent day is not proven to have
+        held. A rail that comes and goes within a day never confirms,
+        while one that holds across days does.
 
         The plausible-value freeze, a real reading that stops moving,
         is not judged here: a device with a strong steady link reports
@@ -713,7 +733,15 @@ class SignalMixin:
             rails[-RAIL_CONFIRM_DAYS:],
             strict=False,
         )
-        return all(count == 0 and (rail or 0) > 0 for count, rail in tail)
+        if not all(count == 0 and (rail or 0) > 0 for count, rail in tail):
+            return False
+        yesterday = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
+        dates = dates_for(record, FAMILY_SIGNAL, len(counts), yesterday)[-RAIL_CONFIRM_DAYS:]
+        # Each date beside the next: one pair fewer than dates, on purpose.
+        return all(
+            (later - earlier).days == 1
+            for earlier, later in zip(dates, dates[1:], strict=False)
+        )
 
     @staticmethod
     def _is_signal(ent: er.RegistryEntry) -> bool:
