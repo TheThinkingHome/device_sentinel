@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.24.4 (2026-10-04)
+// File: panel.js, Version: 0.24.5 (2026-10-04)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -352,8 +352,26 @@ const STYLE = `
   .pane { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
   .muted { color: var(--secondary-text-color); }
   .chips { display: flex; gap: 8px; flex-wrap: wrap; }
-  .chip { min-height: 36px; padding: 0 14px; border-radius: 18px; cursor: pointer; background: transparent;
-    color: var(--primary-text-color); border: 1px solid var(--divider-color); }
+  .chip { min-height: 28px; padding: 0 11px; border-radius: 14px; cursor: pointer; background: transparent;
+    color: var(--primary-text-color); border: 1px solid var(--divider-color); font-size: 13px; }
+  /* The device page's actions (0.24.5): small marks beside a value,
+     and a line saying why a write was refused or asking first. */
+  .edit { width: 28px; height: 28px; border: none; border-radius: 14px; background: transparent;
+    color: var(--primary-color); display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; padding: 0; vertical-align: middle; }
+  .actrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .actcol { display: flex; flex-direction: column; gap: 6px; padding: 2px 0; }
+  .labelchip { display: inline-flex; align-items: center; gap: 4px; padding-left: 10px; border-radius: 13px;
+    border: 1px solid var(--divider-color); font-size: 13px; }
+  .labelchip .meaning { color: var(--warning-color, #b26a00); }
+  .labelchip button { width: 24px; height: 24px; border: none; background: transparent; padding: 0;
+    color: var(--secondary-text-color); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .actnote { padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+  .actnote.refused { background: rgba(219, 68, 55, 0.12); color: var(--error-color, #db4437); }
+  .actnote.ask { background: rgba(255, 152, 0, 0.12); color: var(--warning-color, #b26a00); }
+  .actinput { min-height: 30px; padding: 0 8px; border: 1px solid var(--divider-color); border-radius: 6px;
+    background: transparent; color: var(--primary-text-color); font: inherit; min-width: 240px; }
+  .pick { display: flex; align-items: center; gap: 8px; min-height: 30px; }
   .chip[aria-pressed="true"] { color: var(--primary-color); border-color: var(--primary-color); }
   .scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -925,13 +943,27 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, row.integration
           ? this._link(row.integration, this._integrationPath(row.integration))
           : ""),
-        el("td", {}, row.problem),
+        // The mute that matches each problem, beside it (0.24.5).
+        el("td", {}, el("div", { class: "actrow" }, el("span", {}, row.problem),
+          ...(row.mutes || []).map((kind) => el("button", { class: "chip", type: "button",
+            onclick: () => this._muteFromList(row.device_id, kind) }, `Mute ${kind}`)))),
         el("td", {}, row.since ? moment(row.since) : ""),
         el("td", {}, row.since ? span((at - new Date(row.since).getTime()) / 1000) : "")))));
     this._pane.replaceChildren(summary, chips, el("div", { class: "scroll" }, table),
       el("p", { class: "muted", style: "margin:0;font-size:13px" },
         "Tick a problem to acknowledge it: it stays listed, but nothing reminds you of it again. "
         + "Its recovery is still reported, and the same tick shows on the to-do list."));
+  }
+
+  // A mute beside a Problem List item (0.24.5): the item leaves the
+  // list silently on the refresh, as a mute always makes it (#537).
+  async _muteFromList(device_id, kind) {
+    try {
+      await this._call({ type: "device_sentinel/device_mute", device_id, kind, on: true });
+    } catch (err) {
+      // Gone since the snapshot; the refresh below shows the list as it stands.
+    }
+    await this._refresh();
   }
 
   async _acknowledge(uid, acknowledged) {
@@ -1696,9 +1728,193 @@ class DeviceSentinelPanel extends HTMLElement {
       : [el("p", { class: "muted", style: "margin:0" }, "This device has no battery, signal or last seen entity.")]));
   }
 
+  // The device page's actions (0.24.5). One edit at a time, tied to its
+  // device, so another device's page never shows a half-finished edit.
+  _edit(device_id) {
+    const e = this._devEdit;
+    return e && e.device === device_id ? e : null;
+  }
+
+  _editMark(label, onclick) {
+    const icon = svg("svg", { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+      "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" });
+    icon.append(svg("path", { d: "M4 20h4L19 9l-4-4L4 16z" }), svg("path", { d: "M13.5 6.5l4 4" }));
+    return el("button", { class: "edit", type: "button", "aria-label": label, onclick }, icon);
+  }
+
+  _actNote(row) {
+    const e = this._edit(this._page && this._page.identity && this._page.identity.device_id);
+    if (!e || e.errorRow !== row || !e.error) return null;
+    return el("div", { class: "actnote refused", role: "alert" }, e.error);
+  }
+
+  // One action: on success the page is fetched afresh and the edit
+  // closes; a refusal keeps the row's old value and says why under it.
+  async _deviceAct(message, row) {
+    const device = message.device_id;
+    try {
+      await this._call(message);
+      this._devEdit = null;
+      this._page = await this._fetchView();
+    } catch (err) {
+      const base = this._edit(device) || { device, row };
+      if (err && err.code === "name_in_use") {
+        this._devEdit = { ...base, row, clash: err.message, error: null };
+      } else {
+        this._devEdit = { ...base, row, errorRow: row, clash: null,
+          error: (err && err.message) || "Home Assistant refused the change." };
+      }
+    }
+    this._paintDevicePage();
+  }
+
+  async _openPicker(who, row) {
+    try {
+      this._choices = await this._call({ type: "device_sentinel/device_choices" });
+      this._devEdit = { device: who.device_id, row };
+    } catch (err) {
+      this._devEdit = { device: who.device_id, row: null, errorRow: row,
+        error: (err && err.message) || "Home Assistant's list could not be read." };
+    }
+    this._paintDevicePage();
+  }
+
+  _nameCell(who) {
+    const acts = who.actions;
+    const e = this._edit(who.device_id);
+    if (!e || e.row !== "name") {
+      return el("div", { class: "actcol" }, el("div", { class: "actrow" }, el("span", {}, who.name),
+        this._editMark("Rename", () => {
+          this._devEdit = { device: who.device_id, row: "name", value: acts.name_by_user || who.name };
+          this._paintDevicePage();
+        })), this._actNote("name"));
+    }
+    const input = el("input", { class: "actinput", type: "text", "aria-label": "Name", value: e.value || "" });
+    input.addEventListener("input", () => { e.value = input.value; });
+    const save = (confirm) => this._deviceAct(
+      { type: "device_sentinel/device_rename", device_id: who.device_id, name: input.value, confirm }, "name");
+    const parts = [el("div", { class: "actrow" }, input,
+      el("button", { class: "chip", type: "button", onclick: () => save(false) }, "Save"),
+      el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel"))];
+    if (e.clash) {
+      parts.push(el("div", { class: "actnote ask", role: "alert" }, e.clash),
+        el("div", { class: "actrow" },
+          el("button", { class: "chip", type: "button", onclick: () => {
+            this._devEdit = { ...e, clash: null };
+            this._paintDevicePage();
+            const again = this._pane.querySelector("input.actinput");
+            if (again) { again.focus(); again.select(); }
+          } }, "Change name"),
+          el("button", { class: "chip", type: "button", onclick: () => save(true) }, "Save anyway")));
+    }
+    if (acts.name_by_user) {
+      parts.push(el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+        onclick: () => this._deviceAct({ type: "device_sentinel/device_rename", device_id: who.device_id, name: "" }, "name") },
+        `Reset to ${acts.integration_name || "the integration's name"}`)));
+    }
+    parts.push(this._actNote("name"));
+    return el("div", { class: "actcol" }, ...parts);
+  }
+
+  _areaCell(who) {
+    const acts = who.actions;
+    const e = this._edit(who.device_id);
+    if (!e || e.row !== "area" || !this._choices) {
+      return el("div", { class: "actcol" }, el("div", { class: "actrow" },
+        el("span", {}, who.area || "none assigned"),
+        this._editMark("Change area", () => this._openPicker(who, "area"))), this._actNote("area"));
+    }
+    const choose = (area_id) => this._deviceAct(
+      { type: "device_sentinel/device_area", device_id: who.device_id, area_id }, "area");
+    const option = (id, name) => el("label", { class: "pick" },
+      el("input", { type: "radio", name: "ds-area", ...((acts.area_id || null) === id ? { checked: "" } : {}),
+        onchange: () => choose(id) }), name);
+    return el("div", { class: "actcol" },
+      el("fieldset", { style: "border:none;margin:0;padding:0" },
+        el("legend", { class: "muted", style: "font-size:13px;padding:0 0 4px" }, "Area"),
+        option(null, "No area"), ...this._choices.areas.map((a) => option(a.id, a.name))),
+      el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+        onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel")),
+      this._actNote("area"));
+  }
+
+  _labelsCell(who) {
+    const acts = who.actions;
+    const e = this._edit(who.device_id);
+    const cross = () => {
+      const icon = svg("svg", { width: 12, height: 12, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+        "stroke-width": 2.4, "stroke-linecap": "round", "aria-hidden": "true" });
+      icon.append(svg("path", { d: "M6 6l12 12" }), svg("path", { d: "M18 6L6 18" }));
+      return icon;
+    };
+    const chips = acts.labels.map((label) => el("span", { class: "labelchip" }, label.name,
+      label.meaning ? el("span", { class: "meaning" }, label.meaning) : null,
+      el("button", { type: "button", "aria-label": `Remove the label ${label.name} from this device`,
+        onclick: () => this._deviceAct({ type: "device_sentinel/device_label", device_id: who.device_id,
+          label_id: label.id, add: false }, "labels") }, cross())));
+    const parts = [el("div", { class: "actrow" }, ...chips,
+      el("button", { class: "chip", type: "button", onclick: () => this._openPicker(who, "labels") }, "Add label"))];
+    if (e && e.row === "labels" && this._choices) {
+      const have = new Set(acts.labels.map((l) => l.id));
+      const offer = this._choices.labels.filter((l) => !have.has(l.id));
+      parts.push(el("div", { class: "actcol" },
+        ...offer.map((l) => el("div", { class: "actrow" },
+          el("button", { class: "chip", type: "button",
+            onclick: () => this._deviceAct({ type: "device_sentinel/device_label", device_id: who.device_id,
+              label_id: l.id, add: true }, "labels") }, "Add"),
+          el("span", {}, l.name), l.meaning ? el("span", { class: "muted" }, l.meaning) : null)),
+        el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+          onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Done"))));
+    }
+    parts.push(this._actNote("labels"));
+    return el("div", { class: "actcol" }, ...parts);
+  }
+
+  _mutedCell(who) {
+    const mutes = who.actions.mutes;
+    const e = this._edit(who.device_id);
+    const everything = mutes.everything && mutes.everything.on;
+    const toggle = (kind, words) => {
+      const m = mutes[kind] || { on: false, here: false };
+      // Fixed when the mute comes from a label or an integration, or
+      // when Mute everything covers this kind.
+      const covered = kind !== "everything" && everything;
+      const fixed = (m.on && !m.here) || covered;
+      return el("button", { class: "chip", type: "button", "aria-pressed": String(Boolean(m.on || covered)),
+        ...(fixed ? { "aria-disabled": "true" } : {}),
+        onclick: () => {
+          if (fixed) return;
+          if (kind === "everything" && !m.on) {
+            this._devEdit = { device: who.device_id, row: "muteall" };
+            this._paintDevicePage();
+            return;
+          }
+          this._deviceAct({ type: "device_sentinel/device_mute", device_id: who.device_id, kind, on: !m.on }, "muted");
+        } }, words);
+    };
+    const parts = [el("span", {}, who.muted || "nothing"),
+      el("div", { class: "actrow" }, toggle("freeze", "Mute freeze"), toggle("battery", "Mute battery"),
+        toggle("signal", "Mute signal"), toggle("everything", "Mute everything"))];
+    if (e && e.row === "muteall") {
+      parts.push(el("div", { class: "actnote ask", role: "alert" },
+        `Mute everything for ${who.name}? Device Sentinel will stop judging and reporting it for freeze, battery and signal. It keeps learning.`),
+        el("div", { class: "actrow" },
+          el("button", { class: "chip", type: "button",
+            onclick: () => this._deviceAct({ type: "device_sentinel/device_mute", device_id: who.device_id, kind: "everything", on: true }, "muted") },
+            "Mute everything"),
+          el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel")));
+    }
+    parts.push(this._actNote("muted"));
+    return el("div", { class: "actcol" }, ...parts);
+  }
+
   _paintDevicePage() {
     const page = this._page;
-    const back = el("p", { style: "margin:0" }, this._backLink());
+    const back = el("p", { style: "margin:0;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap" },
+      this._backLink(),
+      this._page && this._page.identity && this._page.identity.actions
+        ? this._link("Open in Home Assistant", `/config/devices/device/${this._page.identity.device_id}`)
+        : null);
     this._readingsBox = null;
     if (!page) {
       this._pane.replaceChildren(back, el("p", { class: "muted" }, "Loading."));
@@ -1746,8 +1962,9 @@ class DeviceSentinelPanel extends HTMLElement {
 
     this._readingsBox = el("div", { class: "readings" });
     const address = (who.connections || []).map(([kind, value]) => `${value} (${kind})`).join(", ");
+    const acts = who.actions;
     const identity = [
-      ["Name", who.name],
+      ["Name", acts ? this._nameCell(who) : who.name],
       ["Manufacturer", who.manufacturer || "not reported"],
       ["Model", who.model || "not reported"],
       ["Model ID", who.model_id || "not reported"],
@@ -1757,16 +1974,26 @@ class DeviceSentinelPanel extends HTMLElement {
       ["Integration", who.integration_name || who.integration || ""],
       // How it connects, from its integration's declaration (0.23.9).
       ...(who.connects ? [["Connects", who.connects]] : []),
-      ["Area", who.area || "none assigned"],
+      ["Area", acts ? this._areaCell(who) : (who.area || "none assigned")],
+      // Labels, each with what Device Sentinel does with it (0.24.5).
+      ...(acts ? [["Labels", this._labelsCell(who)]] : []),
       ["Address", address || "none reported"],
       ["Device ID", who.device_id],
       ["First seen", who.first_observed ? moment(who.first_observed) : "unknown"],
       ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
       // What Device Sentinel counts as this device speaking.
-      ["Heartbeat", who.clock === "last_seen" ? "its Last Seen entity" : "updates from its entities"],
+      ["Heartbeat", acts && acts.last_seen_off ? el("div", { class: "actcol" },
+        el("span", {}, who.clock === "last_seen" ? "its Last Seen entity" : "updates from its entities"),
+        el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+          onclick: () => this._deviceAct({ type: "device_sentinel/device_last_seen", device_id: who.device_id }, "heartbeat") },
+          "Turn on its Last Seen")),
+        this._actNote("heartbeat"))
+        : (who.clock === "last_seen" ? "its Last Seen entity" : "updates from its entities")],
       // The freeze rule in use today and its wait (0.24.0): the
       // shorter of the Trimmed Maximum and the Log-Normal Percentile.
       ...(status.rule ? [["Wait rule", `${status.rule}, ${span(status.window)}`]] : []),
+      // What is muted and why, with the toggles (0.24.5).
+      ...(acts ? [["Muted", this._mutedCell(who)]] : []),
     ];
     const idTable = el("table", { class: "kv" }, el("tbody", {}, ...identity.map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", {}, v)))));
     // The button beside the wait rule (0.24.0): starts the Log-Normal
@@ -1776,10 +2003,10 @@ class DeviceSentinelPanel extends HTMLElement {
       el("button", { class: "chip", type: "button", onclick: async () => {
         try {
           await this._call({ type: "device_sentinel/use_trimmed_maximum", device_id: who.device_id });
+          this._page = await this._fetchView();
           this._paintDevicePage();
         } catch (err) { /* the next refresh shows the rule as it stands */ }
-      } }, "Use the 14-Day Trimmed Maximum"),
-      el("span", { class: "small muted" }, "Until this device has 28 new days.")) : null;
+      } }, "Use the 14-Day Trimmed Maximum")) : null;
     const gaps = page.rhythm.gaps;
     const top = Math.max(...gaps, status.window || 0, 1);
     const gapBars = el("div", { class: "gaps", role: "img", "aria-label": "Longest gap each day, last 14 days" },
