@@ -104,7 +104,7 @@ const withRules = {
     check(`${title}: the legend's first entry has its swatch`, first && first.querySelector(".swatch"), first ? first.textContent : null);
   }
   const rhythm = byTitle("Rhythm");
-  const polylines = [...rhythm.querySelectorAll("polyline")];
+  const polylines = [...rhythm.querySelectorAll("polyline, path")];
   check("Rhythm: the Log-Normal Percentile's wait is drawn, dashed, in its own colour",
     polylines.some((p) => p.getAttribute("stroke") === "#2a78d6" && p.getAttribute("stroke-dasharray")));
   check("Rhythm: the Trimmed Maximum's wait is drawn, dashed, in red",
