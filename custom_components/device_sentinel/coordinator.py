@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.24.2 (2026-10-03)
+# File: coordinator.py, Version: 0.24.3 (2026-10-04)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -2486,6 +2486,19 @@ class DeviceSentinelCoordinator(
         return event_data.get("entity_id") in self._entity_map
 
     @callback
+    def _end_pending_absences(self, device_id: str, spoke: str | None) -> None:
+        """Forget the pending absences of a device that was just heard (0.24.3)."""
+        if not self._pending_unavailable:
+            return
+        for entity_id in [
+            entity_id
+            for entity_id in self._pending_unavailable
+            if entity_id != spoke
+            and (self._entity_map.get(entity_id) or (None,))[0] == device_id
+        ]:
+            del self._pending_unavailable[entity_id]
+
+    @callback
     def _taint_after_absence(
         self,
         device_id: str,
@@ -2572,6 +2585,18 @@ class DeviceSentinelCoordinator(
                         self._battery_entity_reverse[entity_id],
                         notify_on_change=True,
                     )
+            return
+        if new_state.state == STATE_UNKNOWN and entity_id.split(".", 1)[0] == "event":
+            # An event entity reads unknown until its next event, after
+            # every restart (0.24.3): reachable, with nothing to show
+            # yet. That is neither an absence nor the device speaking.
+            # It does end an absence: an action entity unavailable as
+            # Zigbee2MQTT stops comes back unknown as it starts, and the
+            # unavailable stretch is judged by its real length, not by
+            # the hours of waiting for the next press that follow it.
+            pending = self._pending_unavailable.pop(entity_id, None)
+            if pending is not None:
+                self._taint_after_absence(device_id, entity_id, pending)
             return
         if new_state.state in BAD_STATES:
             # Debounced: note when the absence began, taint only if it
@@ -2767,6 +2792,16 @@ class DeviceSentinelCoordinator(
             record[DEV_EVENT_COUNT] = int(record[DEV_EVENT_COUNT]) + 1
             self._dirty = True
             return
+
+        # The device was heard (0.24.3): an absence is the device's,
+        # not one entity's, so any of its entities still marked absent
+        # stops counting, untainted. On the reference rig on 3 October
+        # Button Randy Night Table's action entity sat at unknown from
+        # a restart until a press 8.9 hours later, while the button was
+        # heard through its other entities; the press tainted it and
+        # its next gap was forgotten. An entity that is absent while
+        # the rest of the device reports says nothing about the device.
+        self._end_pending_absences(device_id, entity_id)
 
         # A taint is consumed by a stamp the protocol vouches for:
         # the outage ended here, and the spanning gap is muted
