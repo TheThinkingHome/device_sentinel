@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.24.0 (2026-10-02)
+// File: panel.js, Version: 0.24.4 (2026-10-04)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1926,10 +1926,28 @@ class DeviceSentinelPanel extends HTMLElement {
       }
       return { g, y };
     };
-    const pts = (arr, y) => arr
-      .map((v, i) => ({ v, back: arr.length - 1 - i }))
-      .filter((p) => p.back < days && p.v !== null && p.v !== undefined)
-      .map((p) => `${x(p.back).toFixed(1)},${y(p.v).toFixed(1)}`);
+    // The histories are laid out one slot a day (0.24.4): a day with no
+    // measurement is empty, and a line breaks there rather than joining
+    // across it. Each run of measured days is its own stretch of path.
+    const runsOf = (arr, y) => {
+      const runs = [];
+      let run = [];
+      arr.forEach((v, i) => {
+        const back = arr.length - 1 - i;
+        if (back >= days) return;
+        if (v === null || v === undefined) {
+          if (run.length) runs.push(run);
+          run = [];
+        } else {
+          run.push(`${x(back).toFixed(1)},${y(v).toFixed(1)}`);
+        }
+      });
+      if (run.length) runs.push(run);
+      return runs;
+    };
+    const pathOf = (arr, y) => runsOf(arr, y)
+      .map((r) => `M${r[0]}${r.length > 1 ? ` L${r.slice(1).join(" L")}` : ""}`)
+      .join(" ");
     const addHover = (g) => {
       const line = svg("line", { x1: 44, y1: 16, x2: 44, y2: 194, stroke: "var(--primary-text-color)", opacity: 0 });
       lines.push(line);
@@ -1972,7 +1990,7 @@ class DeviceSentinelPanel extends HTMLElement {
         svg("text", { x: 1086, y: bat.y(b.threshold) - 5, class: "axis", "text-anchor": "end", fill: "var(--error-color, #db4437)" },
           `your threshold, ${b.threshold}%`));
       }
-      bat.g.append(svg("polyline", { points: pts(battery, bat.y).join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 2.2 }));
+      bat.g.append(svg("path", { d: pathOf(battery, bat.y), fill: "none", stroke: "var(--primary-color)", "stroke-width": 2.2 }));
       // The last five weeks' average levels, in orange over the daily
       // line, and the fitted line on a falling cell (0.23.6), drawn
       // only at 30 and 14 days: those are the weeks the table and the
@@ -2083,13 +2101,21 @@ class DeviceSentinelPanel extends HTMLElement {
       const midS = Math.round((lowS + highS) / 2);
       const sig = frame(lowS, highS, [[highS, String(highS)], [midS, String(midS)], [lowS, String(lowS)]],
         `Daily ${page.signal.scale || "signal"} for ${days} days: median, low end, its normal and its bad-day line`);
-      const med = pts(p50, sig.y);
-      const low = pts(p5, sig.y);
-      sig.g.append(svg("polygon", { points: med.concat(low.slice().reverse()).join(" "), fill: "var(--primary-color)", "fill-opacity": 0.16 }),
-        svg("polyline", { points: med.join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 2.2 }),
-        svg("polyline", { points: low.join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 1.2, "stroke-dasharray": "3 3" }));
+      // The band between median and low end, one shape per run of
+      // measured days (0.24.4).
+      const medRuns = runsOf(p50, sig.y);
+      const lowRuns = runsOf(p5, sig.y);
+      medRuns.forEach((m, k) => {
+        const l = lowRuns[k];
+        if (l && l.length === m.length && m.length > 1) {
+          sig.g.append(svg("polygon", { points: m.concat(l.slice().reverse()).join(" "), fill: "var(--primary-color)", "fill-opacity": 0.16 }));
+        }
+      });
+      sig.g.append(
+        svg("path", { d: pathOf(p50, sig.y), fill: "none", stroke: "var(--primary-color)", "stroke-width": 2.2 }),
+        svg("path", { d: pathOf(p5, sig.y), fill: "none", stroke: "var(--primary-color)", "stroke-width": 1.2, "stroke-dasharray": "3 3" }));
       const normal = judged.map((j) => (j ? j.normal : null));
-      sig.g.append(svg("polyline", { points: pts(normal, sig.y).join(" "), fill: "none", stroke: "var(--secondary-text-color)", "stroke-width": 1.4 }));
+      sig.g.append(svg("path", { d: pathOf(normal, sig.y), fill: "none", stroke: "var(--secondary-text-color)", "stroke-width": 1.4 }));
       // The bad-day line only where it falls inside the chart.
       let run = [];
       const flush = () => {
@@ -2173,11 +2199,11 @@ class DeviceSentinelPanel extends HTMLElement {
       // Log-Normal Percentile in blue; the shorter is the one in use.
       const trimmedWins = page.rhythm.trimmed || wins;
       const lognormalWins = page.rhythm.lognormal || [];
-      rhy.g.append(svg("polyline", { points: pts(trimmedWins.map((w) => (w ? cap(w / 3600) : null)), rhy.y).join(" "), fill: "none",
+      rhy.g.append(svg("path", { d: pathOf(trimmedWins.map((w) => (w ? cap(w / 3600) : null)), rhy.y), fill: "none",
         stroke: "var(--error-color, #db4437)", "stroke-width": 1.4, "stroke-dasharray": "5 4" }),
-      svg("polyline", { points: pts(lognormalWins.map((w) => (w ? cap(w / 3600) : null)), rhy.y).join(" "), fill: "none",
+      svg("path", { d: pathOf(lognormalWins.map((w) => (w ? cap(w / 3600) : null)), rhy.y), fill: "none",
         stroke: LOGNORMAL_COLOUR, "stroke-width": 1.4, "stroke-dasharray": "2 3" }),
-      svg("polyline", { points: pts(gaps.map((g) => cap(g / 3600)), rhy.y).join(" "), fill: "none", stroke: "var(--primary-color)", "stroke-width": 1.4 }));
+      svg("path", { d: pathOf(gaps.map((g) => (g == null ? null : cap(g / 3600))), rhy.y), fill: "none", stroke: "var(--primary-color)", "stroke-width": 1.4 }));
       let over = 0;
       gaps.forEach((g, i) => {
         const back = gaps.length - 1 - i;
