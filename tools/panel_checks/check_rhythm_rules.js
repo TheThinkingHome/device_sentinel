@@ -128,8 +128,9 @@ const withRules = {
   check("Rhythm: the set-aside day is crossed", cross && cross.getAttribute("opacity") === "1");
 
   const button = [...root.querySelectorAll("button")].find((b) => b.textContent === "Use the 14-Day Trimmed Maximum");
-  check("Identity: the button sits under the table, with its line",
-    button && /Until this device has 28 new days\./.test(button.parentElement.textContent), button ? button.parentElement.textContent : null);
+  // No helper text beside it since 0.24.5 (James, 4 October 2026).
+  check("Identity: the button sits under the table, with no helper line",
+    button && button.parentElement.textContent === "Use the 14-Day Trimmed Maximum", button ? button.parentElement.textContent : null);
 
   console.log("\nPressing the button");
   const sent = [];
