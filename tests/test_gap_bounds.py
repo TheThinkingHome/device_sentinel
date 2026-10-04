@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_gap_bounds.py, Version: 0.20.18 (2026-09-12)
+# File: tests/test_gap_bounds.py, Version: 0.24.4 (2026-10-04)
 
 """A learned gap may not be negative or exceed the watch (ruling #403)."""
 
@@ -81,33 +81,36 @@ async def test_a_negative_series_is_reset_at_load(hass: HomeAssistant, hass_stor
     assert entry.runtime_data.data[DATA_DEVICES][device.id][DEV_DAILY_MAX] == []
 
 
-async def test_a_gap_wider_than_the_watch_is_bounded_to_it(
+async def test_a_gap_wider_than_the_watch_is_forgotten(
     hass: HomeAssistant, hass_storage
 ):
     """The second fleet's 1,076 days against 25 days watched, at load.
 
-    The #399 bound stopped new banking from writing one; this is the
-    same bound applied to what is already on disk. Bounded rather than
-    dropped: a lower bound on silence is still information.
+    Nobody was listening for the part of that gap before the watch
+    began, so it is forgotten (rulings #403 and #549, 0.24.4), not
+    bounded to the watch as it was under #399's reasoning, and the day
+    it held reads as skipped in the history's dates.
     """
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    from custom_components.device_sentinel.daily_dates import FAMILY_GAP, dates_for
+
     device, _ = register_device(hass, "wide", "Wide")
     _disk(hass_storage, device.id, [30.0, 1076.4 * 86400.0, 40.0])
     entry = await setup_entry(hass)
-    series = entry.runtime_data.data[DATA_DEVICES][device.id][DEV_DAILY_MAX]
-    assert series[0] == 30.0 and series[2] == 40.0
-    # The window is measured at load, so it is a little wider than
-    # WATCH_DAYS by however long this suite has been running. The
-    # assertion is that the gap landed inside the watch, not that it
-    # landed on a constant.
-    assert (WATCH_DAYS - 1) * 86400.0 < series[1] < (WATCH_DAYS + 1) * 86400.0
+    record = entry.runtime_data.data[DATA_DEVICES][device.id]
+    assert record[DEV_DAILY_MAX] == [30.0, 40.0]
+    yesterday = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
+    assert dates_for(record, FAMILY_GAP, 2, yesterday) == [yesterday - timedelta(days=2), yesterday]
 
 
-async def test_an_astronomical_gap_is_bounded_too(hass: HomeAssistant, hass_storage):
+async def test_astronomical_gaps_are_all_forgotten(hass: HomeAssistant, hass_storage):
     device, _ = register_device(hass, "astro", "Astronomical")
     _disk(hass_storage, device.id, [1e308, 1e308, 1e308])
     entry = await setup_entry(hass)
-    series = entry.runtime_data.data[DATA_DEVICES][device.id][DEV_DAILY_MAX]
-    assert all(g < (WATCH_DAYS + 1) * 86400.0 for g in series)
+    assert entry.runtime_data.data[DATA_DEVICES][device.id][DEV_DAILY_MAX] == []
 
 
 async def test_a_series_inside_the_watch_is_untouched(hass: HomeAssistant, hass_storage):

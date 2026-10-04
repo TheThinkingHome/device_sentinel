@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_backup_integrity.py, Version: 0.23.15 (2026-09-28)
+# File: tests/test_backup_integrity.py, Version: 0.24.4 (2026-10-04)
 
 # Tests for 0.18.0 and 0.18.1.
 #
@@ -110,10 +110,10 @@ async def test_a_clean_save_rotates_and_a_faulty_one_leaves_it(
     )
 
 
-async def test_the_banking_repair_restarts_a_damaged_clock(
+async def test_the_repair_restarts_a_damaged_clock(
     hass: HomeAssistant,
 ):
-    """A damaged activity clock is banked, recorded, and stands (#338,
+    """A damaged activity clock is restarted, recorded, and stands (#338,
     #342)."""
     coord = await setup_coordinator(hass)
     device, _ = register_device(hass, "bank", name="BANK")
@@ -137,7 +137,7 @@ async def test_the_banking_repair_restarts_a_damaged_clock(
         if e.get(SYS_KIND) == SYS_STORAGE_REPAIR
     ]
     assert len(events) == 1
-    assert "banked" in str(events[0].get(SYS_DETAIL))
+    assert "restarted" in str(events[0].get(SYS_DETAIL))
     # The repaired record now verifies clean on that field.
     remaining = check_records(coord.data[DATA_DEVICES])
     assert not any(f[1] == DEV_LAST_ACTIVITY for f in remaining)
