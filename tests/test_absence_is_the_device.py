@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_absence_is_the_device.py, Version: 0.24.3 (2026-10-04)
+# File: tests/test_absence_is_the_device.py, Version: 0.24.6 (2026-10-05)
 
 """An absence belongs to the device, not to one of its entities.
 
@@ -78,6 +78,11 @@ async def _report(hass, freezer, after, *entity_values):
 
 async def test_a_device_heard_through_another_entity_was_not_absent(hass, freezer):
     """Button Randy Night Table, 3 October."""
+    # The run spans about fourteen hours. Started from the real clock, it
+    # crossed the harness's local midnight on some afternoons, and the
+    # fold then filed the gap this test reads into the day before. A
+    # fixed start keeps the run inside one day.
+    freezer.move_to("2026-10-01 12:00:00+00:00")
     coord, record, main, seen = await _button(hass, freezer)
     hass.states.async_set(main, "unavailable")
     hass.states.async_set(main, "unknown")

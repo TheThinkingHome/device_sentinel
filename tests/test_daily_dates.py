@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_daily_dates.py, Version: 0.24.4 (2026-10-04)
+# File: tests/test_daily_dates.py, Version: 0.24.6 (2026-10-05)
 
 """The dates of a daily history's entries (0.24.4, issue #18)."""
 
@@ -52,14 +52,14 @@ def test_entries_an_older_release_appended_follow_the_newest_day():
 def test_a_fold_appends_today_and_records_the_skip():
     holder = {}
     set_dates(holder, FAMILY_GAP, _days(5, 4))
-    day_appended(holder, FAMILY_GAP, 2, 3, D)
+    day_appended(holder, FAMILY_GAP, 2, 3, D, added=True)
     assert dates_for(holder, FAMILY_GAP, 3, D) == _days(5, 4, 0)
     assert holder[DAILY_DATES][FAMILY_GAP]["skipped"] == [["2026-09-30", "2026-10-02"]]
 
 
 def test_the_first_dated_fold_dates_the_old_entries_consecutively():
     holder = {}
-    day_appended(holder, FAMILY_GAP, 4, 5, D)
+    day_appended(holder, FAMILY_GAP, 4, 5, D, added=True)
     assert dates_for(holder, FAMILY_GAP, 5, D) == _days(4, 3, 2, 1, 0)
 
 
@@ -94,3 +94,18 @@ def test_a_damaged_block_never_raises(block):
     holder = {DAILY_DATES: {FAMILY_GAP: block}}
     dates = dates_for(holder, FAMILY_GAP, 3, D)
     assert len(dates) == 3 and dates[-1] == D
+
+
+def test_a_fold_at_the_limit_adds_today_and_drops_the_oldest():
+    # One added and one trimmed leaves the length where it was (0.24.6).
+    holder = {}
+    set_dates(holder, FAMILY_GAP, _days(3, 2, 1))
+    day_appended(holder, FAMILY_GAP, 3, 3, D, added=True)
+    assert dates_for(holder, FAMILY_GAP, 3, D) == _days(2, 1, 0)
+
+
+def test_a_fold_that_adds_nothing_keeps_the_dates():
+    holder = {}
+    set_dates(holder, FAMILY_GAP, _days(3, 2, 1))
+    day_appended(holder, FAMILY_GAP, 3, 3, D, added=False)
+    assert dates_for(holder, FAMILY_GAP, 3, D) == _days(3, 2, 1)

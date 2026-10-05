@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_trend.py, Version: 0.24.2 (2026-10-03)
+# File: tests/test_battery_trend.py, Version: 0.24.6 (2026-10-05)
 
 """The battery trend by the week, and the knee (0.23.6).
 
@@ -261,3 +261,30 @@ async def test_the_diagnostics_carry_each_cells_weeks(hass: HomeAssistant):
     assert trend["reading"] == "accelerating"
     assert trend["knee_days_ago"] == 19
     assert [round(week, 1) for week in trend["weeks"]] == [74.6, 73.7, 71.2, 66.0, 59.6]
+
+
+async def test_the_diagnostics_download_carries_a_week_with_no_average(hass: HomeAssistant):
+    # A week the device was never heard has no average (0.24.4), and
+    # rounding it failed the whole download (0.24.6).
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    from custom_components.device_sentinel.daily_dates import FAMILY_BATTERY, set_dates
+
+    coord = await setup_coordinator(hass)
+    cell, _ = register_device(hass, "bw5", "Back Door")
+    await registry_settled(hass)
+    yesterday = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
+    record = _seed(coord, cell.id, [90, 89, 88, 87, 86, 85, 84, 75, 74, 73, 72, 71, 70, 69])
+    # A week measured, two weeks not heard, then the week to yesterday.
+    set_dates(
+        record,
+        FAMILY_BATTERY,
+        [yesterday - timedelta(days=27 - i) for i in range(7)]
+        + [yesterday - timedelta(days=6 - i) for i in range(7)],
+    )
+    diagnostics = await async_get_config_entry_diagnostics(hass, coord.entry)
+    weeks = diagnostics["devices"][cell.id]["battery_trend"]["weeks"]
+    assert None in weeks, "the unheard week was not carried as empty"
+    assert weeks == [87.0, None, None, 72.0]

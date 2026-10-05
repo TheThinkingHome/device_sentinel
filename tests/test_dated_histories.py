@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dated_histories.py, Version: 0.24.4 (2026-10-04)
+# File: tests/test_dated_histories.py, Version: 0.24.6 (2026-10-05)
 
 """The daily histories keep their calendar (0.24.4, issue #18).
 
@@ -210,3 +210,120 @@ async def test_the_retired_rhythm_shadow_file_is_removed(hass: HomeAssistant):
         handle.write("# Device Sentinel v0.23.18 Rhythm Shadow\n")
     await hass.async_add_executor_job(coord._write_reports)
     assert not os.path.exists(stale), "rhythm_shadow.md survived the report write"
+
+
+# ------------------------------------- a history at its History days limit
+#
+# At the limit a fold adds one entry and trims one, so the length does
+# not change. Until 0.24.6 the length was all the fold read: the newest
+# date stopped on the day the limit was reached and every entry slid a
+# day earlier each night, in the gap, battery and signal histories.
+
+LIMIT = 90  # the default History days
+
+
+def _yesterday_of_the_first_fold():
+    return dt_util.as_local(_BASE[0][1]).date() - timedelta(days=1)
+
+
+def _full(record, family, field, value, dated=True):
+    """Fill a history to the limit, its newest entry the day before the
+    test's first fold."""
+    record[field] = [value] * LIMIT
+    if dated:
+        end = _yesterday_of_the_first_fold()
+        set_dates(record, family, [end - timedelta(days=LIMIT - 1 - i) for i in range(LIMIT)])
+
+
+async def test_a_full_gap_history_dates_each_night_and_skips_a_silent_one(hass: HomeAssistant, freezer):
+    coord, record, _ = await _device(hass)
+    assert coord.retention_days == LIMIT
+    _midnight(freezer, 0)
+    _full(record, FAMILY_GAP, DEV_DAILY_MAX, 600.0)
+    record[DEV_TODAY_MAX] = 700.0
+    first = await _fold(hass, freezer, 1)
+    await _fold(hass, freezer, 2)  # a night with no learned gap
+    record[DEV_TODAY_MAX] = 800.0
+    third = await _fold(hass, freezer, 3)
+    assert len(record[DEV_DAILY_MAX]) == LIMIT
+    assert record[DEV_DAILY_MAX][-2:] == [700.0, 800.0]
+    dates = dates_for(record, FAMILY_GAP, LIMIT, third)
+    assert dates[-2:] == [first, third], "the newest dates stopped where the limit was reached"
+    assert len(set(dates)) == LIMIT
+
+
+async def test_a_full_gap_history_with_no_dates_dates_its_first_night(hass: HomeAssistant, freezer):
+    coord, record, _ = await _device(hass)
+    _midnight(freezer, 0)
+    _full(record, FAMILY_GAP, DEV_DAILY_MAX, 600.0, dated=False)
+    record[DEV_TODAY_MAX] = 700.0
+    first = await _fold(hass, freezer, 1)
+    record[DEV_TODAY_MAX] = 800.0
+    second = await _fold(hass, freezer, 2)
+    dates = dates_for(record, FAMILY_GAP, LIMIT, second)
+    assert dates[-2:] == [first, second], "the first dated night at the limit was dated a day early"
+    assert dates[0] == second - timedelta(days=LIMIT - 1)
+
+
+async def test_a_full_battery_history_dates_each_night(hass: HomeAssistant, freezer):
+    coord, record, _ = await _device(hass)
+    _midnight(freezer, 0)
+    _full(record, FAMILY_BATTERY, DEV_BATTERY_DAILY, 90)
+    days = []
+    for ahead, level in ((1, 89), (2, 88), (3, 87)):
+        freezer.move_to(_BASE[0][1] + timedelta(days=ahead) - timedelta(hours=1))
+        record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp()
+        record[DEV_BATTERY_VALUE] = level
+        days.append(await _fold(hass, freezer, ahead))
+    assert len(record[DEV_BATTERY_DAILY]) == LIMIT
+    assert record[DEV_BATTERY_DAILY][-3:] == [89, 88, 87]
+    assert dates_for(record, FAMILY_BATTERY, LIMIT, days[-1])[-3:] == days, (
+        "the newest dates stopped where the limit was reached"
+    )
+    assert battery_calendar(record)[-3:] == [89, 88, 87], "the device page drew empty days at the end"
+
+
+def _rows(coord, monkeypatch, nights):
+    """The signal roll, one row a night it is told the device spoke,
+    trimmed at the limit as the real roll trims, and saying whether it
+    wrote, as the real roll does since 0.24.6."""
+    plan = iter(nights)
+
+    def roll(bucket, fold_now, judged=True):
+        spoke, rail = next(plan)
+        if not spoke:
+            return False
+        for field, value in ((DEV_SIGNAL_DAILY_COUNT, 0 if rail else 5), (DEV_SIGNAL_DAILY_RAIL, 9 if rail else 0)):
+            bucket.setdefault(field, []).append(value)
+            del bucket[field][:-coord.retention_days]
+        return True
+
+    monkeypatch.setattr(coord, "_roll_one_scale", roll)
+
+
+async def test_a_full_signal_history_dates_each_night(hass: HomeAssistant, freezer, monkeypatch):
+    coord, record, _ = await _device(hass)
+    _midnight(freezer, 0)
+    _full(record, FAMILY_SIGNAL, DEV_SIGNAL_DAILY_COUNT, 5)
+    record[DEV_SIGNAL_DAILY_RAIL] = [0] * LIMIT
+    _rows(coord, monkeypatch, [(True, False)] * 3)
+    days = [await _fold(hass, freezer, ahead) for ahead in (1, 2, 3)]
+    assert len(record[DEV_SIGNAL_DAILY_COUNT]) == LIMIT
+    assert dates_for(record, FAMILY_SIGNAL, LIMIT, days[-1])[-3:] == days, (
+        "the newest dates stopped where the limit was reached"
+    )
+
+
+async def test_a_rail_broken_by_a_silent_night_at_the_limit_is_not_confirmed(
+    hass: HomeAssistant, freezer, monkeypatch
+):
+    coord, record, _ = await _device(hass)
+    _midnight(freezer, 0)
+    _full(record, FAMILY_SIGNAL, DEV_SIGNAL_DAILY_COUNT, 5)
+    record[DEV_SIGNAL_DAILY_RAIL] = [0] * LIMIT
+    # Rail, a silent night, rail, rail: three rail rows, not three days.
+    _rows(coord, monkeypatch, [(True, True), (False, False), (True, True), (True, True)])
+    for ahead in (1, 2, 3, 4):
+        await _fold(hass, freezer, ahead)
+    assert record[DEV_SIGNAL_DAILY_COUNT][-3:] == [0, 0, 0]
+    assert not coord.signal_railed(record), "a rail broken by a silent night was confirmed"
