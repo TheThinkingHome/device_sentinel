@@ -151,6 +151,8 @@ Device Sentinel is under active development. The three newest releases are below
 
 The full story: [From Blueprints to Integration: Why Device Sentinel Exists](https://xeazy.com/reliable-home-assistant-dead-sensor-detection/). 
 
+---
+
 **License:** GPL-3.0-or-later. Copyright (C) 2026 James Lander, The Thinking Home.
 
 ---
