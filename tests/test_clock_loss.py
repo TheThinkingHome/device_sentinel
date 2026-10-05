@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_clock_loss.py, Version: 0.24.2 (2026-10-03)
+# File: tests/test_clock_loss.py, Version: 0.24.7 (2026-10-05)
 
 """A lost clocks file, and a startup grace that holds everything.
 
@@ -65,6 +65,7 @@ from custom_components.device_sentinel.const import (
     REPAIR_CLOCKS_RESET,
     STARTUP_GRACE_SECONDS,
     STORAGE_CLOCKS_KEY,
+    STORAGE_KEY,
     SYS_CLOCK_RESET,
     SYS_DURATION,
     SYS_KIND,
@@ -707,3 +708,61 @@ async def test_a_young_device_keeps_no_clock(
     record[DEV_FIRST_OBSERVED] = (dt_util.utcnow() - timedelta(hours=10)).isoformat()
     coordinator = await _lose_clocks(hass, hass_storage, freezer, entry)
     assert coordinator.data[DATA_DEVICES][device.id][DEV_LAST_ACTIVITY] is None
+
+
+# --------------------------------------- a minute check running at the stop
+#
+# Home Assistant runs the minute check as a background task. Stopping
+# cancels its timer, not a check already running, and waiting for the
+# house to settle does not wait for it. Until 0.24.7 such a check
+# finished after the stop and wrote this session's storage again: over
+# the final save, or over a new session's files after a reload. The
+# two tests above that delete the clocks file failed about one run in
+# thirty for that reason.
+
+
+async def _hold_a_minute_check(hass, coordinator, monkeypatch):
+    import asyncio
+
+    reached, release = asyncio.Event(), asyncio.Event()
+
+    async def held() -> None:
+        reached.set()
+        await release.wait()
+
+    monkeypatch.setattr(coordinator, "_close_brief_if_skipped", held)
+    task = asyncio.get_running_loop().create_task(coordinator._on_render_tick(None))
+    await reached.wait()
+    return task, release
+
+
+@pytest.mark.parametrize("save", ["critical", "routine"])
+async def test_a_check_running_at_the_stop_writes_nothing_after_it(
+    hass: HomeAssistant, hass_storage, freezer, monkeypatch, save
+):
+    entry, _devices, _phone = await _house(hass, freezer)
+    coordinator = entry.runtime_data
+    task, release = await _hold_a_minute_check(hass, coordinator, monkeypatch)
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    del hass_storage[STORAGE_CLOCKS_KEY]
+    del hass_storage[STORAGE_KEY]
+    # What the check's own work does once it resumes: a judgment a
+    # reboot must not lose, or ordinary churn whose window has come.
+    coordinator._critical = save == "critical"
+    coordinator._dirty = True
+    coordinator._cold_dirty = True
+    coordinator._next_routine_save = 0.0
+    release.set()
+    await task
+    await hass.async_block_till_done()
+    assert STORAGE_CLOCKS_KEY not in hass_storage, "the clocks file was written after the stop"
+    assert STORAGE_KEY not in hass_storage, "the main file was written after the stop"
+
+
+async def test_the_stop_still_writes_its_own_final_save(hass: HomeAssistant, hass_storage, freezer):
+    entry, _devices, _phone = await _house(hass, freezer)
+    del hass_storage[STORAGE_CLOCKS_KEY]
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert STORAGE_CLOCKS_KEY in hass_storage, "the stop no longer saves"

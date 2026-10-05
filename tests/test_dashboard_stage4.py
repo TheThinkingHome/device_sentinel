@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_stage4.py, Version: 0.22.5 (2026-09-20)
+# File: tests/test_dashboard_stage4.py, Version: 0.24.7 (2026-10-05)
 
 """The Devices tab and each device's page.
 
@@ -137,7 +137,11 @@ async def test_a_devices_page_carries_everything_known(hass: HomeAssistant, hass
     assert identity["integration"] == "mqtt"
     assert ["zigbee", "0x00158d0001a2b3c4"] in identity["connections"]
     assert identity["event_count"] == 10270
-    assert identity["battery_type"] is None, "coming soon"
+    # What powers it (0.24.7): the shipped Battery Notes library knows
+    # this sensor with hardware version 2, and no owner entry exists.
+    assert identity["power"]["words"] == "CR1632"
+    assert identity["power"]["source"] == "library"
+    assert identity["power"]["report_url"] is None
 
     readings = {r["kind"]: r["entity_id"] for r in page["readings"]}
     assert readings["battery"] == battery.entity_id
