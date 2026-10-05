@@ -85,7 +85,7 @@ const rows = (root) => [...root.querySelectorAll("tr")].map((tr) => [...tr.child
     check("has a Battery steps row", !!row, rows(root).map((r) => r[0]));
     check("reading the word it was given", row && row[1] === "Coarse", row);
     const order = rows(root).map((r) => r[0]);
-    check("beneath Battery type", order.indexOf("Battery steps") === order.indexOf("Battery type") + 1, order);
+    check("beneath Power", order.indexOf("Battery steps") === order.indexOf("Power") + 1, order);
   }
   {
     const { root } = await open(`${PREFIX}/device/${DEVICE}`, {
