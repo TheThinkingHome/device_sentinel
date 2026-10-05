@@ -137,6 +137,16 @@ Device Sentinel's settings are designed to be set once and forgotten. For comple
 
 Device Sentinel was built with AI assistance under my direction. Every design decision is mine, and nothing reaches this repository without my review and a full test gate, with detection proven on real hardware. [AI_DISCLOSURE.md](AI_DISCLOSURE.md) explains exactly what the AI did and how every release is checked.
 
+## Latest Releases
+
+Device Sentinel is under active development. The three newest releases are below, and the [changelog](CHANGELOG.md) lists every release since the first.
+
+**[0.23.20](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.23.20), October 1, 2026.** An outage caused by a hub, broker or integration reaches you as one alert, and a recovery is announced only when a device actually reports again. A device that keeps dropping out becomes one problem instead of dozens. Batteries are read by the week, so a half-point wobble no longer reads as falling, and your brief and reports sit behind Home Assistant's sign-in.
+
+**[0.22.29](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.22.29), September 27, 2026.** Device Sentinel starts on any house, whatever your other integrations register, and the diagnostics download works again.
+
+**[0.22.28](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.22.28), September 23, 2026.** Device Sentinel gets its own dashboard in the Home Assistant sidebar: the daily brief, the problem list, battery and signal trends, and each device's own page. The daily brief recommends changes to your setup, such as a notification target that no longer exists. Battery, signal and rhythm graphs share one timeline, with outages shaded behind them.
+
 ## From The Thinking Home
 
 The full story: [From Blueprints to Integration: Why Device Sentinel Exists](https://xeazy.com/reliable-home-assistant-dead-sensor-detection/). 
