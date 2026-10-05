@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.24.1 (2026-10-03)
+# File: store.py, Version: 0.24.7 (2026-10-05)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -580,7 +580,7 @@ class StorageMixin:
             "clocks": clocks,
         }
 
-    async def _save_main(self) -> None:
+    async def _save_main(self, *, final: bool = False) -> None:
         """Every main-file write passes through this one seam.
 
         The boundary on the way out (ruling #370): the whole
@@ -597,7 +597,15 @@ class StorageMixin:
         load that needed repair or restore, because the live file on
         disk at that moment is the damaged original or the restored
         copy, not a file this session wrote clean.
+
+        Once the session has stopped, only the stop's own final save
+        writes (0.24.7): a minute check already running when the stop
+        began finishes afterwards, and its write would put this
+        session's older data back over the final save, or over a newer
+        session's files after a reload.
         """
+        if self._stopped and not final:  # type: ignore[attr-defined]
+            return
         faults = check_records(self.data.get(DATA_DEVICES))
         faults += [
             (table, str(index), "damaged row")
@@ -620,25 +628,38 @@ class StorageMixin:
         await self._store.async_save(self._data_to_save())
         self._rotation_armed = clean
 
-    async def _save_now(self) -> None:
+    async def _save_now(self, *, final: bool = False) -> None:
         """The single immediate-save path.
 
         Every direct save runs through here so the bookkeeping can
         never be missed at one of the scattered sites: both tier
         flags clear, and the pending flag clears because the store
         cancels its pending delayed write when a direct save lands.
+        After the stop, only its final save writes (0.24.7).
+
+        Saves take turns (0.24.7). A minute check can be part way
+        through a save when the stop begins; the stop's final save
+        waits for it to finish, and a save that was waiting behind it
+        finds the stop and writes nothing, so the final save is always
+        the last write of the session.
         """
-        # Order matters. The main file goes first so that if the pair
-        # is ever torn, the survivor is the one holding everything;
-        # the hot file's stamp then tells the next load that it is the
-        # older of the two and must not be merged over the newer.
-        await self._save_main()
-        await self._clock_store.async_save(self._clocks_to_save())
-        self._dirty = False
-        self._critical = False
-        self._next_routine_save = (
-            self.hass.loop.time() + self.coalesce_seconds
-        )
+        if self._stopped and not final:  # type: ignore[attr-defined]
+            return
+        async with self._save_lock:  # type: ignore[attr-defined]
+            if self._stopped and not final:  # type: ignore[attr-defined]
+                return
+            # Order matters. The main file goes first so that if the
+            # pair is ever torn, the survivor is the one holding
+            # everything; the hot file's stamp then tells the next
+            # load that it is the older of the two and must not be
+            # merged over the newer.
+            await self._save_main(final=final)
+            await self._clock_store.async_save(self._clocks_to_save())
+            self._dirty = False
+            self._critical = False
+            self._next_routine_save = (
+                self.hass.loop.time() + self.coalesce_seconds
+            )
 
     @property
     def coalesce_seconds(self) -> float:

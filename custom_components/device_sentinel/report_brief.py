@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.24.5 (2026-10-04)
+# File: report_brief.py, Version: 0.24.7 (2026-10-05)
 
 """The daily brief: the one report written for a person.
 
@@ -288,8 +288,17 @@ class BriefMixin:
                 if float(level).is_integer()
                 else f"{level}%"
             )
-            return f"battery {shown}"
-        return "battery low"
+            return f"battery {shown}{self._brief_power(device_id)}"
+        return f"battery low{self._brief_power(device_id)}"
+
+    def _brief_power(self, device_id: str) -> str:
+        """", 2× CR2032" after a battery cell, or nothing (0.24.7).
+
+        The owner can type their own words, so they pass the report
+        cell's escape like a device name does.
+        """
+        words = self.power_text(device_id)
+        return f", {self._report_cell(words)}" if words else ""
 
     def _brief_phrase(self, row: dict[str, Any]) -> str:
         """Return one incident as a sentence a person would write.
@@ -363,8 +372,8 @@ class BriefMixin:
         """
         for row in self.battery_falling_list:
             if row.get("device_id") == device_id:
-                return f"battery empty in {row['left']}"
-        return "battery running down"
+                return f"battery empty in {row['left']}{self._brief_power(device_id)}"
+        return f"battery running down{self._brief_power(device_id)}"
 
     def _brief_now_rows(
         self,

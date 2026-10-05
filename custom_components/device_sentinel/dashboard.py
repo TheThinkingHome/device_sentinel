@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.24.5 (2026-10-04)
+# File: dashboard.py, Version: 0.24.7 (2026-10-05)
 
 """What the dashboard reads from the coordinator.
 
@@ -773,9 +773,8 @@ class DeviceViewMixin:
         Read live from the registry where the registry is the truth
         (name, manufacturer, model, model id, hardware version, area,
         connections), because nothing of it is stored. The model id and
-        hardware version are the fields a battery library matches on
-        beside manufacturer and model. No library is built yet, so the
-        page's battery type stays empty until one is.
+        hardware version are the fields the battery library matches on
+        beside manufacturer and model (0.24.7, power_source.py).
         """
         records = self.data.get(DATA_DEVICES) or {}
         record = records.get(device_id)
@@ -872,8 +871,9 @@ class DeviceViewMixin:
                 # with their meanings, a switched-off Last Seen, and
                 # each kind of mute with its source.
                 "actions": self.page_actions(device_id),
-                # Filled by the battery library lookup, when it arrives.
-                "battery_type": None,
+                # What powers it (0.24.7): the owner's entry, else the
+                # shipped Battery Notes library, else "Not known".
+                "power": self.power_view(device_id),
                 # How the cell reports, in the words Battery Trends
                 # uses (0.23.1); empty for a device with no battery.
                 "battery_steps": (

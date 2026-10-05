@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.24.6 (2026-10-05)
+# File: coordinator.py, Version: 0.24.7 (2026-10-05)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -49,6 +49,7 @@ Core rules implemented here, all ruled in the project document:
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import math
 import threading
@@ -121,6 +122,7 @@ from .daily_dates import (
     FAMILY_SIGNAL_ALT,
 )
 from .device_actions import DeviceActionsMixin
+from .power_source import PowerMixin
 from .const import (
     CLIP_MAX_DAYS,
     DEV_LOGNORMAL_DAYS,
@@ -290,6 +292,7 @@ from .store import StorageMixin, _watched_seconds
 
 class DeviceSentinelCoordinator(
     DeviceActionsMixin,
+    PowerMixin,
     EventMixin,
     ReportWritingMixin,
     NarrativeMixin,
@@ -333,6 +336,15 @@ class DeviceSentinelCoordinator(
         self._clock_store: Store[dict[str, Any]] = Store(
             hass, STORAGE_CLOCKS_VERSION, STORAGE_CLOCKS_KEY
         )
+        # What powers each device (0.24.7): the owner's entries, in a
+        # store of their own, and the shipped Battery Notes library.
+        self._power_entries: dict[str, dict[str, Any]] = {}
+        # Set as the stop begins (0.24.7). A minute check is a
+        # background task that cancelling its timer does not stop; one
+        # already running finishes after the stop, and must not write.
+        self._stopped = False
+        # One save at a time, so the stop's final save is the last.
+        self._save_lock = asyncio.Lock()
         self.data: dict[str, Any] = {}
         self.storage_healthy: bool = False
         self._dirty: bool = False
@@ -779,6 +791,10 @@ class DeviceSentinelCoordinator(
         copy beside it and starts from that (ruling #345); it stops
         only where there is no copy, or the copy will not load either.
         """
+        # What powers each device (0.24.7), read first so the first
+        # reports of this start already carry it. Neither file can stop
+        # a start: each says why in the log and is treated as empty.
+        await self.async_load_power()
         try:
             loaded = await self._store.async_load()
         except (HomeAssistantError, ValueError) as err:
@@ -1787,6 +1803,9 @@ class DeviceSentinelCoordinator(
 
     async def async_shutdown(self) -> None:
         """Stop listening and flush storage."""
+        # First, so a minute check still running writes nothing from
+        # here on; the final save below is the session's last (0.24.7).
+        self._stopped = True
         if self._broker_reader is not None:
             self._broker_reader.async_stop()
             self._broker_reader = None
@@ -1840,7 +1859,7 @@ class DeviceSentinelCoordinator(
         # the session reads anything, and the session runs on the
         # restored copy, so its save is the right one; nothing set the
         # flag any longer.
-        await self._save_now()
+        await self._save_now(final=True)
 
     # ---------------------------------------------------- registry view
 
@@ -2471,6 +2490,8 @@ class DeviceSentinelCoordinator(
         """
         if event.data.get("action") == "remove":
             self._log_removed_muting(event.data.get("device_id"))
+            # Its owner battery entry goes with it (0.24.7).
+            self._power_forget(event.data.get("device_id"))
         if self._registry_debouncer is None:
             self._rebuild_and_notify()
             return
@@ -4058,12 +4079,17 @@ class DeviceSentinelCoordinator(
         pair. Anything judgment-bearing never reaches here: it is critical and
         wrote both files within the tick that detected it (ruling #100).
         """
+        if self._stopped:
+            return
         now_mono = self.hass.loop.time()
         if now_mono >= self._next_routine_save:
             self._next_routine_save = now_mono + self.coalesce_seconds
-            if self._cold_dirty:
-                await self._store.async_save(self._data_to_save())
-            await self._clock_store.async_save(self._clocks_to_save())
+            async with self._save_lock:
+                if self._stopped:
+                    return
+                if self._cold_dirty:
+                    await self._store.async_save(self._data_to_save())
+                await self._clock_store.async_save(self._clocks_to_save())
         self._dirty = False
 
     async def _on_render_tick(self, _now: Any) -> None:

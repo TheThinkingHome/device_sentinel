@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.24.5 (2026-10-04)
+# File: dashboard_api.py, Version: 0.24.7 (2026-10-05)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -94,6 +94,7 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_device_label)
     websocket_api.async_register_command(hass, ws_device_last_seen)
     websocket_api.async_register_command(hass, ws_device_mute)
+    websocket_api.async_register_command(hass, ws_device_power)
     websocket_api.async_register_command(hass, ws_brief)
     websocket_api.async_register_command(hass, ws_battery_trends)
     websocket_api.async_register_command(hass, ws_signal_trends)
@@ -265,6 +266,12 @@ def ws_problem_list(
                 mute for family, mute in (("down", "freeze"), ("battery", "battery"), ("signal", "signal"))
                 if any(TODO_KIND_FAMILIES.get(kind) == family for kind in kinds)
             ],
+            # What powers it, beside a battery problem (0.24.7).
+            "power": (
+                coordinator.power_text(item[TODO_DEVICE_ID])
+                if any(TODO_KIND_FAMILIES.get(kind) == "battery" for kind in kinds)
+                else None
+            ),
         })
     connection.send_result(msg["id"], {"rows": rows})
 
@@ -489,6 +496,29 @@ def ws_device_rename(
     _page_act(
         hass, connection, msg,
         lambda c: c.page_rename(msg["device_id"], msg.get("name"), msg["confirm"]),
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_power",
+        vol.Required("device_id"): str,
+        vol.Optional("choice"): vol.Any(str, None),
+        vol.Optional("quantity"): vol.Any(int, None),
+        vol.Optional("other"): vol.Any(str, None),
+    }
+)
+@callback
+def ws_device_power(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Set what powers a device, or clear the owner's entry (0.24.7)."""
+    _page_act(
+        hass, connection, msg,
+        lambda c: c.page_set_power(
+            msg["device_id"], msg.get("choice"), msg.get("quantity"), msg.get("other")
+        ),
     )
 
 

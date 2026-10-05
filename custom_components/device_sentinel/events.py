@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.23.19 (2026-09-30)
+# File: events.py, Version: 0.24.7 (2026-10-05)
 
 """What Device Sentinel says on the Home Assistant bus.
 
@@ -174,6 +174,9 @@ class EventMixin:
             kind.endswith("battery") for kind in ordered
         ):
             payload["battery_level"] = level
+        if battery_type is None and any(kind.endswith("battery") for kind in ordered):
+            # What powers it (0.24.7), beside a battery fault only.
+            battery_type = self.power_text(device_id)  # type: ignore[attr-defined]
         if battery_type is not None:
             payload["battery_type"] = battery_type
         if signal_value is not None:
