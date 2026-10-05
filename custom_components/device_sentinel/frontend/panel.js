@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.24.5 (2026-10-04)
+// File: panel.js, Version: 0.24.7 (2026-10-05)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -360,6 +360,7 @@ const STYLE = `
     color: var(--primary-color); display: inline-flex; align-items: center; justify-content: center;
     cursor: pointer; padding: 0; vertical-align: middle; }
   .actrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .powericon { display: inline-flex; align-items: center; width: 20px; height: 20px; }
   .actcol { display: flex; flex-direction: column; gap: 6px; padding: 2px 0; }
   .labelchip { display: inline-flex; align-items: center; gap: 4px; padding-left: 10px; border-radius: 13px;
     border: 1px solid var(--divider-color); font-size: 13px; }
@@ -944,7 +945,7 @@ class DeviceSentinelPanel extends HTMLElement {
           ? this._link(row.integration, this._integrationPath(row.integration))
           : ""),
         // The mute that matches each problem, beside it (0.24.5).
-        el("td", {}, el("div", { class: "actrow" }, el("span", {}, row.problem),
+        el("td", {}, el("div", { class: "actrow" }, el("span", {}, row.power ? `${row.problem}, ${row.power}` : row.problem),
           ...(row.mutes || []).map((kind) => el("button", { class: "chip", type: "button",
             onclick: () => this._muteFromList(row.device_id, kind) }, `Mute ${kind}`)))),
         el("td", {}, row.since ? moment(row.since) : ""),
@@ -1816,6 +1817,111 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("div", { class: "actcol" }, ...parts);
   }
 
+  // What powers the device (0.24.7). The library's icon is Battery
+  // Notes' own, redrawn small (MIT, credited in the integration's
+  // data folder), and opens its repository; the owner's is Device
+  // Sentinel's shield. Each has a version for the dark theme.
+  _powerIcon(power) {
+    const dark = !!(this._hass && this._hass.themes && this._hass.themes.darkMode);
+    const icon = svg("svg", { width: 20, height: 20, viewBox: "0 0 24 24", "aria-hidden": "true" });
+    if (power.source === "library") {
+      const c = dark
+        ? { body: "#64B5F6", edge: "#90CAF9", note: "#FFF59D", ink: "#1C1C1C" }
+        : { body: "#4CA8F2", edge: "#1E88E5", note: "#FFF176", ink: "#212121" };
+      const note = svg("g", { transform: "rotate(-11 12 9.5)" });
+      note.append(svg("rect", { x: 6.6, y: 5.9, width: 10.8, height: 7.2, rx: 0.6, fill: c.note }),
+        svg("path", { d: "M8.6 8.6 H15.4 M8.6 10.6 H14.2", stroke: c.ink, "stroke-width": 1.15, "stroke-linecap": "round" }));
+      icon.append(
+        svg("rect", { x: 8.5, y: 0.75, width: 7, height: 3, rx: 1, fill: c.body, stroke: c.edge, "stroke-width": 0.75 }),
+        svg("rect", { x: 4.75, y: 2.75, width: 14.5, height: 20.5, rx: 2.5, fill: c.body, stroke: c.edge, "stroke-width": 0.75 }),
+        note);
+      const title = "From the Battery Notes library";
+      return el("a", { class: "powericon", href: power.library_home, target: "_blank", rel: "noopener noreferrer",
+        title, "aria-label": `${title}, opens its repository` }, icon);
+    }
+    const c = dark ? { shield: "#B0C4DE", trace: "#1F3A4D" } : { shield: "#224A5E", trace: "#FFFFFF" };
+    icon.append(
+      svg("path", { d: "M12 2 L20 5 V11 C20 16.5 16.6 20.7 12 22 C7.4 20.7 4 16.5 4 11 V5 Z", fill: c.shield }),
+      svg("path", { d: "M6.5 12.5 H9.4 L10.9 9.2 L13.1 15.6 L14.6 12.5 H17.5", fill: "none", stroke: c.trace,
+        "stroke-width": 1.6, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+    return el("span", { class: "powericon", title: "Entered on this page", role: "img", "aria-label": "Entered on this page" }, icon);
+  }
+
+  _powerCell(who) {
+    const power = who.power || { words: "Not known", source: null };
+    const acts = who.actions;
+    const e = this._edit(who.device_id);
+    const shown = el("div", { class: "actrow" }, el("span", {}, power.words),
+      power.source ? this._powerIcon(power) : null,
+      acts ? this._editMark("Change what powers this device", () => {
+        const entry = power.entry;
+        const pick = entry ? (power.battery_choices.includes(entry.type) || entry.type === power.mains || entry.type === power.usb
+          ? entry.type : power.other) : "";
+        this._devEdit = { device: who.device_id, row: "power", choice: pick,
+          quantity: (entry && entry.quantity) || 1, other: entry && pick === power.other ? entry.type : "" };
+        this._paintDevicePage();
+      }) : null);
+    if (!acts || !e || e.row !== "power") {
+      return el("div", { class: "actcol" }, shown, this._powerReport(who, e), this._actNote("power"));
+    }
+    const [qmin, qmax] = power.quantity || [1, 8];
+    const isBattery = (choice) => choice && choice !== power.mains && choice !== power.usb;
+    const select = el("select", { class: "actinput", "aria-label": "What powers this device" },
+      el("option", { value: "" }, "Choose…"),
+      ...power.choices.map((choice) => el("option", { value: choice, ...(e.choice === choice ? { selected: "" } : {}) }, choice)));
+    const quantity = el("select", { class: "actinput", "aria-label": "How many" },
+      ...Array.from({ length: qmax - qmin + 1 }, (_, i) => qmin + i).map((n) =>
+        el("option", { value: String(n), ...(Number(e.quantity) === n ? { selected: "" } : {}) }, `× ${n}`)));
+    const other = el("input", { class: "actinput", type: "text", maxlength: "40", "aria-label": "Battery or power source",
+      placeholder: "Battery or power source", value: e.other || "" });
+    const repaint = () => {
+      quantity.style.display = isBattery(select.value) ? "" : "none";
+      other.style.display = select.value === power.other ? "" : "none";
+    };
+    select.addEventListener("change", () => { e.choice = select.value; repaint(); });
+    quantity.addEventListener("change", () => { e.quantity = Number(quantity.value); });
+    other.addEventListener("input", () => { e.other = other.value; });
+    repaint();
+    const save = () => {
+      if (!select.value) return;
+      const message = { type: "device_sentinel/device_power", device_id: who.device_id, choice: select.value };
+      if (isBattery(select.value)) message.quantity = Number(quantity.value);
+      if (select.value === power.other) message.other = other.value;
+      this._powerAct(message);
+    };
+    const parts = [el("div", { class: "actrow" }, select, quantity, other,
+      el("button", { class: "chip", type: "button", onclick: save }, "Save"),
+      el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel"))];
+    if (power.entry) {
+      parts.push(el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+        onclick: () => this._powerAct({ type: "device_sentinel/device_power", device_id: who.device_id, choice: null }) },
+        power.library ? `Use the library (${power.library})` : "Use the library")));
+    }
+    parts.push(this._actNote("power"));
+    return el("div", { class: "actcol" }, ...parts);
+  }
+
+  // After a save, the page offers to send the entry to Battery Notes'
+  // library: its New Device form, filled in, in a new tab. The owner
+  // presses Submit there; the library's author reviews every entry.
+  _powerReport(who, e) {
+    const power = who.power || {};
+    if (!power.report_url || !e || !e.saved) return null;
+    return el("div", { class: "actrow" },
+      el("span", { class: "muted", style: "font-size:13px" }, "Saved. Battery Notes' library does not list this yet."),
+      el("a", { class: "chip", href: power.report_url, target: "_blank", rel: "noopener noreferrer",
+        style: "display:inline-flex;align-items:center;text-decoration:none" }, "Send to Battery Notes"));
+  }
+
+  async _powerAct(message) {
+    await this._deviceAct(message, "power");
+    const fresh = this._page && this._page.identity;
+    if (!this._devEdit && fresh && fresh.device_id === message.device_id && fresh.power && fresh.power.report_url) {
+      this._devEdit = { device: message.device_id, row: "power-saved", saved: true };
+      this._paintDevicePage();
+    }
+  }
+
   _areaCell(who) {
     const acts = who.actions;
     const e = this._edit(who.device_id);
@@ -1969,7 +2075,8 @@ class DeviceSentinelPanel extends HTMLElement {
       ["Model", who.model || "not reported"],
       ["Model ID", who.model_id || "not reported"],
       ["Hardware version", who.hw_version || "none reported"],
-      ["Battery type", who.battery_type || "coming soon"],
+      // What powers it (0.24.7): words, where they came from, pencil.
+      ["Power", this._powerCell(who)],
       ...(who.battery_steps ? [["Battery steps", who.battery_steps]] : []),
       ["Integration", who.integration_name || who.integration || ""],
       // How it connects, from its integration's declaration (0.23.9).
