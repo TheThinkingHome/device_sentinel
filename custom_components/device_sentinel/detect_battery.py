@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.24.4 (2026-10-04)
+# File: detect_battery.py, Version: 0.24.6 (2026-10-05)
 
 """Battery: the level threshold and what is tracked.
 
@@ -225,16 +225,22 @@ class BatteryMixin:
                 return
         before = len(record.get(DEV_BATTERY_DAILY) or [])
         replaced_before = record.get(DEV_BATTERY_REPLACED_AT)
+        added = False
         try:
             self._roll_battery_level(record, device_id, level)
+            # Every way through the roll adds the day's level (0.24.6);
+            # at the History days limit it also trims one, so the length
+            # alone cannot say a day was added.
+            added = True
         finally:
             after = len(record.get(DEV_BATTERY_DAILY) or [])
             if record.get(DEV_BATTERY_REPLACED_AT) != replaced_before:
                 # A new cell: its history restarted at the one carried
                 # entry, whose date the split already wrote.
                 before = 1
-            if day is not None and after != before:
-                day_appended(record, FAMILY_BATTERY, before, after, day)
+            added = added or after > before
+            if day is not None and (added or after != before):
+                day_appended(record, FAMILY_BATTERY, before, after, day, added=added)
 
     def _roll_battery_level(self, record: dict[str, Any], device_id: str, level: Any) -> None:
         """The battery roll proper, once the day has a level to record."""

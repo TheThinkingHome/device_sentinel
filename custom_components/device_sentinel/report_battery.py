@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.24.4 (2026-10-04)
+# File: report_battery.py, Version: 0.24.6 (2026-10-05)
 
 """Which cells are going to be low: the rows, rates and forecast.
 
@@ -413,7 +413,9 @@ class BatteryReportMixin:
         )
         fit = trend["fit"] or {}
         return {
-            "weeks": [round(week, 2) for week in trend["weeks"]],
+            # A week the device was never heard has no average (0.24.4);
+            # rounding it failed the whole download (0.24.6).
+            "weeks": [round(week, 2) if week is not None else None for week in trend["weeks"]],
             "reading": trend["reading"],
             "pace_per_week": round(trend["pace"], 2) if trend["pace"] else None,
             "knee_days_ago": fit.get("knee_ago"),

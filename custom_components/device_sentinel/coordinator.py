@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.24.5 (2026-10-04)
+# File: coordinator.py, Version: 0.24.6 (2026-10-05)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -3859,7 +3859,9 @@ class DeviceSentinelCoordinator(
                 before = len(record[DEV_DAILY_MAX])
                 record[DEV_DAILY_MAX].append(record[DEV_TODAY_MAX])
                 del record[DEV_DAILY_MAX][:-self.retention_days]
-                day_appended(record, FAMILY_GAP, before, len(record[DEV_DAILY_MAX]), day)
+                day_appended(
+                    record, FAMILY_GAP, before, len(record[DEV_DAILY_MAX]), day, added=True
+                )
                 record[DEV_TODAY_MAX] = None
                 pushed += 1
                 # A day since the last reset, for the Log-Normal

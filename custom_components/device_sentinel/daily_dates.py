@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/daily_dates.py, Version: 0.24.4 (2026-10-04)
+# File: custom_components/device_sentinel/daily_dates.py, Version: 0.24.6 (2026-10-05)
 
 """The date of every entry in a device's daily histories (0.24.4, issue #18).
 
@@ -165,12 +165,19 @@ def day_appended(
     length_before: int,
     length_after: int,
     day: date,
+    added: bool,
 ) -> None:
     """Record the fold of `day` on a history that went from one length to
     another: the new entry, if there is one, takes the day's date, and
-    any trim from the front drops the oldest dates with it."""
+    any trim from the front drops the oldest dates with it.
+
+    The caller says whether the fold added an entry (0.24.6). A history
+    at its History days limit adds one and trims one, so its length does
+    not change, and a length read alone took that night for one that
+    added nothing: the newest date stopped moving and every entry slid a
+    day earlier each night."""
     dates = dates_for(holder, family, length_before, day - timedelta(days=1))
-    if length_after > length_before:
+    if added:
         if dates and dates[-1] >= day:
             # Folded twice for one day, which the fold guards against:
             # the newer entry keeps the day and the older steps back.

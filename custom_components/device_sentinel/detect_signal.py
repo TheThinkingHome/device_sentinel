@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.24.4 (2026-10-04)
+# File: detect_signal.py, Version: 0.24.6 (2026-10-05)
 
 """Signal: the day's statistics, the bad-day judgment, and the rails.
 
@@ -322,14 +322,17 @@ class SignalMixin:
             if bucket is None:
                 continue
             before = len(bucket.get(DEV_SIGNAL_DAILY_COUNT) or [])
-            self._roll_one_scale(bucket, fold_now, judged=judged)
+            wrote = self._roll_one_scale(bucket, fold_now, judged=judged)
             after = len(bucket.get(DEV_SIGNAL_DAILY_COUNT) or [])
-            if day is not None and after != before:
-                day_appended(record, family, before, after, day)
+            added = bool(wrote) or after > before
+            # The roll says whether it wrote the day's row (0.24.6): at
+            # the History days limit a row added is a row trimmed.
+            if day is not None and (added or after != before):
+                day_appended(record, family, before, after, day, added=added)
 
     def _roll_one_scale(
         self, record: dict[str, Any], fold_now: float, judged: bool = True
-    ) -> None:
+    ) -> bool:
         """Close the day's signal distribution into the daily series.
 
         Mean and standard deviation are what the Bayesian successor to
@@ -342,6 +345,9 @@ class SignalMixin:
         population form, and a one-reading day records zero deviation
         rather than none, because one reading genuinely varied by
         nothing.
+
+        Returns whether a row was written (0.24.6), so the fold can date
+        it even when the History days limit trims a row as it adds one.
 
         A row is written only for a day the device actually spoke
         (ruling #305). The Welford count alone cannot decide that:
@@ -375,7 +381,9 @@ class SignalMixin:
             record[DEV_SIGNAL_READS] = 0
         reads = int(record.get(DEV_SIGNAL_READS) or 0)
         rails = int(record.get(DEV_SIGNAL_RAIL_COUNT) or 0)
+        wrote = False
         if count > 0 and reads > 0:
+            wrote = True
             variance = max(0.0, m2 / count)
             record.setdefault(DEV_SIGNAL_DAILY_MEAN, []).append(
                 round(mean, 2)
@@ -439,6 +447,7 @@ class SignalMixin:
             for field in trimmed:
                 del record[field][:-self.retention_days]
         elif rails > 0:
+            wrote = True
             # A rail-only day: the device spoke, and everything it
             # said was the stuck value the estimators refuse. There
             # is no statistic to record and there is evidence to
@@ -474,6 +483,7 @@ class SignalMixin:
         _reset_signal_day(record)
         record[DEV_SIGNAL_RAIL_COUNT] = 0
         record[DEV_SIGNAL_TODAY_MAX] = None
+        return wrote
 
     def _feed_signal(
         self, record: dict[str, Any], value: float, now: float
