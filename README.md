@@ -152,3 +152,7 @@ Device Sentinel is under active development. The three newest releases are below
 The full story: [From Blueprints to Integration: Why Device Sentinel Exists](https://xeazy.com/reliable-home-assistant-dead-sensor-detection/). 
 
 **License:** GPL-3.0-or-later. Copyright (C) 2026 James Lander, The Thinking Home.
+
+---
+
+Battery types come from the device library of [Battery Notes](https://github.com/andrew-codechimp/HA-Battery-Notes) by Andrew Jackson, shipped with Device Sentinel under its MIT licence. The notice is in `custom_components/device_sentinel/data/BATTERY_LIBRARY_LICENSE.md`.
