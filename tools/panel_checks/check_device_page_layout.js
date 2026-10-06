@@ -89,7 +89,12 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
         page.identity.actions = { area_id: null, name_by_user: null, integration_name: null, labels: [], last_seen_off: false,
           mutes: { everything: { on: false }, freeze: { on: false }, battery: { on: false }, signal: { on: false } } };
         page.readings = JSON.parse(JSON.stringify(READINGS));
-        page.rhythm = { ...page.rhythm, ...JSON.parse(JSON.stringify(BOTH)) };
+        // The History chart's own series sit beside the rule figures in
+        // page.rhythm, under the same names the figures once used: the
+        // real page carries them, and they blanked both charts (0.24.9).
+        const { gaps, set_aside, ...figures } = JSON.parse(JSON.stringify(BOTH));
+        page.rhythm = { ...page.rhythm, gaps, set_aside, rules: figures,
+          trimmed: Array(87).fill(null), lognormal: Array(87).fill(null), daily: Array(87).fill(3600) };
         page.status.rule = "40-Day Log-Normal Percentile";
         page.status.window = 2 * HOUR;
         tweak(page);
@@ -159,11 +164,12 @@ const rowCell = (root, label) => {
   check("Fourteen and forty bars", charts.length === 2 && [...charts[0].children].filter((d) => !d.classList.contains("ruleline")).length === 14
     && [...charts[1].children].filter((d) => !d.classList.contains("ruleline")).length === 40);
   check("The set-aside days: hatched, then grey", charts[0].querySelectorAll(".aside").length === 1 && charts[1].querySelectorAll(".grey").length === 2);
+  check("The bars are drawn, not blank", [...root.querySelectorAll(".rulechart > div:not(.ruleline)")].some((d) => parseFloat(d.style.height) > 5));
   check("Each chart's red line carries its figure", [...root.querySelectorAll(".ruleline span")].map((s) => s.textContent).join("|") === "72m|75m",
     [...root.querySelectorAll(".ruleline span")].map((s) => s.textContent));
   check("The paragraph on why there are two", /uses whichever of the two is shorter/.test(root.textContent));
 
-  ({ root } = await open({ tweak: (p) => { Object.assign(p.rhythm, { lognormal: null, lognormal_days: null, lognormal_gaps: [], lognormal_set_aside: [], in_use: "trimmed", trimmed_days: 9 }); p.rhythm.gaps = p.rhythm.gaps.slice(-9); p.rhythm.set_aside = []; } }));
+  ({ root } = await open({ tweak: (p) => { Object.assign(p.rhythm.rules, { lognormal: null, lognormal_days: null, lognormal_gaps: [], lognormal_set_aside: [], in_use: "trimmed", trimmed_days: 9 }); p.rhythm.gaps = p.rhythm.gaps.slice(-9); p.rhythm.set_aside = []; } }));
   check("A young device: one chart with its own days, no paragraph",
     [...root.querySelectorAll(".ruletitle")].map((t) => t.textContent).join("|") === "9-Day Trimmed Maximumin use" && !/whichever of the two/.test(root.textContent),
     [...root.querySelectorAll(".ruletitle")].map((t) => t.textContent));
