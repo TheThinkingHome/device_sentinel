@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.24.8 (2026-10-05)
+// File: panel.js, Version: 0.24.9 (2026-10-06)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -130,7 +130,10 @@ function svg(tag, attrs = {}, ...children) {
 
 function ago(iso, at) {
   if (!iso) return "never";
-  return `${span((at - new Date(iso).getTime()) / 1000)} ago`;
+  const when = new Date(iso).getTime();
+  // A time that cannot be read says so, never "NaN" (0.24.9).
+  if (!Number.isFinite(when)) return "at an unknown time";
+  return `${span((at - when) / 1000)} ago`;
 }
 
 const STANDING = {
@@ -422,6 +425,21 @@ const STYLE = `
   .bank .band > div:last-child { background: var(--primary-color); border-radius: 3px 3px 0 0; }
   .bank .count { text-align: center; font-size: 11px; color: var(--secondary-text-color); padding-bottom: 2px; }
   .gaps > div.aside { background: repeating-linear-gradient(45deg, var(--divider-color), var(--divider-color) 3px, transparent 3px, transparent 6px); }
+  /* The device page's groups and rule charts (0.24.9). */
+  .gaps > div.grey { background: var(--divider-color); }
+  .rulechart { position: relative; height: 110px; }
+  .rulechart > .ruleline { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid #E24B4A; border-radius: 0; flex: none; background: none; }
+  .ruleline > span { position: absolute; right: 0; top: -18px; font-size: 11px; color: #E24B4A; }
+  .rulebox { margin-bottom: 14px; }
+  .ruletitle { font-weight: 500; margin-bottom: 2px; }
+  .inuse { font-size: 11px; padding: 1px 8px; margin-left: 8px; border-radius: 10px; background: var(--success-color, #43a047); color: #fff; }
+  .kv tr.kvgroup td { padding-top: 14px; font-weight: 500; color: var(--primary-text-color); border-bottom: 1px solid var(--divider-color); }
+  .kv tr.kvsub td { background: var(--secondary-background-color, rgba(127,127,127,.06)); }
+  .kv tr.kvsub td:first-child { padding-left: 10px; }
+  .entitylink { font-family: var(--code-font-family, monospace); font-size: 12px; color: var(--primary-color); text-decoration: none; word-break: break-all; }
+  .hbtag { font-size: 11px; padding: 1px 8px; border-radius: 10px; background: var(--secondary-background-color, rgba(127,127,127,.12)); color: var(--secondary-text-color); }
+  .readingvalue { font-weight: 500; }
+  .prevnext { font-size: 14px; }
   .chart { border: 1px solid var(--divider-color); border-radius: 10px; padding: 14px 16px; display: flex;
     flex-direction: column; gap: 8px; }
   .chart svg { width: 100%; height: auto; }
@@ -476,7 +494,7 @@ class DeviceSentinelPanel extends HTMLElement {
     if (this._menu) this._menu.hass = hass;
     // Entity states arrive with every hass update, so the readings on
     // a device page redraw the moment one changes.
-    if (this._readingsBox && this._view && this._view.kind === "device") this._paintReadings();
+    if (this._readingCells && this._view && this._view.kind === "device") this._paintReadings();
     if (!this._started) {
       this._started = true;
       this._build();
@@ -908,6 +926,8 @@ class DeviceSentinelPanel extends HTMLElement {
       }[sort.key];
       rows = [...rows].sort((a, b) => (value(a) < value(b) ? -1 : value(a) > value(b) ? 1 : 0) * sort.dir);
     }
+    // The order a device page's Previous and Next follow (0.24.9).
+    this._lists = { ...(this._lists || {}), [TAB_SLUG["Problem List"]]: [...new Set(rows.map((row) => row.device_id))] };
     if (!all.length) {
       this._pane.replaceChildren(el("p", {}, "Nothing needs attention."));
       return;
@@ -984,7 +1004,8 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _paintRecommendations() {
     const { lines, closing } = this._snapshot.recommendations;
-    if (!lines.length) {
+    const devices = this._snapshot.recommendations.devices || [];
+    if (!lines.length && !devices.length) {
       this._pane.replaceChildren(el("p", {}, "Nothing to recommend right now."));
       return;
     }
@@ -998,11 +1019,85 @@ class DeviceSentinelPanel extends HTMLElement {
         el("p", {}, body),
         el("p", {}, this._link("Open Device Sentinel settings", SETTINGS_PATH)));
     });
+    // Recommendations about single devices (0.24.9), each listing its
+    // devices; a brief's "Open the list" arrives with its card open.
+    const open = new URLSearchParams(window.location.search).get("open");
+    const deviceCards = devices.map((card) => this._recDeviceCard(card, card.kind === open));
+    const count = lines.length + devices.length;
     this._pane.replaceChildren(
-      el("p", { style: "margin:0" }, `${lines.length} ${lines.length === 1 ? "change" : "changes"} you could make, the most important first.`),
-      ...cards,
+      el("p", { style: "margin:0" }, `${count} ${count === 1 ? "change" : "changes"} you could make, the most important first.`),
+      ...cards, ...deviceCards,
       el("p", { class: "muted", style: "margin:0;font-size:13px;line-height:1.5" }, closing));
+    const target = open ? [...this._pane.querySelectorAll("article.rec")].find((a) => a.dataset.kind === open) : null;
+    // A scroll is a nicety; a browser without one still shows the tab.
+    if (target && typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "start" });
   }
+
+  _recDeviceCard(card, open) {
+    const ids = card.devices.map((row) => row.device_id);
+    const from = TAB_SLUG.Recommendations;
+    const nameLink = (row) => el("a", {
+      href: `${this._base}/device/${encodeURIComponent(row.device_id)}?from=${from}`,
+      onclick: (ev) => {
+        ev.preventDefault();
+        // Previous and Next on the device page step through this card.
+        this._lists = { ...(this._lists || {}), [from]: ids };
+        this._navigate(`${this._base}/device/${encodeURIComponent(row.device_id)}?from=${from}`);
+      },
+    }, row.name);
+    const refresh = async () => {
+      this._snapshot.recommendations = await this._call({ type: "device_sentinel/recommendations" });
+      this._paintRecommendations();
+    };
+    const rows = card.devices.map((row) => {
+      const note = el("span", { class: "small" }, "");
+      const fail = (err) => { note.textContent = (err && err.message) || "That did not save."; };
+      let action = null;
+      if (card.kind === "power") action = this._recPowerPicker(row.device_id, refresh, fail);
+      if (card.kind === "last_seen") {
+        action = el("button", { class: "chip", type: "button", onclick: async () => {
+          try { await this._call({ type: "device_sentinel/device_last_seen", device_id: row.device_id }); await refresh(); } catch (err) { fail(err); }
+        } }, "Turn on its Last Seen");
+      }
+      return el("tr", {}, el("td", {}, nameLink(row)), el("td", { class: "small" }, row.area || "no area"),
+        el("td", {}, el("div", { class: "actrow" }, action, note)));
+    });
+    return el("article", { class: "rec", "data-kind": card.kind },
+      el("h3", {}, card.title),
+      el("p", {}, card.body),
+      el("details", open ? { open: "" } : {},
+        el("summary", {}, `Show the ${card.devices.length} ${card.devices.length === 1 ? "device" : "devices"}`),
+        el("div", { class: "scroll" }, el("table", {}, el("tbody", {}, ...rows)))));
+  }
+
+  // The Power choices in a list row (0.24.9), as the device page's pencil
+  // offers them; Save sets the whole model, as there.
+  _recPowerPicker(deviceId, refresh, fail) {
+    const power = this._snapshot.recommendations.power || {};
+    const [qmin, qmax] = power.quantity || [1, 8];
+    const wired = power.wired || [];
+    const select = el("select", { class: "actinput", "aria-label": "What powers this device" },
+      el("option", { value: "" }, "Choose…"), ...(power.choices || []).map((c) => el("option", { value: c }, c)));
+    const quantity = el("select", { class: "actinput", "aria-label": "How many" },
+      ...Array.from({ length: qmax - qmin + 1 }, (_, i) => qmin + i).map((n) => el("option", { value: String(n) }, `× ${n}`)));
+    const other = el("input", { class: "actinput", type: "text", maxlength: "40", placeholder: "Battery or power source",
+      "aria-label": "Battery or power source" });
+    const repaint = () => {
+      quantity.style.display = select.value && !wired.includes(select.value) ? "" : "none";
+      other.style.display = select.value === power.other ? "" : "none";
+    };
+    select.addEventListener("change", repaint);
+    repaint();
+    const save = el("button", { class: "chip", type: "button", onclick: async () => {
+      if (!select.value) return;
+      const message = { type: "device_sentinel/device_power", device_id: deviceId, choice: select.value };
+      if (!wired.includes(select.value)) message.quantity = Number(quantity.value);
+      if (select.value === power.other) message.other = other.value;
+      try { await this._call(message); await refresh(); } catch (err) { fail(err); }
+    } }, "Save");
+    return el("span", { class: "actrow" }, select, quantity, other, save);
+  }
+
 
   _standingText(row) {
     return row.standing === "excluded" && row.first_seen ? "Excluded when first seen" : STANDING[row.standing];
@@ -1692,48 +1787,87 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, ago(row.last_activity, at)),
         el("td", { class: "num" }, row.rhythm ? span(row.rhythm) : ""),
         el("td", { class: "num" }, row.window ? span(row.window) : "")))));
+    // The order a device page's Previous and Next follow (0.24.9).
+    this._lists = { ...(this._lists || {}), [TAB_SLUG.Devices]: rows.map((row) => row.device_id) };
     this._pane.replaceChildren(summary, chips, el("div", { class: "scroll" }, table));
   }
 
   _paintReadings() {
+    // Each group's current value, with when it changed (0.24.9): the
+    // first of the device's sensors of that kind that Home Assistant
+    // can read. Repainted the moment Home Assistant reports a change.
     const page = this._page;
-    if (!this._readingsBox || !page || page.error) return;
-    const labels = { battery: "Battery", signal: "Signal", last_seen: "Last seen" };
-    const cards = page.readings.map((reading) => {
-      const state = this._hass && this._hass.states ? this._hass.states[reading.entity_id] : null;
-      // A reading Home Assistant cannot give is not a reading
-      // (0.22.24): the second signal entity of a ZHA device often
-      // reads unknown, and a tile saying so is noise.
-      if (!state || state.state === "unknown" || state.state === "unavailable") return null;
-      let value = state.state;
-      if (state && state.attributes && state.attributes.unit_of_measurement && !Number.isNaN(Number(value))) {
-        value = `${value}${state.attributes.unit_of_measurement === "%" ? "%" : ` ${state.attributes.unit_of_measurement}`}`;
+    const cells = this._readingCells;
+    if (!cells || !page || page.error) return;
+    for (const [kind, cell] of Object.entries(cells)) {
+      let shown = null;
+      for (const reading of (page.readings || []).filter((r) => r.kind === kind)) {
+        const state = this._hass && this._hass.states ? this._hass.states[reading.entity_id] : null;
+        // A reading Home Assistant cannot give is not a reading
+        // (0.22.24): the second signal entity of a ZHA device often
+        // reads unknown.
+        if (!state || state.state === "unknown" || state.state === "unavailable") continue;
+        let value = state.state;
+        if (state.attributes && state.attributes.unit_of_measurement && !Number.isNaN(Number(value))) {
+          value = `${value}${state.attributes.unit_of_measurement === "%" ? "%" : ` ${state.attributes.unit_of_measurement}`}`;
+        }
+        if (kind === "last_seen" && !Number.isNaN(Date.parse(state.state))) {
+          value = new Date(state.state).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+        }
+        // Home Assistant stamps an entity as changed when a retained
+        // message is replayed at a restart (0.22.24), so a value is
+        // dated from the device's own last report when that is older.
+        const stampedAt = state.last_changed ? new Date(state.last_changed).getTime() : NaN;
+        // A time Home Assistant gave that cannot be read: no "changed"
+        // at all rather than one that says nothing (0.24.9).
+        const stamped = Number.isFinite(stampedAt) ? stampedAt : null;
+        const heard = page.status && page.status.last_activity ? new Date(page.status.last_activity).getTime() : null;
+        const changed = stamped === null ? ""
+          : heard !== null && heard < stamped - 1000
+            ? `last heard ${ago(page.status.last_activity, Date.now())}`
+            : `changed ${ago(state.last_changed, Date.now())}`;
+        shown = [el("span", { class: "readingvalue" }, value), " ", el("span", { class: "small" }, changed)];
+        break;
       }
-      if (state && reading.kind === "last_seen" && !Number.isNaN(Date.parse(state.state))) {
-        value = new Date(state.state).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-      }
-      // Home Assistant stamps an entity as changed when a retained
-      // message is replayed at a restart, so a device silent since
-      // yesterday read "changed 11m ago" on every tile (0.22.24).
-      // A tile is dated from the device's own last report when that
-      // is older than Home Assistant's stamp.
-      const stamped = state.last_changed ? new Date(state.last_changed).getTime() : null;
-      const heard = page.status && page.status.last_activity
-        ? new Date(page.status.last_activity).getTime() : null;
-      const changed = stamped === null ? ""
-        : heard !== null && heard < stamped - 1000
-          ? `last heard ${ago(page.status.last_activity, Date.now())}`
-          : `changed ${ago(state.last_changed, Date.now())}`;
-      return el("div", { class: "stat reading" },
-        el("div", { class: "small" }, labels[reading.kind]),
-        el("div", { class: "v" }, value),
-        el("div", { class: "small" }, reading.entity_id),
-        el("div", { class: "small" }, changed));
-    });
-    const shown = cards.filter(Boolean);
-    this._readingsBox.replaceChildren(...(shown.length ? shown
-      : [el("p", { class: "muted", style: "margin:0" }, "This device has no battery, signal or last seen entity.")]));
+      cell.replaceChildren(...(shown || [el("span", { class: "muted" }, "no reading")]));
+    }
   }
+
+  // An entity's own Home Assistant dialog, with its history and settings.
+  _moreInfo(entityId) {
+    this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId }, bubbles: true, composed: true }));
+  }
+
+  // The list a device page steps through (0.24.9): the one it was opened
+  // from, in the order it was shown, or the Devices tab's own order.
+  _navList() {
+    const rows = this._snapshot && this._snapshot.devices ? this._snapshot.devices.rows : [];
+    const known = new Set(rows.map((row) => row.device_id));
+    const kept = this._lists && this._lists[this._from || ""];
+    // A device removed since the list was drawn is stepped over, never
+    // offered (0.24.9); the page itself stays in the list it came from.
+    if (kept && this._view && kept.includes(this._view.id)) {
+      return kept.filter((id) => id === this._view.id || known.has(id));
+    }
+    return rows.map((row) => row.device_id);
+  }
+
+  _prevNext() {
+    if (!this._view || this._view.kind !== "device") return null;
+    const ids = this._navList();
+    const at = ids.indexOf(this._view.id);
+    if (at < 0) return null;
+    const names = {};
+    for (const row of (this._snapshot && this._snapshot.devices ? this._snapshot.devices.rows : [])) names[row.device_id] = row.name;
+    const own = this._from ? `?from=${encodeURIComponent(this._from)}` : "";
+    const step = (id, text) => id
+      ? el("a", { href: `${this._base}/device/${encodeURIComponent(id)}${own}`, title: names[id] || "",
+        onclick: (ev) => { ev.preventDefault(); this._navigate(`${this._base}/device/${encodeURIComponent(id)}${own}`); } }, text)
+      : el("span", { class: "muted" }, text);
+    return el("span", { class: "prevnext" }, step(ids[at - 1], "\u2039 Previous"), el("span", { class: "muted" }, " \u00b7 "),
+      step(ids[at + 1], "Next \u203a"));
+  }
+
 
   // The device page's actions (0.24.5). One edit at a time, tied to its
   // device, so another device's page never shows a half-finished edit.
@@ -2030,11 +2164,12 @@ class DeviceSentinelPanel extends HTMLElement {
   _paintDevicePage() {
     const page = this._page;
     const back = el("p", { style: "margin:0;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap" },
-      this._backLink(),
+      // Previous and Next beside the way back (0.24.9).
+      el("span", { class: "actrow" }, this._backLink(), this._prevNext()),
       this._page && this._page.identity && this._page.identity.actions
         ? this._link("Open in Home Assistant", `/config/devices/device/${this._page.identity.device_id}`)
         : null);
-    this._readingsBox = null;
+    this._readingCells = null;
     if (!page) {
       this._pane.replaceChildren(back, el("p", { class: "muted" }, "Loading."));
       return;
@@ -2079,69 +2214,131 @@ class DeviceSentinelPanel extends HTMLElement {
       status.window ? el("div", { class: "statusline small" },
         el("span", {}, "0"), el("span", {}, `rhythm ${span(status.rhythm)}`), el("span", {}, `window ${span(status.window)}`)) : null);
 
-    this._readingsBox = el("div", { class: "readings" });
+    // The Identity section (0.24.9): who the device is first, then three
+    // groups, Power, Signal and Last seen, each holding its current value
+    // with when it changed, its sensor as a link that opens Home
+    // Assistant's own dialog, and the details that belong with it. The
+    // Live readings section above it is gone; its values live here and
+    // are repainted the moment Home Assistant reports a change.
     const address = (who.connections || []).map(([kind, value]) => `${value} (${kind})`).join(", ");
     const acts = who.actions;
-    const identity = [
-      ["Name", acts ? this._nameCell(who) : who.name],
-      ["Manufacturer", who.manufacturer || "not reported"],
-      ["Model", who.model || "not reported"],
-      ["Model ID", who.model_id || "not reported"],
-      ["Hardware version", who.hw_version || "none reported"],
-      // What powers it (0.24.7): words, where they came from, pencil.
-      ["Power", this._powerCell(who)],
-      ...(who.battery_steps ? [["Battery steps", who.battery_steps]] : []),
-      ["Integration", who.integration_name || who.integration || ""],
-      // How it connects, from its integration's declaration (0.23.9).
-      ...(who.connects ? [["Connects", who.connects]] : []),
-      ["Area", acts ? this._areaCell(who) : (who.area || "none assigned")],
-      // Labels, each with what Device Sentinel does with it (0.24.5).
-      ...(acts ? [["Labels", this._labelsCell(who)]] : []),
-      ["Address", address || "none reported"],
-      ["Device ID", who.device_id],
-      ["First seen", who.first_observed ? moment(who.first_observed) : "unknown"],
-      ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
-      // What Device Sentinel counts as this device speaking.
-      ["Heartbeat", acts && acts.last_seen_off ? el("div", { class: "actcol" },
-        el("span", {}, who.clock === "last_seen" ? "its Last Seen entity" : "updates from its entities"),
+    this._readingCells = {};
+    const byKind = (kind) => (page.readings || []).filter((r) => r.kind === kind);
+    const sensorLinks = (kind) => {
+      const list = byKind(kind);
+      if (!list.length) return null;
+      return el("div", { class: "actcol" }, ...list.map((r) => el("a", {
+        class: "entitylink", href: "#", title: "Open in Home Assistant",
+        onclick: (ev) => { ev.preventDefault(); this._moreInfo(r.entity_id); },
+      }, r.entity_id)));
+    };
+    const valueCell = (kind) => {
+      const cell = el("span", {}, "");
+      this._readingCells[kind] = cell;
+      return cell;
+    };
+    const heartbeat = who.clock === "last_seen";
+    const lastSeenSensor = sensorLinks("last_seen")
+      ? el("div", { class: "actrow" }, sensorLinks("last_seen"), heartbeat ? el("span", { class: "hbtag" }, "heartbeat") : null)
+      : acts && acts.last_seen_off ? el("div", { class: "actcol" },
+        el("span", {}, "switched off"),
         el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
           onclick: () => this._deviceAct({ type: "device_sentinel/device_last_seen", device_id: who.device_id }, "heartbeat") },
           "Turn on its Last Seen")),
         this._actNote("heartbeat"))
-        : (who.clock === "last_seen" ? "its Last Seen entity" : "updates from its entities")],
-      // The freeze rule in use today and its wait (0.24.0): the
-      // shorter of the Trimmed Maximum and the Log-Normal Percentile.
-      ...(status.rule ? [["Wait rule", `${status.rule}, ${span(status.window)}`]] : []),
-      // What is muted and why, with the toggles (0.24.5).
-      ...(acts ? [["Muted", this._mutedCell(who)]] : []),
-    ];
-    const idTable = el("table", { class: "kv" }, el("tbody", {}, ...identity.map(([k, v]) => el("tr", {}, el("td", {}, k), el("td", {}, v)))));
+        : el("div", { class: "actrow" }, el("span", { class: "muted" }, "none"),
+          el("span", { class: "hbtag" }, "heartbeat: updates from its entities"));
     // The button beside the wait rule (0.24.0): starts the Log-Normal
     // Percentile's count again by hand, as a firmware update does, for
     // a change Device Sentinel cannot see.
-    const useTrimmed = status.rule ? el("div", { class: "use-trimmed", style: "display:flex;gap:12px;align-items:center;margin:8px 0" },
-      el("button", { class: "chip", type: "button", onclick: async () => {
+    const useTrimmed = status.rule ? el("button", { class: "chip", type: "button", style: "margin-top:6px",
+      onclick: async () => {
         try {
           await this._call({ type: "device_sentinel/use_trimmed_maximum", device_id: who.device_id });
           this._page = await this._fetchView();
           this._paintDevicePage();
         } catch (err) { /* the next refresh shows the rule as it stands */ }
-      } }, "Use the 14-Day Trimmed Maximum")) : null;
-    const gaps = page.rhythm.gaps;
-    const top = Math.max(...gaps, status.window || 0, 1);
-    const gapBars = el("div", { class: "gaps", role: "img", "aria-label": "Longest gap each day, last 14 days" },
-      ...gaps.map((g, i) => el("div", {
-        class: page.rhythm.set_aside.includes(i) ? "aside" : "",
-        style: `height:${Math.max(2, (g / top) * 100).toFixed(1)}%`,
-        title: `${span(g)}${page.rhythm.set_aside.includes(i) ? ", set aside" : ""}`,
-      })));
-    const rhythmText = status.rhythm
-      ? `Its longest usual gap is ${span(status.rhythm)}, and it is called frozen after ${span(status.window)} of silence. `
-        + "Each bar is one day's longest gap; the hatched day is set aside as a possible fluke."
-      : "Not enough days yet to learn its rhythm.";
+      } }, "Use the 14-Day Trimmed Maximum") : null;
+    const group = (title) => ["__group__", title];
+    const identity = [
+      ["Name", acts ? this._nameCell(who) : who.name],
+      ["Device ID", who.device_id],
+      ["Area", acts ? this._areaCell(who) : (who.area || "none assigned")],
+      // Labels, each with what Device Sentinel does with it (0.24.5).
+      ...(acts ? [["Labels", this._labelsCell(who)]] : []),
+      ["Manufacturer", who.manufacturer || "not reported"],
+      ["Model", who.model || "not reported"],
+      ["Model ID", who.model_id || "not reported"],
+      ["Hardware version", who.hw_version || "none reported"],
+      ["Integration", who.integration_name || who.integration || ""],
+      // How it connects, from its integration's declaration (0.23.9).
+      ...(who.connects ? [["Connects", who.connects]] : []),
+      ["Address", address || "none reported"],
+      group("Power"),
+      ["Battery level", byKind("battery").length ? valueCell("battery") : el("span", { class: "muted" }, "none")],
+      ["Battery sensor", sensorLinks("battery") || el("span", { class: "muted" }, "none")],
+      // What powers it (0.24.7): words, where they came from, pencil.
+      ["Power", this._powerCell(who)],
+      ...(who.battery_steps ? [["Battery steps", who.battery_steps]] : []),
+      group("Signal"),
+      ["Signal", byKind("signal").length ? valueCell("signal") : el("span", { class: "muted" }, "none")],
+      ["Signal sensor", sensorLinks("signal") || el("span", { class: "muted" }, "none")],
+      group("Last seen"),
+      ["Last seen", byKind("last_seen").length ? valueCell("last_seen") : el("span", { class: "muted" }, "none")],
+      ["Last seen sensor", lastSeenSensor],
+      ["First seen", who.first_observed ? moment(who.first_observed) : "unknown"],
+      ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
+      // The freeze rule in use today and its wait (0.24.0): the
+      // shorter of the Trimmed Maximum and the Log-Normal Percentile.
+      ...(status.rule ? [["Wait rule", el("div", { class: "actcol" }, `${status.rule}, ${span(status.window)}`, useTrimmed)]] : []),
+      // What is muted and why, with the toggles (0.24.5).
+      ...(acts ? [["Muted", this._mutedCell(who)]] : []),
+    ];
+    let inGroup = false;
+    const idTable = el("table", { class: "kv" }, el("tbody", {}, ...identity.map(([k, v]) => {
+      if (k === "__group__") {
+        inGroup = true;
+        return el("tr", { class: "kvgroup" }, el("td", { colspan: "2" }, v));
+      }
+      if (k === "Muted") inGroup = false;
+      return el("tr", inGroup ? { class: "kvsub" } : {}, el("td", {}, k), el("td", {}, v));
+    })));
+
+    // Its rhythm (0.24.9): both rules, each with its own chart and its
+    // result as a red line, the one in use tagged, and a short word on
+    // why there are two.
+    const rhythmBox = page.rhythm || {};
+    const ruleChart = (title, inUse, note, gaps, aside, asideClass, line, from) => {
+      if (!gaps.length) return null;
+      const top = Math.max(...gaps.filter((g, i) => !aside.includes(i)), line || 0, 1) * 1.15;
+      const bars = el("div", { class: "gaps rulechart", role: "img",
+        "aria-label": `${title}: longest gap each day${line ? `, line at ${span(line)}` : ""}` },
+        ...gaps.map((g, i) => el("div", {
+          class: aside.includes(i) ? asideClass : "",
+          style: `height:${Math.max(2, Math.min(100, (g / top) * 100)).toFixed(1)}%`,
+          title: `${span(g)}${aside.includes(i) ? ", set aside" : ""}`,
+        })),
+        line ? el("div", { class: "ruleline", style: `bottom:${Math.min(100, (line / top) * 100).toFixed(1)}%` },
+          el("span", {}, span(line))) : null);
+      return el("div", { class: "rulebox" },
+        el("div", { class: "ruletitle" }, title, inUse ? el("span", { class: "inuse" }, "in use") : null),
+        el("p", { class: "small", style: "margin:0 0 6px;line-height:1.5" }, note),
+        bars,
+        el("div", { class: "statusline small" }, el("span", {}, from), el("span", {}, "yesterday")));
+    };
+    const trimmedDays = rhythmBox.trimmed_days || (page.rhythm.gaps || []).length;
+    const charts = [
+      ruleChart(`${trimmedDays}-Day Trimmed Maximum`, rhythmBox.in_use === "trimmed",
+        "Each bar is one day's longest gap. The hatched day is set aside as a possible fluke; the red line is the longest of the rest.",
+        page.rhythm.gaps || [], page.rhythm.set_aside || [], "aside", rhythmBox.trimmed, `${(page.rhythm.gaps || []).length} days ago`),
+      rhythmBox.lognormal_days ? ruleChart(`${rhythmBox.lognormal_days}-Day Log-Normal Percentile`, rhythmBox.in_use === "lognormal",
+        "Each bar is one day's longest gap. Grey days sit too far from the device's usual to count; the red line is the gap it stays under on nine days out of ten.",
+        rhythmBox.lognormal_gaps || [], rhythmBox.lognormal_set_aside || [], "grey", rhythmBox.lognormal, `${rhythmBox.lognormal_days} days ago`) : null,
+    ].filter(Boolean);
     const rhythm = el("div", {}, el("h3", { class: "section" }, "Its rhythm"),
-      el("p", { style: "margin:0 0 8px;line-height:1.5" }, rhythmText), gapBars,
-      el("div", { class: "statusline small" }, el("span", {}, "14 days ago"), el("span", {}, "yesterday")));
+      ...(charts.length ? charts : [el("p", { style: "margin:0;line-height:1.5" }, "Not enough days yet to learn its rhythm.")]),
+      charts.length > 1 ? el("p", { class: "small", style: "margin:8px 0 0;line-height:1.6" },
+        "Device Sentinel uses whichever of the two is shorter. The 14-day rule adjusts to a change within days, and the 42-day rule within weeks. A change to the device or the mesh around it, such as a firmware update, a new battery, a re-pair or a new router nearby, can leave the 42-day rule out of date. If it does, press Use the 14-Day Trimmed Maximum.") : null);
 
     const silences = page.silences.length
       ? el("div", { class: "scroll" }, el("table", {},
@@ -2162,9 +2359,7 @@ class DeviceSentinelPanel extends HTMLElement {
       : el("p", { class: "muted", style: "margin:0" }, "No silence longer than its rhythm in the last 14 days.");
 
     this._pane.replaceChildren(back, head, statusBox,
-      el("h3", { class: "section" }, "Live readings ", el("span", { class: "small" }, "update the moment they change")),
-      this._readingsBox,
-      el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable, useTrimmed), rhythm),
+      el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable), rhythm),
       el("h3", { class: "section" }, "Silences, last 14 days"), silences,
       this._graphs(page),
       el("p", { class: "muted", style: "margin:0;font-size:13px" },
