@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_power_source.py, Version: 0.24.7 (2026-10-05)
+# File: tests/test_power_source.py, Version: 0.24.8 (2026-10-05)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -62,7 +62,7 @@ def _made_by(hass, device, maker, model, model_id=None, hw=None):
     )
 
 
-async def _setup(hass, hass_ws_client, maker="Third Reality", model="Smart button", model_id="3RSB22BZ", hw="0"):
+async def _setup(hass, hass_ws_client, maker="Sunricher", model="4IN1 Sensor", model_id="HK-SENSOR-4IN1-A", hw="1"):
     device, _entities = register_device(hass, "pw0", "Button Randy Night Table")
     _made_by(hass, device, maker, model, model_id, hw)
     coord = await setup_coordinator(hass)
@@ -167,7 +167,7 @@ async def test_the_library_answers_then_the_owner_then_not_known(hass: HomeAssis
 
 async def test_mains_and_usb_take_no_quantity_and_no_report(hass: HomeAssistant, hass_ws_client):
     coord, client, device = await _setup(hass, hass_ws_client, "Aqara", "Presence sensor FP2", None, None)
-    for choice in ("Mains Powered", "USB Powered"):
+    for choice in ("Mains Powered", "USB Powered", "PoE Powered"):
         reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice=choice, quantity=3)
         assert reply["success"], reply
         view = coord.power_view(device.id)
@@ -205,8 +205,8 @@ async def test_a_non_admin_cannot_set_power(hass: HomeAssistant, hass_ws_client,
 
 
 async def test_the_report_link_fills_battery_notes_form(hass: HomeAssistant, hass_ws_client):
-    coord, client, device = await _setup(hass, hass_ws_client, "Third Reality", "Smart button", "3RSB22BZ", "0")
-    assert coord.power_view(device.id)["words"] == "Not known", "the library lacks this button"
+    coord, client, device = await _setup(hass, hass_ws_client)
+    assert coord.power_view(device.id)["words"] == "Not known", "the library lacks this sensor"
     reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id,
                       choice="Other", other="CR2032 & co", quantity=1)
     assert reply["success"], reply
@@ -215,9 +215,10 @@ async def test_the_report_link_fills_battery_notes_form(hass: HomeAssistant, has
     assert f"{parts.scheme}://{parts.netloc}{parts.path}" == power_source.REPORT_FORM
     assert dict(parse_qsl(parts.query)) == {
         "template": "new_device_request.yaml",
-        "manufacturer": "Third Reality",
-        "model": "Smart button",
-        "model_id": "3RSB22BZ",
+        "title": "[Device]: Sunricher 4IN1 Sensor (HK-SENSOR-4IN1-A)",
+        "manufacturer": "Sunricher",
+        "model": "4IN1 Sensor",
+        "model_id": "HK-SENSOR-4IN1-A",
         "battery_type": "CR2032 & co",
         "battery_quantity": "1",
     }
@@ -326,8 +327,127 @@ async def test_the_page_carries_the_power_block(hass: HomeAssistant, hass_ws_cli
     assert power["words"] == "Not known"
     assert power["choices"] == [
         "AA", "AAA", "CR2032", "CR2450", "Rechargeable", "CR123A", "CR2", "CR2477", "CR1632", "CR2430",
-        "Mains Powered", "USB Powered", "Other",
+        "Mains Powered", "USB Powered", "PoE Powered", "Other",
     ]
     assert power["quantity"] == [1, 8]
     assert power["library_home"] == "https://github.com/andrew-codechimp/HA-Battery-Notes"
     assert "battery_type" not in reply["result"]["identity"]
+
+
+# ------------------------------------------------ one entry for the model (0.24.8)
+
+
+async def _four_of_a_kind(hass, hass_ws_client):
+    """Four of one model, and one other."""
+    names = ("Button Doorbell", "Button Master Shower", "Button Randy Night Table", "Button Terrace Dining")
+    devices = []
+    for i, name in enumerate(names):
+        device, _ = register_device(hass, f"mk{i}", name)
+        _made_by(hass, device, "Sunricher", "4IN1 Sensor", "HK-SENSOR-4IN1-A", str(i))
+        devices.append(device)
+    stranger, _ = register_device(hass, "mk9", "Something Else")
+    _made_by(hass, stranger, "Sunricher", "Other Sensor", "HK-OTHER")
+    coord = await setup_coordinator(hass)
+    client = await hass_ws_client(hass)
+    return coord, client, devices, stranger
+
+
+async def test_one_entry_covers_every_device_of_the_model(hass: HomeAssistant, hass_ws_client):
+    coord, client, devices, stranger = await _four_of_a_kind(hass, hass_ws_client)
+    reply = await _ws(client, type="device_sentinel/device_power", device_id=devices[1].id, choice="AAA", quantity=2)
+    assert reply["success"], reply
+    for device in devices:
+        view = coord.power_view(device.id)
+        assert (view["words"], view["source"], view["covers"]) == ("2× AAA", "owner", 4), device.name
+        assert view["set_on_name"] == "Button Master Shower"
+    assert coord.power_view(stranger.id)["words"] == "Not known", "another model took the entry"
+    # The same model written another way is another model: same means
+    # exactly the same (0.24.8).
+    lookalike, _ = register_device(hass, "mk8", "Lookalike")
+    _made_by(hass, lookalike, "Sunricher", "4IN1 Sensor", "HK SENSOR 4IN1 A")
+    assert coord.power_view(lookalike.id)["words"] == "Not known", "a model written another way took the entry"
+    rows = [r[SYS_DETAIL] for r in _page_rows(coord)]
+    assert rows == ["power set to 2× AAA, for all 4 devices of this model, from its device page"]
+
+
+async def test_changing_or_clearing_it_anywhere_changes_it_for_all(hass: HomeAssistant, hass_ws_client):
+    coord, client, devices, _stranger = await _four_of_a_kind(hass, hass_ws_client)
+    await _ws(client, type="device_sentinel/device_power", device_id=devices[1].id, choice="AAA", quantity=2)
+    reply = await _ws(client, type="device_sentinel/device_power", device_id=devices[3].id, choice="CR2032", quantity=1)
+    assert reply["success"], reply
+    assert {coord.power_view(d.id)["words"] for d in devices} == {"CR2032"}
+    assert coord.power_view(devices[0].id)["set_on_name"] == "Button Terrace Dining"
+    reply = await _ws(client, type="device_sentinel/device_power", device_id=devices[0].id, choice=None)
+    assert reply["success"], reply
+    assert {coord.power_view(d.id)["words"] for d in devices} == {"Not known"}
+
+
+async def test_a_0_24_7_entry_becomes_the_models(hass: HomeAssistant, hass_storage):
+    devices = []
+    for i in range(3):
+        device, _ = register_device(hass, f"mg{i}", f"Button {i}")
+        _made_by(hass, device, "Sunricher", "4IN1 Sensor", "HK-SENSOR-4IN1-A", "1")
+        devices.append(device)
+    lonely, _ = register_device(hass, "mg9", "No Maker")
+    hass_storage[POWER_STORE_KEY] = {"version": 1, "minor_version": 1, "key": POWER_STORE_KEY, "data": {"devices": {
+        devices[0].id: {"kind": "battery", "type": "AA", "quantity": 4, "set": "2026-10-05T12:00:00+00:00"},
+        lonely.id: {"kind": "mains", "type": "Mains Powered", "quantity": None, "set": "2026-10-05T12:00:00+00:00"},
+    }}}
+    coord = await setup_coordinator(hass)
+    assert {coord.power_view(d.id)["words"] for d in devices} == {"4× AA"}
+    assert coord.power_view(lonely.id)["words"] == "Mains Powered", "a device with no model keeps its own"
+    payload = coord._power_payload()
+    assert devices[0].id in payload["devices"] and payload["devices"][devices[0].id]["model"], "no copy for 0.24.7"
+    assert payload["devices"][lonely.id] == {"kind": "mains", "type": "Mains Powered", "quantity": None,
+                                             "set": "2026-10-05T12:00:00+00:00"}
+
+
+async def test_the_copy_for_0_24_7_is_never_read_back_as_an_entry(hass: HomeAssistant, hass_storage, hass_ws_client):
+    coord, client, devices, _stranger = await _four_of_a_kind(hass, hass_ws_client)
+    await _ws(client, type="device_sentinel/device_power", device_id=devices[1].id, choice="AAA", quantity=2)
+    hass_storage[POWER_STORE_KEY] = {"version": 1, "minor_version": 1, "key": POWER_STORE_KEY,
+                                     "data": coord._power_payload()}
+    entry = coord.entry
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    hass_storage[POWER_STORE_KEY]["data"] = json.loads(json.dumps(hass_storage[POWER_STORE_KEY]["data"]))
+    # The device that set it now reports another model: its copy must not
+    # turn into an entry for that model.
+    _made_by(hass, devices[1], "Sunricher", "Renamed Sensor", "HK-RENAMED", "1")
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coord = entry.runtime_data
+    assert coord._power_entries == {}, "the copy came back as a device's own entry"
+    assert len(coord._power_models) == 1
+    client = await hass_ws_client(hass)
+    reply = await _ws(client, type="device_sentinel/device_power", device_id=devices[2].id, choice=None)
+    assert reply["success"], reply
+    assert coord.power_view(devices[1].id)["words"] == "Not known", "the copy became an entry for its new model"
+    assert {coord.power_view(d.id)["words"] for d in devices} == {"Not known"}, "a copy outlived the clear"
+
+
+async def test_a_removed_setter_hands_the_entry_to_another_of_the_model(hass: HomeAssistant, hass_ws_client):
+    coord, client, devices, _stranger = await _four_of_a_kind(hass, hass_ws_client)
+    await _ws(client, type="device_sentinel/device_power", device_id=devices[1].id, choice="AAA", quantity=2)
+    dr.async_get(hass).async_remove_device(devices[1].id)
+    await hass.async_block_till_done()
+    survivors = [d for i, d in enumerate(devices) if i != 1]
+    assert {coord.power_view(d.id)["words"] for d in survivors} == {"2× AAA"}
+    assert coord.power_view(survivors[0].id)["set_on"] in {d.id for d in survivors}
+    for d in survivors:
+        dr.async_get(hass).async_remove_device(d.id)
+    await hass.async_block_till_done()
+    assert coord._power_models == {}, "the last of the model left its entry behind"
+
+
+async def test_an_entry_set_on_a_device_since_gone_names_no_ghost(hass: HomeAssistant, hass_storage):
+    device, _ = register_device(hass, "gh1", "Survivor")
+    _made_by(hass, device, "Sunricher", "4IN1 Sensor", "HK-SENSOR-4IN1-A")
+    key = json.dumps(["Sunricher", "4IN1 Sensor", "HK-SENSOR-4IN1-A"])
+    hass_storage[POWER_STORE_KEY] = {"version": 1, "minor_version": 1, "key": POWER_STORE_KEY, "data": {"models": {
+        key: {"kind": "battery", "type": "AA", "quantity": 3, "set": "2026-10-05T12:00:00+00:00", "device_id": "gone"},
+    }, "devices": {}}}
+    coord = await setup_coordinator(hass)
+    view = coord.power_view(device.id)
+    assert (view["words"], view["set_on_name"]) == ("3× AA", None), view
+
