@@ -114,7 +114,7 @@ const withConnects = (words) => ({
     return page;
   },
 });
-const rowFor = (root, label) => [...root.querySelectorAll("table.kv tr")]
+const rowFor = (root, label) => [...root.querySelectorAll("table.kv tr:not(.kvgroup)")]
   .find((tr) => tr.children[0] && tr.children[0].textContent === label);
 
 (async () => {

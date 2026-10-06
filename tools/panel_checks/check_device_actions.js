@@ -83,7 +83,7 @@ async function open(answers) {
 }
 
 const rowCell = (root, label) => {
-  const row = [...root.querySelectorAll("table.kv tr")].find((tr) => tr.firstChild && tr.firstChild.textContent === label);
+  const row = [...root.querySelectorAll("table.kv tr:not(.kvgroup)")].find((tr) => tr.firstChild && tr.firstChild.textContent === label);
   return row ? row.lastChild : null;
 };
 const buttonIn = (node, text) => node && [...node.querySelectorAll("button")].find((b) => b.textContent === text);
@@ -105,8 +105,9 @@ const click = async (node) => { node.click(); await settle(); };
   check("Labels: the remove mark takes the label off the device", removal && removal.label_id === "bedside" && removal.add === false, removal);
 
   ({ root, calls } = await open({}));
-  await click(buttonIn(rowCell(root, "Heartbeat"), "Turn on its Last Seen"));
-  check("Heartbeat: the chip switches on this device's Last Seen", calls.some((c) => c.type === "device_sentinel/device_last_seen" && c.device_id === DEVICE));
+  // In the Last seen group since 0.24.9, where the Heartbeat row was.
+  await click(buttonIn(rowCell(root, "Last seen sensor"), "Turn on its Last Seen"));
+  check("Last seen sensor: the chip switches on this device's Last Seen", calls.some((c) => c.type === "device_sentinel/device_last_seen" && c.device_id === DEVICE));
 
   ({ root, calls } = await open({}));
   const muted = rowCell(root, "Muted");

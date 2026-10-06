@@ -128,9 +128,13 @@ const withRules = {
   check("Rhythm: the set-aside day is crossed", cross && cross.getAttribute("opacity") === "1");
 
   const button = [...root.querySelectorAll("button")].find((b) => b.textContent === "Use the 14-Day Trimmed Maximum");
-  // No helper text beside it since 0.24.5 (James, 4 October 2026).
-  check("Identity: the button sits under the table, with no helper line",
-    button && button.parentElement.textContent === "Use the 14-Day Trimmed Maximum", button ? button.parentElement.textContent : null);
+  // In the Wait rule row since 0.24.9, beneath the rule it changes,
+  // with no helper text beside it (James, 4 October 2026).
+  const waitRow = button && button.closest("tr");
+  check("Identity: the button sits in the Wait rule row, beneath the rule",
+    waitRow && waitRow.firstChild.textContent === "Wait rule" && button.previousSibling
+      && /Log-Normal Percentile|Trimmed Maximum/.test(button.previousSibling.textContent),
+    waitRow ? waitRow.textContent : null);
 
   console.log("\nPressing the button");
   const sent = [];

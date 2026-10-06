@@ -86,7 +86,7 @@ async function open(answers, power, dark = false) {
 }
 
 const rowCell = (root, label) => {
-  const row = [...root.querySelectorAll("table.kv tr")].find((tr) => tr.firstChild && tr.firstChild.textContent === label);
+  const row = [...root.querySelectorAll("table.kv tr:not(.kvgroup)")].find((tr) => tr.firstChild && tr.firstChild.textContent === label);
   return row ? row.lastChild : null;
 };
 const buttonIn = (node, text) => node && [...node.querySelectorAll("button")].find((b) => b.textContent === text);

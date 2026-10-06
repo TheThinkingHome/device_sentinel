@@ -73,7 +73,7 @@ const backLink = (root) => {
 const text = (root) => root.querySelector(".pane").textContent;
 
 const DEVICE = payloads._ids.bravo;
-const rows = (root) => [...root.querySelectorAll("tr")].map((tr) => [...tr.children].map((c) => c.textContent));
+const rows = (root) => [...root.querySelectorAll("tr:not(.kvgroup)")].map((tr) => [...tr.children].map((c) => c.textContent));
 
 (async () => {
   console.log("The device page");
