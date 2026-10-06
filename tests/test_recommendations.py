@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendations.py, Version: 0.23.5 (2026-09-25)
+# File: tests/test_recommendations.py, Version: 0.24.9 (2026-10-06)
 
 """The brief's Recommendations section (ruling #458).
 
@@ -382,3 +382,104 @@ async def test_a_single_muted_device_is_it_not_them(hass: HomeAssistant):
     assert "your only battery device is muted" in line
     assert "unmute or unexclude it on" in line
     assert "unexclude them" not in line
+
+
+# ------------------------------------------ recommendations about devices (0.24.9)
+
+
+async def _house_for_cards(hass: HomeAssistant):
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import device_registry as dr
+
+    kitchen = ar.async_get(hass).async_create("Kitchen")
+    known, _ = register_device(hass, "rc1", "Door Kitchen")
+    dr.async_get(hass).async_update_device(
+        known.id, manufacturer="Aqara", model="Door and window sensor", model_id="MCCGQ11LM",
+        hw_version="2", area_id=kitchen.id,
+    )
+    unknown, _ = register_device(hass, "rc2", "Mystery Sensor")
+    twin_a, _ = register_device(hass, "rc3", "Hall Light")
+    twin_b, _ = register_device(hass, "rc4", "hall light")
+    for device in (twin_a, twin_b):
+        dr.async_get(hass).async_update_device(device.id, area_id=kitchen.id)
+    coord = await setup_coordinator(hass)
+    off = er.RegistryEntryDisabler.INTEGRATION
+    found = dr.async_get(hass).async_get(unknown.id)
+    entry_id = getattr(found, "config_entry_id", None) or next(iter(found.config_entries))
+    er.async_get(hass).async_get_or_create(
+        "sensor", "test", "rc2_ls", device_id=unknown.id,
+        config_entry=hass.config_entries.async_get_entry(entry_id),
+        original_name="Last seen", disabled_by=off,
+    )
+    coord._rebuild_registry_view()
+    return coord, known, unknown, twin_a, twin_b
+
+
+async def test_each_card_lists_its_devices(hass: HomeAssistant):
+    coord, known, unknown, twin_a, twin_b = await _house_for_cards(hass)
+    cards = {card["kind"]: card for card in coord.device_recommendations()}
+    ids = {kind: [row["device_id"] for row in card["devices"]] for kind, card in cards.items()}
+    assert known.id not in ids["power"], "the library knows the Aqara sensor"
+    assert unknown.id in ids["power"] and twin_a.id in ids["power"]
+    assert ids["last_seen"] == [unknown.id]
+    assert ids["area"] == [unknown.id]
+    assert set(ids["names"]) == {twin_a.id, twin_b.id}, "names compared without regard to capitals"
+    assert [card["kind"] for card in coord.device_recommendations()] == ["power", "last_seen", "area", "names"]
+    assert cards["last_seen"]["body"].startswith("1 device has a Last Seen sensor")
+    names = [row["name"] for row in cards["power"]["devices"]]
+    assert names == sorted(names, key=str.casefold)
+
+
+async def test_a_card_leaves_when_its_condition_does(hass: HomeAssistant, hass_ws_client):
+    coord, known, unknown, twin_a, twin_b = await _house_for_cards(hass)
+    client = await hass_ws_client(hass)
+    for i, device in enumerate((unknown, twin_a, twin_b)):
+        await client.send_json({"id": 10 + i, "type": "device_sentinel/device_power", "device_id": device.id,
+                                "choice": "USB Powered"})
+        assert (await client.receive_json())["success"]
+    assert "power" not in {card["kind"] for card in coord.device_recommendations()}
+
+
+async def test_the_tab_carries_the_cards_and_the_power_choices(hass: HomeAssistant, hass_ws_client):
+    coord, *_ = await _house_for_cards(hass)
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "device_sentinel/recommendations"})
+    reply = await client.receive_json()
+    assert reply["success"], reply
+    result = reply["result"]
+    assert [card["kind"] for card in result["devices"]] == ["power", "last_seen", "area", "names"]
+    assert "PoE Powered" in result["power"]["choices"] and result["power"]["quantity"] == [1, 8]
+    assert not any("Power Not Set" in line for line in result["lines"]), "the cards are not repeated as lines"
+
+
+async def test_the_emailed_brief_carries_one_line_each_with_its_link(hass: HomeAssistant):
+    from custom_components.device_sentinel.const import CONF_REPORT_LINKS, REPORT_LINKS_EXTERNAL
+
+    coord, *_ = await _house_for_cards(hass)
+    text = _text(coord._recommendations_section())
+    for title in ("Power Not Set: ", "Last Seen Sensor Switched Off: ", "No Area Assigned: ", "Devices Sharing A Name: "):
+        assert title in text, title
+    assert "from the Recommendations tab" in text
+    hass.config.external_url = "https://home.example.org"
+    hass.config_entries.async_update_entry(coord.entry, options={**coord.entry.options,
+                                                                  CONF_REPORT_LINKS: REPORT_LINKS_EXTERNAL})
+    coord._recommendations_section()
+    links = coord._brief_rec_links
+    assert links and all(url.startswith("https://home.example.org/device-sentinel/recommendations?open=")
+                         for url in links.values()), links
+
+
+async def test_only_the_recommendation_lines_carry_a_link(hass: HomeAssistant):
+    from custom_components.device_sentinel.const import CONF_REPORT_LINKS, REPORT_LINKS_EXTERNAL
+
+    coord, known, unknown, *_ = await _house_for_cards(hass)
+    hass.config.external_url = "https://home.example.org"
+    hass.config_entries.async_update_entry(coord.entry, options={**coord.entry.options,
+                                                                  CONF_REPORT_LINKS: REPORT_LINKS_EXTERNAL})
+    section = coord._recommendations_section()
+    # A line someone else wrote that reads like a link is only text.
+    page = coord._render_brief_html("\n".join(
+        ["# Device Sentinel Daily Brief", "", '<a href="https://evil.example">x</a>', ""] + section))
+    assert page.count(">Open the list</a>") == 4
+    assert 'href="https://evil.example"' not in page
+    assert "&lt;a href=" in page

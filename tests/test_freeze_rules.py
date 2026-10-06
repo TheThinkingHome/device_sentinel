@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze_rules.py, Version: 0.24.0 (2026-10-02)
+# File: test_freeze_rules.py, Version: 0.24.9 (2026-10-06)
 
 """The freeze wait as the shorter of two rules (#542, amended in 0.24.0).
 
@@ -310,3 +310,56 @@ async def test_a_settings_change_replaces_the_kept_wait(hass: HomeAssistant):
     hass.config_entries.async_update_entry(coord.entry, options={**coord.entry.options, CONF_FREEZE_DELTA_HIGH: 2})
     await hass.async_block_till_done()
     assert coord._freeze_window(record) != before
+
+
+# ------------------------------------------- both rules on the device page
+
+
+async def test_the_device_page_carries_both_rules(hass: HomeAssistant):
+    """Each rule's figure and days, which is in use, and the Log-Normal
+    Percentile's own days with those it set aside (0.24.9)."""
+    coord = await setup_coordinator(hass)
+    device, _ = register_device(hass, "both", "Door 2nd Bedroom")
+    daily = _steady(38) + [6 * HOUR, 5.5 * HOUR]
+    record = _record(daily)
+    out = coord._both_rules(record)
+    found = coord._freeze_rhythm(record)
+    assert out["in_use"] == "lognormal"
+    assert out["trimmed"] == pytest.approx(found["trimmed"])
+    assert out["lognormal"] == pytest.approx(found["lognormal"])
+    assert out["trimmed_days"] == 14 and out["lognormal_days"] == 40
+    assert out["lognormal_gaps"] == daily
+    assert out["lognormal_set_aside"] == [38, 39], "the two bad days are the ones greyed"
+
+
+async def test_a_young_device_has_only_the_trimmed_chart(hass: HomeAssistant):
+    coord = await setup_coordinator(hass)
+    out = coord._both_rules(_record(_steady(9)))
+    assert out["in_use"] == "trimmed" and out["trimmed_days"] == 9
+    assert out["lognormal"] is None and out["lognormal_gaps"] == []
+    assert coord._both_rules(_record(_steady(3)))["in_use"] is None
+
+
+async def test_the_log_normal_chart_reads_only_its_own_days(hass: HomeAssistant):
+    """A long history and a reset ten days ago: the chart shows the days
+    the rule read, and its set-aside days count from the chart's start."""
+    coord = await setup_coordinator(hass)
+    daily = _steady(60) + [7 * HOUR] + _steady(27)
+    out = coord._both_rules(_record(daily, 28))
+    assert out["lognormal_days"] == 28
+    assert len(out["lognormal_gaps"]) == 28
+    assert out["lognormal_gaps"][0] == daily[-28]
+    assert all(0 <= i < 28 for i in out["lognormal_set_aside"])
+
+
+async def test_a_history_holding_a_non_number_is_not_judged(hass: HomeAssistant):
+    """Only a fault could put one there, but the minute check and the
+    page must not fail on it (0.24.9, before Latest)."""
+    coord = await setup_coordinator(hass)
+    for bad in ("x", None, float("nan"), float("inf"), True):
+        daily = _steady(30)
+        daily[10] = bad
+        assert coord._freeze_rhythm(_record(daily)) is None, bad
+        assert coord._both_rules(_record(daily))["in_use"] is None
+    assert coord._freeze_rhythm(_record(_steady(30))) is not None, "a clean history is still judged"
+    assert coord._trimmed_maximum([3600.0, None, 3600.0]) == (None, set())

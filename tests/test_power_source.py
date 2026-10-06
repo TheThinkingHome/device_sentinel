@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_power_source.py, Version: 0.24.8 (2026-10-05)
+# File: tests/test_power_source.py, Version: 0.24.9 (2026-10-06)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -451,3 +451,20 @@ async def test_an_entry_set_on_a_device_since_gone_names_no_ghost(hass: HomeAssi
     view = coord.power_view(device.id)
     assert (view["words"], view["set_on_name"]) == ("3× AA", None), view
 
+
+
+async def test_a_reload_inside_the_save_second_keeps_the_entry(hass: HomeAssistant, hass_storage):
+    """A pencil save is written a second later; a reload or a stop inside
+    that second lost it (0.24.9, found before Latest)."""
+    device, _ = register_device(hass, "rs1", "Saved Then Reloaded")
+    _made_by(hass, device, "Sunricher", "4IN1 Sensor", "HK-SENSOR-4IN1-A")
+    entry = await setup_entry(hass)
+    entry.runtime_data.page_set_power(device.id, "AAA", 2)
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.runtime_data.power_view(device.id)["words"] == "2× AAA"
+    entry.runtime_data.page_set_power(device.id, "CR2032", 1)
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    models = hass_storage[POWER_STORE_KEY]["data"]["models"]
+    assert [m["type"] for m in models.values()] == ["CR2032"]
