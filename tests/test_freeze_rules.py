@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze_rules.py, Version: 0.24.9 (2026-10-06)
+# File: test_freeze_rules.py, Version: 0.24.10 (2026-10-06)
 
 """The freeze wait as the shorter of two rules (#542, amended in 0.24.0).
 
@@ -363,3 +363,40 @@ async def test_a_history_holding_a_non_number_is_not_judged(hass: HomeAssistant)
         assert coord._both_rules(_record(daily))["in_use"] is None
     assert coord._freeze_rhythm(_record(_steady(30))) is not None, "a clean history is still judged"
     assert coord._trimmed_maximum([3600.0, None, 3600.0]) == (None, set())
+
+
+async def test_the_page_keeps_the_rule_figures_apart_from_the_history_series(hass: HomeAssistant):
+    """The History chart's day-by-day series and the rule charts' figures
+    shared the names "trimmed" and "lognormal", and the series won: both
+    charts drew blank on James's rig (0.24.9, before Latest)."""
+    from custom_components.device_sentinel.const import DATA_DEVICES
+
+    device, _ = register_device(hass, "keep", "Button Terrace Dining")
+    coord = await setup_coordinator(hass)
+    coord.data[DATA_DEVICES][device.id].update(_record(_steady(38) + [6 * HOUR, 5.5 * HOUR]))
+    rhythm = coord.dashboard_device(device.id)["rhythm"]
+    rules = rhythm["rules"]
+    assert isinstance(rules["trimmed"], float) and isinstance(rules["lognormal"], float), rules
+    assert rules["in_use"] == "lognormal" and rules["lognormal_days"] == 40
+    assert isinstance(rhythm.get("trimmed"), list), "the History chart keeps its series"
+
+
+async def test_the_status_and_the_devices_tab_show_the_rhythm_in_use(hass: HomeAssistant):
+    """Two long silences in the last fortnight: the Trimmed Maximum keeps
+    the second at 3.2 hours, the Log-Normal Percentile sets both aside and
+    is in use. The bar read "rhythm 3.2h" beside "window 34m" on James's
+    plug (0.24.10)."""
+    from custom_components.device_sentinel.const import DATA_DEVICES
+
+    device, _ = register_device(hass, "plug", "Plug James Night Light")
+    coord = await setup_coordinator(hass)
+    daily = [8 * 60.0] * 40
+    daily[-5], daily[-9] = 237 * 60.0, 190 * 60.0
+    coord.data[DATA_DEVICES][device.id].update(_record(daily))
+    found = coord._freeze_rhythm(_record(daily))
+    assert found["rule"] == RULE_LOGNORMAL and found["trimmed"] == pytest.approx(190 * 60.0)
+    status = coord.dashboard_device(device.id)["status"]
+    assert status["rhythm"] == pytest.approx(found["rhythm"]) and status["rhythm"] < 15 * 60
+    assert status["rhythm"] < status["window"], "the wait follows the rhythm shown"
+    row = next(r for r in coord.dashboard_devices() if r["device_id"] == device.id)
+    assert row["rhythm"] == pytest.approx(found["rhythm"]) and row["rhythm"] < row["window"]
