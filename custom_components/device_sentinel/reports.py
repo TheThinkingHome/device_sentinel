@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.23.19 (2026-09-30)
+# File: reports.py, Version: 0.24.9 (2026-10-06)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -123,6 +123,13 @@ class ReportWritingMixin(
         would draw it. The backslash is Markdown's own escape, reads
         plainly in the raw file, and is taken back off by the brief's
         page, which escapes for HTML itself.
+
+        Square brackets are escaped too (0.24.9). A name holding
+        "![x](https://...)" or "[x](https://...)" drew an outside
+        picture or a link wherever the text is shown as Markdown: the
+        brief delivered as a Home Assistant notification, or a report
+        pasted into a page. Both need brackets, so escaping them is
+        enough, and names like "Soil Irrigation (Monstera)" stay plain.
         """
         return (
             text.replace("\n", " ")
@@ -130,6 +137,8 @@ class ReportWritingMixin(
             .replace("|", "\\|")
             .replace("<", "\\<")
             .replace(">", "\\>")
+            .replace("[", "\\[")
+            .replace("]", "\\]")
         )
 
     def _fmt_gap(self, seconds: Any) -> str:

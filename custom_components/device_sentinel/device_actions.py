@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.24.5 (2026-10-04)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.24.9 (2026-10-06)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -24,6 +24,8 @@ rule for the trim).
 """
 
 from __future__ import annotations
+
+import unicodedata
 
 from typing import Any
 
@@ -210,6 +212,13 @@ class DeviceActionsMixin:
         integration's. A name another device shows is held for a yes."""
         device = self._device(device_id)
         wanted = (name or "").strip() or None
+        if wanted is not None and any(
+            unicodedata.category(ch) in ("Cc", "Cf", "Cs", "Co", "Cn") for ch in wanted
+        ):
+            # A NUL or a direction-flipping mark reached the registry,
+            # and from there the brief and notifications (0.24.9). The
+            # same refusal as the Power row's own words.
+            raise ValueError("That text holds characters that cannot be shown.")
         shown = wanted or device.name or ""
         if not confirm and shown:
             clash = self._name_in_use(device_id, shown)

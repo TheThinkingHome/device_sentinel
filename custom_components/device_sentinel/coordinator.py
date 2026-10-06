@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.24.8 (2026-10-05)
+# File: coordinator.py, Version: 0.24.9 (2026-10-06)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -123,6 +123,7 @@ from .daily_dates import (
 )
 from .device_actions import DeviceActionsMixin
 from .power_source import PowerMixin
+from .device_recommendations import DeviceRecommendationsMixin
 from .const import (
     CLIP_MAX_DAYS,
     DEV_LOGNORMAL_DAYS,
@@ -293,6 +294,7 @@ from .store import StorageMixin, _watched_seconds
 class DeviceSentinelCoordinator(
     DeviceActionsMixin,
     PowerMixin,
+    DeviceRecommendationsMixin,
     EventMixin,
     ReportWritingMixin,
     NarrativeMixin,
@@ -1862,6 +1864,8 @@ class DeviceSentinelCoordinator(
         # restored copy, so its save is the right one; nothing set the
         # flag any longer.
         await self._save_now(final=True)
+        # A power entry still inside its one-second wait (0.24.9).
+        await self.async_flush_power()
 
     # ---------------------------------------------------- registry view
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.24.7 (2026-10-05)
+# File: dashboard.py, Version: 0.24.9 (2026-10-06)
 
 """What the dashboard reads from the coordinator.
 
@@ -39,6 +39,7 @@ from .report_battery import (
     battery_trend,
 )
 from .const import (
+    RULE_LOGNORMAL,
     DEV_LOGNORMAL_DAYS,
     CONNECTS_WORDS,
     BATTERY_STEPS_SMOOTH,
@@ -609,6 +610,32 @@ class DeviceViewMixin:
         rhythm, set_aside = self._trimmed_maximum(gaps)
         return rhythm, sorted(set_aside)
 
+    def _both_rules(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Both freeze rules as the device page draws them (0.24.9)."""
+        daily = record.get(DEV_DAILY_MAX) or []
+        found = self._freeze_rhythm(record)  # type: ignore[attr-defined]
+        out: dict[str, Any] = {
+            "trimmed": None, "trimmed_days": None, "lognormal": None,
+            "lognormal_days": None, "lognormal_gaps": [], "lognormal_set_aside": [],
+            "in_use": None,
+        }
+        if not found:
+            return out
+        out["trimmed"] = found.get("trimmed")
+        out["trimmed_days"] = found.get("trimmed_days")
+        out["in_use"] = "lognormal" if found.get("rule") == RULE_LOGNORMAL else "trimmed"
+        fit = found.get("fit")
+        days = found.get("lognormal_days")
+        if fit and isinstance(days, int) and days > 0:
+            start = max(0, len(daily) - days)
+            out["lognormal"] = found.get("lognormal")
+            out["lognormal_days"] = days
+            out["lognormal_gaps"] = list(daily[start:])
+            out["lognormal_set_aside"] = sorted(
+                i - start for i in fit.get("set_aside", []) if isinstance(i, int) and i >= start
+            )
+        return out
+
     def _rhythm_on_days(self, record: dict[str, Any]) -> dict[str, list[Any]]:
         """The rhythm chart's history laid out one slot a day (0.24.4).
 
@@ -901,6 +928,11 @@ class DeviceViewMixin:
             "rhythm": {
                 "gaps": list((record.get(DEV_DAILY_MAX) or [])[-DAILY_MAX_KEEP:]),
                 "set_aside": set_aside,
+                # Both rules side by side (0.24.9): each one's figure and
+                # days, which one is in use, and the Log-Normal
+                # Percentile's own days with those it set aside, for its
+                # chart beneath the Trimmed Maximum's.
+                **self._both_rules(record),
                 # What the chart can be read against (0.22.25): the
                 # larger of the device's window and its largest day
                 # the trim did not set aside. A vibration sensor away

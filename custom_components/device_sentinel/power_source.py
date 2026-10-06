@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.24.8 (2026-10-05)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.24.9 (2026-10-06)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -250,6 +250,19 @@ def load_library(path: Path = LIBRARY_PATH) -> BatteryLibrary | None:
     return BatteryLibrary(devices)
 
 
+def power_choices() -> dict[str, Any]:
+    """The pencil's choices, for any page that sets power (0.24.9)."""
+    return {
+        "choices": list(POWER_CHOICES),
+        "battery_choices": list(BATTERY_CHOICES),
+        "wired": list(POWER_WIRED),
+        "mains": POWER_MAINS,
+        "usb": POWER_USB,
+        "other": POWER_OTHER,
+        "quantity": [QUANTITY_MIN, QUANTITY_MAX],
+    }
+
+
 def clean_other(text: str | None) -> str:
     """The owner's own type, tidied, or ValueError with the reason."""
     words = " ".join(str(text or "").split())
@@ -362,7 +375,19 @@ class PowerMixin:
 
     def _power_save(self) -> None:
         if self._power_store is not None:
+            self._power_pending = True
             self._power_store.async_delay_save(self._power_payload, 1)
+
+    async def async_flush_power(self) -> None:
+        """Write an entry still waiting for its delayed save (0.24.9).
+
+        A pencil save is written a second later; a reload or a stop
+        inside that second lost it. The stop calls this with its final
+        save, and a direct save cancels the delayed one.
+        """
+        if self._power_store is not None and getattr(self, "_power_pending", False):
+            await self._power_store.async_save(self._power_payload())
+            self._power_pending = False
 
     def _power_device_fields(self, device_id: str) -> tuple[Any, ...]:
         device = dr.async_get(self.hass).async_get(device_id)  # type: ignore[attr-defined]

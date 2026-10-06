@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.24.7 (2026-10-05)
+# File: report_brief.py, Version: 0.24.9 (2026-10-06)
 
 """The daily brief: the one report written for a person.
 
@@ -39,6 +39,7 @@ from .repairs import (
     missing_targets,
 )
 from .const import (
+    PANEL_URL_PATH,
     TODO_KIND_FLAPPING,
     STACK_DISPLAY_NAMES,
     DEV_SIGNAL_VALUE,
@@ -152,7 +153,7 @@ def _plural(count: int) -> str:
 # divides table cells as distinct from the one a name carries. The
 # page escapes for HTML itself, so the backslashes come off first.
 _UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
-_MARKDOWN_ESCAPED = re.compile(r"\\([|<>])")
+_MARKDOWN_ESCAPED = re.compile(r"\\([|<>\[\]])")
 
 
 def _markdown_unescaped(text: str) -> str:
@@ -1290,6 +1291,19 @@ class BriefMixin:
         amending #458).
         """
         items = self._recommendation_items()
+        # One line for each kind of device recommendation, with its
+        # count, pointing to the tab that lists them (0.24.9). The
+        # dashboard's Daily Brief tab is built elsewhere and leaves
+        # them out.
+        # Each carries a link to its list when report links are on: the
+        # renderer adds it to the line it was made for, and to no other.
+        self._brief_rec_links: dict[str, str] = {}
+        for card in self.device_recommendations():
+            line = f"{card['title']}: {card['brief']}"
+            url = self._report_link(f"/{PANEL_URL_PATH}/recommendations?open={card['kind']}")
+            if url:
+                self._brief_rec_links[line] = url
+            items.append(line)
         if not items:
             return []
         lines = ["## Recommendations", ""]
@@ -2566,8 +2580,12 @@ class BriefMixin:
                  self._brief_phrase(row))
                 for row in shown
             ] + [
-                (row[SYS_WHEN], self._system_event_who(row),
-                 self._system_event_phrase(row))
+                # Each cell through the report escape (0.24.9): a device
+                # name, a name typed on its page, a battery typed into
+                # Other or an integration's title can hold a pipe or a
+                # line break, which split the row.
+                (row[SYS_WHEN], self._report_cell(self._system_event_who(row)),
+                 self._report_cell(self._system_event_phrase(row)))
                 for row in sys_events
             ]
             merged.sort(key=lambda item: item[0], reverse=True)
@@ -2733,6 +2751,11 @@ class BriefMixin:
                 html_lines.append(f"<h2>{escape(_markdown_unescaped(line[3:]))}</h2>")
             elif line.strip():
                 text_line = escape(_markdown_unescaped(line))
+                # A device recommendation's link to its list (0.24.9),
+                # built in _recommendations_section from a fixed path.
+                rec_url = (getattr(self, "_brief_rec_links", None) or {}).get(line)
+                if rec_url:
+                    text_line += f' <a href="{escape(rec_url, True)}">Open the list</a>'
                 html_lines.append(f"<p>{text_line}</p>")
         _flush_table()
 

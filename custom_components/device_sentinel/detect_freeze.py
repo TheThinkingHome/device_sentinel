@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.24.4 (2026-10-04)
+# File: detect_freeze.py, Version: 0.24.9 (2026-10-06)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -145,6 +145,13 @@ class FreezeMixin:
         """
         daily_maximum_gaps = daily_maximum_gaps[-DAILY_MAX_KEEP:]
         if not daily_maximum_gaps:
+            return None, set()
+        if not all(
+            isinstance(gap, (int, float)) and not isinstance(gap, bool) and math.isfinite(gap)
+            for gap in daily_maximum_gaps
+        ):
+            # Anything but a number gives no rhythm (0.24.9), as an
+            # empty history does, rather than a failure.
             return None, set()
         if len(daily_maximum_gaps) < TRIM_MIN_SAMPLES:
             return max(daily_maximum_gaps), set()
@@ -291,6 +298,15 @@ class FreezeMixin:
         """
         daily = record.get(DEV_DAILY_MAX) or []
         if len(daily) < FREEZE_ARMING_DAYS:
+            return None
+        if not all(
+            isinstance(gap, (int, float)) and not isinstance(gap, bool) and math.isfinite(gap)
+            for gap in daily
+        ):
+            # A history holding anything but a number cannot be judged
+            # (0.24.9): the device waits as a young one does, rather
+            # than its minute check and its page failing. Only a fault
+            # could put one there; the file check removes them on load.
             return None
         trimmed, _ = self._trimmed_maximum(daily)
         if trimmed is None or trimmed <= 0:

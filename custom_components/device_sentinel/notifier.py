@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.23.19 (2026-09-30)
+# File: notifier.py, Version: 0.24.9 (2026-10-06)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -43,6 +43,8 @@ truth. A target that will not take a message is logged and skipped.
 """
 
 from __future__ import annotations
+
+import re
 
 from typing import Any
 
@@ -124,6 +126,21 @@ def _in_quiet_hours(options: dict[str, Any], now_hms: str) -> bool:
         return start <= now_hms < end
     # Wraps midnight: quiet if after start or before end.
     return now_hms >= start or now_hms < end
+
+
+_CARD_MARKDOWN = re.compile(r"([\\`*_{}\[\]()#+!|<>~])")
+
+
+def _card_text(text: str) -> str:
+    """Text as the card shows it, never as Markdown (0.24.9).
+
+    A name holding "![x](https://...)" made Home Assistant load an
+    outside picture into the card, and "[x](https://...)" made a link
+    beside the card's own. Each Markdown character is escaped with a
+    backslash, which Home Assistant's renderer takes back off, and a line
+    break inside a name becomes a space.
+    """
+    return _CARD_MARKDOWN.sub(r"\\\1", " ".join(str(text).splitlines()))
 
 
 class NotifierMixin:
@@ -506,7 +523,11 @@ class NotifierMixin:
             summary = self._family_summary(family)
             if summary != "All clear.":
                 title = NOTIFY_FAMILY_TITLES[family]
-                lines.append(f"{title}: {summary}")
+                # The card is drawn as Markdown and the summary names
+                # devices, whose names may come from the device itself
+                # (0.24.9): escaped here, and only here, since the same
+                # summary goes to phones as plain text.
+                lines.append(f"{title}: {_card_text(summary)}")
         # A card that lists anything ends with a link to the Problem
         # List, which names every device the card counts (0.23.10).
         # Home Assistant draws the card as Markdown and leaves a link
