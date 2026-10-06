@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.24.7 (2026-10-05)
+// File: panel.js, Version: 0.24.8 (2026-10-05)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -324,6 +324,12 @@ const STYLE = `
   .dot { width: 10px; height: 10px; border-radius: 5px; background: var(--disabled-text-color, #888); }
   .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   button, select { font: inherit; font-size: 14px; font-weight: 500; }
+  /* A dropdown's open list is drawn by the browser on its own white
+     background, while the closed box takes the theme's text colour,
+     white on a dark theme: the choices vanished (0.24.8). Each choice
+     takes the theme's card and text colours instead. */
+  select option, select optgroup { background-color: var(--card-background-color, #ffffff);
+    color: var(--primary-text-color, #212121); }
   .pill { min-height: 44px; padding: 0 18px; border-radius: 22px; cursor: pointer;
     background: var(--card-background-color); color: var(--primary-text-color); border: 1px solid var(--divider-color); }
   .pill:disabled { opacity: 0.6; cursor: default; }
@@ -1855,17 +1861,24 @@ class DeviceSentinelPanel extends HTMLElement {
       power.source ? this._powerIcon(power) : null,
       acts ? this._editMark("Change what powers this device", () => {
         const entry = power.entry;
-        const pick = entry ? (power.battery_choices.includes(entry.type) || entry.type === power.mains || entry.type === power.usb
+        const wired = power.wired || [power.mains, power.usb];
+        const pick = entry ? (power.battery_choices.includes(entry.type) || wired.includes(entry.type)
           ? entry.type : power.other) : "";
         this._devEdit = { device: who.device_id, row: "power", choice: pick,
           quantity: (entry && entry.quantity) || 1, other: entry && pick === power.other ? entry.type : "" };
         this._paintDevicePage();
       }) : null);
+    // Where an owner's entry was set, and how many it covers (0.24.8).
+    const elsewhere = power.source === "owner" && power.set_on && power.set_on !== who.device_id;
+    const covers = power.source === "owner" && power.covers > 1;
+    const whence = elsewhere || covers ? el("div", { class: "muted small powerwhence" },
+      [elsewhere ? `set on ${power.set_on_name || "another device"}` : "set here",
+        covers ? `covers ${power.covers} devices of this model` : null].filter(Boolean).join(", ")) : null;
     if (!acts || !e || e.row !== "power") {
-      return el("div", { class: "actcol" }, shown, this._powerReport(who, e), this._actNote("power"));
+      return el("div", { class: "actcol" }, shown, whence, this._powerReport(who, e), this._actNote("power"));
     }
     const [qmin, qmax] = power.quantity || [1, 8];
-    const isBattery = (choice) => choice && choice !== power.mains && choice !== power.usb;
+    const isBattery = (choice) => choice && !(power.wired || [power.mains, power.usb]).includes(choice);
     const select = el("select", { class: "actinput", "aria-label": "What powers this device" },
       el("option", { value: "" }, "Choose…"),
       ...power.choices.map((choice) => el("option", { value: choice, ...(e.choice === choice ? { selected: "" } : {}) }, choice)));
