@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.24.7 (2026-10-05)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.24.8 (2026-10-05)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -39,7 +39,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import LOGGER
+from .const import DATA_DEVICES, LOGGER
 from .device_fields import device_field
 
 LIBRARY_PATH = Path(__file__).parent / "data" / "battery_library.json"
@@ -56,8 +56,10 @@ BATTERY_CHOICES: tuple[str, ...] = (
 )
 POWER_MAINS = "Mains Powered"
 POWER_USB = "USB Powered"
+POWER_POE = "PoE Powered"  # Power over Ethernet (0.24.8)
 POWER_OTHER = "Other"
-POWER_CHOICES: tuple[str, ...] = (*BATTERY_CHOICES, POWER_MAINS, POWER_USB, POWER_OTHER)
+POWER_WIRED: tuple[str, ...] = (POWER_MAINS, POWER_USB, POWER_POE)
+POWER_CHOICES: tuple[str, ...] = (*BATTERY_CHOICES, *POWER_WIRED, POWER_OTHER)
 QUANTITY_MIN = 1
 QUANTITY_MAX = 8
 OTHER_MAX_LENGTH = 40
@@ -67,6 +69,8 @@ SOURCE_LIBRARY = "library"
 KIND_BATTERY = "battery"
 KIND_MAINS = "mains"
 KIND_USB = "usb"
+KIND_POE = "poe"
+WIRED_KINDS = {POWER_MAINS: KIND_MAINS, POWER_USB: KIND_USB, POWER_POE: KIND_POE}
 
 REPORT_FORM = "https://github.com/andrew-codechimp/HA-Battery-Notes/issues/new"
 REPORT_TEMPLATE = "new_device_request.yaml"
@@ -83,6 +87,18 @@ def power_words(battery_type: str, quantity: int | None) -> str:
 
 def _fold(value: Any) -> str:
     return str(value or "").casefold()
+
+
+def model_key(manufacturer: Any, model: Any, model_id: Any) -> str | None:
+    """What makes two devices the same model, for an owner's entry
+    (0.24.8): manufacturer, model and model ID, exactly as Home
+    Assistant reports them. The hardware version is left out, because
+    one model reports a version on some devices and none on others.
+    None for a device with no manufacturer or no model.
+    """
+    if not manufacturer or not model:
+        return None
+    return json.dumps([str(manufacturer), str(model), str(model_id or "")])
 
 
 @dataclass(frozen=True)
@@ -138,7 +154,13 @@ class BatteryLibrary:
         model_id: str | None = None,
         hw_version: str | None = None,
     ) -> LibraryAnswer | None:
-        """Battery Notes' answer for a device, or None."""
+        """Battery Notes' answer for a device, or None.
+
+        Battery Notes' own search and nothing looser: a looser second
+        search was built for 0.24.8 and withdrawn the same day, because
+        a match that is not certain is worse than "Not known" and a
+        report to the library.
+        """
         if not manufacturer:
             return None
         model_id = model_id or None
@@ -246,7 +268,7 @@ def _clean_entry(raw: Any) -> dict[str, Any] | None:
         return None
     kind = raw.get("kind")
     battery_type = raw.get("type")
-    if kind not in (KIND_BATTERY, KIND_MAINS, KIND_USB) or not isinstance(battery_type, str):
+    if kind not in (KIND_BATTERY, *WIRED_KINDS.values()) or not isinstance(battery_type, str):
         return None
     try:
         battery_type = clean_other(battery_type)
@@ -269,14 +291,22 @@ class PowerMixin:
 
     _power_library: BatteryLibrary | None = None
     _power_entries: dict[str, dict[str, Any]] = {}
+    _power_models: dict[str, dict[str, Any]] = {}
     _power_store: Store[dict[str, Any]] | None = None
 
     async def async_load_power(self) -> None:
-        """Read the library and the owner entries; neither stops a start."""
+        """Read the library and the owner entries; neither stops a start.
+
+        Since 0.24.8 an entry belongs to a model, so one set on one
+        Third Reality button covers all four. 0.24.7's entries, held
+        per device, become model entries here on the first start; a
+        device with no manufacturer or model keeps its entry to itself.
+        """
         hass = self.hass  # type: ignore[attr-defined]
         self._power_library = await hass.async_add_executor_job(load_library)
         self._power_store = Store(hass, POWER_STORE_VERSION, POWER_STORE_KEY)
         self._power_entries = {}
+        self._power_models = {}
         try:
             payload = await self._power_store.async_load()
         except (ValueError, OSError) as err:
@@ -287,14 +317,29 @@ class PowerMixin:
                 err,
             )
             payload = None
-        devices = (payload or {}).get("devices") if isinstance(payload, dict) else None
+        payload = payload if isinstance(payload, dict) else {}
         dropped = 0
-        for device_id, raw in (devices or {}).items() if isinstance(devices, dict) else ():
+        models = payload.get("models")
+        for key, raw in (models.items() if isinstance(models, dict) else ()):
             entry = _clean_entry(raw)
-            if isinstance(device_id, str) and entry is not None:
-                self._power_entries[device_id] = entry
+            setter = raw.get("device_id") if isinstance(raw, dict) else None
+            if isinstance(key, str) and entry is not None and isinstance(setter, str):
+                self._power_models[key] = {**entry, "device_id": setter}
             else:
                 dropped += 1
+        devices = payload.get("devices")
+        for device_id, raw in (devices.items() if isinstance(devices, dict) else ()):
+            if isinstance(raw, dict) and "model" in raw:
+                continue  # the copy kept for 0.24.7, not an entry of its own
+            entry = _clean_entry(raw)
+            if not isinstance(device_id, str) or entry is None:
+                dropped += 1
+                continue
+            key = self._power_key(device_id)
+            if key is not None and key not in self._power_models:
+                self._power_models[key] = {**entry, "device_id": device_id}
+            elif key is None:
+                self._power_entries[device_id] = entry
         if dropped:
             LOGGER.warning(
                 "Device Sentinel left out %d owner battery entr%s it could not read",
@@ -303,7 +348,17 @@ class PowerMixin:
             )
 
     def _power_payload(self) -> dict[str, Any]:
-        return {"devices": {k: dict(v) for k, v in sorted(self._power_entries.items())}}
+        # Each model entry is also written under the device it was set
+        # on, marked with its model, so 0.24.7 still shows it there
+        # after a downgrade; 0.24.8 skips those copies when it reads.
+        devices = {k: dict(v) for k, v in self._power_entries.items()}
+        for key, entry in self._power_models.items():
+            copy = {f: entry[f] for f in ("kind", "type", "quantity", "set")}
+            devices.setdefault(entry["device_id"], {**copy, "model": key})
+        return {
+            "models": {k: dict(v) for k, v in sorted(self._power_models.items())},
+            "devices": dict(sorted(devices.items())),
+        }
 
     def _power_save(self) -> None:
         if self._power_store is not None:
@@ -318,6 +373,25 @@ class PowerMixin:
             device_field(device, "hw_version"),
         )
 
+    def _power_key(self, device_id: str) -> str | None:
+        maker, model, model_id, _hw = self._power_device_fields(device_id)
+        return model_key(maker, model, model_id)
+
+    def _power_same_model(self, key: str, leaving: str | None = None) -> list[str]:
+        """Devices Device Sentinel knows that are this model."""
+        records = self.data.get(DATA_DEVICES) or {}  # type: ignore[attr-defined]
+        return [d for d in records if d != leaving and self._power_key(d) == key]
+
+    def _power_entry(self, device_id: str) -> tuple[dict[str, Any] | None, str | None]:
+        """The owner's entry that covers the device, and its model key."""
+        entry = self._power_entries.get(device_id)
+        if entry is not None:
+            return entry, None
+        key = self._power_key(device_id)
+        if key is not None and key in self._power_models:
+            return self._power_models[key], key
+        return None, key
+
     def power_library_answer(self, device_id: str) -> LibraryAnswer | None:
         if self._power_library is None:
             return None
@@ -325,14 +399,17 @@ class PowerMixin:
 
     def power_of(self, device_id: str) -> dict[str, Any] | None:
         """What powers the device, and where that came from, or None."""
-        entry = self._power_entries.get(device_id)
+        entry, key = self._power_entry(device_id)
         if entry is not None:
+            setter = entry.get("device_id", device_id)
             return {
                 "words": power_words(entry["type"], entry["quantity"]),
                 "source": SOURCE_OWNER,
                 "kind": entry["kind"],
                 "type": entry["type"],
                 "quantity": entry["quantity"],
+                "set_on": setter,
+                "covers": len(self._power_same_model(key)) if key else 1,
             }
         answer = self.power_library_answer(device_id)
         if answer is not None:
@@ -356,9 +433,10 @@ class PowerMixin:
         Offered for a battery type the owner set that the library does
         not already give, on a device with a manufacturer and a model,
         which the form requires. Mains and USB are not batteries, so
-        the library has no place for them.
+        the library has no place for them. The title is filled too,
+        "[Device]: Third Reality Smart button (3RSB22BZ)" (0.24.8).
         """
-        entry = self._power_entries.get(device_id)
+        entry, _key = self._power_entry(device_id)
         if entry is None or entry["kind"] != KIND_BATTERY:
             return None
         maker, model, model_id, _hw = self._power_device_fields(device_id)
@@ -369,7 +447,8 @@ class PowerMixin:
             (answer.quantity or 1) == (entry["quantity"] or 1)
         ):
             return None
-        fields = [("template", REPORT_TEMPLATE), ("manufacturer", maker), ("model", model)]
+        title = f"[Device]: {maker} {model}" + (f" ({model_id})" if model_id else "")
+        fields = [("template", REPORT_TEMPLATE), ("title", title), ("manufacturer", maker), ("model", model)]
         if model_id:
             fields.append(("model_id", model_id))
         fields += [("battery_type", entry["type"]), ("battery_quantity", str(entry["quantity"] or 1))]
@@ -378,12 +457,24 @@ class PowerMixin:
     def power_view(self, device_id: str) -> dict[str, Any]:
         """What the device page's Power row needs."""
         known = self.power_of(device_id)
-        entry = self._power_entries.get(device_id)
+        entry, _key = self._power_entry(device_id)
         answer = self.power_library_answer(device_id)
+        set_on = known.get("set_on") if known else None
         return {
             "words": known["words"] if known else NOT_KNOWN,
             "source": known["source"] if known else None,
-            "entry": dict(entry) if entry else None,
+            "entry": {f: entry[f] for f in ("kind", "type", "quantity", "set")} if entry else None,
+            # Where an owner's entry was set, and how many devices it
+            # covers (0.24.8): "set on Button Master Shower, covers 4".
+            "set_on": set_on,
+            # Named only while Home Assistant still has that device;
+            # otherwise the page says "another device".
+            "set_on_name": (
+                self._device_name(set_on)  # type: ignore[attr-defined]
+                if set_on and dr.async_get(self.hass).async_get(set_on) is not None  # type: ignore[attr-defined]
+                else None
+            ),
+            "covers": known.get("covers") if known else None,
             "library": answer.words if answer else None,
             "library_home": LIBRARY_HOME,
             "report_url": self.power_report_url(device_id),
@@ -391,6 +482,8 @@ class PowerMixin:
             "battery_choices": list(BATTERY_CHOICES),
             "mains": POWER_MAINS,
             "usb": POWER_USB,
+            # The choices that take no quantity and no report (0.24.8).
+            "wired": list(POWER_WIRED),
             "other": POWER_OTHER,
             "quantity": [QUANTITY_MIN, QUANTITY_MAX],
         }
@@ -399,7 +492,8 @@ class PowerMixin:
         known = self.power_of(device_id)
         if known is None:
             return None
-        return {"words": known["words"], "source": known["source"], "entry": self._power_entries.get(device_id)}
+        entry, key = self._power_entry(device_id)
+        return {"words": known["words"], "source": known["source"], "entry": entry, "model": key}
 
     def page_set_power(
         self,
@@ -408,26 +502,31 @@ class PowerMixin:
         quantity: int | None = None,
         other: str | None = None,
     ) -> None:
-        """Set the owner's answer from the device page; None clears it."""
+        """Set the owner's answer from the device page; None clears it.
+
+        Since 0.24.8 the answer covers every device of the same model,
+        and clearing it clears it for all of them.
+        """
         self._device(device_id)  # type: ignore[attr-defined]
         entry: dict[str, Any]
+        key = self._power_key(device_id)
+        covers = len(self._power_same_model(key)) if key else 1
+        many = f", for all {covers} devices of this model" if covers > 1 else ""
         if not choice:
-            if self._power_entries.pop(device_id, None) is None:
+            had_own = self._power_entries.pop(device_id, None) is not None
+            had_model = key is not None and self._power_models.pop(key, None) is not None
+            if not (had_own or had_model):
                 return
             self._power_save()
             answer = self.power_library_answer(device_id)
             self._page_done(  # type: ignore[attr-defined]
                 device_id,
-                f"power entry removed, the library's {answer.words} used"
-                if answer else "power entry removed",
+                (f"power entry removed, the library's {answer.words} used" if answer else "power entry removed")
+                + many,
             )
             return
-        if choice in (POWER_MAINS, POWER_USB):
-            entry = {
-                "kind": KIND_MAINS if choice == POWER_MAINS else KIND_USB,
-                "type": choice,
-                "quantity": None,
-            }
+        if choice in WIRED_KINDS:
+            entry = {"kind": WIRED_KINDS[choice], "type": choice, "quantity": None}
         else:
             if choice in BATTERY_CHOICES:
                 battery_type = choice
@@ -443,14 +542,34 @@ class PowerMixin:
                 raise ValueError(f"The quantity is {QUANTITY_MIN} to {QUANTITY_MAX}.")
             entry = {"kind": KIND_BATTERY, "type": battery_type, "quantity": quantity}
         entry["set"] = dt_util.utcnow().isoformat()
-        self._power_entries[device_id] = entry
+        if key is not None:
+            self._power_models[key] = {**entry, "device_id": device_id}
+            self._power_entries.pop(device_id, None)
+        else:
+            self._power_entries[device_id] = entry
         self._power_save()
         self._page_done(  # type: ignore[attr-defined]
-            device_id, f"power set to {power_words(entry['type'], entry['quantity'])}"
+            device_id, f"power set to {power_words(entry['type'], entry['quantity'])}{many}"
         )
 
     @callback
     def _power_forget(self, device_id: str | None) -> None:
-        """A device gone from Home Assistant takes its entry with it."""
-        if device_id and self._power_entries.pop(device_id, None) is not None:
+        """A device gone from Home Assistant takes its own entry with it.
+
+        A model entry it set passes to another device of the model, or
+        goes with the last of them.
+        """
+        if not device_id:
+            return
+        changed = self._power_entries.pop(device_id, None) is not None
+        for key, entry in list(self._power_models.items()):
+            if entry.get("device_id") != device_id:
+                continue
+            others = self._power_same_model(key, leaving=device_id)
+            if others:
+                entry["device_id"] = others[0]
+            else:
+                del self._power_models[key]
+            changed = True
+        if changed:
             self._power_save()

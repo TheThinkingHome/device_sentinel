@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.24.7 (2026-10-05)
+# File: coordinator.py, Version: 0.24.8 (2026-10-05)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -339,6 +339,8 @@ class DeviceSentinelCoordinator(
         # What powers each device (0.24.7): the owner's entries, in a
         # store of their own, and the shipped Battery Notes library.
         self._power_entries: dict[str, dict[str, Any]] = {}
+        # Entries that cover a whole model (0.24.8), keyed by model.
+        self._power_models: dict[str, dict[str, Any]] = {}
         # Set as the stop begins (0.24.7). A minute check is a
         # background task that cancelling its timer does not stop; one
         # already running finishes after the stop, and must not write.
