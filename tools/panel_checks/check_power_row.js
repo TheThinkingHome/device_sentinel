@@ -1,4 +1,4 @@
-// Panel checks: the Power row (0.24.7). Words, the source icon in light
+// Panel checks: the Power row (0.24.7, 0.24.8). Words, the source icon in light
 // and dark, the library icon's link, the pencil's choices, Save, the
 // report button after a save, and Use the library.
 // Run with: LC_ALL=en_US.UTF-8 node check_power_row.js [path/to/panel.js]
@@ -94,11 +94,11 @@ const click = async (node) => { node.click(); await settle(); };
 
 
 const CHOICES_P = ["AA", "AAA", "CR2032", "CR2450", "Rechargeable", "CR123A", "CR2", "CR2477", "CR1632", "CR2430",
-  "Mains Powered", "USB Powered", "Other"];
+  "Mains Powered", "USB Powered", "PoE Powered", "Other"];
 const block = (over) => Object.assign({
   words: "Not known", source: null, entry: null, library: null,
   library_home: "https://github.com/andrew-codechimp/HA-Battery-Notes", report_url: null,
-  choices: CHOICES_P, battery_choices: CHOICES_P.slice(0, 10), mains: "Mains Powered", usb: "USB Powered",
+  choices: CHOICES_P, battery_choices: CHOICES_P.slice(0, 10), mains: "Mains Powered", usb: "USB Powered", wired: ["Mains Powered", "USB Powered", "PoE Powered"],
   other: "Other", quantity: [1, 8],
 }, over);
 const LIBRARY = block({ words: "CR1632", source: "library", library: "CR1632" });
@@ -140,13 +140,15 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   cell = rowCell(root, "Power");
   const select = cell.querySelector('select[aria-label="What powers this device"]');
   const options = select ? [...select.options].map((o) => o.textContent) : [];
-  check("Pencil: the dropdown offers the ten types, Mains, USB and Other", options.join("|") === ["Choose…", ...CHOICES_P].join("|"), options);
+  check("Pencil: the dropdown offers the ten types, Mains, USB, PoE and Other", options.join("|") === ["Choose…", ...CHOICES_P].join("|"), options);
   const qty = cell.querySelector('select[aria-label="How many"]');
   const other = cell.querySelector('input[aria-label="Battery or power source"]');
   check("Pencil: quantity 1 to 8", qty && [...qty.options].map((o) => o.value).join(",") === "1,2,3,4,5,6,7,8");
   const choose = async (value) => { select.value = value; select.dispatchEvent(new (select.ownerDocument.defaultView.Event)("change")); await settle(); };
   await choose("Mains Powered");
   check("Pencil: no quantity and no text box for Mains Powered", qty.style.display === "none" && other.style.display === "none");
+  await choose("PoE Powered");
+  check("Pencil: no quantity and no text box for PoE Powered", qty.style.display === "none" && other.style.display === "none");
   await choose("Other");
   check("Pencil: Other shows its text box and a quantity", other.style.display === "" && qty.style.display === "");
   other.value = "9V"; other.dispatchEvent(new (other.ownerDocument.defaultView.Event)("input"));
@@ -169,6 +171,23 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   const cleared = calls.filter((c) => c.type === "device_sentinel/device_power").pop();
   check("Use the library clears the entry", cleared && cleared.choice === null, cleared);
   check("No report after going back to the library", !rowCell(root, "Power").querySelector("a.chip"));
+
+  console.log("\nThe Power row, 0.24.8");
+  ({ root } = await open({}, Object.assign({}, OWNER, { set_on: "other", set_on_name: "Button Master Shower", covers: 4 })));
+  let whence = rowCell(root, "Power").querySelector(".powerwhence");
+  check("Set on another device: names it and how many it covers",
+    whence && whence.textContent === "set on Button Master Shower, covers 4 devices of this model", whence && whence.textContent);
+  ({ root } = await open({}, Object.assign({}, OWNER, { set_on: DEVICE, set_on_name: "Button Randy Night Table", covers: 4 })));
+  whence = rowCell(root, "Power").querySelector(".powerwhence");
+  check("Set here on a model of four: says so", whence && whence.textContent === "set here, covers 4 devices of this model",
+    whence && whence.textContent);
+  ({ root } = await open({}, Object.assign({}, OWNER, { set_on: DEVICE, covers: 1 })));
+  check("Set here on a one-off: no extra line", !rowCell(root, "Power").querySelector(".powerwhence"));
+  ({ root } = await open({}, LIBRARY));
+  check("Library answers carry no set-on line", !rowCell(root, "Power").querySelector(".powerwhence"));
+  const css = [...root.querySelectorAll("style")].map((s) => s.textContent).join("\n");
+  check("Dropdown choices take the theme's card and text colours",
+    /select option, select optgroup \{ background-color: var\(--card-background-color, #ffffff\);\s*color: var\(--primary-text-color, #212121\); \}/.test(css));
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
