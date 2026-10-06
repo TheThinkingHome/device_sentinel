@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.24.9 (2026-10-06)
+// File: panel.js, Version: 0.24.10 (2026-10-06)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -2166,8 +2166,10 @@ class DeviceSentinelPanel extends HTMLElement {
     const back = el("p", { style: "margin:0;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap" },
       // Previous and Next beside the way back (0.24.9).
       el("span", { class: "actrow" }, this._backLink(), this._prevNext()),
-      this._page && this._page.identity && this._page.identity.actions
-        ? this._link("Open in Home Assistant", `/config/devices/device/${this._page.identity.device_id}`)
+      // Shown once, here at the top (0.24.10); the header carried a
+      // second copy beside "Live, updates every minute".
+      this._page && this._page.identity
+        ? this._link("Open in Home Assistant", `/config/devices/device/${encodeURIComponent(this._page.identity.device_id)}`)
         : null);
     this._readingCells = null;
     if (!page) {
@@ -2200,8 +2202,7 @@ class DeviceSentinelPanel extends HTMLElement {
           who.integration ? [" on ", this._link(who.integration_name || who.integration, this._integrationPath(who.integration))] : "",
           `. ${standing}.`)),
       el("div", { class: "links" },
-        el("span", { class: "small" }, "Live, updates every minute"),
-        this._link("Open in Home Assistant", `/config/devices/device/${encodeURIComponent(who.device_id)}`)));
+        el("span", { class: "small" }, "Live, updates every minute")));
     const statusBox = el("div", { class: "devstatus" },
       el("div", { class: "statusline" },
         el("div", { style: "font-size:18px;font-weight:500;display:flex;align-items:center;gap:8px" },
@@ -2307,8 +2308,14 @@ class DeviceSentinelPanel extends HTMLElement {
     // Its rhythm (0.24.9): both rules, each with its own chart and its
     // result as a red line, the one in use tagged, and a short word on
     // why there are two.
-    const rhythmBox = page.rhythm || {};
-    const ruleChart = (title, inUse, note, gaps, aside, asideClass, line, from) => {
+    // In a block of its own (0.24.9): page.rhythm's "trimmed" and
+    // "lognormal" are the History chart's series, not these figures.
+    const rhythmBox = (page.rhythm && page.rhythm.rules) || {};
+    const ruleChart = (title, inUse, note, gaps, aside, asideClass, rawLine, from) => {
+      // Only a real number draws the line; anything else draws none,
+      // so a wrong value can never blank the bars (0.24.9).
+      const line = typeof rawLine === "number" && Number.isFinite(rawLine) ? rawLine : null;
+      gaps = (gaps || []).map((g) => (typeof g === "number" && Number.isFinite(g) ? g : 0));
       if (!gaps.length) return null;
       const top = Math.max(...gaps.filter((g, i) => !aside.includes(i)), line || 0, 1) * 1.15;
       const bars = el("div", { class: "gaps rulechart", role: "img",
