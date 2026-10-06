@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.24.9 (2026-10-06)
+# File: dashboard.py, Version: 0.24.10 (2026-10-06)
 
 """What the dashboard reads from the coordinator.
 
@@ -610,6 +610,22 @@ class DeviceViewMixin:
         rhythm, set_aside = self._trimmed_maximum(gaps)
         return rhythm, sorted(set_aside)
 
+    def _rhythm_in_use(self, record: dict[str, Any]) -> float | None:
+        """The rhythm of the rule the wait is built from (0.24.10).
+
+        The status bar and the Devices tab showed the 14-Day Trimmed
+        Maximum's rhythm beside a window built from the Log-Normal
+        Percentile whenever that rule was the shorter: a plug read
+        "rhythm 3.2h" beside "window 34m", its rhythm in use being 8
+        minutes. Young devices, with only the Trimmed Maximum, read
+        as before.
+        """
+        found = self._freeze_rhythm(record)  # type: ignore[attr-defined]
+        if found:
+            return found.get("rhythm")
+        rhythm, _ = self._device_rhythm(record)
+        return rhythm
+
     def _both_rules(self, record: dict[str, Any]) -> dict[str, Any]:
         """Both freeze rules as the device page draws them (0.24.9)."""
         daily = record.get(DEV_DAILY_MAX) or []
@@ -776,7 +792,7 @@ class DeviceViewMixin:
         rows = []
         for device_id, domain in self._watched.items():
             record = records.get(device_id) or {}
-            rhythm, _ = self._device_rhythm(record) if record.get(DEV_DAILY_MAX) else (None, [])
+            rhythm = self._rhythm_in_use(record) if record.get(DEV_DAILY_MAX) else None
             problem = problems.get(device_id)
             rows.append({
                 "device_id": device_id,
@@ -919,7 +935,8 @@ class DeviceViewMixin:
                     else ""
                 ),
                 "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
-                "rhythm": rhythm,
+                # The rule in use, as the window is (0.24.10).
+                "rhythm": self._rhythm_in_use(record) if record.get(DEV_DAILY_MAX) else rhythm,
                 "window": self._freeze_window(record),
                 # The rule in use, as people read it: "37-Day
                 # Log-Normal Percentile" (0.24.0).
@@ -931,8 +948,11 @@ class DeviceViewMixin:
                 # Both rules side by side (0.24.9): each one's figure and
                 # days, which one is in use, and the Log-Normal
                 # Percentile's own days with those it set aside, for its
-                # chart beneath the Trimmed Maximum's.
-                **self._both_rules(record),
+                # chart beneath the Trimmed Maximum's. A block of their
+                # own: the History chart's day-by-day series already use
+                # the names "trimmed" and "lognormal" in this one, and
+                # overwrote the figures, blanking both charts.
+                "rules": self._both_rules(record),
                 # What the chart can be read against (0.22.25): the
                 # larger of the device's window and its largest day
                 # the trim did not set aside. A vibration sensor away
