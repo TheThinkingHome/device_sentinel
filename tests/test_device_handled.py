@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_handled.py, Version: 0.23.18 (2026-09-29)
+# File: tests/test_device_handled.py, Version: 0.24.11 (2026-10-07)
 
 # Tests for 0.19.2, attributing a recovery to a person (ruling #362).
 #
@@ -338,3 +338,26 @@ async def test_a_stale_handling_does_not_discard(hass: HomeAssistant):
     coord._record_activity(device.id, coord.entry.entry_id)
 
     assert record[DEV_TODAY_MAX] > 60.0
+
+
+async def test_a_handling_is_told_on_the_devices_own_line(hass: HomeAssistant):
+    """A device re-paired or reconfigured by hand is told on its own line in
+    the Last 24 Hours table and the dashboard's Daily Brief tab, as a battery
+    change is: "Hall Switch | re-paired by hand", never "The system | a
+    device was re-paired by hand" (James, 7 October, option A, 0.24.11)."""
+    device, _ = register_device(hass, "hall", name="Hall Switch")
+    coord = await setup_coordinator(hass)
+    for kind, words in (("device_joined", "re-paired by hand"),
+                        ("raw_device_initialized", "reconfigured by hand"),
+                        ("device_fully_initialized", "re-paired or reconfigured by hand"),
+                        ("device_removed", "removed by hand")):
+        row = _event(device.id, dt_util.utcnow().timestamp() - 60, kind)
+        assert (coord._system_event_who(row), coord._system_event_phrase(row)) == ("Hall Switch", words)
+    row = _event(device.id, dt_util.utcnow().timestamp() - 60, "device_joined")
+    coord.data["system_events"] = [row]
+    day = coord.dashboard_brief(dt_util.now().date())
+    assert [(r["who"], r["what"], r["device_id"]) for r in day["events"] if "by hand" in str(r["what"])] == [
+        ("Hall Switch", "re-paired by hand", device.id)]
+    blank = _event("", dt_util.utcnow().timestamp() - 60, "device_joined")
+    blank[SYS_DETAIL] = ""
+    assert coord._system_event_who(blank) == "The system", "a row with no device stays the system's"

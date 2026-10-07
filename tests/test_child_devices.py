@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_child_devices.py, Version: 0.22.18 (2026-09-21)
+# File: tests/test_child_devices.py, Version: 0.24.11 (2026-10-07)
 
 """Child devices are watched like any other device.
 
@@ -283,3 +283,19 @@ async def test_every_surface_renders_a_child_without_a_deprecated_read(
         )
         assert result["step_id"] == step
         hass.config_entries.options.async_abort(result["flow_id"])
+
+
+
+async def test_a_child_device_keeps_its_integrations_name(hass: HomeAssistant, hass_storage):
+    """A child device carries no identifiers of its own, so the
+    Zigbee2MQTT naming of 0.24.11 never asks about it: the Devices tab and
+    its page name its integration as before, without a deprecation line."""
+    source, registry, entities, parent = _boiler(hass)
+    child, _, _ = _child(hass, source, registry, entities, parent)
+    entry = await setup_entry(hass)
+    coordinator = entry.runtime_data
+    title = coordinator._integration_title(SOURCE)
+    assert coordinator._integration_name_of(child.id) == title
+    tab = {row["device_id"]: row for row in coordinator.dashboard_devices()}
+    assert tab[child.id]["integration_name"] == title
+    assert coordinator.dashboard_device(child.id)["identity"]["integration_name"] == title

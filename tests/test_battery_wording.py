@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_wording.py, Version: 0.23.17 (2026-09-29)
+# File: tests/test_battery_wording.py, Version: 0.24.11 (2026-10-07)
 
 """What the brief says when a battery level jumps.
 
@@ -16,6 +16,8 @@ surface names both and claims neither.
 """
 
 from __future__ import annotations
+
+import re
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
@@ -83,6 +85,28 @@ async def test_the_written_brief_never_claims_a_replacement(hass: HomeAssistant)
     assert "replaced or recharged" in text
     assert "battery replaced (" not in text
     assert "had its battery replaced at" not in text
+
+
+
+async def test_the_change_is_told_on_the_devices_own_line(hass: HomeAssistant):
+    """Tim Plas, 6 October: "The system | battery replaced or recharged
+    (17% to 100%)" named no device. A battery change is a hand on the
+    device, so the Last 24 Hours table and the dashboard's Daily Brief tab
+    put it on the device's own line (0.24.11, option A)."""
+    device, _ = register_device(hass, "curtain", name="Living Room Curtain")
+    coord = await setup_coordinator(hass)
+    row = _row(device.id)
+    assert coord._system_event_who(row) == "Living Room Curtain"
+    coord.data[DATA_SYSTEM_EVENTS] = [row]
+    day = coord.dashboard_brief(dt_util.now().date())
+    told = [(r["who"], r["what"]) for r in day["events"] if "battery" in str(r["what"])]
+    assert told == [("Living Room Curtain", "battery replaced or recharged (54% to 86%)")]
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    path = hass.config.path("device_sentinel", "daily_brief.html")
+    text = await hass.async_add_executor_job(lambda: open(path, encoding="utf-8").read())
+    cells = re.sub(r"<[^>]+>", "|", text)
+    assert re.search(r"Living Room Curtain\|+battery replaced or recharged \(54% to 86%\)", cells)
+    assert not re.search(r"The system\|+battery replaced", cells)
 
 
 # A repeated battery problem is told once, and what a level says when it moves.

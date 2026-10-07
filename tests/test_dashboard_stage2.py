@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_stage2.py, Version: 0.22.2 (2026-09-19)
+# File: tests/test_dashboard_stage2.py, Version: 0.24.11 (2026-10-07)
 
 """The Problem List and Recommendations tabs.
 
@@ -121,3 +121,46 @@ async def test_the_new_commands_are_admin_only(hass: HomeAssistant, hass_ws_clie
     ):
         reply = await _call(client, **message)
         assert reply["error"]["code"] == "unauthorized", message
+
+
+async def test_a_zigbee2mqtt_device_is_listed_as_zigbee2mqtt(hass: HomeAssistant, hass_ws_client):
+    """Tim Plas, 6 October: his Zigbee2MQTT door sensor read "mqtt" in the
+    Problem List, where its faults are Zigbee's. A device Zigbee2MQTT owns
+    is named for it; another MQTT device keeps MQTT's name, and every row
+    still carries the domain that opens its integration page (0.24.11)."""
+    from homeassistant.config_entries import ConfigEntryState
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    source = MockConfigEntry(domain="mqtt", title="MQTT")
+    source.add_to_hass(hass)
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    made = {}
+    for uid, ident, name in (("s73", "zigbee2mqtt_0x00158d0001a2b3c4", "S73 Door Tilt"),
+                             ("panel", "panel_kitchen", "Kitchen Panel")):
+        device = dr.async_get(hass).async_get_or_create(
+            config_entry_id=source.entry_id, identifiers={("mqtt", ident)}, name=name,
+        )
+        er.async_get(hass).async_get_or_create(
+            "sensor", "mqtt", f"{uid}_value", device_id=device.id, config_entry=source,
+        )
+        made[uid] = device
+    coord = await setup_coordinator(hass)
+    coord.data[DATA_TODO_ITEMS] = [
+        _item("z", made["s73"].id, "S73 Door Tilt", "unavailable", "unavailable", 1791300000.0),
+        _item("p", made["panel"].id, "Kitchen Panel", "unavailable", "unavailable", 1791300000.0),
+    ]
+    client = await hass_ws_client(hass)
+    reply = await _call(client, type="device_sentinel/problem_list")
+    assert reply["success"], reply
+    rows = {row["uid"]: row for row in reply["result"]["rows"]}
+    assert (rows["z"]["integration_name"], rows["z"]["integration"]) == ("Zigbee2MQTT", "mqtt")
+    assert rows["p"]["integration_name"] == coord._integration_title("mqtt")
+    assert rows["p"]["integration"] == "mqtt"
+    # The same name on the Devices tab and on the device's own page.
+    tab = {row["device_id"]: row for row in coord.dashboard_devices()}
+    assert tab[made["s73"].id]["integration_name"] == "Zigbee2MQTT"
+    assert tab[made["panel"].id]["integration_name"] == coord._integration_title("mqtt")
+    assert coord.dashboard_device(made["s73"].id)["identity"]["integration_name"] == "Zigbee2MQTT"
+    assert coord.dashboard_device(made["s73"].id)["identity"]["integration"] == "mqtt"
