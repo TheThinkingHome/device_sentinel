@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_power_source.py, Version: 0.24.9 (2026-10-06)
+# File: tests/test_power_source.py, Version: 0.24.11 (2026-10-07)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -16,6 +16,7 @@ filled in.
 from __future__ import annotations
 
 import json
+import re
 from urllib.parse import parse_qsl, urlsplit
 
 import pytest
@@ -62,7 +63,7 @@ def _made_by(hass, device, maker, model, model_id=None, hw=None):
     )
 
 
-async def _setup(hass, hass_ws_client, maker="Sunricher", model="4IN1 Sensor", model_id="HK-SENSOR-4IN1-A", hw="1"):
+async def _setup(hass, hass_ws_client, maker="Unlisted Maker", model="Unlisted Sensor", model_id="UL-SENSOR-1", hw="1"):
     device, _entities = register_device(hass, "pw0", "Button Randy Night Table")
     _made_by(hass, device, maker, model, model_id, hw)
     coord = await setup_coordinator(hass)
@@ -109,7 +110,7 @@ def test_the_matcher_follows_battery_notes_rules():
 def test_the_shipped_library_loads_and_a_damaged_one_does_not_stop(tmp_path, caplog):
     library = load_library()
     assert library is not None and library.size > 2000
-    assert library.match("Aqara", "Door and window sensor", "MCCGQ11LM", "2").words == "CR1632"
+    assert library.match("Aqara", "Door and window sensor", "MCCGQ11LM", "2").words == "CR2032"
     bad = tmp_path / "battery_library.json"
     bad.write_text("{ not json")
     assert load_library(bad) is None
@@ -118,6 +119,22 @@ def test_the_shipped_library_loads_and_a_damaged_one_does_not_stop(tmp_path, cap
     assert load_library(tmp_path / "missing.json") is None
     assert "cannot read its battery library" in caplog.text
 
+
+
+def test_the_licence_line_counts_the_shipped_library():
+    """The library is refreshed with every Latest (0.24.7, ruling 3), and
+    the licence file's copy line is updated by hand at each refresh. A
+    refresh that forgot the line would ship a notice that misstates
+    what Device Sentinel carries (0.24.11)."""
+    from pathlib import Path
+
+    data = Path(power_source.__file__).parent / "data"
+    count = len(json.loads((data / "battery_library.json").read_text(encoding="utf-8"))["devices"])
+    notice = (data / "BATTERY_LIBRARY_LICENSE.md").read_text(encoding="utf-8")
+    line = re.search(r"Copied for Device Sentinel (\S+) on .+?: ([\d,]+) devices\.", notice)
+    assert line, "the licence file has no copy line"
+    assert int(line.group(2).replace(",", "")) == count
+    assert load_library().size == count
 
 @pytest.mark.parametrize(
     ("text", "reason"),
@@ -146,19 +163,19 @@ def test_other_text_is_tidied_and_markup_stays_text():
 async def test_the_library_answers_then_the_owner_then_not_known(hass: HomeAssistant, hass_ws_client):
     coord, client, device = await _setup(hass, hass_ws_client, "Aqara", "Door and window sensor", "MCCGQ11LM", "2")
     view = coord.power_view(device.id)
-    assert (view["words"], view["source"], view["report_url"]) == ("CR1632", "library", None)
+    assert (view["words"], view["source"], view["report_url"]) == ("CR2032", "library", None)
     reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="AAA", quantity=2)
     assert reply["success"], reply
     view = coord.power_view(device.id)
-    assert (view["words"], view["source"], view["library"]) == ("2× AAA", "owner", "CR1632")
+    assert (view["words"], view["source"], view["library"]) == ("2× AAA", "owner", "CR2032")
     assert view["report_url"], "a correction is offered to Battery Notes"
     reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice=None)
     assert reply["success"], reply
-    assert coord.power_view(device.id)["words"] == "CR1632"
+    assert coord.power_view(device.id)["words"] == "CR2032"
     details = [r[SYS_DETAIL] for r in _page_rows(coord)]
     assert details == [
         "power set to 2× AAA, from its device page",
-        "power entry removed, the library's CR1632 used, from its device page",
+        "power entry removed, the library's CR2032 used, from its device page",
     ]
     other, _ = register_device(hass, "pw9", "Mystery")
     assert coord.power_view(other.id)["words"] == "Not known"
@@ -215,10 +232,10 @@ async def test_the_report_link_fills_battery_notes_form(hass: HomeAssistant, has
     assert f"{parts.scheme}://{parts.netloc}{parts.path}" == power_source.REPORT_FORM
     assert dict(parse_qsl(parts.query)) == {
         "template": "new_device_request.yaml",
-        "title": "[Device]: Sunricher 4IN1 Sensor (HK-SENSOR-4IN1-A)",
-        "manufacturer": "Sunricher",
-        "model": "4IN1 Sensor",
-        "model_id": "HK-SENSOR-4IN1-A",
+        "title": "[Device]: Unlisted Maker Unlisted Sensor (UL-SENSOR-1)",
+        "manufacturer": "Unlisted Maker",
+        "model": "Unlisted Sensor",
+        "model_id": "UL-SENSOR-1",
         "battery_type": "CR2032 & co",
         "battery_quantity": "1",
     }
@@ -227,7 +244,7 @@ async def test_the_report_link_fills_battery_notes_form(hass: HomeAssistant, has
 
 async def test_no_link_without_a_maker_or_when_it_says_what_the_library_says(hass: HomeAssistant, hass_ws_client):
     coord, client, device = await _setup(hass, hass_ws_client, "Aqara", "Door and window sensor", "MCCGQ11LM", "2")
-    reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="Other", other="CR1632")
+    reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="Other", other="CR2032")
     assert reply["success"], reply
     assert coord.power_view(device.id)["report_url"] is None, "nothing new to report"
     _made_by(hass, device, None, None)
@@ -343,10 +360,10 @@ async def _four_of_a_kind(hass, hass_ws_client):
     devices = []
     for i, name in enumerate(names):
         device, _ = register_device(hass, f"mk{i}", name)
-        _made_by(hass, device, "Sunricher", "4IN1 Sensor", "HK-SENSOR-4IN1-A", str(i))
+        _made_by(hass, device, "Unlisted Maker", "Unlisted Sensor", "UL-SENSOR-1", str(i))
         devices.append(device)
     stranger, _ = register_device(hass, "mk9", "Something Else")
-    _made_by(hass, stranger, "Sunricher", "Other Sensor", "HK-OTHER")
+    _made_by(hass, stranger, "Unlisted Maker", "Other Sensor", "HK-OTHER")
     coord = await setup_coordinator(hass)
     client = await hass_ws_client(hass)
     return coord, client, devices, stranger
@@ -364,7 +381,7 @@ async def test_one_entry_covers_every_device_of_the_model(hass: HomeAssistant, h
     # The same model written another way is another model: same means
     # exactly the same (0.24.8).
     lookalike, _ = register_device(hass, "mk8", "Lookalike")
-    _made_by(hass, lookalike, "Sunricher", "4IN1 Sensor", "HK SENSOR 4IN1 A")
+    _made_by(hass, lookalike, "Unlisted Maker", "Unlisted Sensor", "UL SENSOR 1")
     assert coord.power_view(lookalike.id)["words"] == "Not known", "a model written another way took the entry"
     rows = [r[SYS_DETAIL] for r in _page_rows(coord)]
     assert rows == ["power set to 2× AAA, for all 4 devices of this model, from its device page"]
@@ -386,7 +403,7 @@ async def test_a_0_24_7_entry_becomes_the_models(hass: HomeAssistant, hass_stora
     devices = []
     for i in range(3):
         device, _ = register_device(hass, f"mg{i}", f"Button {i}")
-        _made_by(hass, device, "Sunricher", "4IN1 Sensor", "HK-SENSOR-4IN1-A", "1")
+        _made_by(hass, device, "Unlisted Maker", "Unlisted Sensor", "UL-SENSOR-1", "1")
         devices.append(device)
     lonely, _ = register_device(hass, "mg9", "No Maker")
     hass_storage[POWER_STORE_KEY] = {"version": 1, "minor_version": 1, "key": POWER_STORE_KEY, "data": {"devices": {
@@ -413,7 +430,7 @@ async def test_the_copy_for_0_24_7_is_never_read_back_as_an_entry(hass: HomeAssi
     hass_storage[POWER_STORE_KEY]["data"] = json.loads(json.dumps(hass_storage[POWER_STORE_KEY]["data"]))
     # The device that set it now reports another model: its copy must not
     # turn into an entry for that model.
-    _made_by(hass, devices[1], "Sunricher", "Renamed Sensor", "HK-RENAMED", "1")
+    _made_by(hass, devices[1], "Unlisted Maker", "Renamed Sensor", "HK-RENAMED", "1")
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     coord = entry.runtime_data
@@ -442,8 +459,8 @@ async def test_a_removed_setter_hands_the_entry_to_another_of_the_model(hass: Ho
 
 async def test_an_entry_set_on_a_device_since_gone_names_no_ghost(hass: HomeAssistant, hass_storage):
     device, _ = register_device(hass, "gh1", "Survivor")
-    _made_by(hass, device, "Sunricher", "4IN1 Sensor", "HK-SENSOR-4IN1-A")
-    key = json.dumps(["Sunricher", "4IN1 Sensor", "HK-SENSOR-4IN1-A"])
+    _made_by(hass, device, "Unlisted Maker", "Unlisted Sensor", "UL-SENSOR-1")
+    key = json.dumps(["Unlisted Maker", "Unlisted Sensor", "UL-SENSOR-1"])
     hass_storage[POWER_STORE_KEY] = {"version": 1, "minor_version": 1, "key": POWER_STORE_KEY, "data": {"models": {
         key: {"kind": "battery", "type": "AA", "quantity": 3, "set": "2026-10-05T12:00:00+00:00", "device_id": "gone"},
     }, "devices": {}}}
@@ -457,7 +474,7 @@ async def test_a_reload_inside_the_save_second_keeps_the_entry(hass: HomeAssista
     """A pencil save is written a second later; a reload or a stop inside
     that second lost it (0.24.9, found before Latest)."""
     device, _ = register_device(hass, "rs1", "Saved Then Reloaded")
-    _made_by(hass, device, "Sunricher", "4IN1 Sensor", "HK-SENSOR-4IN1-A")
+    _made_by(hass, device, "Unlisted Maker", "Unlisted Sensor", "UL-SENSOR-1")
     entry = await setup_entry(hass)
     entry.runtime_data.page_set_power(device.id, "AAA", 2)
     await hass.config_entries.async_reload(entry.entry_id)
@@ -468,3 +485,96 @@ async def test_a_reload_inside_the_save_second_keeps_the_entry(hass: HomeAssista
     await hass.async_block_till_done()
     models = hass_storage[POWER_STORE_KEY]["data"]["models"]
     assert [m["type"] for m in models.values()] == ["CR2032"]
+
+
+# ------------------------------------------------------------ malformed input (0.24.11)
+
+
+def _registry_with_numbers(hass, hass_storage, device_id, **fields):
+    """The device list as Home Assistant 2026.5 saved it when an integration
+    gave a number for a text field, loaded again. Every version reads a saved
+    number as a number; only a new registration from 2026.6 on is turned into
+    text."""
+    import orjson
+
+    registry = dr.async_get(hass)
+    data = json.loads(orjson.dumps(registry._data_to_save()))
+    for row in data["devices"]:
+        if row["id"] == device_id:
+            row.update(fields)
+    hass_storage["core.device_registry"] = {
+        "version": registry._store.version, "minor_version": registry._store.minor_version,
+        "key": "core.device_registry", "data": data,
+    }
+    return dr.DeviceRegistry(hass)
+
+
+async def test_a_device_saved_with_a_numeric_maker_keeps_its_page_and_the_brief(hass: HomeAssistant, hass_storage):
+    """Since 0.24.9 the brief's recommendation lines ask the library about
+    every device. A maker saved as the number 7 failed that lookup, so the
+    whole brief, the device's page and the Recommendations tab failed with it
+    (0.24.11). The device reads as the text Home Assistant itself would give
+    it today."""
+    device, _ = register_device(hass, "num", "Numbered Plug")
+    numbers = {"manufacturer": 7, "model": 1234, "model_id": 56, "hw_version": 2}
+    if hasattr(dr, "_validate_str"):
+        # 2026.6 and later turn a new number into text, but load a saved one as it is.
+        reloaded = _registry_with_numbers(hass, hass_storage, device.id, **numbers)
+        await reloaded.async_load()
+        hass.data[dr.DATA_REGISTRY] = reloaded
+    else:
+        # 2026.5 stores the integration's number as it is.
+        dr.async_get(hass).async_update_device(device.id, **numbers)
+    assert dr.async_get(hass).async_get(device.id).manufacturer == 7, "the number is held as a number"
+    coord = await setup_coordinator(hass)
+    assert coord._power_device_fields(device.id) == ("7", "1234", "56", "2")
+    assert coord.power_view(device.id)["words"] == "Not known"
+    assert coord.dashboard_device(device.id)["identity"]["power"]["words"] == "Not known"
+    coord.device_recommendations()
+    await hass.async_add_executor_job(coord._write_reports, "manual")
+    brief = hass.config.path("device_sentinel", "daily_brief.html")
+    assert "</html>" in await hass.async_add_executor_job(
+        lambda: open(brief, encoding="utf-8").read()
+    ), "the brief is written whole"
+
+
+def test_a_question_that_is_not_text_gets_no_answer():
+    """Whatever reaches the lookup, it answers or says nothing; it never fails."""
+    for maker, model, model_id, hw in (
+        (7, "TRADFRI remote", None, None), ("IKEA", 7, None, None), ("Aqara", "Door and window sensor", 7, "2"),
+        ("Aqara", "Door and window sensor", "MCCGQ11LM", ["2"]), (True, None, None, None), ({}, [], 1.5, float("nan")),
+    ):
+        assert LIB.match(maker, model, model_id, hw) is None
+    assert LIB.match("IKEA", "TRADFRI remote").words == "CR2032", "text still answers"
+
+
+def test_a_malformed_library_entry_is_skipped_and_the_rest_kept(caplog):
+    """A battery type or quantity the pencil would refuse is never shown from
+    the library either: no hidden or control characters, 1 to 40 characters,
+    a quantity of 1 to 8. The entry is left out with one warning; the good
+    entries beside it still answer (0.24.11)."""
+    good = {"manufacturer": "Acme", "model": "Good", "battery_type": "AAA", "battery_quantity": 2}
+    bad = [
+        {"battery_type": "AA‮A"}, {"battery_type": "AA\nA"}, {"battery_type": ""}, {"battery_type": "   "},
+        {"battery_type": "x" * 41}, {"battery_quantity": 0}, {"battery_quantity": 9}, {"battery_quantity": True},
+        {"battery_quantity": 2**63}, {"battery_quantity": "2"}, {"battery_quantity": 1.5},
+        {"model_id": 7}, {"hw_version": ["2"]}, {"model_match_method": 5},
+    ]
+    entries = [good, {**good, "model": "Single", "battery_quantity": None}]
+    entries += [{**good, "model": f"Bad{i}", **change} for i, change in enumerate(bad)]
+    library = BatteryLibrary(entries)
+    assert library.size == 2
+    assert library.match("Acme", "Good").words == "2× AAA"
+    assert library.match("Acme", "Single").words == "AAA"
+    for i in range(len(bad)):
+        assert library.match("Acme", f"Bad{i}") is None, bad[i]
+    warnings = [r for r in caplog.records if "battery library" in r.getMessage()]
+    assert len(warnings) == 1 and "14" in warnings[0].getMessage()
+
+
+def test_the_shipped_library_has_no_malformed_entry(caplog):
+    """The rules above leave out none of the entries Battery Notes ships, so
+    a refresh that brings a malformed one is seen before release."""
+    entries = json.loads(power_source.LIBRARY_PATH.read_text(encoding="utf-8"))["devices"]
+    assert load_library().size == len(entries)
+    assert not [r for r in caplog.records if "battery library" in r.getMessage()]
