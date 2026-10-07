@@ -1501,8 +1501,7 @@
             "manufacturer": "Aqara",
             "model": "Door and window sensor",
             "model_id": "MCCGQ11LM",
-            "hw_version": "2",
-            "battery_type": "CR1632"
+            "battery_type": "CR2032"
         },
         {
             "manufacturer": "Aqara",
@@ -9793,6 +9792,13 @@
             "battery_type": "CR2430"
         },
         {
+            "manufacturer": "Sunricher",
+            "model": "4IN1 Sensor",
+            "model_id": "HK-SENSOR-4IN1-A",
+            "battery_type": "AA",
+            "battery_quantity": 2
+        },
+        {
             "manufacturer": "Sure Petcare",
             "model": "Cat flap",
             "battery_type": "AA",
@@ -10174,6 +10180,13 @@
         {
             "manufacturer": "Third Reality",
             "model": "Garage door tilt sensor (3RDTS01056Z)",
+            "battery_type": "AAA",
+            "battery_quantity": 2
+        },
+        {
+            "manufacturer": "Third Reality",
+            "model": "Smart button",
+            "model_id": "3RSB22BZ",
             "battery_type": "AAA",
             "battery_quantity": 2
         },
@@ -11464,15 +11477,9 @@
             "battery_quantity": 2
         },
         {
-            "manufacturer": "TuYa",
-            "model": "Temperature and humidity sensor (ZG-227Z)",
-            "battery_type": "CR2450"
-        },
-        {
             "manufacturer": "Tuya",
             "model": "Temperature and humidity sensor (ZG-227Z)",
-            "battery_type": "AAA",
-            "battery_quantity": 2
+            "battery_type": "MANUAL"
         },
         {
             "manufacturer": "TuYa",
