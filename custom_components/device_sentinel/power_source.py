@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.24.9 (2026-10-06)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.24.11 (2026-10-07)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -119,16 +119,19 @@ class BatteryLibrary:
     def __init__(self, devices: list[dict[str, Any]]) -> None:
         self.size = 0
         self._by_maker: dict[str, list[dict[str, Any]]] = {}
+        skipped = 0
         for entry in devices:
-            if not isinstance(entry, dict):
+            if not _library_entry_usable(entry):
+                skipped += 1
                 continue
-            maker = entry.get("manufacturer")
-            model = entry.get("model")
-            kind = entry.get("battery_type")
-            if not (isinstance(maker, str) and isinstance(model, str) and isinstance(kind, str)):
-                continue
-            self._by_maker.setdefault(maker.casefold(), []).append(entry)
+            self._by_maker.setdefault(entry["manufacturer"].casefold(), []).append(entry)
             self.size += 1
+        if skipped:
+            LOGGER.warning(
+                "Device Sentinel left %s malformed entries out of its battery library; "
+                "those devices read \"Not known\" until the library is corrected",
+                skipped,
+            )
 
     @staticmethod
     def _model_matches(entry: dict[str, Any], model: str | None) -> bool:
@@ -161,7 +164,12 @@ class BatteryLibrary:
         a match that is not certain is worse than "Not known" and a
         report to the library.
         """
-        if not manufacturer:
+        if not manufacturer or not all(
+            value is None or isinstance(value, str)
+            for value in (manufacturer, model, model_id, hw_version)
+        ):
+            # A question that is not text has no answer (0.24.11); the
+            # device's own fields are made text before they are asked.
             return None
         model_id = model_id or None
         hw_version = hw_version or None
@@ -222,6 +230,47 @@ class BatteryLibrary:
             return None
         quantity = _quantity(first.get("battery_quantity"))
         return LibraryAnswer(kind, quantity)
+
+
+def _library_entry_usable(entry: Any) -> bool:
+    """Whether a library entry can be shown as it stands (0.24.11).
+
+    The library is copied unchanged from Battery Notes, so a malformed
+    entry in a future copy reaches every surface that names a battery.
+    An entry is kept only when the pencil would accept the same answer
+    from the owner: a type of visible characters, at most 40, already
+    tidy, and a quantity of 1 to 8 or none. The fields the search reads
+    must be text where present. No entry Battery Notes ships breaks
+    these rules, so leaving one out costs only that device's answer,
+    which reads "Not known" as an unlisted device does.
+    """
+    if not isinstance(entry, dict):
+        return False
+    if not all(isinstance(entry.get(f), str) for f in ("manufacturer", "model", "battery_type")):
+        return False
+    if not all(entry.get(f) is None or isinstance(entry.get(f), str)
+               for f in ("model_id", "hw_version", "model_match_method")):
+        return False
+    kind = entry["battery_type"]
+    try:
+        if clean_other(kind) != kind:
+            return False
+    except ValueError:
+        return False
+    quantity = entry.get("battery_quantity")
+    return quantity is None or (
+        isinstance(quantity, int) and not isinstance(quantity, bool)
+        and QUANTITY_MIN <= quantity <= QUANTITY_MAX
+    )
+
+
+def _as_text(value: Any) -> str | None:
+    """A registry field as text, as Home Assistant 2026.6 and later store a
+    new registration (0.24.11). A field saved as a number by 2026.5 is
+    still loaded as one, and the library search compares text."""
+    if value is None or isinstance(value, str):
+        return value
+    return str(value)
 
 
 def _quantity(value: Any) -> int | None:
@@ -392,10 +441,10 @@ class PowerMixin:
     def _power_device_fields(self, device_id: str) -> tuple[Any, ...]:
         device = dr.async_get(self.hass).async_get(device_id)  # type: ignore[attr-defined]
         return (
-            device_field(device, "manufacturer"),
-            device_field(device, "model"),
-            device_field(device, "model_id"),
-            device_field(device, "hw_version"),
+            _as_text(device_field(device, "manufacturer")),
+            _as_text(device_field(device, "model")),
+            _as_text(device_field(device, "model_id")),
+            _as_text(device_field(device, "hw_version")),
         )
 
     def _power_key(self, device_id: str) -> str | None:
