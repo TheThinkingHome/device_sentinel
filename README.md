@@ -141,7 +141,7 @@ Device Sentinel was built with AI assistance under my direction. Every design de
 
 Device Sentinel is under active development. The three newest releases are below, and the [changelog](CHANGELOG.md) lists every release since the first.
 
-**[0.24.11](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.24.11), October 6, 2026.** One or two bad nights can't hold a device's freeze window open for weeks, and a device learns its rhythm only from time Device Sentinel could hear it. Each device's page shows what powers it, from the Battery Notes library or your own entry, and lets you rename it, give it a room, label it and mute it where you see the problem.
+**[0.24.11](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.24.11), October 6, 2026.** A bad night no longer delays your freeze alerts for two weeks, and an outage or restart can't teach a device to stay quiet. Each device's page shows what powers it, from the Battery Notes library or your own entry, and lets you rename it, give it a room, label it and mute it where you see the problem.
 
 **[0.23.20](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.23.20), October 1, 2026.** An outage caused by a hub, broker or integration reaches you as one alert, and a recovery is announced only when a device actually reports again. A device that keeps dropping out becomes one problem instead of dozens. Batteries are read by the week, so a half-point wobble no longer reads as falling, and your brief and reports sit behind Home Assistant's sign-in.
 
