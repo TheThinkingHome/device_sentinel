@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.24.9 (2026-10-06)
+# File: report_brief.py, Version: 0.24.11 (2026-10-07)
 
 """The daily brief: the one report written for a person.
 
@@ -719,11 +719,29 @@ class BriefMixin:
 
     def _system_event_who(self, row: dict[str, Any]) -> str:
         """Whose line a system event goes on: its device's, for an act
-        from a device's page (0.24.5), else the system's."""
-        device_id = row.get(SYS_DEVICE_ID)
+        from a device's page (0.24.5) and for a hand on the device, a
+        battery changed or the device re-paired, reconfigured or removed
+        (0.24.11); else the system's.
+
+        The two interventions keep their device as the first word of
+        their detail, "<registry id> ...", and their table row read
+        "The system | battery replaced or recharged (17% to 100%)",
+        naming no device (Tim Plas, 6 October; James, 7 October,
+        option A). Reading the stored detail puts rows already saved on
+        the right line too.
+        """
+        device_id = self._system_event_device(row)
         if device_id:
             return str(self._device_name(device_id))  # type: ignore[attr-defined]
         return "The system"
+
+    @staticmethod
+    def _system_event_device(row: dict[str, Any]) -> str | None:
+        """The device a system event belongs to, or None (0.24.11)."""
+        device_id = row.get(SYS_DEVICE_ID)
+        if not device_id and row.get(SYS_KIND) in (SYS_BATTERY_REPLACED, SYS_DEVICE_HANDLED):
+            device_id = str(row.get(SYS_DETAIL) or "").split(" ", 1)[0]
+        return str(device_id) if device_id else None
 
     def _system_event_phrase(self, row: dict[str, Any]) -> str:
         """The same event as a table cell rather than a sentence."""
@@ -835,9 +853,8 @@ class BriefMixin:
                 else "unclean shutdown"
             )
         if kind == SYS_DEVICE_HANDLED:
-            # The table row is per event and already sits beside the
-            # device's own rows, so it says what happened without
-            # repeating the id, which is no use to a person.
+            # The row sits on the device's own line (0.24.11), so it
+            # says what was done without naming the device again.
             action = str(detail or "").split(" ", 1)
             what = action[1] if len(action) > 1 else ""
             plain = {
@@ -846,7 +863,7 @@ class BriefMixin:
                 "device_fully_initialized": "re-paired or reconfigured",
                 "device_removed": "removed",
             }.get(what, "handled")
-            return f"a device was {plain} by hand"
+            return f"{plain} by hand"
         if kind == SYS_BATTERY_REPLACED:
             parts = str(detail or "").split(" ")
             levels = (

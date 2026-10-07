@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.24.9 (2026-10-06)
+# File: reports.py, Version: 0.24.11 (2026-10-07)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -232,11 +232,13 @@ class ReportWritingMixin(
         self._write_classification(report_directory, CLASSIFICATION_SETTLED_TRIGGER)
 
     async def _rewrite_classification(self) -> None:
-        """Rewrite the classification report off the event loop."""
+        """Rewrite the classification report off the event loop, in its
+        turn with the other report writes (0.24.11)."""
         try:
-            await self.hass.async_add_executor_job(
-                self._write_classification_settled
-            )
+            async with self._report_lock:  # type: ignore[attr-defined]
+                await self.hass.async_add_executor_job(
+                    self._write_classification_settled
+                )
         except OSError as err:
             LOGGER.warning(
                 "Device Sentinel could not rewrite its classification report: %s",

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.24.9 (2026-10-06)
+# File: dashboard_api.py, Version: 0.24.11 (2026-10-07)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -258,6 +258,9 @@ def ws_problem_list(
             "device_id": item[TODO_DEVICE_ID],
             "name": name,
             "integration": coordinator._watched.get(item[TODO_DEVICE_ID], ""),
+            # Its name as shown, Zigbee2MQTT for a Zigbee2MQTT device
+            # (0.24.11); the domain above still opens its page.
+            "integration_name": coordinator._integration_name_of(item[TODO_DEVICE_ID]),
             "problem": problem,
             "since": dt_util.utc_from_timestamp(since).isoformat() if since is not None else None,
             "acknowledged": item.get(TODO_STATUS) == "completed",

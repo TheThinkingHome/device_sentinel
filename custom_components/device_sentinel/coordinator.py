@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.24.9 (2026-10-06)
+# File: coordinator.py, Version: 0.24.11 (2026-10-07)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -537,6 +537,12 @@ class DeviceSentinelCoordinator(
         self._change_marker = 0
         self._change_listeners: list[Any] = []
         self._brief_unsub: Any | None = None
+        # Report writes take turns (0.24.11). Each report is saved
+        # through a temporary file of a fixed name, and two writes at
+        # once shared it, so one write's move found it gone and that
+        # report was lost: a brief meeting the midnight write closed
+        # its day and sent nothing.
+        self._report_lock = asyncio.Lock()
         # One bridge reader per detected coordinator stack that can
         # report its own liveness and pairing state (ruling #145). Populated in
         # async_setup after the registry view has found the stacks. Z2M
@@ -1780,13 +1786,14 @@ class DeviceSentinelCoordinator(
         """
         await self.async_check_unused_adapter()
         try:
-            if trigger is None:
+            async with self._report_lock:
+                if trigger is None:
+                    return await self.hass.async_add_executor_job(
+                        self._write_reports
+                    )
                 return await self.hass.async_add_executor_job(
-                    self._write_reports
+                    self._write_reports, trigger
                 )
-            return await self.hass.async_add_executor_job(
-                self._write_reports, trigger
-            )
         except OSError as err:
             LOGGER.warning(
                 "Device Sentinel could not write its reports (%s): %s",

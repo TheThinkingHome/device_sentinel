@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.24.10 (2026-10-06)
+# File: dashboard.py, Version: 0.24.11 (2026-10-07)
 
 """What the dashboard reads from the coordinator.
 
@@ -38,8 +38,10 @@ from .report_battery import (
     battery_sentence,
     battery_trend,
 )
+from . import stacks
 from .const import (
     RULE_LOGNORMAL,
+    STACK_DISPLAY_NAMES,
     DEV_LOGNORMAL_DAYS,
     CONNECTS_WORDS,
     BATTERY_STEPS_SMOOTH,
@@ -139,7 +141,6 @@ from .const import (
     BROKER_SENSOR_NAME,
     WIFI_KEY,
     WIFI_SENSOR_NAME,
-    SYS_DEVICE_ID,
 )
 from .escalation import fold
 from .outage_detail import pair_key
@@ -626,6 +627,27 @@ class DeviceViewMixin:
         rhythm, _ = self._device_rhythm(record)
         return rhythm
 
+    def _integration_name_of(self, device_id: str, domain: str | None = None) -> str:
+        """The name shown for a device's integration (0.24.11).
+
+        A Zigbee2MQTT device reaches Home Assistant through the MQTT
+        integration, so the Problem List named it "mqtt", where its
+        faults are Zigbee's (Tim Plas, 6 October). It is named for the
+        stack that owns it, the same on the Problem List, the Devices
+        tab and its page (James, 7 October: one name for one thing,
+        #472); every other device for its integration. The domain still
+        opens the integration's page.
+        """
+        domain = domain or self._watched.get(device_id)  # type: ignore[attr-defined]
+        if not domain:
+            return ""
+        device = dr.async_get(self.hass).async_get(device_id)  # type: ignore[attr-defined]
+        # A child device entry (2026.9) carries no identifiers of its
+        # own, so it keeps its integration's name.
+        if isinstance(device, dr.DeviceEntry) and stacks.radio_owner(domain, device) == STACK_Z2M:
+            return STACK_DISPLAY_NAMES[STACK_Z2M]
+        return str(self._integration_title(domain))  # type: ignore[attr-defined]
+
     def _both_rules(self, record: dict[str, Any]) -> dict[str, Any]:
         """Both freeze rules as the device page draws them (0.24.9)."""
         daily = record.get(DEV_DAILY_MAX) or []
@@ -798,7 +820,7 @@ class DeviceViewMixin:
                 "device_id": device_id,
                 "name": self._device_name(device_id),
                 "integration": domain,
-                "integration_name": self._integration_title(domain),
+                "integration_name": self._integration_name_of(device_id, domain),
                 "muted": self.mute_text(device_id),
                 "status": self._page_status(device_id, record),
                 "problem": problem["problem"] if problem else "",
@@ -895,7 +917,11 @@ class DeviceViewMixin:
                 "hw_version": device_field(device, "hw_version"),
                 "area": area_name,
                 "integration": domain,
-                "integration_name": self._integration_title(domain) if domain else None,
+                "integration_name": self._integration_name_of(device_id, domain) if domain else None,
+                # The integration itself, for what is set on it: an
+                # integration mute on MQTT names MQTT, though the device
+                # is shown as Zigbee2MQTT's (0.24.11).
+                "integration_title": self._integration_title(domain) if domain else None,
                 # How it connects, from its integration's declaration
                 # (0.23.9).
                 "connects": CONNECTS_WORDS.get(self.iot_class_of(domain) or ""),
@@ -1274,7 +1300,7 @@ class BriefViewMixin:
             {
                 "when": _iso(row[SYS_WHEN]),
                 "who": self._system_event_who(row),
-                "device_id": row.get(SYS_DEVICE_ID),
+                "device_id": self._system_event_device(row),
                 "what": self._system_event_phrase(row),
             }
             for row in system
