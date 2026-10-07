@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.24.10 (2026-10-06)
+// File: panel.js, Version: 0.24.11 (2026-10-07)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -42,6 +42,14 @@ const PROBLEM_FILTERS = [
   ["acknowledged", "Acknowledged"],
 ];
 const SETTINGS_PATH = "/config/integrations/integration/device_sentinel";
+// Each mute, the words for it, and the settings section that holds it
+// (0.24.11).
+const MUTE_SOURCES = [
+  ["everything", "Everything", "Exclusions and Muting"],
+  ["freeze", "Freeze", "Freeze Detection"],
+  ["battery", "Battery", "Low Battery"],
+  ["signal", "Signal", "Signal Strength"],
+];
 const INTEGRATION_FILTERS = [
   ["all", "All"],
   ["watched", "Watched"],
@@ -921,7 +929,7 @@ class DeviceSentinelPanel extends HTMLElement {
       const value = {
         acknowledged: (row) => (row.acknowledged ? 1 : 0),
         name: (row) => row.name.toLowerCase(),
-        integration: (row) => row.integration.toLowerCase(),
+        integration: (row) => (row.integration_name || row.integration).toLowerCase(),
         since: (row) => (row.since ? new Date(row.since).getTime() : 0),
       }[sort.key];
       rows = [...rows].sort((a, b) => (value(a) < value(b) ? -1 : value(a) > value(b) ? 1 : 0) * sort.dir);
@@ -968,7 +976,7 @@ class DeviceSentinelPanel extends HTMLElement {
           }))),
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
         el("td", {}, row.integration
-          ? this._link(row.integration, this._integrationPath(row.integration))
+          ? this._link(row.integration_name || row.integration, this._integrationPath(row.integration))
           : ""),
         // The mute that matches each problem, beside it (0.24.5).
         el("td", {}, el("div", { class: "actrow" }, el("span", {}, row.power ? `${row.problem}, ${row.power}` : row.problem),
@@ -1829,7 +1837,17 @@ class DeviceSentinelPanel extends HTMLElement {
         shown = [el("span", { class: "readingvalue" }, value), " ", el("span", { class: "small" }, changed)];
         break;
       }
-      cell.replaceChildren(...(shown || [el("span", { class: "muted" }, "no reading")]));
+      // A device with no Last seen sensor, or none Home Assistant can
+      // read, shows when Device Sentinel last heard it (0.24.11): most
+      // Matter, Z-Wave and ESPHome devices have no such sensor, and
+      // the row read "none" on every one of them (Tim Plas, 6 October).
+      if (!shown && kind === "last_seen" && page.status && page.status.last_activity
+          && Number.isFinite(new Date(page.status.last_activity).getTime())) {
+        shown = [el("span", { class: "readingvalue" },
+          new Date(page.status.last_activity).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })),
+          " ", el("span", { class: "small" }, `heard by Device Sentinel ${ago(page.status.last_activity, Date.now())}`)];
+      }
+      cell.replaceChildren(...(shown || [el("span", { class: "muted" }, kind === "last_seen" ? "none" : "no reading")]));
     }
   }
 
@@ -2148,6 +2166,21 @@ class DeviceSentinelPanel extends HTMLElement {
     const parts = [el("span", {}, who.muted || "nothing"),
       el("div", { class: "actrow" }, toggle("freeze", "Mute freeze"), toggle("battery", "Mute battery"),
         toggle("signal", "Mute signal"), toggle("everything", "Mute everything"))];
+    // A mute set by a label or an integration cannot be lifted here,
+    // and its greyed button said nothing about why (Tim Plas, 6
+    // October). Each says where it comes from and where it is changed
+    // (0.24.11).
+    for (const [kind, words, section] of MUTE_SOURCES) {
+      const m = mutes[kind];
+      if (!m || !m.on || m.here || !m.source) continue;
+      const source = String(m.source);
+      const from = source.startsWith("label: ") ? `the label ${source.slice(7)}`
+        : source.startsWith("integration: ")
+          ? `the integration ${source.slice(13) === who.integration && who.integration_title ? who.integration_title : source.slice(13)}`
+          : source;
+      parts.push(el("div", { class: "actnote" }, `${words} is muted by ${from}. Change it in `,
+        this._link("Device Sentinel's settings", SETTINGS_PATH), `, Configure, ${section}.`));
+    }
     if (e && e.row === "muteall") {
       parts.push(el("div", { class: "actnote ask", role: "alert" },
         `Mute everything for ${who.name}? Device Sentinel will stop judging and reporting it for freeze, battery and signal. It keeps learning.`),
@@ -2285,7 +2318,7 @@ class DeviceSentinelPanel extends HTMLElement {
       ["Signal", byKind("signal").length ? valueCell("signal") : el("span", { class: "muted" }, "none")],
       ["Signal sensor", sensorLinks("signal") || el("span", { class: "muted" }, "none")],
       group("Last seen"),
-      ["Last seen", byKind("last_seen").length ? valueCell("last_seen") : el("span", { class: "muted" }, "none")],
+      ["Last seen", valueCell("last_seen")],
       ["Last seen sensor", lastSeenSensor],
       ["First seen", who.first_observed ? moment(who.first_observed) : "unknown"],
       ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
