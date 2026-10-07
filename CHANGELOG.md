@@ -2,6 +2,10 @@
 
 Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases between them are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
+## [0.24.11](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.24.11), October 6, 2026
+
+One or two bad nights can't hold a device's freeze window open for weeks, and a device learns its rhythm only from time Device Sentinel could hear it. Each device's page shows what powers it, from the Battery Notes library or your own entry, and lets you rename it, give it a room, label it and mute it where you see the problem.
+
 ## [0.23.20](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.23.20), October 1, 2026
 
 An outage caused by a hub, broker or integration reaches you as one alert, and a recovery is announced only when a device actually reports again. A device that keeps dropping out becomes one problem instead of dozens. Batteries are read by the week, so a half-point wobble no longer reads as falling, and your brief and reports sit behind Home Assistant's sign-in.
