@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_actions.py, Version: 0.24.5 (2026-10-04)
+# File: tests/test_device_actions.py, Version: 0.25.0 (2026-10-08)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -210,3 +210,64 @@ async def test_the_brief_puts_a_page_act_on_the_devices_line(hass: HomeAssistant
     assert coord._system_event_who(row) == "Button Randy Night Table"
     assert coord._system_event_phrase(row) == "battery muted, from its device page"
     assert row not in [r for r in coord.data[DATA_SYSTEM_EVENTS] if coord._system_event_who(r) == "The system"]
+
+
+# ------------------------------------- a new area or label from the page (0.25.0)
+#
+# Tim Plas, 6 October: Home Assistant lets a person create a label or an
+# area where they pick one, and Device Sentinel's pickers did not, so
+# he left the page for Home Assistant's settings and came back.
+
+
+async def test_a_new_area_is_made_and_the_device_moved_into_it(hass: HomeAssistant, hass_ws_client):
+    coord, client, device = await _setup(hass, hass_ws_client)
+    reply = await _ws(client, type="device_sentinel/device_new_area", device_id=device.id, name="  Garage  ")
+    assert reply["success"], reply
+    area = ar.async_get(hass).async_get_area_by_name("Garage")
+    assert area is not None and dr.async_get(hass).async_get(device.id).area_id == area.id
+    rows = _rows(coord, SYS_DEVICE_PAGE)
+    assert len(rows) == 1 and rows[0][SYS_DETAIL] == "moved to Garage, a new area, from its device page"
+
+
+async def test_a_new_area_named_as_one_held_is_that_area(hass: HomeAssistant, hass_ws_client):
+    coord, client, device = await _setup(hass, hass_ws_client)
+    laundry = ar.async_get(hass).async_create("Laundry")
+    reply = await _ws(client, type="device_sentinel/device_new_area", device_id=device.id, name="laundry")
+    assert reply["success"], reply
+    assert dr.async_get(hass).async_get(device.id).area_id == laundry.id
+    assert len(ar.async_get(hass).async_list_areas()) == len({a.id for a in ar.async_get(hass).async_list_areas()})
+    assert [a.name for a in ar.async_get(hass).async_list_areas()].count("Laundry") == 1
+    assert _rows(coord, SYS_DEVICE_PAGE)[-1][SYS_DETAIL] == "moved to Laundry, from its device page"
+
+
+async def test_a_new_label_is_made_and_put_on_the_device(hass: HomeAssistant, hass_ws_client):
+    coord, client, device = await _setup(hass, hass_ws_client)
+    reply = await _ws(client, type="device_sentinel/device_new_label", device_id=device.id, name="Spare")
+    assert reply["success"], reply
+    label = lr.async_get(hass).async_get_label_by_name("Spare")
+    assert label is not None and label.label_id in dr.async_get(hass).async_get(device.id).labels
+    assert _rows(coord, SYS_DEVICE_PAGE)[-1][SYS_DETAIL] == "label Spare added, a new label, from its device page"
+    reply = await _ws(client, type="device_sentinel/device_new_label", device_id=device.id, name="spare")
+    assert reply["success"], reply
+    assert [label.name for label in lr.async_get(hass).async_list_labels()].count("Spare") == 1
+
+
+async def test_a_new_name_with_nothing_or_hidden_characters_is_refused(hass: HomeAssistant, hass_ws_client):
+    coord, client, device = await _setup(hass, hass_ws_client)
+    for kind in ("device_new_area", "device_new_label"):
+        for name in ("   ", "Gar‮age", "Shed\x00"):
+            reply = await _ws(client, type=f"device_sentinel/{kind}", device_id=device.id, name=name)
+            assert reply["error"]["code"] == "refused", (kind, name, reply)
+    assert ar.async_get(hass).async_get_area_by_name("Garage") is None
+    assert not _rows(coord, SYS_DEVICE_PAGE)
+
+
+async def test_new_area_and_label_answer_not_found_and_refuse_a_non_admin(hass: HomeAssistant, hass_ws_client, hass_read_only_access_token):
+    coord, client, device = await _setup(hass, hass_ws_client)
+    for kind in ("device_new_area", "device_new_label"):
+        reply = await _ws(client, type=f"device_sentinel/{kind}", device_id="no-such-device", name="Shed")
+        assert reply["error"]["code"] == "not_found", reply
+    reader = await hass_ws_client(hass, hass_read_only_access_token)
+    reply = await _ws(reader, type="device_sentinel/device_new_area", device_id=device.id, name="Shed")
+    assert reply["error"]["code"] == "unauthorized"
+    assert ar.async_get(hass).async_get_area_by_name("Shed") is None

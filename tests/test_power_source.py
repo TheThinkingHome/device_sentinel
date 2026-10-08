@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_power_source.py, Version: 0.24.11 (2026-10-07)
+# File: tests/test_power_source.py, Version: 0.25.0 (2026-10-08)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -16,6 +16,7 @@ filled in.
 from __future__ import annotations
 
 import json
+import os as _os
 import re
 from urllib.parse import parse_qsl, urlsplit
 
@@ -578,3 +579,116 @@ def test_the_shipped_library_has_no_malformed_entry(caplog):
     entries = json.loads(power_source.LIBRARY_PATH.read_text(encoding="utf-8"))["devices"]
     assert load_library().size == len(entries)
     assert not [r for r in caplog.records if "battery library" in r.getMessage()]
+
+
+# ------------------------------------------------- a last-good copy (0.25.0)
+#
+# The owner's entries are the one thing in Device Sentinel's storage a
+# person typed by hand. Until 0.25.0 a damaged power file lost them
+# with a log line. The harness keeps storage in memory, so the files on
+# disk are written by hand here, as test_backup_integrity.py does.
+
+
+def _power_disk(hass, suffix=""):
+    directory = hass.config.path(".storage")
+    _os.makedirs(directory, exist_ok=True)
+    return _os.path.join(directory, POWER_STORE_KEY + (f".{suffix}" if suffix else ""))
+
+
+@pytest.fixture
+def _no_power_files(hass):
+    def sweep():
+        for suffix in ("", "last-good"):
+            path = _power_disk(hass, suffix)
+            if _os.path.exists(path):
+                _os.remove(path)
+    sweep()
+    yield
+    sweep()
+
+
+def _entry_doc(device_id, battery="AA", quantity=4):
+    return {"version": 1, "minor_version": 1, "key": POWER_STORE_KEY, "data": {"devices": {
+        device_id: {"kind": "battery", "type": battery, "quantity": quantity, "set": "2026-10-05T12:00:00+00:00"},
+    }}}
+
+
+async def test_a_save_keeps_the_previous_power_file_as_last_good(hass: HomeAssistant, hass_ws_client, _no_power_files):
+    """Before each save the file about to be replaced becomes last-good
+    (#370's rule, given to the power file in 0.25.0). Fails on 0.24.11,
+    which wrote over the file with no copy."""
+    coord, client, device = await _setup(hass, hass_ws_client)
+    with open(_power_disk(hass), "w", encoding="utf-8") as handle:
+        json.dump(_entry_doc(device.id, "CR2032", 1), handle)
+    reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="AAA", quantity=2)
+    assert reply["success"], reply
+    await coord.async_flush_power()
+    copy = _power_disk(hass, "last-good")
+    assert _os.path.exists(copy), "no last-good copy of the power file"
+    with open(copy, encoding="utf-8") as handle:
+        kept = json.load(handle)["data"]["devices"][device.id]
+    assert (kept["type"], kept["quantity"]) == ("CR2032", 1)
+
+
+async def test_an_unreadable_power_file_is_restored_from_last_good(hass: HomeAssistant, hass_storage, caplog, _no_power_files):
+    """Home Assistant answers nothing for a file it cannot parse; the
+    entries come back from last-good rather than going empty. Fails on
+    0.24.11."""
+    device, _ = register_device(hass, "pw40", "Door Laundry")
+    hass_storage.pop(POWER_STORE_KEY, None)
+    with open(_power_disk(hass, "last-good"), "w", encoding="utf-8") as handle:
+        json.dump(_entry_doc(device.id, "CR2450", 1), handle)
+    coord = await setup_coordinator(hass)
+    assert coord.power_view(device.id)["words"] == "CR2450"
+    assert "restored the owner battery entries" in caplog.text
+
+
+async def test_a_restored_or_damaged_load_never_rotates_over_the_copy(hass: HomeAssistant, hass_storage, hass_ws_client, _no_power_files):
+    """The first save after a restore writes without rotating, so the
+    file on disk then (the damaged one) can never become last-good;
+    the save after it rotates as usual."""
+    device, _ = register_device(hass, "pw41", "Door Master")
+    _made_by(hass, device, "Unlisted Maker", "Unlisted Sensor", "UL-SENSOR-1", "1")
+    hass_storage.pop(POWER_STORE_KEY, None)
+    with open(_power_disk(hass, "last-good"), "w", encoding="utf-8") as handle:
+        json.dump(_entry_doc(device.id, "CR2450", 1), handle)
+    coord = await setup_coordinator(hass)
+    client = await hass_ws_client(hass)
+    with open(_power_disk(hass), "w", encoding="utf-8") as handle:
+        handle.write("{ damaged")
+    reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="AAA", quantity=2)
+    assert reply["success"], reply
+    await coord.async_flush_power()
+    with open(_power_disk(hass, "last-good"), encoding="utf-8") as handle:
+        assert json.load(handle)["data"]["devices"][device.id]["type"] == "CR2450"
+    with open(_power_disk(hass), "w", encoding="utf-8") as handle:
+        json.dump(_entry_doc(device.id, "AAA", 2), handle)
+    reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="AA", quantity=4)
+    assert reply["success"], reply
+    await coord.async_flush_power()
+    with open(_power_disk(hass, "last-good"), encoding="utf-8") as handle:
+        assert json.load(handle)["data"]["devices"][device.id]["type"] == "AAA"
+
+
+async def test_a_burst_of_pencil_saves_makes_one_write(hass: HomeAssistant, hass_ws_client, hass_storage, freezer):
+    """The one-second wait still gathers a burst (0.24.7), now through
+    Device Sentinel's own timer rather than the store's."""
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+    coord, client, device = await _setup(hass, hass_ws_client)
+    writes = []
+    original = coord._power_store.async_save
+
+    async def counting(data):
+        writes.append(data)
+        await original(data)
+
+    coord._power_store.async_save = counting
+    for choice in ("AA", "AAA", "CR2032"):
+        reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice=choice, quantity=1)
+        assert reply["success"], reply
+    freezer.tick(2)
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+    assert len(writes) == 1
+    assert hass_storage[POWER_STORE_KEY]["data"]["models"]
