@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.24.11 (2026-10-07)
+# File: dashboard.py, Version: 0.25.0 (2026-10-08)
 
 """What the dashboard reads from the coordinator.
 
@@ -81,6 +81,7 @@ from .const import (
     DATA_DEVICES,
     DATA_EPISODES,
     DEV_BATTERY_DAILY,
+    DEV_BATTERY_RAW_SCALE,
     DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
@@ -863,7 +864,15 @@ class DeviceViewMixin:
                 ("last_seen", self._is_last_seen),
             ):
                 if test(entity):
-                    readings.append({"kind": kind, "entity_id": entity.entity_id})
+                    reading: dict[str, Any] = {"kind": kind, "entity_id": entity.entity_id}
+                    if kind == "battery" and record.get(DEV_BATTERY_RAW_SCALE):
+                        # The sensor's own state is on Zigbee's raw 0 to
+                        # 200 scale (ruling #545), so the page shows it
+                        # as raw beside the halved percentage Device
+                        # Sentinel uses everywhere else (0.25.0); a
+                        # bare 182% read as a broken cell.
+                        reading["raw_scale"] = True
+                    readings.append(reading)
         rhythm, set_aside = self._device_rhythm(record)
         now = dt_util.utcnow().timestamp()
         since = now - EPISODE_KEEP_DAYS * 86400.0

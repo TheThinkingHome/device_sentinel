@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.24.11 (2026-10-07)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.25.0 (2026-10-08)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -27,8 +27,11 @@ MANUAL gives none, as Battery Notes skips it.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,10 +39,11 @@ from urllib.parse import quote, urlencode
 
 from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import DATA_DEVICES, LOGGER
+from .const import BACKUP_LAST_GOOD_SUFFIX, DATA_DEVICES, LOGGER
 from .device_fields import device_field
 
 LIBRARY_PATH = Path(__file__).parent / "data" / "battery_library.json"
@@ -348,6 +352,28 @@ def _clean_entry(raw: Any) -> dict[str, Any] | None:
     return {"kind": kind, "type": battery_type, "quantity": quantity, "set": set_at}
 
 
+def _power_path(hass: Any, suffix: str = "") -> str:
+    return hass.config.path(".storage", POWER_STORE_KEY + (f".{suffix}" if suffix else ""))
+
+
+def _rotate_power_last_good(hass: Any) -> None:
+    """Rename the live power file to last-good; nothing if there is none."""
+    live = _power_path(hass)
+    if os.path.exists(live):
+        os.replace(live, _power_path(hass, BACKUP_LAST_GOOD_SUFFIX))
+
+
+def _read_power_last_good(hass: Any) -> dict[str, Any] | None:
+    """The data of the last-good power file, or None if it is unusable."""
+    try:
+        with open(_power_path(hass, BACKUP_LAST_GOOD_SUFFIX), encoding="utf-8") as handle:
+            document = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    data = document.get("data") if isinstance(document, dict) else None
+    return data if isinstance(data, dict) else None
+
+
 class PowerMixin:
     """The coordinator's side of the Power row."""
 
@@ -355,6 +381,10 @@ class PowerMixin:
     _power_entries: dict[str, dict[str, Any]] = {}
     _power_models: dict[str, dict[str, Any]] = {}
     _power_store: Store[dict[str, Any]] | None = None
+    _power_pending: bool = False
+    _power_timer: Callable[[], None] | None = None
+    _power_lock: asyncio.Lock
+    _power_rotation_armed: bool = False
 
     async def async_load_power(self) -> None:
         """Read the library and the owner entries; neither stops a start.
@@ -369,16 +399,34 @@ class PowerMixin:
         self._power_store = Store(hass, POWER_STORE_VERSION, POWER_STORE_KEY)
         self._power_entries = {}
         self._power_models = {}
+        self._power_pending = False
+        self._power_timer = None
+        self._power_lock = asyncio.Lock()
         try:
             payload = await self._power_store.async_load()
         except (ValueError, OSError) as err:
             LOGGER.warning(
-                "Device Sentinel cannot read %s, so owner battery entries "
-                "are empty until one is set again (%s)",
-                POWER_STORE_KEY,
-                err,
+                "Device Sentinel cannot read %s (%s)", POWER_STORE_KEY, err
             )
             payload = None
+        restored = False
+        if not isinstance(payload, dict):
+            # Missing or unreadable: Home Assistant moves a file it
+            # cannot parse aside and answers nothing, and a crash
+            # between the rotation and the write below leaves no live
+            # file at all. Either way the last clean file is the
+            # person's own entries, which nothing else can rebuild
+            # (0.25.0).
+            payload = await hass.async_add_executor_job(_read_power_last_good, hass)
+            restored = isinstance(payload, dict)
+            if restored:
+                LOGGER.warning(
+                    "Device Sentinel restored the owner battery entries from "
+                    "%s.%s, because %s could not be read",
+                    POWER_STORE_KEY,
+                    BACKUP_LAST_GOOD_SUFFIX,
+                    POWER_STORE_KEY,
+                )
         payload = payload if isinstance(payload, dict) else {}
         dropped = 0
         models = payload.get("models")
@@ -408,6 +456,11 @@ class PowerMixin:
                 dropped,
                 "y" if dropped == 1 else "ies",
             )
+        # The live file becomes last-good at the next save only when it
+        # was read whole: a file that lost entries, or one restored from
+        # the copy, must never replace the copy (ruling #370's rule for
+        # the main file).
+        self._power_rotation_armed = not restored and not dropped
 
     def _power_payload(self) -> dict[str, Any]:
         # Each model entry is also written under the device it was set
@@ -423,20 +476,58 @@ class PowerMixin:
         }
 
     def _power_save(self) -> None:
-        if self._power_store is not None:
-            self._power_pending = True
-            self._power_store.async_delay_save(self._power_payload, 1)
+        """Write the entries a second from now, so a burst of pencil
+        saves makes one write."""
+        if self._power_store is None:
+            return
+        self._power_pending = True
+        cancel = getattr(self, "_power_timer", None)
+        if cancel is not None:
+            cancel()
+        hass = self.hass  # type: ignore[attr-defined]
+
+        @callback
+        def _due(_now: Any) -> None:
+            self._power_timer = None
+            hass.async_create_task(self._power_write())
+
+        self._power_timer = async_call_later(hass, 1, _due)
+
+    async def _power_write(self) -> None:
+        """Write the power file, the previous clean one kept as last-good.
+
+        The one backup rule of the main file (ruling #370), given to the
+        file a person fills by hand (0.25.0): before each save, the file
+        about to be replaced is renamed to last-good, so last-good is
+        always the most recent clean file. Saves take turns.
+        """
+        if self._power_store is None or not getattr(self, "_power_pending", False):
+            return
+        async with self._power_lock:
+            if not self._power_pending:
+                return
+            self._power_pending = False
+            hass = self.hass  # type: ignore[attr-defined]
+            if getattr(self, "_power_rotation_armed", False):
+                try:
+                    await hass.async_add_executor_job(_rotate_power_last_good, hass)
+                except OSError as err:
+                    LOGGER.warning("Power entries last-good rotation failed: %s", err)
+            await self._power_store.async_save(self._power_payload())
+            self._power_rotation_armed = True
 
     async def async_flush_power(self) -> None:
         """Write an entry still waiting for its delayed save (0.24.9).
 
         A pencil save is written a second later; a reload or a stop
         inside that second lost it. The stop calls this with its final
-        save, and a direct save cancels the delayed one.
+        save.
         """
-        if self._power_store is not None and getattr(self, "_power_pending", False):
-            await self._power_store.async_save(self._power_payload())
-            self._power_pending = False
+        cancel = getattr(self, "_power_timer", None)
+        if cancel is not None:
+            cancel()
+            self._power_timer = None
+        await self._power_write()
 
     def _power_device_fields(self, device_id: str) -> tuple[Any, ...]:
         device = dr.async_get(self.hass).async_get(device_id)  # type: ignore[attr-defined]

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.24.7 (2026-10-05)
+# File: diagnostics.py, Version: 0.25.0 (2026-10-08)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -164,6 +164,50 @@ def _diagnostic_entities(
             }
         )
     return rows
+
+
+def _all_entities(hass: HomeAssistant, device_id: str) -> list[dict[str, Any]]:
+    """Return every entity the registry holds for the device (0.25.0).
+
+    What a device is can only be read from what it reports, since Home
+    Assistant keeps no type for a device, and the rules that will name
+    it (a camera entity, a cover, a moisture sensor) cannot be tested
+    on a real house while the diagnostics carry only the battery,
+    signal and Last seen entities. Each row is what those rules read:
+    the domain, the integration that published it, its device class
+    and unit, its category, and whether it is disabled. No state: the
+    rules do not need one, and a state can say whether a door is open
+    or someone is home.
+
+    Read live from the registry at download time and stored nowhere.
+    """
+    ent_reg = er.async_get(hass)
+    rows: list[dict[str, Any]] = []
+    for ent in er.async_entries_for_device(
+        ent_reg, device_id, include_disabled_entities=True
+    ):
+        rows.append(
+            {
+                "entity_id": ent.entity_id,
+                "domain": ent.domain,
+                "platform": ent.platform,
+                # The person's choice over the integration's, as Home
+                # Assistant itself resolves it.
+                "device_class": ent.device_class or ent.original_device_class,
+                "unit": ent.unit_of_measurement,
+                "category": (
+                    str(ent.entity_category.value)
+                    if ent.entity_category is not None
+                    else None
+                ),
+                "disabled_by": (
+                    str(ent.disabled_by.value)
+                    if ent.disabled_by is not None
+                    else None
+                ),
+            }
+        )
+    return sorted(rows, key=lambda row: row["entity_id"])
 
 
 def _infrastructure(
@@ -381,6 +425,9 @@ async def async_get_config_entry_diagnostics(
             "entities": _diagnostic_entities(
                 hass, coordinator, device_id
             ),
+            # Every entity of the device, for working out what it is
+            # (0.25.0).
+            "all_entities": _all_entities(hass, device_id),
             "statistics": record,
             # Weekly averages and the trend read from them (0.23.6).
             "battery_trend": coordinator.battery_trend_summary(record),

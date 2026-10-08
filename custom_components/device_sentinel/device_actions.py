@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.24.9 (2026-10-06)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.25.0 (2026-10-08)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -237,6 +237,51 @@ class DeviceActionsMixin:
             raise ValueError("Home Assistant has no such area")
         dr.async_get(self.hass).async_update_device(device_id, area_id=area_id or None)
         self._page_done(device_id, f"moved to {area.name}" if area else "area removed")
+
+    @staticmethod
+    def _new_registry_name(name: str | None) -> str:
+        """A name for a new area or label, or a refusal saying why.
+
+        Held to the rename's rule (0.24.9): accents and emoji are
+        welcome, hidden and control characters are not, since the name
+        goes on to the brief, the Problem List and notifications.
+        """
+        wanted = (name or "").strip()
+        if not wanted:
+            raise ValueError("Give it a name.")
+        if any(unicodedata.category(ch) in ("Cc", "Cf", "Cs", "Co", "Cn") for ch in wanted):
+            raise ValueError("That text holds characters that cannot be shown.")
+        return wanted
+
+    def page_new_area(self, device_id: str, name: str | None) -> None:
+        """Make an area and move the device into it (0.25.0, Tim Plas).
+
+        A name Home Assistant already holds is the area it names, not a
+        second area of the same name, which Home Assistant would refuse.
+        """
+        self._device(device_id)
+        wanted = self._new_registry_name(name)
+        areas = ar.async_get(self.hass)
+        held = areas.async_get_area_by_name(wanted)
+        area = held if held is not None else areas.async_create(wanted)
+        dr.async_get(self.hass).async_update_device(device_id, area_id=area.id)
+        self._page_done(device_id, f"moved to {area.name}{'' if held else ', a new area'}")
+
+    def page_new_label(self, device_id: str, name: str | None) -> None:
+        """Make a label and put it on the device (0.25.0, Tim Plas).
+
+        As with an area, a name Home Assistant already holds is that
+        label.
+        """
+        device = self._device(device_id)
+        wanted = self._new_registry_name(name)
+        labels_reg = lr.async_get(self.hass)
+        held = labels_reg.async_get_label_by_name(wanted)
+        label = held if held is not None else labels_reg.async_create(wanted)
+        dr.async_get(self.hass).async_update_device(
+            device_id, labels=set(device.labels or ()) | {label.label_id}
+        )
+        self._page_done(device_id, f"label {label.name} added{'' if held else ', a new label'}")
 
     def page_label(self, device_id: str, label_id: str, add: bool) -> None:
         device = self._device(device_id)

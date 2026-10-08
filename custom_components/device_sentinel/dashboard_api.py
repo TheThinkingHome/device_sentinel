@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.24.11 (2026-10-07)
+# File: dashboard_api.py, Version: 0.25.0 (2026-10-08)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -93,6 +93,8 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_device_rename)
     websocket_api.async_register_command(hass, ws_device_area)
     websocket_api.async_register_command(hass, ws_device_label)
+    websocket_api.async_register_command(hass, ws_device_new_area)
+    websocket_api.async_register_command(hass, ws_device_new_label)
     websocket_api.async_register_command(hass, ws_device_last_seen)
     websocket_api.async_register_command(hass, ws_device_mute)
     websocket_api.async_register_command(hass, ws_device_power)
@@ -567,6 +569,38 @@ def ws_device_label(
         hass, connection, msg,
         lambda c: c.page_label(msg["device_id"], msg["label_id"], msg["add"]),
     )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_new_area",
+        vol.Required("device_id"): str,
+        vol.Required("name"): str,
+    }
+)
+@callback
+def ws_device_new_area(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Make an area and move a device into it (0.25.0)."""
+    _page_act(hass, connection, msg, lambda c: c.page_new_area(msg["device_id"], msg["name"]))
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_new_label",
+        vol.Required("device_id"): str,
+        vol.Required("name"): str,
+    }
+)
+@callback
+def ws_device_new_label(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Make a label and put it on a device (0.25.0)."""
+    _page_act(hass, connection, msg, lambda c: c.page_new_label(msg["device_id"], msg["name"]))
 
 
 @websocket_api.require_admin
