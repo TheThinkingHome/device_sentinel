@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/anonymise_fleet.py, Version: 0.23.3 (2026-09-25)
+# File: tools/anonymise_fleet.py, Version: 0.25.0 (2026-10-08)
 
 """Build the committed fleet set from real houses' files.
 
@@ -16,10 +16,10 @@ owner in a private archive.
     python tools/anonymise_fleet.py RAW_DIR OUT_DIR --key fleet_aliases.json
 
 RAW_DIR holds one folder per house (reference, second, fourth, and any
-tester after them), each with the house's storage file, its clocks file
-and its diagnostics download (`config_entry-device_sentinel-*.json`).
-OUT_DIR receives the same folders: the storage and clocks under their
-own names, and in place of the diagnostics a small
+tester after them), each with the house's storage file, its clocks file,
+its power file if it has one (0.25.0), and its diagnostics download
+(`config_entry-device_sentinel-*.json`). OUT_DIR receives the same
+folders: the storage, clocks and power file under their own names, and in place of the diagnostics a small
 `config_entry-device_sentinel-fleet.json` holding only what the suite
 reads from it, each device's name and the entry's options.
 
@@ -83,12 +83,12 @@ def _is_upstream(value: dict[str, Any]) -> bool:
 SENTENCE_FIELDS = {"summary", "detail"}
 
 STORAGE_NAMES = (
-    ("device_sentinel.storage", "device_sentinel.clocks"),
-    ("device_sentinel_storage.json", "device_sentinel_clocks.json"),
+    ("device_sentinel.storage", "device_sentinel.clocks", "device_sentinel.power"),
+    ("device_sentinel_storage.json", "device_sentinel_clocks.json", "device_sentinel_power.json"),
 )
 DIAGNOSTICS_OUT = "config_entry-device_sentinel-fleet.json"
 KEEP_TARGETS = {"persistent_notification"}
-KINDS = ("ids", "entries", "names", "trackers", "networks", "targets")
+KINDS = ("ids", "entries", "names", "trackers", "networks", "targets", "models")
 
 
 class House:
@@ -136,6 +136,29 @@ class House:
             return real
         return self._alias("targets", real, lambda n: f"notify.target_{n}")
 
+    def model(self, real: str) -> str:
+        """A power entry's model key, `["maker", "model", "model id"]`.
+
+        The stand-in keeps the key's shape, a list of three with the
+        same parts empty, so the suite can give a device the maker and
+        model the entry names. The real key stays out: an ESPHome
+        device's maker is often a name its owner chose (0.25.0).
+        """
+
+        def make(n: int) -> str:
+            try:
+                parts = json.loads(real)
+            except ValueError:
+                parts = None
+            if not isinstance(parts, list):
+                return f"model_{n:03d}"
+            labels = ("Maker", "Model", "Model ID", "Hardware")
+            return json.dumps(
+                [f"{labels[min(i, 3)]} {n:03d}" if part else part for i, part in enumerate(parts)]
+            )
+
+        return self._alias("models", real, make)
+
     def ids_in(self, text: str) -> str:
         """Replace every id and tracker standing inside a string.
 
@@ -182,6 +205,20 @@ def _walk(value: Any, house: House, names: list[str], field: str = "") -> Any:
             value = house.names_in(value, names)
         return house.ids_in(value)
     return value
+
+
+def _power_models(power: Any, house: House) -> Any:
+    """The power file with every model key replaced by its stand-in."""
+    data = power.get("data") if isinstance(power, dict) else None
+    if not isinstance(data, dict):
+        return power
+    models = data.get("models")
+    if isinstance(models, dict):
+        data["models"] = {house.model(key): entry for key, entry in models.items()}
+    for entry in (data.get("devices") or {}).values():
+        if isinstance(entry, dict) and isinstance(entry.get("model"), str):
+            entry["model"] = house.model(entry["model"])
+    return power
 
 
 def _options(options: dict[str, Any], house: House, names: list[str]) -> Any:
@@ -232,7 +269,7 @@ def _leaks(written: list[Path], house: House, raw_names: set[str]) -> list[str]:
     """Every real value the run replaced, and every raw name, that
     still stands anywhere in what was written."""
     forbidden: dict[str, str] = {}
-    for kind in ("ids", "entries", "trackers", "networks", "targets"):
+    for kind in ("ids", "entries", "trackers", "networks", "targets", "models"):
         for real in house.used[kind]:
             forbidden[real] = kind
     for real in house.used["names"] | raw_names:
@@ -262,10 +299,10 @@ def _leaks(written: list[Path], house: House, raw_names: set[str]) -> list[str]:
 
 def anonymise_house(raw: Path, out: Path, house: House) -> list[Path]:
     """Write one house's anonymized files, and return their paths."""
-    storage_name = clocks_name = None
-    for storage, clocks in STORAGE_NAMES:
+    storage_name = clocks_name = power_name = None
+    for storage, clocks, power in STORAGE_NAMES:
         if (raw / storage).exists():
-            storage_name, clocks_name = storage, clocks
+            storage_name, clocks_name, power_name = storage, clocks, power
     if storage_name is None:
         raise SystemExit(f"{raw}: no storage file")
     diagnostics = sorted(raw.glob("config_entry-device_sentinel-*.json"))
@@ -280,18 +317,20 @@ def anonymise_house(raw: Path, out: Path, house: House) -> list[Path]:
     # Names the registry no longer holds live on in the records, for a
     # device since removed, and a sentence can carry one of those too.
     stored = set(raw_names)
-    for storage in (storage_name, clocks_name):
+    for storage in (storage_name, clocks_name, power_name):
         if (raw / storage).exists():
             _collect_names(json.loads((raw / storage).read_text(encoding="utf-8")), stored)
     names = sorted(stored, key=len, reverse=True)
 
     out.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    for name in (storage_name, clocks_name):
+    for name in (storage_name, clocks_name, power_name):
         source = raw / name
         if not source.exists():
             continue
         data = json.loads(source.read_text(encoding="utf-8"))
+        if name == power_name:
+            data = _power_models(data, house)
         target = out / name
         target.write_text(
             json.dumps(_walk(data, house, names), indent=1, ensure_ascii=False)
