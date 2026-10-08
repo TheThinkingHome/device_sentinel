@@ -1,0 +1,347 @@
+{
+ "version": 1,
+ "minor_version": 1,
+ "key": "device_sentinel.power",
+ "data": {
+  "models": {
+   "[\"Maker 001\", \"Model 001\", \"Model ID 001\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:04:08.818670+00:00",
+    "device_id": "02fa000000000000000000000000004d"
+   },
+   "[\"Maker 002\", \"Model 002\", \"Model ID 002\"]": {
+    "kind": "battery",
+    "type": "CR2032",
+    "quantity": 1,
+    "set": "2026-10-06T00:35:38.606920+00:00",
+    "device_id": "02fa0000000000000000000000000019"
+   },
+   "[\"Maker 003\", \"Model 003\", \"\"]": {
+    "kind": "usb",
+    "type": "USB Powered",
+    "quantity": null,
+    "set": "2026-10-05T22:22:34.923152+00:00",
+    "device_id": "02fa0000000000000000000000000036"
+   },
+   "[\"Maker 004\", \"Model 004\", \"Model ID 004\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:00:21.730808+00:00",
+    "device_id": "02fa0000000000000000000000000054"
+   },
+   "[\"Maker 005\", \"Model 005\", \"\"]": {
+    "kind": "usb",
+    "type": "USB Powered",
+    "quantity": null,
+    "set": "2026-10-06T00:34:37.122555+00:00",
+    "device_id": "02fa000000000000000000000000005e"
+   },
+   "[\"Maker 006\", \"Model 006\", \"Model ID 006\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:05:40.117551+00:00",
+    "device_id": "02fa0000000000000000000000000046"
+   },
+   "[\"Maker 007\", \"Model 007\", \"Model ID 007\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:06:07.995057+00:00",
+    "device_id": "02fa0000000000000000000000000003"
+   },
+   "[\"Maker 008\", \"Model 008\", \"\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-05T22:21:09.061923+00:00",
+    "device_id": "02fa0000000000000000000000000057"
+   },
+   "[\"Maker 009\", \"Model 009\", \"\"]": {
+    "kind": "usb",
+    "type": "USB Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:09:28.057895+00:00",
+    "device_id": "02fa000000000000000000000000005f"
+   },
+   "[\"Maker 010\", \"Model 010\", \"\"]": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:01:02.231952+00:00",
+    "device_id": "02fa000000000000000000000000005b"
+   },
+   "[\"Maker 011\", \"Model 011\", \"\"]": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-07T18:40:17.983172+00:00",
+    "device_id": "02fa000000000000000000000000005a"
+   },
+   "[\"Maker 012\", \"Model 012\", \"Model ID 012\"]": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:03:51.801352+00:00",
+    "device_id": "02fa000000000000000000000000005c"
+   },
+   "[\"Maker 013\", \"Model 013\", \"Model ID 013\"]": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:05:27.915542+00:00",
+    "device_id": "02fa0000000000000000000000000061"
+   },
+   "[\"Maker 014\", \"Model 014\", \"\"]": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:04:27.081394+00:00",
+    "device_id": "02fa0000000000000000000000000026"
+   },
+   "[\"Maker 015\", \"Model 015\", \"\"]": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:04:38.119754+00:00",
+    "device_id": "02fa0000000000000000000000000023"
+   },
+   "[\"Maker 016\", \"Model 016\", \"\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-05T22:22:14.613730+00:00",
+    "device_id": "02fa0000000000000000000000000024"
+   },
+   "[\"Maker 017\", \"Model 017\", \"Model ID 017\"]": {
+    "kind": "battery",
+    "type": "AA",
+    "quantity": 2,
+    "set": "2026-10-05T22:19:45.784403+00:00",
+    "device_id": "02fa0000000000000000000000000049"
+   },
+   "[\"Maker 018\", \"Model 018\", \"\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:05:16.198552+00:00",
+    "device_id": "02fa0000000000000000000000000062"
+   },
+   "[\"Maker 019\", \"Model 019\", \"Model ID 019\"]": {
+    "kind": "battery",
+    "type": "AAA",
+    "quantity": 2,
+    "set": "2026-10-05T22:09:14.278912+00:00",
+    "device_id": "02fa000000000000000000000000003c"
+   },
+   "[\"Maker 020\", \"Model 020\", \"Model ID 020\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:03:10.559020+00:00",
+    "device_id": "02fa000000000000000000000000003f"
+   },
+   "[\"Maker 021\", \"Model 021\", \"Model ID 021\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:02:29.158391+00:00",
+    "device_id": "02fa0000000000000000000000000028"
+   },
+   "[\"Maker 022\", \"Model 022\", \"Model ID 022\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:06:16.205426+00:00",
+    "device_id": "02fa0000000000000000000000000004"
+   },
+   "[\"Maker 023\", \"Model 023\", \"Model ID 023\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:05:53.076186+00:00",
+    "device_id": "02fa000000000000000000000000000a"
+   },
+   "[\"Maker 024\", \"Model 024\", \"Model ID 024\"]": {
+    "kind": "battery",
+    "type": "AAA",
+    "quantity": 3,
+    "set": "2026-10-06T22:08:01.448082+00:00",
+    "device_id": "02fa0000000000000000000000000022"
+   }
+  },
+  "devices": {
+   "02fa0000000000000000000000000046": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:05:40.117551+00:00",
+    "model": "[\"Maker 006\", \"Model 006\", \"Model ID 006\"]"
+   },
+   "02fa000000000000000000000000000a": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:05:53.076186+00:00",
+    "model": "[\"Maker 023\", \"Model 023\", \"Model ID 023\"]"
+   },
+   "02fa000000000000000000000000003c": {
+    "kind": "battery",
+    "type": "AAA",
+    "quantity": 2,
+    "set": "2026-10-05T22:09:14.278912+00:00",
+    "model": "[\"Maker 019\", \"Model 019\", \"Model ID 019\"]"
+   },
+   "02fa0000000000000000000000000054": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:00:21.730808+00:00",
+    "model": "[\"Maker 004\", \"Model 004\", \"Model ID 004\"]"
+   },
+   "02fa0000000000000000000000000003": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:06:07.995057+00:00",
+    "model": "[\"Maker 007\", \"Model 007\", \"Model ID 007\"]"
+   },
+   "02fa0000000000000000000000000057": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-05T22:21:09.061923+00:00",
+    "model": "[\"Maker 008\", \"Model 008\", \"\"]"
+   },
+   "02fa0000000000000000000000000026": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:04:27.081394+00:00",
+    "model": "[\"Maker 014\", \"Model 014\", \"\"]"
+   },
+   "02fa0000000000000000000000000036": {
+    "kind": "usb",
+    "type": "USB Powered",
+    "quantity": null,
+    "set": "2026-10-05T22:22:34.923152+00:00",
+    "model": "[\"Maker 003\", \"Model 003\", \"\"]"
+   },
+   "02fa0000000000000000000000000061": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:05:27.915542+00:00",
+    "model": "[\"Maker 013\", \"Model 013\", \"Model ID 013\"]"
+   },
+   "02fa000000000000000000000000005a": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-07T18:40:17.983172+00:00",
+    "model": "[\"Maker 011\", \"Model 011\", \"\"]"
+   },
+   "02fa000000000000000000000000004d": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:04:08.818670+00:00",
+    "model": "[\"Maker 001\", \"Model 001\", \"Model ID 001\"]"
+   },
+   "02fa0000000000000000000000000062": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:05:16.198552+00:00",
+    "model": "[\"Maker 018\", \"Model 018\", \"\"]"
+   },
+   "02fa0000000000000000000000000024": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-05T22:22:14.613730+00:00",
+    "model": "[\"Maker 016\", \"Model 016\", \"\"]"
+   },
+   "02fa0000000000000000000000000019": {
+    "kind": "battery",
+    "type": "CR2032",
+    "quantity": 1,
+    "set": "2026-10-06T00:35:38.606920+00:00",
+    "model": "[\"Maker 002\", \"Model 002\", \"Model ID 002\"]"
+   },
+   "02fa000000000000000000000000005c": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:03:51.801352+00:00",
+    "model": "[\"Maker 012\", \"Model 012\", \"Model ID 012\"]"
+   },
+   "02fa000000000000000000000000005b": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:01:02.231952+00:00",
+    "model": "[\"Maker 010\", \"Model 010\", \"\"]"
+   },
+   "02fa0000000000000000000000000049": {
+    "kind": "battery",
+    "type": "AA",
+    "quantity": 2,
+    "set": "2026-10-05T22:19:45.784403+00:00",
+    "model": "[\"Maker 017\", \"Model 017\", \"Model ID 017\"]"
+   },
+   "02fa0000000000000000000000000028": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:02:29.158391+00:00",
+    "model": "[\"Maker 021\", \"Model 021\", \"Model ID 021\"]"
+   },
+   "02fa000000000000000000000000005e": {
+    "kind": "usb",
+    "type": "USB Powered",
+    "quantity": null,
+    "set": "2026-10-06T00:34:37.122555+00:00",
+    "model": "[\"Maker 005\", \"Model 005\", \"\"]"
+   },
+   "02fa0000000000000000000000000022": {
+    "kind": "battery",
+    "type": "AAA",
+    "quantity": 3,
+    "set": "2026-10-06T22:08:01.448082+00:00",
+    "model": "[\"Maker 024\", \"Model 024\", \"Model ID 024\"]"
+   },
+   "02fa0000000000000000000000000023": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:04:38.119754+00:00",
+    "model": "[\"Maker 015\", \"Model 015\", \"\"]"
+   },
+   "02fa000000000000000000000000005f": {
+    "kind": "usb",
+    "type": "USB Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:09:28.057895+00:00",
+    "model": "[\"Maker 009\", \"Model 009\", \"\"]"
+   },
+   "02fa0000000000000000000000000004": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:06:16.205426+00:00",
+    "model": "[\"Maker 022\", \"Model 022\", \"Model ID 022\"]"
+   },
+   "02fa000000000000000000000000003f": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-06T22:03:10.559020+00:00",
+    "model": "[\"Maker 020\", \"Model 020\", \"Model ID 020\"]"
+   }
+  }
+ }
+}
