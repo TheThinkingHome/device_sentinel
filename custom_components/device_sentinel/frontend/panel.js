@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.24.11 (2026-10-07)
+// File: panel.js, Version: 0.25.0 (2026-10-08)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1816,7 +1816,13 @@ class DeviceSentinelPanel extends HTMLElement {
         // reads unknown.
         if (!state || state.state === "unknown" || state.state === "unavailable") continue;
         let value = state.state;
-        if (state.attributes && state.attributes.unit_of_measurement && !Number.isNaN(Number(value))) {
+        if (kind === "battery" && reading.raw_scale && !Number.isNaN(Number(value))) {
+          // A sensor on Zigbee's raw 0 to 200 scale (ruling #545): its
+          // own number, marked raw, then the percentage Device Sentinel
+          // reads from it (0.25.0). "182%" read as a broken cell.
+          const half = Number(value) / 2;
+          value = `${value} raw (${Number.isInteger(half) ? half : half.toFixed(1)}%)`;
+        } else if (state.attributes && state.attributes.unit_of_measurement && !Number.isNaN(Number(value))) {
           value = `${value}${state.attributes.unit_of_measurement === "%" ? "%" : ` ${state.attributes.unit_of_measurement}`}`;
         }
         if (kind === "last_seen" && !Number.isNaN(Date.parse(state.state))) {
@@ -1907,14 +1913,17 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("div", { class: "actnote refused", role: "alert" }, e.error);
   }
 
-  // One action: on success the page is fetched afresh and the edit
-  // closes; a refusal keeps the row's old value and says why under it.
+  // One action: on success the edit closes and the dashboard is fetched
+  // afresh, the page and every tab with it, so a rename, a mute or a new
+  // area shows on the Devices tab and the Problem List without pressing
+  // Refresh (0.25.0, Tim Plas); a refusal keeps the row's old value and
+  // says why under it.
   async _deviceAct(message, row) {
     const device = message.device_id;
     try {
       await this._call(message);
       this._devEdit = null;
-      this._page = await this._fetchView();
+      await this._refresh();
     } catch (err) {
       const base = this._edit(device) || { device, row };
       if (err && err.code === "name_in_use") {
@@ -2104,9 +2113,23 @@ class DeviceSentinelPanel extends HTMLElement {
       el("fieldset", { style: "border:none;margin:0;padding:0" },
         el("legend", { class: "muted", style: "font-size:13px;padding:0 0 4px" }, "Area"),
         option(null, "No area"), ...this._choices.areas.map((a) => option(a.id, a.name))),
+      this._newNameRow("New area", "Create and move here",
+        (name) => this._deviceAct({ type: "device_sentinel/device_new_area", device_id: who.device_id, name }, "area")),
       el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
         onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel")),
       this._actNote("area"));
+  }
+
+  // A new area or label made from Device Sentinel's own picker, so a
+  // person need not leave for Home Assistant's settings and come back
+  // (0.25.0, Tim Plas). A name Home Assistant already holds is used
+  // as it is.
+  _newNameRow(label, action, save) {
+    const input = el("input", { class: "actinput", type: "text", "aria-label": label, placeholder: label });
+    const go = () => { if (input.value.trim()) save(input.value); };
+    input.addEventListener("keydown", (event) => { if (event.key === "Enter") go(); });
+    return el("div", { class: "actrow" }, input,
+      el("button", { class: "chip", type: "button", onclick: go }, action));
   }
 
   _labelsCell(who) {
@@ -2134,6 +2157,8 @@ class DeviceSentinelPanel extends HTMLElement {
             onclick: () => this._deviceAct({ type: "device_sentinel/device_label", device_id: who.device_id,
               label_id: l.id, add: true }, "labels") }, "Add"),
           el("span", {}, l.name), l.meaning ? el("span", { class: "muted" }, l.meaning) : null)),
+        this._newNameRow("New label", "Create and add",
+          (name) => this._deviceAct({ type: "device_sentinel/device_new_label", device_id: who.device_id, name }, "labels")),
         el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
           onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Done"))));
     }
@@ -2289,8 +2314,7 @@ class DeviceSentinelPanel extends HTMLElement {
       onclick: async () => {
         try {
           await this._call({ type: "device_sentinel/use_trimmed_maximum", device_id: who.device_id });
-          this._page = await this._fetchView();
-          this._paintDevicePage();
+          await this._refresh();
         } catch (err) { /* the next refresh shows the rule as it stands */ }
       } }, "Use the 14-Day Trimmed Maximum") : null;
     const group = (title) => ["__group__", title];
