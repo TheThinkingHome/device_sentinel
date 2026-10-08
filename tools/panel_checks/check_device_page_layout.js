@@ -239,6 +239,21 @@ const rowCell = (root, label) => {
   const level = rowCell(root, "Battery level").textContent;
   check("A time that cannot be read prints no NaN", !/NaN/.test(level) && level.startsWith("19.5%"), level);
 
+  // A cell on Zigbee's raw 0 to 200 scale (ruling #545): LUX Outdoors on
+  // the reference house read "182%" on its page while Device Sentinel
+  // used 91 (0.25.0).
+  const rawStates = { ...STATES, "sensor.bravo_battery": { state: "182", attributes: { unit_of_measurement: "%" }, last_changed: new Date().toISOString() } };
+  ({ root } = await open({ states: rawStates, tweak: (p) => { p.readings[0].raw_scale = true; } }));
+  const raw = rowCell(root, "Battery level").textContent;
+  check("A raw-scale battery reads as raw beside its percentage", raw.startsWith("182 raw (91%)"), raw);
+  ({ root } = await open({ states: { ...rawStates, "sensor.bravo_battery": { ...rawStates["sensor.bravo_battery"], state: "181" } },
+    tweak: (p) => { p.readings[0].raw_scale = true; } }));
+  const odd = rowCell(root, "Battery level").textContent;
+  check("An odd raw reading keeps its half point", odd.startsWith("181 raw (90.5%)"), odd);
+  ({ root } = await open({ states: rawStates }));
+  const plain = rowCell(root, "Battery level").textContent;
+  check("A battery not marked raw reads as before", plain.startsWith("182%"), plain);
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();
