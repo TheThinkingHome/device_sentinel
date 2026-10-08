@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_fleet_invariants.py, Version: 0.23.17 (2026-09-29)
+# File: tests/test_fleet_invariants.py, Version: 0.25.0 (2026-10-08)
 
 """Pre-stable campaign: the changed paths stay consistent, and every
 report still renders.
@@ -84,7 +84,10 @@ from tests.conftest import FLEET_ABSENT, fleet_path
 from tests.helpers import devices_of_entry, register_device, setup_coordinator
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
-TIM = fleet_path("second", "2026-08-26", "device_sentinel_storage.json")
+# The second fleet's committed house. Until 8 October 2026 this read a
+# capture of 26 August that was never committed, so its cases skipped
+# everywhere and only the reference fleet was checked.
+TIM = fleet_path("second", "device_sentinel_storage.json")
 # The newest copy of each fleet, for the forward simulation below. The
 # dated pair above is the campaign's fixed ground; these move.
 JAMES_LIVE = fleet_path("reference", "device_sentinel.storage")
@@ -117,7 +120,14 @@ def _fleet(path: Path) -> list[dict]:
 
 def _check_invariants(coord, recoveries, bare_ids, step: str) -> None:
     watched = set(coord._watched)
-    problems = coord._problem_device_ids()
+    # A device that keeps dropping out is listed for that (0.23.2), and
+    # the three problem lists do not hold it. The check predates
+    # flapping and ran only on the reference fleet until the second
+    # fleet's committed house was read (fleet refresh, 8 October 2026),
+    # whose records carry real flaps.
+    problems = coord._problem_device_ids() | {
+        row["device_id"] for row in coord.flapping_list
+    }
 
     # 1: recoveries only for watched devices. The event is fired at
     # the moment of retirement, so we check against the watched set

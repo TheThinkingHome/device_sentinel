@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_clock_loss.py, Version: 0.24.7 (2026-10-05)
+# File: tests/test_clock_loss.py, Version: 0.25.0 (2026-10-08)
 
 """A lost clocks file, and a startup grace that holds everything.
 
@@ -437,7 +437,10 @@ async def test_running_windows_keep_their_real_time_through_a_reset(hass: HomeAs
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
 
-TIM = fleet_path("second", "2026-08-26", "device_sentinel_storage.json")
+# The second fleet's committed house. Until 8 October 2026 this read a
+# capture of 26 August that was never committed, so its cases skipped
+# everywhere and only the reference fleet was checked.
+TIM = fleet_path("second", "device_sentinel_storage.json")
 
 OBSERVED = "2026-07-08T00:00:00+00:00"
 

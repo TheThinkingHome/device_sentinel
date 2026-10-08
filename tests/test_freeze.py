@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze.py, Version: 0.23.17 (2026-09-29)
+# File: test_freeze.py, Version: 0.25.0 (2026-10-08)
 
 """The freeze, unavailable, unknown, and never-reported detector.
 
@@ -836,7 +836,10 @@ async def test_an_unstamped_pair_credits_nothing(
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
 
-TIM = fleet_path("second", "2026-08-26", "device_sentinel_storage.json")
+# The second fleet's committed house. Until 8 October 2026 this read a
+# capture of 26 August that was never committed, so its cases skipped
+# everywhere and only the reference fleet was checked.
+TIM = fleet_path("second", "device_sentinel_storage.json")
 
 CLOCKS_FOR = {
     "device_sentinel.storage": "device_sentinel.clocks",

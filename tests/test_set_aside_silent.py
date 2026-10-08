@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_set_aside_silent.py, Version: 0.22.20 (2026-09-21)
+# File: tests/test_set_aside_silent.py, Version: 0.25.0 (2026-10-08)
 
 """Replay a restart against both real fleets and count what it says.
 
@@ -56,7 +56,10 @@ from tests.helpers import record_events, register_device, setup_coordinator
 # still run, so the suite is honest about what it checked rather
 # than silently proving less.
 JAMES = fleet_path("reference", "device_sentinel.storage")
-TIM = fleet_path("second", "2026-08-26", "device_sentinel_storage.json")
+# The second fleet's committed house. Until 8 October 2026 this read a
+# capture of 26 August that was never committed, so its cases skipped
+# everywhere and only the reference fleet was checked.
+TIM = fleet_path("second", "device_sentinel_storage.json")
 
 # What each fleet actually did. James's coordinator has no entities
 # and is watched for the length of the startup grace at every

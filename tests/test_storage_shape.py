@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.23.19 (2026-09-30)
+# File: test_storage_shape.py, Version: 0.25.0 (2026-10-08)
 
 """The shape check reports and touches nothing; last-good follows it.
 
@@ -1155,7 +1155,10 @@ async def test_gate_one_repairs_when_there_is_no_copy(
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
 
-TIM = fleet_path("second", "2026-08-26", "device_sentinel_storage.json")
+# The second fleet's committed house. Until 8 October 2026 this read a
+# capture of 26 August that was never committed, so its cases skipped
+# everywhere and only the reference fleet was checked.
+TIM = fleet_path("second", "device_sentinel_storage.json")
 
 OBSERVED = "2026-07-08T00:00:00+00:00"
 
