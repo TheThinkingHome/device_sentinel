@@ -1,0 +1,59 @@
+{
+ "version": 1,
+ "minor_version": 1,
+ "key": "device_sentinel.power",
+ "data": {
+  "models": {
+   "[\"Maker 001\", \"Model 001\", \"\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-07T01:18:07.246729+00:00",
+    "device_id": "03fa000000000000000000000000003c"
+   },
+   "[\"Maker 002\", \"Model 002\", \"\"]": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-07T00:06:09.229357+00:00",
+    "device_id": "03fa00000000000000000000000000bd"
+   },
+   "[\"Maker 003\", \"Model 003\", \"\"]": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-07T01:11:08.678147+00:00",
+    "device_id": "03fa000000000000000000000000002d"
+   }
+  },
+  "devices": {
+   "03fa00000000000000000000000000bd": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-07T00:06:09.229357+00:00",
+    "model": "[\"Maker 002\", \"Model 002\", \"\"]"
+   },
+   "03fa00000000000000000000000000c1": {
+    "kind": "battery",
+    "type": "AAA",
+    "quantity": 2,
+    "set": "2026-10-07T01:34:29.507899+00:00"
+   },
+   "03fa000000000000000000000000003c": {
+    "kind": "mains",
+    "type": "Mains Powered",
+    "quantity": null,
+    "set": "2026-10-07T01:18:07.246729+00:00",
+    "model": "[\"Maker 001\", \"Model 001\", \"\"]"
+   },
+   "03fa000000000000000000000000002d": {
+    "kind": "poe",
+    "type": "PoE Powered",
+    "quantity": null,
+    "set": "2026-10-07T01:11:08.678147+00:00",
+    "model": "[\"Maker 003\", \"Model 003\", \"\"]"
+   }
+  }
+ }
+}

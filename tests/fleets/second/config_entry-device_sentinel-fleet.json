@@ -104,7 +104,7 @@
     "name": "Device 132"
    },
    "03fa0000000000000000000000000023": {
-    "name": "Device 137"
+    "name": "Device 251"
    },
    "03fa0000000000000000000000000024": {
     "name": "Device 178"
@@ -119,7 +119,7 @@
     "name": "Device 091"
    },
    "03fa0000000000000000000000000028": {
-    "name": "Device 181"
+    "name": "Device 252"
    },
    "03fa0000000000000000000000000029": {
     "name": "Device 182"
@@ -434,19 +434,19 @@
     "name": "Device 131"
    },
    "03fa0000000000000000000000000091": {
-    "name": "Device 212"
+    "name": "Device 253"
    },
    "03fa0000000000000000000000000092": {
-    "name": "Device 213"
+    "name": "Device 254"
    },
    "03fa0000000000000000000000000093": {
-    "name": "Device 214"
+    "name": "Device 255"
    },
    "03fa0000000000000000000000000094": {
     "name": "Device 116"
    },
    "03fa0000000000000000000000000095": {
-    "name": "Device 215"
+    "name": "Device 256"
    },
    "03fa0000000000000000000000000096": {
     "name": "Device 111"
@@ -598,9 +598,6 @@
    "03fa00000000000000000000000000c7": {
     "name": "Device 076"
    },
-   "03fa00000000000000000000000000c8": {
-    "name": "Device 230"
-   },
    "03fa00000000000000000000000000c9": {
     "name": "Device 073"
    },
@@ -626,7 +623,7 @@
     "name": "Device 082"
    },
    "03fa00000000000000000000000000d2": {
-    "name": "Device 231"
+    "name": "Device 257"
    },
    "03fa00000000000000000000000000d3": {
     "name": "Device 064"
@@ -654,9 +651,6 @@
    },
    "03fa00000000000000000000000000db": {
     "name": "Device 090"
-   },
-   "03fa00000000000000000000000000dc": {
-    "name": "Device 077"
    },
    "03fa00000000000000000000000000dd": {
     "name": "Device 079"
@@ -698,19 +692,19 @@
     "name": "Device 144"
    },
    "03fa00000000000000000000000000ea": {
-    "name": "Device 244"
+    "name": "Device 258"
    },
    "03fa00000000000000000000000000eb": {
     "name": "Device 145"
    },
    "03fa00000000000000000000000000ec": {
-    "name": "Device 245"
+    "name": "Device 259"
    },
    "03fa00000000000000000000000000ed": {
-    "name": "Device 244"
+    "name": "Device 258"
    },
    "03fa00000000000000000000000000ee": {
-    "name": "Device 245"
+    "name": "Device 259"
    },
    "03fa00000000000000000000000000ef": {
     "name": "Device 246"
@@ -728,13 +722,22 @@
     "name": "Device 248"
    },
    "03fa00000000000000000000000000fb": {
-    "name": "Device 250"
+    "name": "Device 260"
+   },
+   "03fa00000000000000000000000000ff": {
+    "name": "Device 261"
+   },
+   "03fa0000000000000000000000000100": {
+    "name": "Device 230"
+   },
+   "03fa00000000000000000000000000dc": {
+    "name": "Device 262"
    }
   },
   "entry_options": {
-   "battery_days_till_empty": 30.0,
+   "battery_days_till_empty": 7.0,
    "battery_muted_devices": [
-    "03fa0000000000000000000000000002"
+    "03fa00000000000000000000000000d3"
    ],
    "battery_muted_integrations": [],
    "battery_muted_labels": [],
@@ -757,7 +760,10 @@
     "unifi",
     "mobile_app"
    ],
-   "freeze_muted_devices": [],
+   "freeze_muted_devices": [
+    "03fa00000000000000000000000000b4",
+    "03fa00000000000000000000000000b5"
+   ],
    "freeze_muted_integrations": [],
    "freeze_muted_labels": [],
    "high_priority_targets": "**REDACTED**",
@@ -790,7 +796,8 @@
    "muted_labels": [
     "devsen_ignore",
     "spare",
-    "troubleshooting"
+    "troubleshooting",
+    "lab"
    ],
    "normal_priority_targets": "**REDACTED**",
    "persistent_enabled": true,
