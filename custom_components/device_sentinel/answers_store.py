@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/answers_store.py, Version: 0.25.1 (2026-10-08)
+# File: custom_components/device_sentinel/answers_store.py, Version: 0.25.2 (2026-10-09)
 
 """The one file that holds what the owner set with a pencil (0.25.1).
 
@@ -30,8 +30,10 @@ said in the release note. The move is removed at 1.0.0.
 from __future__ import annotations
 
 import asyncio
+import glob
 import json
 import os
+import shutil
 from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
@@ -42,7 +44,9 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 
-from .const import BACKUP_LAST_GOOD_SUFFIX, LOGGER
+from homeassistant.util import dt as dt_util
+
+from .const import BACKUP_LAST_GOOD_SUFFIX, LOGGER, TRIM_BACKUP_DIR
 from .power_source import power_words
 
 ANSWERS_STORE_KEY = "device_sentinel.answers"
@@ -81,6 +85,58 @@ def _read_last_good(hass: Any, key: str) -> dict[str, Any] | None:
 def _remove_legacy_last_good(hass: Any) -> None:
     with suppress(FileNotFoundError):
         os.remove(_path(hass, LEGACY_POWER_KEY, BACKUP_LAST_GOOD_SUFFIX))
+
+
+def _copy_answers_evidence(hass: Any) -> list[str]:
+    """Copy the answers file, its backup and any old power file aside,
+    raw, before a repair writes over them (0.25.2, #340's rule given to
+    the answers file). Returns the names written."""
+    directory = hass.config.path(TRIM_BACKUP_DIR)
+    stamp = dt_util.now().strftime("%Y-%m-%d_%H%M%S")
+    written: list[str] = []
+    sources = sorted(
+        glob.glob(_path(hass, ANSWERS_STORE_KEY) + "*") + glob.glob(_path(hass, LEGACY_POWER_KEY) + "*")
+    )
+    if not sources:
+        return written
+    os.makedirs(directory, exist_ok=True)
+    for source in sources:
+        name = f"device_sentinel_{stamp}.{os.path.basename(source)[len('device_sentinel.'):]}.evidence"
+        # Contents only, with today's time: the trim_backups pruning
+        # judges age by the file's time, and the answers file can be
+        # months old, so a copy that kept it was pruned the same night
+        # (0.25.2, found by review).
+        shutil.copyfile(source, os.path.join(directory, name))
+        written.append(name)
+    return written
+
+
+def _bad_tables(payload: dict[str, Any], sections: tuple[str, ...]) -> list[str]:
+    """The tables in a payload that are there but are not tables.
+
+    A section or its models or devices that a hand edit or a damaged
+    write turned into a list, a string or null held every answer in it,
+    and reading it as empty lost them all without a word (0.25.2, found
+    by testing). An absent table is not damage: a file from before it
+    existed simply has none.
+    """
+    bad = []
+    for name in sections:
+        section = payload.get(name) if name else payload
+        label = name or "old power file"
+        if name and name in payload and not isinstance(section, dict):
+            bad.append(label)
+            continue
+        if not isinstance(section, dict):
+            continue
+        for table in ("models", "devices"):
+            if table in section and not isinstance(section[table], dict):
+                bad.append(f"{label} {table}")
+    return bad
+
+
+def _live_on_disk(hass: Any) -> bool:
+    return os.path.exists(_path(hass, ANSWERS_STORE_KEY))
 
 
 def _legacy_on_disk(hass: Any) -> bool:
@@ -131,9 +187,21 @@ class AnswersMixin:
         self._answers_lock = asyncio.Lock()
         self._power_reset()  # type: ignore[attr-defined]
         self._type_reset()  # type: ignore[attr-defined]
+        # Sentences for the events log, recorded once the session has
+        # loaded (0.25.2, #342's rule: a repair nobody can see did not
+        # happen as far as the person is concerned).
+        self._answers_notes: list[str] = []
+        self._answers_evidence_kept = False
+        self._merge_dropped = 0
 
+        # Asked before the read: Home Assistant renames a file it cannot
+        # parse to .corrupt.<time> inside the read, so afterwards it
+        # looks missing and an empty start went unreported (0.25.2,
+        # found by testing).
+        on_disk = await hass.async_add_executor_job(_live_on_disk, hass)
         payload = await _load(self._answers_store, ANSWERS_STORE_KEY)
         restored = False
+        damaged = payload is None and on_disk
         if payload is None:
             # Missing or unreadable: Home Assistant moves a file it
             # cannot parse aside and answers nothing. The last clean
@@ -142,6 +210,15 @@ class AnswersMixin:
             payload = await hass.async_add_executor_job(_read_last_good, hass, ANSWERS_STORE_KEY)
             restored = payload is not None
             if restored:
+                await self._keep_answers_evidence()
+                # A stop between the rename to last-good and the write
+                # leaves no file at all, which is not damage (found by
+                # review).
+                self._answers_notes.append(
+                    "the answers set on device pages "
+                    + ("could not be read" if on_disk else "were missing")
+                    + ", so they were restored from their backup; a copy was kept in trim_backups"
+                )
                 LOGGER.warning(
                     "Device Sentinel restored the answers you set on device pages from %s.%s, "
                     "because %s could not be read",
@@ -149,10 +226,24 @@ class AnswersMixin:
                 )
 
         if payload is None:
+            # A damaged file is kept and reported before anything is
+            # taken from the old power file, which would otherwise
+            # write over it with power answers alone and lose the type
+            # answers without a word (0.25.2, found by review).
             legacy = await self._legacy_power()
+            if damaged:
+                await self._keep_answers_evidence()
+                self._answers_notes.append(
+                    "the answers set on device pages could not be read and had no "
+                    "backup, so "
+                    + ("only the power answers in the old power file were kept"
+                       if legacy is not None else "they start empty")
+                    + "; a copy was kept in trim_backups"
+                )
             if legacy is not None:
                 dropped = self._power_read(legacy, legacy=True)  # type: ignore[attr-defined]
-                self._warn_dropped(dropped)
+                await self._note_dropped(dropped)
+                await self._note_bad_tables(_bad_tables(legacy, ("",)))
                 self._answers_rotation_armed = False
                 await self._move_legacy_power()
                 return
@@ -165,10 +256,14 @@ class AnswersMixin:
         types = payload.get("types")
         dropped = self._power_read(power if isinstance(power, dict) else {})  # type: ignore[attr-defined]
         dropped += self._type_read(types if isinstance(types, dict) else {})  # type: ignore[attr-defined]
-        self._warn_dropped(dropped)
+        await self._note_dropped(dropped)
+        bad = _bad_tables(payload, ("power", "types"))
+        await self._note_bad_tables(bad)
         # A file read whole becomes last-good at the next save; a
         # restored or damaged one never does (ruling #370's rule).
-        self._answers_rotation_armed = not restored and not dropped
+        # A damaged file with no backup is not rotated either: the next
+        # save would make it last-good (found by review).
+        self._answers_rotation_armed = not restored and not dropped and not bad and not damaged
         if not from_answers or not await self._legacy_left():
             return
         # Both files: either a stop came between the move and its delete,
@@ -181,7 +276,12 @@ class AnswersMixin:
         # Only the file itself is read: its last-good copy can be from
         # before the move, so a damaged file leaves this one in charge.
         legacy = await _load(Store(hass, 1, LEGACY_POWER_KEY), LEGACY_POWER_KEY)
-        if legacy is not None and self._merge_legacy_power(legacy):
+        self._merge_dropped = 0
+        taken = self._merge_legacy_power(legacy) if legacy is not None else 0
+        await self._note_dropped(self._merge_dropped)
+        if legacy is not None:
+            await self._note_bad_tables(_bad_tables(legacy, ("",)))
+        if taken:
             LOGGER.info(
                 "Device Sentinel took power answers set later from %s, saved by an older release",
                 LEGACY_POWER_KEY,
@@ -196,7 +296,7 @@ class AnswersMixin:
         here_models = dict(self._power_models)  # type: ignore[attr-defined]
         here_entries = dict(self._power_entries)  # type: ignore[attr-defined]
         self._power_reset()  # type: ignore[attr-defined]
-        self._warn_dropped(self._power_read(legacy, legacy=True))  # type: ignore[attr-defined]
+        self._merge_dropped = self._power_read(legacy, legacy=True)  # type: ignore[attr-defined]
         old_models = self._power_models  # type: ignore[attr-defined]
         old_entries = self._power_entries  # type: ignore[attr-defined]
         self._power_models, self._power_entries = here_models, here_entries  # type: ignore[attr-defined]
@@ -224,6 +324,52 @@ class AnswersMixin:
                 "Device Sentinel left out %d answer%s set on device pages that it could not read",
                 dropped, "" if dropped == 1 else "s",
             )
+
+    async def _note_dropped(self, dropped: int) -> None:
+        """Answers left out at load: the log, a copy of the files as they
+        were, and a line in the events log the brief shows (0.25.2)."""
+        if not dropped:
+            return
+        self._warn_dropped(dropped)
+        await self._keep_answers_evidence()
+        self._answers_notes.append(
+            f"{dropped} answer{'' if dropped == 1 else 's'} set on device pages could not "
+            "be read and were left out; a copy was kept in trim_backups"
+        )
+
+    async def _note_bad_tables(self, bad: list[str]) -> None:
+        """Whole tables that could not be read: the log, a copy, a line."""
+        if not bad:
+            return
+        LOGGER.warning(
+            "Device Sentinel could not read part of the answers set on device pages (%s) and left it out",
+            ", ".join(bad),
+        )
+        await self._keep_answers_evidence()
+        self._answers_notes.append(
+            f"part of the answers set on device pages ({', '.join(bad)}) could not be read "
+            "and was left out; a copy was kept in trim_backups"
+        )
+
+    async def _keep_answers_evidence(self) -> None:
+        """Copy the files aside once per start, before anything writes."""
+        if getattr(self, "_answers_evidence_kept", False):
+            return
+        self._answers_evidence_kept = True
+        hass = self.hass  # type: ignore[attr-defined]
+        try:
+            written = await hass.async_add_executor_job(_copy_answers_evidence, hass)
+        except OSError as err:
+            LOGGER.warning("Answers evidence copy failed: %s", err)
+            return
+        if written:
+            LOGGER.warning("Answers evidence copied to trim_backups: %s", ", ".join(written))
+
+    def answers_notes(self) -> list[str]:
+        """Take the sentences waiting for the events log."""
+        notes = list(getattr(self, "_answers_notes", None) or [])
+        self._answers_notes = []
+        return notes
 
     # ------------------------------------------------- the move from 0.25.0
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.25.1 (2026-10-08)
+# File: dashboard.py, Version: 0.25.2 (2026-10-09)
 
 """What the dashboard reads from the coordinator.
 
@@ -151,6 +151,49 @@ from .device_fields import device_field
 
 class DashboardMixin:
     """The change marker and the header status."""
+
+    def same_hardware(self, device_id: str) -> dict[str, Any] | None:
+        """The device's copies, if it is one piece of hardware shown as
+        several devices (0.25.2): which copy is watched, and the rest,
+        each with its integration. None for a device with no copies."""
+        groups = getattr(self, "_hardware_groups", None) or []
+        members = next((g for g in groups if device_id in g), None)
+        if not members:
+            return None
+        copy_of = getattr(self, "_copy_of", None) or {}
+        kept = [d for d in members if d in copy_of.values()]
+        watching = sorted(d for d in members if d in self._watched)  # type: ignore[attr-defined]
+        # The device the hardware is watched through: the one kept when
+        # copies are set aside, or the only watched member. With two
+        # watched (restart grace, or one whose entities are all
+        # disabled) or none, there is no single answer, and the page
+        # words its line from each row instead (found by review).
+        watched_through = copy_of.get(device_id) or (kept[0] if kept else None) or (
+            watching[0] if len(watching) == 1 else None
+        )
+        records = (self.data or {}).get(DATA_DEVICES, {})  # type: ignore[attr-defined]
+        registry = dr.async_get(self.hass)  # type: ignore[attr-defined]
+
+        def row(other: str) -> dict[str, Any]:
+            device = registry.async_get(other)
+            domain = self._primary_domain(device) if device is not None else None  # type: ignore[attr-defined]
+            return {
+                "device_id": other,
+                "name": self._device_name(other),  # type: ignore[attr-defined]
+                "integration": domain,
+                "watched": other in self._watched,  # type: ignore[attr-defined]
+                # Why a copy is not watched: "copy", or the reason it
+                # would be set aside anyway, such as an exclusion.
+                "set_aside": (self._set_aside.get(other) or (None, None, None))[2],  # type: ignore[attr-defined]
+                # A device never watched has no page; the panel shows
+                # its name without a link (found by review).
+                "has_page": other in records,
+            }
+
+        return {
+            "watched_through": watched_through,
+            "devices": [row(d) for d in sorted(members, key=lambda d: (d != watched_through, d))],
+        }
 
     def iot_class_of(self, domain: str | None) -> str | None:
         """How an integration talks to its devices: its manifest's
@@ -956,6 +999,10 @@ class DeviceViewMixin:
                 # What it is (0.25.1): the owner's answer, else what
                 # its entities say, else nothing and the pencil.
                 "type": self.type_view(device_id),
+                # The other devices Home Assistant shows for the same
+                # hardware, and which one Device Sentinel watches it
+                # through (0.25.2).
+                "same_hardware": self.same_hardware(device_id),
                 # How the cell reports, in the words Battery Trends
                 # uses (0.23.1); empty for a device with no battery.
                 "battery_steps": (

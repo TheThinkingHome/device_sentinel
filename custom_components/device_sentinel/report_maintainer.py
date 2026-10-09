@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.25.1 (2026-10-08)
+# File: report_maintainer.py, Version: 0.25.2 (2026-10-09)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -936,7 +936,8 @@ class MaintainerReportMixin:
             f"One row per device. Watching {len(self._watched)} of "
             f"{total}; {len(self._set_aside)} set aside (integrations "
             f"you asked to exclude, service devices, disabled devices, "
-            f"duplicate coordinators, and devices with no entities). "
+            f"duplicate coordinators, hardware already watched through "
+            f"another device, and devices with no entities). "
             f"Every watched device is recorded; MUTED only "
             f"suppresses judgment and reporting, and names every mute "
             f"and its source. COPIES above 1 is a "

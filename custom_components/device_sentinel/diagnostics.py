@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.25.1 (2026-10-08)
+# File: diagnostics.py, Version: 0.25.2 (2026-10-09)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -28,7 +28,10 @@ notification targets.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import inspect
+import os
 import re
 from collections.abc import Callable
 from typing import Any
@@ -360,12 +363,33 @@ def _redact_addresses(payload: Any) -> Any:
 
     return walk(payload)
 
+def _addresses(device: Any, key: bytes) -> list[str]:
+    """A device's addresses as "kind:fingerprint", sorted (0.25.2).
+
+    Ten hex characters of an HMAC of the address under a key made for
+    this download alone: two devices with the same address show the
+    same fingerprint inside one file, which is all a reader needs. A
+    plain hash could be reversed by trying every address a maker uses,
+    and a fresh key means nothing outside the file can be looked up
+    (found by review).
+    """
+    found = []
+    for item in device_field(device, "connections", set()) or ():
+        if isinstance(item, (tuple, list)) and len(item) == 2:
+            kind, value = item
+            digest = hmac.new(key, str(value).lower().encode("utf-8"), hashlib.sha256).hexdigest()[:10]
+            found.append(f"{kind}:{digest}")
+    return sorted(found)
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: DeviceSentinelConfigEntry
 ) -> dict[str, Any]:
     """Return the integration's learned state as diagnostics."""
     coordinator = entry.runtime_data
     device_registry = dr.async_get(hass)
+    # Fingerprints match inside this download only (0.25.2).
+    address_key = os.urandom(16)
 
     devices: dict[str, Any] = {}
     for device_id, record in coordinator.data[DATA_DEVICES].items():
@@ -435,6 +459,12 @@ async def async_get_config_entry_diagnostics(
             "power": coordinator.power_diagnostics(device_id),
             # What it is and where that came from (0.25.1).
             "type": coordinator.type_diagnostics(device_id),
+            # Its addresses, each as a short fingerprint so no address
+            # leaves the house, and the device it hangs from: what
+            # ties one piece of hardware's copies together (0.25.2).
+            "addresses": _addresses(device, address_key),
+            "via_device": device_field(device, "via_device_id"),
+            "copy_of": (getattr(coordinator, "_copy_of", None) or {}).get(device_id),
             # Its integration's iot_class (0.23.9).
             "connects": coordinator.iot_class_of(
                 coordinator._watched.get(device_id)
@@ -590,6 +620,13 @@ async def async_get_config_entry_diagnostics(
         # Sentinel does not watch, in one place, so an excluded
         # device's answers can be seen before it is watched again.
         "answers": coordinator.answers_diagnostics(),
+        # One piece of hardware shown as several devices (0.25.2): each
+        # group of registry devices found to be one box, and each copy
+        # set aside with the device it is watched through.
+        "same_hardware": {
+            "groups": [sorted(g) for g in (getattr(coordinator, "_hardware_groups", None) or [])],
+            "copies": dict(getattr(coordinator, "_copy_of", None) or {}),
+        },
         # Watched devices read as groups of the same maker, model and
         # hardware version, with each firmware inside (0.23.4). Worked
         # out now from the registry and the records, stored nowhere,

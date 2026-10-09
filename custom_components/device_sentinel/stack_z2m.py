@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_z2m.py, Version: 0.23.19 (2026-09-30)
+# File: stack_z2m.py, Version: 0.25.2 (2026-10-09)
 
 """Zigbee2MQTT: everything Device Sentinel knows about this stack.
 
@@ -223,6 +223,24 @@ class Z2MBridgeReader:
         self._availability_enabled: bool | None = None
         self._active_timeout: int | None = None
         self._passive_timeout: int | None = None
+        # Where the coordinator is, from bridge/info's serial port
+        # (0.25.2): a network coordinator reads tcp://host:port, which
+        # names the device a coordinator's own integration shows.
+        self._serial_port: str | None = None
+
+    @property
+    def serial_port(self) -> str | None:
+        """The coordinator's port as Zigbee2MQTT reports it, or None."""
+        return self._serial_port
+
+    def zigbee_role(self, ieee: str) -> str | None:
+        """What Zigbee2MQTT calls a device in its network: "Router",
+        "EndDevice" or "Coordinator", or None if it does not say."""
+        for entry in self._devices_by_name.values():
+            if entry.get("ieee_address") == ieee:
+                role = entry.get("type")
+                return role if isinstance(role, str) else None
+        return None
 
     @property
     def availability_enabled(self) -> bool | None:
@@ -501,6 +519,9 @@ class Z2MBridgeReader:
         # payload cannot silently turn reachability off.
         config = data.get("config")
         if isinstance(config, dict):
+            serial = config.get("serial")
+            if isinstance(serial, dict) and isinstance(serial.get("port"), str):
+                self._serial_port = serial["port"]
             availability = config.get("availability")
             if isinstance(availability, dict):
                 self._availability_enabled = bool(

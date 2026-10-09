@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.24.5 (2026-10-04)
+# File: const.py, Version: 0.25.2 (2026-10-09)
 
 """Constants for the Device Sentinel integration."""
 
@@ -584,6 +584,11 @@ SET_ASIDE_EXCLUDED = "excluded"
 # Today that is the Zigbee2MQTT bridge and nothing else; each stack
 # answers for its own.
 SET_ASIDE_DUPLICATE_COORDINATOR = "duplicate coordinator"
+# Another registry device for the same hardware (0.25.2): since Home
+# Assistant 2026.8 one box is one device per integration that knows
+# it. The box is watched once, through the copy that reaches it most
+# directly (hardware_copies.py).
+SET_ASIDE_COPY = "copy"
 # What each reason means, in the order the classification ladder
 # tries them: a person's exclusion first, since a decision outranks a
 # fact about the device, then the facts, with no entities last. The
@@ -638,6 +643,12 @@ SET_ASIDE_MEANINGS: tuple[tuple[str, str], ...] = (
         SET_ASIDE_DUPLICATE_COORDINATOR,
         "A coordinator already watched through its own bridge sensor, "
         "appearing a second time as an ordinary device.",
+    ),
+    (
+        SET_ASIDE_COPY,
+        "Another device in Home Assistant for the same hardware. Device "
+        "Sentinel watches the hardware once, through the copy that "
+        "reaches it most directly.",
     ),
     (
         SET_ASIDE_NO_ENTITIES,

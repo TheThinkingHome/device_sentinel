@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.25.1 (2026-10-08)
+# File: coordinator.py, Version: 0.25.2 (2026-10-09)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -219,6 +219,7 @@ from .const import (
     SERIES_FREEZE,
     SERIES_SIGNAL,
     SET_ASIDE_DISABLED,
+    SET_ASIDE_COPY,
     SET_ASIDE_DUPLICATE_COORDINATOR,
     SET_ASIDE_EXCLUDED,
     SET_ASIDE_NO_ENTITIES,
@@ -264,6 +265,7 @@ from .detect_signal import SignalMixin, _entity_unit, _is_percentage
 from .device_fields import child_devices, device_field
 from .events import EventMixin
 from .interventions import InterventionMixin
+from .hardware_copies import choose_copies, find_groups, rank_of
 from .naming import display_name
 from .router_ties import RouterTiesMixin
 from .study import StudyMixin
@@ -449,6 +451,12 @@ class DeviceSentinelCoordinator(
         # 0.13.3, when a device disabled by Home Assistant joined
         # service devices as a thing to set aside (ruling #257).
         self._set_aside: dict[str, tuple[str, str, str]] = {}
+        # One piece of hardware, several devices (0.25.2): each copy set
+        # aside, mapped to the copy kept watched, and every group found.
+        self._copy_of: dict[str, str] = {}
+        self._hardware_groups: list[set[str]] = []
+        self._via_parents: set[str] = set()
+        self._bluetooth_parents: set[str] = set()
         self._last_seen_entity: dict[str, str] = {}  # device_id -> entity_id
         self._device_entries: dict[str, set[str]] = {}
         self._signal_entities: set[str] = set()
@@ -1756,6 +1764,20 @@ class DeviceSentinelCoordinator(
                 detail=f"{self._pending_epoch_wipe} devices",
             )
             self._pending_epoch_wipe = None
+        # Answers set on device pages that were left out or restored at
+        # load (0.25.2), read before the events log existed this session.
+        notes = self.answers_notes()
+        for note in notes:
+            self._record_system_event(SYS_STORAGE_REPAIR, detail=note)
+        if notes:
+            # The repair is written back once, so the next start does
+            # not find the same damage, copy it again and say so again
+            # (found by review). Rotation is off after a repair, so the
+            # last good file stays as it was; a move from the old power
+            # file in the same load armed it, so it is turned off here
+            # (found by review). Every write arms it again.
+            self._answers_rotation_armed = False
+            self._answers_save()
 
         LOGGER.info(
             "Device Sentinel v%s setup complete: setup_count=%s, "
@@ -2016,6 +2038,48 @@ class DeviceSentinelCoordinator(
             err,
         )
 
+    def _find_hardware_copies(
+        self, devices: list[Any], watched: dict[str, str], ent_reg: Any
+    ) -> dict[str, str]:
+        """Copies of one box among the watched devices, each mapped to
+        the copy kept watched (0.25.2, hardware_copies.py)."""
+        try:
+            groups = find_groups(devices, self._primary_domain)
+        except Exception as err:  # noqa: BLE001 - never stops a rebuild
+            LOGGER.warning("Device Sentinel could not group hardware copies: %s", err)
+            self._hardware_groups = []
+            return {}
+        self._hardware_groups = groups
+
+        ranks: dict[str, tuple[int, int, int, int, int]] = {}
+        for members in groups:
+            for device_id in members:
+                if device_id not in watched:
+                    continue
+                domain = watched[device_id]
+                # Enabled entities only: UniFi registers a client speed
+                # sensor disabled, and counting it ranked a tracker over
+                # the box (0.25.2, found by review).
+                own = [
+                    e for e in er.async_entries_for_device(ent_reg, device_id)
+                    if e.platform == domain and e.disabled_by is None
+                ]
+                ranks[device_id] = rank_of(
+                    self.iot_class_of(domain),  # type: ignore[attr-defined]
+                    {e.domain for e in own},
+                    len(own),
+                    battery=any(
+                        (e.device_class or e.original_device_class) == "battery" for e in own
+                    ),
+                )
+        # Only a device with entities of its own can be a copy or the
+        # one kept. One with none keeps its own reason (no entities, or
+        # watched through restart grace while its integration loads),
+        # so a box whose main integration is still starting is never
+        # set aside in favor of a copy for that minute.
+        candidates = {d: watched[d] for d, r in ranks.items() if r[0]}
+        return choose_copies(groups, candidates, ranks.__getitem__)
+
     def _rebuild_registry_view(self, audit: bool = False) -> None:
         """Classify devices and rebuild the entity-to-device map."""
         ent_reg = er.async_get(self.hass)
@@ -2049,7 +2113,8 @@ class DeviceSentinelCoordinator(
         owning_domains: set[str] = set()
         stack_keys: dict[str, tuple[str, str]] = {}
         entry_of: dict[str, str] = {}
-        for device in self._registry_devices(dev_reg):
+        all_devices = self._registry_devices(dev_reg)
+        for device in all_devices:
             domain = self._primary_domain(device)
             entry_id = self._primary_entry(device)
             if entry_id is not None:
@@ -2125,6 +2190,33 @@ class DeviceSentinelCoordinator(
                 muted_devices[device.id] = "label"
             elif device.id in muted_device_ids:
                 muted_devices[device.id] = "device"
+
+        # One piece of hardware shown as several devices (0.25.2): every
+        # watched copy but the one that reaches the box most directly is
+        # set aside, so the box is judged once.
+        # What other devices hang from, for the Type row (0.25.2): a
+        # device others reach Home Assistant through is a hub, and an
+        # ESPHome board with a Bluetooth adapter of its own registered
+        # under it is a Bluetooth proxy.
+        self._via_parents = {
+            via for d in all_devices if (via := device_field(d, "via_device_id"))
+        }
+        self._bluetooth_parents = {
+            via for d in all_devices
+            if (via := device_field(d, "via_device_id")) and self._primary_domain(d) == "bluetooth"
+        }
+        copy_of = self._find_hardware_copies(all_devices, watched, ent_reg)
+        for copy_id, kept in copy_of.items():
+            set_aside[copy_id] = (
+                device_names.pop(copy_id, copy_id),
+                watched.pop(copy_id),
+                SET_ASIDE_COPY,
+            )
+            device_labels.pop(copy_id, None)
+            muted_devices.pop(copy_id, None)
+            stack_keys.pop(copy_id, None)
+            radio_owned.discard(copy_id)
+        self._copy_of = copy_of
 
         entity_map: dict[str, tuple[str, str | None]] = {}
         # Entities another integration added to a watched device
