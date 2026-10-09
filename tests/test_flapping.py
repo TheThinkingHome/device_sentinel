@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_flapping.py, Version: 0.23.2 (2026-09-24)
+# File: tests/test_flapping.py, Version: 0.25.1 (2026-10-08)
 
 """A device that keeps dropping out is one problem, not fifty.
 
@@ -171,3 +171,20 @@ async def test_the_pages_say_flapping(hass: HomeAssistant, freezer):
     assert coord.reachability_phrase(device.id) == (
         "Check its signal and the router it connects through."
     )
+
+
+async def test_the_fault_report_counts_a_device_that_keeps_dropping_out(hass: HomeAssistant, freezer):
+    """The second fleet's report of 8 October counted 2 devices with a fault
+    while S73 stood on the problem list after 404 drops, acknowledged. The
+    section now lists it under Dropping Out and counts it (0.25.1). Fails
+    on 0.25.0, whose section reads "Devices With A Fault (0)" here."""
+    coord, device, entity_id, _phone = await _shed(hass, freezer)
+    for _ in range(4):
+        await _drop(hass, coord, freezer, entity_id)
+    item = _item(coord, device.id)
+    item["status"] = "completed"
+    lines = coord._reporting_lines()
+    assert lines[0] == "## Devices With A Fault (1)"
+    at = lines.index("### Dropping Out")
+    assert lines[at + 2].startswith(f"- **{NAME}** (dropped out 4 times) for ")
+    assert lines[at + 2].endswith("[✓ acknowledged]")

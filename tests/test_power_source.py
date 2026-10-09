@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_power_source.py, Version: 0.25.0 (2026-10-08)
+# File: tests/test_power_source.py, Version: 0.25.1 (2026-10-08)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -16,7 +16,6 @@ filled in.
 from __future__ import annotations
 
 import json
-import os as _os
 import re
 from urllib.parse import parse_qsl, urlsplit
 
@@ -41,8 +40,8 @@ from custom_components.device_sentinel.const import (
     TODO_SUMMARY,
     TODO_UID,
 )
+from custom_components.device_sentinel.answers_store import ANSWERS_STORE_KEY, LEGACY_POWER_KEY
 from custom_components.device_sentinel.power_source import (
-    POWER_STORE_KEY,
     BatteryLibrary,
     clean_other,
     load_library,
@@ -255,7 +254,12 @@ async def test_no_link_without_a_maker_or_when_it_says_what_the_library_says(has
     assert coord.power_view(device.id)["report_url"] is None, "the form refuses a device with no maker"
 
 
-# ------------------------------------------------------------ its own file
+# ------------------------------------------------------------ the answers file (0.25.1)
+
+
+def _answers(power):
+    return {"version": 1, "minor_version": 1, "key": ANSWERS_STORE_KEY,
+            "data": {"power": power, "types": {"models": {}, "devices": {}}}}
 
 
 async def test_entries_live_in_their_own_file_and_survive_a_restart(hass: HomeAssistant, hass_storage, hass_ws_client, freezer):
@@ -270,7 +274,7 @@ async def test_entries_live_in_their_own_file_and_survive_a_restart(hass: HomeAs
     from pytest_homeassistant_custom_component.common import async_fire_time_changed
     async_fire_time_changed(hass, dt_util.utcnow())
     await hass.async_block_till_done()
-    saved = hass_storage[POWER_STORE_KEY]["data"]["devices"][device.id]
+    saved = hass_storage[ANSWERS_STORE_KEY]["data"]["power"]["devices"][device.id]
     assert (saved["kind"], saved["type"], saved["quantity"]) == ("battery", "CR2032", 2)
     main = json.dumps(hass_storage.get("device_sentinel.storage", {}))
     assert "CR2032" not in main, "owner entries leaked into the main storage file"
@@ -284,15 +288,15 @@ async def test_entries_live_in_their_own_file_and_survive_a_restart(hass: HomeAs
 async def test_a_damaged_entry_is_left_out_and_the_rest_kept(hass: HomeAssistant, hass_storage, caplog):
     good, _ = register_device(hass, "pw2", "Good")
     bad, _ = register_device(hass, "pw3", "Bad")
-    hass_storage[POWER_STORE_KEY] = {"version": 1, "minor_version": 1, "key": POWER_STORE_KEY, "data": {"devices": {
+    hass_storage[ANSWERS_STORE_KEY] = _answers({"devices": {
         good.id: {"kind": "battery", "type": "AA", "quantity": 4, "set": "2026-10-05T12:00:00+00:00"},
         bad.id: {"kind": "battery", "type": "AA", "quantity": 99},
         "x": "not an entry",
-    }}}
+    }})
     coord = await setup_coordinator(hass)
     assert coord.power_view(good.id)["words"] == "4× AA"
     assert coord.power_view(bad.id)["source"] is None
-    assert "left out 2 owner battery entries" in caplog.text
+    assert "left out 2 answers set on device pages" in caplog.text
 
 
 async def test_a_removed_device_takes_its_entry_with_it(hass: HomeAssistant, hass_ws_client):
@@ -407,7 +411,7 @@ async def test_a_0_24_7_entry_becomes_the_models(hass: HomeAssistant, hass_stora
         _made_by(hass, device, "Unlisted Maker", "Unlisted Sensor", "UL-SENSOR-1", "1")
         devices.append(device)
     lonely, _ = register_device(hass, "mg9", "No Maker")
-    hass_storage[POWER_STORE_KEY] = {"version": 1, "minor_version": 1, "key": POWER_STORE_KEY, "data": {"devices": {
+    hass_storage[LEGACY_POWER_KEY] = {"version": 1, "minor_version": 1, "key": LEGACY_POWER_KEY, "data": {"devices": {
         devices[0].id: {"kind": "battery", "type": "AA", "quantity": 4, "set": "2026-10-05T12:00:00+00:00"},
         lonely.id: {"kind": "mains", "type": "Mains Powered", "quantity": None, "set": "2026-10-05T12:00:00+00:00"},
     }}}
@@ -415,7 +419,7 @@ async def test_a_0_24_7_entry_becomes_the_models(hass: HomeAssistant, hass_stora
     assert {coord.power_view(d.id)["words"] for d in devices} == {"4× AA"}
     assert coord.power_view(lonely.id)["words"] == "Mains Powered", "a device with no model keeps its own"
     payload = coord._power_payload()
-    assert devices[0].id in payload["devices"] and payload["devices"][devices[0].id]["model"], "no copy for 0.24.7"
+    assert list(payload["devices"]) == [lonely.id], "a copy for 0.24.7 is still written (gone in 0.25.1)"
     assert payload["devices"][lonely.id] == {"kind": "mains", "type": "Mains Powered", "quantity": None,
                                              "set": "2026-10-05T12:00:00+00:00"}
 
@@ -423,12 +427,18 @@ async def test_a_0_24_7_entry_becomes_the_models(hass: HomeAssistant, hass_stora
 async def test_the_copy_for_0_24_7_is_never_read_back_as_an_entry(hass: HomeAssistant, hass_storage, hass_ws_client):
     coord, client, devices, _stranger = await _four_of_a_kind(hass, hass_ws_client)
     await _ws(client, type="device_sentinel/device_power", device_id=devices[1].id, choice="AAA", quantity=2)
-    hass_storage[POWER_STORE_KEY] = {"version": 1, "minor_version": 1, "key": POWER_STORE_KEY,
-                                     "data": coord._power_payload()}
+    # The power file as 0.25.0 wrote it: each model entry, and a copy
+    # under the device it was set on, marked with its model.
+    power = coord._power_payload()
+    for key, model_entry in power["models"].items():
+        copy = {f: model_entry[f] for f in ("kind", "type", "quantity", "set")}
+        power["devices"][model_entry["device_id"]] = {**copy, "model": key}
     entry = coord.entry
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
-    hass_storage[POWER_STORE_KEY]["data"] = json.loads(json.dumps(hass_storage[POWER_STORE_KEY]["data"]))
+    hass_storage.pop(ANSWERS_STORE_KEY, None)
+    hass_storage[LEGACY_POWER_KEY] = {"version": 1, "minor_version": 1, "key": LEGACY_POWER_KEY,
+                                      "data": json.loads(json.dumps(power))}
     # The device that set it now reports another model: its copy must not
     # turn into an entry for that model.
     _made_by(hass, devices[1], "Unlisted Maker", "Renamed Sensor", "HK-RENAMED", "1")
@@ -462,9 +472,9 @@ async def test_an_entry_set_on_a_device_since_gone_names_no_ghost(hass: HomeAssi
     device, _ = register_device(hass, "gh1", "Survivor")
     _made_by(hass, device, "Unlisted Maker", "Unlisted Sensor", "UL-SENSOR-1")
     key = json.dumps(["Unlisted Maker", "Unlisted Sensor", "UL-SENSOR-1"])
-    hass_storage[POWER_STORE_KEY] = {"version": 1, "minor_version": 1, "key": POWER_STORE_KEY, "data": {"models": {
+    hass_storage[ANSWERS_STORE_KEY] = _answers({"models": {
         key: {"kind": "battery", "type": "AA", "quantity": 3, "set": "2026-10-05T12:00:00+00:00", "device_id": "gone"},
-    }, "devices": {}}}
+    }, "devices": {}})
     coord = await setup_coordinator(hass)
     view = coord.power_view(device.id)
     assert (view["words"], view["set_on_name"]) == ("3× AA", None), view
@@ -484,7 +494,7 @@ async def test_a_reload_inside_the_save_second_keeps_the_entry(hass: HomeAssista
     entry.runtime_data.page_set_power(device.id, "CR2032", 1)
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
-    models = hass_storage[POWER_STORE_KEY]["data"]["models"]
+    models = hass_storage[ANSWERS_STORE_KEY]["data"]["power"]["models"]
     assert [m["type"] for m in models.values()] == ["CR2032"]
 
 
@@ -581,93 +591,10 @@ def test_the_shipped_library_has_no_malformed_entry(caplog):
     assert not [r for r in caplog.records if "battery library" in r.getMessage()]
 
 
-# ------------------------------------------------- a last-good copy (0.25.0)
+# ------------------------------------------------- one write for a burst
 #
-# The owner's entries are the one thing in Device Sentinel's storage a
-# person typed by hand. Until 0.25.0 a damaged power file lost them
-# with a log line. The harness keeps storage in memory, so the files on
-# disk are written by hand here, as test_backup_integrity.py does.
-
-
-def _power_disk(hass, suffix=""):
-    directory = hass.config.path(".storage")
-    _os.makedirs(directory, exist_ok=True)
-    return _os.path.join(directory, POWER_STORE_KEY + (f".{suffix}" if suffix else ""))
-
-
-@pytest.fixture
-def _no_power_files(hass):
-    def sweep():
-        for suffix in ("", "last-good"):
-            path = _power_disk(hass, suffix)
-            if _os.path.exists(path):
-                _os.remove(path)
-    sweep()
-    yield
-    sweep()
-
-
-def _entry_doc(device_id, battery="AA", quantity=4):
-    return {"version": 1, "minor_version": 1, "key": POWER_STORE_KEY, "data": {"devices": {
-        device_id: {"kind": "battery", "type": battery, "quantity": quantity, "set": "2026-10-05T12:00:00+00:00"},
-    }}}
-
-
-async def test_a_save_keeps_the_previous_power_file_as_last_good(hass: HomeAssistant, hass_ws_client, _no_power_files):
-    """Before each save the file about to be replaced becomes last-good
-    (#370's rule, given to the power file in 0.25.0). Fails on 0.24.11,
-    which wrote over the file with no copy."""
-    coord, client, device = await _setup(hass, hass_ws_client)
-    with open(_power_disk(hass), "w", encoding="utf-8") as handle:
-        json.dump(_entry_doc(device.id, "CR2032", 1), handle)
-    reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="AAA", quantity=2)
-    assert reply["success"], reply
-    await coord.async_flush_power()
-    copy = _power_disk(hass, "last-good")
-    assert _os.path.exists(copy), "no last-good copy of the power file"
-    with open(copy, encoding="utf-8") as handle:
-        kept = json.load(handle)["data"]["devices"][device.id]
-    assert (kept["type"], kept["quantity"]) == ("CR2032", 1)
-
-
-async def test_an_unreadable_power_file_is_restored_from_last_good(hass: HomeAssistant, hass_storage, caplog, _no_power_files):
-    """Home Assistant answers nothing for a file it cannot parse; the
-    entries come back from last-good rather than going empty. Fails on
-    0.24.11."""
-    device, _ = register_device(hass, "pw40", "Door Laundry")
-    hass_storage.pop(POWER_STORE_KEY, None)
-    with open(_power_disk(hass, "last-good"), "w", encoding="utf-8") as handle:
-        json.dump(_entry_doc(device.id, "CR2450", 1), handle)
-    coord = await setup_coordinator(hass)
-    assert coord.power_view(device.id)["words"] == "CR2450"
-    assert "restored the owner battery entries" in caplog.text
-
-
-async def test_a_restored_or_damaged_load_never_rotates_over_the_copy(hass: HomeAssistant, hass_storage, hass_ws_client, _no_power_files):
-    """The first save after a restore writes without rotating, so the
-    file on disk then (the damaged one) can never become last-good;
-    the save after it rotates as usual."""
-    device, _ = register_device(hass, "pw41", "Door Master")
-    _made_by(hass, device, "Unlisted Maker", "Unlisted Sensor", "UL-SENSOR-1", "1")
-    hass_storage.pop(POWER_STORE_KEY, None)
-    with open(_power_disk(hass, "last-good"), "w", encoding="utf-8") as handle:
-        json.dump(_entry_doc(device.id, "CR2450", 1), handle)
-    coord = await setup_coordinator(hass)
-    client = await hass_ws_client(hass)
-    with open(_power_disk(hass), "w", encoding="utf-8") as handle:
-        handle.write("{ damaged")
-    reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="AAA", quantity=2)
-    assert reply["success"], reply
-    await coord.async_flush_power()
-    with open(_power_disk(hass, "last-good"), encoding="utf-8") as handle:
-        assert json.load(handle)["data"]["devices"][device.id]["type"] == "CR2450"
-    with open(_power_disk(hass), "w", encoding="utf-8") as handle:
-        json.dump(_entry_doc(device.id, "AAA", 2), handle)
-    reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="AA", quantity=4)
-    assert reply["success"], reply
-    await coord.async_flush_power()
-    with open(_power_disk(hass, "last-good"), encoding="utf-8") as handle:
-        assert json.load(handle)["data"]["devices"][device.id]["type"] == "AAA"
+# The last-good copy is tested with the answers file, in
+# test_answers_store.py (0.25.1).
 
 
 async def test_a_burst_of_pencil_saves_makes_one_write(hass: HomeAssistant, hass_ws_client, hass_storage, freezer):
@@ -677,13 +604,13 @@ async def test_a_burst_of_pencil_saves_makes_one_write(hass: HomeAssistant, hass
     from pytest_homeassistant_custom_component.common import async_fire_time_changed
     coord, client, device = await _setup(hass, hass_ws_client)
     writes = []
-    original = coord._power_store.async_save
+    original = coord._answers_store.async_save
 
     async def counting(data):
         writes.append(data)
         await original(data)
 
-    coord._power_store.async_save = counting
+    coord._answers_store.async_save = counting
     for choice in ("AA", "AAA", "CR2032"):
         reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice=choice, quantity=1)
         assert reply["success"], reply
@@ -691,4 +618,16 @@ async def test_a_burst_of_pencil_saves_makes_one_write(hass: HomeAssistant, hass
     async_fire_time_changed(hass, dt_util.utcnow())
     await hass.async_block_till_done()
     assert len(writes) == 1
-    assert hass_storage[POWER_STORE_KEY]["data"]["models"]
+    assert hass_storage[ANSWERS_STORE_KEY]["data"]["power"]["models"]
+
+
+async def test_clearing_a_devices_own_entry_leaves_the_models(hass: HomeAssistant, hass_ws_client):
+    """As on the Type row (found by review, 0.25.1)."""
+    coord, _client, devices, _stranger = await _four_of_a_kind(hass, hass_ws_client)
+    coord._power_entries[devices[0].id] = {"kind": "battery", "type": "AA", "quantity": 1, "set": None}
+    coord.page_set_power(devices[1].id, "AAA", 2)
+    assert coord.power_text(devices[0].id) == "AA"
+    coord.page_set_power(devices[0].id, None)
+    assert {coord.power_text(d.id) for d in devices} == {"2× AAA"}
+    rows = [r[SYS_DETAIL] for r in _page_rows(coord)]
+    assert rows[-1] == "power entry removed, the model's 2× AAA used, from its device page"
