@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_hardware_copies.py, Version: 0.25.2 (2026-10-09)
+# File: tests/test_hardware_copies.py, Version: 0.25.3 (2026-10-09)
 
 """One piece of hardware shown as several devices (0.25.2).
 
@@ -114,7 +114,10 @@ async def test_a_proxy_is_watched_once_through_its_esphome_device(hass: HomeAssi
     same = coord.same_hardware(bluesight.id)
     assert same["watched_through"] == esphome.id
     assert [row["device_id"] for row in same["devices"]][0] == esphome.id
-    assert {row["integration"] for row in same["devices"]} == {"esphome", "bluesight", "unifi", "bluetooth"}
+    assert {row["domain"] for row in same["devices"]} == {"esphome", "bluesight", "unifi", "bluetooth"}
+    # The name shown elsewhere, not the domain (0.25.3, James's house).
+    names = {row["domain"]: row["integration"] for row in same["devices"]}
+    assert names["unifi"] == "UniFi Network"
 
 
 @needs_split

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_power_source.py, Version: 0.25.1 (2026-10-08)
+# File: tests/test_power_source.py, Version: 0.25.3 (2026-10-09)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -184,7 +184,7 @@ async def test_the_library_answers_then_the_owner_then_not_known(hass: HomeAssis
 
 async def test_mains_and_usb_take_no_quantity_and_no_report(hass: HomeAssistant, hass_ws_client):
     coord, client, device = await _setup(hass, hass_ws_client, "Aqara", "Presence sensor FP2", None, None)
-    for choice in ("Mains Powered", "USB Powered", "PoE Powered"):
+    for choice in ("Mains Powered", "USB Powered", "USB Direct to Server", "PoE Powered"):
         reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice=choice, quantity=3)
         assert reply["success"], reply
         view = coord.power_view(device.id)
@@ -349,7 +349,7 @@ async def test_the_page_carries_the_power_block(hass: HomeAssistant, hass_ws_cli
     assert power["words"] == "Not known"
     assert power["choices"] == [
         "AA", "AAA", "CR2032", "CR2450", "Rechargeable", "CR123A", "CR2", "CR2477", "CR1632", "CR2430",
-        "Mains Powered", "USB Powered", "PoE Powered", "Other",
+        "Mains Powered", "USB Powered", "USB Direct to Server", "PoE Powered", "Other",
     ]
     assert power["quantity"] == [1, 8]
     assert power["library_home"] == "https://github.com/andrew-codechimp/HA-Battery-Notes"
@@ -631,3 +631,17 @@ async def test_clearing_a_devices_own_entry_leaves_the_models(hass: HomeAssistan
     assert {coord.power_text(d.id) for d in devices} == {"2× AAA"}
     rows = [r[SYS_DETAIL] for r in _page_rows(coord)]
     assert rows[-1] == "power entry removed, the model's 2× AAA used, from its device page"
+
+
+
+async def test_a_wired_source_typed_as_a_battery_reads_as_the_choice(hass: HomeAssistant, hass_ws_client):
+    """James's Z-Wave stick was saved as one battery called "USB Direct to
+    Server" before that was a choice (0.25.3)."""
+    coord, _client, device = await _setup(hass, hass_ws_client)
+    key = coord._power_key(device.id)
+    coord._power_reset()
+    coord._power_read({"models": {key: {"kind": "battery", "type": "USB Direct to Server", "quantity": 1,
+                                        "set": "2026-10-09T15:45:34+00:00", "device_id": device.id}}, "devices": {}})
+    view = coord.power_view(device.id)
+    assert view["words"] == "USB Direct to Server"
+    assert view["entry"]["kind"] == "usb" and view["entry"]["quantity"] is None

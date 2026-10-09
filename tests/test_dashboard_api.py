@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_api.py, Version: 0.23.17 (2026-09-29)
+# File: tests/test_dashboard_api.py, Version: 0.25.3 (2026-10-09)
 
 """The dashboard's data layer: status, actions and the change marker.
 
@@ -253,6 +253,8 @@ async def test_classification_names_the_mute_and_the_reason_set_aside(hass: Home
         "device_id": "x", "name": "Old Tracker", "integration": "tplink_router",
         "watched": False, "muted": "", "muted_global": "",
         "set_aside": "excluded (integration: tplink_router)", "copies": 1,
+        # What it is (0.25.3); a device gone from the registry has none.
+        "type": None,
     }
 
 
