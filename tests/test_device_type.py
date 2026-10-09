@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_type.py, Version: 0.25.1 (2026-10-08)
+# File: tests/test_device_type.py, Version: 0.25.2 (2026-10-09)
 
 """What each device is (0.25.1, Project__Device_Type.md).
 
@@ -63,7 +63,23 @@ def _e(domain, device_class=None, category=None, disabled=None):
     ([_e("binary_sensor", "carbon_monoxide")], "CO Alarm"),
     ([_e("switch"), _e("sensor", "power"), _e("sensor", "energy")], "Plug"),
     ([_e("switch"), _e("select", category=EntityCategory.CONFIG)], "Switch"),
-    ([_e("light")], "Switch"),
+    # Bulbs and light strips are lights (James, 9 October 2026).
+    ([_e("light")], "Light"),
+    ([_e("light"), _e("switch")], "Switch"),
+    # 0.25.2: a lock with a door contact, a thermostat that reports
+    # temperature, a valve with a leak probe.
+    ([_e("lock"), _e("binary_sensor", "door")], "Lock"),
+    ([_e("climate"), _e("sensor", "temperature")], "Thermostat"),
+    ([_e("valve"), _e("binary_sensor", "moisture")], "Valve"),
+    ([_e("fan"), _e("light")], "Fan"),
+    # A 4-in-1 is a multi sensor; with only two of the three readings
+    # it is still a motion sensor (James, 9 October 2026).
+    ([_e("binary_sensor", "occupancy"), _e("sensor", "temperature"), _e("sensor", "humidity"),
+      _e("sensor", "illuminance")], "Multi Sensor"),
+    ([_e("binary_sensor", "motion"), _e("sensor", "temperature"), _e("sensor", "illuminance")], "Motion Sensor"),
+    # The siren comes after the alarms: a smoke alarm sounds one.
+    ([_e("siren"), _e("binary_sensor", "smoke")], "Smoke Alarm"),
+    ([_e("siren")], "Siren"),
     ([_e("sensor", "moisture"), _e("sensor", "temperature")], "Soil Sensor"),
     ([_e("sensor", "temperature"), _e("sensor", "humidity")], "Temperature Sensor"),
     ([_e("event", "button"), _e("sensor", "battery", category=EntityCategory.DIAGNOSTIC)], "Button"),
@@ -83,7 +99,7 @@ def test_a_type_is_read_from_the_main_entities_first_match_wins(entities, expect
 _SOURCE = {}
 
 
-def _device(hass, uid, name, entities, maker="Third Reality", model="Zigbee / BLE smart plug", model_id="3RSP019BZ"):
+def _device(hass, uid, name, entities, maker="Example Maker", model="Example smart plug", model_id="EX-PLUG-1"):
     if "source" not in _SOURCE or _SOURCE["source"][0] is not hass:
         entry = MockConfigEntry(domain="test", title="Source")
         entry.add_to_hass(hass)
@@ -112,7 +128,7 @@ async def _plugs(hass, hass_ws_client):
     second = _device(hass, "p2", "Plug Laundry Router", [("switch", None)])
     leak = _device(hass, "l1", "Leak Kitchen Sink", [("binary_sensor", "moisture")], maker="Aqara",
                    model="Water leak sensor", model_id="SJCGQ11LM")
-    radio = _device(hass, "r1", "Router Aotec Zi", [("sensor", "signal_strength")], maker="Aeotec",
+    radio = _device(hass, "r1", "Router Aotec Zi", [("sensor", "signal_strength")], maker="Example Radio Co",
                     model="Range extender Zi", model_id="WG001")
     coord = await setup_coordinator(hass)
     client = await hass_ws_client(hass)
@@ -186,9 +202,11 @@ async def test_the_diagnostics_carry_each_devices_type_and_its_source(hass: Home
     await _ws(client, type="device_sentinel/device_type", device_id=first.id, choice="Plug")
     payload = await async_get_config_entry_diagnostics(hass, coord.entry)
     devices = payload["devices"]
-    assert devices[first.id]["type"] == {"words": "Plug", "source": "owner", "from_entities": "Switch"}
-    assert devices[leak.id]["type"] == {"words": "Leak Sensor", "source": "entities", "from_entities": "Leak Sensor"}
-    assert devices[radio.id]["type"] == {"words": None, "source": None, "from_entities": None}
+    assert devices[first.id]["type"] == {"words": "Plug", "source": "owner", "from_entities": "Switch",
+                                         "auto_source": "entities"}
+    assert devices[leak.id]["type"] == {"words": "Leak Sensor", "source": "entities", "from_entities": "Leak Sensor",
+                                        "auto_source": "entities"}
+    assert devices[radio.id]["type"] == {"words": None, "source": None, "from_entities": None, "auto_source": None}
 
 
 def test_the_choices_are_the_approved_types_then_other():
@@ -197,7 +215,14 @@ def test_the_choices_are_the_approved_types_then_other():
         "Camera", "Voice Assistant", "Cover", "Leak Sensor", "Door/Window Sensor",
         "Vibration Sensor", "Motion Sensor", "Presence Sensor", "Smoke Alarm", "CO Alarm",
         "Switch", "Plug", "Soil Sensor", "Temperature Sensor", "Button",
+        # 0.25.2 (James, 9 October 2026).
+        "Zigbee Coordinator (Zigbee2MQTT)", "Zigbee Coordinator (ZHA)", "Z-Wave Controller",
+        "Thread Border Router", "Matter Bridge", "Zigbee Router", "Z-Wave Repeater", "Thread Router",
+        "Hub", "Printer", "Dashboard", "Plant Waterer", "Multi Sensor", "Lock", "Thermostat", "Valve",
+        "Siren", "Fan", "Light", "Bluetooth Proxy", "ESPHome Device",
     }
+    listed = list(device_type.TYPE_CHOICES[:-1])
+    assert listed == sorted(listed, key=str.casefold), "the list is not in reading order"
 
 
 async def test_clearing_a_devices_own_answer_leaves_the_models(hass: HomeAssistant, hass_ws_client):

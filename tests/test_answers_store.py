@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_answers_store.py, Version: 0.25.1 (2026-10-08)
+# File: tests/test_answers_store.py, Version: 0.25.2 (2026-10-09)
 
 """The one file of pencil answers (0.25.1).
 
@@ -728,3 +728,242 @@ async def test_the_page_names_the_models_answer_and_counts_only_devices_it_cover
     rows = [r for r in coord.data[DATA_SYSTEM_EVENTS] if r[SYS_KIND] == SYS_DEVICE_PAGE]
     assert coord._system_event_phrase(rows[-1]) == "type set to Plug, for all 3 devices of this model, from its device page"
     assert third.id
+
+
+# ------------------------------------------- evidence and the brief (0.25.2)
+# Before a repair writes over the answers file, the files as they were
+# are copied to trim_backups, and the events log the brief reads says
+# what happened (#340's and #342's rules given to the answers file).
+
+
+def _evidence(hass):
+    return sorted(os.path.basename(p) for p in glob.glob(
+        os.path.join(hass.config.path("device_sentinel/trim_backups"), "device_sentinel_*.evidence")))
+
+
+def _repairs(coord):
+    from custom_components.device_sentinel.const import DATA_SYSTEM_EVENTS, SYS_KIND, SYS_STORAGE_REPAIR
+    return [e.get("detail") for e in coord.data.get(DATA_SYSTEM_EVENTS, []) if e.get(SYS_KIND) == SYS_STORAGE_REPAIR]
+
+
+@pytest.fixture
+def _no_evidence(hass):
+    def sweep():
+        for path in glob.glob(os.path.join(hass.config.path("device_sentinel/trim_backups"), "*.evidence")):
+            os.remove(path)
+    sweep()
+    yield
+    sweep()
+
+
+async def test_disk_a_corrupt_file_with_no_backup_is_kept_and_reported(hass: HomeAssistant, real_disk, _no_evidence):
+    """Home Assistant moves a file it cannot parse aside before Device
+    Sentinel looks, so the file seemed missing and the empty start went
+    unreported (0.25.2, found by testing)."""
+    _model_device(hass)
+    _text(_disk(hass, ANSWERS_STORE_KEY), "{ not json")
+    await real_disk()
+    coord = await setup_coordinator(hass)
+    notes = _repairs(coord)
+    assert any("had no backup" in (n or "") for n in notes), notes
+    kept = _evidence(hass)
+    assert kept and any(".answers.corrupt." in name for name in kept), kept
+    path = os.path.join(hass.config.path("device_sentinel/trim_backups"), next(n for n in kept if "corrupt" in n))
+    with open(path, encoding="utf-8") as handle:
+        assert handle.read() == "{ not json"
+
+
+async def test_disk_a_restore_from_backup_keeps_both_files_and_says_so(hass: HomeAssistant, real_disk, _no_evidence):
+    device = _model_device(hass)
+    _text(_disk(hass, ANSWERS_STORE_KEY), "{ not json")
+    _write(_disk(hass, ANSWERS_STORE_KEY, "last-good"), _doc(ANSWERS_STORE_KEY, {
+        "power": {"models": {KEY: _power("CR2450", 1, device.id)}, "devices": {}},
+        "types": {"models": {}, "devices": {}}}))
+    await real_disk()
+    coord = await setup_coordinator(hass)
+    assert coord.power_view(device.id)["words"] == "CR2450"
+    notes = _repairs(coord)
+    assert len(notes) == 1 and "restored from their backup" in notes[0], notes
+    kept = _evidence(hass)
+    assert any(name.endswith(".answers.last-good.evidence") for name in kept), kept
+    assert any(".answers.corrupt." in name for name in kept), kept
+
+
+async def test_disk_a_dropped_answer_is_counted_in_the_brief_and_the_file_kept(
+    hass: HomeAssistant, real_disk, _no_evidence
+):
+    device = _model_device(hass)
+    original = _doc(ANSWERS_STORE_KEY, {
+        "power": {"models": {KEY: _power("CR2450", 1, device.id), "not a key": {"kind": "battery"}},
+                  "devices": {"x": 7}},
+        "types": {"models": {}, "devices": {device.id: {"type": 5}}}})
+    _write(_disk(hass, ANSWERS_STORE_KEY), original)
+    await real_disk()
+    coord = await setup_coordinator(hass)
+    notes = _repairs(coord)
+    assert len(notes) == 1 and "left out" in notes[0], notes
+    assert notes[0].startswith("3 answers"), notes
+    kept = _evidence(hass)
+    assert [n for n in kept if n.endswith(".answers.evidence")], kept
+    path = os.path.join(hass.config.path("device_sentinel/trim_backups"),
+                        next(n for n in kept if n.endswith(".answers.evidence")))
+    assert _read(path) == original, "the evidence is not the file as it was"
+
+
+async def test_disk_a_clean_start_keeps_nothing_and_says_nothing(hass: HomeAssistant, real_disk, _no_evidence):
+    device = _model_device(hass)
+    _write(_disk(hass, ANSWERS_STORE_KEY), _doc(ANSWERS_STORE_KEY, {
+        "power": {"models": {KEY: _power("CR2450", 1, device.id)}, "devices": {}},
+        "types": {"models": {}, "devices": {}}}))
+    await real_disk()
+    coord = await setup_coordinator(hass)
+    assert _repairs(coord) == []
+    assert _evidence(hass) == []
+
+
+async def test_disk_a_failed_evidence_copy_never_stops_a_start(hass: HomeAssistant, real_disk, _no_evidence, caplog):
+    _model_device(hass)
+    _text(_disk(hass, ANSWERS_STORE_KEY), "{ not json")
+    await real_disk()
+
+    def refuse(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    with patch("custom_components.device_sentinel.answers_store.shutil.copyfile", refuse):
+        entry = await setup_entry(hass)
+    assert entry.state is ConfigEntryState.LOADED
+    assert "Answers evidence copy failed" in caplog.text
+
+
+async def test_disk_an_evidence_copy_is_dated_today_so_the_pruning_keeps_it(
+    hass: HomeAssistant, real_disk, _no_evidence
+):
+    """Found by review: a copy kept the answers file's own time, months
+    old, and the nightly pruning took it."""
+    _model_device(hass)
+    _text(_disk(hass, ANSWERS_STORE_KEY), "{ not json")
+    old = 1_600_000_000
+    os.utime(_disk(hass, ANSWERS_STORE_KEY), (old, old))
+    await real_disk()
+    await setup_coordinator(hass)
+    for name in _evidence(hass):
+        path = os.path.join(hass.config.path("device_sentinel/trim_backups"), name)
+        assert os.path.getmtime(path) > old + 86400 * 365, name
+
+
+async def test_disk_a_damaged_file_beside_an_old_power_file_is_kept_and_reported(
+    hass: HomeAssistant, real_disk, _no_evidence
+):
+    """Found by review: the old power file was taken first and the
+    damaged answers file went without a copy or a word."""
+    device = _model_device(hass)
+    _text(_disk(hass, ANSWERS_STORE_KEY), "{ not json")
+    _write(_disk(hass, LEGACY_POWER_KEY), _legacy_0_25_0(device.id))
+    await real_disk()
+    coord = await setup_coordinator(hass)
+    assert coord.power_view(device.id)["words"] == "2× AAA"
+    notes = _repairs(coord)
+    assert any("only the power answers in the old power file were kept" in (n or "") for n in notes), notes
+    assert any(".answers.corrupt." in name for name in _evidence(hass)), _evidence(hass)
+
+
+@pytest.mark.parametrize(("data", "part"), [
+    ({"power": None, "types": {"models": {}, "devices": {}}}, "power"),
+    ({"power": {"models": {}, "devices": {}}, "types": []}, "types"),
+    ({"power": {"models": [1], "devices": {}}, "types": {"models": {}, "devices": {}}}, "power models"),
+    ({"power": {"models": {}, "devices": {}}, "types": {"models": {}, "devices": "x"}}, "types devices"),
+])
+async def test_disk_a_table_that_is_not_a_table_is_reported_and_kept(
+    hass: HomeAssistant, real_disk, _no_evidence, data, part
+):
+    """Found by testing: a whole table of the wrong shape read as empty,
+    with no word, no copy, and the next save rotated over last-good."""
+    _model_device(hass)
+    original = _doc(ANSWERS_STORE_KEY, data)
+    _write(_disk(hass, ANSWERS_STORE_KEY), original)
+    await real_disk()
+    coord = await setup_coordinator(hass)
+    notes = _repairs(coord)
+    assert len(notes) == 1 and f"({part})" in notes[0], notes
+    kept = [n for n in _evidence(hass) if n.endswith(".answers.evidence")]
+    assert kept, _evidence(hass)
+    assert coord._answers_rotation_armed is False
+
+
+async def test_disk_an_old_power_file_with_a_table_of_the_wrong_shape_is_reported(
+    hass: HomeAssistant, real_disk, _no_evidence
+):
+    _model_device(hass)
+    _write(_disk(hass, LEGACY_POWER_KEY), _doc(LEGACY_POWER_KEY, {"models": "x", "devices": {}}))
+    await real_disk()
+    coord = await setup_coordinator(hass)
+    assert any("(old power file models)" in (n or "") for n in _repairs(coord)), _repairs(coord)
+
+
+async def test_disk_a_damaged_file_with_no_backup_is_never_made_last_good(
+    hass: HomeAssistant, real_disk, _no_evidence
+):
+    """Found by review: a file of the wrong shape is not moved aside by
+    Home Assistant, and the first save rotated it into last-good."""
+    device = _model_device(hass)
+    _text(_disk(hass, ANSWERS_STORE_KEY), json.dumps({"version": 1, "minor_version": 1, "key": "x", "data": []}))
+    await real_disk()
+    coord = await setup_coordinator(hass)
+    assert coord._answers_rotation_armed is False
+    coord.page_set_power(device.id, "CR2032", 1)
+    await coord.async_flush_answers()
+    last_good = _disk(hass, ANSWERS_STORE_KEY, "last-good")
+    if os.path.exists(last_good):
+        assert _read(last_good).get("data") != [], "the damaged file became last-good"
+
+
+async def test_disk_a_repair_is_written_back_and_not_repeated(hass: HomeAssistant, real_disk, _no_evidence):
+    """Found by review: a load repair was never saved, so every start
+    found the same damage, copied it again and said so again."""
+    device = _model_device(hass)
+    _write(_disk(hass, ANSWERS_STORE_KEY), _doc(ANSWERS_STORE_KEY, {
+        "power": {"models": {KEY: _power("CR2450", 1, device.id), "not a key": 7}, "devices": {}},
+        "types": {"models": {}, "devices": {}}}))
+    await real_disk()
+    entry = await setup_entry(hass)
+    assert len(_repairs(entry.runtime_data)) == 1
+    await entry.runtime_data.async_flush_answers()
+    written = _read(_disk(hass, ANSWERS_STORE_KEY))
+    assert "not a key" not in written["data"]["power"]["models"] and KEY in written["data"]["power"]["models"]
+    assert not os.path.exists(_disk(hass, ANSWERS_STORE_KEY, "last-good")), "a damaged file became last-good"
+    copies = len(_evidence(hass))
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    notes = _repairs(entry.runtime_data)
+    assert len(notes) == 1, notes
+    assert len(_evidence(hass)) == copies, "the same damage was copied again"
+
+
+async def test_disk_a_missing_file_restored_from_backup_says_missing(hass: HomeAssistant, real_disk, _no_evidence):
+    device = _model_device(hass)
+    _write(_disk(hass, ANSWERS_STORE_KEY, "last-good"), _doc(ANSWERS_STORE_KEY, {
+        "power": {"models": {KEY: _power("CR2450", 1, device.id)}, "devices": {}},
+        "types": {"models": {}, "devices": {}}}))
+    await real_disk()
+    coord = await setup_coordinator(hass)
+    notes = _repairs(coord)
+    assert len(notes) == 1 and notes[0].startswith("the answers set on device pages were missing"), notes
+
+
+async def test_disk_a_repair_after_a_rollback_move_never_rotates_over_last_good(hass: HomeAssistant, real_disk, _no_evidence):
+    """Found by review: the move from the old power file armed rotation,
+    and the repair save a second later rotated over the clean copy."""
+    device = _model_device(hass)
+    _write(_disk(hass, ANSWERS_STORE_KEY), _doc(ANSWERS_STORE_KEY, {
+        "power": {"models": {KEY: _power("AAA", 2, device.id), "not a key": 7}, "devices": {}},
+        "types": {"models": {KEY: _type("Button", device.id)}, "devices": {}}}))
+    _write(_disk(hass, LEGACY_POWER_KEY), _doc(LEGACY_POWER_KEY, {
+        "models": {KEY: {**_power("CR2477", 1, device.id), "set": LATER}}, "devices": {}}))
+    clean = _doc(ANSWERS_STORE_KEY, {"power": {"models": {KEY: _power("CR2450", 1, device.id)}, "devices": {}},
+                                     "types": {"models": {}, "devices": {}}})
+    _write(_disk(hass, ANSWERS_STORE_KEY, "last-good"), clean)
+    await real_disk()
+    coord = await setup_coordinator(hass)
+    assert len(_repairs(coord)) == 1
+    await coord.async_flush_answers()
+    assert _read(_disk(hass, ANSWERS_STORE_KEY, "last-good")) == clean, "the last clean file was rotated over"

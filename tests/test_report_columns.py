@@ -1,7 +1,7 @@
 """Tests for what the reports say about set-aside devices.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_report_columns.py, Version: 0.23.5 (2026-09-25)
+# File: test_report_columns.py, Version: 0.25.2 (2026-10-09)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -96,6 +96,7 @@ async def test_the_header_names_every_cause(hass: HomeAssistant):
     for cause in (
         "integrations you asked to exclude", "service devices",
         "disabled devices", "duplicate coordinators",
+        "hardware already watched through another device",
         "devices with no entities",
     ):
         assert cause in text
