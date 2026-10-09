@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.25.2 (2026-10-09)
+// File: panel.js, Version: 0.25.3 (2026-10-09)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -29,6 +29,8 @@ const TABS = [
 // address, so opening the dashboard lands on it.
 const TAB_SLUG = Object.fromEntries(TABS.map((name) => [name, name.toLowerCase().replace(/ /g, "-")]));
 const TAB_BY_SLUG = Object.fromEntries(TABS.map((name) => [TAB_SLUG[name], name]));
+// A device no type could be found for (0.25.1), as the Type filters name it.
+const NOT_KNOWN_TYPE = "Not known";
 const BUILT = new Set(["Daily Brief", "Problem List", "Battery Trends", "Signal Trends", "Classification", "Integrations", "Devices", "Recommendations"]);
 const FILTERS = [
   ["all", "All"],
@@ -1064,6 +1066,10 @@ class DeviceSentinelPanel extends HTMLElement {
       const fail = (err) => { note.textContent = (err && err.message) || "That did not save."; };
       let action = null;
       if (card.kind === "power") action = this._recPowerPicker(row.device_id, refresh, fail);
+      if (card.kind === "type") action = this._recTypePicker(row.device_id, refresh, fail);
+      // A model split between types (0.25.3): which model, and what
+      // this device is.
+      if (card.kind === "mixed_types") action = el("span", { class: "small" }, `${row.model || "Unknown model"}: ${row.type}`);
       if (card.kind === "last_seen") {
         action = el("button", { class: "chip", type: "button", onclick: async () => {
           try { await this._call({ type: "device_sentinel/device_last_seen", device_id: row.device_id }); await refresh(); } catch (err) { fail(err); }
@@ -1108,6 +1114,29 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("span", { class: "actrow" }, select, quantity, other, save);
   }
 
+
+  // The Type choices in a list row (0.25.3), as the device page's
+  // pencil offers them; Save sets the whole model, as there.
+  _recTypePicker(deviceId, refresh, fail) {
+    const kinds = this._snapshot.recommendations.types || { choices: [], other: "Other" };
+    const select = el("select", { class: "actinput", "aria-label": "What this device is" },
+      el("option", { value: "" }, "Choose…"), ...kinds.choices.map((c) => el("option", { value: c }, c)));
+    const other = el("input", { class: "actinput", type: "text", maxlength: "40", placeholder: "What it is",
+      "aria-label": "Your own words for what this device is" });
+    const save = el("button", { class: "chip", type: "button", disabled: "", onclick: async () => {
+      if (!select.value) return;
+      const message = { type: "device_sentinel/device_type", device_id: deviceId, choice: select.value };
+      if (select.value === kinds.other) message.other = other.value;
+      try { await this._call(message); await refresh(); } catch (err) { fail(err); }
+    } }, "Save");
+    const repaint = () => {
+      other.style.display = select.value === kinds.other ? "" : "none";
+      save.disabled = !select.value;
+    };
+    select.addEventListener("change", repaint);
+    repaint();
+    return el("span", { class: "actrow" }, select, other, save);
+  }
 
   _standingText(row) {
     return row.standing === "excluded" && row.first_seen ? "Excluded when first seen" : STANDING[row.standing];
@@ -1417,12 +1446,14 @@ class DeviceSentinelPanel extends HTMLElement {
           el("td", {}, row.what))))))
       : null;
 
-    this._pane.replaceChildren(nav,
+    // Empty parts left out: the browser writes a missing one as "null"
+    // (0.25.3).
+    this._pane.replaceChildren(...[nav,
       el("h3", { class: "section" }, "Now"),
       nowLine ? el("p", { style: "margin:0" }, nowLine) : null, nowTable,
       el("h3", { class: "section" }, "Repeat Offenders"), ...repeat,
       el("h3", { class: "section" }, "Last 24 Hours"),
-      el("p", { style: "margin:0" }, eventsLine), eventsTable);
+      el("p", { style: "margin:0" }, eventsLine), eventsTable].filter((part) => part));
   }
 
   _sorter(state, key, repaint) {
@@ -1455,27 +1486,111 @@ class DeviceSentinelPanel extends HTMLElement {
     });
   }
 
+  // Types on a tab (0.25.3). Each tab keeps its own choice: "" for
+  // every type, NOT_KNOWN_TYPE for devices with none, else the type.
+  _typeMatch(chosen, type) {
+    if (!chosen) return true;
+    return chosen === NOT_KNOWN_TYPE ? !type : type === chosen;
+  }
+
+  // A type as a link that narrows the tab to it.
+  _typeLink(type, pick) {
+    return el("button", { class: type ? "linkbtn" : "linkbtn muted", type: "button",
+      title: `Show ${type || NOT_KNOWN_TYPE} only`, onclick: () => pick(type || NOT_KNOWN_TYPE) }, type || NOT_KNOWN_TYPE);
+  }
+
+  // The list of types beside a tab's filters, with how many of each.
+  _typePicker(types, chosen, pick, label) {
+    const counted = [...types.entries()]
+      .filter(([type]) => type)
+      .sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: "base" }) || (a < b ? -1 : a > b ? 1 : 0));
+    const total = [...types.values()].reduce((sum, n) => sum + n, 0);
+    const unknown = types.get("") || 0;
+    return el("select", { class: "actinput", "aria-label": label || "Show one type", onchange: (ev) => pick(ev.target.value) },
+      el("option", { value: "", ...(!chosen ? { selected: "" } : {}) }, `All types ${total}`),
+      ...counted.map(([type, n]) => el("option", { value: type, ...(chosen === type ? { selected: "" } : {}) }, `${type} ${n}`)),
+      ...(unknown ? [el("option", { value: NOT_KNOWN_TYPE, ...(chosen === NOT_KNOWN_TYPE ? { selected: "" } : {}) },
+        `${NOT_KNOWN_TYPE} ${unknown}`)] : []));
+  }
+
+  _typeShowing(chosen, pick) {
+    return chosen ? el("p", { class: "typeshowing", style: "margin:0" }, `Showing ${chosen} only. `,
+      el("button", { class: "linkbtn", type: "button", onclick: () => pick("") }, "Show all")) : null;
+  }
+
+  _countTypes(rows) {
+    const types = new Map();
+    for (const row of rows) types.set(row.type || "", (types.get(row.type || "") || 0) + 1);
+    return types;
+  }
+
   _paintBatteryTrends() {
     const page = this._snapshot.battery;
     // Points a week and points over four weeks, from weekly averages
     // (0.23.6), in place of a rate per day that described a wobble.
-    const perWeek = (v) => (v === null || v === undefined ? "\u2013"
+    const perWeek = (v) => (v === null || v === undefined ? "–"
       : Math.abs(v) < 0.05 ? "level" : v < 0 ? `down ${(-v).toFixed(1)} a week` : `up ${v.toFixed(1)} a week`);
-    const moved = (v) => (v === null || v === undefined ? "\u2013"
+    const moved = (v) => (v === null || v === undefined ? "–"
       : Math.abs(v) < 0.05 ? "level" : v > 0 ? `down ${v.toFixed(1)}` : `up ${(-v).toFixed(1)}`);
     const pct = (v) => (v === null || v === undefined ? "" : `${Math.round(v)}%`);
     this._batterySort = this._batterySort || { key: null, dir: 1 };
     this._modelSort = this._modelSort || { key: null, dir: 1 };
+    this._lowSort = this._lowSort || { key: null, dir: 1 };
+    this._steadySort = this._steadySort || { key: null, dir: 1 };
     const again = () => this._paintBatteryTrends();
+    // One type at a time (0.25.3): the whole tab narrows, the bank, the
+    // models and every list, and the summary counts what is shown.
+    const allCells = page.cell_rows || [];
+    const everyone = [...allCells, ...page.unreadable];
+    const types = this._countTypes(everyone);
+    let chosen = this._batteryType || "";
+    if (chosen && !everyone.some((row) => this._typeMatch(chosen, row.type))) chosen = this._batteryType = "";
+    const pick = (type) => { this._batteryType = type; again(); };
+    const keep = (row) => this._typeMatch(chosen, row.type);
+    const cells = allCells.filter(keep);
+    const falling = page.falling.filter(keep);
+    const low = page.low.filter(keep);
+    const steadyAll = page.steady.filter(keep);
+    const unreadableRows = page.unreadable.filter(keep);
+    const noBattery = chosen
+      ? ((page.no_battery_types || {})[chosen === NOT_KNOWN_TYPE ? "" : chosen] || 0) : page.no_battery;
+    const middle = (values) => {
+      const s = [...values].sort((a, b) => a - b);
+      const n = s.length;
+      return !n ? 0 : n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+    };
+    let bankCounts = page.bank;
+    let modelRows = page.models;
+    if (chosen) {
+      bankCounts = Array(10).fill(0);
+      for (const cell of cells) bankCounts[Math.min(9, Math.floor(cell.level / 10))] += 1;
+      // Counted by type, so a model row matches the lists below: a
+      // model with one device set apart shows only the cells of the
+      // type chosen (James, 9 October 2026).
+      const byModel = new Map();
+      for (const cell of cells) {
+        const key = `${cell.maker}\u0000${cell.model}`;
+        if (!byModel.has(key)) byModel.set(key, []);
+        byModel.get(key).push(cell);
+      }
+      modelRows = [...byModel.values()].map((group) => {
+        const lowest = group.reduce((a, b) => (b.level < a.level ? b : a));
+        return { maker: group[0].maker, model: group[0].model, cells: group.length,
+          rate: middle(group.map((c) => c.rate)), typical: middle(group.map((c) => c.level)),
+          lowest: lowest.level, lowest_name: lowest.name, lowest_id: lowest.device_id,
+          types: [[group[0].type || "", group.length]] };
+      }).sort((a, b) => a.rate - b.rate || b.cells - a.cells);
+    }
+    const cellCount = chosen ? cells.length : page.cells;
     const summary = el("p", { style: "margin:0;line-height:1.5" },
-      `${page.cells} cells report a level. ${page.falling.length} falling, ${page.steady.length} steady, `
-      + `${page.low.length} at or under your threshold of ${page.threshold}%. ${page.no_battery} watched `
-      + `devices report no battery at all, and ${page.unreadable.length} ${page.unreadable.length === 1 ? "reports" : "report"} a reading that is not a percentage.`);
+      `${cellCount} ${cellCount === 1 ? "cell reports" : "cells report"} a level. ${falling.length} falling, ${steadyAll.length} steady, `
+      + `${low.length} at or under your threshold of ${page.threshold}%. ${noBattery} watched `
+      + `${noBattery === 1 ? "device reports" : "devices report"} no battery at all, and ${unreadableRows.length} ${unreadableRows.length === 1 ? "reports" : "report"} a reading that is not a percentage.`);
     // The bank.
-    const top = Math.max(...page.bank, 1);
+    const top = Math.max(...bankCounts, 1);
     const bank = el("div", {},
       el("div", { class: "bank", role: "img", "aria-label": "How many cells sit in each ten percent band" },
-        ...page.bank.map((count, index) => el("div", {
+        ...bankCounts.map((count, index) => el("div", {
           class: "band",
           title: `${count} cell${count === 1 ? "" : "s"} between ${index * 10}% and ${index * 10 + 10}%`,
         },
@@ -1484,9 +1599,16 @@ class DeviceSentinelPanel extends HTMLElement {
         el("div", { style: `height:${count ? Math.max(3, (count / top) * 100) : 0}%` })))),
       el("div", { class: "statusline small" }, el("span", {}, "0%"),
         el("span", {}, "cells by charge remaining"), el("span", {}, "100%")));
-    // Every model.
-    const models = this._sortRows(page.models, this._modelSort, {
+    // Every model, with the types of its cells: one type as a link, a
+    // model split between types as each type and its count (0.25.3).
+    const typeCell = (row) => {
+      const list = row.types || [];
+      if (list.length <= 1) return this._typeLink((list[0] || [""])[0], pick);
+      return el("span", {}, ...list.flatMap(([type, n], i) => [i ? ", " : null, this._typeLink(type, pick), ` ${n}`]));
+    };
+    const models = this._sortRows(modelRows, this._modelSort, {
       name: (row) => `${row.maker} ${row.model}`.toLowerCase(),
+      type: (row) => (((row.types || [])[0] || [""])[0] || "￿").toLowerCase(),
       cells: (row) => row.cells,
       rate: (row) => row.rate,
       typical: (row) => row.typical,
@@ -1495,6 +1617,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const modelTable = el("table", {},
       el("thead", {}, el("tr", {},
         this._sortHead(this._modelSort, "MAKER AND MODEL", "name", again),
+        this._sortHead(this._modelSort, "TYPE", "type", again),
         this._sortHead(this._modelSort, "CELLS", "cells", again, "num"),
         this._sortHead(this._modelSort, "TYPICAL RATE", "rate", again, "num"),
         this._sortHead(this._modelSort, "TYPICAL LEVEL", "typical", again, "num"),
@@ -1502,24 +1625,29 @@ class DeviceSentinelPanel extends HTMLElement {
         el("th", {}, "WHICH ONE"))),
       el("tbody", {}, ...models.map((row) => el("tr", {},
         el("td", {}, `${row.maker} ${row.model}`),
+        el("td", {}, typeCell(row)),
         el("td", { class: "num" }, String(row.cells)),
         el("td", { class: "num", style: row.rate <= -1 ? "color:var(--error-color, #db4437)" : "" }, perWeek(row.rate)),
         el("td", { class: "num" }, pct(row.typical)),
         el("td", { class: "num" }, pct(row.lowest)),
         el("td", {}, this._link(row.lowest_name, this._devicePath(row.lowest_id)))))));
+    const byType = (row) => (row.type || "￿").toLowerCase();
+    const byName = (row) => (row.name || "").toLowerCase();
     // The report's own groups. A falling cell shows its last five
     // weekly averages and what each week lost (0.23.6).
     const weekHeads = ["28 DAYS AGO", "21 DAYS AGO", "14 DAYS AGO", "7 DAYS AGO", "THIS WEEK"];
-    const fallingRows = this._sortRows(page.falling, this._batterySort, {
-      name: (row) => row.name.toLowerCase(),
+    const fallingRows = this._sortRows(falling, this._batterySort, {
+      name: byName,
+      type: byType,
       level: (row) => row.level,
       rate: (row) => -(row.pace || 0),
       reading: (row) => row.reading || "",
     });
-    const falling = page.falling.length
+    const fallingTable = falling.length
       ? el("div", { class: "scroll" }, el("table", {},
         el("thead", {}, el("tr", {},
           this._sortHead(this._batterySort, "DEVICE", "name", again),
+          this._sortHead(this._batterySort, "TYPE", "type", again),
           this._sortHead(this._batterySort, "LEVEL", "level", again, "num"),
           ...weekHeads.map((label) => el("th", { class: "num" }, label)),
           this._sortHead(this._batterySort, "PACE", "rate", again, "num"),
@@ -1530,51 +1658,78 @@ class DeviceSentinelPanel extends HTMLElement {
           const padded = [...Array(Math.max(0, 5 - weeks.length)).fill(null), ...weeks];
           return el("tr", {},
             el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+            el("td", {}, this._typeLink(row.type, pick)),
             el("td", { class: "num" }, pct(row.level)),
-            ...padded.map((w, i) => el("td", { class: "num" }, w == null ? "\u2013" : `${w.toFixed(1)}%`,
+            ...padded.map((w, i) => el("td", { class: "num" }, w == null ? "–" : `${w.toFixed(1)}%`,
               i > 0 && padded[i - 1] != null ? el("div", { class: "small" }, moved(padded[i - 1] - w)) : "")),
             el("td", { class: "num" }, perWeek(-(row.pace || 0))),
             el("td", { style: row.reading === "accelerating" ? "color:var(--error-color, #db4437);font-weight:500" : "" }, row.reading || ""),
             el("td", row.left_soon ? { style: "color:var(--error-color, #db4437)" } : {}, row.left || ""));
         }))))
       : el("p", { class: "muted", style: "margin:0" }, "No cell is measurably falling.");
-    const plain = (rows, columns) => el("div", { class: "scroll" }, el("table", {},
-      el("thead", {}, el("tr", {}, ...columns.map(([label, cls]) => el("th", cls ? { class: cls } : {}, label)))),
-      el("tbody", {}, ...rows)));
-    const low = page.low.length
-      ? plain(page.low.map((row) => el("tr", {},
-        el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-        el("td", { class: "num" }, pct(row.level)),
-        el("td", {}, row.since ? moment(row.since) : ""))), [["DEVICE"], ["LEVEL", "num"], ["SINCE"]])
+    const lowRows = this._sortRows(low, this._lowSort, { name: byName, type: byType, level: (row) => row.level,
+      since: (row) => row.since || "" });
+    const lowTable = low.length
+      ? el("div", { class: "scroll" }, el("table", {},
+        el("thead", {}, el("tr", {},
+          this._sortHead(this._lowSort, "DEVICE", "name", again),
+          this._sortHead(this._lowSort, "TYPE", "type", again),
+          this._sortHead(this._lowSort, "LEVEL", "level", again, "num"),
+          this._sortHead(this._lowSort, "SINCE", "since", again))),
+        el("tbody", {}, ...lowRows.map((row) => el("tr", {},
+          el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+          el("td", {}, this._typeLink(row.type, pick)),
+          el("td", { class: "num" }, pct(row.level)),
+          el("td", {}, row.since ? moment(row.since) : ""))))))
       : el("p", { class: "muted", style: "margin:0" }, "No cell is at or under your threshold.");
-    const steady = plain(page.steady.map((row) => el("tr", {},
-      el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-      el("td", { class: "num" }, pct(row.level)),
-      el("td", { class: "num" }, moved(row.month_drop)),
-      el("td", { class: "num" }, String(row.days)),
-      // How the cell reports (0.23.1): a coarse cell that is falling
-      // sits here with no forecast, and this says why.
-      el("td", {}, row.steps || ""))),
-    [["DEVICE"], ["LEVEL", "num"], ["4 WEEKS", "num"], ["DAYS RECORDED", "num"], ["STEPS"]]);
-    const unreadable = page.unreadable.length
-      ? el("div", {}, plain(page.unreadable.map((row) => el("tr", {},
+    const steadyRows = this._sortRows(steadyAll, this._steadySort, { name: byName, type: byType,
+      level: (row) => row.level, month: (row) => row.month_drop || 0, days: (row) => row.days || 0,
+      steps: (row) => row.steps || "" });
+    const steady = el("div", { class: "scroll" }, el("table", {},
+      el("thead", {}, el("tr", {},
+        this._sortHead(this._steadySort, "DEVICE", "name", again),
+        this._sortHead(this._steadySort, "TYPE", "type", again),
+        this._sortHead(this._steadySort, "LEVEL", "level", again, "num"),
+        this._sortHead(this._steadySort, "4 WEEKS", "month", again, "num"),
+        this._sortHead(this._steadySort, "DAYS RECORDED", "days", again, "num"),
+        this._sortHead(this._steadySort, "STEPS", "steps", again))),
+      el("tbody", {}, ...steadyRows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-        el("td", { class: "num" }, pct(row.level)))), [["DEVICE"], ["READING", "num"]]),
+        el("td", {}, this._typeLink(row.type, pick)),
+        el("td", { class: "num" }, pct(row.level)),
+        el("td", { class: "num" }, moved(row.month_drop)),
+        el("td", { class: "num" }, String(row.days)),
+        // How the cell reports (0.23.1): a coarse cell that is falling
+        // sits here with no forecast, and this says why.
+        el("td", {}, row.steps || ""))))));
+    const unreadable = unreadableRows.length
+      ? el("div", {}, el("div", { class: "scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, el("th", {}, "DEVICE"), el("th", {}, "TYPE"), el("th", { class: "num" }, "READING"))),
+        el("tbody", {}, ...unreadableRows.map((row) => el("tr", {},
+          el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+          el("td", {}, this._typeLink(row.type, pick)),
+          el("td", { class: "num" }, pct(row.level))))))),
       el("p", { class: "small", style: "margin:6px 0 0" },
         "These report a raw sensor value rather than a battery level, and are never called low. To take them out of these lists, "
         + "mute them for battery in Configure, Low Battery."))
       : null;
-    this._pane.replaceChildren(summary,
+    const cellTotal = modelRows.reduce((sum, row) => sum + row.cells, 0);
+    // Empty parts are left out before the page is filled: the browser
+    // writes a missing one as the word "null" (0.25.3, seen on
+    // James's house as "nullnull" under Steady).
+    this._pane.replaceChildren(...[summary,
+      el("div", { class: "actrow" }, this._typePicker(types, chosen, pick)),
+      this._typeShowing(chosen, pick),
       el("h3", { class: "section" }, "The Bank"), bank,
       el("h3", { class: "section" }, "By Model ",
-        el("span", { class: "small" }, `${page.models.length} models, ${page.cells} cells, all of them`)),
+        el("span", { class: "small" }, `${modelRows.length} ${modelRows.length === 1 ? "model" : "models"}, ${cellTotal} ${cellTotal === 1 ? "cell" : "cells"}${chosen ? "" : ", all of them"}`)),
       el("p", { class: "small", style: "margin:0;line-height:1.5" },
         "Which of your models eat batteries, and which do not. The rate is the middle of that model's cells: points lost a week over the last four weeks, from weekly averages. Mains-powered devices are absent: they report no battery."),
       el("div", { class: "scroll" }, modelTable),
-      el("h3", { class: "section" }, "At or Under the Threshold"), low,
-      el("h3", { class: "section" }, "Falling"), falling,
-      el("h3", { class: "section" }, "Steady ", el("span", { class: "small" }, `${page.steady.length} cells`)), steady,
-      unreadable ? el("h3", { class: "section" }, "Not a Percentage") : null, unreadable);
+      el("h3", { class: "section" }, "At or Under the Threshold"), lowTable,
+      el("h3", { class: "section" }, "Falling"), fallingTable,
+      el("h3", { class: "section" }, "Steady ", el("span", { class: "small" }, `${steadyAll.length} cells`)), steady,
+      unreadable ? el("h3", { class: "section" }, "Not a Percentage") : null, unreadable].filter((part) => part));
   }
 
   _paintSignalTrends() {
@@ -1764,6 +1919,7 @@ class DeviceSentinelPanel extends HTMLElement {
     if (this._deviceType) {
       rows = rows.filter((row) => (this._deviceType === NOT_KNOWN ? !row.type : row.type === this._deviceType));
     }
+    const pickType = (type) => { this._deviceType = type; this._paintDevices(); };
     const sort = this._deviceSort;
     if (sort) {
       const value = {
@@ -1806,7 +1962,8 @@ class DeviceSentinelPanel extends HTMLElement {
         header("RHYTHM", "rhythm", "num"), header("WINDOW", "window", "num"))),
       el("tbody", {}, ...rows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-        el("td", {}, row.type || el("span", { class: "muted" }, NOT_KNOWN)),
+        // A link that sets the type filter (0.25.3).
+        el("td", {}, this._typeLink(row.type, pickType)),
         el("td", {}, this._link(row.integration_name, this._integrationPath(row.integration))),
         el("td", {}, row.muted ? `Muted: ${row.muted}` : "Watched"),
         el("td", {}, row.problem ? `${row.problem}${row.acknowledged ? ", acknowledged" : ""}` : ""),
@@ -1820,7 +1977,8 @@ class DeviceSentinelPanel extends HTMLElement {
       el("option", { value: "", ...(!this._deviceType ? { selected: "" } : {}) }, "All types"),
       ...[...types, NOT_KNOWN].map((type) => el("option", { value: type, ...(this._deviceType === type ? { selected: "" } : {}) },
         `${type} ${type === NOT_KNOWN ? all.filter((row) => !row.type).length : all.filter((row) => row.type === type).length}`)));
-    this._pane.replaceChildren(summary, el("div", { class: "actrow" }, chips, typeFilter), el("div", { class: "scroll" }, table));
+    this._pane.replaceChildren(...[summary, el("div", { class: "actrow" }, chips, typeFilter),
+      this._typeShowing(this._deviceType, pickType), el("div", { class: "scroll" }, table)].filter((part) => part));
   }
 
   _paintReadings() {
@@ -2114,7 +2272,7 @@ class DeviceSentinelPanel extends HTMLElement {
       : others.length ? "Device Sentinel watches this hardware through another device."
         : "Device Sentinel watches none of these devices.";
     const why = (row) => (row.watched ? "watched"
-      : row.set_aside === "copy" ? "a copy, not judged on its own"
+      : row.set_aside === "clone" ? "a clone, not judged on its own"
         : row.set_aside ? `set aside: ${row.set_aside}` : "not watched");
     return el("div", { class: "actcol" },
       el("div", {}, lead),
@@ -3030,11 +3188,18 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _paintClassification() {
     const data = this._snapshot.classification;
+    // One type at a time (0.25.3), together with the chips: the counts
+    // on the chips follow the type chosen.
+    const types = this._countTypes(data.rows);
+    let chosen = this._classType || "";
+    if (chosen && !data.rows.some((row) => this._typeMatch(chosen, row.type))) chosen = this._classType = "";
+    const pick = (type) => { this._classType = type; this._paintClassification(); };
+    const ofType = data.rows.filter((row) => this._typeMatch(chosen, row.type));
     const counts = {
-      all: data.rows.length,
-      watched: data.watched,
-      muted: data.rows.filter((row) => row.muted).length,
-      set_aside: data.set_aside,
+      all: ofType.length,
+      watched: ofType.filter((row) => row.watched).length,
+      muted: ofType.filter((row) => row.muted).length,
+      set_aside: ofType.filter((row) => !row.watched).length,
     };
     const keep = {
       all: () => true,
@@ -3042,8 +3207,18 @@ class DeviceSentinelPanel extends HTMLElement {
       muted: (row) => row.muted,
       set_aside: (row) => !row.watched,
     }[this._filter];
-    const rows = data.rows.filter(keep);
-    // All five reasons, and no count of entities with no device: those
+    this._classSort = this._classSort || { key: null, dir: 1 };
+    const again = () => this._paintClassification();
+    const rows = this._sortRows(ofType.filter(keep), this._classSort, {
+      name: (row) => (row.name || "").toLowerCase(),
+      integration: (row) => (row.integration || "").toLowerCase(),
+      type: (row) => (row.type || "\uffff").toLowerCase(),
+      watched: (row) => (row.watched ? 0 : 1),
+      muted: (row) => (row.muted || "\uffff").toLowerCase(),
+      set_aside: (row) => (row.set_aside || "\uffff").toLowerCase(),
+      copies: (row) => -(row.copies || 1),
+    });
+    // All six reasons, and no count of entities with no device: those
     // are never watched, and "seen only as entities" said they were
     // (0.22.13, from the second fleet's review).
     const summary = el("p", { style: "margin:0;line-height:1.5" },
@@ -3060,12 +3235,15 @@ class DeviceSentinelPanel extends HTMLElement {
         },
       }, `${label} ${counts[key]}`)));
     const showCopies = data.rows.some((row) => row.copies > 1);
-    const head = ["DEVICE", "INTEGRATION", "WATCHED", "MUTED", "SET ASIDE", ...(showCopies ? ["COPIES"] : [])];
+    const head = (label, key) => this._sortHead(this._classSort, label, key, again);
     const table = el("table", {},
-      el("thead", {}, el("tr", {}, ...head.map((h) => el("th", {}, h)))),
+      el("thead", {}, el("tr", {}, head("DEVICE", "name"), head("INTEGRATION", "integration"), head("TYPE", "type"),
+        head("WATCHED", "watched"), head("MUTED", "muted"), head("SET ASIDE", "set_aside"),
+        showCopies ? head("COPIES", "copies") : null)),
       el("tbody", {}, ...rows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
         el("td", {}, this._link(row.integration, this._integrationPath(row.integration))),
+        el("td", {}, this._typeLink(row.type, pick)),
         el("td", {}, row.watched ? "\u2713" : ""),
         el("td", {}, row.muted),
         el("td", {}, row.set_aside),
@@ -3075,8 +3253,11 @@ class DeviceSentinelPanel extends HTMLElement {
       el("p", { style: "margin:0 0 4px" }, "Set aside, by reason:"),
       ...(data.set_aside_meanings || []).map(([reason, meaning]) =>
         el("p", { style: "margin:0" }, el("strong", {}, reason), `: ${meaning}`)));
-    this._pane.replaceChildren(summary, chips, el("div", { class: "scroll" }, table),
-      el("p", { class: "muted", style: "margin:0;font-size:13px" }, `${rows.length} shown.`), key);
+    this._pane.replaceChildren(...[summary,
+      el("div", { class: "actrow" }, chips, this._typePicker(types, chosen, pick)),
+      this._typeShowing(chosen, pick),
+      el("div", { class: "scroll" }, table),
+      el("p", { class: "muted", style: "margin:0;font-size:13px" }, `${rows.length} shown.`), key].filter((part) => part));
   }
 
   async _maintenance() {
