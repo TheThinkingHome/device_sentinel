@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.23.19 (2026-09-30)
+# File: __init__.py, Version: 0.25.1 (2026-10-08)
 
 """The Device Sentinel integration.
 
@@ -54,6 +54,7 @@ from .const import (
     STORAGE_CLOCKS_KEY,
     STORAGE_KEY,
 )
+from .answers_store import ANSWERS_STORE_KEY, LEGACY_POWER_KEY
 from .coordinator import DeviceSentinelCoordinator
 from .repairs import async_clear_all
 
@@ -433,7 +434,7 @@ async def async_remove_entry(
 
     Runs when a person deletes the integration, after the unload. A
     tool whose pitch is that it costs almost nothing must also cost
-    nothing to leave: both storage files with every backup copy taken
+    nothing to leave: every storage file with every backup copy taken
     beside them, the reports folder, and the www folder all go, so an
     uninstall leaves no trace for the person to find later and wonder
     about. Deliberately not part of unload, which also runs on every
@@ -454,7 +455,9 @@ async def async_remove_entry(
         # (the pre-strip pair of ruling #130, the epoch copies of
         # ruling #204): the glob catches whatever suffixes exist
         # rather than a list somebody must remember to extend.
-        for key in (STORAGE_KEY, STORAGE_CLOCKS_KEY):
+        # The answers file (0.25.1), and the power file it replaced,
+        # which 0.24.7 to 0.25.0 left behind on uninstall.
+        for key in (STORAGE_KEY, STORAGE_CLOCKS_KEY, ANSWERS_STORE_KEY, LEGACY_POWER_KEY):
             for path in storage.glob(f"{key}*"):
                 try:
                     path.unlink()

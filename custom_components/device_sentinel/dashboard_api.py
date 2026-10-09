@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.25.0 (2026-10-08)
+# File: dashboard_api.py, Version: 0.25.1 (2026-10-08)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -98,6 +98,7 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_device_last_seen)
     websocket_api.async_register_command(hass, ws_device_mute)
     websocket_api.async_register_command(hass, ws_device_power)
+    websocket_api.async_register_command(hass, ws_device_type)
     websocket_api.async_register_command(hass, ws_brief)
     websocket_api.async_register_command(hass, ws_battery_trends)
     websocket_api.async_register_command(hass, ws_signal_trends)
@@ -532,6 +533,26 @@ def ws_device_power(
         lambda c: c.page_set_power(
             msg["device_id"], msg.get("choice"), msg.get("quantity"), msg.get("other")
         ),
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_type",
+        vol.Required("device_id"): str,
+        vol.Optional("choice"): vol.Any(str, None),
+        vol.Optional("other"): vol.Any(str, None),
+    }
+)
+@callback
+def ws_device_type(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Set what a device is, or go back to what its entities say (0.25.1)."""
+    _page_act(
+        hass, connection, msg,
+        lambda c: c.page_set_type(msg["device_id"], msg.get("choice"), msg.get("other")),
     )
 
 

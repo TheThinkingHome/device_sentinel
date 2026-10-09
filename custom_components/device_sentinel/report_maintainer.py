@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.24.0 (2026-10-02)
+# File: report_maintainer.py, Version: 0.25.1 (2026-10-08)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -445,7 +445,7 @@ class MaintainerReportMixin:
         """Return the telemetry report's Devices With A Fault section.
 
         Every device with a fault, grouped by family (freeze, then
-        battery, then signal) and alphabetical within each group, so
+        dropping out, then battery, then signal) and alphabetical within each group, so
         the whole trouble picture reads in one place. This is
         diagnostics, not notification: an acknowledged item is shown
         here, tagged acknowledged, because the checkbox silences the
@@ -526,13 +526,26 @@ class MaintainerReportMixin:
                 f"- **{shown_name}** ({row['kind']}) for {age} {tag}"
             )
 
-        count = len(self._problem_device_ids())
+        # A device that keeps dropping out is listed for that on the
+        # problem list (0.23.2), and none of the three lists above holds
+        # it, so until 0.25.1 this section left it out: the second
+        # fleet's report of 8 October counted 2 devices while S73 stood
+        # on the list after 404 drops.
+        dropping = sorted(self.flapping_list, key=lambda r: (r["name"] or "").lower())
+        dropping_lines = [
+            f"- **{self._report_cell(row['name'] or row['device_id'])}** "
+            f"(dropped out {row['drops']} times) for {_age_from_epoch(row.get('since'))} "
+            f"{self._todo_tag_of(row['device_id'])}"
+            for row in dropping
+        ]
+
+        count = len(self._problem_device_ids() | {row["device_id"] for row in dropping})
         if count == 0:
             return [
                 "## Devices With A Fault (0)",
                 "",
                 f"As of {as_of}, nothing is frozen, unavailable, "
-                f"unknown, low on battery, or railed.",
+                f"unknown, dropping out, low on battery, or railed.",
                 "",
             ]
         out = [
@@ -548,6 +561,8 @@ class MaintainerReportMixin:
         ]
         if freeze_lines:
             out += ["### Freeze", "", *freeze_lines, ""]
+        if dropping_lines:
+            out += ["### Dropping Out", "", *dropping_lines, ""]
         if battery_lines:
             out += ["### Battery", "", *battery_lines, ""]
         if signal_lines:

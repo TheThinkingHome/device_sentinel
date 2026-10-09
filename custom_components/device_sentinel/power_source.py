@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.25.0 (2026-10-08)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.25.1 (2026-10-08)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -14,8 +14,9 @@ Nothing here reads an installed Battery Notes.
 
 The library is a read-only file in the integration's own folder, read
 once at start and replaced only when a release replaces it. Owner
-entries live in their own small store, written only when the pencil
-is used, so the main storage file never carries them.
+entries live in the answers file with the device types (0.25.1,
+answers_store.py), written only when a pencil is used, so the main
+storage file never carries them.
 
 The matcher is a port of Battery Notes' own get_device_battery_details,
 so a device gets the answer Battery Notes would give it: manufacturer
@@ -27,11 +28,8 @@ MANUAL gives none, as Battery Notes skips it.
 
 from __future__ import annotations
 
-import asyncio
 import json
-import os
 import unicodedata
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -39,16 +37,12 @@ from urllib.parse import quote, urlencode
 
 from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import BACKUP_LAST_GOOD_SUFFIX, DATA_DEVICES, LOGGER
+from .const import DATA_DEVICES, LOGGER
 from .device_fields import device_field
 
 LIBRARY_PATH = Path(__file__).parent / "data" / "battery_library.json"
-POWER_STORE_KEY = "device_sentinel.power"
-POWER_STORE_VERSION = 1
 
 # The ten battery types the library names most often, most used first
 # (5 October 2026: 94.8% of the library's devices, 97.1% of the
@@ -103,6 +97,22 @@ def model_key(manufacturer: Any, model: Any, model_id: Any) -> str | None:
     if not manufacturer or not model:
         return None
     return json.dumps([str(manufacturer), str(model), str(model_id or "")])
+
+
+def is_model_key(key: Any) -> bool:
+    """Whether a stored key has the shape model_key gives (0.25.1): the
+    JSON text of three strings, the first two not empty. A damaged key
+    is left out at load rather than carried into the diagnostics."""
+    if not isinstance(key, str):
+        return False
+    try:
+        parts = json.loads(key)
+    except ValueError:
+        return False
+    return (
+        isinstance(parts, list) and len(parts) == 3
+        and all(isinstance(p, str) for p in parts) and bool(parts[0]) and bool(parts[1])
+    )
 
 
 @dataclass(frozen=True)
@@ -352,88 +362,44 @@ def _clean_entry(raw: Any) -> dict[str, Any] | None:
     return {"kind": kind, "type": battery_type, "quantity": quantity, "set": set_at}
 
 
-def _power_path(hass: Any, suffix: str = "") -> str:
-    return hass.config.path(".storage", POWER_STORE_KEY + (f".{suffix}" if suffix else ""))
-
-
-def _rotate_power_last_good(hass: Any) -> None:
-    """Rename the live power file to last-good; nothing if there is none."""
-    live = _power_path(hass)
-    if os.path.exists(live):
-        os.replace(live, _power_path(hass, BACKUP_LAST_GOOD_SUFFIX))
-
-
-def _read_power_last_good(hass: Any) -> dict[str, Any] | None:
-    """The data of the last-good power file, or None if it is unusable."""
-    try:
-        with open(_power_path(hass, BACKUP_LAST_GOOD_SUFFIX), encoding="utf-8") as handle:
-            document = json.load(handle)
-    except (OSError, ValueError):
-        return None
-    data = document.get("data") if isinstance(document, dict) else None
-    return data if isinstance(data, dict) else None
-
-
 class PowerMixin:
     """The coordinator's side of the Power row."""
 
     _power_library: BatteryLibrary | None = None
     _power_entries: dict[str, dict[str, Any]] = {}
     _power_models: dict[str, dict[str, Any]] = {}
-    _power_store: Store[dict[str, Any]] | None = None
-    _power_pending: bool = False
-    _power_timer: Callable[[], None] | None = None
-    _power_lock: asyncio.Lock
-    _power_rotation_armed: bool = False
 
     async def async_load_power(self) -> None:
-        """Read the library and the owner entries; neither stops a start.
-
-        Since 0.24.8 an entry belongs to a model, so one set on one
-        Third Reality button covers all four. 0.24.7's entries, held
-        per device, become model entries here on the first start; a
-        device with no manufacturer or model keeps its entry to itself.
-        """
+        """Read the library; a missing or damaged one never stops a start.
+        The owner's entries are read with the answers file (0.25.1)."""
         hass = self.hass  # type: ignore[attr-defined]
         self._power_library = await hass.async_add_executor_job(load_library)
-        self._power_store = Store(hass, POWER_STORE_VERSION, POWER_STORE_KEY)
+
+    def _power_reset(self) -> None:
         self._power_entries = {}
         self._power_models = {}
-        self._power_pending = False
-        self._power_timer = None
-        self._power_lock = asyncio.Lock()
-        try:
-            payload = await self._power_store.async_load()
-        except (ValueError, OSError) as err:
-            LOGGER.warning(
-                "Device Sentinel cannot read %s (%s)", POWER_STORE_KEY, err
-            )
-            payload = None
-        restored = False
-        if not isinstance(payload, dict):
-            # Missing or unreadable: Home Assistant moves a file it
-            # cannot parse aside and answers nothing, and a crash
-            # between the rotation and the write below leaves no live
-            # file at all. Either way the last clean file is the
-            # person's own entries, which nothing else can rebuild
-            # (0.25.0).
-            payload = await hass.async_add_executor_job(_read_power_last_good, hass)
-            restored = isinstance(payload, dict)
-            if restored:
-                LOGGER.warning(
-                    "Device Sentinel restored the owner battery entries from "
-                    "%s.%s, because %s could not be read",
-                    POWER_STORE_KEY,
-                    BACKUP_LAST_GOOD_SUFFIX,
-                    POWER_STORE_KEY,
-                )
-        payload = payload if isinstance(payload, dict) else {}
+
+    def _power_read(self, payload: dict[str, Any], legacy: bool = False) -> int:
+        """Take the owner's entries from a stored payload; the number left out.
+
+        Since 0.24.8 an entry belongs to a model, so one set on one
+        Third Reality button covers all four. Read from the old power
+        file (legacy), 0.24.7's entries, held per device, become model
+        entries; a device with no manufacturer or model keeps its entry
+        to itself. The copies 0.25.0 and earlier wrote for 0.24.7,
+        marked with their model, are skipped.
+
+        Read from the answers file, a device's own entry stays its own,
+        as the page showed it, even once the device reports a model: a
+        restart turned it into an answer for the whole model, or dropped
+        it when the model had one (0.25.1, found by testing).
+        """
         dropped = 0
         models = payload.get("models")
         for key, raw in (models.items() if isinstance(models, dict) else ()):
             entry = _clean_entry(raw)
             setter = raw.get("device_id") if isinstance(raw, dict) else None
-            if isinstance(key, str) and entry is not None and isinstance(setter, str):
+            if is_model_key(key) and entry is not None and isinstance(setter, str):
                 self._power_models[key] = {**entry, "device_id": setter}
             else:
                 dropped += 1
@@ -445,89 +411,23 @@ class PowerMixin:
             if not isinstance(device_id, str) or entry is None:
                 dropped += 1
                 continue
-            key = self._power_key(device_id)
+            key = self._power_key(device_id) if legacy else None
             if key is not None and key not in self._power_models:
                 self._power_models[key] = {**entry, "device_id": device_id}
-            elif key is None:
+            else:
+                # No model, or the model already has an answer: the entry
+                # stays the device's own, never dropped (found by review).
                 self._power_entries[device_id] = entry
-        if dropped:
-            LOGGER.warning(
-                "Device Sentinel left out %d owner battery entr%s it could not read",
-                dropped,
-                "y" if dropped == 1 else "ies",
-            )
-        # The live file becomes last-good at the next save only when it
-        # was read whole: a file that lost entries, or one restored from
-        # the copy, must never replace the copy (ruling #370's rule for
-        # the main file).
-        self._power_rotation_armed = not restored and not dropped
+        return dropped
 
     def _power_payload(self) -> dict[str, Any]:
-        # Each model entry is also written under the device it was set
-        # on, marked with its model, so 0.24.7 still shows it there
-        # after a downgrade; 0.24.8 skips those copies when it reads.
-        devices = {k: dict(v) for k, v in self._power_entries.items()}
-        for key, entry in self._power_models.items():
-            copy = {f: entry[f] for f in ("kind", "type", "quantity", "set")}
-            devices.setdefault(entry["device_id"], {**copy, "model": key})
         return {
             "models": {k: dict(v) for k, v in sorted(self._power_models.items())},
-            "devices": dict(sorted(devices.items())),
+            "devices": {k: dict(v) for k, v in sorted(self._power_entries.items())},
         }
 
     def _power_save(self) -> None:
-        """Write the entries a second from now, so a burst of pencil
-        saves makes one write."""
-        if self._power_store is None:
-            return
-        self._power_pending = True
-        cancel = getattr(self, "_power_timer", None)
-        if cancel is not None:
-            cancel()
-        hass = self.hass  # type: ignore[attr-defined]
-
-        @callback
-        def _due(_now: Any) -> None:
-            self._power_timer = None
-            hass.async_create_task(self._power_write())
-
-        self._power_timer = async_call_later(hass, 1, _due)
-
-    async def _power_write(self) -> None:
-        """Write the power file, the previous clean one kept as last-good.
-
-        The one backup rule of the main file (ruling #370), given to the
-        file a person fills by hand (0.25.0): before each save, the file
-        about to be replaced is renamed to last-good, so last-good is
-        always the most recent clean file. Saves take turns.
-        """
-        if self._power_store is None or not getattr(self, "_power_pending", False):
-            return
-        async with self._power_lock:
-            if not self._power_pending:
-                return
-            self._power_pending = False
-            hass = self.hass  # type: ignore[attr-defined]
-            if getattr(self, "_power_rotation_armed", False):
-                try:
-                    await hass.async_add_executor_job(_rotate_power_last_good, hass)
-                except OSError as err:
-                    LOGGER.warning("Power entries last-good rotation failed: %s", err)
-            await self._power_store.async_save(self._power_payload())
-            self._power_rotation_armed = True
-
-    async def async_flush_power(self) -> None:
-        """Write an entry still waiting for its delayed save (0.24.9).
-
-        A pencil save is written a second later; a reload or a stop
-        inside that second lost it. The stop calls this with its final
-        save.
-        """
-        cancel = getattr(self, "_power_timer", None)
-        if cancel is not None:
-            cancel()
-            self._power_timer = None
-        await self._power_write()
+        self._answers_save()  # type: ignore[attr-defined]
 
     def _power_device_fields(self, device_id: str) -> tuple[Any, ...]:
         device = dr.async_get(self.hass).async_get(device_id)  # type: ignore[attr-defined]
@@ -541,6 +441,25 @@ class PowerMixin:
     def _power_key(self, device_id: str) -> str | None:
         maker, model, model_id, _hw = self._power_device_fields(device_id)
         return model_key(maker, model, model_id)
+
+    def _model_devices_anywhere(self, key: str, leaving: str | None = None) -> list[str]:
+        """Devices of this model in Home Assistant, watched or not (0.25.1).
+
+        A model answer is handed on from a deleted device to one of
+        these, so an excluded device of the model keeps it.
+        """
+        registry = dr.async_get(self.hass)  # type: ignore[attr-defined]
+        return sorted(
+            device.id
+            for device in self._registry_devices(registry)  # type: ignore[attr-defined]
+            if device.id != leaving and self._power_key(device.id) == key
+        )
+
+    def _model_covers(self, key: str, own: dict[str, Any], device_id: str | None = None) -> int:
+        """How many devices a model answer covers: those of the model with
+        no answer of their own (0.25.1, found by review). device_id counts
+        as covered, since setting a model answer on it replaces its own."""
+        return len([d for d in self._power_same_model(key) if d not in own or d == device_id])
 
     def _power_same_model(self, key: str, leaving: str | None = None) -> list[str]:
         """Devices Device Sentinel knows that are this model."""
@@ -557,13 +476,25 @@ class PowerMixin:
             return self._power_models[key], key
         return None, key
 
+    def _power_model_words(self, device_id: str) -> str | None:
+        if device_id not in self._power_entries:
+            return None
+        key = self._power_key(device_id)
+        model = self._power_models.get(key) if key else None
+        return power_words(model["type"], model["quantity"]) if model else None
+
     def power_library_answer(self, device_id: str) -> LibraryAnswer | None:
         if self._power_library is None:
             return None
         return self._power_library.match(*self._power_device_fields(device_id))
 
-    def power_of(self, device_id: str) -> dict[str, Any] | None:
-        """What powers the device, and where that came from, or None."""
+    def power_of(self, device_id: str, covers: bool = False) -> dict[str, Any] | None:
+        """What powers the device, and where that came from, or None.
+
+        covers counts the devices of the model, which walks every record;
+        only the device page asks for it (0.25.1: every list asked, so a
+        Devices tab on a big house cost the square of its size).
+        """
         entry, key = self._power_entry(device_id)
         if entry is not None:
             setter = entry.get("device_id", device_id)
@@ -574,7 +505,7 @@ class PowerMixin:
                 "type": entry["type"],
                 "quantity": entry["quantity"],
                 "set_on": setter,
-                "covers": len(self._power_same_model(key)) if key else 1,
+                "covers": (self._model_covers(key, self._power_entries) if key else 1) if covers else None,
             }
         answer = self.power_library_answer(device_id)
         if answer is not None:
@@ -621,7 +552,7 @@ class PowerMixin:
 
     def power_view(self, device_id: str) -> dict[str, Any]:
         """What the device page's Power row needs."""
-        known = self.power_of(device_id)
+        known = self.power_of(device_id, covers=True)
         entry, _key = self._power_entry(device_id)
         answer = self.power_library_answer(device_id)
         set_on = known.get("set_on") if known else None
@@ -640,6 +571,9 @@ class PowerMixin:
                 else None
             ),
             "covers": known.get("covers") if known else None,
+            # The model's answer, when this device has its own: what
+            # clearing its own puts in place (found by review).
+            "model_answer": self._power_model_words(device_id),
             "library": answer.words if answer else None,
             "library_home": LIBRARY_HOME,
             "report_url": self.power_report_url(device_id),
@@ -675,20 +609,27 @@ class PowerMixin:
         self._device(device_id)  # type: ignore[attr-defined]
         entry: dict[str, Any]
         key = self._power_key(device_id)
-        covers = len(self._power_same_model(key)) if key else 1
+        covers = self._model_covers(key, self._power_entries, device_id) if key else 1
         many = f", for all {covers} devices of this model" if covers > 1 else ""
         if not choice:
+            # A device's own answer, from before it reported a model, is
+            # cleared alone; the model's answer, set on another device,
+            # stays for the rest (0.25.1, found by review).
             had_own = self._power_entries.pop(device_id, None) is not None
-            had_model = key is not None and self._power_models.pop(key, None) is not None
+            had_model = not had_own and key is not None and self._power_models.pop(key, None) is not None
             if not (had_own or had_model):
                 return
+            if had_own:
+                many = ""
             self._power_save()
-            answer = self.power_library_answer(device_id)
-            self._page_done(  # type: ignore[attr-defined]
-                device_id,
-                (f"power entry removed, the library's {answer.words} used" if answer else "power entry removed")
-                + many,
-            )
+            now = self.power_of(device_id)
+            if now is not None and now["source"] == SOURCE_OWNER:
+                used = f", the model's {now['words']} used"
+            elif now is not None:
+                used = f", the library's {now['words']} used"
+            else:
+                used = ""
+            self._page_done(device_id, f"power entry removed{used}{many}")  # type: ignore[attr-defined]
             return
         if choice in WIRED_KINDS:
             entry = {"kind": WIRED_KINDS[choice], "type": choice, "quantity": None}
@@ -721,8 +662,9 @@ class PowerMixin:
     def _power_forget(self, device_id: str | None) -> None:
         """A device gone from Home Assistant takes its own entry with it.
 
-        A model entry it set passes to another device of the model, or
-        goes with the last of them.
+        A model entry it set passes to another device of the model, a
+        watched one first, then any in Home Assistant (0.25.1), or goes
+        with the last of them.
         """
         if not device_id:
             return
@@ -730,7 +672,9 @@ class PowerMixin:
         for key, entry in list(self._power_models.items()):
             if entry.get("device_id") != device_id:
                 continue
-            others = self._power_same_model(key, leaving=device_id)
+            others = self._power_same_model(key, leaving=device_id) or self._model_devices_anywhere(
+                key, leaving=device_id
+            )
             if others:
                 entry["device_id"] = others[0]
             else:

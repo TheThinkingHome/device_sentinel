@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.24.11 (2026-10-07)
+# File: coordinator.py, Version: 0.25.1 (2026-10-08)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -123,6 +123,8 @@ from .daily_dates import (
 )
 from .device_actions import DeviceActionsMixin
 from .power_source import PowerMixin
+from .device_type import TypeMixin
+from .answers_store import AnswersMixin
 from .device_recommendations import DeviceRecommendationsMixin
 from .const import (
     CLIP_MAX_DAYS,
@@ -294,6 +296,8 @@ from .store import StorageMixin, _watched_seconds
 class DeviceSentinelCoordinator(
     DeviceActionsMixin,
     PowerMixin,
+    TypeMixin,
+    AnswersMixin,
     DeviceRecommendationsMixin,
     EventMixin,
     ReportWritingMixin,
@@ -802,9 +806,11 @@ class DeviceSentinelCoordinator(
         only where there is no copy, or the copy will not load either.
         """
         # What powers each device (0.24.7), read first so the first
-        # reports of this start already carry it. Neither file can stop
-        # a start: each says why in the log and is treated as empty.
+        # reports of this start already carry it, then the answers
+        # owners set on device pages (0.25.1). Neither can stop a
+        # start: each says why in the log and is treated as empty.
         await self.async_load_power()
+        await self.async_load_answers()
         try:
             loaded = await self._store.async_load()
         except (HomeAssistantError, ValueError) as err:
@@ -1871,8 +1877,8 @@ class DeviceSentinelCoordinator(
         # restored copy, so its save is the right one; nothing set the
         # flag any longer.
         await self._save_now(final=True)
-        # A power entry still inside its one-second wait (0.24.9).
-        await self.async_flush_power()
+        # A pencil answer still inside its one-second wait (0.24.9).
+        await self.async_flush_answers()
 
     # ---------------------------------------------------- registry view
 
@@ -2505,6 +2511,8 @@ class DeviceSentinelCoordinator(
             self._log_removed_muting(event.data.get("device_id"))
             # Its owner battery entry goes with it (0.24.7).
             self._power_forget(event.data.get("device_id"))
+            # And its type answer (0.25.1).
+            self._type_forget(event.data.get("device_id"))
         if self._registry_debouncer is None:
             self._rebuild_and_notify()
             return
