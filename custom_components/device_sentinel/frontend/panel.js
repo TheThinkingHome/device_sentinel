@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.25.0 (2026-10-08)
+// File: panel.js, Version: 0.25.1 (2026-10-08)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -377,6 +377,7 @@ const STYLE = `
     color: var(--primary-color); display: inline-flex; align-items: center; justify-content: center;
     cursor: pointer; padding: 0; vertical-align: middle; }
   .actrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .linkbtn { background: none; border: 0; padding: 0; font: inherit; color: var(--primary-color); cursor: pointer; text-decoration: underline; text-align: left; }
   .powericon { display: inline-flex; align-items: center; width: 20px; height: 20px; }
   .actcol { display: flex; flex-direction: column; gap: 6px; padding: 2px 0; }
   .labelchip { display: inline-flex; align-items: center; gap: 4px; padding-left: 10px; border-radius: 13px;
@@ -482,6 +483,7 @@ class DeviceSentinelPanel extends HTMLElement {
     this._view = null;
     this._page = null;
     this._deviceFilter = "all";
+    this._deviceType = "";
     this._deviceSort = null;
     // The graphs' range carries from one device page to the next.
     this._range = "all";
@@ -1748,10 +1750,25 @@ class DeviceSentinelPanel extends HTMLElement {
       problem: (row) => row.problem,
       muted: (row) => row.muted,
     }[this._deviceFilter]);
+    // The Type filter (0.25.1), beside the chips: every type a watched
+    // device has, then the ones nothing could name.
+    const NOT_KNOWN = "Not known";
+    // Sorted as people read, so an owner's "lamp" sits with the L's.
+    const types = [...new Set(all.map((row) => row.type).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }) || (a < b ? -1 : a > b ? 1 : 0));
+    // A chosen type no device has any longer goes back to All types,
+    // Not known included once every device has a type.
+    if (this._deviceType && (this._deviceType === NOT_KNOWN ? all.every((row) => row.type) : !types.includes(this._deviceType))) {
+      this._deviceType = "";
+    }
+    if (this._deviceType) {
+      rows = rows.filter((row) => (this._deviceType === NOT_KNOWN ? !row.type : row.type === this._deviceType));
+    }
     const sort = this._deviceSort;
     if (sort) {
       const value = {
         name: (row) => row.name.toLowerCase(),
+        type: (row) => (row.type || "\uffff").toLowerCase(),
         integration: (row) => row.integration_name.toLowerCase(),
         last: (row) => (row.last_activity ? new Date(row.last_activity).getTime() : 0),
         rhythm: (row) => row.rhythm || 0,
@@ -1784,11 +1801,12 @@ class DeviceSentinelPanel extends HTMLElement {
       }, `${label} ${counts[key]}`)));
     const table = el("table", {},
       el("thead", {}, el("tr", {},
-        header("DEVICE", "name"), header("INTEGRATION", "integration"), el("th", {}, "STANDING"),
+        header("DEVICE", "name"), header("TYPE", "type"), header("INTEGRATION", "integration"), el("th", {}, "STANDING"),
         el("th", {}, "PROBLEM"), header("LAST REPORT", "last"),
         header("RHYTHM", "rhythm", "num"), header("WINDOW", "window", "num"))),
       el("tbody", {}, ...rows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
+        el("td", {}, row.type || el("span", { class: "muted" }, NOT_KNOWN)),
         el("td", {}, this._link(row.integration_name, this._integrationPath(row.integration))),
         el("td", {}, row.muted ? `Muted: ${row.muted}` : "Watched"),
         el("td", {}, row.problem ? `${row.problem}${row.acknowledged ? ", acknowledged" : ""}` : ""),
@@ -1797,7 +1815,12 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", { class: "num" }, row.window ? span(row.window) : "")))));
     // The order a device page's Previous and Next follow (0.24.9).
     this._lists = { ...(this._lists || {}), [TAB_SLUG.Devices]: rows.map((row) => row.device_id) };
-    this._pane.replaceChildren(summary, chips, el("div", { class: "scroll" }, table));
+    const typeFilter = el("select", { class: "actinput", "aria-label": "Show one type",
+      onchange: (ev) => { this._deviceType = ev.target.value; this._paintDevices(); } },
+      el("option", { value: "", ...(!this._deviceType ? { selected: "" } : {}) }, "All types"),
+      ...[...types, NOT_KNOWN].map((type) => el("option", { value: type, ...(this._deviceType === type ? { selected: "" } : {}) },
+        `${type} ${type === NOT_KNOWN ? all.filter((row) => !row.type).length : all.filter((row) => row.type === type).length}`)));
+    this._pane.replaceChildren(summary, el("div", { class: "actrow" }, chips, typeFilter), el("div", { class: "scroll" }, table));
   }
 
   _paintReadings() {
@@ -2069,9 +2092,74 @@ class DeviceSentinelPanel extends HTMLElement {
     if (power.entry) {
       parts.push(el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
         onclick: () => this._powerAct({ type: "device_sentinel/device_power", device_id: who.device_id, choice: null }) },
-        power.library ? `Use the library (${power.library})` : "Use the library")));
+        power.model_answer ? `Use the model's answer (${power.model_answer})`
+          : power.library ? `Use the library (${power.library})` : "Use the library")));
     }
     parts.push(this._actNote("power"));
+    return el("div", { class: "actcol" }, ...parts);
+  }
+
+  // What the device is (0.25.1): the owner's answer, else what its
+  // entities say, else "Not known, click to set", which opens the
+  // pencil. Like the Power row, an answer covers the whole model.
+  _typeCell(who) {
+    const kind = who.type || { words: null, source: null, choices: [], other: "Other" };
+    const acts = who.actions;
+    const e = this._edit(who.device_id);
+    const open = () => {
+      // The type shown now is chosen to start with, whoever gave it.
+      const pick = kind.source === "owner"
+        ? (kind.choices.includes(kind.words) ? kind.words : kind.other)
+        : (kind.choices.includes(kind.words) ? kind.words : "");
+      this._devEdit = { device: who.device_id, row: "type", choice: pick,
+        other: kind.source === "owner" && pick === kind.other ? kind.words : "" };
+      this._paintDevicePage();
+    };
+    const words = kind.words
+      ? el("span", {}, kind.words)
+      : acts
+        ? el("button", { class: "linkbtn", type: "button", onclick: open }, "Not known, click to set")
+        : el("span", { class: "muted" }, "Not known");
+    const shown = el("div", { class: "actrow" }, words,
+      kind.source === "owner" ? this._powerIcon({ source: "owner" }) : null,
+      acts && kind.words ? this._editMark("Change what this device is", open) : null);
+    const elsewhere = kind.source === "owner" && kind.set_on && kind.set_on !== who.device_id;
+    const covers = kind.source === "owner" && kind.covers > 1;
+    const whence = elsewhere || covers ? el("div", { class: "muted small powerwhence" },
+      [elsewhere ? `set on ${kind.set_on_name || "another device"}` : "set here",
+        covers ? `covers ${kind.covers} devices of this model` : null].filter(Boolean).join(", ")) : null;
+    if (!acts || !e || e.row !== "type") {
+      return el("div", { class: "actcol" }, shown, whence, this._actNote("type"));
+    }
+    const select = el("select", { class: "actinput", "aria-label": "What this device is" },
+      el("option", { value: "" }, "Choose…"),
+      ...kind.choices.map((choice) => el("option", { value: choice, ...(e.choice === choice ? { selected: "" } : {}) }, choice)));
+    const other = el("input", { class: "actinput", type: "text", maxlength: "40",
+      "aria-label": "Your own words for what this device is", placeholder: "What this device is", value: e.other || "" });
+    // Save waits for a choice, so pressing it never does nothing.
+    const saveButton = el("button", { class: "chip", type: "button", onclick: () => save() }, "Save");
+    const repaint = () => {
+      other.style.display = select.value === kind.other ? "" : "none";
+      saveButton.disabled = !select.value;
+    };
+    select.addEventListener("change", () => { e.choice = select.value; repaint(); });
+    other.addEventListener("input", () => { e.other = other.value; });
+    repaint();
+    const save = () => {
+      if (!select.value) return;
+      const message = { type: "device_sentinel/device_type", device_id: who.device_id, choice: select.value };
+      if (select.value === kind.other) message.other = other.value;
+      this._deviceAct(message, "type");
+    };
+    const parts = [el("div", { class: "actrow" }, select, other, saveButton,
+      el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel"))];
+    if (kind.source === "owner") {
+      parts.push(el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+        onclick: () => this._deviceAct({ type: "device_sentinel/device_type", device_id: who.device_id, choice: null }, "type") },
+        kind.model_answer ? `Use the model's answer (${kind.model_answer})`
+          : kind.auto ? `Use what its entities say (${kind.auto})` : "Use what its entities say")));
+    }
+    parts.push(this._actNote("type"));
     return el("div", { class: "actcol" }, ...parts);
   }
 
@@ -2320,6 +2408,8 @@ class DeviceSentinelPanel extends HTMLElement {
     const group = (title) => ["__group__", title];
     const identity = [
       ["Name", acts ? this._nameCell(who) : who.name],
+      // What it is (0.25.1).
+      ["Type", this._typeCell(who)],
       ["Device ID", who.device_id],
       ["Area", acts ? this._areaCell(who) : (who.area || "none assigned")],
       // Labels, each with what Device Sentinel does with it (0.24.5).
