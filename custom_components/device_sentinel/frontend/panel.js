@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.25.1 (2026-10-08)
+// File: panel.js, Version: 0.25.2 (2026-10-09)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -2099,9 +2099,34 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("div", { class: "actcol" }, ...parts);
   }
 
-  // What the device is (0.25.1): the owner's answer, else what its
-  // entities say, else "Not known, click to set", which opens the
-  // pencil. Like the Power row, an answer covers the whole model.
+  // The other devices Home Assistant shows for this hardware (0.25.2):
+  // the one Device Sentinel watches it through first, then the rest,
+  // each with its integration and why it is not watched.
+  _sameHardwareCell(who) {
+    const same = who.same_hardware || { devices: [] };
+    // Worded from each row's own state, so a page never says another
+    // device is watched when this one is too (found by review).
+    const mine = same.devices.find((row) => row.device_id === who.device_id);
+    const others = same.devices.filter((row) => row.device_id !== who.device_id && row.watched);
+    const lead = mine && mine.watched
+      ? (others.length ? "Device Sentinel watches this device, and another device for the same hardware too."
+        : "Device Sentinel watches this hardware through this device.")
+      : others.length ? "Device Sentinel watches this hardware through another device."
+        : "Device Sentinel watches none of these devices.";
+    const why = (row) => (row.watched ? "watched"
+      : row.set_aside === "copy" ? "a copy, not judged on its own"
+        : row.set_aside ? `set aside: ${row.set_aside}` : "not watched");
+    return el("div", { class: "actcol" },
+      el("div", {}, lead),
+      ...same.devices.filter((row) => row.device_id !== who.device_id).map((row) => el("div", { class: "muted small" },
+        row.has_page === false ? (row.name || row.device_id) : this._link(row.name || row.device_id, this._devicePath(row.device_id)),
+        ` (${row.integration || "unknown"}), ${why(row)}`)));
+  }
+
+  // What the device is (0.25.1): the owner's answer, else Device
+  // Sentinel's own (a known model, a network role, its entities), else
+  // "Not known, click to set", which opens the pencil. Like the Power
+  // row, an answer covers the whole model.
   _typeCell(who) {
     const kind = who.type || { words: null, source: null, choices: [], other: "Other" };
     const acts = who.actions;
@@ -2157,7 +2182,9 @@ class DeviceSentinelPanel extends HTMLElement {
       parts.push(el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
         onclick: () => this._deviceAct({ type: "device_sentinel/device_type", device_id: who.device_id, choice: null }, "type") },
         kind.model_answer ? `Use the model's answer (${kind.model_answer})`
-          : kind.auto ? `Use what its entities say (${kind.auto})` : "Use what its entities say")));
+          : kind.auto && kind.auto_source && kind.auto_source !== "entities"
+            ? `Use Device Sentinel's answer (${kind.auto})`
+            : kind.auto ? `Use what its entities say (${kind.auto})` : "Use what its entities say")));
     }
     parts.push(this._actNote("type"));
     return el("div", { class: "actcol" }, ...parts);
@@ -2421,6 +2448,8 @@ class DeviceSentinelPanel extends HTMLElement {
       ["Integration", who.integration_name || who.integration || ""],
       // How it connects, from its integration's declaration (0.23.9).
       ...(who.connects ? [["Connects", who.connects]] : []),
+      // One piece of hardware shown as several devices (0.25.2).
+      ...(who.same_hardware ? [["Same hardware", this._sameHardwareCell(who)]] : []),
       ["Address", address || "none reported"],
       group("Power"),
       ["Battery level", byKind("battery").length ? valueCell("battery") : el("span", { class: "muted" }, "none")],
@@ -3019,7 +3048,8 @@ class DeviceSentinelPanel extends HTMLElement {
     // (0.22.13, from the second fleet's review).
     const summary = el("p", { style: "margin:0;line-height:1.5" },
       `Watching ${data.watched} of ${data.rows.length} devices. ${data.set_aside} are set aside: integrations you `
-      + "excluded, service devices, disabled devices, duplicate coordinators, and devices with no entities. MUTED "
+      + "excluded, service devices, disabled devices, duplicate coordinators, hardware already watched through "
+      + "another device, and devices with no entities. MUTED "
       + "names every mute on a device and its source.");
     const chips = el("div", { class: "chips" }, ...FILTERS.map(([key, label]) =>
       el("button", {
