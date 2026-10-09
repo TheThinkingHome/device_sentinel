@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.25.2 (2026-10-09)
+# File: report_maintainer.py, Version: 0.25.3 (2026-10-09)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -871,6 +871,8 @@ class MaintainerReportMixin:
                 "muted_global": self._global_mute_text(device_id),
                 "set_aside": "",
                 "copies": name_copy_counts.get(name, 1),
+                # What the device is (0.25.3), for the tab's TYPE column.
+                "type": self.type_words(device_id),  # type: ignore[attr-defined]
             })
         for device_id, (name, integration_domain, reason) in self._set_aside.items():
             rows.append({
@@ -886,6 +888,7 @@ class MaintainerReportMixin:
                     else reason or ""
                 ),
                 "copies": 1,
+                "type": self.type_words(device_id),  # type: ignore[attr-defined]
             })
         rows.sort(key=lambda row: row["name"].lower())
         return rows

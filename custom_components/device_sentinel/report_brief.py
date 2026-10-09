@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.24.11 (2026-10-07)
+# File: report_brief.py, Version: 0.25.3 (2026-10-09)
 
 """The daily brief: the one report written for a person.
 
@@ -1316,6 +1316,8 @@ class BriefMixin:
         # renderer adds it to the line it was made for, and to no other.
         self._brief_rec_links: dict[str, str] = {}
         for card in self.device_recommendations():
+            if not card.get("brief"):
+                continue  # on the tab only (0.25.3)
             line = f"{card['title']}: {card['brief']}"
             url = self._report_link(f"/{PANEL_URL_PATH}/recommendations?open={card['kind']}")
             if url:

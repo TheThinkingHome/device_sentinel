@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.25.1 (2026-10-08)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.25.3 (2026-10-09)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -54,9 +54,12 @@ BATTERY_CHOICES: tuple[str, ...] = (
 )
 POWER_MAINS = "Mains Powered"
 POWER_USB = "USB Powered"
+# Plugged straight into the Home Assistant machine, so it goes down with
+# it (0.25.3, James's Z-Wave stick).
+POWER_USB_SERVER = "USB Direct to Server"
 POWER_POE = "PoE Powered"  # Power over Ethernet (0.24.8)
 POWER_OTHER = "Other"
-POWER_WIRED: tuple[str, ...] = (POWER_MAINS, POWER_USB, POWER_POE)
+POWER_WIRED: tuple[str, ...] = (POWER_MAINS, POWER_USB, POWER_USB_SERVER, POWER_POE)
 POWER_CHOICES: tuple[str, ...] = (*BATTERY_CHOICES, *POWER_WIRED, POWER_OTHER)
 QUANTITY_MIN = 1
 QUANTITY_MAX = 8
@@ -68,7 +71,7 @@ KIND_BATTERY = "battery"
 KIND_MAINS = "mains"
 KIND_USB = "usb"
 KIND_POE = "poe"
-WIRED_KINDS = {POWER_MAINS: KIND_MAINS, POWER_USB: KIND_USB, POWER_POE: KIND_POE}
+WIRED_KINDS = {POWER_MAINS: KIND_MAINS, POWER_USB: KIND_USB, POWER_USB_SERVER: KIND_USB, POWER_POE: KIND_POE}
 
 REPORT_FORM = "https://github.com/andrew-codechimp/HA-Battery-Notes/issues/new"
 REPORT_TEMPLATE = "new_device_request.yaml"
@@ -351,6 +354,11 @@ def _clean_entry(raw: Any) -> dict[str, Any] | None:
     except ValueError:
         return None
     quantity = raw.get("quantity")
+    if kind == KIND_BATTERY and battery_type in WIRED_KINDS:
+        # A wired source typed under Other, as a battery, before it was a
+        # choice: read as the choice (0.25.3, James's "USB Direct to
+        # Server", saved as one battery).
+        kind = WIRED_KINDS[battery_type]
     if kind == KIND_BATTERY:
         if not isinstance(quantity, int) or isinstance(quantity, bool) or not (
             QUANTITY_MIN <= quantity <= QUANTITY_MAX

@@ -3,20 +3,23 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.24.9 (2026-10-06)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.25.3 (2026-10-09)
 
 """Recommendations about single devices, for the Recommendations tab (0.24.9).
 
-Four kinds, each one card listing the devices it covers, worst first:
-a device with no power set, one with no area, one whose Last Seen
-sensor is switched off, and devices sharing a name. Watched devices
+Six kinds, each one card listing the devices it covers, worst first:
+a device with no power set, one whose Last Seen sensor is switched
+off, one with no area, devices sharing a name, and last two about
+types (0.25.3): a device with no type, and a model whose devices have
+more than one. Watched devices
 only. Nothing is stored or dismissed: a device leaves its card when
 its condition is gone, as the other recommendations do.
 
 The tab lists every device, and each can be put right from the list.
 The emailed brief, and its file, carries one line for each kind, with
 its count, pointing to the tab; the dashboard's Daily Brief tab does
-not (James, 6 October 2026).
+not (James, 6 October 2026). The two type cards stay out of the brief:
+a missing or mixed type is not a fault (James, 9 October 2026).
 """
 
 from __future__ import annotations
@@ -30,6 +33,8 @@ KIND_POWER = "power"
 KIND_AREA = "area"
 KIND_LAST_SEEN = "last_seen"
 KIND_NAMES = "names"
+KIND_TYPE = "type"
+KIND_MIXED_TYPES = "mixed_types"
 
 
 def _count(count: int, one: str, many: str) -> str:
@@ -131,5 +136,46 @@ class DeviceRecommendationsMixin:
                     "another, so they cannot be told apart in this brief or in "
                     "notifications. Rename them from the Recommendations tab."
                 ),
+            })
+        # Last: a missing or mixed type changes no judgment (0.25.3).
+        kinds = {d: self.type_words(d) for d in watched}  # type: ignore[attr-defined]
+        untyped = [d for d in watched if not kinds[d]]
+        if untyped:
+            cards.append({
+                "kind": KIND_TYPE,
+                "title": "Type Not Set",
+                "body": (
+                    f"{_count(len(untyped), 'device has', 'devices have')} no type. Set each "
+                    "one here, and it joins the others of its kind on the Devices, Battery "
+                    "Trends and Classification tabs."
+                ),
+                "devices": rows(untyped),
+            })
+        # Models whose devices disagree (0.25.3): a device given its own
+        # type apart from the rest of its model, by an owner or by its
+        # entities. Devices with no type are the card above's.
+        by_model: dict[str, list[str]] = {}
+        for device_id in watched:
+            key = self._power_key(device_id)  # type: ignore[attr-defined]
+            if key is not None and kinds[device_id]:
+                by_model.setdefault(key, []).append(device_id)
+        mixed = [ids for ids in by_model.values() if len({kinds[d] for d in ids}) > 1]
+        if mixed:
+            listed_mixed = []
+            for ids in mixed:
+                for row in rows(ids):
+                    maker, model, _model_id, _hw = self._power_device_fields(row["device_id"])  # type: ignore[attr-defined]
+                    row["model"] = " ".join(part for part in (maker, model) if part)
+                    row["type"] = kinds[row["device_id"]]
+                    listed_mixed.append(row)
+            cards.append({
+                "kind": KIND_MIXED_TYPES,
+                "title": "Model With More Than One Type",
+                "body": (
+                    f"{_count(len(mixed), 'model has', 'models have')} devices of more than one "
+                    "type. Open the device that is different and set it to match, or give the "
+                    "model the type you want."
+                ),
+                "devices": listed_mixed,
             })
         return cards

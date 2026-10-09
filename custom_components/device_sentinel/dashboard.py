@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.25.2 (2026-10-09)
+# File: dashboard.py, Version: 0.25.3 (2026-10-09)
 
 """What the dashboard reads from the coordinator.
 
@@ -180,9 +180,12 @@ class DashboardMixin:
             return {
                 "device_id": other,
                 "name": self._device_name(other),  # type: ignore[attr-defined]
-                "integration": domain,
+                # The name shown elsewhere on the page, "UniFi Network",
+                # not the domain "unifi" (0.25.3, seen on James's house).
+                "integration": self._integration_name_of(other, domain) if domain else None,
+                "domain": domain,
                 "watched": other in self._watched,  # type: ignore[attr-defined]
-                # Why a copy is not watched: "copy", or the reason it
+                # Why a clone is not watched: "clone", or the reason it
                 # would be set aside anyway, such as an exclusion.
                 "set_aside": (self._set_aside.get(other) or (None, None, None))[2],  # type: ignore[attr-defined]
                 # A device never watched has no page; the panel shows
@@ -640,6 +643,14 @@ def _middle(values: list[float]) -> float:
     if count % 2:
         return ordered[count // 2]
     return (ordered[count // 2 - 1] + ordered[count // 2]) / 2.0
+
+
+def _count_types(kinds: Any) -> dict[str, int]:
+    """How many of each type, "" for no type."""
+    counts: dict[str, int] = {}
+    for kind in kinds:
+        counts[kind or ""] = counts.get(kind or "", 0) + 1
+    return counts
 
 
 def _iso(stamp: Any) -> str | None:
@@ -1457,6 +1468,18 @@ class TrendsViewMixin:
         registry = dr.async_get(self.hass)
         groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
         bank = [0] * 10
+        # Each device's type (0.25.3), read once: the tab narrows to one
+        # type, and By Model lists the types a model's cells have.
+        types: dict[str, str | None] = {}
+
+        def type_of(device_id: str | None) -> str | None:
+            if not device_id:
+                return None
+            if device_id not in types:
+                types[device_id] = self.type_words(device_id)  # type: ignore[attr-defined]
+            return types[device_id]
+
+        cell_rows: list[dict[str, Any]] = []
         for device_id, record, series in self._battery_cells():
             level = float(record[DEV_BATTERY_VALUE])
             bank[min(9, int(level // 10))] += 1
@@ -1465,7 +1488,7 @@ class TrendsViewMixin:
                 device_field(device, "manufacturer") or "not reported",
                 device_field(device, "model") or "not reported",
             )
-            groups.setdefault(key, []).append({
+            cell = {
                 "device_id": device_id,
                 "name": self._device_name(device_id),
                 "level": level,
@@ -1473,10 +1496,16 @@ class TrendsViewMixin:
                 # negative for a fall, as the models table has always
                 # sorted: the hungriest model first.
                 "rate": -(battery_month_drop(series) or 0.0) / 3,
-            })
+                "type": type_of(device_id),
+            }
+            groups.setdefault(key, []).append(cell)
+            cell_rows.append({**cell, "maker": key[0], "model": key[1]})
         models = []
         for (maker, model), cells in groups.items():
             lowest = min(cells, key=lambda cell: cell["level"])
+            kinds: dict[str, int] = {}
+            for cell in cells:
+                kinds[cell["type"] or ""] = kinds.get(cell["type"] or "", 0) + 1
             models.append({
                 "maker": maker,
                 "model": model,
@@ -1486,6 +1515,9 @@ class TrendsViewMixin:
                 "lowest": lowest["level"],
                 "lowest_name": lowest["name"],
                 "lowest_id": lowest["device_id"],
+                # Each type its cells have and how many, most first;
+                # "" for cells with no type (0.25.3).
+                "types": sorted(kinds.items(), key=lambda item: (-item[1], item[0])),
             })
         models.sort(key=lambda row: (row["rate"], -row["cells"]))
         report = self._battery_rows()
@@ -1496,6 +1528,7 @@ class TrendsViewMixin:
                 item = {
                     "device_id": row.get("device_id"),
                     "name": row.get("name"),
+                    "type": type_of(row.get("device_id")),
                     "level": row.get("level"),
                     "since": row.get("since"),
                     "steps": BATTERY_STEPS_WORDS.get(str(row.get("steps") or ""), ""),
@@ -1525,10 +1558,14 @@ class TrendsViewMixin:
             "low": listed(report["low"]),
             "steady": listed(report["flat"]),
             "unreadable": [
-                {"device_id": row.get("device_id"), "name": row.get("name"), "level": row.get("level")}
+                {"device_id": row.get("device_id"), "name": row.get("name"), "level": row.get("level"),
+                 "type": type_of(row.get("device_id"))}
                 for row in report["unreadable"]
             ],
             "no_battery": len(report["absent"]),
+            # The same, by type, for the tab narrowed to one (0.25.3).
+            "no_battery_types": _count_types(type_of(row.get("device_id")) for row in report["absent"]),
+            "cell_rows": cell_rows,
             "threshold": self.low_threshold,
         }
 
