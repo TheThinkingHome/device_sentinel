@@ -106,7 +106,7 @@ async function tab(root, name) {
   await tab(root, "Classification");
   const pane = root.querySelector(".pane");
   const summary = pane.querySelector("p").textContent;
-  check("the summary names all five reasons", ["integrations you excluded", "service devices", "disabled devices", "duplicate coordinators", "devices with no entities"].every((reason) => summary.includes(reason)), summary);
+  check("the summary names all six reasons", ["integrations you excluded", "service devices", "disabled devices", "duplicate coordinators", "hardware already watched through", "devices with no entities"].every((reason) => summary.includes(reason)), summary);
   check("the summary no longer counts entities with no device", !summary.includes("belong to no device") && !summary.includes("seen only as entities"), summary);
   const cell = (name, column) => {
     const heads = [...pane.querySelectorAll("thead th")].map((th) => th.textContent);
