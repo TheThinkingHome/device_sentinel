@@ -127,7 +127,8 @@ const rowCell = (root, label) => {
   console.log("\nThe device page's Identity section (0.24.9)");
   let { window, root, events, hass, panel } = await open();
   const order = labelsOf(root);
-  const want = ["Name", "Device ID", "Area", "Labels", "Manufacturer", "Model", "Model ID", "Hardware version", "Integration",
+  // Type follows Name since 0.25.1 (Project__Device_Type.md).
+  const want = ["Name", "Type", "Device ID", "Area", "Labels", "Manufacturer", "Model", "Model ID", "Hardware version", "Integration",
     "Address", "[Power]", "Battery level", "Battery sensor", "Power", "[Signal]", "Signal", "Signal sensor",
     "[Last seen]", "Last seen", "Last seen sensor", "First seen", "Events seen", "Wait rule", "Muted"];
   const shown = order.filter((l) => l !== "Connects" && l !== "Battery steps");

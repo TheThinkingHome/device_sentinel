@@ -172,6 +172,12 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   check("Use the library clears the entry", cleared && cleared.choice === null, cleared);
   check("No report after going back to the library", !rowCell(root, "Power").querySelector("a.chip"));
 
+  // 0.25.1: a device's own entry, under a model with an answer of its own.
+  ({ root } = await open({}, Object.assign({}, OWNER, { model_answer: "2× AAA" })));
+  await click(rowCell(root, "Power").querySelector('button[aria-label="Change what powers this device"]'));
+  check("Clearing its own entry names the model's answer it goes back to",
+    !!buttonIn(rowCell(root, "Power"), "Use the model's answer (2× AAA)") && !buttonIn(rowCell(root, "Power"), "Use the library (CR1632)"));
+
   console.log("\nThe Power row, 0.24.8");
   ({ root } = await open({}, Object.assign({}, OWNER, { set_on: "other", set_on_name: "Button Master Shower", covers: 4 })));
   let whence = rowCell(root, "Power").querySelector(".powerwhence");
