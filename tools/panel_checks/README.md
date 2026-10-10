@@ -14,6 +14,7 @@ written rather than what it proves).
 | Every tab | `check_back_links.js` | 19 | back links to the exact page a view was opened from, and Print beside the gear |
 | Every tab | `check_controls_band.js` | 14 | the controls in a band above the tabs, and tabs that read as tabs |
 | Every tab | `check_tables_hold_columns.js` | 15 | every table pinned, so filters and sorts leave the columns still |
+| Every tab | `check_stale_tab.js` | 31 | a tab left open across an update: no error from the new copy, and a line offering a reload |
 | Daily Brief | `check_repeat_offenders.js` | 10 | the Repeat Offenders table, and the devices on MQTT's page that ride the broker |
 | Classification | `check_classification_sources.js` | 16 | Classification's sources, the gear, the date beside "As of" |
 | Integrations | `check_no_hardware_integrations.js` | 13 | an integration with no hardware of its own on the Integrations tab |
