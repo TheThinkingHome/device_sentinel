@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.25.3 (2026-10-09)
+# File: dashboard_api.py, Version: 0.25.4 (2026-10-09)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -13,6 +13,10 @@ page's buttons call. `device_sentinel/subscribe_changes` pushes the
 change marker whenever it moves, so the Refresh button can change
 colour without the dashboard asking on a timer. Each tab's own data
 command is added with its tab.
+
+The status reply and every change marker also carry `panel`, the hash
+of the dashboard file Home Assistant serves this run (0.25.4), so a tab
+left open across an update knows it is out of date.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ from .device_type import TYPE_CHOICES, TYPE_OTHER
 from .power_source import power_choices
 from .report_brief import RECOMMENDATIONS_CLOSING
 from .const import (
+    DATA_PANEL_FILE,
     DOMAIN,
     TODO_DEVICE_ID,
     TODO_KINDS,
@@ -130,7 +135,9 @@ def ws_status(
     if coordinator is None:
         _not_loaded(connection, msg["id"])
         return
-    connection.send_result(msg["id"], coordinator.dashboard_status())
+    connection.send_result(
+        msg["id"], {**coordinator.dashboard_status(), "panel": hass.data.get(DATA_PANEL_FILE)}
+    )
 
 
 @websocket_api.require_admin
@@ -177,7 +184,10 @@ def ws_subscribe_changes(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Push the change marker now and whenever it moves."""
+    """Push the change marker now and whenever it moves, with the
+    dashboard file served (0.25.4). Home Assistant's frontend subscribes
+    again when it reconnects after a restart, so the first marker after
+    an update reaches an open tab without anyone pressing Refresh."""
     coordinator = _coordinator(hass)
     if coordinator is None:
         _not_loaded(connection, msg["id"])
@@ -186,7 +196,9 @@ def ws_subscribe_changes(
     @callback
     def _forward(marker: int) -> None:
         connection.send_message(
-            websocket_api.event_message(msg["id"], {"marker": marker})
+            websocket_api.event_message(
+                msg["id"], {"marker": marker, "panel": hass.data.get(DATA_PANEL_FILE)}
+            )
         )
 
     connection.subscriptions[msg["id"]] = coordinator.async_subscribe_changes(

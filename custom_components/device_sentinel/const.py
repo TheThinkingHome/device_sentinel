@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.25.3 (2026-10-09)
+# File: const.py, Version: 0.25.4 (2026-10-09)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1119,6 +1119,11 @@ PANEL_URL_PATH = "device-sentinel"
 # anything (0.23.10, from Tim Plas: the card names a few devices and
 # counts the rest, and the list holds them all).
 PROBLEM_LIST_PATH = f"/{PANEL_URL_PATH}/problem-list"
+# Which dashboard file Home Assistant serves this run, the hash in its
+# address (0.25.4). The dashboard reads it from the status reply and the
+# change marker, so a tab left open across an update can tell that the
+# file it runs is no longer the one served, and offer a reload.
+DATA_PANEL_FILE = f"{DOMAIN}_panel_file"
 
 # Days of battery history before a cell's trend can be judged: two
 # whole weeks, the fewest that give one week to compare with another

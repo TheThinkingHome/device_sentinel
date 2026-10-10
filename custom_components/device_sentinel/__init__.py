@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.25.1 (2026-10-08)
+# File: __init__.py, Version: 0.25.4 (2026-10-09)
 
 """The Device Sentinel integration.
 
@@ -36,6 +36,7 @@ from homeassistant.loader import async_get_integration
 
 from .dashboard_api import async_register_dashboard_api
 from .const import (
+    DATA_PANEL_FILE,
     DEAD_ENTITY_SENTINEL_TYPES,
     DEAD_OPTION_KEYS,
     DOMAIN,
@@ -367,6 +368,12 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
     registered once per run and a reload reuses it. Registration writes
     to Home Assistant's panel table and needs nothing else loaded, which
     is why `frontend` is an after-dependency rather than a requirement.
+
+    The hash is kept for the dashboard (0.25.4). A tab left open across
+    an update runs the file it loaded, and Home Assistant hands it the
+    new one, which cannot register the same element a second time; the
+    tab compares the hash it was loaded with against the one served and
+    offers a reload when they differ.
     """
     module = Path(__file__).parent / "frontend" / "panel.js"
     digest = await hass.async_add_executor_job(
@@ -385,6 +392,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
         # broken integration: detection, reports and alerts carry on.
         LOGGER.warning("Device Sentinel could not serve its dashboard: %s", err)
         return
+    hass.data[DATA_PANEL_FILE] = digest
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
