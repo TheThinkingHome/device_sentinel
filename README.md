@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/device-sentinel-banner-dark.png">
+  <img alt="Device Sentinel. Finds the devices that have stopped reporting." src="https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/device-sentinel-banner-light.png">
+</picture>
+
 # Device Sentinel
 
 ![Tests](https://github.com/TheThinkingHome/device_sentinel/actions/workflows/test.yml/badge.svg)
@@ -16,9 +21,7 @@
 &nbsp;
 &nbsp;
 
-<figure>
-  <img src="https://xeazy.com/wp-content/uploads/Dashboard-Mockup-scaled.png" alt="Dashboard Mock-Up">
-</figure>
+![The Device Sentinel dashboard: every watched device with its type, its last report, its learned rhythm and its freeze window](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Dashboard%20Devices.png)
 
 &nbsp;
 &nbsp;
@@ -54,12 +57,14 @@ If a battery is projected to reach empty inside your chosen horizon, say thirty 
 | **Low or falling battery** | Warned while you can still act, even when a coin cell still reads 80%. |
 | **Weak or stuck signal** | Links degrade before they fail. |
 
-![Device Sentinel battery decay beside a device's radio link](https://xeazy.com/wp-content/uploads/Battery-Decay-Signal-Dwell.png)
+![A device's battery over three months, with the weekly reading beside it](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Dashboard%20Device%20Detail%20Battery%20Chart.png)
+
+![The same device's radio link against its own normal and its bad-day line](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Dashboard%20Device%20Detail%20Signal%20Chart.png)
 
 ## What You Get
 
 **Zero-Config Monitoring From Day One**
-Device Sentinel watches the devices in Home Assistant from the moment you install it. Non-hardware entries (like Sun or HACS) and disabled devices are automatically ignored.
+Device Sentinel watches the devices in Home Assistant from the moment you install it. Non-hardware entries (like Sun or HACS) and disabled devices are automatically ignored, and hardware that two integrations both list is watched once.
 
 **One Unified Problem List**
 Every fault lands in one Home Assistant to-do list. A device that is both frozen and low on battery is one line, not two. Tick the item to acknowledge it, and it stops making noise on your phone while staying on the list until it recovers.
@@ -68,14 +73,14 @@ Every fault lands in one Home Assistant to-do list. A device that is both frozen
 When a coordinator, broker, or Wi-Fi network goes down, every device behind it goes quiet. Device Sentinel reports the one failure you can fix, rather than giving you sixty separate alerts for sixty silent devices. When it comes back, Device Sentinel gives each device time to rejoin, then reports only the ones that didn't. 
 
 **A Dashboard in Your Sidebar**
-The daily brief, the problem list, battery and signal trends, and each device's own page, one click apart. Administrators only.
+The daily brief, the problem list, battery and signal trends, and each device's own page, one click apart. Every device has a type, such as Leak Sensor, Plug or Camera, so you can look at all your door sensors at once, and a recommendations tab lists what you can set right there. Administrators only.
 
 **Alerts That Respect Your Evening**
 Live push notifications are sent for real faults, and quiet hours keep your phone silent overnight. A daily brief, delivered by email or push on your schedule, summarizes what happened and highlights devices that keep failing for no clear reason.
 
 Every screen and setting is explained in the [wiki](https://github.com/TheThinkingHome/device_sentinel/wiki).
 
-![A Device Sentinel daily brief, listing the devices that need attention and what happened over the last day](https://xeazy.com/wp-content/uploads/daily_brief.webp)
+![A Device Sentinel daily brief as it arrives by email, listing the devices that need attention and what happened over the last day](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Sentinel%20Daily%20Brief%20Hard%20Copy.png)
 
 ## Installation
 
@@ -96,7 +101,7 @@ Device Sentinel works with its defaults from the start. Two steps on day one mak
 1. Open the integration settings and configure **Notifications and Daily Brief**.
 2. At the top of the Device Sentinel dashboard, press the three **Enable** buttons (Battery, Signals, Last Seen) so the integration has data to learn from.
 
-![The Device Sentinel device page in Home Assistant, with its three enable buttons and diagnostic sensors](https://xeazy.com/wp-content/uploads/integration_page.webp)
+![The Device Sentinel device page in Home Assistant, with its controls and sensors](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Page%20Full.png)
 
 It takes time to learn your house. Freeze detection arms after a week, battery trends after two weeks, and signal baselines settle after three weeks.
 
@@ -104,7 +109,7 @@ It takes time to learn your house. Freeze detection arms after a week, battery t
 
 Device Sentinel's settings are designed to be set once and forgotten. For complete details, see the [Wiki Configuration Guide](https://github.com/TheThinkingHome/device_sentinel/wiki).
 
-![The Device Sentinel configuration screens in Home Assistant](https://xeazy.com/wp-content/uploads/integration_settings.webp)
+![Device Sentinel's configuration menu in Home Assistant](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Integration%20Settings%20Main.png)
 
 | Section | What it controls |
 |---|---|
@@ -121,7 +126,7 @@ Device Sentinel's settings are designed to be set once and forgotten. For comple
 
 | Area | Status | Notes |
 |---|---|---|
-| **Dashboard** | Working | Everything Device Sentinel knows, one click apart, with each device's own page. Administrators only. |
+| **Dashboard** | Working | Everything Device Sentinel knows, one click apart, with each device's own page. Devices carry a type, and the tabs sort and filter by it. Administrators only. |
 | **Freeze Detection** | Stable | Catches frozen, unavailable and flapping devices, each on its own rhythm. Devices with four or more weeks of history get a steadier rhythm that a few bad days can't stretch. |
 | **Battery** | Stable | Warns on low batteries and on batteries falling or speeding up. |
 | **Storage** | Stable | Survives power cuts and restores itself from a backup. |
@@ -139,7 +144,7 @@ Device Sentinel was built with AI assistance under my direction. Every design de
 
 ## Latest Releases
 
-Device Sentinel is under active development. The three newest releases are below, and the [changelog](CHANGELOG.md) lists every release since the first.
+Device Sentinel is under active development. The three newest releases published as Latest are below, and the [changelog](CHANGELOG.md) lists every release since the first. The 0.25 line, which gives every device a type and watches cloned hardware once, is in pre-release; the newest is [0.25.3](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.25.3).
 
 **[0.24.11](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.24.11), October 6, 2026.** A bad night no longer delays your freeze alerts for two weeks, and an outage or restart can't teach a device to stay quiet. Each device's page shows what powers it, from the Battery Notes library or your own entry, and lets you rename it, give it a room, label it and mute it where you see the problem.
 
