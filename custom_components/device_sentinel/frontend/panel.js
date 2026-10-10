@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.25.3 (2026-10-09)
+// File: panel.js, Version: 0.25.4 (2026-10-09)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -12,6 +12,15 @@
 // Colours are Home Assistant's theme variables, so the page follows
 // light, dark and custom themes. Every name is set as text, never as
 // markup, because names come from a person's own registry.
+//
+// A tab left open across an update (0.25.4). Home Assistant serves this
+// file at an address carrying a hash of its contents, so an update gives
+// it a new address, and an open tab that reconnects is handed the new
+// file while the old one still runs. The element can be registered only
+// once in a tab, so the new file registers nothing and tells the running
+// page instead; the server sends the hash it serves with every status
+// and change marker too. A page that finds it is not the file being
+// served says so and offers a reload.
 
 const TABS = [
   "Daily Brief",
@@ -79,6 +88,21 @@ const STATUS_WORDS = {
   set_aside: ["Set aside", "var(--disabled-text-color, #888)"],
 };
 const LIVE_SECONDS = 60;
+const PANEL_ELEMENT = "device-sentinel-panel";
+const UPDATED_EVENT = "device-sentinel-updated";
+// The hash in the address this copy was loaded from (0.25.4), read from
+// where the browser says this code is running. A browser that names no
+// such address leaves it to the first reply from the server, which comes
+// a moment after the file was served.
+const PANEL_FILE = (() => {
+  try {
+    const found = /\/device_sentinel_panel\/panel\.([0-9a-f]{12})\.js/.exec(String(new Error().stack || ""));
+    return found ? found[1] : null;
+  } catch (err) {
+    return null;
+  }
+})();
+let panelLoadedFrom = PANEL_FILE;
 // The print view: dark text on white whatever the theme, the same
 // colour names the page draws with, and nothing that only works on a
 // screen. A browser's print dialog offers "Save as PDF" as well as a
@@ -353,6 +377,11 @@ const STYLE = `
   .maint select { min-height: 44px; background: transparent; color: var(--primary-text-color); border: 0;
     border-left: 1px solid var(--divider-color); padding: 0 12px; border-radius: 0 22px 22px 0; }
   .asof { margin-left: auto; font-size: 13px; color: var(--secondary-text-color); }
+  /* A tab older than the dashboard served (0.25.4). */
+  .updated { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 14px;
+    border: 1px solid var(--warning-color, #ffa600); border-left-width: 6px;
+    border-radius: var(--ha-card-border-radius, 12px); background: var(--card-background-color, var(--ha-card-background)); }
+  .updated span { flex: 1 1 260px; }
   /* The controls above sit in a band of their own, and the tabs read
      as tabs: a tinted strip joined to the content, labels in the main
      text colour, the active one bold with a thicker underline (0.23.10,
@@ -499,6 +528,20 @@ class DeviceSentinelPanel extends HTMLElement {
     this._latestMarker = null;
     this._unsubscribe = null;
     this._narrow = false;
+    // Whether this tab runs an older dashboard than the one served.
+    this._updated = false;
+    this._onUpdated = (event) => {
+      // Only the word a copy of this file sends: a detail naming its file,
+      // or null where its browser could not say. Anything else is not ours.
+      const detail = event && event.detail;
+      if (!detail || typeof detail !== "object" || !("file" in detail)) return;
+      const file = detail.file;
+      if (file !== null && typeof file !== "string") return;
+      // Another copy running at all means Home Assistant loaded a file
+      // at a new address; only a copy that names this very file is not.
+      if (file && panelLoadedFrom && file === panelLoadedFrom) return;
+      this._showUpdated();
+    };
   }
 
   set hass(hass) {
@@ -643,10 +686,12 @@ class DeviceSentinelPanel extends HTMLElement {
   }
 
   connectedCallback() {
+    window.addEventListener(UPDATED_EVENT, this._onUpdated);
     if (this._started && !this._unsubscribe) this._subscribe();
   }
 
   disconnectedCallback() {
+    window.removeEventListener(UPDATED_EVENT, this._onUpdated);
     if (this._liveTimer) {
       clearInterval(this._liveTimer);
       this._liveTimer = null;
@@ -665,6 +710,7 @@ class DeviceSentinelPanel extends HTMLElement {
     try {
       this._unsubscribe = await this._hass.connection.subscribeMessage(
         (event) => {
+          this._noteServed(event.panel);
           this._latestMarker = event.marker;
           this._paintRefresh();
         },
@@ -673,6 +719,26 @@ class DeviceSentinelPanel extends HTMLElement {
     } catch (err) {
       this._unsubscribe = null;
     }
+  }
+
+  // The dashboard file the server says it serves (0.25.4). The first one
+  // heard stands for this copy when the browser could not name it.
+  _noteServed(file) {
+    if (typeof file !== "string" || !file) return;
+    if (panelLoadedFrom === null) {
+      panelLoadedFrom = file;
+      return;
+    }
+    if (file !== panelLoadedFrom) this._showUpdated();
+  }
+
+  _showUpdated() {
+    this._updated = true;
+    if (!this._body || this._notice) return;
+    this._notice = el("div", { class: "updated", role: "status" },
+      el("span", {}, "Device Sentinel was updated. Reload this page to use the new version."),
+      el("button", { class: "pill", type: "button", onclick: () => window.location.reload() }, "Reload"));
+    this._body.prepend(this._notice);
   }
 
   _navigate(path) {
@@ -749,11 +815,11 @@ class DeviceSentinelPanel extends HTMLElement {
         }
       }
     }).observe(this._pane, { childList: true, subtree: true });
-    root.append(
-      el("div", { class: "body" },
-        el("div", { class: "head" }, this._statusRow, actions),
-        el("div", { class: "card" }, this._tabRow, this._pane)),
-    );
+    this._body = el("div", { class: "body" },
+      el("div", { class: "head" }, this._statusRow, actions),
+      el("div", { class: "card" }, this._tabRow, this._pane));
+    root.append(this._body);
+    if (this._updated) this._showUpdated();
     this._paintTabs();
   }
 
@@ -826,6 +892,7 @@ class DeviceSentinelPanel extends HTMLElement {
         this._call({ type: "device_sentinel/signal_trends" }),
       ]);
       this._snapshot = { status, classification, problems, recommendations, integrations, devices, brief, battery, signal, at: new Date() };
+      this._noteServed(status.panel);
       if (this._view) this._page = await this._fetchView();
       this._shownMarker = status.marker;
       if (this._latestMarker === null || this._latestMarker < status.marker) this._latestMarker = status.marker;
@@ -3276,4 +3343,11 @@ class DeviceSentinelPanel extends HTMLElement {
   }
 }
 
-customElements.define("device-sentinel-panel", DeviceSentinelPanel);
+// Registered once per tab (0.25.4). A second copy, loaded into a tab
+// already running one after an update, registers nothing and tells the
+// running page, which offers a reload.
+if (!customElements.get(PANEL_ELEMENT)) {
+  customElements.define(PANEL_ELEMENT, DeviceSentinelPanel);
+} else {
+  window.dispatchEvent(new CustomEvent(UPDATED_EVENT, { detail: { file: PANEL_FILE } }));
+}
