@@ -1501,7 +1501,7 @@
             "manufacturer": "Aqara",
             "model": "Door and window sensor",
             "model_id": "MCCGQ11LM",
-            "battery_type": "CR2032"
+            "battery_type": "CR1632"
         },
         {
             "manufacturer": "Aqara",
@@ -6823,6 +6823,12 @@
             "battery_type": "Rechargeable"
         },
         {
+            "manufacturer": "Manhot",
+            "model": "Smart blinds motor",
+            "model_id": "MB60L-ZG-ZT-TY",
+            "battery_type": "Rechargeable"
+        },
+        {
             "manufacturer": "Meian",
             "model": "Water leak sensor",
             "model_id": "SW02",
@@ -7444,6 +7450,12 @@
             "model": "OBI meter",
             "model_id": "506e83",
             "battery_type": "AA",
+            "battery_quantity": 2
+        },
+        {
+            "manufacturer": "Octopus",
+            "model": "Cosy 6",
+            "battery_type": "AAA",
             "battery_quantity": 2
         },
         {
@@ -11361,6 +11373,13 @@
             "model": "Temperature & humidity sensor TS0601",
             "battery_type": "AAA",
             "battery_quantity": 2
+        },
+        {
+            "manufacturer": "Tuya",
+            "model": "Temperature & humidity sensor with clock",
+            "model_id": "JM-TRH-ZGB-V1",
+            "battery_type": "AAA",
+            "battery_quantity": 3
         },
         {
             "manufacturer": "Tuya",
