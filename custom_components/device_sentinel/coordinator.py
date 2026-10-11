@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.25.5 (2026-10-10)
+# File: coordinator.py, Version: 0.25.6 (2026-10-11)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -2082,7 +2082,8 @@ class DeviceSentinelCoordinator(
             return {}
         self._hardware_groups = groups
 
-        ranks: dict[str, tuple[int, int, int, int, int]] = {}
+        ranks: dict[str, tuple[int, int, int, int, int, int]] = {}
+        by_id = {device.id: device for device in devices}
         for members in groups:
             for device_id in members:
                 if device_id not in watched:
@@ -2102,6 +2103,8 @@ class DeviceSentinelCoordinator(
                     battery=any(
                         (e.device_class or e.original_device_class) == "battery" for e in own
                     ),
+                    # An address of its own (ruling #624).
+                    addressed=bool(device_field(by_id.get(device_id), "connections", set())),
                 )
         # Only a device with entities of its own can be a copy or the
         # one kept. One with none keeps its own reason (no entities, or
@@ -2120,6 +2123,12 @@ class DeviceSentinelCoordinator(
         previous_names = {
             device_id: held[0] for device_id, held in self._set_aside.items()
         }
+        # Which devices were set aside as excluded before this walk, so
+        # one removed from Home Assistant can be told apart below.
+        previously_excluded = {
+            device_id for device_id, held in self._set_aside.items()
+            if held[2] == SET_ASIDE_EXCLUDED
+        }
         previous_names.update(self._device_names)
         self._label_names = {
             label.label_id: label.name
@@ -2135,6 +2144,8 @@ class DeviceSentinelCoordinator(
             options.get(CONF_MUTED_INTEGRATIONS, [])
         )
         excluded_integrations = self.excluded_integrations
+        # One device excluded on its own (ruling #625).
+        excluded_devices = self.excluded_devices
 
         watched: dict[str, str] = {}
         radio_owned: set[str] = set()
@@ -2165,9 +2176,9 @@ class DeviceSentinelCoordinator(
             stack = self._ask_registry(detect_stack, domain, device, name)
             if stack is not None:
                 stacks.add(stack)
-            if domain in excluded_integrations:
-                # The person asked for this integration never to be
-                # watched, so their reason is the one recorded even
+            if domain in excluded_integrations or device.id in excluded_devices:
+                # The person asked for this integration, or this one
+                # device (ruling #625), never to be watched, so their reason is the one recorded even
                 # where another would also fit. Everything else on
                 # this ladder is a fact about the device; this is a
                 # decision about it, and a decision outranks a fact
@@ -2498,6 +2509,7 @@ class DeviceSentinelCoordinator(
         now_stamp = dt_util.utcnow().timestamp()
         held_now: list[str] = []
         returned: list[str] = []
+        excluded_gone: list[str] = []
         for device_id in list(devices):
             record = devices[device_id]
             if device_id in watched or device_id in set_aside:
@@ -2521,6 +2533,13 @@ class DeviceSentinelCoordinator(
                 continue
             if record.get(DEV_REMOVED_SINCE) is not None:
                 continue
+            if device_id in previously_excluded or device_id in self.excluded_devices:
+                # Excluded, then removed (ruling #625, found by review):
+                # the person already asked for its record to go, so it
+                # is not held for a return. It goes now, with what it
+                # recorded, as the fold would have taken it at midnight.
+                excluded_gone.append(device_id)
+                continue
             # Gone from Home Assistant: held, not dropped (ruling #622).
             # Home Assistant keeps a removed device's id and gives it
             # back when the same hardware is added again, so for
@@ -2534,6 +2553,8 @@ class DeviceSentinelCoordinator(
                 record[DEV_SET_ASIDE_SINCE] = now_stamp
             held_now.append(device_id)
             self._mark_cold_dirty()
+        if excluded_gone:
+            self._drop_excluded_and_removed(excluded_gone)
         if held_now:
             self._clear_verdicts_for_set_aside(dict.fromkeys(held_now))
             for device_id in held_now:
@@ -2682,6 +2703,13 @@ class DeviceSentinelCoordinator(
             # One with no record takes its answers with it (0.24.7,
             # 0.25.1).
             held = isinstance(device_id, str) and device_id in (self.data.get(DATA_DEVICES) or {})
+            # An excluded device is not held (ruling #625): its answers
+            # go with it.
+            if held and (
+                device_id in self.excluded_devices
+                or (self._set_aside.get(device_id) or (None, None, None))[2] == SET_ASIDE_EXCLUDED
+            ):
+                held = False
             self._log_removed_muting(device_id, held)
             self._power_forget(device_id, hold=held)
             self._type_forget(device_id, hold=held)
@@ -3479,8 +3507,8 @@ class DeviceSentinelCoordinator(
 
     @property
     def _excluded_device_ids(self) -> set[str]:
-        """Return the devices set aside because their integration is
-        excluded.
+        """Return the devices set aside because they, or their
+        integration, are excluded.
 
         Read by the record discard and the episode cleanup. The
         enable buttons no longer need it: they reach watched devices
@@ -3488,11 +3516,17 @@ class DeviceSentinelCoordinator(
         the narrower filter already covers what this used to mute
         from them.
         """
-        return {
+        excluded = {
             device_id
             for device_id, (_name, _domain, reason) in self._set_aside.items()
             if reason == SET_ASIDE_EXCLUDED
         }
+        # A device excluded on its own and then removed from Home
+        # Assistant before midnight is no longer set aside, since the
+        # registry no longer names it, and its record would be held
+        # for 30 days (ruling #622). The person asked for it to go, so
+        # the fold takes it all the same (ruling #625, found by review).
+        return excluded | (set(self.excluded_devices) - set(self._watched))
 
     async def _repair_storage(
         self, moment: str, faults: list[tuple[str, str, str]]
@@ -4056,8 +4090,38 @@ class DeviceSentinelCoordinator(
                 ", ".join(sorted(purged)[:10]),
             )
 
+    def _drop_excluded_and_removed(self, device_ids: list[str]) -> None:
+        """Drop the records of excluded devices removed from Home Assistant.
+
+        Not held (ruling #625, found by review): an exclusion already
+        said the record should go, and a hold would keep it, and its
+        answers, for 30 days against what the person asked. Its
+        episodes and incidents go with it, as at the fold.
+        """
+        devices = self.data.get(DATA_DEVICES) or {}
+        gone = set(device_ids)
+        for device_id in device_ids:
+            devices.pop(device_id, None)
+            self._power_forget(device_id)  # type: ignore[attr-defined]
+            self._type_forget(device_id)  # type: ignore[attr-defined]
+        episodes = self.episode_rows()
+        kept = [row for row in episodes if row.get(EP_DEVICE_ID) not in gone]
+        if len(kept) != len(episodes):
+            self.data[DATA_EPISODES] = kept
+        incidents = self.incident_rows()
+        kept_incidents = [row for row in incidents if row.get(INC_DEVICE_ID) not in gone]
+        if len(kept_incidents) != len(incidents):
+            self.data[DATA_INCIDENTS] = kept_incidents
+        self._mark_cold_dirty()
+        LOGGER.info(
+            "Excluded and then removed from Home Assistant, so not held: "
+            "deleted %d record(s): %s",
+            len(device_ids),
+            ", ".join(sorted(device_ids)[:10]),
+        )
+
     def _discard_excluded_records(self) -> None:
-        """Drop what an excluded integration recorded before it was.
+        """Drop what an excluded integration or device recorded before it was.
 
         Here rather than on the save that excluded it, because this is
         the fold, and the fold is already the one place the record
@@ -4113,7 +4177,7 @@ class DeviceSentinelCoordinator(
         if dropped or shed_episodes or shed_incidents:
             self._mark_cold_dirty()
             LOGGER.info(
-                "Excluded integrations: discarded %d device record(s), "
+                "Excluded integrations and devices: discarded %d device record(s), "
                 "%d episode(s) and %d incident(s) at the fold",
                 len(dropped),
                 shed_episodes,

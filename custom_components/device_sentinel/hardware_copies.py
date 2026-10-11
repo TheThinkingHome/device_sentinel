@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/hardware_copies.py, Version: 0.25.2 (2026-10-09)
+# File: custom_components/device_sentinel/hardware_copies.py, Version: 0.25.6 (2026-10-11)
 
 """One piece of hardware shown as several devices (0.25.2).
 
@@ -26,6 +26,16 @@ recorded, never on a name:
 2. **A Bluetooth adapter registered for a proxy.** Home Assistant's
    Bluetooth integration registers each proxy's adapter as a device of
    its own and points it at the proxy's device (via_device).
+3. **An identifier that is another device's address (0.25.6, ruling
+   #624).** Some integrations record no connection and name the device
+   by the box's address instead: BlueSight registers each proxy as
+   ("bluesight", "<the proxy's Bluetooth address>"), so its devices
+   never met rule 1 and Tim Plas's proxies showed no clones on
+   0.25.3. An identifier part shaped like a MAC address is pooled with
+   every connection and every other identifier holding that address,
+   whatever its kind or spelling, and the pool joins on rule 1's terms:
+   never two devices of one integration. Such a copy ranks below one
+   that records an address of its own (see rank_of()).
 
 Only a group holding two or more devices that would otherwise be
 watched changes anything. One copy is kept watched, the one that
@@ -36,10 +46,11 @@ watched again with their history.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from .device_fields import device_field
+from .device_fields import device_field, identifier_values
 
 # How directly an integration reaches its hardware, from its manifest's
 # iot_class: a push from the device itself beats polling, local beats
@@ -61,6 +72,35 @@ def _connections(device: Any) -> set[tuple[str, str]]:
             kind, value = item
             if isinstance(kind, str) and isinstance(value, str) and value:
                 found.add((kind, value.lower()))
+    return found
+
+
+# Six pairs of hex digits joined by colons or hyphens, or twelve hex
+# digits bare: the shapes a MAC or Bluetooth address takes in a
+# connection or an identifier.
+_MAC_SHAPE = re.compile(r"^(?:[0-9a-f]{2}([:-])(?:[0-9a-f]{2}\1){4}[0-9a-f]{2}|[0-9a-f]{12})$")
+# Addresses that name no box: unset and broadcast.
+_NO_BOX = {"000000000000", "ffffffffffff"}
+
+
+def mac_of(value: Any) -> str | None:
+    """A MAC-shaped value as twelve lowercase hex digits, or None."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip().lower()
+    if not _MAC_SHAPE.match(text):
+        return None
+    bare = text.replace(":", "").replace("-", "")
+    return None if bare in _NO_BOX else bare
+
+
+def _identifier_macs(device: Any) -> set[str]:
+    found = set()
+    for _domain, parts in identifier_values(device):
+        for part in parts:
+            mac = mac_of(part)
+            if mac:
+                found.add(mac)
     return found
 
 
@@ -104,6 +144,36 @@ def find_groups(devices: Iterable[Any], domain_of: Callable[[Any], str | None]) 
             continue
         for other in members[1:]:
             join(members[0], other)
+    # Rule 3 (ruling #624): an identifier that is another device's
+    # address. Only an address some device holds in an identifier is
+    # pooled here; two connections that read alike with no identifier
+    # holding the address are left to rule 1, as before.
+    by_mac_connection: dict[str, set[str]] = {}
+    for device in devices:
+        for _kind, value in _connections(device):
+            mac = mac_of(value)
+            if mac:
+                by_mac_connection.setdefault(mac, set()).add(device.id)
+    by_mac_identifier: dict[str, set[str]] = {}
+    for device in devices:
+        try:
+            macs = _identifier_macs(device)
+        except Exception:  # noqa: BLE001 - another integration's data
+            # An entry that cannot be read names no address.
+            macs = set()
+        for mac in macs:
+            by_mac_identifier.setdefault(mac, set()).add(device.id)
+    for mac in sorted(by_mac_identifier):
+        holders = sorted(by_mac_connection.get(mac, set()) | by_mac_identifier[mac])
+        if len(holders) < 2:
+            continue
+        # The same refusal as rule 1: an address one integration gives
+        # to two of its devices is a hub and a child, not copies.
+        owners = [domains.get(m) for m in holders]
+        if len(set(owners)) != len(owners):
+            continue
+        for other in holders[1:]:
+            join(holders[0], other)
     for device in devices:
         via = device_field(device, "via_device_id")
         if domains.get(device.id) == BLUETOOTH_DOMAIN and via in parent and domains.get(via) != BLUETOOTH_DOMAIN:
@@ -140,13 +210,22 @@ def _tie(device_id: str) -> tuple[int, ...]:
 
 
 def rank_of(
-    iot_class: str | None, own_domains: set[str], own_count: int, battery: bool = False
-) -> tuple[int, int, int, int, int]:
+    iot_class: str | None,
+    own_domains: set[str],
+    own_count: int,
+    battery: bool = False,
+    addressed: bool = True,
+) -> tuple[int, int, int, int, int, int]:
     """How good a copy is to watch the hardware through.
 
     First, whether it has entities of its own at all. Then whether it is
     more than a network tracker: a device with a tracker of its own is a
     router's view of the box, which describes the network, not the box.
+    Then whether it records an address of its own (0.25.6, ruling #624,
+    found by review): a device joined only because its identifier names
+    another device's address, as BlueSight's are, is a view of the box
+    from outside, and it carries more entities than a plain ESPHome
+    proxy, so on entity count alone it would have been the copy kept.
     Then whether it carries the box's battery reading: a copy set aside
     has its readings dropped with it, so keeping the one without the
     battery would stop the battery being watched (found by review). Then how
@@ -157,4 +236,11 @@ def rank_of(
     # Any tracker of its own marks a router's view of the box, whatever
     # else that integration adds (found by review).
     not_tracker = 0 if "device_tracker" in own_domains else 1
-    return (has_own, not_tracker, 1 if battery else 0, IOT_RANK.get(iot_class or "", 0), own_count)
+    return (
+        has_own,
+        not_tracker,
+        1 if addressed else 0,
+        1 if battery else 0,
+        IOT_RANK.get(iot_class or "", 0),
+        own_count,
+    )

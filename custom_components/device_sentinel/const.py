@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.25.5 (2026-10-10)
+# File: const.py, Version: 0.25.6 (2026-10-11)
 
 """Constants for the Device Sentinel integration."""
 
@@ -635,8 +635,8 @@ STANDING_MEANINGS: tuple[tuple[str, str], ...] = (
 SET_ASIDE_MEANINGS: tuple[tuple[str, str], ...] = (
     (
         SET_ASIDE_EXCLUDED,
-        "Its integration is on your exclusion list, in Exclusions and "
-        "Muting.",
+        "You excluded it, or its integration, in Exclusions and Muting "
+        "or on its device page.",
     ),
     (
         SET_ASIDE_SERVICE,
@@ -693,6 +693,15 @@ DEFAULT_EXCLUDED_INTEGRATIONS = (
 # tracker. Seen for the first time on a system that already exists,
 # one is added to the person's exclusion list once, and after that it
 # is theirs.
+# Single devices a person excluded (0.25.6, ruling #625, from Tim
+# Plas): the integration exclusion's rules applied to one device. Set
+# aside with the same reason, discarded at the same fold, so taking it
+# back before midnight loses nothing. Picked in Settings beside the
+# integrations, or from the device's page.
+# Not "excluded_devices": before 0.16.18 that name meant a mute, and a
+# file from then is still renamed to muted_devices on load.
+CONF_EXCLUDED_DEVICES = "devices_to_exclude"
+
 ROUTER_INTEGRATIONS = (
     "tplink_router",
     "unifi",
@@ -2405,7 +2414,7 @@ SYS_DEVICE_ID = "device_id"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 622
+HIGHEST_RULING = 626
 
 # How long a registry rebuild waits after the last one before the next
 # (0.24.2). Every device, entity or label change rebuilt Device

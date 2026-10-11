@@ -3,12 +3,13 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.25.0 (2026-10-08)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.25.6 (2026-10-11)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
 A person looking at a device in trouble can rename it, place it, label
-it, give it a better clock or mute it without leaving the page. Names,
+it, give it a better clock, mute it or exclude it (0.25.6) without
+leaving the page. Names,
 areas and labels are written to Home Assistant's device registry, so
 they stay Home Assistant's and are read back as every other registry
 change is. A mute is written to Device Sentinel's own options, the
@@ -35,6 +36,7 @@ from homeassistant.helpers import label_registry as lr
 
 from .const import (
     CONF_BATTERY_MUTED_DEVICES,
+    CONF_EXCLUDED_DEVICES,
     CONF_BATTERY_MUTED_INTEGRATIONS,
     CONF_BATTERY_MUTED_LABELS,
     CONF_FREEZE_MUTED_DEVICES,
@@ -144,6 +146,23 @@ class DeviceActionsMixin:
             "labels": shown,
             "last_seen_off": self._switched_off_last_seen(device_id) is not None,
             "mutes": self.page_mutes(device_id),
+            "excluded": self.page_excluded(device_id),
+        }
+
+    def page_excluded(self, device_id: str) -> dict[str, bool]:
+        """Whether the device is excluded on its own, and whether its
+        integration is (ruling #625). Only its own can be lifted here."""
+        own = device_id in self.excluded_devices  # type: ignore[attr-defined]
+        domain = None
+        device = dr.async_get(self.hass).async_get(device_id)
+        if device is not None:
+            try:
+                domain = self._primary_domain(device)  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001 - another integration's data
+                domain = None
+        return {
+            "here": own,
+            "integration": domain is not None and domain in self.excluded_integrations,  # type: ignore[attr-defined]
         }
 
     def page_choices(self) -> dict[str, list[dict[str, str]]]:
@@ -307,6 +326,32 @@ class DeviceActionsMixin:
         if enabled:
             self._page_done(device_id, "Last Seen turned on")
         return enabled
+
+    def page_set_excluded(self, device_id: str, on: bool) -> None:
+        """Exclude the device, or take it back (ruling #625), in the list
+        Settings writes beside the integrations, through the same update
+        listener. Its record goes at the next midnight's fold, as an
+        excluded integration's does, so taking it back before then
+        loses nothing."""
+        self._device(device_id)
+        stored = self.entry.options.get(CONF_EXCLUDED_DEVICES)
+        current = [d for d in stored if isinstance(d, str)] if isinstance(stored, (list, tuple)) else []
+        if on and device_id not in current:
+            current.append(device_id)
+        elif not on and device_id in current:
+            current.remove(device_id)
+        else:
+            return
+        self._page_option_keys.add(CONF_EXCLUDED_DEVICES)
+        self.hass.config_entries.async_update_entry(
+            self.entry, options={**self.entry.options, CONF_EXCLUDED_DEVICES: current}
+        )
+        self._record_system_event(  # type: ignore[attr-defined]
+            SYS_DEVICE_PAGE,
+            detail=f"{'excluded' if on else 'no longer excluded'}, from its device page",
+            device_id=device_id,
+        )
+        self._mark_changed()  # type: ignore[attr-defined]
 
     def page_set_mute(self, device_id: str, kind: str, on: bool) -> None:
         """Set or lift one kind's mute on the device, in the options

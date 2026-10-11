@@ -75,13 +75,15 @@
         "data_description": {},
         "sections": {
           "exclude": {
-            "name": "Integrations to Exclude",
-            "description": "Devices from an excluded integration are completely set aside. Nothing is learned, no data is kept, and they never appear in reports or notifications. What they had already recorded is discarded at the next local midnight, so taking an integration back off this list before then restores it untouched. Use it where what an integration publishes is not a measurement of your house: phones that leave it, wall tablets on permanent power, probes that answer on every poll.",
+            "name": "Integrations and Devices to Exclude",
+            "description": "An excluded integration or device is completely set aside. Nothing is learned, no data is kept, and it never appears in reports or notifications. What it had already recorded is discarded at the next local midnight, so taking it back off the list before then restores it untouched. Use it where what a device publishes is not a measurement of your house: phones that leave it, wall tablets on permanent power, probes that answer on every poll. A single device can also be excluded from its page on the Device Sentinel dashboard.",
             "data": {
-              "excluded_integrations": "Integrations to Exclude"
+              "excluded_integrations": "Integrations to Exclude",
+              "devices_to_exclude": "Devices to Exclude"
             },
             "data_description": {
-              "excluded_integrations": "Every device from a ticked integration is set aside."
+              "excluded_integrations": "Every device from a ticked integration is set aside.",
+              "devices_to_exclude": "Each device picked here is set aside on its own, by the same rules."
             }
           },
           "muting": {

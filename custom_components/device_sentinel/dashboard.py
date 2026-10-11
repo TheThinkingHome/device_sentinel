@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.25.5 (2026-10-10)
+# File: dashboard.py, Version: 0.25.6 (2026-10-11)
 
 """What the dashboard reads from the coordinator.
 
@@ -41,6 +41,7 @@ from .report_battery import (
 )
 from . import stacks
 from .const import (
+    SET_ASIDE_EXCLUDED,
     RULE_LOGNORMAL,
     STACK_DISPLAY_NAMES,
     DEV_LOGNORMAL_DAYS,
@@ -432,6 +433,15 @@ class IntegrationViewMixin:
             return "muted"
         if not watched and domain in self._no_hardware_integrations:
             return STANDING_HELPER if self._is_helper(domain) else STANDING_NO_HARDWARE
+        if not watched:
+            # Every one of its devices excluded on its own (ruling
+            # #625) reads excluded, not service only (found by review).
+            reasons = {
+                reason for _name, owner, reason in self._set_aside.values()  # type: ignore[attr-defined]
+                if owner == domain
+            }
+            if reasons == {SET_ASIDE_EXCLUDED}:
+                return "excluded"
         return "watched" if watched else "service"
 
     # Which kind a phrase in a problem summary came from (0.22.24).

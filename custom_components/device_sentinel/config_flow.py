@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.25.5 (2026-10-10)
+# File: config_flow.py, Version: 0.25.6 (2026-10-11)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -90,6 +90,7 @@ from .const import (
     CONF_TRIM_INTEGRATIONS,
     CONF_MUTED_DEVICES,
     CONF_MUTED_INTEGRATIONS,
+    CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
     CONF_MUTED_LABELS,
     CONF_FREEZE_DELTA_HIGH,
@@ -230,6 +231,7 @@ def _device_options(
     label_for: Callable[[dict[str, Any]], str],
     dev_reg: dr.DeviceRegistry,
     name_for: Callable[[str], str] | None = None,
+    missing_note: str = "not currently listed",
 ) -> list[selector.SelectOptionDict]:
     """Return a picker's options, including any pick the rows lack.
 
@@ -283,7 +285,7 @@ def _device_options(
         )
         options.append(
             selector.SelectOptionDict(
-                value=device_id, label=f"{name} (not currently listed)"
+                value=device_id, label=f"{name} ({missing_note})"
             )
         )
     options.sort(key=lambda option: option["label"].casefold())
@@ -545,9 +547,18 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             ]
 
         excluded = set(names(CONF_EXCLUDED_INTEGRATIONS))
-        # Rung one: an excluded integration is never watched, so
-        # every mute of it, global or sectional, is a decision about
-        # something that has already been decided.
+        # A device excluded on its own (ruling #625) goes from the list
+        # once Home Assistant no longer has it, as a mute pick does.
+        if CONF_EXCLUDED_DEVICES in settled:
+            settled[CONF_EXCLUDED_DEVICES] = _surviving_picks(
+                names(CONF_EXCLUDED_DEVICES), set(), dev_reg
+            )
+        # Rung one: an excluded integration is never watched, so every
+        # mute of it, global or sectional, is a decision about something
+        # that has already been decided. A device excluded on its own
+        # keeps its mutes (ruling #625): taking the exclusion back
+        # before midnight must give back everything, mutes included,
+        # and a mute of an excluded device changes nothing meanwhile.
         if excluded:
             excluded_devices = {
                 row["device_id"]
@@ -1402,6 +1413,35 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             covered_devices,
             dev_reg,
         )
+        # Single devices to exclude (ruling #625): any watched device,
+        # plus the ones already excluded, which are set aside and so
+        # are not among the watched rows. A device whose integration is
+        # excluded is not watched, so it is not offered unless it was
+        # already picked; such a pick is kept and changes nothing.
+        stored_excluded = options.get(CONF_EXCLUDED_DEVICES)
+        excluded_device_picks = _surviving_picks(
+            [d for d in stored_excluded if isinstance(d, str)]
+            if isinstance(stored_excluded, (list, tuple)) else [],
+            set(),
+            dev_reg,
+        )
+        excluded_device_options = _device_options(
+            device_rows,
+            excluded_device_picks,
+            set(),
+            lambda row: f"{row['name']} ({row['integration']})",
+            dev_reg,
+            self.config_entry.runtime_data._device_name,
+            missing_note="excluded",
+        )
+        # An excluded pick is named with its integration too, as every
+        # other row is, so two listings of one box can be told apart.
+        set_aside = self.config_entry.runtime_data._set_aside
+        for option in excluded_device_options:
+            held = set_aside.get(option["value"])
+            if held and option["label"].endswith(" (excluded)"):
+                option["label"] = f"{option['label'][: -len(' (excluded)')]} ({held[1]}, excluded)"
+        excluded_device_options.sort(key=lambda option: option["label"].casefold())
         device_options = _device_options(
             device_rows,
             options.get(CONF_MUTED_DEVICES, []),
@@ -1438,6 +1478,21 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                                         options=excludable_domains,
                                         multiple=True,
                                         custom_value=True,
+                                        sort=True,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                                vol.Optional(
+                                    CONF_EXCLUDED_DEVICES,
+                                    default=excluded_device_picks,
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=excluded_device_options,
+                                        multiple=True,
                                         sort=True,
                                         mode=(
                                             selector
