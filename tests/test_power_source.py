@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_power_source.py, Version: 0.25.3 (2026-10-09)
+# File: tests/test_power_source.py, Version: 0.25.5 (2026-10-10)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -26,6 +26,7 @@ from homeassistant.helpers import device_registry as dr
 from custom_components.device_sentinel import power_source
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
+    DEV_REMOVED_SINCE,
     DATA_SYSTEM_EVENTS,
     DEV_BATTERY_VALUE,
     EVENT_FAULT,
@@ -47,7 +48,7 @@ from custom_components.device_sentinel.power_source import (
     load_library,
 )
 
-from .helpers import register_device, setup_coordinator, setup_entry
+from .helpers import register_device, registry_settled, setup_coordinator, setup_entry
 
 _ids = iter(range(1, 10_000))
 
@@ -110,7 +111,7 @@ def test_the_matcher_follows_battery_notes_rules():
 def test_the_shipped_library_loads_and_a_damaged_one_does_not_stop(tmp_path, caplog):
     library = load_library()
     assert library is not None and library.size > 2000
-    assert library.match("Aqara", "Door and window sensor", "MCCGQ11LM", "2").words == "CR2032"
+    assert library.match("Aqara", "Door and window sensor", "MCCGQ11LM", "2").words == "CR1632"
     bad = tmp_path / "battery_library.json"
     bad.write_text("{ not json")
     assert load_library(bad) is None
@@ -163,19 +164,19 @@ def test_other_text_is_tidied_and_markup_stays_text():
 async def test_the_library_answers_then_the_owner_then_not_known(hass: HomeAssistant, hass_ws_client):
     coord, client, device = await _setup(hass, hass_ws_client, "Aqara", "Door and window sensor", "MCCGQ11LM", "2")
     view = coord.power_view(device.id)
-    assert (view["words"], view["source"], view["report_url"]) == ("CR2032", "library", None)
+    assert (view["words"], view["source"], view["report_url"]) == ("CR1632", "library", None)
     reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="AAA", quantity=2)
     assert reply["success"], reply
     view = coord.power_view(device.id)
-    assert (view["words"], view["source"], view["library"]) == ("2× AAA", "owner", "CR2032")
+    assert (view["words"], view["source"], view["library"]) == ("2× AAA", "owner", "CR1632")
     assert view["report_url"], "a correction is offered to Battery Notes"
     reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice=None)
     assert reply["success"], reply
-    assert coord.power_view(device.id)["words"] == "CR2032"
+    assert coord.power_view(device.id)["words"] == "CR1632"
     details = [r[SYS_DETAIL] for r in _page_rows(coord)]
     assert details == [
         "power set to 2× AAA, from its device page",
-        "power entry removed, the library's CR2032 used, from its device page",
+        "power entry removed, the library's CR1632 used, from its device page",
     ]
     other, _ = register_device(hass, "pw9", "Mystery")
     assert coord.power_view(other.id)["words"] == "Not known"
@@ -244,7 +245,7 @@ async def test_the_report_link_fills_battery_notes_form(hass: HomeAssistant, has
 
 async def test_no_link_without_a_maker_or_when_it_says_what_the_library_says(hass: HomeAssistant, hass_ws_client):
     coord, client, device = await _setup(hass, hass_ws_client, "Aqara", "Door and window sensor", "MCCGQ11LM", "2")
-    reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="Other", other="CR2032")
+    reply = await _ws(client, type="device_sentinel/device_power", device_id=device.id, choice="Other", other="CR1632")
     assert reply["success"], reply
     assert coord.power_view(device.id)["report_url"] is None, "nothing new to report"
     _made_by(hass, device, None, None)
@@ -465,6 +466,13 @@ async def test_a_removed_setter_hands_the_entry_to_another_of_the_model(hass: Ho
     for d in survivors:
         dr.async_get(hass).async_remove_device(d.id)
     await hass.async_block_till_done()
+    await registry_settled(hass)
+    # The last of the model is held 30 days, and the entry with it
+    # (ruling #622); the purge takes both.
+    assert len(coord._power_models) == 1, "the entry went before the hold ended"
+    for d in survivors:
+        coord.data[DATA_DEVICES][d.id][DEV_REMOVED_SINCE] -= 31 * 86400
+    await coord._on_midnight(None)
     assert coord._power_models == {}, "the last of the model left its entry behind"
 
 

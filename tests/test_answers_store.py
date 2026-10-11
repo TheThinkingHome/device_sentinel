@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_answers_store.py, Version: 0.25.2 (2026-10-09)
+# File: tests/test_answers_store.py, Version: 0.25.5 (2026-10-10)
 
 """The one file of pencil answers (0.25.1).
 
@@ -37,10 +37,10 @@ from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.answers_store import ANSWERS_STORE_KEY, LEGACY_POWER_KEY
-from custom_components.device_sentinel.const import CONF_EXCLUDED_INTEGRATIONS
+from custom_components.device_sentinel.const import CONF_EXCLUDED_INTEGRATIONS, DATA_DEVICES, DEV_REMOVED_SINCE
 from custom_components.device_sentinel.diagnostics import async_get_config_entry_diagnostics
 
-from .helpers import register_device, setup_coordinator, setup_entry
+from .helpers import register_device, registry_settled, setup_coordinator, setup_entry
 
 # Home Assistant's own storage functions, taken before the harness puts
 # its in-memory stand-ins in their place, for the tests on real files.
@@ -357,13 +357,18 @@ async def test_an_excluded_device_keeps_its_answers_for_when_it_is_watched_again
 
 
 async def test_deleting_a_device_deletes_its_answers(hass: HomeAssistant, hass_storage, _no_files):
-    """Deletes need no saving (James, 8 October 2026)."""
+    """Deletes need no saving (James, 8 October 2026). Since 0.25.5 the
+    answers wait with the device's record for 30 days in case it comes
+    back (ruling #622), and go with the record."""
     lonely, _ = register_device(hass, "n1", "No Maker")
     coord = await setup_coordinator(hass)
     coord.page_set_type(lonely.id, "Other", "Hub")
     coord.page_set_power(lonely.id, "Mains Powered")
     dr.async_get(hass).async_remove_device(lonely.id)
-    await hass.async_block_till_done()
+    await registry_settled(hass)
+    assert [row["name"] for item in coord.answers_held() for row in item["devices"]] == ["No Maker"]
+    coord.data[DATA_DEVICES][lonely.id][DEV_REMOVED_SINCE] -= 31 * 86400
+    await coord._on_midnight(None)
     assert coord.answers_held() == []
     assert lonely.id not in coord._type_entries and lonely.id not in coord._power_entries
 

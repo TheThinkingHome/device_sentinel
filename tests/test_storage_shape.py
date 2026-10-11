@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.25.0 (2026-10-08)
+# File: test_storage_shape.py, Version: 0.25.5 (2026-10-10)
 
 """The shape check reports and touches nothing; last-good follows it.
 
@@ -542,8 +542,8 @@ async def test_two_records_damaged_in_the_same_field_do_not_share_it(
     write into one appears in the other.
 
     Registered devices rather than fleet ids, because a record whose
-    device the registry does not carry is pruned at load and the
-    assertion would never reach the repair.
+    device the registry does not carry is held rather than watched
+    (ruling #622), and the test is about the repair of watched ones.
     """
     first_device, _ = register_device(hass, "share_one")
     second_device, _ = register_device(hass, "share_two")
@@ -1852,3 +1852,21 @@ async def test_a_retired_signal_clock_leaves_a_stored_record(hass, hass_storage)
     assert "signal_last_change" not in record
     assert "signal_last_change" not in (record.get("signal_alt") or {})
     assert record.get("a_field_from_a_newer_version") == 1
+
+
+async def test_a_damaged_clock_and_a_damaged_event_row_repair_together(
+    hass: HomeAssistant,
+):
+    """Would catch: the clock repair writing its system event before the
+    damaged rows are dropped. The event writer read every row of the
+    table as a dict, so a junk row beside a damaged clock raised a
+    TypeError and the save failed (0.25.5, found by the convergence
+    fuzz once held records changed its random path)."""
+    device, _ = register_device(hass, "clock_and_row")
+    coord = await setup_coordinator(hass)
+    coord.data.setdefault(DATA_SYSTEM_EVENTS, []).insert(0, 7)
+    coord.data[DATA_DEVICES][device.id][DEV_LAST_ACTIVITY] = "rotten"
+    await coord._save_main()
+    ok, why = _clean(coord)
+    assert ok, why
+    assert isinstance(coord.data[DATA_DEVICES][device.id][DEV_LAST_ACTIVITY], float)

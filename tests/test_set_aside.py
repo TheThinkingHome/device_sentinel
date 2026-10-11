@@ -1,7 +1,7 @@
 """Tests for setting disabled devices aside.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_set_aside.py, Version: 0.23.17 (2026-09-29)
+# File: test_set_aside.py, Version: 0.25.5 (2026-10-10)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -38,6 +38,7 @@ from custom_components.device_sentinel.const import (
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
+    DEV_REMOVED_SINCE,
     DEV_SET_ASIDE_SINCE,
     EVENT_RECOVERED,
     INCIDENT_ACTION,
@@ -49,7 +50,7 @@ from custom_components.device_sentinel.const import (
 )
 from tests.helpers import record_events
 
-from .helpers import register_device, setup_coordinator
+from .helpers import register_device, registry_settled, setup_coordinator
 
 
 def _device(hass, uid, name, entities=1, disabled=None, entity_disabled=None):
@@ -157,18 +158,23 @@ async def test_a_set_aside_device_keeps_everything_it_learned(
     assert kept[DEV_SET_ASIDE_SINCE] is not None
 
 
-async def test_a_departed_device_still_loses_its_record(
+async def test_a_departed_device_loses_its_record_after_the_hold(
     hass: HomeAssistant,
 ):
     """Set aside is not gone. A device the registry no longer holds
-    has nothing left to describe, and its record goes as before."""
+    keeps its record 30 days in case it comes back (ruling #622), and
+    the fold after that deletes it."""
     device, _ = register_device(hass, "sa6", "Leaving Device")
     coord = await setup_coordinator(hass)
     assert device.id in coord.data[DATA_DEVICES]
 
     dr.async_get(hass).async_remove_device(device.id)
-    await hass.async_block_till_done()
+    await registry_settled(hass)
 
+    record = coord.data[DATA_DEVICES][device.id]
+    assert record[DEV_REMOVED_SINCE] is not None
+    record[DEV_REMOVED_SINCE] -= 31 * 86400
+    await coord._on_midnight(None)
     assert device.id not in coord.data[DATA_DEVICES]
 
 
