@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.25.5 (2026-10-10)
+// File: panel.js, Version: 0.25.6 (2026-10-11)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -382,6 +382,15 @@ const STYLE = `
     border: 1px solid var(--warning-color, #ffa600); border-left-width: 6px;
     border-radius: var(--ha-card-border-radius, 12px); background: var(--card-background-color, var(--ha-card-background)); }
   .updated span { flex: 1 1 260px; }
+  /* It glows three times when it appears, then holds still, so it
+     catches the eye without blinking for as long as it is shown; a
+     viewer who asked for less motion sees it still (0.25.6). */
+  .updated { animation: ds-updated-glow 1.2s ease-in-out 3; }
+  @keyframes ds-updated-glow {
+    0%, 100% { box-shadow: 0 0 0 0 transparent; }
+    50% { box-shadow: 0 0 0 4px var(--warning-color, #ffa600), 0 0 18px 6px var(--warning-color, #ffa600); }
+  }
+  @media (prefers-reduced-motion: reduce) { .updated { animation: none; } }
   /* The controls above sit in a band of their own, and the tabs read
      as tabs: a tinted strip joined to the content, labels in the main
      text colour, the active one bold with a thicker underline (0.23.10,
@@ -1104,7 +1113,9 @@ class DeviceSentinelPanel extends HTMLElement {
     const deviceCards = devices.map((card) => this._recDeviceCard(card, card.kind === open));
     const count = lines.length + devices.length;
     this._pane.replaceChildren(
-      el("p", { style: "margin:0" }, `${count} ${count === 1 ? "change" : "changes"} you could make, the most important first.`),
+      // Every card is a suggestion and none is required (0.25.6):
+      // no card is singled out as more needed than another.
+      el("p", { style: "margin:0" }, `${count} ${count === 1 ? "recommendation" : "recommendations"} to help Device Sentinel run better. None of them is required.`),
       ...cards, ...deviceCards,
       el("p", { class: "muted", style: "margin:0;font-size:13px;line-height:1.5" }, closing));
     const target = open ? [...this._pane.querySelectorAll("article.rec")].find((a) => a.dataset.kind === open) : null;
@@ -2559,6 +2570,42 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("div", { class: "actcol" }, ...parts);
   }
 
+  // Exclude one device (0.25.6, ruling #625, from Tim Plas): the
+  // integration exclusion's rules for this device alone, asked once
+  // before it is done. Only the device's own exclusion is lifted here;
+  // an excluded integration is changed in Settings.
+  _excludedCell(who) {
+    const ex = who.actions.excluded || { here: false, integration: false };
+    const e = this._edit(who.device_id);
+    const act = (on) => this._deviceAct({ type: "device_sentinel/device_exclude", device_id: who.device_id, on }, "excluded");
+    const parts = [];
+    // Another listing of the same box can take over the watching
+    // (found by review), as it does when an integration is excluded.
+    const copies = who.same_hardware && Array.isArray(who.same_hardware.devices) && who.same_hardware.devices.length > 1;
+    const takeover = copies ? " If another listing of the same hardware can be watched, Device Sentinel watches the hardware through it instead." : "";
+    if (ex.here) {
+      parts.push(el("span", {}, "Excluded. Device Sentinel does not watch it, and deletes what it recorded at the next midnight. "
+        + "After that this page is gone, and it is taken back in Device Sentinel's settings, Exclusions and Muting."),
+        el("div", { class: "actrow" }, el("button", { class: "chip", type: "button", onclick: () => act(false) }, "Stop excluding")));
+    } else if (ex.integration) {
+      parts.push(el("div", { class: "actnote" }, "Its integration is excluded. Change it in ",
+        this._link("Device Sentinel's settings", SETTINGS_PATH), ", Configure, Exclusions and Muting."));
+    } else if (e && e.row === "exclude") {
+      parts.push(el("div", { class: "actnote ask", role: "alert" },
+        `Exclude ${who.name}? Device Sentinel will stop watching it and delete what it recorded at the next midnight. Take it back here before then and nothing is lost. After that, take it back in Device Sentinel's settings.${takeover}`),
+        el("div", { class: "actrow" },
+          el("button", { class: "chip", type: "button", onclick: () => act(true) }, "Exclude"),
+          el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel")));
+    } else {
+      parts.push(el("span", {}, "no"),
+        el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+          onclick: () => { this._devEdit = { device: who.device_id, row: "exclude" }; this._paintDevicePage(); } },
+          "Exclude this device")));
+    }
+    parts.push(this._actNote("excluded"));
+    return el("div", { class: "actcol" }, ...parts);
+  }
+
   _paintDevicePage() {
     const page = this._page;
     const back = el("p", { style: "margin:0;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap" },
@@ -2704,17 +2751,20 @@ class DeviceSentinelPanel extends HTMLElement {
       ...(status.rule ? [["Wait rule", el("div", { class: "actcol" }, `${status.rule}, ${span(status.window)}`, useTrimmed)]] : []),
       // What is muted and why, with the toggles (0.24.5).
       ...(acts ? [["Muted", this._mutedCell(who)]] : []),
+      // Excluded, with its button (0.25.6).
+      ...(acts ? [["Excluded", this._excludedCell(who)]] : []),
     ];
     // A group left with no rows under it is not drawn either.
+    const ungrouped = new Set(["Muted", "Excluded"]);
     const shownRows = identity.filter(([k], i) =>
-      k !== "__group__" || (identity[i + 1] && identity[i + 1][0] !== "__group__" && identity[i + 1][0] !== "Muted"));
+      k !== "__group__" || (identity[i + 1] && identity[i + 1][0] !== "__group__" && !ungrouped.has(identity[i + 1][0])));
     let inGroup = false;
     const idTable = el("table", { class: "kv" }, el("tbody", {}, ...shownRows.map(([k, v]) => {
       if (k === "__group__") {
         inGroup = true;
         return el("tr", { class: "kvgroup" }, el("td", { colspan: "2" }, v));
       }
-      if (k === "Muted") inGroup = false;
+      if (ungrouped.has(k)) inGroup = false;
       return el("tr", inGroup ? { class: "kvsub" } : {}, el("td", {}, k), el("td", {}, v));
     })));
 
