@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.25.4 (2026-10-09)
+// File: panel.js, Version: 0.25.5 (2026-10-10)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -2619,7 +2619,11 @@ class DeviceSentinelPanel extends HTMLElement {
     // Assistant's own dialog, and the details that belong with it. The
     // Live readings section above it is gone; its values live here and
     // are repainted the moment Home Assistant reports a change.
-    const address = (who.connections || []).map(([kind, value]) => `${value} (${kind})`).join(", ");
+    // Its addresses, one row per kind, named by the kind (0.25.5).
+    const ADDRESS_LABELS = ["MAC Address", "Zigbee Address", "Bluetooth Address", "UPnP ID", "Z-Wave Node", "Serial Number"];
+    const addressRows = (Array.isArray(who.addresses) ? who.addresses : [])
+      .filter((row) => row && ADDRESS_LABELS.includes(row.label) && typeof row.value === "string" && row.value)
+      .map((row) => [row.label, row.value]);
     const acts = who.actions;
     this._readingCells = {};
     const byKind = (kind) => (page.readings || []).filter((r) => r.kind === kind);
@@ -2666,29 +2670,34 @@ class DeviceSentinelPanel extends HTMLElement {
       ["Area", acts ? this._areaCell(who) : (who.area || "none assigned")],
       // Labels, each with what Device Sentinel does with it (0.24.5).
       ...(acts ? [["Labels", this._labelsCell(who)]] : []),
-      ["Manufacturer", who.manufacturer || "not reported"],
-      ["Model", who.model || "not reported"],
-      ["Model ID", who.model_id || "not reported"],
-      ["Hardware version", who.hw_version || "none reported"],
-      ["Integration", who.integration_name || who.integration || ""],
-      // How it connects, from its integration's declaration (0.23.9).
+      // A row with nothing to show is left out (0.25.5); a row with
+      // an action, such as Area or Power, always stays. The server
+      // sends nothing for a field that is empty or only zeros.
+      ...(who.manufacturer ? [["Manufacturer", who.manufacturer]] : []),
+      ...(who.model ? [["Model", who.model]] : []),
+      ...(who.model_id ? [["Model ID", who.model_id]] : []),
+      ...(who.hw_version ? [["Hardware version", who.hw_version]] : []),
+      ...(who.integration_name || who.integration ? [["Integration", who.integration_name || who.integration]] : []),
+      // How it connects, from its integration's declaration (0.23.9),
+      // for a device that does not report on the local network as
+      // changes happen (0.25.5).
       ...(who.connects ? [["Connects", who.connects]] : []),
       // One piece of hardware shown as several devices (0.25.2).
       ...(who.same_hardware ? [["Same hardware", this._sameHardwareCell(who)]] : []),
-      ["Address", address || "none reported"],
+      ...addressRows,
       group("Power"),
-      ["Battery level", byKind("battery").length ? valueCell("battery") : el("span", { class: "muted" }, "none")],
-      ["Battery sensor", sensorLinks("battery") || el("span", { class: "muted" }, "none")],
+      ...(byKind("battery").length ? [["Battery level", valueCell("battery")]] : []),
+      ...(byKind("battery").length ? [["Battery sensor", sensorLinks("battery")]] : []),
       // What powers it (0.24.7): words, where they came from, pencil.
       ["Power", this._powerCell(who)],
       ...(who.battery_steps ? [["Battery steps", who.battery_steps]] : []),
       group("Signal"),
-      ["Signal", byKind("signal").length ? valueCell("signal") : el("span", { class: "muted" }, "none")],
-      ["Signal sensor", sensorLinks("signal") || el("span", { class: "muted" }, "none")],
+      ...(byKind("signal").length ? [["Signal", valueCell("signal")]] : []),
+      ...(byKind("signal").length ? [["Signal sensor", sensorLinks("signal")]] : []),
       group("Last seen"),
       ["Last seen", valueCell("last_seen")],
       ["Last seen sensor", lastSeenSensor],
-      ["First seen", who.first_observed ? moment(who.first_observed) : "unknown"],
+      ...(who.first_observed ? [["First seen", moment(who.first_observed)]] : []),
       ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
       // The freeze rule in use today and its wait (0.24.0): the
       // shorter of the Trimmed Maximum and the Log-Normal Percentile.
@@ -2696,8 +2705,11 @@ class DeviceSentinelPanel extends HTMLElement {
       // What is muted and why, with the toggles (0.24.5).
       ...(acts ? [["Muted", this._mutedCell(who)]] : []),
     ];
+    // A group left with no rows under it is not drawn either.
+    const shownRows = identity.filter(([k], i) =>
+      k !== "__group__" || (identity[i + 1] && identity[i + 1][0] !== "__group__" && identity[i + 1][0] !== "Muted"));
     let inGroup = false;
-    const idTable = el("table", { class: "kv" }, el("tbody", {}, ...identity.map(([k, v]) => {
+    const idTable = el("table", { class: "kv" }, el("tbody", {}, ...shownRows.map(([k, v]) => {
       if (k === "__group__") {
         inGroup = true;
         return el("tr", { class: "kvgroup" }, el("td", { colspan: "2" }, v));
