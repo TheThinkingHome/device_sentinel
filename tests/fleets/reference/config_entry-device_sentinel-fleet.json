@@ -309,6 +309,9 @@
    },
    "02fa0000000000000000000000000067": {
     "name": "Device 059"
+   },
+   "02fa000000000000000000000000006b": {
+    "name": "Device 106"
    }
   },
   "entry_options": {
@@ -362,7 +365,8 @@
    "signal_muted_labels": [],
    "storage_write_minutes": 20.0,
    "study_hardware": [
-    "Matter"
+    "Matter",
+    "Z-Wave"
    ],
    "trim_devices": [],
    "trim_integrations": [],
