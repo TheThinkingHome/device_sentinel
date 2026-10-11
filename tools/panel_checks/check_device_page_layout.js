@@ -128,11 +128,22 @@ const rowCell = (root, label) => {
   let { window, root, events, hass, panel } = await open();
   const order = labelsOf(root);
   // Type follows Name since 0.25.1 (Project__Device_Type.md).
-  const want = ["Name", "Type", "Device ID", "Area", "Labels", "Manufacturer", "Model", "Model ID", "Hardware version", "Integration",
-    "Address", "[Power]", "Battery level", "Battery sensor", "Power", "[Signal]", "Signal", "Signal sensor",
+  // A row with nothing to show is left out (0.25.5): this test device
+  // reports no manufacturer, model, hardware version or address.
+  const want = ["Name", "Type", "Device ID", "Area", "Labels", "Integration",
+    "[Power]", "Battery level", "Battery sensor", "Power", "[Signal]", "Signal", "Signal sensor",
     "[Last seen]", "Last seen", "Last seen sensor", "First seen", "Events seen", "Wait rule", "Muted"];
   const shown = order.filter((l) => l !== "Connects" && l !== "Battery steps");
   check("Rows in the approved order, in three groups", JSON.stringify(shown) === JSON.stringify(want), shown);
+  ({ root } = await open({ tweak: (p) => {
+    Object.assign(p.identity, { manufacturer: "Acme", model: "Door sensor", model_id: "DS-1", hw_version: "2",
+      addresses: [{ label: "MAC Address", value: "aa:bb" }, { label: "Zigbee Address", value: "0x00158d0001" }] });
+  } }));
+  const full = labelsOf(root).filter((l) => l !== "Connects" && l !== "Battery steps");
+  const wantFull = ["Name", "Type", "Device ID", "Area", "Labels", "Manufacturer", "Model", "Model ID", "Hardware version", "Integration",
+    "MAC Address", "Zigbee Address", ...want.slice(6)];
+  check("With data, every row in the approved order", JSON.stringify(full) === JSON.stringify(wantFull), full);
+  ({ root, window, events, hass, panel } = await open());
   check("No Live readings section, and no Heartbeat row", !/Live readings/.test(root.textContent) && !order.includes("Heartbeat"));
   check("Battery level: the value, then when it changed", /^19\.5% changed 3\.2h ago/.test(rowCell(root, "Battery level").textContent),
     rowCell(root, "Battery level").textContent);
@@ -152,7 +163,9 @@ const rowCell = (root, label) => {
   check("A new reading repaints its row", /^19% changed/.test(rowCell(root, "Battery level").textContent), rowCell(root, "Battery level").textContent);
 
   ({ root } = await open({ tweak: (p) => { p.readings = []; p.identity.clock = "entities"; } }));
-  check("No sensors: each row says none", ["Battery level", "Battery sensor", "Signal", "Signal sensor"].every((l) => rowCell(root, l).textContent === "none"));
+  check("No sensors: no battery or signal rows, and no empty Signal group",
+    ["Battery level", "Battery sensor", "Signal", "Signal sensor"].every((l) => rowCell(root, l) === null)
+    && !labelsOf(root).includes("[Signal]") && labelsOf(root).includes("[Power]"), labelsOf(root));
   check("No Last seen sensor: says how the heartbeat is kept",
     rowCell(root, "Last seen sensor").textContent === "noneheartbeat: updates from its entities", rowCell(root, "Last seen sensor").textContent);
 

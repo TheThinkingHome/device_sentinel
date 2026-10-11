@@ -100,8 +100,8 @@ const DEVICE_PATH = `${PREFIX}/device/${DEVICE}`;
   ({ root } = await open(DEVICE_PATH, block({ words: "Bluetooth Proxy", source: "role", auto: "Bluetooth Proxy", auto_source: "role" }),
     null, true, group));
   let order = labels(root);
-  check("The row sits right after Connects, or before Address", order.includes("Same hardware")
-    && (order.indexOf("Same hardware") === order.indexOf("Connects") + 1 || order.indexOf("Address") === order.indexOf("Same hardware") + 1), order);
+  check("The row sits right after Integration, or after Connects where it is shown", order.includes("Same hardware")
+    && order.indexOf("Same hardware") === Math.max(order.indexOf("Integration"), order.indexOf("Connects")) + 1, order);
   let cell = rowCell(root, "Same hardware");
   const text = cell ? cell.textContent : "";
   check("Watched here: says so", text.startsWith("Device Sentinel watches this hardware through this device."), text);
