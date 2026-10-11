@@ -132,7 +132,9 @@ const rowCell = (root, label) => {
   // reports no manufacturer, model, hardware version or address.
   const want = ["Name", "Type", "Device ID", "Area", "Labels", "Integration",
     "[Power]", "Battery level", "Battery sensor", "Power", "[Signal]", "Signal", "Signal sensor",
-    "[Last seen]", "Last seen", "Last seen sensor", "First seen", "Events seen", "Wait rule", "Muted"];
+    "[Last seen]", "Last seen", "Last seen sensor", "First seen", "Events seen", "Wait rule", "Muted",
+    // Excluded, with its button, last (0.25.6).
+    "Excluded"];
   const shown = order.filter((l) => l !== "Connects" && l !== "Battery steps");
   check("Rows in the approved order, in three groups", JSON.stringify(shown) === JSON.stringify(want), shown);
   ({ root } = await open({ tweak: (p) => {
