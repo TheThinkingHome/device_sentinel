@@ -5,6 +5,8 @@
 // of date and offer a reload, whether it learns it from the new copy or
 // from the server. Found in James's log of 9 October 2026: "the name
 // device-sentinel-panel has already been used with this registry".
+// Since 0.25.6 the banner glows three times when it appears, then holds
+// still, and not at all for a viewer who asked for less motion (#623).
 // Run with: LC_ALL=en_US.UTF-8 node check_stale_tab.js [path/to/panel.js]
 const fs = require("fs");
 const path = require("path");
@@ -261,6 +263,23 @@ const notices = (panel) => panel.shadowRoot.querySelectorAll(".updated").length;
     load(t, NEW);
     await settle();
     check("and listens again when put back", Boolean(notice(panel)));
+  }
+
+  console.log("\nThe banner glows three times, then holds still (ruling #623)");
+  {
+    const t = tab();
+    load(t, OLD);
+    const panel = await open(t, { file: OLD });
+    const css = [...panel.shadowRoot.querySelectorAll("style")].map((s) => s.textContent).join("\n");
+    check("The banner glows three times when it appears", /\.updated \{ animation: ds-updated-glow 1\.2s ease-in-out 3; \}/.test(css));
+    check("The glow is a keyframe on the border, not blinking text", /@keyframes ds-updated-glow/.test(css) && !/\.updated span \{[^}]*animation/.test(css) && !/text-decoration:\s*blink/.test(css));
+    check("A viewer who asked for less motion sees it still",
+      /@media \(prefers-reduced-motion: reduce\) \{ \.updated \{ animation: none; \} \}/.test(css));
+    panel._showUpdated();
+    const banner = notice(panel);
+    check("The banner itself is unchanged: its words and Reload",
+      !!banner && /Device Sentinel was updated\. Reload this page/.test(banner.textContent)
+      && [...banner.querySelectorAll("button")].map((b) => b.textContent).join() === "Reload");
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);
