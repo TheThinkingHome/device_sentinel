@@ -31,7 +31,7 @@ jobs:
         include:
           - home-assistant: "2026.5.0"
             requirements: requirements_test_floor.txt
-          - home-assistant: "2026.9.2"
+          - home-assistant: "2026.10.1"
             requirements: requirements_test.txt
     steps:
       - uses: actions/checkout@v4
