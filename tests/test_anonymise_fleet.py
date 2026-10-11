@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_anonymise_fleet.py, Version: 0.25.0 (2026-10-08)
+# File: tests/test_anonymise_fleet.py, Version: 0.25.6 (2026-10-11)
 
-"""The anonymizer and the power file (fleet refresh, 8 October 2026).
+"""The anonymizer, the power file and the answers file.
 
 The committed houses now carry each house's power file. Its model keys
 are written by the device's own integration, and an ESPHome device's
@@ -14,6 +14,11 @@ was. So a model key is replaced like a name: by a stand-in of the same
 shape, the same in every place it stands and from one refresh to the
 next, with an empty part left empty so the suite can still give a
 device the maker and model its entry names.
+
+Since 0.25.1 a house keeps every pencil answer in the answers file,
+what powers a device and what it is, and the refresh of 11 October
+2026 was the first with houses on 0.25. Its two parts carry model keys
+of the same kind, and both are replaced the same way.
 """
 
 from __future__ import annotations
@@ -109,5 +114,75 @@ def test_a_model_key_left_in_place_is_caught(tmp_path: Path, monkeypatch):
         return power
 
     monkeypatch.setattr(tool, "_power_models", forgetful)
+    with pytest.raises(SystemExit, match="real values survived"):
+        tool.main([str(tmp_path / "raw"), str(tmp_path / "out"), "--key", str(tmp_path / "k.json")])
+
+
+def _answers_house(raw: Path) -> None:
+    """The same house a release later: its power file moved into the
+    answers file, with a type answer on the same models."""
+    _house(raw)
+    folder = raw / "reference"
+    power = json.loads((folder / "device_sentinel.power").read_text())["data"]
+    (folder / "device_sentinel.power").unlink()
+    store = {"version": 1, "minor_version": 1, "key": "device_sentinel.answers"}
+    (folder / "device_sentinel.answers").write_text(json.dumps({**store, "data": {
+        "power": {"models": power["models"], "devices": {}},
+        "types": {
+            "models": {
+                REAL_KEY: {"type": "Bluetooth Proxy", "set": "2026-10-09T00:00:00+00:00", "device_id": DEVICE},
+                SECOND_KEY: {"type": "Door Sensor", "set": "2026-10-09T00:00:00+00:00", "device_id": DEVICE},
+            },
+            "devices": {DEVICE: {"type": "Bluetooth Proxy", "set": "2026-10-09T00:00:00+00:00"}},
+        },
+    }}))
+
+
+def test_answer_model_keys_become_the_same_stand_ins_in_both_parts(tmp_path: Path):
+    tool = _tool()
+    _answers_house(tmp_path / "raw")
+    key = tmp_path / "key.json"
+    assert tool.main([str(tmp_path / "raw"), str(tmp_path / "out"), "--key", str(key)]) == 0
+    written = tmp_path / "out" / "reference" / "device_sentinel.answers"
+    text = written.read_text(encoding="utf-8")
+    assert "carol" not in text.lower()
+    assert "Aqara" not in text and "MCCGQ11LM" not in text
+    assert DEVICE not in text
+    data = json.loads(text)["data"]
+    assert set(data["power"]["models"]) == set(data["types"]["models"]), "one model, two stand-ins"
+    shapes = sorted(tuple(bool(part) for part in json.loads(k)) for k in data["types"]["models"])
+    assert shapes == [(True, True, False), (True, True, True)]
+    assert sorted(e["type"] for e in data["types"]["models"].values()) == ["Bluetooth Proxy", "Door Sensor"]
+    assert not (tmp_path / "out" / "reference" / "device_sentinel.power").exists()
+
+
+def test_a_house_on_0_24_and_one_on_0_25_share_a_key(tmp_path: Path):
+    """A refresh that moves a house from its power file to its answers
+    file gives each model the stand-in it had before."""
+    tool = _tool()
+    key = tmp_path / "key.json"
+    _house(tmp_path / "old")
+    tool.main([str(tmp_path / "old"), str(tmp_path / "one"), "--key", str(key)])
+    _answers_house(tmp_path / "new")
+    tool.main([str(tmp_path / "new"), str(tmp_path / "two"), "--key", str(key)])
+    before = json.loads((tmp_path / "one" / "reference" / "device_sentinel.power").read_text())["data"]
+    after = json.loads((tmp_path / "two" / "reference" / "device_sentinel.answers").read_text())["data"]
+    assert set(before["models"]) == set(after["power"]["models"])
+
+
+def test_a_type_key_left_in_place_is_caught(tmp_path: Path, monkeypatch):
+    """The leak check reads the answers file: a type answer's model key
+    given a stand-in but left in place stops the run."""
+    tool = _tool()
+    _answers_house(tmp_path / "raw")
+
+    def forgetful(answers, house):
+        data = answers["data"]
+        data["power"]["models"] = {house.model(k): e for k, e in data["power"]["models"].items()}
+        for key in data["types"]["models"]:
+            house.model(key)
+        return answers
+
+    monkeypatch.setattr(tool, "_answers_models", forgetful)
     with pytest.raises(SystemExit, match="real values survived"):
         tool.main([str(tmp_path / "raw"), str(tmp_path / "out"), "--key", str(tmp_path / "k.json")])
