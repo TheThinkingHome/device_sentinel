@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.25.2 (2026-10-09)
+# File: coordinator.py, Version: 0.25.5 (2026-10-10)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -192,6 +192,15 @@ from .const import (
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     DEV_SET_ASIDE_SINCE,
+    DEV_REMOVED_NAME,
+    DEV_BATTERY_VALUE,
+    DEV_BATTERY_SINCE,
+    DEV_BATTERY_LOW,
+    DEV_FLAP_BACK,
+    DEV_FLAP_SINCE,
+    DEV_FLAP_DROPS,
+    DEV_REMOVED_SINCE,
+    REMOVED_HOLD_DAYS,
     DEV_SIGNAL_DAILY_MEAN,
     DEV_SIGNAL_ALT,
     RETIRED_SIGNAL_KEYS,
@@ -288,11 +297,33 @@ from .records import (
     _reset_signal_day,
     _shift,
     _span,
+    forget_signal_history,
 )
 from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
 from .stacks import device_key, is_plumbing, radio_owner
 from .store import StorageMixin, _watched_seconds
+
+
+def _plain(name: object, limit: int = 120) -> str:
+    """A name fit for one log line: control characters as spaces, cut
+    to a readable length (0.25.5, found by the adversarial round)."""
+    text = "".join(" " if ord(ch) < 32 or ord(ch) == 127 else ch for ch in str(name))
+    return text if len(text) <= limit else text[: limit - 1] + "\u2026"
+
+
+def _forget_hold_verdicts(record: dict[str, Any]) -> None:
+    """What a removed device's held record must not carry back (ruling
+    #622): a flap in progress and a low battery verdict with the level
+    it was read from. Each is formed again from what the device says
+    when it returns. Its histories stay (0.25.5, found by the
+    adversarial round)."""
+    fresh = _new_device_record("", None)
+    for field in (
+        DEV_FLAP_DROPS, DEV_FLAP_SINCE, DEV_FLAP_BACK,
+        DEV_BATTERY_LOW, DEV_BATTERY_SINCE, DEV_BATTERY_VALUE,
+    ):
+        record[field] = fresh[field]
 
 
 class DeviceSentinelCoordinator(
@@ -2084,6 +2115,12 @@ class DeviceSentinelCoordinator(
         """Classify devices and rebuild the entity-to-device map."""
         ent_reg = er.async_get(self.hass)
         dev_reg = dr.async_get(self.hass)
+        # The names the last rebuild knew, for a device removed since:
+        # its record is held under the name it had (ruling #622).
+        previous_names = {
+            device_id: held[0] for device_id, held in self._set_aside.items()
+        }
+        previous_names.update(self._device_names)
         self._label_names = {
             label.label_id: label.name
             for label in lr.async_get(self.hass).async_list_labels()
@@ -2459,11 +2496,16 @@ class DeviceSentinelCoordinator(
             self._firmware_unflickered = True
         self._note_firmware(watched)
         now_stamp = dt_util.utcnow().timestamp()
-        departed = 0
+        held_now: list[str] = []
+        returned: list[str] = []
         for device_id in list(devices):
-            if device_id in watched:
-                continue
-            if device_id in set_aside:
+            record = devices[device_id]
+            if device_id in watched or device_id in set_aside:
+                if isinstance(record, dict) and record.get(DEV_REMOVED_SINCE) is not None:
+                    returned.append(device_id)
+                    self._welcome_back(device_id, record)
+                if device_id in watched:
+                    continue
                 # Set aside, not gone: a person disabling an
                 # integration for an afternoon must not lose what the
                 # house spent weeks learning (ruling #257). The record
@@ -2473,10 +2515,32 @@ class DeviceSentinelCoordinator(
                     devices[device_id][DEV_SET_ASIDE_SINCE] = now_stamp
                     self._mark_cold_dirty()
                 continue
-            del devices[device_id]
-            departed += 1
+            if not isinstance(record, dict):
+                del devices[device_id]
+                self._mark_cold_dirty()
+                continue
+            if record.get(DEV_REMOVED_SINCE) is not None:
+                continue
+            # Gone from Home Assistant: held, not dropped (ruling #622).
+            # Home Assistant keeps a removed device's id and gives it
+            # back when the same hardware is added again, so for
+            # REMOVED_HOLD_DAYS the rhythm, answers and mutes wait for
+            # it, unjudged. The set-aside stamp refuses the gap that
+            # spans the absence, as it does for a disabling. The fold
+            # purges a hold that has run its time.
+            record[DEV_REMOVED_SINCE] = now_stamp
+            record[DEV_REMOVED_NAME] = previous_names.get(device_id)
+            if record.get(DEV_SET_ASIDE_SINCE) is None:
+                record[DEV_SET_ASIDE_SINCE] = now_stamp
+            held_now.append(device_id)
             self._mark_cold_dirty()
-        if departed:
+        if held_now:
+            self._clear_verdicts_for_set_aside(dict.fromkeys(held_now))
+            for device_id in held_now:
+                _forget_hold_verdicts(devices[device_id])
+            # The Problem List drops the row now, not at the next minute
+            # (0.25.5, found by the adversarial round).
+            self._held_unsynced = True
             # Said once rather than silently. On an ordinary restart
             # this is a device a person removed. On a restore to a
             # fresh Home Assistant install it is every record the
@@ -2484,9 +2548,20 @@ class DeviceSentinelCoordinator(
             # install, and a person reading "watching 0 of 0" with no
             # explanation has no way to know which happened.
             LOGGER.info(
-                "%d stored record(s) belonged to device ids this registry "
-                "does not know and were dropped",
-                departed,
+                "%d stored record(s) belong to device ids this registry "
+                "does not know; each is held %d days in case the device "
+                "comes back, then deleted: %s",
+                len(held_now),
+                REMOVED_HOLD_DAYS,
+                ", ".join(
+                    _plain(devices[d].get(DEV_REMOVED_NAME) or d) for d in sorted(held_now)[:10]
+                ),
+            )
+        if returned:
+            LOGGER.info(
+                "%d removed device(s) came back and kept their records: %s",
+                len(returned),
+                ", ".join(_plain(display_names.get(d) or set_aside.get(d, (d,))[0]) for d in sorted(returned)[:10]),
             )
 
         if audit and set_aside:
@@ -2600,11 +2675,16 @@ class DeviceSentinelCoordinator(
         only until the removal completes.
         """
         if event.data.get("action") == "remove":
-            self._log_removed_muting(event.data.get("device_id"))
-            # Its owner battery entry goes with it (0.24.7).
-            self._power_forget(event.data.get("device_id"))
-            # And its type answer (0.25.1).
-            self._type_forget(event.data.get("device_id"))
+            device_id = event.data.get("device_id")
+            # A device with a record is held 30 days (ruling #622), and
+            # its power and type answers wait with it; a model answer
+            # it set still passes to another device of the model now.
+            # One with no record takes its answers with it (0.24.7,
+            # 0.25.1).
+            held = isinstance(device_id, str) and device_id in (self.data.get(DATA_DEVICES) or {})
+            self._log_removed_muting(device_id, held)
+            self._power_forget(device_id, hold=held)
+            self._type_forget(device_id, hold=held)
         if self._registry_debouncer is None:
             self._rebuild_and_notify()
             return
@@ -2614,18 +2694,34 @@ class DeviceSentinelCoordinator(
     def _rebuild_and_notify(self) -> None:
         """Rebuild the registry view, then tell the entities."""
         self._rebuild_registry_view()
+        if getattr(self, "_held_unsynced", False):
+            self._held_unsynced = False
+            self._sync_problem_list()
         self._notify()
 
     @callback
-    def _log_removed_muting(self, device_id: str | None) -> None:
+    def _log_removed_muting(self, device_id: str | None, held: bool = False) -> None:
         """Name a departing device that carries a muting pick.
 
         The pick is pruned the next time its screen is saved, and by
         then the device is gone from the registry and only its id
         remains, which tells a person nothing. This is the last
         moment its name exists, so the name is written down here.
+        A device whose record is held keeps its mutes while the hold
+        lasts (ruling #622).
         """
-        if device_id is None or device_id not in self._device_names:
+        if device_id is None:
+            return
+        # On Home Assistant 2026.5 its entities' removal arrives first
+        # and the rebuild it runs already holds the record, so its name
+        # is looked for there too (0.25.5).
+        record = (self.data.get(DATA_DEVICES) or {}).get(device_id)
+        name = (
+            self._device_names.get(device_id)
+            or (self._set_aside.get(device_id) or (None,))[0]
+            or (record.get(DEV_REMOVED_NAME) if isinstance(record, dict) else None)
+        )
+        if name is None:
             return
         keys = (
             CONF_MUTED_DEVICES,
@@ -2636,11 +2732,21 @@ class DeviceSentinelCoordinator(
         options = self.entry.options
         if not any(device_id in options.get(key, []) for key in keys):
             return
+        if held:
+            LOGGER.info(
+                "%s (%s) has been removed from Home Assistant and carried a "
+                "Device Sentinel muting; the muting is kept %d days in case "
+                "the device comes back",
+                _plain(name),
+                device_id,
+                REMOVED_HOLD_DAYS,
+            )
+            return
         LOGGER.info(
             "%s (%s) has been removed from Home Assistant and carried a "
             "Device Sentinel muting; the setting is dropped the next "
             "time its screen is saved",
-            self._device_names.get(device_id, device_id),
+            _plain(name),
             device_id,
         )
 
@@ -3852,6 +3958,104 @@ class DeviceSentinelCoordinator(
             self._dirty = True
             self._critical = True
 
+    def _welcome_back(self, device_id: str, record: dict[str, Any]) -> None:
+        """A removed device is back in Home Assistant with its old id
+        (ruling #622). The rhythm stays; the set-aside stamp, kept,
+        refuses the gap across the absence at its first report. The
+        signal history stays only when it comes back before the next
+        midnight: a device away longer may have been moved."""
+        since = record.get(DEV_REMOVED_SINCE)
+        heard = record.get(DEV_LAST_ACTIVITY)
+        # A hold always carries the set-aside stamp, and only the
+        # device's own report clears it. A hold without one was carried
+        # back by an older release that kept the removal stamp while
+        # the device was back and reporting: nothing is reset (0.25.5,
+        # found by review). Device Sentinel's own clock restarts leave
+        # the stamp alone, so they cannot pass for a report.
+        carried_back = record.get(DEV_SET_ASIDE_SINCE) is None
+        if isinstance(since, (int, float)) and not isinstance(since, bool) and not carried_back:
+            left = dt_util.as_local(dt_util.utc_from_timestamp(float(since))).date()
+            if dt_util.now().date() != left:
+                forget_signal_history(record)
+            if isinstance(heard, (int, float)) and not isinstance(heard, bool):
+                # Its clock restarts here, as after a lost clocks file
+                # (#468): judged on the days it was gone, it would be
+                # listed frozen before its first report (0.25.5, found
+                # by review). The set-aside stamp still refuses that
+                # first gap. A device never heard keeps no clock, so it
+                # can still be listed as never reported.
+                record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp()
+                record[DEV_TAINTED] = False
+        record[DEV_REMOVED_SINCE] = None
+        record[DEV_REMOVED_NAME] = None
+        self._mark_cold_dirty()
+
+    def held_records(self) -> list[dict[str, Any]]:
+        """The records held for removed devices, oldest first (ruling #622)."""
+        rows = []
+        for device_id, record in (self.data.get(DATA_DEVICES) or {}).items():
+            if not isinstance(record, dict):
+                continue
+            since = record.get(DEV_REMOVED_SINCE)
+            if not isinstance(since, (int, float)) or isinstance(since, bool):
+                continue
+            rows.append({
+                "device_id": device_id,
+                "name": record.get(DEV_REMOVED_NAME),
+                "removed": dt_util.utc_from_timestamp(float(since)).isoformat(),
+                "deleted_after": dt_util.utc_from_timestamp(
+                    float(since) + REMOVED_HOLD_DAYS * 86400.0
+                ).isoformat(),
+            })
+        rows.sort(key=lambda row: (row["removed"], row["device_id"]))
+        return rows
+
+    def is_held(self, device_id: Any) -> bool:
+        """Whether a device id is a removed device whose record is held."""
+        record = (self.data.get(DATA_DEVICES) or {}).get(device_id) if isinstance(device_id, str) else None
+        return isinstance(record, dict) and record.get(DEV_REMOVED_SINCE) is not None
+
+    def _purge_held_records(self, now: float) -> None:
+        """Delete each held record whose REMOVED_HOLD_DAYS have passed,
+        with its answers (ruling #622). At the fold, where records
+        change size. A device back in the registry is never purged:
+        the rebuild that brings it back clears its hold."""
+        devices = self.data.get(DATA_DEVICES) or {}
+        if self._clock_reset is not None and now - self._clock_reset[0] < 2 * 86400.0:
+            # The clock was set in the last two days: a step forward
+            # would purge every hold, and its answers, for good. The
+            # purge waits until the clock has held still (0.25.5,
+            # found by review).
+            return
+        limit = REMOVED_HOLD_DAYS * 86400.0
+        purged: list[str] = []
+        for device_id, record in list(devices.items()):
+            if not isinstance(record, dict):
+                continue
+            since = record.get(DEV_REMOVED_SINCE)
+            if not isinstance(since, (int, float)) or isinstance(since, bool):
+                continue
+            # Present means found by the registry walk. Asking the
+            # registry by id answers a device id from before Home
+            # Assistant 2026.8's split with a made-up composite
+            # device, which would keep such a hold for ever (0.25.5,
+            # found by review).
+            if now - float(since) < limit or device_id in self._watched or device_id in self._set_aside:
+                continue
+            purged.append(_plain(record.get(DEV_REMOVED_NAME) or device_id))
+            del devices[device_id]
+            self._power_forget(device_id)
+            self._type_forget(device_id)
+        if purged:
+            self._mark_cold_dirty()
+            LOGGER.info(
+                "Deleted %d record(s) of devices removed from Home Assistant "
+                "more than %d days ago: %s",
+                len(purged),
+                REMOVED_HOLD_DAYS,
+                ", ".join(sorted(purged)[:10]),
+            )
+
     def _discard_excluded_records(self) -> None:
         """Drop what an excluded integration recorded before it was.
 
@@ -3983,6 +4187,7 @@ class DeviceSentinelCoordinator(
         self._fold_day_override = None
         self._folding_day = day
         self._discard_excluded_records()
+        self._purge_held_records(dt_util.utcnow().timestamp())
         # Study readings for hardware no longer volunteered go here,
         # with everything else that ages out at the fold (#393).
         self.study_fold()
@@ -4152,6 +4357,11 @@ class DeviceSentinelCoordinator(
 
     def _device_name(self, device_id: str) -> str:
         """Return a device's display name for logging and the report."""
+        # A removed device whose record is held keeps the name it had
+        # (ruling #622).
+        record = (self.data.get(DATA_DEVICES) or {}).get(device_id)
+        if isinstance(record, dict) and isinstance(record.get(DEV_REMOVED_NAME), str):
+            return str(record[DEV_REMOVED_NAME])
         registry = dr.async_get(self.hass)
         device = registry.async_get(device_id)
         domain = self._primary_domain(device) if device is not None else None

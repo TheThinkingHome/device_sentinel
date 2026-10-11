@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.23.19 (2026-09-30)
+# File: config_flow.py, Version: 0.25.5 (2026-10-10)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -614,11 +614,53 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         """
         self.hass.config_entries.async_update_entry(
             self.config_entry,
-            options=self._settled_options(
-                {**self.config_entry.options, **changed}
+            options=self._kept_held_picks(
+                self._settled_options(
+                    {**self.config_entry.options, **changed}
+                )
             ),
         )
         return await self.async_step_init()
+
+    def _kept_held_picks(self, options: dict[str, Any]) -> dict[str, Any]:
+        """Put back the mutes of removed devices whose records are held.
+
+        A device removed from Home Assistant keeps its mutes for the 30
+        days its record is held (ruling #622). The screens cannot offer
+        it, since the registry no longer names it, so a save would drop
+        its pick; it is put back here from the options as they were. A
+        pick whose hold has ended is pruned on the next save, as before.
+        """
+        coordinator = self.config_entry.runtime_data
+        before = self.config_entry.options
+        kept = dict(options)
+        for key in (
+            CONF_MUTED_DEVICES,
+            CONF_BATTERY_MUTED_DEVICES,
+            CONF_FREEZE_MUTED_DEVICES,
+            CONF_SIGNAL_MUTED_DEVICES,
+        ):
+            previous = before.get(key)
+            if not isinstance(previous, (list, tuple)):
+                continue
+            held = [
+                device_id
+                for device_id in previous
+                if isinstance(device_id, str) and coordinator.is_held(device_id)
+            ]
+            current = kept.get(key)
+            current = list(current) if isinstance(current, (list, tuple)) else []
+            # A section pick the global mute already covers stays
+            # settled away, as the settle left it.
+            covered = (
+                set(kept.get(CONF_MUTED_DEVICES) or [])
+                if key != CONF_MUTED_DEVICES and isinstance(kept.get(CONF_MUTED_DEVICES), (list, tuple))
+                else set()
+            )
+            missing = [d for d in held if d not in current and d not in covered]
+            if missing:
+                kept[key] = current + missing
+        return kept
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None

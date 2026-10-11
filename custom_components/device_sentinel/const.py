@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.25.4 (2026-10-09)
+# File: const.py, Version: 0.25.5 (2026-10-10)
 
 """Constants for the Device Sentinel integration."""
 
@@ -458,6 +458,14 @@ DEV_TODAY_MAX = "today_max"
 DEV_FIRST_OBSERVED = "first_observed"
 DEV_EVENT_COUNT = "event_count"
 DEV_SET_ASIDE_SINCE = "set_aside_since"
+# A device gone from Home Assistant keeps its record for
+# REMOVED_HOLD_DAYS (0.25.5, ruling #622). Home Assistant gives a
+# re-added device back its old id, and the record, answers and mutes
+# come back with it. The moment it left and the name it had then are
+# kept, so the hold can be listed and purged by name.
+DEV_REMOVED_SINCE = "removed_since"
+DEV_REMOVED_NAME = "removed_name"
+REMOVED_HOLD_DAYS = 30
 DEV_TAINTED = "tainted"
 
 # Provisional tunables from the telemetry layer. Set from reasoning
@@ -1448,6 +1456,8 @@ EPOCH_KEPT = (
     DEV_FIRMWARE_HISTORY,
     DEV_SIGNAL_READS,
     DEV_SET_ASIDE_SINCE,
+    DEV_REMOVED_SINCE,
+    DEV_REMOVED_NAME,
     DEV_LAST_ACTIVITY,
     DEV_FIRST_OBSERVED,
     DEV_SIGNAL_VALUE,
@@ -1950,6 +1960,8 @@ EVENT_ACKNOWLEDGED = "device_sentinel_acknowledged"
 EVENT_WITHDRAWN = "device_sentinel_withdrawn"
 WITHDRAWN_REASON_SET_ASIDE = "set_aside"
 WITHDRAWN_REASON_MUTED = "muted"
+# A device removed from Home Assistant, its record held (ruling #622).
+WITHDRAWN_REASON_REMOVED = "removed"
 
 # The upstream pair. A stopped broker or bridge silences every device
 # behind it deliberately (rulings #264, #266), so until now the one
@@ -2195,6 +2207,9 @@ ACTION_READDED = "readded"
 # stopped. Recorded so the timeline says what happened rather than
 # claiming an ending (ruling #368).
 ACTION_SET_ASIDE = "set_aside"
+# The watching stopped because the device was removed from Home
+# Assistant (ruling #622), told apart from being set aside.
+ACTION_REMOVED = "removed"
 # A kind a person muted away, by device, integration or label. A mute
 # is a person's act, not a recovery: nothing is pushed, no recovery
 # reaches the bus, and the brief never says "recovered" (ruling #537).
@@ -2390,7 +2405,7 @@ SYS_DEVICE_ID = "device_id"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 549
+HIGHEST_RULING = 622
 
 # How long a registry rebuild waits after the last one before the next
 # (0.24.2). Every device, entity or label change rebuilt Device
@@ -3080,6 +3095,6 @@ CONNECTS_WORDS = {
         "Through the maker's cloud, checked at set times. It stops reporting "
         "if their servers or your internet go down."
     ),
-    "assumed_state": "It can't report back, so Home Assistant shows what it last told it to do.",
+    "assumed_state": "It can't report back, so Home Assistant shows what it last told it.",
     "calculated": "Worked out by Home Assistant from other readings.",
 }

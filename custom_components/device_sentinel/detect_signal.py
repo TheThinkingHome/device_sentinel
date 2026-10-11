@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.24.6 (2026-10-05)
+# File: detect_signal.py, Version: 0.25.5 (2026-10-10)
 
 """Signal: the day's statistics, the bad-day judgment, and the rails.
 
@@ -876,7 +876,7 @@ class SignalMixin:
         railed = {row["device_id"] for row in self.signal_problem_list}
         weak = []
         for device_id, record in (self.data.get(DATA_DEVICES) or {}).items():
-            if device_id in railed:
+            if device_id in railed or self.is_held(device_id):  # type: ignore[attr-defined]
                 continue
             if (
                 self._signal_muted(device_id)
@@ -946,8 +946,13 @@ class SignalMixin:
             for device_id, record in self.data.get(
                 DATA_DEVICES, {}
             ).items()
-            if record.get(DEV_SIGNAL_VALUE) is not None
-            or record.get(DEV_SIGNAL_DAILY_P5)
+            if (
+                record.get(DEV_SIGNAL_VALUE) is not None
+                or record.get(DEV_SIGNAL_DAILY_P5)
+            )
+            # A removed device's held record names nothing a person
+            # can pick (ruling #622).
+            and not self.is_held(device_id)  # type: ignore[attr-defined]
         ]
         rows.sort(key=lambda row: row["name"].lower())
         return rows

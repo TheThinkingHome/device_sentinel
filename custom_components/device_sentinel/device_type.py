@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_type.py, Version: 0.25.2 (2026-10-09)
+# File: custom_components/device_sentinel/device_type.py, Version: 0.25.5 (2026-10-10)
 
 """What each device is, in plain words (0.25.1, Project__Device_Type.md).
 
@@ -546,12 +546,17 @@ class TypeMixin:
         self._page_done(device_id, f"type set to {words}{many}")  # type: ignore[attr-defined]
 
     @callback
-    def _type_forget(self, device_id: str | None) -> None:
+    def _type_forget(self, device_id: str | None, hold: bool = False) -> None:
         """A device gone from Home Assistant takes its own answer with it;
-        a model answer it set passes to another device of the model."""
+        a model answer it set passes to another device of the model.
+
+        hold: the device's record is held after its removal (ruling
+        #622), so its own answer stays and a model answer with no other
+        device to pass to stays with it until the purge.
+        """
         if not device_id:
             return
-        changed = self._type_entries.pop(device_id, None) is not None
+        changed = not hold and self._type_entries.pop(device_id, None) is not None
         for key, entry in list(self._type_models.items()):
             if entry.get("device_id") != device_id:
                 continue
@@ -560,6 +565,8 @@ class TypeMixin:
             )
             if others:
                 entry["device_id"] = others[0]
+            elif hold:
+                continue
             else:
                 del self._type_models[key]
             changed = True

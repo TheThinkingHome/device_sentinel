@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.24.4 (2026-10-04)
+# File: records.py, Version: 0.25.5 (2026-10-10)
 
 """The device record shape, and the small helpers that go with it.
 
@@ -53,6 +53,8 @@ from .const import (
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
+    DEV_REMOVED_NAME,
+    DEV_REMOVED_SINCE,
     DEV_SET_ASIDE_SINCE,
     DEV_SIGNAL_COUNT,
     DEV_SIGNAL_DAILY_COUNT,
@@ -79,6 +81,7 @@ from .const import (
     DEV_TODAY_MAX,
     DEV_DAILY_DATES,
 )
+from .daily_dates import FAMILY_SIGNAL, FAMILY_SIGNAL_ALT, set_dates
 from .durations import compact_span
 
 BAD_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
@@ -115,6 +118,20 @@ def _reset_signal_day(record: dict[str, Any]) -> None:
     record[DEV_SIGNAL_P50_STATE] = None
 
 
+def forget_signal_history(record: dict[str, Any]) -> None:
+    """Start a record's signal history again, both scales and their dates.
+
+    For a removed device that comes back on a later day (ruling #622):
+    it may have been moved, so the signal it learned describes a place
+    it may no longer be."""
+    fresh = _new_device_record("", None)
+    for field, value in fresh.items():
+        if field.startswith("signal_"):
+            record[field] = value
+    set_dates(record, FAMILY_SIGNAL, [])
+    set_dates(record, FAMILY_SIGNAL_ALT, [])
+
+
 def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
     """Return a fresh per-device statistics record."""
     return {
@@ -130,6 +147,11 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         # aside otherwise, so a gap spanning a disabling is refused
         # rather than learned (ruling #257).
         DEV_SET_ASIDE_SINCE: None,
+        # None while the device is in Home Assistant; when it was
+        # removed, and its name then, while the record is held for
+        # REMOVED_HOLD_DAYS (ruling #622).
+        DEV_REMOVED_SINCE: None,
+        DEV_REMOVED_NAME: None,
         # Which scale the fields below are measured on, and the
         # second scale when a device publishes one (ruling #285).
         # None until the first reading says.

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.23.19 (2026-09-30)
+# File: narrative.py, Version: 0.25.5 (2026-10-10)
 
 """How to say what happened: the composer.
 
@@ -39,6 +39,7 @@ from .const import (
     ACTION_DELETED,
     ACTION_READDED,
     ACTION_MUTED,
+    ACTION_REMOVED,
     ACTION_SET_ASIDE,
     ACTION_UNACKNOWLEDGED,
     DATA_DEVICES,
@@ -357,6 +358,9 @@ class NarrativeMixin:
         if cause == ACTION_MUTED:
             # A person's mute, not a recovery (ruling #537).
             return f"{name} was muted at {when}."
+        if cause == ACTION_REMOVED:
+            # Removed from Home Assistant, its record held (ruling #622).
+            return f"{name} was removed from Home Assistant at {when}."
         if cause == ACTION_SET_ASIDE:
             # Not a recovery and not an acknowledgment. The device
             # left the watched set with its problem standing, which

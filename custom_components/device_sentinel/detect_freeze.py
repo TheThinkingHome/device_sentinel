@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.24.9 (2026-10-06)
+# File: detect_freeze.py, Version: 0.25.5 (2026-10-10)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -407,7 +407,8 @@ class FreezeMixin:
         with no record.
         """
         record = self.data[DATA_DEVICES].get(device_id)
-        if record is None:
+        if record is None or self.is_held(device_id):  # type: ignore[attr-defined]
+            # A removed device's held record has no page (ruling #622).
             return False
         record[DEV_LOGNORMAL_DAYS] = 0
         self._mark_cold_dirty()

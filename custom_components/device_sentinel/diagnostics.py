@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.25.2 (2026-10-09)
+# File: diagnostics.py, Version: 0.25.5 (2026-10-10)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -403,10 +403,12 @@ async def async_get_config_entry_diagnostics(
             daily_maximum_gaps
         )
         devices[device_id] = {
+            # A removed device whose record is held keeps the name it
+            # had (ruling #622).
             "name": (
                 (device.name_by_user or device.name)
                 if device
-                else None
+                else record.get("removed_name")
             ),
             # Read live from the registry, stored nowhere. Two
             # questions a report cannot answer without it: which
@@ -717,6 +719,9 @@ async def async_get_config_entry_diagnostics(
                 coordinator.upstreams_loaded_after
             ),
         },
+        # Records of devices removed from Home Assistant, held 30 days
+        # in case the device comes back (ruling #622).
+        "held_records": coordinator.held_records(),
         "devices": devices,
     }
     return _redact_addresses(payload)

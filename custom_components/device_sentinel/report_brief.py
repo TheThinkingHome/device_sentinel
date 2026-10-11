@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.25.3 (2026-10-09)
+# File: report_brief.py, Version: 0.25.5 (2026-10-10)
 
 """The daily brief: the one report written for a person.
 
@@ -64,6 +64,7 @@ from .const import (
     ACTION_DELETED,
     ACTION_READDED,
     ACTION_MUTED,
+    ACTION_REMOVED,
     ACTION_SET_ASIDE,
     ACTION_UNACKNOWLEDGED,
     CONF_REMINDER_TIME,
@@ -345,6 +346,7 @@ class BriefMixin:
                 # stopped. Saying so keeps the table from claiming an
                 # acknowledgment nobody made (ruling #369).
                 ACTION_SET_ASIDE: "set aside, no longer watched",
+                ACTION_REMOVED: "removed from Home Assistant",
                 ACTION_MUTED: "muted",
             }.get(row.get(INC_CAUSE) or "", "acknowledged")
         if kind == TODO_KIND_LOW_BATTERY:
@@ -2089,6 +2091,9 @@ class BriefMixin:
             if when < cutoff:
                 continue
             device_id = row.get(INC_DEVICE_ID)
+            if self.is_held(device_id):  # type: ignore[attr-defined]
+                # Removed from Home Assistant (ruling #622): nothing to act on.
+                continue
             ends = [
                 t
                 for t in resolved.get(
@@ -2393,7 +2398,7 @@ class BriefMixin:
         # are always read together (0.22.27).
         incidents = [
             row
-            for row in escalation.fold(self.incident_rows())
+            for row in escalation.withdrawals_once(escalation.fold(self.incident_rows()))
             if window_start <= row[INC_WHEN] <= window_end
             and row[INC_DEVICE_ID] not in self._muted_devices
             and row[INC_DEVICE_ID] not in silenced

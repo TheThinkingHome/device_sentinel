@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.24.5 (2026-10-04)
+# File: journal.py, Version: 0.25.5 (2026-10-10)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -662,8 +662,16 @@ class JournalMixin:
             dt_util.utcnow().timestamp()
             - self.retention_days * 86400.0
         )
+        # A damaged row is kept for the repair to drop and count: the
+        # clock repair writes its event before the rows are repaired,
+        # and reading a junk row here raised and failed the save
+        # (0.25.5, found by the convergence fuzz).
         self.data[DATA_SYSTEM_EVENTS] = [
-            row for row in events if row[SYS_WHEN] >= cutoff
+            row for row in events
+            if not isinstance(row, dict)
+            or not isinstance(row.get(SYS_WHEN), (int, float))
+            or isinstance(row.get(SYS_WHEN), bool)
+            or row[SYS_WHEN] >= cutoff
         ]
         self._mark_cold_dirty()
         # Something happened to the house: the dashboard's Refresh has

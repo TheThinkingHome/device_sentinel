@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.24.7 (2026-10-05)
+# File: events.py, Version: 0.25.5 (2026-10-10)
 
 """What Device Sentinel says on the Home Assistant bus.
 
@@ -343,7 +343,12 @@ class EventMixin:
         integration is responsible for, the fire call failing on its
         own account.
         """
-        if self._in_startup_grace():
+        # A withdrawal is a fact about the house, not an echo of the
+        # restart: a device removed or set aside while Home Assistant was
+        # stopped closes the fault an automation paired it with, so it is
+        # fired inside the startup grace too (0.25.5, found by the
+        # adversarial round).
+        if self._in_startup_grace() and event_type != EVENT_WITHDRAWN:
             return
         try:
             self.hass.bus.async_fire(event_type, payload)

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.25.3 (2026-10-09)
+# File: dashboard.py, Version: 0.25.5 (2026-10-10)
 
 """What the dashboard reads from the coordinator.
 
@@ -32,6 +32,7 @@ from homeassistant.util import dt as dt_util
 from datetime import date, timedelta
 
 from .daily_dates import FAMILY_GAP, FAMILY_SIGNAL, dates_for, on_calendar
+from .device_addresses import addresses, shown
 from .report_battery import (
     battery_calendar,
     battery_month_drop,
@@ -143,7 +144,7 @@ from .const import (
     WIFI_KEY,
     WIFI_SENSOR_NAME,
 )
-from .escalation import fold
+from .escalation import fold, withdrawals_once
 from .outage_detail import pair_key
 from .report_brief import REPEAT_PARAGRAPH
 from .device_fields import device_field
@@ -902,6 +903,10 @@ class DeviceViewMixin:
         if record is None:
             return None
         device = dr.async_get(self.hass).async_get(device_id)
+        if self.is_held(device_id):  # type: ignore[attr-defined]
+            # Removed from Home Assistant, its record held in case it
+            # comes back (ruling #622): there is no device to show.
+            return None
         area_name = None
         if device is not None and device.area_id:
             area = ar.async_get(self.hass).async_get_area(device.area_id)
@@ -975,10 +980,12 @@ class DeviceViewMixin:
                 # getattr alone does not spare it: the child answers the
                 # attribute with a deprecation line, so device_field
                 # asks what the entry is first.
-                "manufacturer": device_field(device, "manufacturer"),
-                "model": device_field(device, "model"),
-                "model_id": device_field(device, "model_id"),
-                "hw_version": device_field(device, "hw_version"),
+                # Each as the page shows it: nothing, or only zeros,
+                # is None, and the page leaves the row out (0.25.5).
+                "manufacturer": shown(device_field(device, "manufacturer")),
+                "model": shown(device_field(device, "model")),
+                "model_id": shown(device_field(device, "model_id")),
+                "hw_version": shown(device_field(device, "hw_version")),
                 "area": area_name,
                 "integration": domain,
                 "integration_name": self._integration_name_of(device_id, domain) if domain else None,
@@ -987,8 +994,17 @@ class DeviceViewMixin:
                 # is shown as Zigbee2MQTT's (0.24.11).
                 "integration_title": self._integration_title(domain) if domain else None,
                 # How it connects, from its integration's declaration
-                # (0.23.9).
-                "connects": CONNECTS_WORDS.get(self.iot_class_of(domain) or ""),
+                # (0.23.9). Not for a device that reports changes on
+                # the local network as they happen, the way nearly all
+                # do: a row the same on every page says nothing
+                # (0.25.5).
+                "connects": (
+                    None
+                    if (iot_class := self.iot_class_of(domain)) == "local_push"
+                    else CONNECTS_WORDS.get(iot_class or "")
+                ),
+                # Its addresses, each row named by its kind (0.25.5).
+                "addresses": addresses(device),
                 "connections": sorted(
                     [kind, value]
                     for kind, value in device_field(device, "connections", set())
@@ -1347,7 +1363,7 @@ class BriefViewMixin:
         # escalation a recovery the file does not (0.22.27).
         incidents = [
             row
-            for row in fold(self.incident_rows())
+            for row in withdrawals_once(fold(self.incident_rows()))
             if start <= row[INC_WHEN] < end
             and row[INC_DEVICE_ID] not in self._muted_devices
             and row[INC_DEVICE_ID] not in silenced

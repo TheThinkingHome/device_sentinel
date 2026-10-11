@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: escalation.py, Version: 0.22.27 (2026-09-23)
+# File: escalation.py, Version: 0.25.5 (2026-10-10)
 
 """A problem replaced by a worse one, told as the change it is.
 
@@ -36,6 +36,10 @@ from __future__ import annotations
 from typing import Any
 
 from .const import (
+    ACTION_REMOVED,
+    ACTION_SET_ASIDE,
+    INC_CAUSE,
+    INCIDENT_ACTION,
     INCIDENT_OPENED,
     INCIDENT_RESOLVED,
     INC_DEVICE_ID,
@@ -145,3 +149,33 @@ def fold(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             row = {**row, ESCALATED_FROM: lesser_for[index]}
         folded.append(row)
     return folded
+
+
+def withdrawals_once(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A device leaving with several problems, told once (0.25.5).
+
+    A device set aside or removed closes each kind on its line with an
+    action row of its own, so each kind's story ends. The brief and the
+    Daily Brief tab told each of those rows, and a device with three
+    problems "was removed from Home Assistant" three times. The rows
+    stay in the record; the telling keeps one row for each leaving. One
+    leaving writes its rows microseconds apart, so rows of the same
+    device and cause less than a second from the one kept are the same
+    leaving, wherever a second boundary falls.
+    """
+    kept_at: dict[tuple[Any, Any], list[float]] = {}
+    kept = []
+    for row in rows:
+        when = row.get(INC_WHEN)
+        if (
+            row.get(INC_EVENT) == INCIDENT_ACTION
+            and row.get(INC_CAUSE) in (ACTION_SET_ASIDE, ACTION_REMOVED)
+            and isinstance(when, (int, float))
+            and not isinstance(when, bool)
+        ):
+            told = kept_at.setdefault((row.get(INC_DEVICE_ID), row.get(INC_CAUSE)), [])
+            if any(abs(float(when) - other) < 1.0 for other in told):
+                continue
+            told.append(float(when))
+        kept.append(row)
+    return kept

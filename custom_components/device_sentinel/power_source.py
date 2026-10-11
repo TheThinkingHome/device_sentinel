@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.25.3 (2026-10-09)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.25.5 (2026-10-10)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -472,7 +472,12 @@ class PowerMixin:
     def _power_same_model(self, key: str, leaving: str | None = None) -> list[str]:
         """Devices Device Sentinel knows that are this model."""
         records = self.data.get(DATA_DEVICES) or {}  # type: ignore[attr-defined]
-        return [d for d in records if d != leaving and self._power_key(d) == key]
+        # Not a removed device's held record (ruling #622): an old
+        # composite id could still answer to the model (found by review).
+        return [
+            d for d in records
+            if d != leaving and not self.is_held(d) and self._power_key(d) == key  # type: ignore[attr-defined]
+        ]
 
     def _power_entry(self, device_id: str) -> tuple[dict[str, Any] | None, str | None]:
         """The owner's entry that covers the device, and its model key."""
@@ -667,16 +672,20 @@ class PowerMixin:
         )
 
     @callback
-    def _power_forget(self, device_id: str | None) -> None:
+    def _power_forget(self, device_id: str | None, hold: bool = False) -> None:
         """A device gone from Home Assistant takes its own entry with it.
 
         A model entry it set passes to another device of the model, a
         watched one first, then any in Home Assistant (0.25.1), or goes
         with the last of them.
+
+        hold: the device's record is held after its removal (ruling
+        #622), so its own answer stays and a model answer with no other
+        device to pass to stays with it until the purge.
         """
         if not device_id:
             return
-        changed = self._power_entries.pop(device_id, None) is not None
+        changed = not hold and self._power_entries.pop(device_id, None) is not None
         for key, entry in list(self._power_models.items()):
             if entry.get("device_id") != device_id:
                 continue
@@ -685,6 +694,8 @@ class PowerMixin:
             )
             if others:
                 entry["device_id"] = others[0]
+            elif hold:
+                continue
             else:
                 del self._power_models[key]
             changed = True

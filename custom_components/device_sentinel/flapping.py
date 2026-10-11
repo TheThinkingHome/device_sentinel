@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: flapping.py, Version: 0.23.2 (2026-09-24)
+# File: flapping.py, Version: 0.25.5 (2026-10-10)
 
 """A device that keeps dropping out, learned and held (0.23.2).
 
@@ -31,6 +31,7 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    DEV_REMOVED_SINCE,
     DATA_DEVICES,
     DEV_FLAP_BACK,
     DEV_FLAP_DROPS,
@@ -69,6 +70,9 @@ class FlapMixin:
         devices = self.data[DATA_DEVICES]
         for device_id, record in devices.items():
             if not isinstance(record, dict):
+                continue
+            if record.get(DEV_REMOVED_SINCE) is not None:
+                # Held after its removal (ruling #622): not judged.
                 continue
             drops = [
                 value

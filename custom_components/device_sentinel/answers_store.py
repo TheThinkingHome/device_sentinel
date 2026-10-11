@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/answers_store.py, Version: 0.25.2 (2026-10-09)
+# File: custom_components/device_sentinel/answers_store.py, Version: 0.25.5 (2026-10-10)
 
 """The one file that holds what the owner set with a pencil (0.25.1).
 
@@ -540,8 +540,12 @@ class AnswersMixin:
             known = registry.async_get(device_id) is not None
             if known:
                 name = self._device_name(device_id)  # type: ignore[attr-defined]
+            elif aside:
+                name = aside[0]
             else:
-                name = aside[0] if aside else None
+                # A removed device whose record is held keeps its
+                # name (ruling #622).
+                name = self._device_name(device_id) if self.is_held(device_id) else None  # type: ignore[attr-defined]
             if aside:
                 why = aside[2]
             elif not known:

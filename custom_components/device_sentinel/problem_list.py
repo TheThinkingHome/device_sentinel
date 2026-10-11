@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.23.19 (2026-09-30)
+# File: problem_list.py, Version: 0.25.5 (2026-10-10)
 
 """The problem list: the single memory every channel renders.
 
@@ -49,6 +49,7 @@ from .const import (
     ACTION_DELETED,
     ACTION_READDED,
     ACTION_MUTED,
+    ACTION_REMOVED,
     ACTION_SET_ASIDE,
     ACTION_UNACKNOWLEDGED,
     DATA_DEVICES,
@@ -85,6 +86,7 @@ from .const import (
     WIFI_KEY,
     UPSTREAM_SETTLE_SECONDS,
     WITHDRAWN_REASON_MUTED,
+    WITHDRAWN_REASON_REMOVED,
     WITHDRAWN_REASON_SET_ASIDE,
 )
 
@@ -1174,6 +1176,9 @@ class ProblemListMixin:
         name = record.get(TODO_SORT_NAME) or device_id
         kinds = record.get(TODO_KINDS, {})
         if not announce:
+            # Removed from Home Assistant rather than set aside (ruling
+            # #622): the timeline and the event say which.
+            removed = self.is_held(device_id)  # type: ignore[attr-defined]
             withdrawn = sort_kinds([k for k in kinds if k != UPSTREAM_KIND])
             for kind in withdrawn:
                 # A fault still held for its debounce is withdrawn
@@ -1195,13 +1200,14 @@ class ProblemListMixin:
                     name,
                     kind,
                     INCIDENT_ACTION,
-                    cause=ACTION_SET_ASIDE,
+                    cause=ACTION_REMOVED if removed else ACTION_SET_ASIDE,
                 )
             if withdrawn:
                 # The answer #289 promised, without the word
                 # "recovered" (ruling #370).
                 self.fire_withdrawn(
-                    device_id, name, withdrawn, WITHDRAWN_REASON_SET_ASIDE
+                    device_id, name, withdrawn,
+                    WITHDRAWN_REASON_REMOVED if removed else WITHDRAWN_REASON_SET_ASIDE,
                 )
             return
         # Worst first, and every kind fires as it becomes the top,
