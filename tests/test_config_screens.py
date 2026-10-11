@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_config_screens.py, Version: 0.16.13 (2026-08-21)
+# File: tests/test_config_screens.py, Version: 0.25.6 (2026-10-11)
 
 """What the configuration screens promise a person reading them.
 
@@ -399,7 +399,8 @@ async def test_both_halves_carry_a_heading_and_an_explanation(
     ):
         step = json.loads(source.read_text())["options"]["step"]["exclusions"]
         assert not step["data"], "nothing loose on this screen"
-        assert step["sections"]["exclude"]["name"] == "Integrations to Exclude"
+        # Devices joined the integrations in 0.25.6 (ruling #625).
+        assert step["sections"]["exclude"]["name"] == "Integrations and Devices to Exclude"
         assert (
             step["sections"]["muting"]["name"] == "Global Muting"
         )

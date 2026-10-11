@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_learning_rhythm.py, Version: 0.23.19 (2026-09-30)
+# File: test_learning_rhythm.py, Version: 0.25.6 (2026-10-11)
 
 """How the integration learns each device's reporting rhythm.
 
@@ -757,6 +757,11 @@ async def test_gap_learning_after_grace(hass: HomeAssistant, freezer):
 
 async def test_taint_excludes_outage_gap(hass: HomeAssistant, freezer):
     """A gap spanning unavailability never feeds learning."""
+    # Pinned to a morning (#330, #198): run within about an hour of a
+    # Pacific midnight, the test's own ticks crossed it and the midnight
+    # save or fold changed what it counts (second gate of 11 October
+    # 2026, 06:00 to 06:45 UTC).
+    freezer.move_to("2026-10-07 15:00:00+00:00")
     source = MockConfigEntry(domain="test")
     source.add_to_hass(hass)
     device, (eid,) = _make_device(hass, source, 1)

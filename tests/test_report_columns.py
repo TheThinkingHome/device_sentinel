@@ -1,7 +1,7 @@
 """Tests for what the reports say about set-aside devices.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_report_columns.py, Version: 0.25.2 (2026-10-09)
+# File: test_report_columns.py, Version: 0.25.6 (2026-10-11)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -94,7 +94,7 @@ async def test_the_header_names_every_cause(hass: HomeAssistant):
 
     # All five, since 0.22.13: duplicate coordinators were missing.
     for cause in (
-        "integrations you asked to exclude", "service devices",
+        "integrations and devices you asked to exclude", "service devices",
         "disabled devices", "duplicate coordinators",
         "hardware already watched through another device",
         "devices with no entities",

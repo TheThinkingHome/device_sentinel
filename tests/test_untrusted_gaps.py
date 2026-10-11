@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_untrusted_gaps.py, Version: 0.24.1 (2026-10-03)
+# File: tests/test_untrusted_gaps.py, Version: 0.25.6 (2026-10-11)
 
 """A gap is learned only if Device Sentinel could have heard the device for all of it.
 
@@ -37,6 +37,10 @@ def _speak(hass, entities, n):
 
 
 async def test_a_report_before_the_check_does_not_learn_a_clock_jump(hass, freezer):
+    # Pinned to a morning (#330): run in the evening, the three-hour jump
+    # crossed local midnight, the fold emptied the day's maximum and the
+    # last assertion read None (gate of 11 October 2026, 03:51 UTC).
+    freezer.move_to("2026-10-07 15:00:00+00:00")
     device, entities = register_device(hass, "ck", name="Clock Probe")
     coord = await setup_coordinator(hass)
     record = coord.data[DATA_DEVICES][device.id]

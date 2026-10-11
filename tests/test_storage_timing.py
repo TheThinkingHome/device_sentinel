@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_timing.py, Version: 0.23.19 (2026-09-30)
+# File: test_storage_timing.py, Version: 0.25.6 (2026-10-11)
 
 """When a save happens: coalescing, and what forces one.
 
@@ -115,6 +115,11 @@ def _armed_and_silent(coord, device_id, basis_hours, share):
 async def test_routine_churn_coalesces(hass: HomeAssistant, freezer):
     """The first dirty tick opens the window; churn inside it writes
     nothing; the window closing writes the hot file alone (#165)."""
+    # Pinned to a morning (#330, #198): run within about an hour of a
+    # Pacific midnight, the test's own ticks crossed it and the midnight
+    # save or fold changed what it counts (second gate of 11 October
+    # 2026, 06:00 to 06:45 UTC).
+    freezer.move_to("2026-10-07 15:00:00+00:00")
     device, entity_id = _register(hass, "r1", "Routine Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
@@ -250,6 +255,11 @@ async def test_dirty_ticks_write_once_per_window(
     that is always dirty must neither write every tick nor push the
     deadline forward forever. The deadline is a plain float that only
     the write that satisfies it advances."""
+    # Pinned to a morning (#330, #198): run within about an hour of a
+    # Pacific midnight, the test's own ticks crossed it and the midnight
+    # save or fold changed what it counts (second gate of 11 October
+    # 2026, 06:00 to 06:45 UTC).
+    freezer.move_to("2026-10-07 15:00:00+00:00")
     device, entity_id = _register(hass, "c1", "Churn Sensor")
     entry = await setup_entry(hass)
     coord = entry.runtime_data
