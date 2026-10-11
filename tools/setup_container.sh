@@ -4,7 +4,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/setup_container.sh, Version: 0.22.20 (2026-09-21)
+# File: tools/setup_container.sh, Version: 0.25.6 (2026-10-11)
 #
 # Rebuild the whole test environment in a fresh build container.
 #
@@ -43,7 +43,7 @@ BANDIT_PIN="1.9.4"
 MYPY_PIN="2.3.1"
 
 FLOOR_ENV="$PREFIX/venv_329"     # Home Assistant 2026.5.0, the declared minimum
-CURRENT_ENV="$PREFIX/venv_365"   # Home Assistant 2026.9.2, what the fleets run
+CURRENT_ENV="$PREFIX/venv_372"   # Home Assistant 2026.10.1, what the fleets run
 TOOLS_ENV="$PREFIX/venv_tools"   # ruff and bandit, pinned
 JSDOM_DIR="$PREFIX/jsdom"        # the front end's only harness
 
@@ -87,7 +87,7 @@ fi
 # tests that need it.
 #
 # Never uninstall a package from a harness environment. Home Assistant
-# 2026.9.2 itself requires probatio==0.11.4, and removing it to satisfy
+# 2026.10.1 itself requires probatio (0.13.0), and removing it to satisfy
 # something else takes the harness down.
 
 build_env() {  # $1 path  $2 label  $3.. install arguments
@@ -106,10 +106,10 @@ say "harness at the declared minimum (2026.5.0)"
 build_env "$FLOOR_ENV" "venv_329" -r requirements_test_floor.txt
 note "$("$FLOOR_ENV/bin/python" -c 'from homeassistant.const import __version__ as v; import sys; print("Home Assistant", v, "on Python", sys.version.split()[0])')"
 
-say "harness at what the fleets run (2026.9.2)"
+say "harness at what the fleets run (2026.10.1)"
 # mypy goes in beside the harness rather than with the other linters,
 # so it type-checks against the same Home Assistant the fleets run.
-build_env "$CURRENT_ENV" "venv_365" -r requirements_test.txt "mypy==$MYPY_PIN"
+build_env "$CURRENT_ENV" "venv_372" -r requirements_test.txt "mypy==$MYPY_PIN"
 note "$("$CURRENT_ENV/bin/python" -c 'from homeassistant.const import __version__ as v; import sys; print("Home Assistant", v, "on Python", sys.version.split()[0])')"
 
 # ------------------------------------------------------------- linters
