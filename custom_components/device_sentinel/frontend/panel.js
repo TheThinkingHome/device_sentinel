@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.25.6 (2026-10-11)
+// File: panel.js, Version: 0.26.0 (2026-10-12)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -494,6 +494,10 @@ const STYLE = `
   .chart svg { width: 100%; height: auto; }
   .chart .axis { fill: var(--secondary-text-color); font-size: 11px; }
   .chip[aria-disabled="true"] { opacity: 0.4; cursor: default; border-style: dashed; }
+  /* A mute that is on (ruling #646): filled, with its check mark, and
+     still filled when it is set elsewhere and cannot be pressed here. */
+  .chip.on { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
+  .chip.on[aria-disabled="true"] { opacity: 1; border-style: solid; }
   .figures th, .figures td { padding: 6px 8px; }
   .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--secondary-text-color); align-items: center; }
   .legend .swatch { display: inline-block; width: 18px; vertical-align: middle; margin-right: 6px; }
@@ -1074,7 +1078,7 @@ class DeviceSentinelPanel extends HTMLElement {
   // list silently on the refresh, as a mute always makes it (#537).
   async _muteFromList(device_id, kind) {
     try {
-      await this._call({ type: "device_sentinel/device_mute", device_id, kind, on: true });
+      await this._call({ type: "device_sentinel/device_mute", device_id, kind, on: true, source: "problem_list" });
     } catch (err) {
       // Gone since the snapshot; the refresh below shows the list as it stands.
     }
@@ -1152,6 +1156,14 @@ class DeviceSentinelPanel extends HTMLElement {
         action = el("button", { class: "chip", type: "button", onclick: async () => {
           try { await this._call({ type: "device_sentinel/device_last_seen", device_id: row.device_id }); await refresh(); } catch (err) { fail(err); }
         } }, "Turn on its Last Seen");
+      }
+      // A device slow to judge for freeze (0.26.0, ruling #637): the
+      // same mute its device page offers, in the list. The device
+      // leaves the card once muted.
+      if (card.kind === "slow") {
+        action = el("button", { class: "chip", type: "button", onclick: async () => {
+          try { await this._call({ type: "device_sentinel/device_mute", device_id: row.device_id, kind: "freeze", on: true, source: "recommendations" }); await refresh(); } catch (err) { fail(err); }
+        } }, "Mute freeze");
       }
       return el("tr", {}, el("td", {}, nameLink(row)), el("td", { class: "small" }, row.area || "no area"),
         el("td", {}, el("div", { class: "actrow" }, action, note)));
@@ -2527,7 +2539,11 @@ class DeviceSentinelPanel extends HTMLElement {
       // when Mute everything covers this kind.
       const covered = kind !== "everything" && everything;
       const fixed = (m.on && !m.here) || covered;
-      return el("button", { class: "chip", type: "button", "aria-pressed": String(Boolean(m.on || covered)),
+      const lit = Boolean(m.on || covered);
+      // A mute that is on is drawn filled, with a check mark, whether
+      // set here or by a label, an integration or Mute everything
+      // (ruling #646); one set elsewhere cannot be pressed here.
+      return el("button", { class: lit ? "chip on" : "chip", type: "button", "aria-pressed": String(lit),
         ...(fixed ? { "aria-disabled": "true" } : {}),
         onclick: () => {
           if (fixed) return;
@@ -2537,9 +2553,10 @@ class DeviceSentinelPanel extends HTMLElement {
             return;
           }
           this._deviceAct({ type: "device_sentinel/device_mute", device_id: who.device_id, kind, on: !m.on }, "muted");
-        } }, words);
+        } }, lit ? `\u2713 ${words}` : words);
     };
-    const parts = [el("span", {}, who.muted || "nothing"),
+    // The buttons say what is muted; "nothing" went (ruling #646).
+    const parts = [
       el("div", { class: "actrow" }, toggle("freeze", "Mute freeze"), toggle("battery", "Mute battery"),
         toggle("signal", "Mute signal"), toggle("everything", "Mute everything"))];
     // A mute set by a label or an integration cannot be lifted here,
@@ -2584,9 +2601,11 @@ class DeviceSentinelPanel extends HTMLElement {
     const copies = who.same_hardware && Array.isArray(who.same_hardware.devices) && who.same_hardware.devices.length > 1;
     const takeover = copies ? " If another listing of the same hardware can be watched, Device Sentinel watches the hardware through it instead." : "";
     if (ex.here) {
-      parts.push(el("span", {}, "Excluded. Device Sentinel does not watch it, and deletes what it recorded at the next midnight. "
-        + "After that this page is gone, and it is taken back in Device Sentinel's settings, Exclusions and Muting."),
-        el("div", { class: "actrow" }, el("button", { class: "chip", type: "button", onclick: () => act(false) }, "Stop excluding")));
+      // Watching stops at once; the history goes at midnight, and until
+      // then cancelling loses nothing (ruling #645).
+      parts.push(el("span", {}, "Excluded. Device Sentinel has stopped watching this device and deletes its history at midnight. "
+        + "After that this page is gone, and the device is taken back in Device Sentinel's settings, Exclusions and Muting."),
+        el("div", { class: "actrow" }, el("button", { class: "chip", type: "button", onclick: () => act(false) }, "Cancel the exclusion")));
     } else if (ex.integration) {
       parts.push(el("div", { class: "actnote" }, "Its integration is excluded. Change it in ",
         this._link("Device Sentinel's settings", SETTINGS_PATH), ", Configure, Exclusions and Muting."));
@@ -2597,7 +2616,8 @@ class DeviceSentinelPanel extends HTMLElement {
           el("button", { class: "chip", type: "button", onclick: () => act(true) }, "Exclude"),
           el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel")));
     } else {
-      parts.push(el("span", {}, "no"),
+      // A watched device shows only the button (ruling #645).
+      parts.push(
         el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
           onclick: () => { this._devEdit = { device: who.device_id, row: "exclude" }; this._paintDevicePage(); } },
           "Exclude this device")));
@@ -2696,6 +2716,9 @@ class DeviceSentinelPanel extends HTMLElement {
           onclick: () => this._deviceAct({ type: "device_sentinel/device_last_seen", device_id: who.device_id }, "heartbeat") },
           "Turn on its Last Seen")),
         this._actNote("heartbeat"))
+        // ZHA keeps its own Last Seen for every device (ruling #652).
+        : who.clock === "zha" ? el("div", { class: "actrow" }, el("span", {}, "ZHA's own"),
+          el("span", { class: "hbtag" }, "heartbeat: when ZHA last heard it"))
         : el("div", { class: "actrow" }, el("span", { class: "muted" }, "none"),
           el("span", { class: "hbtag" }, "heartbeat: updates from its entities"));
     // The button beside the wait rule (0.24.0): starts the Log-Normal
