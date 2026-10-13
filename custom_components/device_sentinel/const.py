@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.26.0 (2026-10-12)
+# File: const.py, Version: 0.26.1 (2026-10-13)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2444,7 +2444,7 @@ SYS_DEVICE_ID = "device_id"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 652
+HIGHEST_RULING = 659
 
 # How long a registry rebuild waits after the last one before the next
 # (0.24.2). Every device, entity or label change rebuilt Device
@@ -2544,6 +2544,9 @@ SYS_OPTIONS_CHANGED = "options_changed"
 # system event that names a device, so the brief puts it on that
 # device's line.
 SYS_DEVICE_PAGE = "device_page"
+# A person excluded an integration, or took it back, from its page on
+# the dashboard (0.26.1, ruling #659). Its scope is the integration.
+SYS_INTEGRATION_PAGE = "integration_page"
 
 # A person deliberately erased a device's or an integration's learned
 # history from the Advanced screen (ruling #307). Recorded because it

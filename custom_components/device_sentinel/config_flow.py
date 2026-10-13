@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.26.0 (2026-10-12)
+# File: config_flow.py, Version: 0.26.1 (2026-10-13)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -50,7 +50,7 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -475,6 +475,156 @@ def _house_url(hass, choice: str) -> str | None:
     except Exception:  # noqa: BLE001 - that address is not set
         return None
 
+# The muting ladder, broadest first. Each rung is the option keys
+# that carry one level of decision, and a pick on a lower rung is
+# dead once a higher rung already covers it (ruling #336).
+SECTION_MUTING = (
+    (
+        CONF_BATTERY_MUTED_INTEGRATIONS,
+        CONF_BATTERY_MUTED_LABELS,
+        CONF_BATTERY_MUTED_DEVICES,
+    ),
+    (
+        CONF_SIGNAL_MUTED_INTEGRATIONS,
+        CONF_SIGNAL_MUTED_LABELS,
+        CONF_SIGNAL_MUTED_DEVICES,
+    ),
+    (
+        CONF_FREEZE_MUTED_INTEGRATIONS,
+        CONF_FREEZE_MUTED_LABELS,
+        CONF_FREEZE_MUTED_DEVICES,
+    ),
+)
+
+
+def settle_options(
+    hass: HomeAssistant, coordinator: Any, merged: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the options with every superseded pick removed.
+
+    The ladder has three rungs, integration, label and device,
+    with the exclusion above them all. They were only ever
+    settled along one axis: within a screen, a device pick went
+    when that screen's own integration or label pick covered it. Nothing
+    ever settled the rungs against each other, so excluding an
+    integration left it muted, and muting one globally left it
+    muted in all three sections. Reported by James on 25 August
+    after excluding tplink_router and finding it still listed as
+    muted when he came back to the screen.
+
+    The cost of leaving it is not tidiness. A decision that is
+    never cleared is a decision that comes back: un-exclude an
+    integration tomorrow and the mute nobody removed is waiting
+    underneath, with no screen having said so.
+
+    Settling is a deletion and not a suppression, which is what
+    the screens warn about before a save. A narrower pick a
+    broader mute covered is gone from the stored options, and
+    removing the broader mute later does not bring it back; the
+    person re-picks it. Any wording written for a reader has to
+    say that plainly rather than calling it hiding.
+
+    Settling runs here rather than in each screen's own pruner,
+    because every screen saves through this one method and the
+    rungs cross screens: excluding on the exclusions screen has
+    to reach the battery screen's picks, and only a merged view
+    of the options can see both.
+
+    Coverage is proved, never assumed (ruling #45). A device pick
+    is removed only where a row demonstrates that device belongs
+    to a covered integration or carries a covered label; a device
+    the rows cannot account for is kept. An excluded integration
+    clears no label, because a label spans integrations and
+    excluding one says nothing about the others that wear it.
+
+    A non-string entry in any pick list is skipped rather than
+    settled: it can name nothing, so it covers nothing and is
+    covered by nothing, and it stays where it was. That case came
+    from an attack rather than from the schema, which writes
+    strings, and it is here so a hand-edited entry cannot raise
+    inside a person's options dialog.
+    """
+
+    settled = dict(merged)
+    rows = coordinator.watched_device_rows
+    dev_reg = dr.async_get(hass)
+
+    def names(key: str) -> list[str]:
+        """Return the entries of one option list that can name
+        something.
+
+        A pick is a string on every path that writes one, and a
+        non-string cannot name an integration, a label or a
+        device, so it can neither cover nor be covered. Skipping
+        it keeps it in the list, which is what proof-only pruning
+        requires (ruling #45), and keeps a hand-edited entry from
+        raising inside a person's options dialog: the attack that
+        found this put a list inside a pick list and the covering
+        set could not be built.
+        """
+        value = settled.get(key)
+        if isinstance(value, str) or not isinstance(
+            value, (list, tuple, set)
+        ):
+            return []
+        return [item for item in value if isinstance(item, str)]
+
+    def keep(key: str, gone: set[str]) -> None:
+        """Drop the named picks from one option list."""
+        settled[key] = [
+            item for item in names(key) if item not in gone
+        ]
+
+    excluded = set(names(CONF_EXCLUDED_INTEGRATIONS))
+    # A device excluded on its own (ruling #625) goes from the list
+    # once Home Assistant no longer has it, as a mute pick does.
+    if CONF_EXCLUDED_DEVICES in settled:
+        settled[CONF_EXCLUDED_DEVICES] = _surviving_picks(
+            names(CONF_EXCLUDED_DEVICES), set(), dev_reg
+        )
+    # Rung one: an excluded integration is never watched, so every
+    # mute of it, global or sectional, is a decision about something
+    # that has already been decided. A device excluded on its own
+    # keeps its mutes (ruling #625): taking the exclusion back
+    # before midnight must give back everything, mutes included,
+    # and a mute of an excluded device changes nothing meanwhile.
+    if excluded:
+        excluded_devices = {
+            row["device_id"]
+            for row in rows
+            if row["integration"] in excluded
+        }
+        keep(CONF_MUTED_INTEGRATIONS, excluded)
+        keep(CONF_MUTED_DEVICES, excluded_devices)
+        for integrations, _labels, devices in SECTION_MUTING:
+            keep(integrations, excluded)
+            keep(devices, excluded_devices)
+
+    # Rung two: a globally muted device is judged by nothing, so
+    # a section mute of it does nothing either.
+    global_integrations = set(names(CONF_MUTED_INTEGRATIONS))
+    global_labels = set(names(CONF_MUTED_LABELS))
+    covered_globally = _devices_covered_by(
+        rows, list(global_integrations), list(global_labels)
+    )
+    settled[CONF_MUTED_DEVICES] = _surviving_picks(
+        names(CONF_MUTED_DEVICES), covered_globally, dev_reg
+    )
+    globally = covered_globally | set(names(CONF_MUTED_DEVICES))
+    for integrations, labels, devices in SECTION_MUTING:
+        keep(integrations, global_integrations)
+        keep(labels, global_labels)
+        # Rung three: within a section, its own integration and
+        # label picks cover its device picks, which is the one
+        # axis that was already settled and stays settled here.
+        covered = _devices_covered_by(
+            rows, names(integrations), names(labels)
+        )
+        settled[devices] = _surviving_picks(
+            names(devices), covered | globally, dev_reg
+        )
+    return settled
+
 class DeviceSentinelConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the Device Sentinel config flow."""
 
@@ -525,154 +675,22 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             data_schema = _badges_in_order(self.hass, data_schema)
         return super().async_show_form(data_schema=data_schema, **kwargs)
 
-    # The muting ladder, broadest first. Each rung is the option keys
-    # that carry one level of decision, and a pick on a lower rung is
-    # dead once a higher rung already covers it (ruling #336).
-    _SECTION_MUTING = (
-        (
-            CONF_BATTERY_MUTED_INTEGRATIONS,
-            CONF_BATTERY_MUTED_LABELS,
-            CONF_BATTERY_MUTED_DEVICES,
-        ),
-        (
-            CONF_SIGNAL_MUTED_INTEGRATIONS,
-            CONF_SIGNAL_MUTED_LABELS,
-            CONF_SIGNAL_MUTED_DEVICES,
-        ),
-        (
-            CONF_FREEZE_MUTED_INTEGRATIONS,
-            CONF_FREEZE_MUTED_LABELS,
-            CONF_FREEZE_MUTED_DEVICES,
-        ),
-    )
+    # The muting ladder, broadest first (ruling #336); the module keeps
+    # it, so the dashboard's exclusions settle it as Settings does.
+    _SECTION_MUTING = SECTION_MUTING
 
     def _settled_options(
         self, merged: dict[str, Any]
     ) -> dict[str, Any]:
         """Return the options with every superseded pick removed.
 
-        The ladder has three rungs, integration, label and device,
-        with the exclusion above them all. They were only ever
-        settled along one axis: within a screen, a device pick went
-        when that screen's own integration or label pick covered it. Nothing
-        ever settled the rungs against each other, so excluding an
-        integration left it muted, and muting one globally left it
-        muted in all three sections. Reported by James on 25 August
-        after excluding tplink_router and finding it still listed as
-        muted when he came back to the screen.
-
-        The cost of leaving it is not tidiness. A decision that is
-        never cleared is a decision that comes back: un-exclude an
-        integration tomorrow and the mute nobody removed is waiting
-        underneath, with no screen having said so.
-
-        Settling is a deletion and not a suppression, which is what
-        the screens warn about before a save. A narrower pick a
-        broader mute covered is gone from the stored options, and
-        removing the broader mute later does not bring it back; the
-        person re-picks it. Any wording written for a reader has to
-        say that plainly rather than calling it hiding.
-
-        Settling runs here rather than in each screen's own pruner,
-        because every screen saves through this one method and the
-        rungs cross screens: excluding on the exclusions screen has
-        to reach the battery screen's picks, and only a merged view
-        of the options can see both.
-
-        Coverage is proved, never assumed (ruling #45). A device pick
-        is removed only where a row demonstrates that device belongs
-        to a covered integration or carries a covered label; a device
-        the rows cannot account for is kept. An excluded integration
-        clears no label, because a label spans integrations and
-        excluding one says nothing about the others that wear it.
-
-        A non-string entry in any pick list is skipped rather than
-        settled: it can name nothing, so it covers nothing and is
-        covered by nothing, and it stays where it was. That case came
-        from an attack rather than from the schema, which writes
-        strings, and it is here so a hand-edited entry cannot raise
-        inside a person's options dialog.
+        The ladder is settled in one place, `settle_options`, which an
+        integration excluded from its dashboard page also passes
+        through (0.26.1, ruling #659).
         """
-        settled = dict(merged)
-        coordinator = self.config_entry.runtime_data
-        rows = coordinator.watched_device_rows
-        dev_reg = dr.async_get(self.hass)
-
-        def names(key: str) -> list[str]:
-            """Return the entries of one option list that can name
-            something.
-
-            A pick is a string on every path that writes one, and a
-            non-string cannot name an integration, a label or a
-            device, so it can neither cover nor be covered. Skipping
-            it keeps it in the list, which is what proof-only pruning
-            requires (ruling #45), and keeps a hand-edited entry from
-            raising inside a person's options dialog: the attack that
-            found this put a list inside a pick list and the covering
-            set could not be built.
-            """
-            value = settled.get(key)
-            if isinstance(value, str) or not isinstance(
-                value, (list, tuple, set)
-            ):
-                return []
-            return [item for item in value if isinstance(item, str)]
-
-        def keep(key: str, gone: set[str]) -> None:
-            """Drop the named picks from one option list."""
-            settled[key] = [
-                item for item in names(key) if item not in gone
-            ]
-
-        excluded = set(names(CONF_EXCLUDED_INTEGRATIONS))
-        # A device excluded on its own (ruling #625) goes from the list
-        # once Home Assistant no longer has it, as a mute pick does.
-        if CONF_EXCLUDED_DEVICES in settled:
-            settled[CONF_EXCLUDED_DEVICES] = _surviving_picks(
-                names(CONF_EXCLUDED_DEVICES), set(), dev_reg
-            )
-        # Rung one: an excluded integration is never watched, so every
-        # mute of it, global or sectional, is a decision about something
-        # that has already been decided. A device excluded on its own
-        # keeps its mutes (ruling #625): taking the exclusion back
-        # before midnight must give back everything, mutes included,
-        # and a mute of an excluded device changes nothing meanwhile.
-        if excluded:
-            excluded_devices = {
-                row["device_id"]
-                for row in rows
-                if row["integration"] in excluded
-            }
-            keep(CONF_MUTED_INTEGRATIONS, excluded)
-            keep(CONF_MUTED_DEVICES, excluded_devices)
-            for integrations, _labels, devices in self._SECTION_MUTING:
-                keep(integrations, excluded)
-                keep(devices, excluded_devices)
-
-        # Rung two: a globally muted device is judged by nothing, so
-        # a section mute of it does nothing either.
-        global_integrations = set(names(CONF_MUTED_INTEGRATIONS))
-        global_labels = set(names(CONF_MUTED_LABELS))
-        covered_globally = _devices_covered_by(
-            rows, list(global_integrations), list(global_labels)
+        return settle_options(
+            self.hass, self.config_entry.runtime_data, merged
         )
-        settled[CONF_MUTED_DEVICES] = _surviving_picks(
-            names(CONF_MUTED_DEVICES), covered_globally, dev_reg
-        )
-        globally = covered_globally | set(names(CONF_MUTED_DEVICES))
-        for integrations, labels, devices in self._SECTION_MUTING:
-            keep(integrations, global_integrations)
-            keep(labels, global_labels)
-            # Rung three: within a section, its own integration and
-            # label picks cover its device picks, which is the one
-            # axis that was already settled and stays settled here.
-            covered = _devices_covered_by(
-                rows, names(integrations), names(labels)
-            )
-            settled[devices] = _surviving_picks(
-                names(devices), covered | globally, dev_reg
-            )
-        return settled
 
     async def _save_and_return(
         self, changed: dict[str, Any]

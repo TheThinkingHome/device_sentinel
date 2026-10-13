@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.26.0 (2026-10-12)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.26.1 (2026-10-13)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -37,6 +37,8 @@ from homeassistant.helpers import label_registry as lr
 from .const import (
     CONF_BATTERY_MUTED_DEVICES,
     CONF_EXCLUDED_DEVICES,
+    CONF_EXCLUDED_INTEGRATIONS,
+    DEFAULT_EXCLUDED_INTEGRATIONS,
     CONF_BATTERY_MUTED_INTEGRATIONS,
     CONF_BATTERY_MUTED_LABELS,
     CONF_FREEZE_MUTED_DEVICES,
@@ -49,6 +51,7 @@ from .const import (
     CONF_SIGNAL_MUTED_INTEGRATIONS,
     CONF_SIGNAL_MUTED_LABELS,
     SYS_DEVICE_PAGE,
+    SYS_INTEGRATION_PAGE,
 )
 
 # Each mute kind's three settings lists, in the order every mute is
@@ -61,6 +64,8 @@ MUTE_SOURCES_SAID: dict[str, str] = {
     "device_page": "from its device page",
     "recommendations": "from the Recommendations tab",
     "problem_list": "from the Problem List",
+    # The Devices tab's Excluded list (ruling #658).
+    "devices_tab": "from the Devices tab",
 }
 
 MUTE_KINDS: dict[str, tuple[str, str, str]] = {
@@ -337,7 +342,9 @@ class DeviceActionsMixin:
             self._page_done(device_id, "Last Seen turned on")
         return enabled
 
-    def page_set_excluded(self, device_id: str, on: bool) -> None:
+    def page_set_excluded(
+        self, device_id: str, on: bool, source: str = "device_page"
+    ) -> None:
         """Exclude the device, or take it back (ruling #625), in the list
         Settings writes beside the integrations, through the same update
         listener. Its record goes at the next midnight's fold, as an
@@ -358,8 +365,47 @@ class DeviceActionsMixin:
         )
         self._record_system_event(  # type: ignore[attr-defined]
             SYS_DEVICE_PAGE,
-            detail=f"{'excluded' if on else 'no longer excluded'}, from its device page",
+            detail=f"{'excluded' if on else 'no longer excluded'}, {MUTE_SOURCES_SAID.get(source, MUTE_SOURCES_SAID['device_page'])}",
             device_id=device_id,
+        )
+        self._mark_changed()  # type: ignore[attr-defined]
+
+    def page_set_integration_excluded(self, domain: str, on: bool) -> None:
+        """Exclude an integration, or take it back, from its page on the
+        dashboard (ruling #659), in the list Settings writes, through the
+        same update listener. The ladder is settled as a Settings save
+        settles it (ruling #336), so its mutes go with an exclusion. Its
+        devices' records go at the next midnight's fold, so taking it
+        back before then loses nothing. One act, one row in the brief."""
+        from .config_flow import settle_options  # the flow imports this module's package
+
+        stored = self.entry.options.get(CONF_EXCLUDED_INTEGRATIONS)
+        if stored is None:
+            # The default list stands until the option is first saved.
+            current = list(DEFAULT_EXCLUDED_INTEGRATIONS)
+        elif isinstance(stored, (list, tuple)):
+            current = [d for d in stored if isinstance(d, str)]
+        else:
+            current = []
+        if on and domain not in current:
+            current.append(domain)
+        elif not on and domain in current:
+            current.remove(domain)
+        else:
+            return
+        merged = {**self.entry.options, CONF_EXCLUDED_INTEGRATIONS: current}
+        if on:
+            merged = settle_options(self.hass, self, merged)
+        self._page_option_keys.update(
+            key
+            for key in set(merged) | set(self.entry.options)
+            if merged.get(key) != self.entry.options.get(key)
+        )
+        self.hass.config_entries.async_update_entry(self.entry, options=merged)
+        self._record_system_event(  # type: ignore[attr-defined]
+            SYS_INTEGRATION_PAGE,
+            scope=domain,
+            detail="excluded" if on else "no longer excluded",
         )
         self._mark_changed()  # type: ignore[attr-defined]
 

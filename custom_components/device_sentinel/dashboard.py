@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.26.0 (2026-10-12)
+# File: dashboard.py, Version: 0.26.1 (2026-10-13)
 
 """What the dashboard reads from the coordinator.
 
@@ -26,6 +26,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 from homeassistant.loader import async_get_loaded_integration
 from homeassistant.util import dt as dt_util
 
@@ -635,6 +636,9 @@ class IntegrationViewMixin:
             "first_seen": domain in (self.data.get(DATA_ROUTERS_SEEN) or [])
             and domain in self.excluded_integrations,
             "devices": listed,
+            # On the exclusion list, so the page offers to take it back;
+            # otherwise it offers to exclude it (ruling #659).
+            "excluded": domain in self.excluded_integrations,
             "behind_broker": behind_broker,
             "outages": self.integration_outages().get(domain, []),
             "bursts": self._bursts(domain),
@@ -895,6 +899,64 @@ class DeviceViewMixin:
                 "rhythm": rhythm,
                 "window": self._freeze_window(record) if record.get(DEV_DAILY_MAX) else None,
                 "type": self.type_words(device_id),
+                # For the tab's Area and Label filters (ruling #658).
+                **self._area_and_labels(device_id),
+            })
+        rows.sort(key=lambda row: row["name"].lower())
+        return rows
+
+    def _area_and_labels(self, device_id: str) -> dict[str, Any]:
+        """The device's area name and label names, read live from Home
+        Assistant's registries (ruling #658); nothing of it is stored."""
+        device = dr.async_get(self.hass).async_get(device_id)
+        if device is None:
+            return {"area": None, "labels": []}
+        area = None
+        if device.area_id:
+            entry = ar.async_get(self.hass).async_get_area(device.area_id)
+            area = entry.name if entry else None
+        labels_reg = lr.async_get(self.hass)
+        labels = sorted(
+            (
+                entry.name
+                for entry in (labels_reg.async_get_label(label_id) for label_id in (device.labels or ()))
+                if entry is not None
+            ),
+            key=str.casefold,
+        )
+        return {"area": area, "labels": labels}
+
+    def dashboard_excluded_devices(self) -> list[dict[str, Any]]:
+        """The devices on the exclusion lists, for the Devices tab's
+        Excluded list (ruling #658).
+
+        Read live from the registry and the options: an excluded device
+        is never recorded, so what is shown is what Home Assistant has
+        now. A device excluded on its own can be taken back from the
+        list; one excluded with its integration is taken back with the
+        integration, because the broader exclusion covers it (#336).
+        Its Device Sentinel page exists until the midnight that deletes
+        its history; after that its name opens Home Assistant's own.
+        """
+        own = self.excluded_devices
+        integrations = self.excluded_integrations
+        records = self.data.get(DATA_DEVICES) or {}
+        rows = []
+        for device_id, (_name, domain, reason) in list(self._set_aside.items()):
+            if reason != SET_ASIDE_EXCLUDED:
+                continue
+            by_integration = domain in integrations
+            if not by_integration and device_id not in own:
+                continue
+            kept = device_id in records and not self.is_held(device_id)
+            rows.append({
+                "device_id": device_id,
+                "name": self._device_name(device_id),
+                "integration": domain,
+                "integration_name": self._integration_name_of(device_id, domain),
+                "how": "integration" if by_integration else "device",
+                "page": kept,
+                **self._area_and_labels(device_id),
             })
         rows.sort(key=lambda row: row["name"].lower())
         return rows

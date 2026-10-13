@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.25.5 (2026-10-10)
+# File: detect_signal.py, Version: 0.26.1 (2026-10-13)
 
 """Signal: the day's statistics, the bad-day judgment, and the rails.
 
@@ -48,7 +48,14 @@ from homeassistant.helpers import entity_registry as er
 
 from homeassistant.util import dt as dt_util
 
-from .daily_dates import FAMILY_SIGNAL, FAMILY_SIGNAL_ALT, dates_for, day_appended
+from .daily_dates import (
+    FAMILY_SIGNAL,
+    FAMILY_SIGNAL_ALT,
+    dates_for,
+    day_appended,
+    set_dates,
+    swap_families,
+)
 from .const import (
     CONF_SIGNAL_MUTED_DEVICES,
     CONF_SIGNAL_MUTED_INTEGRATIONS,
@@ -227,6 +234,12 @@ def signal_bucket(record: dict[str, Any], scale: str) -> dict[str, Any]:
             record[field] = promoted.get(field)
         record[DEV_SIGNAL_SCALE] = scale
         record[DEV_SIGNAL_ALT] = demoted
+        # The dates go where their series went (0.26.1). A block made
+        # just now has no history, so any second-scale dates left on
+        # the record describe nothing and are dropped first.
+        if alt is None:
+            set_dates(record, FAMILY_SIGNAL_ALT, [])
+        swap_families(record, FAMILY_SIGNAL, FAMILY_SIGNAL_ALT)
         return record
     if alt is None:
         alt = _new_alt_block(scale)

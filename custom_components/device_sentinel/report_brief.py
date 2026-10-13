@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.26.0 (2026-10-12)
+# File: report_brief.py, Version: 0.26.1 (2026-10-13)
 
 """The daily brief: the one report written for a person.
 
@@ -136,6 +136,7 @@ from .const import (
     TODO_SORT_NAME,
     TODO_STATUS,
     SYS_DEVICE_PAGE,
+    SYS_INTEGRATION_PAGE,
     SYS_DEVICE_ID,
 )
 from .outage_detail import FAILED, parse_detail
@@ -679,6 +680,14 @@ class BriefMixin:
             # names: "Button Randy Night Table: battery muted, from its
             # device page, at 9:14 AM."
             return f"{self._system_event_who(row)}: {detail or 'changed from its device page'}, at {when}."
+        if kind == SYS_INTEGRATION_PAGE:
+            # An integration excluded or taken back from its page on the
+            # dashboard (0.26.1, ruling #659): "ZHA: excluded, from its
+            # integration page, at 9:14 AM."
+            return (
+                f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))}: "
+                f"{detail or 'changed'}, from its integration page, at {when}."
+            )
         if kind == SYS_TRIMMED:
             # The one destructive act performed on a person's
             # instruction, so the brief carries it even though the
@@ -882,6 +891,11 @@ class BriefMixin:
             )
         if kind == SYS_OPTIONS_CHANGED:
             return f"settings changed ({detail})" if detail else "settings changed"
+        if kind == SYS_INTEGRATION_PAGE:
+            return (
+                f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))} "
+                f"{detail or 'changed'}, from its integration page"
+            )
         if kind == SYS_TRIMMED:
             return (
                 f"learned history erased ({detail})"

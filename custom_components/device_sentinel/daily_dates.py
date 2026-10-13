@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/daily_dates.py, Version: 0.24.6 (2026-10-05)
+# File: custom_components/device_sentinel/daily_dates.py, Version: 0.26.1 (2026-10-13)
 
 """The date of every entry in a device's daily histories (0.24.4, issue #18).
 
@@ -158,6 +158,25 @@ def set_dates(holder: dict[str, Any], family: str, dates: list[date]) -> None:
         _SKIPPED: skipped,
     }
 
+
+def swap_families(holder: dict[str, Any], first: str, second: str) -> None:
+    """Trade two histories' dates, for histories that trade places.
+
+    The two signal scales swap when RSSI arrives on a device whose
+    primary is LQI (ruling #285): the series change places, so their
+    dates must too (0.26.1). A family with no block leaves the other
+    with none.
+    """
+    blocks = holder.get(DAILY_DATES)
+    if not isinstance(blocks, dict):
+        return
+    one, two = blocks.pop(first, None), blocks.pop(second, None)
+    if two is not None:
+        blocks[first] = two
+    if one is not None:
+        blocks[second] = one
+    if not blocks:
+        holder[DAILY_DATES] = None
 
 def day_appended(
     holder: dict[str, Any],

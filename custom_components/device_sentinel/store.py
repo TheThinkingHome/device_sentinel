@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.25.6 (2026-10-11)
+# File: store.py, Version: 0.26.1 (2026-10-13)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -25,7 +25,12 @@ from homeassistant.core import Event, callback
 from homeassistant.util import dt as dt_util
 from .backup import async_rotate_last_good
 from .normalise import check_records, damaged_rows
-from .records import _new_device_record, _reset_signal_day, _span
+from .records import (
+    _new_device_record,
+    _reset_signal_day,
+    _span,
+    forget_signal_history,
+)
 
 from .const import (
     RETIRED_DEVICE_FIELDS,
@@ -430,10 +435,10 @@ class StorageMixin:
                     seen.append(value)
             if not seen or min(seen) >= 0 or max(seen) < 0:
                 continue
-            fresh = _new_device_record("", None)
-            for field in fresh:
-                if field.startswith("signal_"):
-                    record[field] = fresh[field]
+            # Both scales and their dates (0.26.1). The dates stayed
+            # behind before, so the next day's entry was dated as the
+            # newest of the old history's many.
+            forget_signal_history(record)
             cleared.append(device_id)
         return cleared
 

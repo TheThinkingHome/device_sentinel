@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.26.0 (2026-10-12)
+# File: dashboard_api.py, Version: 0.26.1 (2026-10-13)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -104,6 +104,7 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_device_last_seen)
     websocket_api.async_register_command(hass, ws_device_mute)
     websocket_api.async_register_command(hass, ws_device_exclude)
+    websocket_api.async_register_command(hass, ws_integration_exclude)
     websocket_api.async_register_command(hass, ws_device_power)
     websocket_api.async_register_command(hass, ws_device_type)
     websocket_api.async_register_command(hass, ws_brief)
@@ -405,12 +406,16 @@ def ws_devices(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Return the Devices tab: every watched device."""
+    """Return the Devices tab: every watched device, and the devices on
+    the exclusion lists for its Excluded list (ruling #658)."""
     coordinator = _coordinator(hass)
     if coordinator is None:
         _not_loaded(connection, msg["id"])
         return
-    connection.send_result(msg["id"], {"rows": coordinator.dashboard_devices()})
+    connection.send_result(msg["id"], {
+        "rows": coordinator.dashboard_devices(),
+        "excluded": coordinator.dashboard_excluded_devices(),
+    })
 
 
 @websocket_api.require_admin
@@ -679,6 +684,8 @@ def ws_device_mute(
         vol.Required("type"): "device_sentinel/device_exclude",
         vol.Required("device_id"): str,
         vol.Required("on"): bool,
+        # Where it was pressed, for the brief's row (ruling #658).
+        vol.Optional("source", default="device_page"): vol.In(["device_page", "devices_tab"]),
     }
 )
 @callback
@@ -688,8 +695,38 @@ def ws_device_exclude(
     """Exclude one device, or take it back, as Settings does (ruling #625)."""
     _page_act(
         hass, connection, msg,
-        lambda c: c.page_set_excluded(msg["device_id"], msg["on"]),
+        lambda c: c.page_set_excluded(msg["device_id"], msg["on"], msg["source"]),
     )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/integration_exclude",
+        vol.Required("domain"): str,
+        vol.Required("on"): bool,
+    }
+)
+@callback
+def ws_integration_exclude(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Exclude an integration, or take it back, from its page (ruling #659).
+
+    Only an integration that owns a device has a page that offers it."""
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    if coordinator.dashboard_integration(msg["domain"]) is None:
+        connection.send_error(msg["id"], "not_found", "No device belongs to that integration")
+        return
+    try:
+        coordinator.page_set_integration_excluded(msg["domain"], msg["on"])
+    except HomeAssistantError as err:
+        connection.send_error(msg["id"], "refused", str(err) or "Home Assistant refused the change")
+        return
+    connection.send_result(msg["id"], {})
 
 
 @websocket_api.require_admin
