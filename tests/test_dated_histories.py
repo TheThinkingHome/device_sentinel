@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dated_histories.py, Version: 0.24.6 (2026-10-05)
+# File: tests/test_dated_histories.py, Version: 0.26.1 (2026-10-13)
 
 """The daily histories keep their calendar (0.24.4, issue #18).
 
@@ -327,3 +327,87 @@ async def test_a_rail_broken_by_a_silent_night_at_the_limit_is_not_confirmed(
         await _fold(hass, freezer, ahead)
     assert record[DEV_SIGNAL_DAILY_COUNT][-3:] == [0, 0, 0]
     assert not coord.signal_railed(record), "a rail broken by a silent night was confirmed"
+
+
+def _skipping_days(end, count):
+    """`count` measured days ending at `end`, with one day skipped near
+    the start, so dates read as consecutive days cannot match them."""
+    days = [end - timedelta(days=i) for i in range(count + 1)]
+    del days[-2]
+    return sorted(days)
+
+
+def test_a_scale_swap_carries_the_signal_dates_with_the_series():
+    """When RSSI arrives on a device whose primary is LQI, the two
+    scales trade places (ruling #285), and their dates must trade with
+    them (0.26.1). Before, the series moved and the dates stayed, so the
+    LQI history read the RSSI block's dates or none at all. The storage
+    split cuts each history by its entries and their dates, so a
+    history whose dates describe other entries would be split wrongly."""
+    from custom_components.device_sentinel.const import (
+        DEV_SIGNAL_DAILY_P50,
+        DEV_SIGNAL_SCALE,
+        SIGNAL_SCALE_LQI,
+        SIGNAL_SCALE_RSSI,
+    )
+    from custom_components.device_sentinel.detect_signal import signal_bucket
+    from custom_components.device_sentinel.records import _new_device_record
+
+    end = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
+    lqi_days = _skipping_days(end - timedelta(days=4), 3)
+    record = _new_device_record("2026-07-01T00:00:00+00:00", None)
+    record[DEV_SIGNAL_SCALE] = SIGNAL_SCALE_LQI
+    record[DEV_SIGNAL_DAILY_P50] = [150.0, 160.0, 170.0]
+    record[DEV_SIGNAL_DAILY_COUNT] = [40, 41, 42]
+    set_dates(record, FAMILY_SIGNAL, lqi_days)
+
+    signal_bucket(record, SIGNAL_SCALE_RSSI)
+
+    assert record[DEV_SIGNAL_ALT][DEV_SIGNAL_DAILY_P50] == [150.0, 160.0, 170.0]
+    assert dates_for(record, FAMILY_SIGNAL_ALT, 3, end) == lqi_days, (
+        "the LQI history moved to the second scale without its dates"
+    )
+    assert FAMILY_SIGNAL not in (record[DAILY_DATES] or {}), (
+        "the new RSSI history, still empty, kept the LQI history's dates"
+    )
+
+
+async def test_a_mixed_signal_clear_at_load_drops_the_signal_dates(
+    hass: HomeAssistant, hass_storage
+):
+    """A signal history holding two scales at once is cleared at load
+    (ruling #282). Its dates go with it (0.26.1), as they already do
+    when a removed device's signal history is forgotten (#622); before,
+    the cleared history kept the old dates and the next day's entry
+    was dated as the newest of many."""
+    from custom_components.device_sentinel.const import (
+        DEV_SIGNAL_DAILY_P5,
+        STATS_EPOCH,
+    )
+    from custom_components.device_sentinel.records import _new_device_record
+
+    device, _ = register_device(hass, "mixdates", name="Mixed Dates Probe")
+    end = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
+    record = _new_device_record("2026-07-01T00:00:00+00:00", None)
+    record[DEV_SIGNAL_DAILY_P5] = [-66.0, 215.0, -70.0, 247.0]
+    record[DEV_SIGNAL_DAILY_COUNT] = [10, 11, 12, 13]
+    record[DEV_DAILY_MAX] = [100.0, 200.0]
+    set_dates(record, FAMILY_SIGNAL, _skipping_days(end, 4))
+    set_dates(record, FAMILY_SIGNAL_ALT, _skipping_days(end, 2))
+    set_dates(record, FAMILY_GAP, [end - timedelta(days=1), end])
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "data": {
+            DATA_DEVICES: {device.id: record},
+            DATA_STATS_EPOCH: STATS_EPOCH,
+        },
+    }
+    coord = await setup_coordinator(hass)
+    after = coord.data[DATA_DEVICES][device.id]
+    assert after[DEV_SIGNAL_DAILY_COUNT] == []
+    blocks = after[DAILY_DATES] or {}
+    assert FAMILY_SIGNAL not in blocks, "the cleared signal history kept its dates"
+    assert FAMILY_SIGNAL_ALT not in blocks, "the cleared second scale kept its dates"
+    assert dates_for(after, FAMILY_GAP, 2, end) == [end - timedelta(days=1), end], (
+        "the gap history's dates were touched"
+    )

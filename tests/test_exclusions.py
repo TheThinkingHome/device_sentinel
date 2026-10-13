@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_exclusions.py, Version: 0.26.0 (2026-10-12)
+# File: test_exclusions.py, Version: 0.26.1 (2026-10-13)
 
 """Exclusion: watched and recorded, but not judged or reported.
 
@@ -1993,3 +1993,124 @@ async def test_a_cancelled_exclusion_raises_no_frozen_alert(hass: HomeAssistant,
         await minutes(1)
         seen.append(coord.data[DATA_DEVICES][drop.id][DEV_FROZEN_CATEGORY])
     assert seen == [None] * 5, seen
+
+
+# ---------------------------------------------------------------------
+# Taking an exclusion back from the dashboard (0.26.1, rulings #658 and
+# #659). The Devices tab lists the excluded devices, read live, and an
+# integration's page excludes it or takes it back, as Settings does.
+
+
+async def test_the_devices_tab_lists_the_excluded_devices_live(hass: HomeAssistant, hass_ws_client):
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import label_registry as lr
+
+    entry, coord, keep, drop = await _two(hass)
+    area = ar.async_get(hass).async_create("Garage")
+    label = lr.async_get(hass).async_create("Spare")
+    dr.async_get(hass).async_update_device(drop.id, area_id=area.id, labels={label.label_id})
+    coord.data[DATA_DEVICES].setdefault(drop.id, {})
+    await _set(hass, entry, **{CONF_EXCLUDED_DEVICES: [drop.id]})
+    client = await hass_ws_client(hass)
+    reply = await _ws(client, type="device_sentinel/devices")
+    assert reply["success"], reply
+    excluded = reply["result"]["excluded"]
+    assert [row["name"] for row in excluded] == ["Old Plug"]
+    row = excluded[0]
+    assert (row["how"], row["page"], row["area"], row["labels"]) == ("device", True, "Garage", ["Spare"])
+    assert all(r["device_id"] != drop.id for r in reply["result"]["rows"]), "an excluded device is listed as watched"
+    watched = next(r for r in reply["result"]["rows"] if r["device_id"] == keep.id)
+    assert (watched["area"], watched["labels"]) == (None, [])
+    # Past midnight its history is gone, and so is its page here.
+    coord._discard_excluded_records()
+    assert coord.dashboard_excluded_devices()[0]["page"] is False
+
+
+async def test_a_device_excluded_with_its_integration_is_listed_as_such(hass: HomeAssistant):
+    entry, coord, keep, drop = await _two(hass, {CONF_EXCLUDED_INTEGRATIONS: ["test"]})
+    await _set(hass, entry, **{CONF_EXCLUDED_DEVICES: [drop.id]})
+    rows = {row["name"]: row["how"] for row in coord.dashboard_excluded_devices()}
+    # The broader exclusion covers both, the one picked by hand too.
+    assert rows == {"Door Master": "integration", "Old Plug": "integration"}
+
+
+async def test_the_devices_tab_takes_an_exclusion_back_and_says_where(hass: HomeAssistant, hass_ws_client):
+    entry, coord, keep, drop = await _two(hass)
+    await _set(hass, entry, **{CONF_EXCLUDED_DEVICES: [drop.id]})
+    settings_rows = len(_rows(coord, SYS_OPTIONS_CHANGED))
+    client = await hass_ws_client(hass)
+    reply = await _ws(client, type="device_sentinel/device_exclude", device_id=drop.id, on=False, source="devices_tab")
+    assert reply["success"], reply
+    await hass.async_block_till_done()
+    assert entry.options[CONF_EXCLUDED_DEVICES] == [] and drop.id in coord._watched
+    assert [r[SYS_DETAIL] for r in _rows(coord, SYS_DEVICE_PAGE)] == ["no longer excluded, from the Devices tab"]
+    assert len(_rows(coord, SYS_OPTIONS_CHANGED)) == settings_rows, "the act also wrote a Settings changed row"
+    reply = await _ws(client, type="device_sentinel/device_exclude", device_id=drop.id, on=True, source="elsewhere")
+    assert not reply["success"], "an unknown source was accepted"
+
+
+async def test_an_integration_page_excludes_and_takes_back_with_one_row_each(hass: HomeAssistant, hass_ws_client):
+    from custom_components.device_sentinel.const import (
+        CONF_FREEZE_MUTED_INTEGRATIONS,
+        CONF_MUTED_INTEGRATIONS,
+        SYS_INTEGRATION_PAGE,
+        SYS_SCOPE,
+    )
+
+    entry, coord, keep, drop = await _two(hass, {
+        CONF_MUTED_INTEGRATIONS: ["test"], CONF_FREEZE_MUTED_INTEGRATIONS: ["test"],
+    })
+    client = await hass_ws_client(hass)
+    assert coord.dashboard_integration("test")["excluded"] is False
+    reply = await _ws(client, type="device_sentinel/integration_exclude", domain="test", on=True)
+    assert reply["success"], reply
+    await hass.async_block_till_done()
+    assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == ["test"]
+    assert keep.id not in coord._watched and drop.id not in coord._watched
+    # Settled as a Settings save settles it (ruling #336): its mutes go.
+    assert entry.options[CONF_MUTED_INTEGRATIONS] == []
+    assert entry.options[CONF_FREEZE_MUTED_INTEGRATIONS] == []
+    rows = _rows(coord, SYS_INTEGRATION_PAGE)
+    assert [(r[SYS_SCOPE], r[SYS_DETAIL]) for r in rows] == [("test", "excluded")]
+    assert _rows(coord, SYS_OPTIONS_CHANGED) == [], "the page act also wrote a Settings changed row"
+    assert coord.dashboard_integration("test")["excluded"] is True
+    # The brief tells it once, saying where it was pressed.
+    sentence = coord._system_event_sentence(rows[0])
+    title = coord._integration_title("test")
+    assert sentence.startswith(f"{title}: excluded, from its integration page, at "), sentence
+    reply = await _ws(client, type="device_sentinel/integration_exclude", domain="test", on=False)
+    await hass.async_block_till_done()
+    assert reply["success"] and entry.options[CONF_EXCLUDED_INTEGRATIONS] == []
+    assert keep.id in coord._watched and drop.id in coord._watched
+    assert _rows(coord, SYS_INTEGRATION_PAGE)[-1][SYS_DETAIL] == "no longer excluded"
+    # The same act twice changes nothing and writes nothing.
+    reply = await _ws(client, type="device_sentinel/integration_exclude", domain="test", on=False)
+    assert reply["success"] and len(_rows(coord, SYS_INTEGRATION_PAGE)) == 2
+
+
+async def test_an_integration_page_starts_from_the_default_list(hass: HomeAssistant, hass_ws_client):
+    from custom_components.device_sentinel.const import DEFAULT_EXCLUDED_INTEGRATIONS
+
+    keep, _ = register_device(hass, "keep", "Door Master")
+    entry = await setup_entry(hass, {})
+    assert CONF_EXCLUDED_INTEGRATIONS not in entry.options
+    client = await hass_ws_client(hass)
+    reply = await _ws(client, type="device_sentinel/integration_exclude", domain="test", on=True)
+    assert reply["success"], reply
+    await hass.async_block_till_done()
+    # The default list stood until now, so it is kept beside the new one.
+    assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == [*DEFAULT_EXCLUDED_INTEGRATIONS, "test"]
+
+
+async def test_an_integration_page_refuses_an_unknown_integration_and_a_non_admin(
+    hass: HomeAssistant, hass_ws_client, hass_read_only_access_token
+):
+    entry, coord, keep, drop = await _two(hass)
+    client = await hass_ws_client(hass)
+    reply = await _ws(client, type="device_sentinel/integration_exclude", domain="nothing_here", on=True)
+    assert reply["error"]["code"] == "not_found"
+    reader = await hass_ws_client(hass, hass_read_only_access_token)
+    reply = await _ws(reader, type="device_sentinel/integration_exclude", domain="test", on=True)
+    assert reply["error"]["code"] == "unauthorized"
+    assert entry.options[CONF_EXCLUDED_INTEGRATIONS] == []
