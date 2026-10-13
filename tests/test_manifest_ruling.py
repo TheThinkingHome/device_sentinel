@@ -3,9 +3,9 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_manifest_ruling.py, Version: 0.23.11 (2026-09-27)
+# File: tests/test_manifest_ruling.py, Version: 0.26.0 (2026-10-12)
 
-"""The manifest names only frontend and mqtt (ruled 26 September 2026).
+"""The manifest names frontend, mqtt, esphome and zha, and nothing else (rulings #515, #639 and #652).
 
 Rule 3 of the stack readers: Extended Diagnostics may read another
 integration's private state, and nothing goes in the manifest, so a
@@ -33,7 +33,13 @@ ALLOWED = {"button", "diagnostics", "frontend", "http", "repairs", "sensor", "to
 
 def test_the_manifest_declares_nothing_new():
     manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest.get("after_dependencies") == ["frontend", "mqtt"]
+    # esphome since 0.26.0 (ruling #639): the one integration whose
+    # private state detection reads, named here so a reader of the
+    # manifest sees it, and loaded first so the flag is there at the
+    # first read. after_dependencies only: Device Sentinel starts
+    # without it. zha since 0.26.0 (ruling #652): the time ZHA last
+    # heard each device, read the same way.
+    assert manifest.get("after_dependencies") == ["esphome", "frontend", "mqtt", "zha"]
     assert manifest.get("dependencies") == ["http", "websocket_api"]
     assert "requirements" not in manifest
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendations.py, Version: 0.25.3 (2026-10-09)
+# File: tests/test_recommendations.py, Version: 0.26.0 (2026-10-12)
 
 """The brief's Recommendations section (ruling #458).
 
@@ -19,16 +19,26 @@ from __future__ import annotations
 from datetime import timedelta
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 from homeassistant.util import dt as dt_util
 
 from custom_components.device_sentinel.const import (
     CONF_BATTERY_MUTED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
+    CONF_FREEZE_MUTED_DEVICES,
     CONF_HIGH_PRIORITY_TARGETS,
+    CONF_MUTED_DEVICES,
+    CONF_MUTED_INTEGRATIONS,
+    CONF_MUTED_LABELS,
     DATA_DEVICES,
     DATA_STORM_DAYS,
     DEV_BATTERY_VALUE,
+    DEV_DAILY_MAX,
+    DEV_LAST_ACTIVITY,
+    FREEZE_ARMING_DAYS,
+    SLOW_REPORTER_SECONDS,
     STORM_DAY_COUNT,
     STORM_DAY_DATE,
     STORM_DAY_DOMAIN,
@@ -484,3 +494,134 @@ async def test_only_the_recommendation_lines_carry_a_link(hass: HomeAssistant):
     assert page.count(">Open the list</a>") == 4
     assert 'href="https://evil.example"' not in page
     assert "&lt;a href=" in page
+
+
+# ==================================================================
+# Slow Reporting Devices (ruling #637, 0.26.0).
+# ==================================================================
+
+def _wait_of(coord, device_id, rhythm_seconds):
+    record = coord.data[DATA_DEVICES][device_id]
+    record[DEV_DAILY_MAX] = [rhythm_seconds] * (FREEZE_ARMING_DAYS + 2)
+    record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp()
+    return coord._freeze_window(record)
+
+
+def _slow_card(coord):
+    return next((c for c in coord.device_recommendations() if c["kind"] == "slow"), None)
+
+
+async def test_a_device_whose_wait_is_over_the_line_is_offered_a_freeze_mute(hass: HomeAssistant):
+    """The card lists it in James's words, and it is not in the emailed brief."""
+    slow, _ = register_device(hass, "slow1", "Guest Lamp")
+    quick, _ = register_device(hass, "slow2", "Hall Motion")
+    coord = await setup_coordinator(hass)
+    assert _wait_of(coord, slow.id, 40 * 3600.0) > SLOW_REPORTER_SECONDS
+    assert _wait_of(coord, quick.id, 600.0) < SLOW_REPORTER_SECONDS
+
+    card = _slow_card(coord)
+    assert card is not None and card["title"] == "Slow Reporting Devices"
+    assert [row["name"] for row in card["devices"]] == ["Guest Lamp"]
+    assert card["body"].startswith("These devices go quiet for long periods.")
+    assert "its battery runs low." in card["body"]
+    assert "brief" not in card, "a slow device is not a fault, so it stays out of the brief"
+    assert not any("Slow Reporting" in line for line in coord._recommendations_section())
+
+
+async def test_the_line_is_the_wait_in_use_not_the_rhythm(hass: HomeAssistant):
+    """A rhythm just under the line whose grace carries the wait over it
+    is listed: the card reads what the freeze judgment reads."""
+    device, _ = register_device(hass, "slow3", "Porch Button")
+    coord = await setup_coordinator(hass)
+    rhythm = SLOW_REPORTER_SECONDS - 1800.0
+    wait = _wait_of(coord, device.id, rhythm)
+    assert wait > SLOW_REPORTER_SECONDS > rhythm
+    assert [row["name"] for row in _slow_card(coord)["devices"]] == ["Porch Button"]
+
+
+async def test_a_device_already_muted_for_freeze_leaves_the_card(hass: HomeAssistant):
+    device, _ = register_device(hass, "slow4", "Muted Lamp")
+    coord = await setup_coordinator(hass, {CONF_FREEZE_MUTED_DEVICES: [device.id]})
+    _wait_of(coord, device.id, 40 * 3600.0)
+    assert _slow_card(coord) is None
+
+
+async def test_an_unarmed_device_has_no_wait_and_no_card(hass: HomeAssistant):
+    device, _ = register_device(hass, "slow5", "New Device")
+    coord = await setup_coordinator(hass)
+    coord.data[DATA_DEVICES][device.id][DEV_DAILY_MAX] = [40 * 3600.0] * 2
+    assert _slow_card(coord) is None
+
+
+async def test_a_device_muted_for_everything_leaves_the_card(hass: HomeAssistant):
+    """Mute everything already stops every freeze verdict, so the card has
+    nothing to offer it, whether the mute names the device, a label or the
+    integration (adversarial round two, 12 October 2026)."""
+    label = lr.async_get(hass).async_create("Ignore")
+    by_device, _ = register_device(hass, "slow6", "Muted Device")
+    by_label, _ = register_device(hass, "slow7", "Labelled Device")
+    dr.async_get(hass).async_update_device(by_label.id, labels={label.label_id})
+    coord = await setup_coordinator(
+        hass, {CONF_MUTED_DEVICES: [by_device.id], CONF_MUTED_LABELS: [label.label_id]}
+    )
+    for device in (by_device, by_label):
+        _wait_of(coord, device.id, 40 * 3600.0)
+    assert _slow_card(coord) is None
+
+
+async def test_an_integration_muted_for_everything_leaves_the_card(hass: HomeAssistant):
+    device, _ = register_device(hass, "slow8", "Integration Device")
+    coord = await setup_coordinator(hass, {CONF_MUTED_INTEGRATIONS: ["test"]})
+    _wait_of(coord, device.id, 40 * 3600.0)
+    assert _slow_card(coord) is None
+
+
+def _esphome_slow_device(hass, uid, deep_sleep, available=True):
+    from homeassistant.config_entries import ConfigEntryState
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    class _Info:
+        has_deep_sleep = deep_sleep
+
+    class _Runtime:
+        device_info = _Info()
+
+    _Runtime.available = available
+    source = MockConfigEntry(domain="esphome")
+    source.add_to_hass(hass)
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    source.runtime_data = _Runtime()
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id, identifiers={("esphome", uid)}, name=f"Device {uid}"
+    )
+    ids = [
+        er.async_get(hass).async_get_or_create(
+            "sensor", "esphome", f"{uid}_{n}", device_id=device.id, config_entry=source
+        ).entity_id
+        for n in ("t", "fw")
+    ]
+    return device, ids
+
+
+async def test_the_card_leaves_off_only_the_devices_judgment_leaves_off(hass: HomeAssistant):
+    """An awake ESPHome device is off the card while its connection is up,
+    even with one entity unavailable; with a frozen verdict standing, or
+    for a deep-sleep device, the freeze rule can judge it, so the card
+    offers the mute. A dropped device is judged unavailable, never
+    frozen, so it stays off too (#636, #637 and #640; adversarial rounds
+    of 12 October 2026)."""
+    from custom_components.device_sentinel.const import DEV_FROZEN_CATEGORY, FREEZE_CATEGORY_FROZEN
+
+    connected, (c_t, c_fw) = _esphome_slow_device(hass, "conn", False)
+    partial, (p_t, p_fw) = _esphome_slow_device(hass, "part", False)
+    standing, (s_t, s_fw) = _esphome_slow_device(hass, "stand", False)
+    sleeper, (z_t, z_fw) = _esphome_slow_device(hass, "sleep", True)
+    dropped, _ = _esphome_slow_device(hass, "drop", False, available=False)
+    coord = await setup_coordinator(hass)
+    for eid in (c_t, c_fw, p_t, s_t, s_fw, z_t, z_fw):
+        hass.states.async_set(eid, "21.5")
+    hass.states.async_set(p_fw, "unavailable")
+    for device in (connected, partial, standing, sleeper, dropped):
+        _wait_of(coord, device.id, 40 * 3600.0)
+    coord.data[DATA_DEVICES][standing.id][DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
+    assert [row["name"] for row in _slow_card(coord)["devices"]] == ["Device sleep", "Device stand"]

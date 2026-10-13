@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_exclusions.py, Version: 0.25.6 (2026-10-11)
+# File: test_exclusions.py, Version: 0.26.0 (2026-10-12)
 
 """Exclusion: watched and recorded, but not judged or reported.
 
@@ -1896,3 +1896,100 @@ async def test_excluding_a_device_in_trouble_is_not_a_recovery(hass: HomeAssista
     assert [b for b in bus if b[0] == "withdrawn"], bus
     about_it = [c.data.get("message") for c in phone if "Probe" in str(c.data.get("message"))]
     assert not about_it, about_it
+
+
+def _defaults_of(schema, section_name: str, key: str):
+    """The value a section's field opens with, as the form shows it."""
+    for marker, field in schema.schema.items():
+        if str(marker) == section_name:
+            for inner, _ in field.schema.schema.items():
+                if str(inner) == key:
+                    return inner.default()
+    raise AssertionError(f"{section_name}.{key} not on the form")
+
+
+async def test_the_badges_open_in_alphabetical_order(hass: HomeAssistant):
+    """Saved picks are shown sorted by the words on their badges, not in
+    the order they were picked (Tim Plas, 12 October 2026)."""
+    source = MockConfigEntry(domain="test")
+    source.add_to_hass(hass)
+    names = ["Zulu Plug", "alpha Sensor", "Mike Switch"]
+    devices = [
+        dr.async_get(hass).async_get_or_create(
+            config_entry_id=source.entry_id, identifiers={("test", f"badge{i}")}, name=name
+        )
+        for i, name in enumerate(names)
+    ]
+    for i, device in enumerate(devices):
+        er.async_get(hass).async_get_or_create("sensor", "test", f"badge{i}", device_id=device.id, config_entry=source)
+    labels = [lr.async_get(hass).async_create(name).label_id for name in ("Winter", "attic", "Garage")]
+    entry = await setup_entry(
+        hass,
+        {CONF_MUTED_DEVICES: [d.id for d in devices], CONF_MUTED_LABELS: labels,
+         CONF_EXCLUDED_INTEGRATIONS: ["zwave_js", "mqtt", "esphome"]},
+    )
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "exclusions"}
+    )
+    schema = result["data_schema"]
+    by_name = {d.id: d.name for d in devices}
+    assert [by_name[d] for d in _defaults_of(schema, "muting", CONF_MUTED_DEVICES)] == ["alpha Sensor", "Mike Switch", "Zulu Plug"]
+    label_names = {lid: lr.async_get(hass).async_get_label(lid).name for lid in labels}
+    assert [label_names[x] for x in _defaults_of(schema, "muting", CONF_MUTED_LABELS)] == ["attic", "Garage", "Winter"]
+    assert _defaults_of(schema, "exclude", CONF_EXCLUDED_INTEGRATIONS) == ["esphome", "mqtt", "zwave_js"]
+
+
+def test_accented_names_sort_with_their_letter():
+    """Names such as "Ático" and "Ärger" file with the A's, not after Z
+    (adversarial round of 12 October 2026)."""
+    from custom_components.device_sentinel.config_flow import _alphabetical
+
+    names = ["Zulu", "Ático", "Mike", "alpha", "Ärger"]
+    assert sorted(names, key=_alphabetical) == ["alpha", "Ärger", "Ático", "Mike", "Zulu"]
+    # Letters drawn with a stroke or joined, and an invisible mark in
+    # front of a name, file with the plain letter too.
+    others = ["Zulu", "Øvre", "Łódź", "Ærø", "Oak", "\u200bBeta", "Lima", "Echo"]
+    assert sorted(others, key=_alphabetical) == ["Ærø", "\u200bBeta", "Echo", "Lima", "Łódź", "Oak", "Øvre", "Zulu"]
+
+
+async def test_a_cancelled_exclusion_raises_no_frozen_alert(hass: HomeAssistant, freezer):
+    """A device reporting every ten minutes, excluded for an hour and taken
+    back: the hour nobody watched it is not its silence, so the next
+    minute check raises nothing before it reports (ruling #648)."""
+    from datetime import timedelta
+
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    from custom_components.device_sentinel.const import (
+        DEV_DAILY_MAX,
+        DEV_FROZEN_CATEGORY,
+        FREEZE_ARMING_DAYS,
+        STARTUP_GRACE_SECONDS,
+    )
+
+    async def minutes(n):
+        for _ in range(n):
+            freezer.tick(timedelta(seconds=60))
+            async_fire_time_changed(hass)
+            await hass.async_block_till_done()
+
+    freezer.move_to("2026-10-12 12:00:00+00:00")
+    entry, coord, keep, drop = await _two(hass)
+    eid = next(
+        e.entity_id for e in er.async_entries_for_device(er.async_get(hass), drop.id)
+    )
+    await minutes(STARTUP_GRACE_SECONDS // 60 + 1)
+    record = coord.data[DATA_DEVICES][drop.id]
+    record[DEV_DAILY_MAX] = [600.0] * (FREEZE_ARMING_DAYS + 2)
+    hass.states.async_set(eid, "1")
+    await hass.async_block_till_done()
+    await minutes(5)
+    await _set(hass, entry, **{CONF_EXCLUDED_DEVICES: [drop.id]})
+    await minutes(60)
+    await _set(hass, entry, **{CONF_EXCLUDED_DEVICES: []})
+    seen = []
+    for _ in range(5):
+        await minutes(1)
+        seen.append(coord.data[DATA_DEVICES][drop.id][DEV_FROZEN_CATEGORY])
+    assert seen == [None] * 5, seen

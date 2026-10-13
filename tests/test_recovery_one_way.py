@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recovery_one_way.py, Version: 0.23.17 (2026-09-29)
+# File: tests/test_recovery_one_way.py, Version: 0.26.0 (2026-10-12)
 
 """A recovery goes one way, and what else 0.23.12 settles (#529 to #533).
 
@@ -535,3 +535,194 @@ async def test_a_real_return_still_ends_the_problem(hass: HomeAssistant, freezer
     coord = await setup_coordinator(hass)
     held = coord._hold_the_worst({"unavailable": 1.0, "low_battery": 2.0}, {"low_battery": 2.0}, None)
     assert held == {"low_battery": 2.0}
+
+
+# ------------------- how long a recovered device was down (ruling #644)
+
+
+async def _armed_device(hass, freezer, uid):
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    from custom_components.device_sentinel.const import (
+        DEV_DAILY_MAX,
+        DEV_TODAY_MAX,
+        FREEZE_ARMING_DAYS,
+        STARTUP_GRACE_SECONDS,
+    )
+
+    freezer.move_to("2026-10-12 12:00:00+00:00")
+    device, (eid,) = register_device(hass, uid, f"Device {uid}")
+    coord = await setup_coordinator(hass)
+    freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 5))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    record = coord.data["devices"][device.id]
+    record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
+    record[DEV_TODAY_MAX] = None
+    hass.states.async_set(eid, "21.5")
+    await hass.async_block_till_done()
+    return coord, device, eid
+
+
+async def _minutes_on(hass, freezer, n):
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    for _ in range(n):
+        freezer.tick(timedelta(seconds=60))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+
+
+async def test_down_for_counts_from_when_the_device_went_silent(hass: HomeAssistant, freezer):
+    """Frozen, then unavailable, then back: the recovery says how long
+    since the device last spoke, not since it turned unavailable
+    (ruling #644)."""
+    from tests.helpers import record_events
+
+    from custom_components.device_sentinel.const import EVENT_RECOVERED
+
+    coord, device, eid = await _armed_device(hass, freezer, "silent1")
+    recoveries = record_events(hass, EVENT_RECOVERED)
+    await _minutes_on(hass, freezer, 160)
+    assert coord.data["devices"][device.id]["frozen_category"] == "frozen"
+    hass.states.async_set(eid, "unavailable")
+    await hass.async_block_till_done()
+    await _minutes_on(hass, freezer, 10)
+    hass.states.async_set(eid, "22.0")
+    await hass.async_block_till_done()
+    await _minutes_on(hass, freezer, 2)
+    mine = [r for r in recoveries if r.get("device_id") == device.id]
+    assert len(mine) == 1 and mine[0]["kind"] == "unavailable"
+    assert abs(mine[0]["down_for"] - 170 * 60) <= 60, mine[0]
+
+
+async def test_a_battery_recovery_keeps_its_own_opening(hass: HomeAssistant, freezer):
+    """Only the down family counts from the silence: a low battery that
+    recovers is timed from when it was found low."""
+    from custom_components.device_sentinel.const import TODO_KIND_LOW_BATTERY
+
+    coord, device, eid = await _armed_device(hass, freezer, "silent2")
+    coord._silence_began[device.id] = 100.0
+    coord._report_ends_down[device.id] = ("frozen", 400.0)
+    assert coord._down_for(device.id, TODO_KIND_LOW_BATTERY, 1000.0, 1600.0) == 600.0
+    assert coord._down_for(device.id, "frozen", 1000.0, 1600.0) == 1500.0, "a freeze: from the last report"
+    coord._report_ends_down[device.id] = ("frozen", 400.0)
+    assert coord._down_for(device.id, "frozen", None, 1600.0) == 1500.0
+    coord._report_ends_down[device.id] = ("unavailable", 900.0)
+    assert coord._down_for(device.id, "unavailable", 1000.0, 1600.0) == 700.0, "straight to unavailable: from when it went"
+    coord._silence_began.pop(device.id)
+    coord._report_ends_down[device.id] = ("frozen", 400.0)
+    assert coord._down_for(device.id, "frozen", 1000.0, 1600.0) == 600.0, "no silence seen: the opening"
+    coord.data["devices"][device.id]["last_activity"] = float("-inf")
+    assert coord._down_for(device.id, "frozen", 1000.0, 1600.0) == 600.0, "a damaged stamp: the opening"
+
+
+async def test_a_verdict_that_clears_without_a_report_counts_from_the_last_report(hass: HomeAssistant, freezer):
+    """A frozen verdict can clear on a minute tick when the wait grows (a
+    day folds in, a setting changes). The silence is still running, so
+    "down for" counts from the last report, not from the start of the
+    gap before it (ruling #644; adversarial round of 12 October 2026)."""
+    from tests.helpers import record_events
+
+    from custom_components.device_sentinel.const import (
+        DEV_DAILY_MAX,
+        EVENT_RECOVERED,
+        FREEZE_ARMING_DAYS,
+    )
+
+    coord, device, eid = await _armed_device(hass, freezer, "silent3")
+    recoveries = record_events(hass, EVENT_RECOVERED)
+    await _minutes_on(hass, freezer, 50)
+    hass.states.async_set(eid, "23.0")
+    await hass.async_block_till_done()
+    record = coord.data["devices"][device.id]
+    last_report = record["last_activity"]
+    await _minutes_on(hass, freezer, 240)
+    assert record["frozen_category"] == "frozen"
+    record[DEV_DAILY_MAX] = [12 * 3600.0] * (FREEZE_ARMING_DAYS + 2)
+    await _minutes_on(hass, freezer, 1)
+    assert record["frozen_category"] is None
+    mine = [r for r in recoveries if r.get("device_id") == device.id]
+    assert len(mine) == 1
+    now = dt_util.utcnow().timestamp()
+    assert abs(mine[0]["down_for"] - (now - last_report)) <= 61, (mine[0], now - last_report)
+
+
+async def test_a_report_stamped_before_the_opening_by_its_last_seen_clock(hass: HomeAssistant, freezer):
+    """With a Last Seen clock (#124) the recovering report carries the
+    stack's own time of contact, which can be older than the moment the
+    incident opened. It is still a report, so "down for" counts from the
+    start of the silence it ended, 30 hours (ruling #644; adversarial
+    round of 12 October 2026)."""
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+    from tests.helpers import record_events
+
+    from custom_components.device_sentinel.const import (
+        DEV_DAILY_MAX,
+        DEV_FROZEN_CATEGORY,
+        DEV_LAST_ACTIVITY,
+        DEV_TODAY_MAX,
+        EVENT_RECOVERED,
+        FREEZE_ARMING_DAYS,
+        FREEZE_CATEGORY_FROZEN,
+        STARTUP_GRACE_SECONDS,
+    )
+
+    async def _tick(step=61, n=1):
+        for _ in range(n):
+            freezer.tick(timedelta(seconds=step))
+            async_fire_time_changed(hass)
+            await hass.async_block_till_done()
+
+    freezer.move_to("2026-10-12 12:00:00+00:00")
+    device, (eid,) = register_device(hass, "lastseen1", "Device lastseen1")
+    source_id = er.async_get(hass).async_get(eid).config_entry_id
+    seen = er.async_get(hass).async_get_or_create(
+        "sensor", "test", "lastseen1_last_seen", device_id=device.id,
+        config_entry=hass.config_entries.async_get_entry(source_id))
+    old = dt_util.utcnow() - timedelta(hours=30)
+    hass.states.async_set(seen.entity_id, old.isoformat())
+    hass.states.async_set(eid, "1")
+    coord = await setup_coordinator(hass)
+    await _tick(step=STARTUP_GRACE_SECONDS + 5)
+    record = coord.data["devices"][device.id]
+    record[DEV_DAILY_MAX] = [3600.0] * (FREEZE_ARMING_DAYS + 2)
+    record[DEV_TODAY_MAX] = None
+    assert coord._last_seen_entity.get(device.id) == seen.entity_id
+    record[DEV_LAST_ACTIVITY] = old.timestamp()
+    recoveries = record_events(hass, EVENT_RECOVERED)
+    await _tick(n=3)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_FROZEN
+    await _tick(step=600)
+    heard = dt_util.utcnow() - timedelta(minutes=14)
+    hass.states.async_set(seen.entity_id, heard.isoformat())
+    hass.states.async_set(eid, "2")
+    await hass.async_block_till_done()
+    mine = [r for r in recoveries if r.get("device_id") == device.id]
+    assert len(mine) == 1, mine
+    expected = dt_util.utcnow().timestamp() - old.timestamp()
+    assert abs(mine[0]["down_for"] - expected) <= 900, (mine[0]["down_for"], expected)
+
+
+async def test_a_short_drop_on_a_quiet_device_reads_as_short(hass: HomeAssistant, freezer):
+    """A device that reports once an hour, quiet for 40 minutes, then
+    unavailable for five: the trouble began as unavailable, so "down for"
+    counts from when it went, five minutes, not the 45 since it last
+    spoke (ruling #644, amended 12 October 2026)."""
+    from tests.helpers import record_events
+
+    from custom_components.device_sentinel.const import EVENT_RECOVERED
+
+    coord, device, eid = await _armed_device(hass, freezer, "quiet1")
+    recoveries = record_events(hass, EVENT_RECOVERED)
+    await _minutes_on(hass, freezer, 40)
+    hass.states.async_set(eid, "unavailable")
+    await hass.async_block_till_done()
+    await _minutes_on(hass, freezer, 5)
+    assert coord.data["devices"][device.id]["frozen_category"] == "unavailable"
+    hass.states.async_set(eid, "22.5")
+    await hass.async_block_till_done()
+    await _minutes_on(hass, freezer, 1)
+    mine = [r for r in recoveries if r.get("device_id") == device.id]
+    assert len(mine) == 1
+    assert 4 * 60 <= mine[0]["down_for"] <= 6 * 60, mine[0]

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_foreign_entities.py, Version: 0.22.22 (2026-09-22)
+# File: tests/test_foreign_entities.py, Version: 0.26.0 (2026-10-12)
 
 """Another integration's entity on a device is not the device speaking.
 
@@ -144,12 +144,13 @@ async def test_a_foreign_value_does_not_hold_up_a_down_device(
 async def test_a_foreign_absence_says_nothing(hass: HomeAssistant):
     device, contact, note = _house(hass)
     coord = await setup_coordinator(hass)
+    hass.states.async_set(contact, "on")
     hass.states.async_set(note, "unavailable")
     await hass.async_block_till_done()
-    assert note not in coord._pending_unavailable
+    assert coord.data["devices"][device.id]["down_since"] is None
     hass.states.async_set(contact, "unavailable")
     await hass.async_block_till_done()
-    assert contact in coord._pending_unavailable
+    assert coord.data["devices"][device.id]["down_since"] is not None
 
 
 async def test_a_foreign_reading_is_still_read(hass: HomeAssistant):

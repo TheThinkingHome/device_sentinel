@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.24.5 (2026-10-04)
+# File: test_brief_wording.py, Version: 0.26.0 (2026-10-12)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -1888,3 +1888,65 @@ async def test_a_refused_row_is_not_told_as_unchanged(hass):
     sentence = coord._system_event_sentence(row)
     assert "dropped" in sentence
     assert "Nothing was changed" not in sentence
+
+
+async def test_a_storm_run_inside_one_minute_names_its_minute_once(hass: HomeAssistant, freezer):
+    """A run whose bursts all fall inside one minute reads "at 5:11 PM",
+    not "between 5:11 PM and 5:11 PM" (ruling #629); a run that spans
+    minutes keeps its "between" (0.26.0)."""
+    freezer.move_to("2026-10-11 20:00:00+00:00")
+    coord = await setup_coordinator(hass)
+    now = dt_util.utcnow().timestamp()
+    events = []
+    # Three ZHA bursts inside forty seconds, two hours ago.
+    for offset in (7200.0, 7185.0, 7165.0):
+        events.append({SYS_WHEN: now - offset, SYS_KIND: "storm_open", SYS_SCOPE: "zha"})
+        events.append({SYS_WHEN: now - offset + 5.0, SYS_KIND: "storm_closed", SYS_SCOPE: "zha", SYS_DEVICES: 41})
+    # Three mqtt bursts spread over ten minutes, four hours ago.
+    for offset in (14400.0, 14100.0, 13800.0):
+        events.append({SYS_WHEN: now - offset, SYS_KIND: "storm_open", SYS_SCOPE: "mqtt"})
+        events.append({SYS_WHEN: now - offset + 5.0, SYS_KIND: "storm_closed", SYS_SCOPE: "mqtt", SYS_DEVICES: 9})
+    coord.data[DATA_SYSTEM_EVENTS] = sorted(events, key=lambda row: row[SYS_WHEN])
+
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = _brief_text(hass)
+    sentences = [part.strip() + "." for part in text.replace("\n", " ").split(". ")]
+    zha = next(part for part in sentences if "The ZHA integration reloaded" in part)
+    assert " at " in zha and "between" not in zha, zha
+    assert "the largest affecting 41 devices" in zha
+    mqtt = next(part for part in sentences if "integration reloaded" in part and "ZHA" not in part)
+    assert "between" in mqtt and " and " in mqtt, mqtt
+
+
+async def test_a_run_crossing_a_minute_keeps_between(hass: HomeAssistant, freezer):
+    """Under sixty seconds but across a minute: both minutes are named,
+    since "at" would hide the second (#629 as built)."""
+    freezer.move_to("2026-10-11 20:00:00+00:00")
+    coord = await setup_coordinator(hass)
+    base = dt_util.utcnow().timestamp() - 7200.0 - (dt_util.utcnow().timestamp() % 60) + 50.0
+    events = []
+    for offset in (0.0, 25.0, 50.0):
+        events.append({SYS_WHEN: base + offset, SYS_KIND: "storm_open", SYS_SCOPE: "zha"})
+        events.append({SYS_WHEN: base + offset + 2.0, SYS_KIND: "storm_closed", SYS_SCOPE: "zha", SYS_DEVICES: 7})
+    coord.data[DATA_SYSTEM_EVENTS] = events
+    await hass.async_add_executor_job(coord._write_reports, "test")
+    text = _brief_text(hass).replace("\n", " ")
+    zha = next(part for part in text.split(". ") if "The ZHA integration reloaded" in part)
+    assert "between" in zha, zha
+
+
+async def test_an_hour_apart_in_the_repeated_hour_keeps_between(hass: HomeAssistant):
+    """When a clock sets back, 1:30 AM prints twice an hour apart; "at"
+    would make two reloads one moment, so a run must also last under a
+    minute (adversarial round three, 12 October 2026)."""
+    await hass.config.async_set_time_zone("America/Chicago")
+    coord = await setup_coordinator(hass)
+    first = dt_util.parse_datetime("2026-11-01 06:30:00+00:00").timestamp()  # 1:30 AM CDT
+    second = dt_util.parse_datetime("2026-11-01 07:30:00+00:00").timestamp()  # 1:30 AM CST
+    opens = [
+        {SYS_KIND: "storm_open", SYS_SCOPE: "zha", SYS_WHEN: first},
+        {SYS_KIND: "storm_open", SYS_SCOPE: "zha", SYS_WHEN: second},
+    ]
+    rows = opens + [{SYS_KIND: "storm_closed", SYS_SCOPE: "zha", SYS_WHEN: second + 5.0, SYS_DEVICES: 3}]
+    text = coord._compose_storm_run("zha", opens, rows)
+    assert "between 1:30 AM and 1:30 AM" in text, text

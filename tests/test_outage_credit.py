@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_credit.py, Version: 0.23.16 (2026-09-29)
+# File: tests/test_outage_credit.py, Version: 0.26.0 (2026-10-12)
 
 """An outage is not a device's silence (#536).
 
@@ -194,9 +194,10 @@ async def test_the_night_of_28_september(hass: HomeAssistant, freezer):
     hass.states.async_set(value, "unavailable")
     hass.states.async_set(seen, "unavailable")
     await _minutes(hass, coord, freezer, 60)
-    # The restart in the middle: the in-memory record of unavailable
-    # entities is gone, as it was at 7:34 on the rig.
-    coord._pending_unavailable.clear()
+    # The restart in the middle, as at 7:34 on the rig. The outage
+    # starts are saved with the record since 0.26.0 (ruling #647), so
+    # a restart no longer loses them; the outage credit is what this
+    # test proves, and it holds either way.
     await _minutes(hass, coord, freezer, 180)
     coord._bridge_readers[STACK_Z2M] = _Stub(BRIDGE_RUNNING)
     hass.states.async_set(value, "56")

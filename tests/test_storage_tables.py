@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_tables.py, Version: 0.23.19 (2026-09-30)
+# File: test_storage_tables.py, Version: 0.26.0 (2026-10-12)
 
 """The half of the file the shape check never read (ruling #332).
 
@@ -71,6 +71,9 @@ def _clock(**over):
         "signal_reads": 0,
         "signal_today_max": None,
         "signal_rail_count": 0,
+        # The saved outage starts, written with each routine save
+        # since 0.26.0 (ruling #647).
+        "down_since": None,
     }
     row.update(over)
     return row

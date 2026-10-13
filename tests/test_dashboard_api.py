@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_api.py, Version: 0.25.3 (2026-10-09)
+# File: tests/test_dashboard_api.py, Version: 0.26.0 (2026-10-12)
 
 """The dashboard's data layer: status, actions and the change marker.
 
@@ -232,7 +232,8 @@ async def test_classification_is_the_files_rows(hass: HomeAssistant, hass_ws_cli
     assert all(row["device_id"] for row in result["rows"])
     assert result["watched"] == len(watched)
     assert result["watched"] + result["set_aside"] == len(result["rows"])
-    assert set(result) >= {"rows", "watched", "set_aside", "deviceless", "muted_entities"}
+    assert set(result) >= {"rows", "watched", "set_aside", "deviceless"}
+    assert "muted_entities" not in result, "devices are muted, never entities (ruling #642)"
 
 
 async def test_classification_names_the_mute_and_the_reason_set_aside(hass: HomeAssistant, hass_ws_client):

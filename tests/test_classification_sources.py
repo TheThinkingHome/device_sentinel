@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_classification_sources.py, Version: 0.25.3 (2026-10-09)
+# File: tests/test_classification_sources.py, Version: 0.26.0 (2026-10-12)
 
 """Classification says why: the source of every mute and exclusion.
 
@@ -246,3 +246,21 @@ async def test_a_renamed_label_is_named_by_its_new_name(hass: HomeAssistant):
     lr.async_get(hass).async_update(label_id, name="Shed spares")
     await hass.async_block_till_done()
     assert _row(coord, "Lima Plug")["muted"] == "Global (label: Shed spares)"
+
+
+async def test_a_muted_label_on_one_entity_mutes_nothing(hass: HomeAssistant):
+    """Devices are muted, never entities (ruling #642): a muted label on
+    one of a device's entities leaves the device watched and judged, and
+    the entity still speaks for it."""
+    from homeassistant.helpers import entity_registry as er
+
+    device, (eid,) = register_device(hass, "f", name="Foxtrot Sensor")
+    label = lr.async_get(hass).async_create("Dashboard only")
+    er.async_get(hass).async_update_entity(eid, labels={label.label_id})
+    coord = await setup_coordinator(hass, {CONF_MUTED_LABELS: [label.label_id]})
+    assert device.id not in coord._muted_devices
+    assert not hasattr(coord, "_muted_entities")
+    assert _row(coord, "Foxtrot Sensor")["muted"] == ""
+    hass.states.async_set(eid, "21.5")
+    await hass.async_block_till_done()
+    assert coord.data["devices"][device.id]["last_activity"] is not None

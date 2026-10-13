@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_actions.py, Version: 0.25.0 (2026-10-08)
+# File: tests/test_device_actions.py, Version: 0.26.0 (2026-10-12)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -14,6 +14,7 @@ brief on the device's own line.
 
 from __future__ import annotations
 
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
@@ -271,3 +272,28 @@ async def test_new_area_and_label_answer_not_found_and_refuse_a_non_admin(hass: 
     reply = await _ws(reader, type="device_sentinel/device_new_area", device_id=device.id, name="Shed")
     assert reply["error"]["code"] == "unauthorized"
     assert ar.async_get(hass).async_get_area_by_name("Shed") is None
+
+
+@pytest.mark.parametrize(
+    ("source", "said"),
+    [
+        ("recommendations", "freeze muted, from the Recommendations tab"),
+        ("problem_list", "freeze muted, from the Problem List"),
+        (None, "freeze muted, from its device page"),
+    ],
+)
+async def test_a_mute_says_where_it_was_pressed(hass: HomeAssistant, hass_ws_client, source, said):
+    """The Slow Reporting Devices card and the Problem List call the same
+    mute as the device page; the brief says which (ruling #643)."""
+    coord, client, device = await _setup(hass, hass_ws_client)
+    extra = {"source": source} if source else {}
+    reply = await _ws(client, type="device_sentinel/device_mute", device_id=device.id, kind="freeze", on=True, **extra)
+    assert reply["success"], reply
+    await hass.async_block_till_done()
+    assert [row[SYS_DETAIL] for row in _rows(coord, SYS_DEVICE_PAGE)] == [said]
+
+
+async def test_an_unknown_source_is_refused(hass: HomeAssistant, hass_ws_client):
+    coord, client, device = await _setup(hass, hass_ws_client)
+    reply = await _ws(client, type="device_sentinel/device_mute", device_id=device.id, kind="freeze", on=True, source="elsewhere")
+    assert not reply["success"]

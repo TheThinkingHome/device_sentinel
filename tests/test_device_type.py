@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_type.py, Version: 0.25.2 (2026-10-09)
+# File: tests/test_device_type.py, Version: 0.26.0 (2026-10-11)
 
 """What each device is (0.25.1, Project__Device_Type.md).
 
@@ -69,6 +69,14 @@ def _e(domain, device_class=None, category=None, disabled=None):
     # 0.25.2: a lock with a door contact, a thermostat that reports
     # temperature, a valve with a leak probe.
     ([_e("lock"), _e("binary_sensor", "door")], "Lock"),
+    # #627, from Tim Plas's answers: a garage door opener has a cover
+    # and a lock for its remote lockout; a Broadlink blaster has a
+    # remote entity and a temperature probe; a television's remote
+    # entity sits beside its media player and makes no blaster.
+    ([_e("cover", "garage"), _e("lock"), _e("light")], "Cover"),
+    ([_e("remote"), _e("sensor", "temperature"), _e("sensor", "humidity")], "IR Remote"),
+    ([_e("remote")], "IR Remote"),
+    ([_e("remote"), _e("media_player", "tv")], None),
     ([_e("climate"), _e("sensor", "temperature")], "Thermostat"),
     ([_e("valve"), _e("binary_sensor", "moisture")], "Valve"),
     ([_e("fan"), _e("light")], "Fan"),
@@ -220,6 +228,8 @@ def test_the_choices_are_the_approved_types_then_other():
         "Thread Border Router", "Matter Bridge", "Zigbee Router", "Z-Wave Repeater", "Thread Router",
         "Hub", "Printer", "Dashboard", "Plant Waterer", "Multi Sensor", "Lock", "Thermostat", "Valve",
         "Siren", "Fan", "Light", "Bluetooth Proxy", "ESPHome Device",
+        # #627, from Tim Plas's answers under Other (James, 11 October 2026).
+        "Appliance", "IR Remote", "Router", "NAS", "UPS",
     }
     listed = list(device_type.TYPE_CHOICES[:-1])
     assert listed == sorted(listed, key=str.casefold), "the list is not in reading order"

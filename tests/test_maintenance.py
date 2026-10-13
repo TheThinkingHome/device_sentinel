@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_maintenance.py, Version: 0.23.19 (2026-09-30)
+# File: tests/test_maintenance.py, Version: 0.26.0 (2026-10-12)
 
 """Maintenance mode and the surfaces that shipped beside it.
 
@@ -167,11 +167,13 @@ async def test_a_recovery_during_maintenance_is_not_learned(
     assert record[DEV_TODAY_MAX] >= 600.0
 
     # Again, inside a declared window: discarded, and the retraction
-    # pulls the larger gap back out of the day.
+    # pulls the larger gap back out of the day, giving the day back the
+    # gap it had before (ruling #641; it once set the day to nothing).
+    earlier = record[DEV_TODAY_MAX]
     record[DEV_LAST_ACTIVITY] = record[DEV_LAST_ACTIVITY] - 900.0
     await coord.async_toggle_maintenance()
     coord._record_activity(device.id, None)
-    assert record[DEV_TODAY_MAX] is None
+    assert record[DEV_TODAY_MAX] == earlier
 
 
 async def test_pairing_takes_precedence_over_maintenance(

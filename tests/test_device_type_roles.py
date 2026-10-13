@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_type_roles.py, Version: 0.25.2 (2026-10-09)
+# File: tests/test_device_type_roles.py, Version: 0.26.0 (2026-10-11)
 
 """Types the entities cannot show (0.25.2).
 
@@ -46,6 +46,12 @@ def test_a_known_model_wins_over_its_entities():
         "Switch", "entities")
 
 
+def test_tims_water_shutoff_is_a_valve():
+    """Z-Wave shows the EcoNet EVC200 as a switch (#627, his answer)."""
+    assert type_for_device([_e("switch")], model=("EcoNet Controls", "EVC200", ""), domain="zwave_js") == (
+        "Valve", "known model")
+
+
 def test_a_role_wins_over_entities():
     assert type_for_device([_e("sensor", "temperature")], role=dt.ZWAVE_CONTROLLER) == ("Z-Wave Controller", "role")
 
@@ -67,6 +73,12 @@ def test_a_role_wins_over_entities():
     ({"domain": "hue", "hub": True}, [], "Hub"),
     ({"domain": "hue", "hub": True}, [_e("light")], "Light"),
     ({"domain": "hue"}, [], None),
+    # An appliance by its integration, whatever its entities (#627).
+    ({"domain": "geappliances"}, [_e("switch")], "Appliance"),
+    ({"domain": "ge_home"}, [], "Appliance"),
+    ({"domain": "ge_home"}, [_e("climate"), _e("sensor", "temperature")], "Appliance"),
+    ({"domain": "home_connect"}, [_e("sensor")], "Appliance"),
+    ({"domain": "miele"}, [_e("switch"), _e("sensor", "power")], "Appliance"),
 ])
 def test_the_integration_answers_last(kwargs, entities, expected):
     words, source = type_for_device(entities, **kwargs)
@@ -79,7 +91,7 @@ def test_every_type_the_rules_give_is_a_choice():
     given = set(dt.KNOWN_MODEL_TYPES.values()) | {
         dt.ZIGBEE_COORDINATOR_Z2M, dt.ZIGBEE_COORDINATOR_ZHA, dt.ZWAVE_CONTROLLER, dt.THREAD_BORDER_ROUTER,
         dt.MATTER_BRIDGE, dt.ZIGBEE_ROUTER, dt.ZWAVE_REPEATER, dt.HUB, dt.PRINTER, dt.BLUETOOTH_PROXY,
-        dt.ESPHOME_DEVICE,
+        dt.ESPHOME_DEVICE, dt.APPLIANCE,
     }
     assert given <= set(dt.TYPE_CHOICES)
 

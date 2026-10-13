@@ -1,0 +1,583 @@
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: test_esphome_connection.py, Version: 0.26.0 (2026-10-12)
+
+"""An ESPHome device's connection through a drop and a return (ruling #640).
+
+Home Assistant's ESPHome integration sets the connection flag false
+before it writes the device's entities unavailable, keeps the Status
+sensor available and switches it off, and sets the flag true before
+any state arrives on a reconnect. Nothing written while the flag is
+false is the device speaking; the device is unavailable for the whole
+drop, so the gap spanning it is not learned, whichever entity reports
+first on the return. Found by the adversarial round of 12 October 2026.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import timedelta
+
+import pytest
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
+
+from custom_components.device_sentinel.const import (
+    DATA_DEVICES,
+    DEV_DAILY_MAX,
+    DEV_FROZEN_CATEGORY,
+    DEV_LAST_ACTIVITY,
+    DEV_TODAY_MAX,
+    EVENT_RECOVERED,
+    FREEZE_ARMING_DAYS,
+    FREEZE_CATEGORY_FROZEN,
+    FREEZE_CATEGORY_UNAVAILABLE,
+    STARTUP_GRACE_SECONDS,
+    CONF_FREEZE_MUTED_DEVICES,
+    CONF_MUTED_DEVICES,
+)
+
+from .helpers import record_events, setup_coordinator
+
+PIN = "2026-10-11 15:00:00+00:00"
+
+
+def _dropped(coord, device_id):
+    """The saved start of a device's outage, its drop here (ruling #647)."""
+    saved = coord.data[DATA_DEVICES][device_id].get("down_since")
+    return saved[0] if saved else None
+
+
+class _Info:
+    def __init__(self, deep_sleep):
+        self.has_deep_sleep = deep_sleep
+
+
+class _Runtime:
+    def __init__(self, deep_sleep, available=True):
+        self.device_info = _Info(deep_sleep)
+        self.available = available
+
+
+def _source(hass, runtime):
+    source = MockConfigEntry(domain="esphome")
+    source.add_to_hass(hass)
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    source.runtime_data = runtime
+    return source
+
+
+def _esp_device(hass, source, uid, domains):
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id, identifiers={("esphome", uid)}, name=f"Device {uid}")
+    eids = []
+    for index, domain in enumerate(domains):
+        entity = er.async_get(hass).async_get_or_create(
+            domain, "esphome", f"{uid}_{index}", device_id=device.id, config_entry=source)
+        eids.append(entity.entity_id)
+    return device, eids
+
+
+def _arm(coord, device_id, rhythm=3600.0):
+    record = coord.data[DATA_DEVICES][device_id]
+    record[DEV_DAILY_MAX] = [rhythm] * (FREEZE_ARMING_DAYS + 2)
+    record[DEV_TODAY_MAX] = None
+    return record
+
+
+async def _past_grace(hass, freezer):
+    freezer.tick(timedelta(seconds=STARTUP_GRACE_SECONDS + 5))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+
+async def _tick(hass, freezer, step=61, n=1):
+    for _ in range(n):
+        freezer.tick(timedelta(seconds=step))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+
+
+async def _ready(hass, freezer, uid, flag=False, domains=("sensor", "binary_sensor"), values=("21.5", "on")):
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(flag))
+    device, eids = _esp_device(hass, source, uid, domains)
+    coord = await setup_coordinator(hass)
+    record = _arm(coord, device.id)
+    for eid, value in zip(eids, values):
+        hass.states.async_set(eid, value)
+    await hass.async_block_till_done()
+    await _past_grace(hass, freezer)
+    return coord, device, eids, record, source
+
+
+async def _drop(hass, source, eids, status_index=1):
+    source.runtime_data.available = False
+    for index, eid in enumerate(eids):
+        hass.states.async_set(eid, "off" if index == status_index else "unavailable")
+    await hass.async_block_till_done()
+
+
+async def _reconnect(hass, source, eids, values, order=None):
+    source.runtime_data.available = True
+    for index in order or range(len(eids)):
+        hass.states.async_set(eids[index], values[index])
+        await hass.async_block_till_done()
+
+
+def _mine(events, device_id):
+    return [e for e in events if e.get("device_id") == device_id]
+
+
+
+async def test_a_same_value_write_while_dropped_is_not_the_device_speaking(hass: HomeAssistant, freezer):
+    """#640: nothing written while the connection is down is the device
+    speaking. Home Assistant rewrites an entity with the same value (a
+    registry edit, a second device update) as a state_reported event, not
+    a state change. The Status sensor rewritten "off" while dropped must
+    not move the clock or clear the unavailable verdict."""
+    coord, device, eids, record, source = await _ready(hass, freezer, "r601")
+    recoveries = record_events(hass, EVENT_RECOVERED)
+    await _drop(hass, source, eids)
+    await _tick(hass, freezer, step=600, n=3)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+    before = record[DEV_LAST_ACTIVITY]
+    hass.states.async_set(eids[1], "off", force_update=False)  # same value: state_reported
+    await hass.async_block_till_done()
+    assert record[DEV_LAST_ACTIVITY] == before, "a same-value write while dropped moved the clock"
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE, record[DEV_FROZEN_CATEGORY]
+    assert not _mine(recoveries, device.id), recoveries
+
+
+
+async def test_the_report_on_reconnect_is_never_lost(hass: HomeAssistant, freezer):
+    """#640: True is set before any state on reconnect, so the first state
+    after it is a report: the verdict clears at once, one recovery fires,
+    and its down_for counts from the drop, since the trouble began as
+    unavailable, not as a freeze (#644, amended 12 October 2026)."""
+    coord, device, eids, record, source = await _ready(hass, freezer, "r602")
+    recoveries = record_events(hass, EVENT_RECOVERED)
+    last_report = record[DEV_LAST_ACTIVITY]
+    dropped_at = dt_util.utcnow().timestamp()
+    await _drop(hass, source, eids)
+    await _tick(hass, freezer, step=600, n=6)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+    await _reconnect(hass, source, eids, ("22.0", "on"))
+    assert record[DEV_FROZEN_CATEGORY] is None
+    assert record[DEV_LAST_ACTIVITY] > last_report
+    await _tick(hass, freezer)
+    mine = _mine(recoveries, device.id)
+    assert len(mine) == 1, mine
+    expected = record[DEV_LAST_ACTIVITY] - dropped_at
+    assert abs(mine[0]["down_for"] - expected) <= 61, (mine[0], expected)
+
+
+
+@pytest.mark.parametrize("order", [(1, 0), (0, 1)], ids=["status_first", "sensor_first"])
+async def test_the_gap_spanning_a_drop_is_not_learned(hass: HomeAssistant, freezer, order):
+    """#549 and #137 under #640: a device judged unavailable for a two-hour
+    drop has not been heard for any of it, so the gap spanning the drop is
+    not learned. ESPHome sends binary sensors first on a reconnect, so the
+    Status sensor ("on") is normally the first entity written. Run both
+    orders."""
+    coord, device, eids, record, source = await _ready(hass, freezer, f"r603{order[0]}")
+    await _tick(hass, freezer, step=60, n=2)
+    record[DEV_TODAY_MAX] = None
+    await _drop(hass, source, eids)
+    await _tick(hass, freezer, step=600, n=12)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+    await _reconnect(hass, source, eids, ("22.0", "on"), order=order)
+    learned = record[DEV_TODAY_MAX]
+    assert learned is None or learned < 3600.0, (
+        "the two-hour drop was learned as the device's own silence", learned)
+
+
+
+async def test_a_status_only_device_does_not_learn_its_drop(hass: HomeAssistant, freezer):
+    """The same promise for a device whose only watched entity is its Status
+    sensor: the drop writes nothing unavailable, so nothing taints."""
+    coord, device, eids, record, source = await _ready(
+        hass, freezer, "r604", domains=("binary_sensor",), values=("on",))
+    await _tick(hass, freezer, step=60, n=2)
+    record[DEV_TODAY_MAX] = None
+    await _drop(hass, source, eids, status_index=0)
+    await _tick(hass, freezer, step=600, n=12)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+    await _reconnect(hass, source, eids, ("on",))
+    learned = record[DEV_TODAY_MAX]
+    assert learned is None or learned < 3600.0, ("drop learned", learned)
+
+
+async def test_dropped_inside_startup_grace_then_judged_after(hass: HomeAssistant, freezer):
+    """A device still disconnected when Device Sentinel starts (ESPHome sets
+    available False until it connects): nothing judged inside the grace
+    (#291), unavailable after it, never frozen; its Status "off" written
+    during the grace is not a report."""
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False, available=False))
+    device, eids = _esp_device(hass, source, "r605", ("sensor", "binary_sensor"))
+    hass.states.async_set(eids[0], "21.5")
+    hass.states.async_set(eids[1], "on")
+    coord = await setup_coordinator(hass)
+    record = _arm(coord, device.id)
+    record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - 30 * 3600.0
+    before = record[DEV_LAST_ACTIVITY]
+    hass.states.async_set(eids[0], "unavailable")
+    hass.states.async_set(eids[1], "off")
+    await hass.async_block_till_done()
+    assert record[DEV_LAST_ACTIVITY] == before
+    seen = []
+    await _past_grace(hass, freezer)
+    for _ in range(12):
+        await _tick(hass, freezer)
+        seen.append(record[DEV_FROZEN_CATEGORY])
+    assert FREEZE_CATEGORY_FROZEN not in seen, seen
+    assert seen[-1] == FREEZE_CATEGORY_UNAVAILABLE, seen
+
+
+async def test_runtime_replaced_on_reload_is_read_afresh(hass: HomeAssistant, freezer):
+    """ESPHome's reload removes runtime_data (Home Assistant deletes it on
+    unload) and sets a new object. While it is missing the device keeps
+    the freeze rule; the new object is read, not a cached one, and a
+    dropped new runtime is judged unavailable."""
+    coord, device, eids, record, source = await _ready(hass, freezer, "r606")
+    assert coord._awake_esphome(device.id) is True
+    object.__delattr__(source, "runtime_data")
+    assert coord._esphome_flags(device.id) == (None, None)
+    assert coord._awake_esphome(device.id) is False and coord._dropped_esphome(device.id) is False
+    source.runtime_data = _Runtime(False, available=False)
+    assert coord._dropped_esphome(device.id) is True
+    source.runtime_data.available = True
+    assert coord._awake_esphome(device.id) is True
+
+
+async def test_device_info_none_before_first_connect_then_readable(hass: HomeAssistant, freezer, caplog):
+    """A new ESPHome entry has device_info None until its first connect:
+    unknown, logged once at info; once device_info arrives the flags are
+    read (the log-once set does not pin it to unknown)."""
+    caplog.set_level(logging.INFO)
+    coord, device, eids, record, source = await _ready(hass, freezer, "r607")
+    source.runtime_data.device_info = None
+    for _ in range(3):
+        assert coord._esphome_flags(device.id) == (None, None)
+    source.runtime_data.device_info = _Info(False)
+    assert coord._esphome_flags(device.id) == (False, True)
+    lines = [r for r in caplog.records if "could not read whether an ESPHome" in r.getMessage()]
+    assert len(lines) == 1 and lines[0].levelno == logging.INFO, [r.getMessage() for r in lines]
+
+
+@pytest.mark.parametrize("deep, avail", [
+    (0, True), (False, 1), (False, None), ("False", True), (False, "False"), (1.0, False),
+])
+async def test_hostile_flags_answer_unknown(hass: HomeAssistant, freezer, deep, avail):
+    """#640: each flag must be a real bool; anything else answers unknown."""
+    coord, device, eids, record, source = await _ready(hass, freezer, "r608")
+    source.runtime_data = _Runtime(deep, avail)
+    assert coord._esphome_flags(device.id) == (None, None)
+    assert not coord._dropped_esphome(device.id) and not coord._awake_esphome(device.id)
+
+
+async def test_raising_property_answers_unknown(hass: HomeAssistant, freezer):
+    coord, device, eids, record, source = await _ready(hass, freezer, "r609")
+
+    class Boom:
+        @property
+        def available(self):
+            raise RuntimeError("moved")
+
+        device_info = _Info(False)
+
+    source.runtime_data = Boom()
+    assert coord._esphome_flags(device.id) == (None, None)
+
+
+async def test_several_devices_on_one_entry_drop_together(hass: HomeAssistant, freezer):
+    """Several devices on one ESPHome entry (sub-devices): one flag speaks
+    for all. All are judged unavailable on a drop, none frozen, and the
+    Status sensor on the main device is not a report for any."""
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    devices = [_esp_device(hass, source, f"r610{i}", ("sensor", "binary_sensor")) for i in range(3)]
+    coord = await setup_coordinator(hass)
+    records = [_arm(coord, d.id) for d, _ in devices]
+    for _, eids in devices:
+        hass.states.async_set(eids[0], "21.5")
+        hass.states.async_set(eids[1], "on")
+    await hass.async_block_till_done()
+    await _past_grace(hass, freezer)
+    records[0][DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
+    records[0][DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - 30 * 3600.0
+    source.runtime_data.available = False
+    for _, eids in devices:
+        hass.states.async_set(eids[0], "unavailable")
+        hass.states.async_set(eids[1], "off")
+    await hass.async_block_till_done()
+    await _tick(hass, freezer, step=600, n=3)
+    assert [r[DEV_FROZEN_CATEGORY] for r in records] == [FREEZE_CATEGORY_UNAVAILABLE] * 3
+
+
+async def test_deep_sleeper_disconnected_keeps_freeze_rule(hass: HomeAssistant, freezer):
+    """Deep sleepers keep the freeze rule: asleep (available False) is not
+    dropped, so the freeze window still judges it frozen, not unavailable."""
+    coord, device, eids, record, source = await _ready(hass, freezer, "r611", flag=True,
+                                                       domains=("sensor",), values=("21.5",))
+    source.runtime_data.available = False
+    record[DEV_LAST_ACTIVITY] = dt_util.utcnow().timestamp() - 30 * 3600.0
+    await _tick(hass, freezer, n=3)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_FROZEN
+
+
+async def test_drop_and_reconnect_before_debounce_publishes_nothing(hass: HomeAssistant, freezer):
+    """A drop shorter than the unavailable debounce publishes nothing and
+    announces nothing (the debounce applies to the connection verdict as
+    to any unavailable)."""
+    coord, device, eids, record, source = await _ready(hass, freezer, "r612")
+    recoveries = record_events(hass, EVENT_RECOVERED)
+    await _drop(hass, source, eids)
+    await _tick(hass, freezer, step=20)
+    assert record[DEV_FROZEN_CATEGORY] is None
+    await _reconnect(hass, source, eids, ("21.6", "on"))
+    await _tick(hass, freezer, n=3)
+    assert record[DEV_FROZEN_CATEGORY] is None
+    assert not _mine(recoveries, device.id)
+
+
+async def test_ds_reload_while_dropped_keeps_unavailable(hass: HomeAssistant, freezer):
+    """Device Sentinel reloaded while an ESPHome device is dropped: the
+    verdict stays unavailable through and after the grace, never cleared
+    and never frozen, and no recovery is announced."""
+    coord, device, eids, record, source = await _ready(hass, freezer, "r613")
+    recoveries = record_events(hass, EVENT_RECOVERED)
+    await _drop(hass, source, eids)
+    await _tick(hass, freezer, step=600, n=3)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+    entry = hass.config_entries.async_entries("device_sentinel")[0]
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    coord = entry.runtime_data
+    record = coord.data[DATA_DEVICES][device.id]
+    seen = [record[DEV_FROZEN_CATEGORY]]
+    await _past_grace(hass, freezer)
+    for _ in range(5):
+        await _tick(hass, freezer)
+        seen.append(record[DEV_FROZEN_CATEGORY])
+    assert set(seen) == {FREEZE_CATEGORY_UNAVAILABLE}, seen
+    assert not _mine(recoveries, device.id), recoveries
+
+
+# ------------------------------------------------------------ #644 down_for
+
+
+def _entry(hass):
+    return hass.config_entries.async_entries("device_sentinel")[0]
+
+
+@pytest.mark.parametrize("how", ["reload_mid_drop", "dropped_while_unloaded"])
+async def test_a_drop_spanning_a_reload_is_not_learned(hass: HomeAssistant, freezer, how):
+    """A Device Sentinel reload, or a Home Assistant restart, during a drop
+    forgets when the drop began, and the entities already read unavailable
+    and off, so nothing more is written. The minute check notes the drop
+    again, so the gap spanning it is still not learned (ruling #640;
+    adversarial round of 12 October 2026)."""
+    coord, device, eids, record, source = await _ready(hass, freezer, f"reload{how[0]}")
+    await _tick(hass, freezer, step=60, n=2)
+    record[DEV_TODAY_MAX] = None
+    entry = _entry(hass)
+    if how == "reload_mid_drop":
+        await _drop(hass, source, eids)
+        await _tick(hass, freezer, step=600, n=6)
+        assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+    else:
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await _drop(hass, source, eids)
+        freezer.tick(timedelta(seconds=120))
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    coord = _entry(hass).runtime_data
+    record = coord.data[DATA_DEVICES][device.id]
+    await _past_grace(hass, freezer)
+    await _tick(hass, freezer, step=600, n=12)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE, record[DEV_FROZEN_CATEGORY]
+    await _reconnect(hass, source, eids, ("22.0", "on"), order=(1, 0))
+    learned = record[DEV_TODAY_MAX]
+    assert learned is None or learned < 3600.0, (
+        "a drop the reload forgot was learned as the device's own silence", learned,
+        _dropped(coord, device.id))
+
+
+# The drop survives a reload, a mute and a clock step (adversarial round of
+# 12 October 2026).
+
+
+async def _ready_muted(hass, freezer, uid, options=None):
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    device, eids = _esp_device(hass, source, uid, ("sensor", "binary_sensor"))
+    if options is not None:
+        options = {k: (v if v != "SELF" else [device.id]) for k, v in options.items()}
+    coord = await setup_coordinator(hass, options)
+    record = _arm(coord, device.id)
+    for eid, value in zip(eids, ("21.5", "on")):
+        hass.states.async_set(eid, value)
+    await hass.async_block_till_done()
+    await _past_grace(hass, freezer)
+    return coord, device, eids, record, source
+
+
+async def _drop_both(hass, source, eids):
+    source.runtime_data.available = False
+    hass.states.async_set(eids[0], "unavailable")
+    hass.states.async_set(eids[1], "off")
+    await hass.async_block_till_done()
+
+
+async def _return_status_first(hass, source, eids, values=("22.0", "on")):
+    source.runtime_data.available = True
+    # ESPHome's Status sensor first, then the values.
+    hass.states.async_set(eids[1], values[1])
+    await hass.async_block_till_done()
+    hass.states.async_set(eids[0], values[0])
+    await hass.async_block_till_done()
+
+
+@pytest.mark.parametrize("mute", [CONF_FREEZE_MUTED_DEVICES, CONF_MUTED_DEVICES])
+async def test_a_muted_device_does_not_learn_a_drop_across_a_reload(hass: HomeAssistant, freezer, mute):
+    """#640 promises the drop is noted from the minute check so it survives
+    a reload. Muting suppresses judgment, not observation: a muted device
+    keeps learning its rhythm. `_device_down_category` returns for a muted
+    device before the drop check, so after a reload a muted, dropped
+    device is never noted, and the three-hour drop is learned as its own
+    silence, which the device carries into judgment once unmuted."""
+    coord, device, eids, record, source = await _ready_muted(hass, freezer, f"mute{mute[:4]}", {mute: "SELF"})
+    hass.states.async_set(eids[0], "21.6")
+    await hass.async_block_till_done()
+    record[DEV_TODAY_MAX] = None
+    await _drop_both(hass, source, eids)
+    await _tick(hass, freezer, step=600, n=6)
+    assert _dropped(coord, device.id) is not None  # noted from the writes
+    assert await hass.config_entries.async_reload(_entry(hass).entry_id)
+    await hass.async_block_till_done()
+    coord = _entry(hass).runtime_data
+    record = coord.data[DATA_DEVICES][device.id]
+    await _past_grace(hass, freezer)
+    await _tick(hass, freezer, step=600, n=12)
+    noted = _dropped(coord, device.id)
+    await _return_status_first(hass, source, eids)
+    learned = record[DEV_TODAY_MAX]
+    assert learned is None or learned < 3600.0, ("muted device learned the drop", learned, noted)
+
+
+@pytest.mark.parametrize("back_after", [60, STARTUP_GRACE_SECONDS + 120])
+async def test_a_return_soon_after_a_reload_mid_drop_is_not_learned(hass: HomeAssistant, freezer, back_after):
+    """A three-hour drop; Device Sentinel reloads in its third hour and the
+    device returns `back_after` seconds later. Judgment is skipped in the
+    startup grace, and once it runs it notes the drop at the moment it
+    looks, not when the drop began, so a return soon after reads as a
+    drop shorter than the debounce. The gap spans three hours of drop and
+    must not be learned."""
+    coord, device, eids, record, source = await _ready_muted(hass, freezer, f"back{back_after}")
+    hass.states.async_set(eids[0], "21.6")
+    await hass.async_block_till_done()
+    record[DEV_TODAY_MAX] = None
+    await _drop_both(hass, source, eids)
+    await _tick(hass, freezer, step=600, n=18)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+    assert await hass.config_entries.async_reload(_entry(hass).entry_id)
+    await hass.async_block_till_done()
+    coord = _entry(hass).runtime_data
+    record = coord.data[DATA_DEVICES][device.id]
+    await _tick(hass, freezer, step=60, n=back_after // 60)
+    noted = _dropped(coord, device.id)
+    await _return_status_first(hass, source, eids)
+    learned = record[DEV_TODAY_MAX]
+    assert learned is None or learned < 3600.0, ("three-hour drop learned after a reload", learned, noted)
+
+
+@pytest.mark.parametrize("step_hours", [3, -3])
+async def test_a_drop_written_just_after_a_clock_step_is_not_learned(hass: HomeAssistant, freezer, step_hours):
+    """The system clock is stepped, and the device drops before the next
+    minute check notices the step. The drop is noted from the write in the
+    new clock; the check then moves every in-memory moment by the step
+    (#538), the saved drop start among them, so the drop's start lands
+    `step_hours` away from when it really began. Two hours of drop must
+    still taint the gap on return."""
+    coord, device, eids, record, source = await _ready_muted(hass, freezer, f"step{step_hours}")
+    mono = {"now": coord._monotonic()}
+    coord._monotonic = lambda: mono["now"]
+
+    async def tick(seconds):
+        freezer.tick(timedelta(seconds=seconds))
+        mono["now"] += seconds
+        await coord._on_render_tick(None)
+        await hass.async_block_till_done()
+
+    await tick(60)
+    hass.states.async_set(eids[0], "21.7")
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(hours=step_hours))
+    await _drop_both(hass, source, eids)
+    await tick(30)
+    shifted = _dropped(coord, device.id)
+    for _ in range(120):
+        await tick(60)
+    record[DEV_TODAY_MAX] = None
+    await _return_status_first(hass, source, eids)
+    now = dt_util.utcnow().timestamp()
+    learned = record[DEV_TODAY_MAX]
+    assert learned is None or learned < 3600.0, learned
+    assert shifted is None or shifted <= now - 7000, ("drop start moved off its real moment", shifted, now)
+
+
+@pytest.mark.parametrize("connected_at_setup", [True, False])
+async def test_a_restart_before_esphome_connects_costs_no_gap(hass: HomeAssistant, freezer, connected_at_setup):
+    """Home Assistant restarts and ESPHome connects to each device a moment
+    after Device Sentinel's first look, so a device that is fine reads as
+    not connected for a few seconds. That is not a drop to date from its
+    last report: the gap its first report ends, two quiet hours and a
+    three-minute restart, is learned with the downtime taken out (#549),
+    whichever came first (adversarial round of 12 October 2026)."""
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    device, eids = _esp_device(hass, source, f"boot{connected_at_setup}", ("sensor", "binary_sensor"))
+    for eid, value in zip(eids, ("21.5", "on")):
+        hass.states.async_set(eid, value)
+    await hass.async_block_till_done()
+    coord = await setup_coordinator(hass)
+    await _past_grace(hass, freezer)
+    hass.states.async_set(eids[0], "21.6")
+    await hass.async_block_till_done()
+    coord.data[DATA_DEVICES][device.id][DEV_TODAY_MAX] = None
+    await _tick(hass, freezer, step=600, n=12)  # two hours quiet, connected
+    entry = hass.config_entries.async_entries("device_sentinel")[0]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    # Home Assistant down for three minutes; on start ESPHome's entities
+    # read unavailable until it connects.
+    freezer.tick(timedelta(minutes=3))
+    source.runtime_data.available = connected_at_setup
+    for eid in eids:
+        hass.states.async_set(eid, "unavailable")
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coord = entry.runtime_data
+    freezer.tick(timedelta(seconds=5))
+    source.runtime_data.available = True
+    hass.states.async_set(eids[1], "on")
+    hass.states.async_set(eids[0], "21.6")
+    await hass.async_block_till_done()
+    record = coord.data[DATA_DEVICES][device.id]
+    learned = record[DEV_TODAY_MAX]
+    # Two hours quiet and three minutes down: 7,385 s, 7,205 s with the
+    # downtime taken out (#541).
+    assert learned is not None and 7000 < learned < 7400, learned

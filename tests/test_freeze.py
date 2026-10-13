@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze.py, Version: 0.25.0 (2026-10-08)
+# File: test_freeze.py, Version: 0.26.0 (2026-10-12)
 
 """The freeze, unavailable, unknown, and never-reported detector.
 
@@ -35,6 +35,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+from homeassistant.config_entries import ConfigEntryState
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
@@ -916,3 +917,211 @@ async def test_the_sweep_survives_hostile_records(hass: HomeAssistant, seed):
         record = coord.data[DATA_DEVICES][device.id]
         if record.get("frozen_category") == FREEZE_CATEGORY_NEVER_REPORTED:
             assert device.id in coord._devices_with_entities
+
+
+# ==================================================================
+# An ESPHome device's own connection (rulings #636, #639 and #640, 0.26.0).
+# ==================================================================
+
+class _Info:
+    def __init__(self, deep_sleep):
+        self.has_deep_sleep = deep_sleep
+
+
+class _Runtime:
+    """The two fields Home Assistant's ESPHome integration keeps that
+    Device Sentinel reads: the deep-sleep flag and the connection."""
+
+    def __init__(self, deep_sleep, available=True):
+        self.device_info = _Info(deep_sleep)
+        self.available = available
+
+
+def _esphome_device(hass, uid, runtime, status=False):
+    """A watched device on the esphome domain, its entry carrying the
+    runtime data Home Assistant's ESPHome integration keeps; with a
+    Status sensor when asked."""
+    source = MockConfigEntry(domain="esphome")
+    source.add_to_hass(hass)
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    if runtime is not None:
+        source.runtime_data = runtime
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id, identifiers={("esphome", uid)}, name=f"Device {uid}"
+    )
+    registry = er.async_get(hass)
+    entity = registry.async_get_or_create(
+        "sensor", "esphome", f"{uid}_temp", device_id=device.id, config_entry=source
+    )
+    if not status:
+        return device, entity.entity_id
+    status_id = registry.async_get_or_create(
+        "binary_sensor", "esphome", f"{uid}_status", device_id=device.id, config_entry=source
+    ).entity_id
+    return device, entity.entity_id, status_id
+
+
+async def _silent_past_window(coord, device_id):
+    now = 1_000_000.0
+    window = coord._freeze_grace(3600.0) + 3600.0
+    record = _armed_record(3600.0, now - window - 10)
+    coord.data["devices"][device_id] = record
+    return record, now
+
+
+UNREADABLE = "could not read whether an ESPHome device deep-sleeps or is connected"
+
+
+async def test_an_awake_esphome_device_is_never_frozen_while_connected(hass: HomeAssistant):
+    """Home Assistant holds the connection, so the device is connected
+    with nothing new to say (rulings #636 and #640)."""
+    device, eid = _esphome_device(hass, "awake", _Runtime(False))
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, "21.5")
+    record, now = await _silent_past_window(coord, device.id)
+    assert coord._awake_esphome(device.id) is True
+    assert coord._device_down_category(device.id, record, now) is None
+
+
+async def test_an_entity_unavailable_while_connected_changes_nothing(hass: HomeAssistant):
+    """A firmware update entity reads unavailable while the ESPHome
+    dashboard is stopped; the connection is up, so the device is still
+    not judged frozen (ruling #640)."""
+    device, eid, update = _esphome_device(hass, "update", _Runtime(False), status=True)
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, "21.5")
+    hass.states.async_set(update, STATE_UNAVAILABLE)
+    record, now = await _silent_past_window(coord, device.id)
+    assert coord._device_down_category(device.id, record, now) is None
+
+
+async def test_a_dropped_device_is_unavailable_whatever_its_status_sensor_reads(hass: HomeAssistant):
+    """ESPHome keeps the Status sensor available and switches it off when
+    the connection drops; the connection says unavailable (ruling #640;
+    found by the adversarial round of 12 October 2026)."""
+    device, eid, status = _esphome_device(hass, "dropped", _Runtime(False, available=False), status=True)
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, STATE_UNAVAILABLE)
+    hass.states.async_set(status, "off")
+    record, now = await _silent_past_window(coord, device.id)
+    assert coord._dropped_esphome(device.id) is True
+    assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_UNAVAILABLE
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
+    assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_UNAVAILABLE, (
+        "a frozen verdict escalates to unavailable"
+    )
+
+
+async def test_the_status_sensor_turning_off_is_not_the_device_speaking(hass: HomeAssistant, freezer):
+    """The drop writes the Status sensor off; that must not move the
+    device's clock, or a frozen device is told recovered as it dies
+    (ruling #640; adversarial round five, 12 October 2026)."""
+    runtime = _Runtime(False)
+    device, eid, status = _esphome_device(hass, "statusoff", runtime, status=True)
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(status, "on")
+    hass.states.async_set(eid, "21.5")
+    await hass.async_block_till_done()
+    record = coord.data["devices"][device.id]
+    before = record[DEV_LAST_ACTIVITY]
+    assert before is not None, "the device was heard before the drop"
+    freezer.tick(timedelta(seconds=30))
+    runtime.available = False
+    hass.states.async_set(status, "off")
+    hass.states.async_set(eid, STATE_UNAVAILABLE)
+    await hass.async_block_till_done()
+    assert record[DEV_LAST_ACTIVITY] == before
+    freezer.tick(timedelta(seconds=30))
+    runtime.available = True
+    hass.states.async_set(eid, "22.0")
+    await hass.async_block_till_done()
+    assert record[DEV_LAST_ACTIVITY] > before, "back, and heard"
+
+
+async def test_a_deep_sleep_device_keeps_the_freeze_rule(hass: HomeAssistant):
+    """Home Assistant shows a sleeper available while it sleeps, and its
+    connection is down between wakes, so neither says anything: the
+    freeze rule is what catches it."""
+    device, eid = _esphome_device(hass, "sleeper", _Runtime(True, available=False))
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, "21.5")
+    record, now = await _silent_past_window(coord, device.id)
+    assert coord._esphome_deep_sleep(device.id) is True
+    assert coord._awake_esphome(device.id) is False
+    assert coord._dropped_esphome(device.id) is False
+    assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_FROZEN
+
+
+@pytest.mark.parametrize("runtime", [None, object(), _Runtime(None).__class__.__new__(_Runtime)])
+async def test_unreadable_flags_keep_the_freeze_rule(hass: HomeAssistant, runtime, caplog):
+    """The private read is wrapped (rulings #639 and #640): no runtime
+    data, a runtime of another shape, or a missing attribute each answer
+    "unknown", the device stays on the freeze rule, and one line is logged."""
+    device, eid = _esphome_device(hass, "odd", runtime)
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, "21.5")
+    record, now = await _silent_past_window(coord, device.id)
+    assert coord._esphome_deep_sleep(device.id) is None
+    assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_FROZEN
+    assert coord._esphome_deep_sleep(device.id) is None
+    assert caplog.text.count(UNREADABLE) == 1
+
+
+async def test_another_integrations_device_is_not_an_esphome_device(hass: HomeAssistant):
+    device, entities = register_device(hass, "frz_other", entity_count=1)
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entities[0], "21.5")
+    record, now = await _silent_past_window(coord, device.id)
+    assert coord._awake_esphome(device.id) is False
+    assert coord._dropped_esphome(device.id) is False
+    assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_FROZEN
+
+
+async def test_a_device_already_frozen_keeps_its_verdict_until_it_reports(hass: HomeAssistant):
+    """A device standing frozen when 0.26.0 starts is not cleared by the
+    connection rule, which would tell it as recovered though it never
+    reported (#529, found by the adversarial round of 11 October)."""
+    device, eid = _esphome_device(hass, "standing", _Runtime(False))
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, "21.5")
+    record, now = await _silent_past_window(coord, device.id)
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
+    assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_FROZEN
+
+
+async def test_an_awake_device_reading_unknown_is_unknown_not_frozen(hass: HomeAssistant):
+    """Unknown is a value Home Assistant shows while the device is
+    connected, as a device of buttons does until one is pressed: the
+    connection rule keeps frozen off it, and unknown is still told
+    (ruling #636; adversarial round three, 12 October 2026)."""
+    device, eid = _esphome_device(hass, "unknownawake", _Runtime(False))
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, STATE_UNKNOWN)
+    record, now = await _silent_past_window(coord, device.id)
+    assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_UNKNOWN
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
+    assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_FROZEN, (
+        "a verdict already standing waits for the device to report (#529)"
+    )
+
+
+async def test_a_sleeping_device_reading_unknown_keeps_the_freeze_rule(hass: HomeAssistant):
+    device, eid = _esphome_device(hass, "unknownsleeper", _Runtime(True))
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(eid, STATE_UNKNOWN)
+    record, now = await _silent_past_window(coord, device.id)
+    assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_FROZEN
+
+
+@pytest.mark.parametrize("flag", [None, 0, 1, "false"])
+async def test_a_flag_that_is_not_true_or_false_is_unknown(hass: HomeAssistant, flag):
+    """Only a real True or False is an answer (rulings #639 and #640);
+    None or any other shape keeps the freeze rule. bool(None) once made
+    a device awake (adversarial round three, 12 October 2026)."""
+    device, _ = _esphome_device(hass, "oddflag", _Runtime(flag))
+    other, _ = _esphome_device(hass, "oddconn", _Runtime(False, available=flag))
+    coord = await setup_coordinator(hass)
+    assert coord._esphome_deep_sleep(device.id) is None
+    assert coord._awake_esphome(device.id) is False
+    assert coord._awake_esphome(other.id) is False
+    assert coord._dropped_esphome(other.id) is False
