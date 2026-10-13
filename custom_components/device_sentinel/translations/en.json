@@ -96,7 +96,7 @@
             },
             "data_description": {
               "muted_integrations": "Mutes every device the integration owns. Its devices will be learned and recorded, but will not appear on the Problem List or in any reports or notifications.",
-              "muted_labels": "The system mutes any device or entity carrying these labels. You can manage this mute without ever opening this dialog. Simply apply the label on the hardware's own device page, and Device Sentinel stops reporting on it.",
+              "muted_labels": "The system mutes any device carrying these labels. A label on one entity mutes nothing. You can manage this mute without ever opening this dialog. Simply apply the label on the hardware's own device page, and Device Sentinel stops reporting on it.",
               "muted_devices": "This applies the exact same muting rules as the lists above, but targets individual pieces of hardware. Add a specific device here to take it off the Problem List and mute its reports and notifications."
             }
           }
