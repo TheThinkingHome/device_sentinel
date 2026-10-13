@@ -1,6 +1,7 @@
 // Panel checks: the Recommendations tab. Its opening line counts the
 // recommendations, says they help Device Sentinel run better, and says
 // none of them is required; no card is singled out (#626, 0.25.6).
+// Since 0.26.0 it also draws the Slow Reporting Devices card (#637).
 // Run with: LC_ALL=en_US.UTF-8 node check_recommendations.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -109,6 +110,51 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   check("It says they help it run better and none is required",
     !!first && first.textContent === `${count} ${word} to help Device Sentinel run better. None of them is required.`, first && first.textContent);
   check("Nothing says one matters more than another", !/most important/.test(root.textContent));
+
+  // Slow Reporting Devices (ruling #637, 0.26.0): the card in James's
+  // words, each device with a Mute freeze chip that calls the same
+  // mute the device page does, and the list refreshed afterwards.
+  console.log("\nThe Slow Reporting Devices card (ruling #637)");
+  const SLOW = {
+    kind: "slow", title: "Slow Reporting Devices",
+    body: "These devices go quiet for long periods. They are often devices that sleep until a person triggers or interacts with them. Because these devices do not report on a rhythm, Device Sentinel has trouble accurately reporting a frozen verdict. Often a freeze verdict for this device is noise and the best practice is to mute it. Device Sentinel will still report when it becomes unavailable or its battery runs low.",
+    devices: [{ device_id: ROWS[0].device_id, name: "Guest Lamp", area: "Guest Bedroom" }, { device_id: ROWS[1].device_id, name: "Porch Button", area: null }],
+  };
+  let muted = [];
+  let served = 0;
+  const slow = await open({ path: `${PREFIX}/recommendations?open=slow`, answers: {
+    recommendations: () => {
+      served += 1;
+      const base = JSON.parse(JSON.stringify(payloads.recommendations));
+      const card = JSON.parse(JSON.stringify(SLOW));
+      card.devices = card.devices.filter((row) => !muted.includes(row.device_id));
+      base.devices = (base.devices || []).concat(card.devices.length ? [card] : []);
+      return base;
+    },
+    device_mute: (message) => { muted.push(message.device_id); return {}; },
+  } });
+  const card = [...slow.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "slow");
+  check("The card is drawn with James's title", !!card && card.querySelector("h3").textContent === "Slow Reporting Devices");
+  check("Its body is James's text, word for word", !!card && card.querySelector("p").textContent === SLOW.body);
+  check("It opens on its list when the address asks for it", !!card && card.querySelector("details").hasAttribute("open"));
+  const rows = card ? [...card.querySelectorAll("tbody tr")] : [];
+  check("Each device has a row with its area or 'no area'", rows.length === 2
+    && rows[0].children[1].textContent === "Guest Bedroom" && rows[1].children[1].textContent === "no area", rows.map((r) => r.textContent));
+  const chip = rows[0] && rows[0].querySelector("button.chip");
+  check("Each row offers Mute freeze", !!chip && chip.textContent === "Mute freeze", chip && chip.textContent);
+  chip.click();
+  await settle(); await settle(); await settle();
+  const muteCall = slow.calls.find((c) => c.type === "device_sentinel/device_mute");
+  check("The chip mutes freeze for that device, and nothing else",
+    !!muteCall && muteCall.device_id === ROWS[0].device_id && muteCall.kind === "freeze" && muteCall.on === true, muteCall);
+  check("The brief will say it came from the Recommendations tab (ruling #643)", !!muteCall && muteCall.source === "recommendations", muteCall);
+  const after = [...slow.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "slow");
+  check("The list is fetched again and the muted device leaves the card",
+    served >= 2 && !!after && after.querySelectorAll("tbody tr").length === 1
+    && after.querySelector("tbody tr").textContent.includes("Porch Button"), after && after.textContent);
+  const count2 = (payloads.recommendations.lines || []).length + (payloads.recommendations.devices || []).length + 1;
+  check("The opening line counts the new card", slow.root.querySelector("p").textContent.startsWith(`${count2} recommendations`),
+    slow.root.querySelector("p").textContent);
 
 
   console.log(`\n${passed} passed, ${failed} failed`);

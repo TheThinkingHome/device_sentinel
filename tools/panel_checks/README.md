@@ -17,7 +17,7 @@ written rather than what it proves).
 | Every tab | `check_stale_tab.js` | 35 | a tab left open across an update: no error from the new copy, a line offering a reload, and its glow |
 | Every tab | `check_type_filters.js` | 30 | types on Battery Trends, Classification, Devices and Recommendations, and no "null" on a quiet day |
 | Daily Brief | `check_repeat_offenders.js` | 10 | the Repeat Offenders table, and the devices on MQTT's page that ride the broker |
-| Recommendations | `check_recommendations.js` | 2 | the opening line: what the recommendations are for, and that none is required |
+| Recommendations | `check_recommendations.js` | 10 | the opening line: what the recommendations are for, and that none is required; the Slow Reporting Devices card and its Mute freeze chip |
 | Classification | `check_classification_sources.js` | 16 | Classification's sources, the gear, the date beside "As of" |
 | Integrations | `check_no_hardware_integrations.js` | 13 | an integration with no hardware of its own on the Integrations tab |
 | Integrations | `check_no_hardware_pages.js` | 20 | its page, and a helper's, naming the devices it adds entities to |

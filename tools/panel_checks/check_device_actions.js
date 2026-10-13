@@ -2,7 +2,9 @@
 // duplicate-name warning, the area and label pickers, the Heartbeat chip,
 // the mute toggles and their confirmation, a refused write shown under
 // its row, Open in Home Assistant, and no helper text. Since 0.25.6 the
-// Excluded row, which excludes one device from its page (#625).
+// Excluded row, which excludes one device from its page (#625). Since
+// 0.26.0 that row shows only its button until pressed, and the Muted row
+// draws each mute that is on filled with a check mark (#645, #646).
 // Run with: LC_ALL=en_US.UTF-8 node check_device_actions.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -122,9 +124,17 @@ const excludedPage = (excluded) => (p) => {
 
   ({ root, calls } = await open({}));
   const muted = rowCell(root, "Muted");
-  const battery = buttonIn(muted, "Mute battery");
+  const battery = buttonIn(muted, "\u2713 Mute battery");
   check("Muted: a mute from a label shows lit and fixed",
     battery && battery.getAttribute("aria-pressed") === "true" && battery.getAttribute("aria-disabled") === "true");
+  // Ruling #646: the row says nothing in words; each mute that is on is
+  // filled with a check mark, and one that is off is plain.
+  check("Muted: no word before the buttons, not even 'nothing'",
+    !!muted && muted.querySelector(".actcol").firstChild.classList.contains("actrow")
+    && !/nothing/.test(muted.textContent), muted && muted.innerHTML.slice(0, 80));
+  check("Muted: a mute that is on is filled and checked, one that is off is plain",
+    battery.classList.contains("on") && /^\u2713 /.test(battery.textContent)
+    && !buttonIn(muted, "Mute freeze").classList.contains("on"));
   await click(battery);
   check("Muted: a fixed chip sends nothing", !calls.some((c) => c.type === "device_sentinel/device_mute"));
   await click(buttonIn(rowCell(root, "Muted"), "Mute everything"));
@@ -133,6 +143,27 @@ const excludedPage = (excluded) => (p) => {
   const confirmButton = [...rowCell(root, "Muted").querySelectorAll("button")].filter((b) => b.textContent === "Mute everything").pop();
   await click(confirmButton);
   check("Muted: confirming sends the mute", calls.some((c) => c.type === "device_sentinel/device_mute" && c.kind === "everything" && c.on === true));
+
+  // Mute everything on: the other three show on too, filled, and cannot
+  // be pressed (ruling #646).
+  ({ root, calls } = await open({}, (p) => {
+    p.identity.actions.mutes = {
+      everything: { on: true, source: null, here: true },
+      freeze: { on: false, source: null, here: false },
+      battery: { on: false, source: null, here: false },
+      signal: { on: false, source: null, here: false },
+    };
+  }));
+  const all = rowCell(root, "Muted");
+  const lit = [...all.querySelectorAll("button")].filter((b) => b.classList.contains("on")).map((b) => b.textContent);
+  check("Muted: with Mute everything on, all four are filled and checked",
+    lit.join() === "\u2713 Mute freeze,\u2713 Mute battery,\u2713 Mute signal,\u2713 Mute everything", lit);
+  check("Muted: the three it covers cannot be pressed",
+    ["\u2713 Mute freeze", "\u2713 Mute battery", "\u2713 Mute signal"].every((t) => buttonIn(all, t) && buttonIn(all, t).getAttribute("aria-disabled") === "true"));
+  const allButton = buttonIn(all, "\u2713 Mute everything");
+  if (allButton) await click(allButton);
+  const lift = calls.filter((c) => c.type === "device_sentinel/device_mute");
+  check("Muted: pressing Mute everything again lifts it", lift.length === 1 && lift[0].kind === "everything" && lift[0].on === false, lift);
 
   console.log("\nRenaming");
   ({ root, calls } = await open({
@@ -213,7 +244,8 @@ const excludedPage = (excluded) => (p) => {
   const excludedRow = [...root.querySelectorAll("table.kv tr:not(.kvgroup)")].find((tr) => tr.firstChild.textContent === "Excluded");
   check("It sits outside the Last seen group", !!excludedRow && !excludedRow.classList.contains("kvsub"));
   cell = rowCell(root, "Excluded");
-  check("A watched device offers Exclude this device", /^no/.test(cell.textContent) && buttons(cell).join() === "Exclude this device", cell.textContent);
+  check("A watched device offers only Exclude this device, with no 'no' (ruling #645)",
+    cell.textContent === "Exclude this device" && buttons(cell).join() === "Exclude this device", cell.textContent);
   cell.querySelector("button").click();
   await settle();
   cell = rowCell(root, "Excluded");
@@ -233,14 +265,14 @@ const excludedPage = (excluded) => (p) => {
 
   ({ root, calls } = await open({}, excludedPage({ here: true, integration: false })));
   cell = rowCell(root, "Excluded");
-  check("An excluded device says so and offers Stop excluding",
-    /^Excluded\. Device Sentinel does not watch it, and deletes what it recorded at the next midnight\. After that this page is gone, and it is taken back in Device Sentinel's settings, Exclusions and Muting\.Stop excluding/.test(cell.textContent)
-    && buttons(cell).join() === "Stop excluding", cell.textContent);
+  check("An excluded device says so and offers Cancel the exclusion (ruling #645)",
+    /^Excluded\. Device Sentinel has stopped watching this device and deletes its history at midnight\. After that this page is gone, and the device is taken back in Device Sentinel's settings, Exclusions and Muting\.Cancel the exclusion/.test(cell.textContent)
+    && buttons(cell).join() === "Cancel the exclusion", cell.textContent);
   check("The head says it is set aside, excluded", /Set aside: excluded\./.test(root.querySelector(".pagehead").textContent));
   cell.querySelector("button").click();
   await settle();
   const back = calls.filter((c) => c.type === "device_sentinel/device_exclude");
-  check("Stop excluding sends on: false", back.length === 1 && back[0].on === false, back);
+  check("Cancel the exclusion sends on: false", back.length === 1 && back[0].on === false, back);
 
   ({ root, calls } = await open({}, excludedPage({ here: false, integration: true })));
   cell = rowCell(root, "Excluded");

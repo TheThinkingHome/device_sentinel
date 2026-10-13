@@ -170,6 +170,9 @@ const rowCell = (root, label) => {
     && !labelsOf(root).includes("[Signal]") && labelsOf(root).includes("[Power]"), labelsOf(root));
   check("No Last seen sensor: says how the heartbeat is kept",
     rowCell(root, "Last seen sensor").textContent === "noneheartbeat: updates from its entities", rowCell(root, "Last seen sensor").textContent);
+  ({ root } = await open({ tweak: (p) => { p.readings = []; p.identity.clock = "zha"; } }));
+  check("A ZHA device: its heartbeat is ZHA's own Last Seen",
+    rowCell(root, "Last seen sensor").textContent === "ZHA's ownheartbeat: when ZHA last heard it", rowCell(root, "Last seen sensor").textContent);
 
   console.log("\nIts rhythm: both rules");
   ({ root } = await open());
