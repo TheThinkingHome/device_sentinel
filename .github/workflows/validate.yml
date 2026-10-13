@@ -31,7 +31,7 @@ jobs:
       # raises a pull request when either action moves, which keeps
       # the checks current without the reference being open-ended.
       # home-assistant/actions master, 2026-08-03.
-      - uses: home-assistant/actions/hassfest@a7c616ce81ccda50150bf1595786c71b1883fabb
+      - uses: home-assistant/actions/hassfest@50baf3a307f87100cf550d4ae127746595030d5d
 
   hacs:
     name: HACS validation
