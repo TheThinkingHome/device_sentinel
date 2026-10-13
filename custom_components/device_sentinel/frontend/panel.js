@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.26.0 (2026-10-12)
+// File: panel.js, Version: 0.26.1 (2026-10-13)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -75,6 +75,8 @@ const DEVICE_FILTERS = [
   ["problem", "With a problem"],
   ["muted", "Muted"],
 ];
+// The Area filter's choice for a device with no area (ruling #658).
+const NO_AREA = "\u0000no area";
 const RANGES = [["all", "All"], [360, "360 Days"], [180, "180 Days"], [90, "90 Days"], [30, "30 Days"], [14, "14 Days"]];
 const STATUS_WORDS = {
   reporting: ["Reporting", "var(--success-color, #43a047)"],
@@ -119,6 +121,7 @@ const PRINT_STYLE = `
   * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   html, body { background: #ffffff; color: #1a1a19; margin: 0; }
   body { font-family: Roboto, "Helvetica Neue", Arial, sans-serif; font-size: 12px; padding: 16px; }
+  .pane.devpage { font-size: 12px; }
   .printhead { border-bottom: 1px solid #d3d1c7; margin-bottom: 12px; padding-bottom: 8px; }
   .printhead h1 { margin: 0; font-size: 18px; font-weight: 500; }
   .printhead p { margin: 4px 0 0; color: #5f5e5a; }
@@ -503,6 +506,18 @@ const STYLE = `
   .legend .swatch { display: inline-block; width: 18px; vertical-align: middle; margin-right: 6px; }
   .readout { background: var(--secondary-background-color, rgba(127,127,127,0.1)); border-radius: 8px; padding: 10px 12px; min-height: 22px; }
   .small { font-size: 12px; color: var(--secondary-text-color); }
+  /* The device page reads at one size (0.26.1, James, 13 October): its
+     secondary text, such as "heard by Device Sentinel 9m ago" and the
+     heartbeat line, dropped to 11 and 12px in many rows. Headings, the
+     big figures, buttons, chips and the charts' own labels keep theirs.
+     The heartbeat line is plain grey text and a sensor's name is in the
+     page's own font, since a pill or monospace reads as a different
+     size even at the same pixels. Other tabs are unchanged. */
+  .pane.devpage { font-size: 14px; }
+  .devpage .small, .devpage .legend, .devpage .actnote, .devpage .labelchip,
+  .devpage .inuse, .devpage .entitylink, .devpage .hbtag { font-size: inherit; }
+  .devpage .entitylink { font-family: inherit; }
+  .devpage .hbtag { padding: 0; border-radius: 0; background: none; }
   .num { text-align: right; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
   .stat { border: 1px solid var(--divider-color); border-radius: 10px; padding: 12px 14px; }
@@ -529,6 +544,12 @@ class DeviceSentinelPanel extends HTMLElement {
     this._deviceFilter = "all";
     this._deviceType = "";
     this._deviceSort = null;
+    // The Devices tab's search, area and label (ruling #658).
+    this._deviceSearch = "";
+    // The watched devices, or the devices on the exclusion lists.
+    this._deviceView = "watched";
+    this._deviceArea = "";
+    this._deviceLabel = "";
     // The graphs' range carries from one device page to the next.
     this._range = "all";
     this._hover = null;
@@ -964,6 +985,9 @@ class DeviceSentinelPanel extends HTMLElement {
   }
 
   _paintPane() {
+    // The device page reads at one size (0.26.1); every other view keeps
+    // its own.
+    this._pane.classList.toggle("devpage", Boolean(this._view && this._view.kind === "device"));
     if (!BUILT.has(this._tab)) {
       this._pane.replaceChildren(el("p", { class: "muted" }, `${this._tab} arrives in a later release.`));
       return;
@@ -1385,6 +1409,24 @@ class DeviceSentinelPanel extends HTMLElement {
       el("div", { class: "links" },
         this._link("Open in Home Assistant", `/config/integrations/integration/${encodeURIComponent(page.domain)}`),
         this._link("Device Sentinel settings", SETTINGS_PATH)));
+    // Exclude the integration, or take it back, here as well as in
+    // Settings (0.26.1, ruling #659).
+    const exclusion = el("div", { class: "actrow" },
+      el("button", { class: "chip", type: "button",
+        onclick: async () => {
+          this._integrationNote = null;
+          try {
+            await this._call({ type: "device_sentinel/integration_exclude", domain: page.domain, on: !page.excluded });
+          } catch (err) {
+            this._integrationNote = { domain: page.domain, text: err.message || "Home Assistant refused the change." };
+          }
+          await this._refresh();
+        } }, page.excluded ? "Cancel the exclusion" : "Exclude this integration"),
+      page.excluded
+        ? el("span", { class: "muted" }, "Device Sentinel does not watch its devices, and deletes their history at the midnight after it is excluded.")
+        : null,
+      this._integrationNote && this._integrationNote.domain === page.domain
+        ? el("span", { class: "actnote refused" }, this._integrationNote.text) : null);
     const stat = (label, value, note) => el("div", { class: "stat" },
       el("div", { class: "small" }, label), el("div", { class: "v" }, value, note ? el("span", { class: "small" }, ` ${note}`) : null));
     const stats = el("div", { class: "stats" },
@@ -1423,7 +1465,7 @@ class DeviceSentinelPanel extends HTMLElement {
             el("td", {}, d.watched ? (d.muted ? `Watched, muted: ${d.muted}` : "Watched") : `Set aside: ${d.set_aside}`),
             el("td", {}, d.problem ? `${d.problem}${d.acknowledged ? ", acknowledged" : ""}` : ""))))))
       : null;
-    this._pane.replaceChildren(back, head, stats,
+    this._pane.replaceChildren(back, head, exclusion, stats,
       el("h3", { class: "section" }, "Recommendations"), ...recs,
       el("h3", { class: "section" }, "Outages, last 14 days"), outages,
       el("h3", { class: "section" }, `Devices `, el("span", { class: "small" }, `${page.devices.length}, problems first`)), devices,
@@ -1984,13 +2026,47 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _paintDevices() {
     const all = this._snapshot.devices.rows;
+    const excludedAll = this._snapshot.devices.excluded || [];
     const at = this._snapshot.at.getTime();
     const counts = {
       all: all.length,
       problem: all.filter((row) => row.problem).length,
       muted: all.filter((row) => row.muted).length,
     };
-    let rows = all.filter({
+    // Search, Area and Label narrow either list (ruling #658). A chosen
+    // area or label nothing carries any longer goes back to All.
+    const excludedView = this._deviceView === "excluded";
+    const listed = excludedView ? excludedAll : all;
+    const areas = [...new Set(listed.map((row) => row.area).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const labels = [...new Set(listed.flatMap((row) => row.labels || []))].sort((a, b) => a.localeCompare(b));
+    if (this._deviceArea && this._deviceArea !== NO_AREA && !areas.includes(this._deviceArea)) this._deviceArea = "";
+    if (this._deviceLabel && !labels.includes(this._deviceLabel)) this._deviceLabel = "";
+    const wanted = this._deviceSearch.trim().toLocaleLowerCase();
+    const narrow = (list) => list.filter((row) =>
+      (!wanted || row.name.toLocaleLowerCase().includes(wanted))
+      && (!this._deviceArea || (this._deviceArea === NO_AREA ? !row.area : row.area === this._deviceArea))
+      && (!this._deviceLabel || (row.labels || []).includes(this._deviceLabel)));
+    const finders = this._deviceFinders(areas, labels, listed);
+    const chipsFor = () => el("div", { class: "chips" }, ...DEVICE_FILTERS.map(([key, label]) =>
+      el("button", {
+        class: "chip", type: "button", "aria-pressed": String(key === this._deviceFilter),
+        onclick: () => {
+          this._deviceFilter = key;
+          this._paintDevices();
+        },
+      }, `${label} ${counts[key]}`)));
+    // A view of its own rather than a filter chip: its table has other
+    // columns, and a filter never moves a table's columns.
+    const switchView = (view) => el("button", { class: "linkbtn", type: "button",
+      onclick: () => { this._deviceView = view; this._paintDevices(); } },
+      view === "excluded"
+        ? `Show the ${excludedAll.length} excluded ${excludedAll.length === 1 ? "device" : "devices"}`
+        : "Back to the watched devices");
+    if (excludedView) {
+      this._paintExcludedDevices(narrow(excludedAll), excludedAll.length, switchView("watched"), finders);
+      return;
+    }
+    let rows = narrow(all).filter({
       all: () => true,
       problem: (row) => row.problem,
       muted: (row) => row.muted,
@@ -2037,14 +2113,7 @@ class DeviceSentinelPanel extends HTMLElement {
       `${all.length} devices are watched. ${counts.problem} ${counts.problem === 1 ? "has" : "have"} a problem, `
       + `${counts.muted} ${counts.muted === 1 ? "is" : "are"} muted. Each device's window is how long it may stay `
       + "quiet before it is called frozen, learned from its own rhythm.");
-    const chips = el("div", { class: "chips" }, ...DEVICE_FILTERS.map(([key, label]) =>
-      el("button", {
-        class: "chip", type: "button", "aria-pressed": String(key === this._deviceFilter),
-        onclick: () => {
-          this._deviceFilter = key;
-          this._paintDevices();
-        },
-      }, `${label} ${counts[key]}`)));
+    const chips = chipsFor();
     const table = el("table", {},
       el("thead", {}, el("tr", {},
         header("DEVICE", "name"), header("TYPE", "type"), header("INTEGRATION", "integration"), el("th", {}, "STANDING"),
@@ -2067,8 +2136,90 @@ class DeviceSentinelPanel extends HTMLElement {
       el("option", { value: "", ...(!this._deviceType ? { selected: "" } : {}) }, "All types"),
       ...[...types, NOT_KNOWN].map((type) => el("option", { value: type, ...(this._deviceType === type ? { selected: "" } : {}) },
         `${type} ${type === NOT_KNOWN ? all.filter((row) => !row.type).length : all.filter((row) => row.type === type).length}`)));
-    this._pane.replaceChildren(...[summary, el("div", { class: "actrow" }, chips, typeFilter),
+    this._pane.replaceChildren(...[summary, el("div", { class: "actrow" }, chips, typeFilter), finders,
+      excludedAll.length ? el("p", { style: "margin:0" }, switchView("excluded")) : null,
       this._typeShowing(this._deviceType, pickType), el("div", { class: "scroll" }, table)].filter((part) => part));
+    this._keepSearchFocus();
+  }
+
+  // The Devices tab's search box and its Area and Label filters
+  // (ruling #658), shared by the watched and excluded lists.
+  _deviceFinders(areas, labels, listed) {
+    const search = el("input", {
+      class: "actinput devsearch", type: "search", placeholder: "Search by name", "aria-label": "Search by name",
+      value: this._deviceSearch,
+      oninput: (ev) => {
+        this._deviceSearch = ev.target.value;
+        this._searchFocus = { start: ev.target.selectionStart, end: ev.target.selectionEnd };
+        this._paintDevices();
+      },
+    });
+    search.value = this._deviceSearch;
+    const count = (test) => listed.filter(test).length;
+    const area = el("select", { class: "actinput", "aria-label": "Show one area",
+      onchange: (ev) => { this._deviceArea = ev.target.value; this._paintDevices(); } },
+      el("option", { value: "", ...(!this._deviceArea ? { selected: "" } : {}) }, "All areas"),
+      ...areas.map((name) => el("option", { value: name, ...(this._deviceArea === name ? { selected: "" } : {}) },
+        `${name} ${count((row) => row.area === name)}`)),
+      el("option", { value: NO_AREA, ...(this._deviceArea === NO_AREA ? { selected: "" } : {}) },
+        `No area ${count((row) => !row.area)}`));
+    const label = el("select", { class: "actinput", "aria-label": "Show one label",
+      onchange: (ev) => { this._deviceLabel = ev.target.value; this._paintDevices(); } },
+      el("option", { value: "", ...(!this._deviceLabel ? { selected: "" } : {}) }, "All labels"),
+      ...labels.map((name) => el("option", { value: name, ...(this._deviceLabel === name ? { selected: "" } : {}) },
+        `${name} ${count((row) => (row.labels || []).includes(name))}`)));
+    return el("div", { class: "actrow" }, search, area, label);
+  }
+
+  // Typing repaints the tab, so the search box takes its focus and
+  // cursor back each time (ruling #658).
+  _keepSearchFocus() {
+    if (!this._searchFocus) return;
+    const box = this._pane.querySelector("input.devsearch");
+    const { start, end } = this._searchFocus;
+    this._searchFocus = null;
+    if (!box) return;
+    box.focus();
+    try { box.setSelectionRange(start, end); } catch (err) { /* a search box that cannot take a range keeps its focus */ }
+  }
+
+  // The Excluded list (ruling #658): the devices on the exclusion lists,
+  // as Home Assistant has them now, since nothing of them is recorded. A
+  // device excluded on its own is taken back here; one excluded with its
+  // integration is taken back on that integration's page, because the
+  // broader exclusion covers it (ruling #336). A device whose history
+  // has gone has no Device Sentinel page, so its name opens Home
+  // Assistant's own.
+  _paintExcludedDevices(rows, total, back, finders) {
+    const summary = el("p", { style: "margin:0;line-height:1.5" },
+      total
+        ? `${total} ${total === 1 ? "device is" : "devices are"} excluded. Device Sentinel does not watch `
+          + `${total === 1 ? "it" : "them"}, and deletes each one's history at the midnight after it is excluded.`
+        : "No device is excluded.");
+    const takeBack = (row) => el("button", { class: "chip", type: "button",
+      onclick: async () => {
+        try {
+          await this._call({ type: "device_sentinel/device_exclude", device_id: row.device_id, on: false, source: "devices_tab" });
+        } catch (err) { /* the refresh shows the list as it stands */ }
+        await this._refresh();
+      } }, "Cancel the exclusion");
+    const table = el("table", {},
+      el("thead", {}, el("tr", {}, ...["DEVICE", "INTEGRATION", "AREA", "EXCLUDED", "HISTORY", ""].map((h) => el("th", {}, h)))),
+      el("tbody", {}, ...rows.map((row) => el("tr", {},
+        el("td", {}, row.page
+          ? this._link(row.name, this._devicePath(row.device_id))
+          : this._link(row.name, `/config/devices/device/${encodeURIComponent(row.device_id)}`)),
+        el("td", {}, this._link(row.integration_name, this._integrationPath(row.integration))),
+        el("td", {}, row.area || ""),
+        el("td", {}, row.how === "integration" ? "With its integration" : "By you"),
+        el("td", {}, row.page ? "Kept until midnight" : "Deleted"),
+        el("td", {}, row.how === "integration"
+          ? this._link("Open its integration page", this._integrationPath(row.integration))
+          : takeBack(row))))));
+    this._pane.replaceChildren(summary, el("p", { style: "margin:0" }, back), finders,
+      rows.length || !total ? el("div", { class: "scroll" }, table)
+        : el("p", { class: "muted", style: "margin:0" }, "No excluded device matches."));
+    this._keepSearchFocus();
   }
 
   _paintReadings() {
@@ -2445,7 +2596,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const power = who.power || {};
     if (!power.report_url || !e || !e.saved) return null;
     return el("div", { class: "actrow" },
-      el("span", { class: "muted", style: "font-size:13px" }, "Saved. Battery Notes' library does not list this yet."),
+      el("span", { class: "muted" }, "Saved. Battery Notes' library does not list this yet."),
       el("a", { class: "chip", href: power.report_url, target: "_blank", rel: "noopener noreferrer",
         style: "display:inline-flex;align-items:center;text-decoration:none" }, "Send to Battery Notes"));
   }
@@ -2474,7 +2625,7 @@ class DeviceSentinelPanel extends HTMLElement {
         onchange: () => choose(id) }), name);
     return el("div", { class: "actcol" },
       el("fieldset", { style: "border:none;margin:0;padding:0" },
-        el("legend", { class: "muted", style: "font-size:13px;padding:0 0 4px" }, "Area"),
+        el("legend", { class: "muted", style: "padding:0 0 4px" }, "Area"),
         option(null, "No area"), ...this._choices.areas.map((a) => option(a.id, a.name))),
       this._newNameRow("New area", "Create and move here",
         (name) => this._deviceAct({ type: "device_sentinel/device_new_area", device_id: who.device_id, name }, "area")),
@@ -2628,6 +2779,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _paintDevicePage() {
     const page = this._page;
+    this._pane.classList.add("devpage");
     const back = el("p", { style: "margin:0;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap" },
       // Previous and Next beside the way back (0.24.9).
       el("span", { class: "actrow" }, this._backLink(), this._prevNext()),
@@ -2855,7 +3007,7 @@ class DeviceSentinelPanel extends HTMLElement {
       el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable), rhythm),
       el("h3", { class: "section" }, "Silences, last 14 days"), silences,
       this._graphs(page),
-      el("p", { class: "muted", style: "margin:0;font-size:13px" },
+      el("p", { class: "muted", style: "margin:0" },
         "The Battery and Signal tabs open this page for any device, so these two graphs are where a battery or signal question ends."));
     this._paintReadings();
   }
