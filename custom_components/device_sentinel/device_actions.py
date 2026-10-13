@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.25.6 (2026-10-11)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.26.0 (2026-10-12)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -53,6 +53,16 @@ from .const import (
 
 # Each mute kind's three settings lists, in the order every mute is
 # read: the integration, the device's labels, the device itself.
+# Where a mute was pressed, in the words the brief prints (ruling
+# #643): the Slow Reporting Devices card and the Problem List call the
+# same action as the device page, and all three once read "from its
+# device page".
+MUTE_SOURCES_SAID: dict[str, str] = {
+    "device_page": "from its device page",
+    "recommendations": "from the Recommendations tab",
+    "problem_list": "from the Problem List",
+}
+
 MUTE_KINDS: dict[str, tuple[str, str, str]] = {
     "everything": (CONF_MUTED_INTEGRATIONS, CONF_MUTED_LABELS, CONF_MUTED_DEVICES),
     "freeze": (CONF_FREEZE_MUTED_INTEGRATIONS, CONF_FREEZE_MUTED_LABELS, CONF_FREEZE_MUTED_DEVICES),
@@ -353,9 +363,12 @@ class DeviceActionsMixin:
         )
         self._mark_changed()  # type: ignore[attr-defined]
 
-    def page_set_mute(self, device_id: str, kind: str, on: bool) -> None:
+    def page_set_mute(
+        self, device_id: str, kind: str, on: bool, source: str = "device_page"
+    ) -> None:
         """Set or lift one kind's mute on the device, in the options
-        Settings writes, through the same update listener."""
+        Settings writes, through the same update listener. The brief's
+        line says where it was pressed (ruling #643)."""
         self._device(device_id)
         if kind not in MUTE_KINDS:
             raise ValueError(f"no mute kind {kind}")
@@ -375,7 +388,7 @@ class DeviceActionsMixin:
         )
         self._record_system_event(  # type: ignore[attr-defined]
             SYS_DEVICE_PAGE,
-            detail=f"{kind} {'muted' if on else 'unmuted'}, from its device page",
+            detail=f"{kind} {'muted' if on else 'unmuted'}, {MUTE_SOURCES_SAID.get(source, MUTE_SOURCES_SAID['device_page'])}",
             device_id=device_id,
         )
         self._mark_changed()  # type: ignore[attr-defined]

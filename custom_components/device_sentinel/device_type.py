@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_type.py, Version: 0.25.5 (2026-10-10)
+# File: custom_components/device_sentinel/device_type.py, Version: 0.26.0 (2026-10-11)
 
 """What each device is, in plain words (0.25.1, Project__Device_Type.md).
 
@@ -83,6 +83,14 @@ FAN = "Fan"
 LIGHT = "Light"
 BLUETOOTH_PROXY = "Bluetooth Proxy"
 ESPHOME_DEVICE = "ESPHome Device"
+# From Tim Plas's own answers under Other (James, 11 October 2026, #627):
+# one word for every household appliance, so the list does not grow a
+# type per machine, and four kinds of box.
+APPLIANCE = "Appliance"
+IR_REMOTE = "IR Remote"
+ROUTER = "Router"
+NAS = "NAS"
+UPS = "UPS"
 
 # The kinds of entity that settle a type on their own, checked first.
 # A camera with a switch for its spotlight is still a camera, and a
@@ -92,12 +100,15 @@ ESPHOME_DEVICE = "ESPHome Device"
 DOMAIN_TYPES: tuple[tuple[str, str], ...] = (
     ("camera", CAMERA),
     ("assist_satellite", VOICE_ASSISTANT),
-    ("lock", LOCK),
-    ("climate", THERMOSTAT),
     # A blind and a shade are both a cover (James, 8 October 2026):
     # Motionblinds gives all six of the reference rig's the class
-    # "shade", so a split by class called two blinds shades.
+    # "shade", so a split by class called two blinds shades. Ahead of
+    # the lock (#627): a garage door opener such as Tim Plas's ratgdo
+    # boards has a cover and a lock for its remote lockout, and read
+    # Lock.
     ("cover", COVER),
+    ("lock", LOCK),
+    ("climate", THERMOSTAT),
     ("valve", VALVE),
     ("fan", FAN),
 )
@@ -137,7 +148,14 @@ KNOWN_MODEL_TYPES: dict[tuple[str, str, str], str] = {
     ("Third Reality", "Smart watering kit", "3RWK0148Z"): PLANT_WATERER,
     ("Aeotec", "Range extender Zi", "WG001"): ZIGBEE_ROUTER,
     ("Zooz", "ZST39 LR", ""): ZWAVE_CONTROLLER,
+    # Tim Plas's water shutoff (#627): Z-Wave shows it as a switch.
+    ("EcoNet Controls", "EVC200", ""): VALVE,
 }
+# Integrations that make only household appliances (#627): Tim Plas's
+# GE washer, dryer and stove named nothing, and his dishwasher read
+# Switch. Checked ahead of the entities, since an appliance's switches
+# and sensors say little about what it is.
+APPLIANCE_DOMAINS = frozenset({"ge_home", "geappliances", "home_connect", "miele"})
 
 TYPE_CHOICES: tuple[str, ...] = (
     *sorted({
@@ -148,6 +166,7 @@ TYPE_CHOICES: tuple[str, ...] = (
         THREAD_BORDER_ROUTER, MATTER_BRIDGE, ZIGBEE_ROUTER, ZWAVE_REPEATER,
         THREAD_ROUTER, HUB, PRINTER, DASHBOARD, PLANT_WATERER, MULTI_SENSOR,
         LOCK, THERMOSTAT, VALVE, SIREN, FAN, LIGHT, BLUETOOTH_PROXY, ESPHOME_DEVICE,
+        APPLIANCE, IR_REMOTE, ROUTER, NAS, UPS,
     }, key=str.casefold),
     TYPE_OTHER,
 )
@@ -182,6 +201,12 @@ def type_from_entities(entities: list[Any]) -> str | None:
     for domain, words in DOMAIN_TYPES:
         if domain in domains:
             return words
+    # An infrared or radio blaster (#627): Home Assistant gives it a
+    # remote entity, and Tim Plas's Broadlink RM4 mini read Temperature
+    # Sensor from the probe on its cable. A television has a remote
+    # entity too, beside its media player, and is not a blaster.
+    if "remote" in domains and "media_player" not in domains:
+        return IR_REMOTE
     binary = classes("binary_sensor")
     sensors = classes("sensor")
     if binary & MOTION_CLASSES and MULTI_READINGS <= sensors and not binary & {
@@ -222,7 +247,7 @@ def type_for_device(
 
     In order: a model it knows; what the device is to its network when
     that is all it is for (a coordinator, a controller, a border
-    router); what its entities say; and last, for a device whose
+    router); an appliance, by its integration; what its entities say; and last, for a device whose
     entities name nothing, what its integration or network says (a
     printer, an ESPHome board or Bluetooth proxy, a Zigbee router, a
     Z-Wave repeater, a hub). A router plug stays a Plug.
@@ -231,6 +256,8 @@ def type_for_device(
         return KNOWN_MODEL_TYPES[model], SOURCE_KNOWN
     if role:
         return role, SOURCE_ROLE
+    if domain in APPLIANCE_DOMAINS:
+        return APPLIANCE, SOURCE_ROLE
     words = type_from_entities(entities)
     if words:
         return words, SOURCE_ENTITIES

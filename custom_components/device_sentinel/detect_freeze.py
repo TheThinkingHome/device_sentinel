@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.25.5 (2026-10-10)
+# File: detect_freeze.py, Version: 0.26.0 (2026-10-12)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -83,8 +83,11 @@ from .const import (
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
     DEV_FROZEN_CATEGORY,
+    DEV_DOWN_SINCE,
     DEV_FROZEN_SINCE,
+    DEV_DOWN_BEGAN_AS,
     DEV_LAST_ACTIVITY,
+    DEV_WATCHED_FROM,
     DEV_TAINTED,
     DEV_TODAY_MAX,
     FREEZE_ARMING_DAYS,
@@ -99,10 +102,6 @@ from .const import (
     FREEZE_UNAVAILABLE_DEBOUNCE,
     LOGGER,
     PAIRING_GRACE_SECONDS_DEFAULT,
-    RATCHET_FAST_ALLOWANCE,
-    RATCHET_FAST_RHYTHM,
-    RATCHET_SLOW_ALLOWANCE,
-    RATCHET_SLOW_RHYTHM,
     TAINT_UNAVAILABLE,
     TRIM_MIN_SAMPLES,
     TRIM_TOP_K,
@@ -206,26 +205,80 @@ class FreezeMixin:
         grace = a * (rhythm**p)
         return min(delta_high, max(delta_low, grace))
 
-    def _resurrection_cap(self, record: dict[str, Any]) -> float | None:
-        """Return the most a convicted device's gap may teach (ruling #166).
+    def _esphome_flags(self, device_id: str) -> tuple[bool | None, bool | None]:
+        """Return an ESPHome device's deep-sleep and connection flags.
 
-        rhythm plus a * rhythm^p, the same power-curve solver as the
-        grace (ruling #85) through the ratchet anchors: fast devices may step
-        half their rhythm, slow ones a tenth, falling continuously
-        between. The rhythm is read as it stands at the moment of
-        recovery, ordinary staleness accepted, no special midnight
-        handling. None means the device is unarmed, and an unarmed
-        device can never stand convicted, so no cap is needed.
+        The two private fields detection reads (rulings #639 and #640).
+        Home Assistant keeps both only in the ESPHome integration's
+        runtime data: whether the device deep-sleeps, which nothing
+        public says (of Tim Plas's 35 devices one reports a battery and
+        eight were ever seen unavailable), and whether its connection
+        is up. The connection flag is the one the device's Status
+        sensor shows; ESPHome sets it before it writes the entities
+        unavailable on a drop, and before any state arrives on a
+        reconnect. The read is wrapped so a missing entry, a missing
+        attribute or a value that is not True or False answers None,
+        which keeps the device on the ordinary freeze rule; a Home
+        Assistant update that moves a field costs this exception and
+        nothing else. The first failure per entry is logged once at
+        info, so a moved field is visible without filling the log.
         """
-        found = self._freeze_rhythm(record)
-        if found is None:
-            return None
-        rhythm = found["rhythm"]
-        p = math.log(RATCHET_SLOW_ALLOWANCE / RATCHET_FAST_ALLOWANCE) / math.log(
-            RATCHET_SLOW_RHYTHM / RATCHET_FAST_RHYTHM
-        )
-        a = RATCHET_FAST_ALLOWANCE / (RATCHET_FAST_RHYTHM**p)
-        return rhythm + a * (rhythm**p)
+        entry_id = self._entry_of_device.get(device_id)
+        if entry_id is None:
+            return None, None
+        try:
+            runtime = self.hass.config_entries.async_get_entry(entry_id).runtime_data
+            deep_sleep = runtime.device_info.has_deep_sleep
+            connected = runtime.available
+            if not isinstance(deep_sleep, bool) or not isinstance(connected, bool):
+                # None or any other shape is a changed field, not an
+                # answer (adversarial round three, 12 October 2026).
+                raise TypeError(f"{type(deep_sleep).__name__}, {type(connected).__name__}")
+            return deep_sleep, connected
+        except Exception:  # noqa: BLE001
+            if entry_id not in self._deep_sleep_unreadable:
+                self._deep_sleep_unreadable.add(entry_id)
+                LOGGER.info(
+                    "device_sentinel: could not read whether an ESPHome "
+                    "device deep-sleeps or is connected; it is judged by "
+                    "the freeze rule"
+                )
+            return None, None
+
+    def _esphome_deep_sleep(self, device_id: str) -> bool | None:
+        """Whether an ESPHome device deep-sleeps, or None if unknown (#639)."""
+        return self._esphome_flags(device_id)[0]
+
+    def _awake_esphome(self, device_id: str) -> bool:
+        """Whether this is an ESPHome device whose connection speaks for it.
+
+        An ESPHome device that does not deep-sleep is never newly
+        judged frozen while Home Assistant's connection to it is up
+        (rulings #636 and #640): a device that hangs loses the
+        connection with everything else. On Tim Plas's house all 18
+        closed frozen episodes on ESPHome devices ran with the
+        connection up throughout. An entity of its own reading
+        unavailable while the connection is up, such as a firmware
+        update entity with the ESPHome dashboard stopped, does not
+        change this. A deep-sleep device is shown available while it
+        sleeps, so it keeps the freeze rule, and so does a device
+        whose flags cannot be read.
+        """
+        if self._watched.get(device_id) != "esphome":
+            return False
+        return self._esphome_flags(device_id) == (False, True)
+
+    def _dropped_esphome(self, device_id: str) -> bool:
+        """Whether an ESPHome device that does not sleep has lost its connection.
+
+        Such a device is unavailable, whatever its Status sensor reads,
+        and nothing its entities show while the connection is down is
+        the device speaking (ruling #640): ESPHome keeps the Status
+        sensor available and switches it off on a drop.
+        """
+        if self._watched.get(device_id) != "esphome":
+            return False
+        return self._esphome_flags(device_id) == (False, False)
 
     def _freeze_rhythm(self, record: dict[str, Any]) -> dict[str, Any] | None:
         """Return the rhythm in use for a device, kept in memory (0.24.0).
@@ -480,17 +533,23 @@ class FreezeMixin:
             return False
 
     @staticmethod
-    def _retract_today_max(record: dict[str, Any], gap: float) -> None:
-        """Undo a daily-max bump a now-discarded pairing gap just made.
+    def _retract_today_max(
+        record: dict[str, Any], gap: float, before: float | None
+    ) -> None:
+        """Undo the daily-max bump a now-discarded gap just made.
 
-        The gap update runs before the pairing check, so a pairing gap
-        that was the day's largest has to be pulled back out, or it
-        would widen the learned rhythm it should never touch. Only the
-        exact value is retracted, and only when it is the current max,
-        so an unrelated larger gap is left alone.
+        The gap update runs before the pairing, maintenance, handled,
+        set-aside and commanded checks, so a discarded gap that was the
+        day's largest has to be pulled back out, or it would widen the
+        learned rhythm it should never touch. Only the exact value is
+        retracted, and only when it is the current max, so an unrelated
+        larger gap is left alone. The day's longest gap from before
+        this one goes back in its place (ruling #641): setting it to
+        nothing threw away the real gaps the device had earlier that
+        day (adversarial round three, 12 October 2026).
         """
         if record[DEV_TODAY_MAX] is not None and record[DEV_TODAY_MAX] == gap:
-            record[DEV_TODAY_MAX] = None
+            record[DEV_TODAY_MAX] = before
 
     def _taint_debounce(self, record: dict[str, Any]) -> float:
         """Return the unavailable a device tolerates before a taint.
@@ -579,6 +638,11 @@ class FreezeMixin:
 
         window = self._freeze_window(record)
 
+        # An ESPHome device whose connection is down is unavailable
+        # (ruling #640), and a frozen verdict standing escalates to it.
+        if self._dropped_esphome(device_id):
+            return FREEZE_CATEGORY_UNAVAILABLE
+
         # Frozen: armed, and silent past its window while entities
         # still hold values. Judged first because it is the timer's
         # own verdict.
@@ -621,6 +685,17 @@ class FreezeMixin:
         # regardless of the clock: this is the unavailable/unknown
         # path, which needs no arming because it reads present state.
         if all_bad:
+            # An awake ESPHome device whose entities read unknown is
+            # still connected (ruling #636): unknown is shown, frozen
+            # is not, unless a frozen verdict already stands (#529).
+            # Found by the adversarial round of 12 October 2026: a
+            # device of buttons reads unknown until one is pressed.
+            if (
+                frozen
+                and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
+                and self._awake_esphome(device_id)
+            ):
+                frozen = False
             present = {
                 FREEZE_CATEGORY_UNAVAILABLE: any_unavailable,
                 FREEZE_CATEGORY_UNKNOWN: any_unknown,
@@ -635,10 +710,35 @@ class FreezeMixin:
         # non-bad entities are stale (not fresh), the device is
         # frozen; a genuinely fresh entity would have re-armed the
         # timer, so reaching here with frozen True means the values
-        # are held, not live.
+        # are held, not live. Unless the device's own connection says
+        # otherwise (rulings #636 and #640): an awake ESPHome device
+        # whose connection is up has nothing new to say, which is not
+        # a freeze. A verdict already standing is kept until the
+        # device reports (#529): a device frozen when 0.26.0 starts is
+        # not told as recovered by a rule changing.
+        if (
+            frozen
+            and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
+            and self._awake_esphome(device_id)
+        ):
+            return None
         if frozen:
             return FREEZE_CATEGORY_FROZEN
         return None
+
+    @staticmethod
+    def _outage_began(record: dict[str, Any], now: float) -> float:
+        """When the device as a whole went down, from its saved start, or now."""
+        saved = record.get(DEV_DOWN_SINCE)
+        if (
+            isinstance(saved, list)
+            and len(saved) == 2
+            and isinstance(saved[0], (int, float))
+            and not isinstance(saved[0], bool)
+            and saved[0] <= now
+        ):
+            return float(saved[0])
+        return now
 
     def _apply_freeze_verdict(
         self, device_id: str, record: dict[str, Any], now: float
@@ -671,7 +771,12 @@ class FreezeMixin:
             since = record.get(DEV_FROZEN_SINCE)
             if current is None:
                 if since is None:
-                    record[DEV_FROZEN_SINCE] = now
+                    # Dated from the saved start of the outage when one
+                    # is held (ruling #647): the sweep sees a drop up
+                    # to a minute late, and after a restart much later.
+                    # The debounce still counts from the moment the
+                    # whole device went.
+                    record[DEV_FROZEN_SINCE] = self._outage_began(record, now)
                     self._dirty = True
                     # Critical, not merely dirty. This stamp is what
                     # the debounce counts from, and its clear below is
@@ -705,6 +810,13 @@ class FreezeMixin:
             return False
 
         record[DEV_FROZEN_CATEGORY] = category
+        # How the trouble began, saved with the record so a restart
+        # cannot turn a freeze that went unavailable into a drop (#644,
+        # amended; adversarial round thirteen).
+        if category is None:
+            record[DEV_DOWN_BEGAN_AS] = None
+        elif current is None:
+            record[DEV_DOWN_BEGAN_AS] = category
         if category == FREEZE_CATEGORY_FROZEN and current != FREEZE_CATEGORY_FROZEN:
             self._note_frozen_listing(device_id, record, now)
         elif current == FREEZE_CATEGORY_FROZEN:
@@ -736,6 +848,7 @@ class FreezeMixin:
             if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_FROZEN:
                 self._note_frozen_cleared(device_id, dt_util.utcnow().timestamp())
             record[DEV_FROZEN_CATEGORY] = None
+            record[DEV_DOWN_BEGAN_AS] = None
             record[DEV_FROZEN_SINCE] = None
             self._dirty = True
             self._critical = True
@@ -761,6 +874,7 @@ class FreezeMixin:
         now = dt_util.utcnow().timestamp()
         self._note_silences(now)
         self._trim_episodes(now)
+        self._note_drops(now)
         if self._in_startup_grace():
             # Nothing is judged inside the grace (ruling #291): every
             # verdict stays as the last start left it, and the first
@@ -792,6 +906,17 @@ class FreezeMixin:
                 )
         if flipped:
             self._notify()
+
+    def _note_drops(self, now: float) -> None:
+        """Start or end each device's outage from what it reads now (#647).
+
+        Run each minute, inside the startup grace and for muted devices
+        too, since muting stops judgment and not learning. It catches
+        what no state change announces: an ESPHome connection dropping
+        or coming back, and an entity renamed or removed.
+        """
+        for device_id in self._watched:
+            self._settle_down(device_id, None)  # type: ignore[attr-defined]
 
     def _held_by_upstream(self, device_id: str, now: float) -> bool:
         """Whether the device's upstream is down or still handing back.
@@ -840,6 +965,15 @@ class FreezeMixin:
         last = record.get(DEV_LAST_ACTIVITY)
         if not isinstance(last, (int, float)):
             return None
+        # A device set aside, excluded or removed and then watched again
+        # is judged from the moment it was watched again: the time
+        # nobody watched it is not its silence (ruling #648). A
+        # cancelled exclusion raised a frozen alert for the unwatched
+        # hour before. A clock restarted since (#468, #538, #622) is
+        # later than that moment and wins.
+        back = record.get(DEV_WATCHED_FROM)
+        if isinstance(back, (int, float)) and not isinstance(back, bool) and last < back <= now:
+            last = float(back)
         spans: list[tuple[float, float]] = []
         if (
             self._downtime > 0.0

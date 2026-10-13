@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.25.6 (2026-10-11)
+# File: config_flow.py, Version: 0.26.0 (2026-10-12)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -292,6 +292,77 @@ def _device_options(
     return options
 
 
+
+def _alphabetical(words: str) -> str:
+    """A sort key that files "Ático", "Ærø" and "Łódź" with their letter.
+
+    Accents are set aside, letters drawn with a stroke or joined (Ø, Ł,
+    Đ, Æ, Œ) are read as their plain letters, invisible marks such as a
+    zero-width space are dropped, and case is folded, so a Spanish,
+    German or Nordic name sits where a reader looks for it (adversarial
+    rounds of 12 October 2026).
+    """
+    import unicodedata
+
+    plain = unicodedata.normalize("NFKD", words)
+    kept = "".join(
+        ch for ch in plain
+        if unicodedata.category(ch)[0] != "M" and unicodedata.category(ch) != "Cf"
+    )
+    return kept.casefold().translate(_PLAIN_LETTERS)
+
+
+_PLAIN_LETTERS = str.maketrans({
+    "ø": "o", "ł": "l", "đ": "d", "ð": "d", "ħ": "h", "ŧ": "t", "ı": "i",
+    "æ": "ae", "œ": "oe",
+})
+
+def _badges_in_order(hass: Any, schema: vol.Schema) -> vol.Schema:
+    """Return the form with each multiple pick list's saved values sorted.
+
+    Home Assistant draws a list's badges in the order its value holds
+    them, which was the order they were picked, so a long exclusion or
+    mute list had no order a person could scan (Tim Plas, 12 October
+    2026). Each saved value is sorted by the words its badge shows: the
+    option's label, a label's name, or the value itself. Sections are
+    walked the same way; anything else passes through untouched.
+    """
+    from homeassistant.helpers import label_registry as lr
+
+    def words_for(field: Any) -> dict[str, str] | None:
+        if isinstance(field, selector.SelectSelector) and field.config.get("multiple"):
+            named: dict[str, str] = {}
+            for option in field.config.get("options") or []:
+                if isinstance(option, Mapping):
+                    named[str(option.get("value"))] = str(option.get("label") or option.get("value"))
+                else:
+                    named[str(option)] = str(option)
+            return named
+        if isinstance(field, selector.LabelSelector) and field.config.get("multiple"):
+            return {
+                label.label_id: label.name
+                for label in lr.async_get(hass).async_list_labels()
+            }
+        return None
+
+    rebuilt: dict[Any, Any] = {}
+    for key, field in schema.schema.items():
+        if isinstance(field, section):
+            field = section(_badges_in_order(hass, field.schema), field.options)
+        named = words_for(field)
+        default = getattr(key, "default", vol.UNDEFINED)
+        if named is not None and isinstance(key, vol.Optional) and callable(default):
+            held = default()
+            if isinstance(held, list) and len(held) > 1:
+                ordered = sorted(
+                    held,
+                    key=lambda value: (_alphabetical(named.get(str(value), str(value))), str(value)),
+                )
+                key = vol.Optional(key.schema, default=ordered, description=key.description)
+        rebuilt[key] = field
+    return vol.Schema(rebuilt, extra=schema.extra)
+
+
 def _surviving_picks(
     picks: list[str], covered: set[str], dev_reg: dr.DeviceRegistry
 ) -> list[str]:
@@ -446,6 +517,13 @@ def _studiable(hass) -> list[str]:
 
 class DeviceSentinelOptionsFlow(OptionsFlow):
     """A menu branching to each configuration surface."""
+
+    @callback
+    def async_show_form(self, *, data_schema: vol.Schema | None = None, **kwargs: Any) -> Any:
+        """Every form, with each list's chosen badges in alphabetical order."""
+        if data_schema is not None:
+            data_schema = _badges_in_order(self.hass, data_schema)
+        return super().async_show_form(data_schema=data_schema, **kwargs)
 
     # The muting ladder, broadest first. Each rung is the option keys
     # that carry one level of decision, and a pick on a lower rung is

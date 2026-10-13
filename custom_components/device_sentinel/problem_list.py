@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.25.5 (2026-10-10)
+# File: problem_list.py, Version: 0.26.0 (2026-10-12)
 
 """The problem list: the single memory every channel renders.
 
@@ -33,6 +33,8 @@ coordinator throughout and nothing here stands alone.
 
 from __future__ import annotations
 
+import math
+
 import uuid
 from typing import Any
 from homeassistant.core import callback
@@ -54,6 +56,10 @@ from .const import (
     ACTION_UNACKNOWLEDGED,
     DATA_DEVICES,
     DEV_FROZEN_CATEGORY,
+    DEV_LAST_ACTIVITY,
+    DEV_SET_ASIDE_SINCE,
+    DEV_WATCHED_FROM,
+    FREEZE_CATEGORY_FROZEN,
     DATA_TODO_ITEMS,
     DATA_TODO_JOURNAL,
     SETTLE_SHARE_PCT,
@@ -1258,8 +1264,9 @@ class ProblemListMixin:
             # This path is the device leaving the list altogether, so
             # nothing replaced anything: every kind here really did
             # clear.
+            down = self._down_for(device_id, kind, opened, now)
             self._resolve_incident(
-                device_id, name, kind, now, opened_at=opened
+                device_id, name, kind, now, opened_at=opened, down_for=down
             )
             self._collect_event(
                 kind, name, recovery=True, device_id=device_id
@@ -1268,7 +1275,7 @@ class ProblemListMixin:
                 device_id,
                 name,
                 kind,
-                None if opened is None else now - opened,
+                down,
                 # Bounded to this incident, using the opening read
                 # before the resolve. Asking again here returns None,
                 # because the row just written closes it, and the
@@ -1278,6 +1285,63 @@ class ProblemListMixin:
                 # (ruling #367).
                 self._recovery_cause(device_id, opened or 0.0),
             )
+
+    def _down_for(
+        self, device_id: str, kind: str, opened: float | None, now: float
+    ) -> float | None:
+        """How long a recovered device was down, for the recovered event.
+
+        For a frozen, unavailable or unknown kind (ruling #644, amended
+        12 October 2026): trouble that began as a freeze counts from the
+        device's last report, so a device frozen at 2h21 and unavailable
+        at 2h41 that returns at 2h50 was down 2h50; trouble that began
+        as unavailable or unknown counts from when it went, so a
+        five-minute drop on a device that reports twice a day reads five
+        minutes. A freeze that cleared with no report (the wait grew, a
+        setting changed) counts from the last report. A device taken
+        back counts from when it was watched again (ruling #650), or
+        from the opening when it came back already past its window.
+        Other kinds count from the opening.
+        """
+        began: Any = None
+        if TODO_KIND_FAMILIES.get(kind) == "down":
+            ended = self._report_ends_down.pop(device_id, None)  # type: ignore[attr-defined]
+            if isinstance(ended, tuple):
+                began_as, chain_since = ended
+                if began_as == FREEZE_CATEGORY_FROZEN:
+                    # A freeze: down since the device last spoke.
+                    began = self._silence_began.get(device_id)  # type: ignore[attr-defined]
+                elif isinstance(chain_since, (int, float)) and not isinstance(chain_since, bool):
+                    # Straight to unavailable or unknown: down since it went.
+                    began = chain_since
+                else:
+                    began = self._silence_began.get(device_id)  # type: ignore[attr-defined]
+            elif kind == TODO_KIND_FROZEN:
+                # A freeze that cleared with no report: the wait grew.
+                # Not across a stretch the device was set aside, which
+                # keeps the opening, as the report path does (round
+                # thirteen).
+                devices = self.data.get(DATA_DEVICES) if isinstance(self.data, dict) else None  # type: ignore[attr-defined]
+                record = devices.get(device_id) if isinstance(devices, dict) else None
+                if isinstance(record, dict) and record.get(DEV_SET_ASIDE_SINCE) is None:
+                    began = record.get(DEV_LAST_ACTIVITY)
+                elif isinstance(record, dict):
+                    # Taken back: from when it was watched again (#650).
+                    began = record.get(DEV_WATCHED_FROM)
+        # Across a clock step both count from the step (ruling #651).
+        if isinstance(began, (int, float)) and not isinstance(began, bool):
+            began = self._counted_from(float(began))  # type: ignore[attr-defined]
+        opened = self._counted_from(opened)  # type: ignore[attr-defined]
+        if (
+            isinstance(began, (int, float))
+            and not isinstance(began, bool)
+            and math.isfinite(began)
+            and began > 0.0
+            and began <= now
+            and (opened is None or began <= opened)
+        ):
+            return now - began
+        return None if opened is None else max(0.0, now - opened)
 
     def _diff_kinds(
         self,
@@ -1358,9 +1422,14 @@ class ProblemListMixin:
             replaced = self._overtaken(kind, gained) or self._still_down(
                 kind, new_kinds
             )
+            down = (
+                self._down_for(device_id, kind, opened, now)
+                if kind == top and not replaced
+                else None
+            )
             self._resolve_incident(
                 device_id, problem["name"], kind, now, opened_at=opened,
-                superseded=replaced,
+                superseded=replaced, down_for=down,
             )
             self._collect_event(
                 kind, problem["name"], recovery=True,
@@ -1372,7 +1441,7 @@ class ProblemListMixin:
                     device_id,
                     problem["name"],
                     kind,
-                    None if opened is None else now - opened,
+                    down,
                     # The same bound as the retire path: read before
                     # the resolve, because asking after it returns
                     # None and the fallback let any episode on the

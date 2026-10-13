@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: records.py, Version: 0.25.5 (2026-10-10)
+# File: records.py, Version: 0.26.0 (2026-10-12)
 
 """The device record shape, and the small helpers that go with it.
 
@@ -52,6 +52,7 @@ from .const import (
     DEV_FIRST_OBSERVED,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
+    DEV_DOWN_BEGAN_AS,
     DEV_LAST_ACTIVITY,
     DEV_REMOVED_NAME,
     DEV_REMOVED_SINCE,
@@ -77,6 +78,8 @@ from .const import (
     DEV_SIGNAL_VALUE,
     DEV_SIGNAL_ALT,
     DEV_SIGNAL_SCALE,
+    DEV_DOWN_SINCE,
+    DEV_WATCHED_FROM,
     DEV_TAINTED,
     DEV_TODAY_MAX,
     DEV_DAILY_DATES,
@@ -95,9 +98,10 @@ def _shift(seconds: float) -> str:
 def _span(seconds: float) -> str:
     """A compact span for a label: 74m, 4.1h, 2.3d, 3.5w.
 
-    First written for the label the resurrection cap prints when it
-    holds a gap down (ruling #166); since 0.23.19 it is the one compact
-    format, `durations.compact_span`, which every table uses.
+    First written for the label the resurrection cap printed when it
+    held a gap down (ruling #166, retired by #638 in 0.26.0); since
+    0.23.19 it is the one compact format, `durations.compact_span`,
+    which every table uses.
     """
     return compact_span(seconds)
 
@@ -147,6 +151,10 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         # aside otherwise, so a gap spanning a disabling is refused
         # rather than learned (ruling #257).
         DEV_SET_ASIDE_SINCE: None,
+        # The outage starts, kept on disk (ruling #647).
+        DEV_DOWN_SINCE: None,
+        # When it was watched again after being set aside (#648).
+        DEV_WATCHED_FROM: None,
         # None while the device is in Home Assistant; when it was
         # removed, and its name then, while the record is held for
         # REMOVED_HOLD_DAYS (ruling #622).
@@ -193,6 +201,7 @@ def _new_device_record(now_iso: str, seed_ts: float | None) -> dict[str, Any]:
         DEV_BATTERY_DAILY: [],
         DEV_FROZEN_CATEGORY: None,
         DEV_FROZEN_SINCE: None,
+        DEV_DOWN_BEGAN_AS: None,
     }
 
 

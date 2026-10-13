@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.23.19 (2026-09-30)
+# File: stack_zha.py, Version: 0.26.0 (2026-10-12)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -49,6 +49,7 @@ numbers say so.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntryState
@@ -461,3 +462,38 @@ def make_reader(hass: HomeAssistant) -> Any:
     reader at all.
     """
     return ZhaCoordinatorReader(hass)
+
+
+
+def last_heard(hass: HomeAssistant, device: dr.DeviceEntry) -> float | None:
+    """When ZHA's radio last heard a device, or None if it cannot be read.
+
+    ZHA keeps this for every device it owns: the "Last seen" on the
+    device's page in Home Assistant, moved by every message the radio
+    receives from the device (repeats and replays do not move it), and
+    saved in ZHA's database, so a reload or a restart does not reset
+    it. It is ZHA's own Last Seen clock, so a value a restarted ZHA
+    hands back from its cache is not taken for the device speaking
+    (ruling #652). Read from what ZHA keeps in Home Assistant's data,
+    without importing ZHA (rulings #515 and #639); anything not where
+    it is expected, as on a ZHA that keeps it elsewhere, reads as None
+    and the device is judged as one without a Last Seen clock.
+    """
+    try:
+        ieee = next(
+            str(identifier).lower()
+            for domain, identifier in device.identifiers
+            if domain == STACK_ZHA
+        )
+        proxies = hass.data[STACK_ZHA].gateway_proxy.device_proxies
+        seen = next(
+            proxy.device.last_seen
+            for key, proxy in proxies.items()
+            if str(key).lower() == ieee
+        )
+    except Exception:  # noqa: BLE001 - another integration's internals
+        return None
+    if isinstance(seen, bool) or not isinstance(seen, (int, float)):
+        return None
+    seen = float(seen)
+    return seen if math.isfinite(seen) and seen > 0.0 else None

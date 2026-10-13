@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.25.6 (2026-10-11)
+# File: const.py, Version: 0.26.0 (2026-10-12)
 
 """Constants for the Device Sentinel integration."""
 
@@ -222,28 +222,28 @@ MAINTENANCE_MINUTES_MIN = 5
 MAINTENANCE_MINUTES_MAX = 60
 MAINTENANCE_MINUTES_STEP = 5
 
-# The resurrection cap. A gap completing while the device stands
-# convicted of a freeze is a silent-then-speaks recovery that neither
-# of the other two intervention detectors can see: the device never
-# went unavailable, so nothing tainted it (ruling #137), and
-# permit-join was never open, so no pairing window covers it (ruling
-# #145). It may therefore be a battery pulled and pushed back, which
-# the integration has no way to observe (ruling #138). It is learned
-# at most as rhythm
-# plus an allowance, and the allowance is a power curve solved through
-# these two anchors: fifty percent of rhythm at the fast reference,
-# ten percent at the slow one. The fixed anchors are deliberate; they
-# graduate to sliders only once the mechanics are proven in the field.
-# Anchored to the rhythm, the device's own measured fact, rather than
-# the window, because the window is rhythm plus our patience, and
-# learning it back is a feedback loop that diverges on the grace
-# curve. Scope is the frozen verdict alone: an unavailable stretch is
-# attributed silence, the outage explains the gap, and the taint's
-# total discard remains correct for it.
-RATCHET_FAST_RHYTHM = 600.0
-RATCHET_FAST_ALLOWANCE = 300.0
-RATCHET_SLOW_RHYTHM = 43200.0
-RATCHET_SLOW_ALLOWANCE = 4320.0
+# A report that follows a command to the device clears a freeze
+# verdict without teaching anything (0.26.0, ruling #638): the device
+# answered, so it is reachable, but a toggle from a device card or an
+# automation says nothing about the device's own rhythm. The window is
+# how long after the command a report still counts as its reply. On
+# Zigbee2MQTT and ESPHome a toggle's reply arrives within a second or
+# two; sixty seconds covers a slow mesh and costs, at worst, one
+# discarded gap on a self-report that happened to follow a command,
+# the fail-safe direction pairing already takes. James measures it on
+# the rig before it moves. The ratchet cap this replaces (#166) is
+# retired: the two freeze rules already set a long day aside.
+COMMANDED_RECOVERY_SECONDS = 60.0
+LEARNED_COMMANDED = "no (commanded)"
+
+# A device whose wait in use is longer than this is slow to judge for
+# freeze (0.26.0, ruling #637): it reports on a person's habits rather
+# than a rhythm, so a freeze verdict comes late and is often noise.
+# Measured on 288 devices across two houses: freeze days per device
+# stay flat up to 48 hours of wait and jump above it, and James chose
+# 36 hours, inside the flat part, so the card offers a mute early and
+# never late. Checked again as more houses report.
+SLOW_REPORTER_SECONDS = 36.0 * 3600.0
 
 # A taint records why learning was suppressed, not merely that it
 # was, so a row can name the bridge that felled a device instead of
@@ -458,6 +458,18 @@ DEV_TODAY_MAX = "today_max"
 DEV_FIRST_OBSERVED = "first_observed"
 DEV_EVENT_COUNT = "event_count"
 DEV_SET_ASIDE_SINCE = "set_aside_since"
+# When the device as a whole went down, and the state it read (0.26.0,
+# ruling #647): every one of its own entities unavailable or unknown, or
+# an ESPHome device's connection dropped. One moment per device, never
+# per entity, so a rename or a removal cannot lose it. Saved with the
+# record so a restart cannot lose it either: the gap spanning an outage
+# longer than the taint debounce is not learned, whatever restarts
+# happen inside it.
+DEV_DOWN_SINCE = "down_since"
+# When a device set aside, excluded or removed was watched again, until
+# it reports (0.26.0, ruling #648). Its silence is judged from here, not
+# from its last report: the time nobody watched it is not its silence.
+DEV_WATCHED_FROM = "watched_from"
 # A device gone from Home Assistant keeps its record for
 # REMOVED_HOLD_DAYS (0.25.5, ruling #622). Home Assistant gives a
 # re-added device back its old id, and the record, answers and mutes
@@ -714,6 +726,13 @@ ROUTER_INTEGRATIONS = (
     "upc_connect",
 )
 DATA_ROUTERS_SEEN = "routers_seen"
+
+# The devices set aside (disabled, excluded or held after a removal)
+# at the last registry rebuild (ruling #648). Saved, so a device taken
+# back while Device Sentinel was reloading or disabled is still dated
+# as returned. Absent in a file from 0.25.6, whose stretches are not
+# dated: the upgrade is not a return.
+DATA_ASIDE_SEEN = "aside_seen"
 
 # The learned medium of every router tracker, persisted (ruling #418).
 # Keyed by tracker entity id, each value a dict of wired and wireless
@@ -1409,9 +1428,12 @@ SERIES_SIGNAL = (
 # every reading. The category is one of the three down states, or
 # None when the device is alive. frozen_since
 # is the UTC timestamp the verdict began, for the report and for
-# "how long".
+# "how long". down_began_as is the category the current trouble began
+# as, so a freeze that turned unavailable still counts from the last
+# report after a restart (ruling #644, amended).
 DEV_FROZEN_CATEGORY = "frozen_category"
 DEV_FROZEN_SINCE = "frozen_since"
+DEV_DOWN_BEGAN_AS = "down_began_as"
 
 
 # What a statistics epoch keeps. The wipe is everything else, taken
@@ -1448,7 +1470,10 @@ DEV_FROZEN_SINCE = "frozen_since"
 # rhythm, so it survives an epoch reset with the series it splits
 # (ruling #397). The comment sits outside the tuple because a guard
 # reads the tuple's lines as names.
+# The moment a device was watched again (ruling #648) is kept, with the
+# clock it corrects.
 EPOCH_KEPT = (
+    DEV_WATCHED_FROM,
     DEV_DAILY_DATES,
     DEV_SIGNAL_SCALE,
     DEV_SIGNAL_ALT,
@@ -1533,6 +1558,11 @@ CLOCK_FIELDS = (
     DEV_SIGNAL_READS,
     DEV_SIGNAL_TODAY_MAX,
     DEV_SIGNAL_RAIL_COUNT,
+    # The saved outage start (ruling #647) changes with the states, so
+    # it is written with each routine save: kept only in the main file,
+    # a start already cleared came back after a power cut (adversarial
+    # round eleven, 12 October 2026).
+    DEV_DOWN_SINCE,
 )
 
 SENTINEL_TYPE_LOW_BATTERIES = "low_batteries"
@@ -2414,7 +2444,7 @@ SYS_DEVICE_ID = "device_id"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 626
+HIGHEST_RULING = 652
 
 # How long a registry rebuild waits after the last one before the next
 # (0.24.2). Every device, entity or label change rebuilt Device
@@ -2791,9 +2821,8 @@ TODO_JOURNAL_KEEP = 100
 # present and future. Muting suppresses judgment, not observation:
 # muted devices keep their clocks, statistics, and vouching, so an
 # undo is instant and free and the rhythm history carries no holes.
-# An entity carrying a muted label does not feed its device's judgment;
-# there is no separate entity kind, which went as residue of the Entity
-# Sentinel blueprint.
+# A muted label mutes the device that carries it; on an entity it
+# mutes nothing (ruling #642). There is no entity kind of mute.
 #
 # The three kinds form a priority ladder, broadest first: integration,
 # label, device. A broader muting supersedes a narrower one and prunes

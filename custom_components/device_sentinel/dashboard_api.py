@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.25.6 (2026-10-11)
+# File: dashboard_api.py, Version: 0.26.0 (2026-10-12)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -33,7 +33,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
-from .device_actions import NameInUse
+from .device_actions import MUTE_SOURCES_SAID, NameInUse
 from .device_type import TYPE_CHOICES, TYPE_OTHER
 from .power_source import power_choices
 from .report_brief import RECOMMENDATIONS_CLOSING
@@ -236,10 +236,6 @@ def ws_classification(
             "deviceless": coordinator.deviceless_count,
             # The key under the table, the same words as the report's.
             "set_aside_meanings": [list(pair) for pair in SET_ASIDE_MEANINGS],
-            "muted_entities": [
-                {"entity_id": entity_id, "reason": reason}
-                for entity_id, reason in sorted(coordinator._muted_entities.items())
-            ],
         },
     )
 
@@ -662,6 +658,8 @@ def ws_device_last_seen(
         vol.Required("device_id"): str,
         vol.Required("kind"): vol.In(["everything", "freeze", "battery", "signal"]),
         vol.Required("on"): bool,
+        # Where the press was made, for the brief's line (ruling #643).
+        vol.Optional("source", default="device_page"): vol.In(list(MUTE_SOURCES_SAID)),
     }
 )
 @callback
@@ -671,7 +669,7 @@ def ws_device_mute(
     """Set or lift one kind of mute on a device, as Settings does."""
     _page_act(
         hass, connection, msg,
-        lambda c: c.page_set_mute(msg["device_id"], msg["kind"], msg["on"]),
+        lambda c: c.page_set_mute(msg["device_id"], msg["kind"], msg["on"], msg["source"]),
     )
 
 

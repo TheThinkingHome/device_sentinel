@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.25.6 (2026-10-11)
+# File: report_maintainer.py, Version: 0.26.0 (2026-10-12)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -1004,24 +1004,6 @@ class MaintainerReportMixin:
                 lines.append(
                     f"| {self._report_cell(domain)} | {standing} | {adds_to} |"
                 )
-
-        if self._muted_entities:
-            lines.append("")
-            lines.append(
-                f"## Muted Entities ({len(self._muted_entities)})"
-            )
-            lines.append("")
-            lines.append(
-                "Individual entities muted from judgment. An "
-                "muted entity still vouches for its device."
-            )
-            lines.append("")
-            lines.append("| ENTITY | REASON |")
-            lines.append("|---|---|")
-            for entity_id, reason in sorted(
-                self._muted_entities.items()
-            ):
-                lines.append(f"| {entity_id} | {reason} |")
 
         path = os.path.join(report_directory, REPORT_CLASSIFICATION)
         self._write_file(path, "\n".join(lines) + "\n")

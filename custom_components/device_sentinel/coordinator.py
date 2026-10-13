@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.25.6 (2026-10-11)
+# File: coordinator.py, Version: 0.26.0 (2026-10-12)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -61,8 +61,11 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    EVENT_CALL_SERVICE,
     EVENT_HOMEASSISTANT_STOP,
     EVENT_STATE_REPORTED,
+    STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
 from homeassistant.core import Event, HomeAssistant, callback
@@ -132,8 +135,10 @@ from .const import (
     RULE_TRIMMED,
     SLOWDOWN_DAYS,
     DAILY_SERIES_FIELDS,
+    COMMANDED_RECOVERY_SECONDS,
     FETCHING_INTEGRATIONS,
     FREEZE_CATEGORY_UNAVAILABLE,
+    FREEZE_CATEGORY_UNKNOWN,
     DEFAULT_RETENTION_DAYS,
     CONF_RETENTION_DAYS,
     CLOCK_RESET_THRESHOLD_SECONDS,
@@ -158,6 +163,7 @@ from .const import (
     DAILY_MAX_KEEP,
     DATA_BRIDGE_SEEN,
     DATA_ROUTERS_SEEN,
+    DATA_ASIDE_SEEN,
     DATA_WIFI_MEDIUM,
     DATA_WIFI_MEDIUM_REJECTED,
     DATA_BROKER_SEEN,
@@ -190,8 +196,11 @@ from .const import (
     DEV_EVENT_COUNT,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
+    DEV_DOWN_BEGAN_AS,
     DEV_LAST_ACTIVITY,
     DEV_SET_ASIDE_SINCE,
+    DEV_DOWN_SINCE,
+    DEV_WATCHED_FROM,
     DEV_REMOVED_NAME,
     DEV_BATTERY_VALUE,
     DEV_BATTERY_SINCE,
@@ -211,8 +220,10 @@ from .const import (
     EPOCH_KEPT,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
+    FREEZE_CATEGORY_PRIORITY,
     INC_CAUSE,
     LEARNED_DISABLED,
+    LEARNED_COMMANDED,
     LEARNED_MAINTENANCE,
     LEARNED_HANDLED,
     LEARNED_DOWNTIME_OUT,
@@ -296,12 +307,12 @@ from .records import (
     _new_device_record,
     _reset_signal_day,
     _shift,
-    _span,
     forget_signal_history,
 )
 from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
 from .stacks import device_key, is_plumbing, radio_owner
+from .stacks import last_heard as stack_last_heard
 from .store import StorageMixin, _watched_seconds
 
 
@@ -310,6 +321,22 @@ def _plain(name: object, limit: int = 120) -> str:
     to a readable length (0.25.5, found by the adversarial round)."""
     text = "".join(" " if ord(ch) < 32 or ord(ch) == 127 else ch for ch in str(name))
     return text if len(text) <= limit else text[: limit - 1] + "\u2026"
+
+
+# What a device whose only live entities are at rest reads as: not a
+# bad state, so it is judged by its clock (round sixteen).
+EVENT_RESTING = "resting"
+
+# Entities that read unknown until first used: an event entity until
+# its next event after every restart (0.24.3), a button until it is
+# first pressed. At rest they hold, as a kept value does, and say
+# nothing about the device (adversarial rounds sixteen and seventeen).
+RESTING_DOMAINS = frozenset({"event", "button"})
+
+
+def _resting(entity_id: str, state: str) -> bool:
+    """Whether an entity reads unknown only because it is at rest."""
+    return state == STATE_UNKNOWN and entity_id.split(".", 1)[0] in RESTING_DOMAINS
 
 
 def _forget_hold_verdicts(record: dict[str, Any]) -> None:
@@ -420,6 +447,10 @@ class DeviceSentinelCoordinator(
         self._hand_deleted: set[str] = set()
 
         self._entity_map: dict[str, tuple[str, str | None]] = {}
+        # Each watched device's own entities, from the same rebuild, so
+        # reading one device's states does not walk every entity in
+        # the house (adversarial round seventeen).
+        self._own_entities: dict[str, list[str]] = {}
         # The day a fold is folding, and the one a catch-up fold sets
         # for it (0.24.4): the daily histories' new entries take it.
         # Options a device-page mute just wrote (0.24.5): the update
@@ -476,7 +507,6 @@ class DeviceSentinelCoordinator(
         # running for everything in them, so undo is instant and the
         # rhythm history carries no holes.
         self._muted_devices: dict[str, str] = {}  # device_id -> reason
-        self._muted_entities: dict[str, str] = {}  # entity_id -> reason
         # id -> (name, domain, reason). The reason is one of the
         # SET_ASIDE_* constants and has been the third element since
         # 0.13.3, when a device disabled by Home Assistant joined
@@ -502,7 +532,6 @@ class DeviceSentinelCoordinator(
         self._signal_own_entities: set[str] = set()
         # entity_id -> device_id, the reverse index the intake uses.
         self._battery_entity_reverse: dict[str, str] = {}
-        self._pending_unavailable: dict[str, tuple[float, str]] = {}
         self._taint_consumed_at: dict[str, float] = {}
         # The unavailable duration that set each device's live
         # taint, held until the recovery stamp writes it onto the
@@ -625,6 +654,26 @@ class DeviceSentinelCoordinator(
         # state other than loaded. An integration is called down only
         # once that has outlived the dwell.
         self._entry_of_device: dict[str, str] = {}
+        # The moment of the last command to each device's entities,
+        # read from the bus (0.26.0, ruling #638), and the ESPHome
+        # entries whose deep-sleep flag could not be read (#639).
+        # Both live in memory only.
+        self._commanded_at: dict[str, float] = {}
+        # When each device's latest closed silence began (#644).
+        self._silence_began: dict[str, float] = {}
+        # Whether each device's latest report came while it was judged
+        # down (#644).
+        self._report_ends_down: dict[str, tuple[str, Any] | None] = {}
+        # Entities just renamed, whose first state under the new id is
+        # Home Assistant moving the old one across, not the device (#647).
+        self._renamed_entities: set[str] = set()
+        # The devices set aside at the last registry rebuild, so a
+        # return and a new stretch are each seen once, as they happen
+        # (#648; adversarial round thirteen). None before the first
+        # rebuild, which reads the saved set; a file from a release
+        # that kept none dates no return.
+        self._aside_seen: set[str] | None = None
+        self._deep_sleep_unreadable: set[str] = set()
         self._entry_down_at: dict[str, float] = {}
         self._integration_told: set[str] = set()
         # Entry outages by entry (0.22.23): each one's detail, the one
@@ -782,6 +831,11 @@ class DeviceSentinelCoordinator(
         self._tick_wall: float | None = None
         self._tick_mono: float | None = None
         self._clock_reset: tuple[float, float] | None = None
+        # The last clock step, as (the last minute check before it, in
+        # the old clock; the moment it was noticed, in the new one).
+        # Time across a step is unknown (ruling #651): a moment from
+        # before it counts from the step.
+        self._clock_step: tuple[float, float] | None = None
         self._orphan_episodes: dict[str, Any] = {}
         self._options_seen: dict[str, Any] = dict(entry.options)
         # What the last shape check found, held for the Repairs pass
@@ -1219,6 +1273,17 @@ class DeviceSentinelCoordinator(
             # fleet-wide clock reset. Missing-field faults keep their old
             # path: latched and reported, never a reason to discard.
             clock_faults = check_clocks((hot_payload or {}).get("clocks"))
+            # A damaged saved outage start (ruling #647) is that one
+            # field's loss, not the file's: it is cleared, and the
+            # device's next outage starts afresh. Discarding the whole
+            # file for it restarted every device's clock (adversarial
+            # round twelve, 12 October 2026).
+            for device_id, field, why in list(clock_faults):
+                if field == DEV_DOWN_SINCE and why != "missing":
+                    row = ((hot_payload or {}).get("clocks") or {}).get(device_id)
+                    if isinstance(row, dict):
+                        row[field] = None
+                    clock_faults.remove((device_id, field, why))
             clock_damage = [f for f in clock_faults if f[2] != "missing"]
             if clock_damage:
                 LOGGER.warning(
@@ -1661,6 +1726,17 @@ class DeviceSentinelCoordinator(
                 EVENT_STATE_REPORTED,
                 self._on_state_reported,
                 event_filter=self._event_filter,
+            )
+        )
+        # A command to a watched device's entity, from a device card,
+        # a script or an automation (0.26.0, ruling #638). The first
+        # time Device Sentinel sees a hand on a device: a report that
+        # follows one clears a freeze verdict and teaches nothing.
+        self._unsubs.append(
+            self.hass.bus.async_listen(
+                EVENT_CALL_SERVICE,
+                self._on_call_service,
+                event_filter=self._command_filter,
             )
         )
         # One rebuild for a burst of registry changes, not one per
@@ -2156,7 +2232,6 @@ class DeviceSentinelCoordinator(
         # not follow it (ruling #331).
         set_aside: dict[str, tuple[str, str, str]] = {}
         muted_devices: dict[str, str] = {}
-        muted_entities: dict[str, str] = {}
         stacks: set[str] = set()
         owning_domains: set[str] = set()
         stack_keys: dict[str, tuple[str, str]] = {}
@@ -2329,13 +2404,12 @@ class DeviceSentinelCoordinator(
                     device_entries.setdefault(ent.device_id, set()).add(
                         ent.config_entry_id
                     )
-            if muted_labels & set(ent.labels or ()):
-                # An entity carrying a muted label does not feed
-                # its device's judgment. This is the label axis, not a
-                # per-entity mute: the explicit entity mute was
-                # removed as residue from
-                # the entity-level Entity Sentinel blueprint.
-                muted_entities[ent.entity_id] = "label"
+            # A muted label mutes the device that carries it, never an
+            # entity (ruling #642): Device Sentinel judges devices, and
+            # a label on one entity, often put there for a dashboard or
+            # a voice assistant, changed nothing a person could see on
+            # the device's page. Disabling the entity in Home Assistant
+            # is the way to take one entity out.
             if self._is_last_seen(ent):
                 if last_seen_entity.get(ent.device_id) is None or (
                     own and not last_seen_own.get(ent.device_id, False)
@@ -2455,9 +2529,13 @@ class DeviceSentinelCoordinator(
         self._device_labels = device_labels
         self._set_aside = set_aside
         self._muted_devices = muted_devices
-        self._muted_entities = muted_entities
         self._entity_map = entity_map
         self._foreign_entities = foreign_entities
+        own_entities: dict[str, list[str]] = {}
+        for entity_id, (owner, _) in entity_map.items():
+            if entity_id not in foreign_entities:
+                own_entities.setdefault(owner, []).append(entity_id)
+        self._own_entities = own_entities
         self._foreign_by_device = foreign_by_device
         self._foreign_ids = foreign_ids
         # An integration whose entities all sit on devices other
@@ -2510,21 +2588,74 @@ class DeviceSentinelCoordinator(
         held_now: list[str] = []
         returned: list[str] = []
         excluded_gone: list[str] = []
+        aside_before = self._aside_seen
+        if aside_before is None:
+            # The first rebuild reads the saved set, so a return made
+            # while Device Sentinel was reloading or disabled is dated
+            # (adversarial round fourteen). None from a file that has
+            # none, such as 0.25.6's.
+            stored = self.data.get(DATA_ASIDE_SEEN)
+            if isinstance(stored, list) and all(isinstance(x, str) for x in stored):
+                aside_before = set(stored)
+        # Watched at the last rebuild, so being set aside or removed
+        # now starts a new stretch; before the first rebuild nothing
+        # is known, and a stamp already saved is kept.
+        aside_now: set[str] = set()
         for device_id in list(devices):
             record = devices[device_id]
+            fresh_stretch = aside_before is not None and device_id not in aside_before
             if device_id in watched or device_id in set_aside:
+                came_back = False
                 if isinstance(record, dict) and record.get(DEV_REMOVED_SINCE) is not None:
                     returned.append(device_id)
                     self._welcome_back(device_id, record)
+                    came_back = True
                 if device_id in watched:
+                    returning = (
+                        isinstance(record, dict)
+                        and record.get(DEV_SET_ASIDE_SINCE) is not None
+                        and (came_back or (aside_before is not None and device_id in aside_before))
+                    )
+                    if returning and self._past_window_when_set_aside(record):
+                        # Down before anyone stopped watching it: judged
+                        # from its last report, so an earlier return no
+                        # longer dates its silence (ruling #650).
+                        if record.get(DEV_WATCHED_FROM) is not None:
+                            record[DEV_WATCHED_FROM] = None
+                            self._mark_cold_dirty()
+                    elif returning:
+                        # Back from being set aside, excluded or
+                        # removed: judged from now, since the time
+                        # nobody watched it is not its silence (#648).
+                        # Dated once, as it comes back: a later
+                        # settings change, a restart or the upgrade
+                        # from a release that kept no return never
+                        # re-dates it, so none can clear a standing
+                        # freeze (adversarial round thirteen).
+                        record[DEV_WATCHED_FROM] = now_stamp
+                        # In the main file, written at once: a lost
+                        # clocks file must not make a restart look like
+                        # the return (adversarial round twelve).
+                        self._mark_cold_dirty()
+                        self._critical = True
                     continue
+                aside_now.add(device_id)
+                # Unwatched, its outage is not followed: the return
+                # reads it afresh (#648; adversarial round seventeen).
+                if isinstance(record, dict) and record.get(DEV_DOWN_SINCE) is not None:
+                    record[DEV_DOWN_SINCE] = None
+                    self._dirty = True
                 # Set aside, not gone: a person disabling an
                 # integration for an afternoon must not lose what the
                 # house spent weeks learning (ruling #257). The record
                 # is kept untouched and unjudged, and the stamp lets
                 # the gap that spans the absence be refused on return.
-                if devices[device_id].get(DEV_SET_ASIDE_SINCE) is None:
-                    devices[device_id][DEV_SET_ASIDE_SINCE] = now_stamp
+                # Each stretch dates its own start, so the return reads
+                # this stretch, not an earlier one (round thirteen).
+                if isinstance(record, dict) and (
+                    record.get(DEV_SET_ASIDE_SINCE) is None or fresh_stretch
+                ):
+                    record[DEV_SET_ASIDE_SINCE] = now_stamp
                     self._mark_cold_dirty()
                 continue
             if not isinstance(record, dict):
@@ -2532,6 +2663,7 @@ class DeviceSentinelCoordinator(
                 self._mark_cold_dirty()
                 continue
             if record.get(DEV_REMOVED_SINCE) is not None:
+                aside_now.add(device_id)
                 continue
             if device_id in previously_excluded or device_id in self.excluded_devices:
                 # Excluded, then removed (ruling #625, found by review):
@@ -2549,10 +2681,17 @@ class DeviceSentinelCoordinator(
             # purges a hold that has run its time.
             record[DEV_REMOVED_SINCE] = now_stamp
             record[DEV_REMOVED_NAME] = previous_names.get(device_id)
-            if record.get(DEV_SET_ASIDE_SINCE) is None:
+            if record.get(DEV_SET_ASIDE_SINCE) is None or fresh_stretch:
                 record[DEV_SET_ASIDE_SINCE] = now_stamp
+            record[DEV_DOWN_SINCE] = None
             held_now.append(device_id)
+            aside_now.add(device_id)
             self._mark_cold_dirty()
+        self._aside_seen = aside_now
+        if self.data.get(DATA_ASIDE_SEEN) != sorted(aside_now):
+            self.data[DATA_ASIDE_SEEN] = sorted(aside_now)
+            self._mark_cold_dirty()
+            self._critical = True
         if excluded_gone:
             self._drop_excluded_and_removed(excluded_gone)
         if held_now:
@@ -2695,6 +2834,10 @@ class DeviceSentinelCoordinator(
         that carried a muting stays immediate, because its name exists
         only until the removal completes.
         """
+        old_id = event.data.get("old_entity_id")
+        new_id = event.data.get("entity_id")
+        if isinstance(old_id, str) and isinstance(new_id, str) and old_id != new_id:
+            self._entity_renamed(old_id, new_id)
         if event.data.get("action") == "remove":
             device_id = event.data.get("device_id")
             # A device with a record is held 30 days (ruling #622), and
@@ -2785,18 +2928,127 @@ class DeviceSentinelCoordinator(
         """Fast pre-filter: only entities mapped to watched devices."""
         return event_data.get("entity_id") in self._entity_map
 
-    @callback
-    def _end_pending_absences(self, device_id: str, spoke: str | None) -> None:
-        """Forget the pending absences of a device that was just heard (0.24.3)."""
-        if not self._pending_unavailable:
+    def _past_window_when_set_aside(self, record: dict[str, Any]) -> bool:
+        """Whether the device was already silent past its window when set aside.
+
+        Such a device was down before anyone stopped watching it, so it
+        is judged from its last report on its return, and reads frozen
+        again at once rather than a window later (adversarial round
+        twelve, 12 October 2026).
+        """
+        last = record.get(DEV_LAST_ACTIVITY)
+        aside = record.get(DEV_SET_ASIDE_SINCE)
+        if not isinstance(last, (int, float)) or not isinstance(aside, (int, float)):
+            return False
+        if isinstance(last, bool) or isinstance(aside, bool):
+            return False
+        # Silence counts from an earlier return, if it came after the
+        # last report and before this stretch, so an earlier stretch
+        # set aside is not read as this one's silence (round thirteen).
+        back = record.get(DEV_WATCHED_FROM)
+        if (
+            isinstance(back, (int, float))
+            and not isinstance(back, bool)
+            and last < back <= aside
+        ):
+            last = back
+        window = self._freeze_window(record)
+        return window is not None and aside - last >= window
+
+    def _entity_renamed(self, old_id: str, new_id: str) -> None:
+        """Note a renamed entity, whose first write is not a report.
+
+        Home Assistant removes the old state and writes the same value
+        under the new id. That write is not the device speaking
+        (adversarial rounds of 12 October 2026). The outage start is
+        the device's, not the entity's, so a rename carries nothing.
+        """
+        self._renamed_entities.add(new_id)
+
+    def _down_now(self, device_id: str) -> str | None:
+        """The state the device as a whole is down in now, "" if up.
+
+        Down means its ESPHome connection has dropped (ruling #640), or
+        every one of its own live entities reads unavailable or
+        unknown. A foreign entity is not read, and an event entity at
+        rest holds, as a kept value does. None when nothing can be
+        read yet, as while its integration loads after a restart: an
+        outage neither starts nor ends on that.
+        """
+        if self._dropped_esphome(device_id):
+            return STATE_UNAVAILABLE
+        states = self._live_entity_states(device_id)
+        if not states:
+            return None
+        if any(state not in BAD_STATES for state in states):
+            return ""
+        return STATE_UNAVAILABLE if STATE_UNAVAILABLE in states else STATE_UNKNOWN
+
+    @staticmethod
+    def _saved_down_since(record: dict[str, Any]) -> tuple[float, str] | None:
+        """The record's saved outage start, if it holds a sound one."""
+        saved = record.get(DEV_DOWN_SINCE)
+        if (
+            isinstance(saved, list)
+            and len(saved) == 2
+            and isinstance(saved[0], (int, float))
+            and not isinstance(saved[0], bool)
+            and math.isfinite(saved[0])
+            and isinstance(saved[1], str)
+        ):
+            return float(saved[0]), saved[1]
+        return None
+
+    @staticmethod
+    def _verdict_start(record: dict[str, Any]) -> tuple[float, str] | None:
+        """When a standing unavailable or unknown verdict began, if one does."""
+        category = record.get(DEV_FROZEN_CATEGORY)
+        since = record.get(DEV_FROZEN_SINCE)
+        if (
+            category in (FREEZE_CATEGORY_UNAVAILABLE, FREEZE_CATEGORY_UNKNOWN)
+            and isinstance(since, (int, float))
+            and not isinstance(since, bool)
+            and math.isfinite(since)
+        ):
+            return float(since), str(category)
+        return None
+
+    def _settle_down(self, device_id: str, entity_id: str | None) -> None:
+        """Start or end the device's outage, from what it reads now.
+
+        One moment per device (ruling #647): saved when the device goes
+        down as a whole, and taken when it comes back, whichever entity
+        it comes back through. An entity that goes bad alone while
+        another still holds a value is not the device's outage and
+        starts nothing. Kept with the record, so a restart inside an
+        outage cannot lose its start, and free of entity ids, so a
+        rename or a removal cannot either. With nothing saved, as at
+        the upgrade from a release that saved no start or after a
+        damaged one was cleared, a standing unavailable or unknown
+        verdict gives the start.
+        """
+        record = self.data[DATA_DEVICES].get(device_id)
+        if not isinstance(record, dict):
             return
-        for entity_id in [
-            entity_id
-            for entity_id in self._pending_unavailable
-            if entity_id != spoke
-            and (self._entity_map.get(entity_id) or (None,))[0] == device_id
-        ]:
-            del self._pending_unavailable[entity_id]
+        down = self._down_now(device_id)
+        if down is None:
+            return
+        saved = self._saved_down_since(record)
+        if down:
+            if saved is None:
+                now = dt_util.utcnow().timestamp()
+                verdict = self._verdict_start(record)
+                began = verdict[0] if verdict is not None and verdict[0] < now else now
+                record[DEV_DOWN_SINCE] = [began, down]
+                self._dirty = True
+            return
+        if record.get(DEV_DOWN_SINCE) is not None:
+            record[DEV_DOWN_SINCE] = None
+            self._dirty = True
+        if saved is None:
+            saved = self._verdict_start(record)
+        if saved is not None:
+            self._taint_after_absence(device_id, entity_id or device_id, saved)
 
     @callback
     def _taint_after_absence(
@@ -2824,7 +3076,16 @@ class DeviceSentinelCoordinator(
         apart.
         """
         began, bad_state = pending
-        gone = dt_util.utcnow().timestamp() - began
+        now = dt_util.utcnow().timestamp()
+        if began > now:
+            # A clock set back since the start was saved (#538): how
+            # long it lasted is unknown, so the gap is not learned.
+            began = now - 86400.0
+        # Device Sentinel's own stops inside the absence are not the
+        # device's (ruling #541, as for a gap): an entity written
+        # unavailable as Home Assistant shuts down and back as it
+        # starts is a restart, not an outage (ruling #647).
+        gone = now - began - self._stopped_within(began, now)
         if began <= self._taint_consumed_at.get(device_id, 0.0):
             return
         record = self.data[DATA_DEVICES].get(device_id)
@@ -2870,6 +3131,11 @@ class DeviceSentinelCoordinator(
         if mapped is None:
             return
         device_id, entry_id = mapped
+        if entity_id in self._renamed_entities:
+            self._renamed_entities.discard(entity_id)
+            if event.data.get("old_state") is None and new_state.state not in BAD_STATES:
+                # The value moved across by a rename, not a report.
+                return
         if entity_id in self._foreign_entities:
             # Another integration's entity on this device (0.22.21):
             # its absence says nothing about the device, and its
@@ -2886,30 +3152,19 @@ class DeviceSentinelCoordinator(
                         notify_on_change=True,
                     )
             return
-        if new_state.state == STATE_UNKNOWN and entity_id.split(".", 1)[0] == "event":
-            # An event entity reads unknown until its next event, after
-            # every restart (0.24.3): reachable, with nothing to show
-            # yet. That is neither an absence nor the device speaking.
-            # It does end an absence: an action entity unavailable as
-            # Zigbee2MQTT stops comes back unknown as it starts, and the
-            # unavailable stretch is judged by its real length, not by
-            # the hours of waiting for the next press that follow it.
-            pending = self._pending_unavailable.pop(entity_id, None)
-            if pending is not None:
-                self._taint_after_absence(device_id, entity_id, pending)
+        # The device's outage starts when it goes down as a whole and
+        # ends when any of its own entities holds a value again (ruling
+        # #647). An event entity reads unknown until its next event,
+        # after every restart (0.24.3): at rest, holding, so an action
+        # entity back at unknown as Zigbee2MQTT starts ends the outage
+        # at its real length, not after the hours until the next press.
+        self._settle_down(device_id, entity_id)
+        if new_state.state in BAD_STATES or self._dropped_esphome(device_id):
+            # An absence, or an event entity at rest, says nothing
+            # new; and a value written while the connection is down,
+            # such as the Status sensor turning off, is not the device
+            # speaking (ruling #640).
             return
-        if new_state.state in BAD_STATES:
-            # Debounced: note when the absence began, taint only if it
-            # lasts. A dead device never recovers, never completes a
-            # gap, and so needs no taint to stay unlearned.
-            self._pending_unavailable.setdefault(
-                entity_id,
-                (dt_util.utcnow().timestamp(), new_state.state),
-            )
-            return
-        pending = self._pending_unavailable.pop(entity_id, None)
-        if pending is not None:
-            self._taint_after_absence(device_id, entity_id, pending)
         old_state = event.data.get("old_state")
         if self._republished(device_id, old_state):
             # A value coming back through a restart or an outage is the
@@ -2954,11 +3209,85 @@ class DeviceSentinelCoordinator(
             # reference rig ends most nights at the reboot's reading.
             return False
         record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
+        # The stack's own Last Seen clock, as ZHA keeps (ruling #652):
+        # a value is the device speaking only if the radio has heard it
+        # since its last report. Otherwise the stack, restarted or
+        # reloaded, is handing back what it kept, however briefly it
+        # was down.
+        heard = stack_last_heard(self.hass, self._watched.get(device_id), device_id)
+        if heard is not None:
+            last = record.get(DEV_LAST_ACTIVITY)
+            return (
+                isinstance(last, (int, float))
+                and not isinstance(last, bool)
+                and heard[1] <= last
+            )
         if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_UNAVAILABLE:
             return False
         return self._in_startup_grace() or self._held_by_upstream(
             device_id, dt_util.utcnow().timestamp()
         )
+
+    @callback
+    def _command_filter(self, event_data: Any) -> bool:
+        """Fast pre-filter: commands naming an entity of a watched device."""
+        return bool(self._command_entities(event_data))
+
+    def _command_entities(self, event_data: Any) -> list[str]:
+        """The watched entities a service call names, if any.
+
+        A call names its targets under `service_data` as one entity
+        id or a list of them (0.26.0, ruling #638). Calls aimed at an
+        area, a device id or a label are not resolved here: Home
+        Assistant expands those inside the call, and the reply the
+        device sends is still a reply, so the cost of missing one is
+        a learned gap, the direction the rule was already taking.
+        """
+        try:
+            data = event_data.get("service_data") or {}
+            ids = data.get(ATTR_ENTITY_ID)
+        except AttributeError:
+            return []
+        # Home Assistant also accepts one string of comma-separated ids
+        # and any letter case (adversarial round three, 12 October 2026).
+        if isinstance(ids, str):
+            ids = ids.split(",")
+        if not isinstance(ids, list):
+            return []
+        named = (i.strip().lower() for i in ids if isinstance(i, str))
+        return [i for i in named if i in self._entity_map]
+
+    @callback
+    def _on_call_service(self, event: Event[Any]) -> None:
+        """Remember when each watched device was last commanded (#638)."""
+        now = dt_util.utcnow().timestamp()
+        for entity_id in self._command_entities(event.data):
+            owner = self._entity_map[entity_id][0]
+            if entity_id in self._foreign_entities:
+                continue
+            self._commanded_at[owner] = now
+
+    def _recovered_after_command(
+        self, device_id: str, record: dict[str, Any], now: float
+    ) -> bool:
+        """Whether this report clears a freeze and follows a command.
+
+        True only while the device stands frozen and a command to one
+        of its own entities arrived within COMMANDED_RECOVERY_SECONDS
+        (ruling #638). The command is spent once read, so a second
+        report after it is the device's own.
+        """
+        if record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN:
+            return False
+        at = self._commanded_at.get(device_id)
+        if at is None:
+            return False
+        # A command stamped after now means the system clock was set
+        # back since (#538): it is no reply to anything.
+        if not 0.0 <= now - at <= COMMANDED_RECOVERY_SECONDS:
+            return False
+        self._commanded_at.pop(device_id, None)
+        return True
 
     @callback
     def _on_state_reported(self, event: Event[Any]) -> None:
@@ -2972,9 +3301,16 @@ class DeviceSentinelCoordinator(
         if mapped is None:
             return
         device_id, entry_id = mapped
+        foreign = entity_id in self._foreign_entities
+        if not foreign:
+            self._settle_down(device_id, entity_id)
+            # A same-value write while the connection is down is not
+            # the device speaking either (#640; adversarial round six).
+            if self._dropped_esphome(device_id):
+                return
         self._record_activity(
             device_id, entry_id, entity_id, new_state.state,
-            foreign=entity_id in self._foreign_entities,
+            foreign=foreign,
         )
 
     @callback
@@ -3093,15 +3429,50 @@ class DeviceSentinelCoordinator(
             self._dirty = True
             return
 
-        # The device was heard (0.24.3): an absence is the device's,
-        # not one entity's, so any of its entities still marked absent
-        # stops counting, untainted. On the reference rig on 3 October
-        # Button Randy Night Table's action entity sat at unknown from
-        # a restart until a press 8.9 hours later, while the button was
-        # heard through its other entities; the press tainted it and
-        # its next gap was forgotten. An entity that is absent while
-        # the rest of the device reports says nothing about the device.
-        self._end_pending_absences(device_id, entity_id)
+        # When the silence this report ends began (ruling #644): a
+        # recovery's "down for" counts from here, the device's last
+        # report, rather than from the moment its verdict was reached.
+        # Not across a stretch the device was set aside, disabled or
+        # excluded by a person: that is not the device being down, and
+        # the recovery keeps its own opening (ruling #367's case).
+        # A device taken back counts from when it was watched again
+        # (ruling #650): the time nobody watched it is not its silence.
+        back = record.get(DEV_WATCHED_FROM)
+        if last is not None and record.get(DEV_SET_ASIDE_SINCE) is None:
+            self._silence_began[device_id] = last
+        elif (
+            last is not None
+            and isinstance(back, (int, float))
+            and not isinstance(back, bool)
+            and back > last
+        ):
+            self._silence_began[device_id] = float(back)
+        else:
+            self._silence_began.pop(device_id, None)
+        # Whether this report ends a down verdict, read before the
+        # verdict clears below: a recovery that follows it counts from
+        # the silence it ended; one with no report counts from the last
+        # report (#644). Read from the verdict, not from stamps, which a
+        # Last Seen clock or a clock reset can place before the opening
+        # (adversarial round of 12 October 2026).
+        # It keeps how the trouble began (ruling #644, amended 12
+        # October 2026): a freeze counts from the last report, while a
+        # device that went straight to unavailable counts from when it
+        # went, so a five-minute drop on a quiet device reads five
+        # minutes, not the hours of quiet before it.
+        category = record.get(DEV_FROZEN_CATEGORY)
+        if category is None:
+            self._report_ends_down[device_id] = None
+        else:
+            # A damaged saved value is not trusted, and a standing
+            # freeze can only have begun as a freeze (round fourteen).
+            began_as = record.get(DEV_DOWN_BEGAN_AS)
+            if category == FREEZE_CATEGORY_FROZEN or began_as not in FREEZE_CATEGORY_PRIORITY:
+                began_as = category
+            self._report_ends_down[device_id] = (
+                began_as,
+                record.get(DEV_FROZEN_SINCE),
+            )
 
         # A taint is consumed by a stamp the protocol vouches for:
         # the outage ended here, and the spanning gap is muted
@@ -3122,9 +3493,12 @@ class DeviceSentinelCoordinator(
             # A gap is learned only if Device Sentinel could trust all
             # of it (#549): see `_gap_untrusted` for the rule.
             tainted = self._gap_untrusted(device_id, record, last, stamp)
-        capped_note: str | None = None
         downtime_note: str | None = None
         learned_gap: float | None = None
+        # Today's longest gap before this one, put back if this gap is
+        # discarded below (ruling #641): the day keeps the real gaps it
+        # had, rather than losing them with the one set aside.
+        today_before = record.get(DEV_TODAY_MAX)
         if not tainted and last is not None:
             gap = stamp - last
             learned_gap = gap
@@ -3136,27 +3510,14 @@ class DeviceSentinelCoordinator(
             if stopped > 0.0:
                 learned_gap = max(0.0, gap - stopped)
                 downtime_note = LEARNED_DOWNTIME_OUT
-            # The resurrection cap (ruling #166): a gap completing while the
-            # device stands convicted of a freeze may be a hand-fix
-            # nothing can see, so it teaches at most rhythm plus the
-            # ratchet allowance. Judgment and every human-facing
-            # surface keep the true duration; only what learning
-            # stores is capped. Several recoveries in one day each cap
-            # independently, and the comparison below keeps only the
-            # largest.
-            if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_FROZEN:
-                cap = self._resurrection_cap(record)
-                if cap is not None and learned_gap > cap:
-                    learned_gap = cap
-                    capped_note = (
-                        f"capped ({_span(gap)} -> {_span(cap)})"
-                    )
-                    LOGGER.debug(
-                        "Convicted device's completed gap of %.0f s "
-                        "learned as %.0f s under the resurrection cap",
-                        gap,
-                        cap,
-                    )
+            # No cap on a gap that ends under a freeze verdict (0.26.0,
+            # ruling #638, retiring #166): the Trimmed Maximum sets
+            # aside its longest day and the Log-Normal Percentile its
+            # days far above normal, so a single long day cannot
+            # stretch the wait in use. A device that goes quiet for
+            # long spells on most days does learn them: a slow reporter
+            # learns the quiet spells it really has. A hand on the device is read below, from
+            # the command that preceded the report.
             # Held at the retention (ruling #543): a silence longer
             # than the history kept is learned as the retention and
             # shown as more than it.
@@ -3178,7 +3539,7 @@ class DeviceSentinelCoordinator(
         learned = (
             f"no ({tainted})"
             if tainted
-            else (capped_note or downtime_note or "yes")
+            else (downtime_note or "yes")
         )
         # A recovery during a pairing window is a hand re-pair, not a
         # self-recovery, so its gap is discarded whatever the taint
@@ -3191,9 +3552,9 @@ class DeviceSentinelCoordinator(
             if not tainted and learned_gap is not None:
                 # Undo the daily-max update this gap just made, so a
                 # pairing gap never widens the learned rhythm. The
-                # retraction uses what was actually learned, which is
-                # the capped value when the cap bit (ruling #166).
-                self._retract_today_max(record, learned_gap)
+                # retraction uses what was actually learned, the gap
+                # with Device Sentinel's own stops taken out (#541).
+                self._retract_today_max(record, learned_gap, today_before)
             LOGGER.debug(
                 "Device %s recovered during a Z2M pairing window; gap "
                 "discarded as a pairing intervention",
@@ -3205,11 +3566,11 @@ class DeviceSentinelCoordinator(
             # the device's own rhythm (ruling #257). Same treatment as
             # pairing and maintenance: refused and retracted, so a
             # two weeks switched off cannot teach a two-week
-            # window of normal silence. The stamp is cleared by the registry rebuild
-            # that brought the device back.
+            # window of normal silence. The stamp is cleared by the
+            # device's own report, below.
             learned = LEARNED_DISABLED
             if not tainted and learned_gap is not None:
-                self._retract_today_max(record, learned_gap)
+                self._retract_today_max(record, learned_gap, today_before)
             LOGGER.debug(
                 "Device %s returned from being set aside; gap "
                 "discarded as administrative",
@@ -3233,7 +3594,7 @@ class DeviceSentinelCoordinator(
             # and the moment both.
             learned = LEARNED_HANDLED
             if not tainted and learned_gap is not None:
-                self._retract_today_max(record, learned_gap)
+                self._retract_today_max(record, learned_gap, today_before)
             LOGGER.debug(
                 "Device %s was handled by a person; gap discarded "
                 "rather than learned",
@@ -3245,15 +3606,33 @@ class DeviceSentinelCoordinator(
             # and #238). Pairing takes precedence where both windows are
             # open, because it is the more specific signal: it names
             # the stack, where maintenance names only the person. Same
-            # retraction as pairing (ruling #166); detections are untouched,
+            # retraction as pairing; detections are untouched,
             # since a device going down during maintenance is not an
             # intervention.
             learned = LEARNED_MAINTENANCE
             if not tainted and learned_gap is not None:
-                self._retract_today_max(record, learned_gap)
+                self._retract_today_max(record, learned_gap, today_before)
             LOGGER.debug(
                 "Device %s recovered during a maintenance window; gap "
                 "discarded as a hand fix",
+                device_id,
+            )
+        elif self._recovered_after_command(device_id, record, now):
+            # The report that clears a freeze verdict followed a
+            # command to the device (0.26.0, ruling #638): a toggle
+            # from a device card or an automation. The device answered,
+            # so it is reachable and the verdict clears below; the gap
+            # measures nobody's hand on the switch rather than the
+            # device's own rhythm, so it is discarded as a pairing gap
+            # is. Last on the ladder, below every window a stack or a
+            # person declared, and read only while a freeze stands:
+            # a command on an ordinary day changes nothing.
+            learned = LEARNED_COMMANDED
+            if not tainted and learned_gap is not None:
+                self._retract_today_max(record, learned_gap, today_before)
+            LOGGER.debug(
+                "Device %s reported after a command to it while frozen; "
+                "gap discarded as a commanded recovery",
                 device_id,
             )
         self._close_episode(device_id, stamp, learned, taint_seconds)
@@ -3266,6 +3645,10 @@ class DeviceSentinelCoordinator(
             # Cleared here rather than when the registry brought it
             # back, which happens before it speaks (ruling #257).
             record[DEV_SET_ASIDE_SINCE] = None
+        # Heard: its silence runs from this report again (#648).
+        if record.get(DEV_WATCHED_FROM) is not None:
+            record[DEV_WATCHED_FROM] = None
+            self._mark_cold_dirty()
         self._dirty = True
 
         # Recovery is live: a device the protocol has heard from is
@@ -3383,6 +3766,29 @@ class DeviceSentinelCoordinator(
         for record in self.data[DATA_DEVICES].values():
             if not isinstance(record, dict):
                 continue
+            # An outage's start restarts here, as the device clocks
+            # do: which clock it was written in cannot be told, and
+            # the time before is unwatched (ruling #647; adversarial
+            # round seventeen). So does the start of an unavailable or
+            # unknown verdict, or of one still being debounced.
+            saved = self._saved_down_since(record)
+            if saved is not None:
+                record[DEV_DOWN_SINCE] = [wall, saved[1]]
+            since = record.get(DEV_FROZEN_SINCE)
+            if (
+                record.get(DEV_FROZEN_CATEGORY)
+                in (None, FREEZE_CATEGORY_UNAVAILABLE, FREEZE_CATEGORY_UNKNOWN)
+                and isinstance(since, (int, float))
+                and not isinstance(since, bool)
+            ):
+                record[DEV_FROZEN_SINCE] = wall
+            # The set-aside stamp moves too, so a clock set back while
+            # a device is set aside does not read as silence before it
+            # (round thirteen).
+            for field in (DEV_WATCHED_FROM, DEV_SET_ASIDE_SINCE):
+                moment = record.get(field)
+                if isinstance(moment, (int, float)) and not isinstance(moment, bool):
+                    record[field] = float(moment) + drift
             if record.get(DEV_LAST_ACTIVITY) is None:
                 continue
             since = record.get(DEV_FROZEN_SINCE)
@@ -3397,10 +3803,23 @@ class DeviceSentinelCoordinator(
                 record[DEV_FROZEN_SINCE] = min(float(since), wall)
             else:
                 record[DEV_LAST_ACTIVITY] = wall
-            record[DEV_TAINTED] = False
+            # An outage running across the step has no known length,
+            # so the gap it ends is not learned (ruling #651).
+            record[DEV_TAINTED] = (
+                False if saved is None
+                else TAINT_UNKNOWN if saved[1] == STATE_UNKNOWN
+                else TAINT_UNAVAILABLE
+            )
             restarted += 1
         self._shift_moments(drift)
         self._clock_reset = (wall, drift)
+        self._clock_step = (previous_wall, wall)
+        # A restart's downtime credit was measured in the old clock:
+        # with the clocks restarted here it has nothing left to cover,
+        # and kept, it put a frozen device back inside its window
+        # (ruling #651; adversarial round eighteen).
+        self._downtime = 0.0
+        self._last_alive = None
         self._record_system_event(
             SYS_CLOCK_RESET,
             detail=f"{_shift(drift)}, {restarted} clocks restarted",
@@ -3441,12 +3860,24 @@ class DeviceSentinelCoordinator(
         "_pairing_open_at",
         "_handled_at",
         "_taint_consumed_at",
+        "_commanded_at",
+        "_silence_began",
     )
     _MOMENT_PAIRS = (
         "_bridge_handback",
         "_integration_handback",
         "_wifi_handback",
     )
+
+    def _counted_from(self, moment: float | None) -> float | None:
+        """A moment as a duration counts it: from the last clock step
+        when it lies before the step, since the time across a step is
+        unknown (ruling #651)."""
+        step = self._clock_step
+        if moment is None or step is None:
+            return moment
+        before, at = step
+        return at if moment <= before else moment
 
     def _shift_moments(self, drift: float) -> None:
         """Move every in-memory wall-clock moment by a reset's size."""
@@ -3989,6 +4420,7 @@ class DeviceSentinelCoordinator(
                 continue
             record[DEV_FROZEN_CATEGORY] = None
             record[DEV_FROZEN_SINCE] = None
+            record[DEV_DOWN_BEGAN_AS] = None
             self._dirty = True
             self._critical = True
 
@@ -4402,17 +4834,22 @@ class DeviceSentinelCoordinator(
         """Return the current states of a device's live (enabled)
         entities. A missing state object means the entity is not live
         and is skipped, so the judgment reads only what a person could
-        see reporting.
+        see reporting. A foreign entity (0.22.21) is not read: holding a
+        value, it would read the device as up while every entity of its
+        own is down.
         """
         states: list[str] = []
-        for entity_id, (owner, _) in self._entity_map.items():
-            # A foreign entity (0.22.21) holding a value would read the
-            # device as up while every entity of its own is down.
-            if owner != device_id or entity_id in self._foreign_entities:
-                continue
+        resting = False
+        for entity_id in self._own_entities.get(device_id, ()):
             state = self.hass.states.get(entity_id)
-            if state is not None:
-                states.append(state.state)
+            if state is None:
+                continue
+            if _resting(entity_id, state.state):
+                resting = True
+                continue
+            states.append(state.state)
+        if not states and resting:
+            states.append(EVENT_RESTING)
         return states
 
 
@@ -4985,11 +5422,10 @@ class DeviceSentinelCoordinator(
                 SYS_OPTIONS_CHANGED, detail=", ".join(moved)
             )
         LOGGER.debug(
-            "Options updated: low threshold now %s, %d devices and %d "
-            "entities muted; re-evaluating",
+            "Options updated: low threshold now %s, %d devices "
+            "muted; re-evaluating",
             self.low_threshold,
             len(self._muted_devices),
-            len(self._muted_entities),
         )
         self._schedule_brief()
         self._evaluate_all_batteries()

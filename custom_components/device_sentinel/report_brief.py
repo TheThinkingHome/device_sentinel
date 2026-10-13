@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.25.5 (2026-10-10)
+# File: report_brief.py, Version: 0.26.0 (2026-10-12)
 
 """The daily brief: the one report written for a person.
 
@@ -1589,9 +1589,21 @@ class BriefMixin:
         # fifty-device hub reconnect wear the same word otherwise
         # (ruling #233).
         tail = f", the largest affecting {_plural(most)}" if most else ""
+        # A run inside one minute names its minute once (0.26.0,
+        # ruling #629): "between 5:11 PM and 5:11 PM" read as a
+        # mistake. Decided on the printed minutes, so a run from 5:11:50
+        # to 5:12:40 still reads "between 5:11 PM and 5:12 PM". The
+        # run must also last under a minute: in the hour a clock sets
+        # back, 1:30 AM and the next 1:30 AM print alike an hour apart
+        # (adversarial round three, 12 October 2026).
+        inside_a_minute = float(opens[-1][SYS_WHEN]) - float(opens[0][SYS_WHEN]) < 60.0
+        when = (
+            f"at {first}" if first == last and inside_a_minute
+            else f"between {first} and {last}"
+        )
         return (
             f"The {self._integration_title(str(scope))} integration reloaded {len(opens)} times "
-            f"between {first} and {last}{tail}."
+            f"{when}{tail}."
         )
 
     def _other_house_sentences(

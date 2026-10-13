@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stacks.py, Version: 0.21.3 (2026-09-14)
+# File: stacks.py, Version: 0.26.0 (2026-10-12)
 
 """The one place a coordinator stack is registered.
 
@@ -156,4 +156,28 @@ def reader_for_domain(
     for module in STACK_MODULES:
         if module.owns_domain(domain):
             return readers.get(module.STACK)
+    return None
+
+
+def last_heard(
+    hass: HomeAssistant, domain: str | None, device_id: str
+) -> tuple[str, float] | None:
+    """When the device's own stack last heard it, if the stack keeps that.
+
+    The stack's own Last Seen clock (ruling #652), as ZHA keeps for
+    every device. A stack that keeps none answers nothing, and so does
+    one whose clock cannot be read; the device is then judged as one
+    without a Last Seen clock. Returns the stack's name with the time.
+    """
+    if not domain:
+        return None
+    device = dr.async_get(hass).async_get(device_id)
+    if device is None:
+        return None
+    for module in STACK_MODULES:
+        if not module.owns_domain(domain):
+            continue
+        reader = getattr(module, "last_heard", None)
+        seen = reader(hass, device) if reader is not None else None
+        return (module.STACK, seen) if seen is not None else None
     return None

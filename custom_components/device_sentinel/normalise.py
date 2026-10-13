@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.25.5 (2026-10-10)
+# File: normalise.py, Version: 0.26.0 (2026-10-12)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (ruling #370).
@@ -86,7 +86,10 @@ from .const import (
     DEV_FIRST_OBSERVED,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
+    DEV_DOWN_BEGAN_AS,
     DEV_LAST_ACTIVITY,
+    DEV_DOWN_SINCE,
+    DEV_WATCHED_FROM,
     DEV_SET_ASIDE_SINCE,
     DEV_REMOVED_NAME,
     DEV_REMOVED_SINCE,
@@ -130,6 +133,7 @@ from .const import (
     DATA_SIGNAL_DAY_REPAIR,
     DATA_SIGNAL_WEIGHTING,
     BACKUP_TAKEN_KEY,
+    DATA_ASIDE_SEEN,
     DATA_SIGNAL_STRESS,
     PROBE_AGREES,
     PROBE_DETAIL,
@@ -238,6 +242,8 @@ REAL_NUMBER = "number, not None"
 TEXT_LIST = "list of strings"
 MAPPING = "mapping"
 NULLABLE_MAPPING = "None or a mapping"
+# Each entity's outage start and the state it read (ruling #647).
+DOWN_SINCE = "None or [moment, state]"
 # A device's firmware history (0.23.4): [version, first seen] pairs,
 # the version a non-empty string and the moment a number.
 VERSION_HISTORY = "list of [version, first seen] pairs"
@@ -257,6 +263,8 @@ EXPECTED: dict[str, str] = {
     DEV_SIGNAL_SCALE: STRING,
     DEV_SIGNAL_ALT: ALT,
     DEV_SET_ASIDE_SINCE: MOMENT,
+    DEV_DOWN_SINCE: DOWN_SINCE,
+    DEV_WATCHED_FROM: MOMENT,
     DEV_REMOVED_SINCE: MOMENT,
     DEV_REMOVED_NAME: STRING,
     DEV_SIGNAL_VALUE: READING,
@@ -295,6 +303,7 @@ EXPECTED: dict[str, str] = {
     DEV_FIRMWARE_HISTORY: VERSION_HISTORY,
     DEV_FROZEN_CATEGORY: STRING,
     DEV_FROZEN_SINCE: MOMENT,
+    DEV_DOWN_BEGAN_AS: STRING,
 }
 
 
@@ -514,6 +523,17 @@ def _fault(kind: str, value: Any) -> str | None:
         return None
     if kind == MAPPING:
         return None if isinstance(value, dict) else _describe(value)
+    if kind == DOWN_SINCE:
+        if value is None:
+            return None
+        if (
+            isinstance(value, list)
+            and len(value) == 2
+            and _within(value[0], MOMENT_LOWEST, MOMENT_HIGHEST)
+            and isinstance(value[1], str)
+        ):
+            return None
+        return _describe(value)
     if kind == NULLABLE_MAPPING:
         if value is None or isinstance(value, dict):
             return None
@@ -740,6 +760,8 @@ SCALARS: dict[str, str] = {
     # The suffixes of the one-time backups already taken (#204). A
     # damaged list means a backup is taken twice or not at all.
     BACKUP_TAKEN_KEY: TEXT_LIST,
+    # A damaged list dates no return (ruling #648).
+    DATA_ASIDE_SEEN: TEXT_LIST,
 }
 
 # How many rows of one table are reported before the rest are counted.

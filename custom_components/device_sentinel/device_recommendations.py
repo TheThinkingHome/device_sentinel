@@ -3,16 +3,16 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.25.3 (2026-10-09)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.26.0 (2026-10-12)
 
 """Recommendations about single devices, for the Recommendations tab (0.24.9).
 
-Six kinds, each one card listing the devices it covers, worst first:
+Seven kinds, each one card listing the devices it covers, worst first:
 a device with no power set, one whose Last Seen sensor is switched
-off, one with no area, devices sharing a name, and last two about
-types (0.25.3): a device with no type, and a model whose devices have
-more than one. Watched devices
-only. Nothing is stored or dismissed: a device leaves its card when
+off, one with no area, devices sharing a name, two about types
+(0.25.3): a device with no type, and a model whose devices have more
+than one; and a device slow to judge for freeze (0.26.0, ruling #637),
+offered a freeze mute. Watched devices only. Nothing is stored or dismissed: a device leaves its card when
 its condition is gone, as the other recommendations do.
 
 The tab lists every device, and each can be put right from the list.
@@ -29,12 +29,20 @@ from typing import Any
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 
+from .const import (
+    DATA_DEVICES,
+    DEV_FROZEN_CATEGORY,
+    FREEZE_CATEGORY_FROZEN,
+    SLOW_REPORTER_SECONDS,
+)
+
 KIND_POWER = "power"
 KIND_AREA = "area"
 KIND_LAST_SEEN = "last_seen"
 KIND_NAMES = "names"
 KIND_TYPE = "type"
 KIND_MIXED_TYPES = "mixed_types"
+KIND_SLOW = "slow"
 
 
 def _count(count: int, one: str, many: str) -> str:
@@ -137,6 +145,30 @@ class DeviceRecommendationsMixin:
                     "notifications. Rename them from the Recommendations tab."
                 ),
             })
+        # A device slow to judge for freeze (0.26.0, ruling #637): its
+        # wait in use is over SLOW_REPORTER_SECONDS, it reports on a
+        # person's habits rather than a rhythm, and a freeze verdict for
+        # it comes late and is often noise. The card offers a freeze
+        # mute and changes nothing itself; a device already muted for
+        # freeze or for everything, and an awake ESPHome device #636 never judges frozen,
+        # are left off. Not in the emailed brief: a slow device is not
+        # a fault (#617's reasoning). The text is James's.
+        slow = [d for d in watched if self._slow_reporter(d)]  # type: ignore[attr-defined]
+        if slow:
+            cards.append({
+                "kind": KIND_SLOW,
+                "title": "Slow Reporting Devices",
+                "body": (
+                    "These devices go quiet for long periods. They are often devices that "
+                    "sleep until a person triggers or interacts with them. Because these "
+                    "devices do not report on a rhythm, Device Sentinel has trouble "
+                    "accurately reporting a frozen verdict. Often a freeze verdict for "
+                    "this device is noise and the best practice is to mute it. Device "
+                    "Sentinel will still report when it becomes unavailable or its "
+                    "battery runs low."
+                ),
+                "devices": rows(slow),
+            })
         # Last: a missing or mixed type changes no judgment (0.25.3).
         kinds = {d: self.type_words(d) for d in watched}  # type: ignore[attr-defined]
         untyped = [d for d in watched if not kinds[d]]
@@ -179,3 +211,30 @@ class DeviceRecommendationsMixin:
                 "devices": listed_mixed,
             })
         return cards
+
+    def _slow_reporter(self, device_id: str) -> bool:
+        """Whether a watched device's wait in use is over the slow line (#637).
+
+        A device muted for everything is never judged frozen either, so
+        it is left off as a freeze-muted one is (adversarial round two,
+        12 October 2026).
+        """
+        if device_id in self._muted_devices:  # type: ignore[attr-defined]
+            return False
+        if self._freeze_muted(device_id):  # type: ignore[attr-defined]
+            return False
+        record = self.data.get(DATA_DEVICES, {}).get(device_id)  # type: ignore[attr-defined]
+        if not isinstance(record, dict):
+            return False
+        # Left off only where judgment leaves it (#636, #640): an awake
+        # ESPHome device, connected or dropped (a drop is judged
+        # unavailable, never frozen), with no frozen verdict standing. Otherwise the freeze rule can still judge it, so
+        # the card still offers the mute (adversarial round five,
+        # 12 October 2026).
+        if (
+            (self._awake_esphome(device_id) or self._dropped_esphome(device_id))  # type: ignore[attr-defined]
+            and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
+        ):
+            return False
+        window = self._freeze_window(record)  # type: ignore[attr-defined]
+        return window is not None and window > SLOW_REPORTER_SECONDS

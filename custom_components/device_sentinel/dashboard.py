@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.25.6 (2026-10-11)
+# File: dashboard.py, Version: 0.26.0 (2026-10-12)
 
 """What the dashboard reads from the coordinator.
 
@@ -1021,7 +1021,15 @@ class DeviceViewMixin:
                 ),
                 "first_observed": record.get(DEV_FIRST_OBSERVED),
                 "event_count": record.get(DEV_EVENT_COUNT),
-                "clock": "last_seen" if device_id in self._last_seen_entity else "recorded",
+                # The Last Seen clock it is judged by: a Last Seen
+                # entity, its stack's own, named by the stack, as ZHA
+                # keeps (ruling #652), or none.
+                "clock": (
+                    "last_seen" if device_id in self._last_seen_entity
+                    else heard[0] if (heard := stacks.last_heard(
+                        self.hass, self._watched.get(device_id), device_id))
+                    else "recorded"
+                ),
                 "watched": device_id in self._watched,
                 "set_aside": (self._set_aside.get(device_id) or (None, None, ""))[2],
                 "muted": self.mute_text(device_id),

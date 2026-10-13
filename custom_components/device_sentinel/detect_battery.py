@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.24.6 (2026-10-05)
+# File: detect_battery.py, Version: 0.26.0 (2026-10-12)
 
 """Battery: the level threshold and what is tracked.
 
@@ -600,7 +600,6 @@ class BatteryMixin:
             # Battery-only muting stack on top of the global list.
             if (
                 device_id in self._muted_devices
-                or entity_id in self._muted_entities
                 or self._battery_muted(device_id)
             ):
                 continue
@@ -683,9 +682,8 @@ class BatteryMixin:
         """Return the number of devices currently battery-low."""
         return sum(
             1
-            for device_id, (entity_id, _) in self._battery_entity.items()
+            for device_id in self._battery_entity
             if device_id not in self._muted_devices
-            and entity_id not in self._muted_entities
             and not self._battery_muted(device_id)
             and (self.data[DATA_DEVICES].get(device_id) or {}).get(
                 DEV_BATTERY_LOW

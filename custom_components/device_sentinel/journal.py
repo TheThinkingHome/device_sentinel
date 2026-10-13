@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.25.5 (2026-10-10)
+# File: journal.py, Version: 0.26.0 (2026-10-12)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -775,6 +775,7 @@ class JournalMixin:
         now: float,
         opened_at: float | None = None,
         superseded: bool = False,
+        down_for: float | None = None,
     ) -> None:
         """Close one problem on the incident timeline.
 
@@ -791,7 +792,13 @@ class JournalMixin:
         opened = self._incident_opened_at(device_id, kind)
         if opened is None:
             opened = opened_at
-        duration = (now - opened) if opened is not None else None
+        # Across a clock step it counts from the step (ruling #651).
+        counted = self._counted_from(opened)  # type: ignore[attr-defined]
+        duration = max(0.0, now - counted) if counted is not None else None
+        if down_for is not None:
+            # The same figure the recovered event carries (#644), so
+            # the brief and an automation agree on how long it was down.
+            duration = down_for
         # A kind that ended because a worse one replaced it recovered
         # nothing, so it is neither timed against a reviving reboot
         # nor told as good news (0.22.26).
