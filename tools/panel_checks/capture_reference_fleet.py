@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/panel_checks/capture_reference_fleet.py, Version: 0.23.19 (2026-09-30)
+# File: tools/panel_checks/capture_reference_fleet.py, Version: 0.26.1 (2026-10-13)
 
 """Capture every dashboard reply from the reference fleet.
 
@@ -17,7 +17,7 @@ breaks the WebSocket's sign-in.
 """
 import json
 from pathlib import Path
-from tests.test_campaign_consistency import _render_fleet, JAMES_LIVE
+from tests.test_fleet_invariants import _render_fleet, JAMES_LIVE
 
 # Run from tests/, so the repository root is one level up.
 OUT = Path(__file__).resolve().parents[1] / "tools" / "panel_checks" / "payloads_fleet.json"

@@ -33,12 +33,14 @@ written rather than what it proves).
 | A device's page | `check_connects_line.js` | 4 | the Connects line, after Integration, absent where nothing is declared |
 | A device's page | `check_mutes_shown.js` | 6 | mutes named on the page, the Devices tab and an integration's page |
 | A device's page | `check_dated_histories.js` | 4 | a skipped day breaks a chart's line |
+| A device's page | `check_device_page_text.js` | 14 | the page reads at one size: secondary text at 14px, the heartbeat line plain, sensor names in the page's font, and other tabs unchanged |
+| Devices | `check_device_finders.js` | 28 | the Devices tab's search, Area and Label filters, its Excluded list with Cancel the exclusion, and an integration's page excluding it or taking it back |
 | Battery | `check_battery_steps.js` | 6 | how a battery reports, on its page and on Battery Trends |
 | Battery | `check_battery_weeks.js` | 13 | five weekly averages, the knee and its sentence, and the weekly columns |
 | Battery | `check_battery_chart.js` | 12 | the weekly bars and the fitted line only at 30 and 14 days, the knee only inside the range |
 | Signal | `check_dropping_out.js` | 5 | a device that keeps dropping out, on its page and on Signal Trends |
 
-444 checks in 27 files, as of 11 October 2026.
+501 checks in 29 files, as of 13 October 2026 (0.26.1).
 
 ## Running Them
 
