@@ -192,6 +192,12 @@ An automation built on Device Sentinel's events. When a presence sensor is repor
 
 ## Banners
 
+### device-sentinel-banner.svg
+
+The Device Sentinel banner the README shows. It turns dark or light with the reader's browser or system setting, on GitHub and on the HACS page.
+
+![device-sentinel-banner](./device-sentinel-banner.svg)
+
 ### device-sentinel-banner-light.png
 
 The Device Sentinel banner, light version.
