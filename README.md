@@ -1,7 +1,4 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/device-sentinel-banner-dark.png">
-  <img alt="Device Sentinel. Finds the devices that have stopped reporting." src="https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/device-sentinel-banner-light.png">
-</picture>
+<img alt="Device Sentinel. Finds the devices that have stopped reporting." src="https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/device-sentinel-banner.svg">
 
 # Device Sentinel
 
