@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.26.0 (2026-10-12)
+# File: coordinator.py, Version: 0.26.2 (2026-10-13)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -129,7 +129,9 @@ from .power_source import PowerMixin
 from .device_type import TypeMixin
 from .answers_store import AnswersMixin
 from .device_recommendations import DeviceRecommendationsMixin
+from .history_file import fold_line
 from .const import (
+    DATA_HISTORY_LINE,
     CLIP_MAX_DAYS,
     DEV_LOGNORMAL_DAYS,
     RULE_TRIMMED,
@@ -402,6 +404,16 @@ class DeviceSentinelCoordinator(
         self._clock_store: Store[dict[str, Any]] = Store(
             hass, STORAGE_CLOCKS_VERSION, STORAGE_CLOCKS_KEY
         )
+        # The history file (0.26.2, rulings #633, #655, #660): the
+        # digest of the older part last written or joined, the
+        # generation the main file pairs with, the highest generation
+        # seen on disk, and what the load found, for the diagnostics.
+        self._history_digest: str | None = None
+        self._history_generation: int | None = None
+        self._history_generation_high = 0
+        self._history_state: dict[str, Any] = {}
+        self._history_writes = 0
+        self._history_body: dict[str, Any] = {}
         # What powers each device (0.24.7): the owner's entries, in a
         # store of their own, and the shipped Battery Notes library.
         self._power_entries: dict[str, dict[str, Any]] = {}
@@ -1139,6 +1151,15 @@ class DeviceSentinelCoordinator(
             loaded.setdefault(DATA_WIFI_MEDIUM_REJECTED, {})
             loaded.setdefault(DATA_STORMS, [])
             loaded.setdefault(DATA_STORM_DAYS, [])
+            # The history file joins here, once for each document this
+            # load settles on, so every load-time step and both gates
+            # see the whole record (rulings #655, #660). A restore below
+            # replaces the document and the next pass joins its pair.
+            await self._join_history_at_load(loaded)
+            # Rows cross into the history file at a line set at each
+            # fold; a file from before 0.26.2 has none until now.
+            if not isinstance(loaded.get(DATA_HISTORY_LINE), (int, float)):
+                loaded[DATA_HISTORY_LINE] = fold_line()
             # The dry-run outbox was retired once the
             # notifications it previewed had been sending for
             # several releases. Drop what an older install stored,
@@ -4682,6 +4703,9 @@ class DeviceSentinelCoordinator(
         ).date()
         self._fold_day_override = None
         self._folding_day = day
+        # The line the long-kept rows cross into the history file moves
+        # only here, so they cross only at a fold (ruling #655).
+        self.data[DATA_HISTORY_LINE] = fold_line()
         self._discard_excluded_records()
         self._purge_held_records(dt_util.utcnow().timestamp())
         # Study readings for hardware no longer volunteered go here,
@@ -4912,7 +4936,7 @@ class DeviceSentinelCoordinator(
                 if self._stopped:
                     return
                 if self._cold_dirty:
-                    await self._store.async_save(self._data_to_save())
+                    await self._save_routine_main()
                 await self._clock_store.async_save(self._clocks_to_save())
         self._dirty = False
 
@@ -5346,7 +5370,7 @@ class DeviceSentinelCoordinator(
                 trim.write_backup,
                 self.hass.config.path(TRIM_BACKUP_DIR),
                 dt_util.now(),
-                self._data_to_save(),
+                self._trim_backup_storage(),
                 self._clocks_to_save(),
             )
         except OSError as error:

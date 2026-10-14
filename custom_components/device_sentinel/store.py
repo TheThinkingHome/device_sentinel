@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.26.1 (2026-10-13)
+# File: store.py, Version: 0.26.2 (2026-10-14)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -22,8 +22,14 @@ from __future__ import annotations
 
 from typing import Any
 from homeassistant.core import Event, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
-from .backup import async_rotate_last_good
+from . import history_file
+from .backup import (
+    async_copy_evidence,
+    async_rotate_last_good,
+    copy_main_over_last_good,
+)
 from .normalise import check_records, damaged_rows
 from .records import (
     _new_device_record,
@@ -68,6 +74,8 @@ from .const import (
     DATA_DEVICES,
     DATA_EPISODES,
     DATA_FIRST_INSTALLED,
+    DATA_HISTORY_GENERATION,
+    DATA_HISTORY_LINE,
     DATA_SAVED_AT,
     DATA_SETUP_COUNT,
     DATA_TODO_ITEMS,
@@ -93,7 +101,10 @@ from .const import (
     RETENTION_DAYS_MAX,
     RETENTION_DAYS_MIN,
     STORAGE_CLOCKS_KEY,
+    HISTORY_KEEP_ENTRIES,
+    STORAGE_HISTORY_KEY,
     TODO_DEVICE_ID,
+    TRIM_BACKUP_DIR,
 )
 
 
@@ -131,6 +142,14 @@ class StorageMixin:
     _started_at: float | None
     _pending_unclean: int | None
     _clocks_reset_at: float | None
+    # The history file's bookkeeping (0.26.2), set by the coordinator.
+    _history_digest: str | None
+    _history_generation: int | None
+    _history_generation_high: int
+    _history_state: dict[str, Any]
+    _history_writes: int
+    _history_body: dict[str, Any]
+    _rotation_armed: bool
 
     @staticmethod
     def _reconcile_records(
@@ -477,6 +496,18 @@ class StorageMixin:
         }
         return out
 
+    def _trim_backup_storage(self) -> dict[str, Any]:
+        """The whole record for a trim's backup copy (ruling #662).
+
+        The main file is a view since 0.26.2, so the copy is built from
+        memory, older history included, and records no history
+        generation: put back as the storage file, it loads whole and
+        joins nothing, so no older entry is doubled.
+        """
+        whole = self._data_to_save()
+        whole.pop(DATA_HISTORY_GENERATION, None)
+        return whole
+
     def _merge_clocks(
         self, loaded: dict[str, Any], hot: dict[str, Any] | None
     ) -> int:
@@ -631,8 +662,274 @@ class StorageMixin:
         elif self._rotation_armed:
             await async_rotate_last_good(self.hass)
             self._last_good_taken = dt_util.utcnow().timestamp()
-        await self._store.async_save(self._data_to_save())
+        await self._write_main_files(clean=clean and self._rotation_armed)
         self._rotation_armed = clean
+
+    async def _save_routine_main(self) -> None:
+        """The routine window's main-file write (0.26.2).
+
+        A routine write does not rotate, so a history change reaching
+        it would leave the main file's last-good copy older than both
+        history copies. When the older part has changed, the write
+        goes through the full seam instead, which rotates in the same
+        save the history file is written (ruling #660).
+        """
+        _view, part = history_file.split(self.data)
+        if history_file.digest(part) != self._history_digest:  # type: ignore[attr-defined]
+            await self._save_main()
+            return
+        await self._write_main_files(clean=False)
+
+    async def _write_main_files(self, *, clean: bool) -> None:
+        """Write the main file as a view, and the history file if it changed.
+
+        The four steps (ruling #660), run only when the digest of the
+        older part differs from the one last written (#655): the
+        history file is renamed to last-good, the new history file is
+        written and read back, the main file is written recording its
+        generation, and the new history file is copied over
+        last-good. A stop after the second step leaves the old main
+        file matching last-good; a stop after the third leaves the new
+        main file matching the live history.
+
+        A history file that cannot be written, or does not read back
+        the same, leaves the main file written whole, as an older
+        release wrote it, and the split is tried again at the next
+        save. An empty older part deletes both history files.
+        """
+        payload = self._data_to_save()
+        view, part = history_file.split(payload)
+        stamp = history_file.digest(part)
+        if stamp == self._history_digest:  # type: ignore[attr-defined]
+            if self._history_generation is None:  # type: ignore[attr-defined]
+                view.pop(DATA_HISTORY_GENERATION, None)
+            else:
+                view[DATA_HISTORY_GENERATION] = self._history_generation  # type: ignore[attr-defined]
+            await self._store.async_save(view)  # type: ignore[attr-defined]
+            return
+        if history_file.is_empty(part):
+            # Nothing older is kept. The main file goes first, recording
+            # no generation, then both history files, then the main
+            # file over its last-good as in any save that changed the
+            # history file: a stop between leaves a main file that joins
+            # nothing, and the next save removes what is left.
+            view.pop(DATA_HISTORY_GENERATION, None)
+            self.data.pop(DATA_HISTORY_GENERATION, None)  # type: ignore[attr-defined]
+            await self._store.async_save(view)  # type: ignore[attr-defined]
+            try:
+                removed = await history_file.delete_both(self.hass)  # type: ignore[attr-defined]
+            except OSError as err:
+                LOGGER.warning("The history file could not be removed: %s", err)
+                return
+            if removed:
+                LOGGER.info(
+                    "Nothing older than %d days is kept, so %s and its "
+                    "copy were removed",
+                    HISTORY_KEEP_ENTRIES,
+                    STORAGE_HISTORY_KEY,
+                )
+            await self._main_over_last_good(clean)
+            self._history_digest = stamp  # type: ignore[attr-defined]
+            self._history_generation = None  # type: ignore[attr-defined]
+            return
+        generation = self._history_generation_high + 1  # type: ignore[attr-defined]
+        self._history_generation_high = generation  # type: ignore[attr-defined]
+        if not await self._write_history(part, generation):
+            payload.pop(DATA_HISTORY_GENERATION, None)
+            self.data.pop(DATA_HISTORY_GENERATION, None)  # type: ignore[attr-defined]
+            self._history_generation = None  # type: ignore[attr-defined]
+            await self._store.async_save(payload)  # type: ignore[attr-defined]
+            return
+        view[DATA_HISTORY_GENERATION] = generation
+        self.data[DATA_HISTORY_GENERATION] = generation  # type: ignore[attr-defined]
+        await self._store.async_save(view)  # type: ignore[attr-defined]
+        try:
+            await history_file.write_copy(self.hass, self._history_body, last_good=True)  # type: ignore[attr-defined]
+        except (OSError, HomeAssistantError) as err:
+            # Last-good keeps the generation before this one, which the
+            # main file's own last-good copy matches until its next
+            # rotation, so nothing is unpaired.
+            LOGGER.warning(
+                "The new history file could not be copied over its "
+                "last-good copy: %s",
+                err,
+            )
+        await self._main_over_last_good(clean)
+        self._history_digest = stamp  # type: ignore[attr-defined]
+        self._history_generation = generation  # type: ignore[attr-defined]
+        self._history_writes += 1  # type: ignore[attr-defined]
+
+    async def _main_over_last_good(self, clean: bool) -> None:
+        """The main file over its own last-good, after a history change.
+
+        James, 13 October: "We do this to every data file." Only when
+        this save was a clean one that rotated: all the files then hold
+        one generation, so a main file damaged before the next save is
+        restored to a copy the history files match, or, when the
+        history files were removed, to one that joins nothing.
+        """
+        if not clean:
+            return
+        try:
+            await self.hass.async_add_executor_job(  # type: ignore[attr-defined]
+                copy_main_over_last_good, self.hass  # type: ignore[attr-defined]
+            )
+            self._last_good_taken = dt_util.utcnow().timestamp()  # type: ignore[attr-defined]
+        except OSError as err:
+            LOGGER.warning(
+                "The new storage file could not be copied over its "
+                "last-good copy: %s",
+                err,
+            )
+
+    async def _write_history(self, part: dict[str, Any], generation: int) -> bool:
+        """Steps 1 and 2: last-good, then the new file, read back."""
+        hass = self.hass  # type: ignore[attr-defined]
+        try:
+            await hass.async_add_executor_job(history_file.rename_to_last_good, hass)
+        except OSError as err:
+            LOGGER.warning(
+                "The history file could not be moved to its last-good "
+                "copy, so the storage file is written whole: %s",
+                err,
+            )
+            return False
+        body = {
+            history_file.H_GENERATION: generation,
+            history_file.H_LINE: self.data.get(DATA_HISTORY_LINE),  # type: ignore[attr-defined]
+            **part,
+        }
+        self._history_body = body
+        try:
+            await history_file.write_copy(hass, body, last_good=False)
+            written, why = await history_file.read_copy(hass, False)
+        except (OSError, ValueError, TypeError, HomeAssistantError) as err:
+            written, why = None, str(err)
+        if (
+            not isinstance(written, dict)
+            or written.get(history_file.H_GENERATION) != generation
+            or not history_file.same_content(written, part)
+        ):
+            LOGGER.warning(
+                "The history file did not read back as written (%s), so "
+                "the storage file is written whole and the split is tried "
+                "again at the next save",
+                why or "a different content",
+            )
+            return False
+        return True
+
+    async def _join_history_at_load(self, loaded: dict[str, Any]) -> None:
+        """Join the history copy whose generation the main file records.
+
+        Called once for each document the load settles on, before the
+        first load-time step, so every step and both gates see the
+        whole record (ruling #655). A main file with no generation
+        joins nothing: it was written before 0.26.2, or whole, and the
+        first save splits it. With no matching copy that passes the
+        shape check, both files are copied aside as evidence and the
+        start uses the main file's thirty days (ruling #660).
+        """
+        hass = self.hass  # type: ignore[attr-defined]
+        wanted = history_file.main_generation(loaded)
+        live, live_why = await history_file.read_copy(hass, False)
+        copy, copy_why = await history_file.read_copy(hass, True)
+        seen = [
+            payload.get(history_file.H_GENERATION)
+            for payload in (live, copy)
+            if isinstance(payload, dict)
+        ]
+        self._history_generation_high = max(  # type: ignore[attr-defined]
+            [0, wanted or 0]
+            + [g for g in seen if isinstance(g, int) and not isinstance(g, bool)]
+        )
+        state: dict[str, Any] = {
+            "generation": wanted,
+            "joined": None,
+            "reason": None,
+            "counts": None,
+            "held": None,
+        }
+        self._history_state = state  # type: ignore[attr-defined]
+        self._history_digest = None  # type: ignore[attr-defined]
+        self._history_generation = None  # type: ignore[attr-defined]
+        if wanted is None:
+            state["reason"] = "the storage file holds everything"
+            return
+        reasons: list[str] = []
+        for payload, why, which in ((live, live_why, "live"), (copy, copy_why, "last-good")):
+            if payload is None:
+                reasons.append(f"{which}: {why}")
+                continue
+            found = payload.get(history_file.H_GENERATION)
+            if found != wanted:
+                reasons.append(f"{which}: generation {found}")
+                continue
+            fault = history_file.check_payload(payload)
+            if fault is not None:
+                reasons.append(f"{which}: {fault}")
+                continue
+            part = {
+                key: value
+                for key, value in payload.items()
+                if key not in (history_file.H_GENERATION, history_file.H_LINE)
+            }
+            counts = history_file.join(loaded, payload)
+            state.update(
+                joined=which,
+                counts=counts,
+                held=history_file.describe(payload),
+                reason="; ".join(reasons) or None,
+            )
+            self._history_digest = history_file.digest(part)  # type: ignore[attr-defined]
+            self._history_generation = wanted  # type: ignore[attr-defined]
+            # The other copy is made the same again, so the pair is whole
+            # before the next fault rather than one fault from a mismatch:
+            # a stop between the last two steps leaves last-good a
+            # generation behind, and a damaged live file leaves one copy.
+            other = copy if which == "live" else live
+            if not isinstance(other, dict) or other != payload:
+                try:
+                    await history_file.write_copy(hass, payload, last_good=(which == "live"))
+                except (OSError, HomeAssistantError) as err:
+                    LOGGER.warning(
+                        "The %s history file could not be made the same "
+                        "as the %s one: %s",
+                        "last-good" if which == "live" else "live",
+                        which,
+                        err,
+                    )
+                else:
+                    state["mended"] = "last-good" if which == "live" else "live"
+            if which != "live":
+                LOGGER.warning(
+                    "The history file could not be used (%s), so its "
+                    "last-good copy of the same generation was joined",
+                    "; ".join(reasons),
+                )
+            LOGGER.info(
+                "History joined from the %s file, generation %d: %d "
+                "entries on %d device(s), %d row(s)",
+                which,
+                wanted,
+                counts["entries"],
+                counts["devices"],
+                counts["rows"],
+            )
+            return
+        stamp, _copied = await async_copy_evidence(hass)
+        state["reason"] = "; ".join(reasons)
+        loaded.pop(DATA_HISTORY_GENERATION, None)
+        LOGGER.warning(
+            "No history file matches the storage file (generation %d; "
+            "%s). Device Sentinel starts with the %d days the storage "
+            "file holds; copies were written to %s as %s",
+            wanted,
+            state["reason"],
+            HISTORY_KEEP_ENTRIES,
+            TRIM_BACKUP_DIR,
+            stamp or "unstamped",
+        )
 
     async def _save_now(self, *, final: bool = False) -> None:
         """The single immediate-save path.

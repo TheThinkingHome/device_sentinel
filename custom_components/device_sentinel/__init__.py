@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.25.4 (2026-10-09)
+# File: __init__.py, Version: 0.26.2 (2026-10-13)
 
 """The Device Sentinel integration.
 
@@ -53,6 +53,7 @@ from .const import (
     REPORT_DIR,
     REPORT_WWW_DIR,
     STORAGE_CLOCKS_KEY,
+    STORAGE_HISTORY_KEY,
     STORAGE_KEY,
 )
 from .answers_store import ANSWERS_STORE_KEY, LEGACY_POWER_KEY
@@ -465,7 +466,7 @@ async def async_remove_entry(
         # rather than a list somebody must remember to extend.
         # The answers file (0.25.1), and the power file it replaced,
         # which 0.24.7 to 0.25.0 left behind on uninstall.
-        for key in (STORAGE_KEY, STORAGE_CLOCKS_KEY, ANSWERS_STORE_KEY, LEGACY_POWER_KEY):
+        for key in (STORAGE_KEY, STORAGE_CLOCKS_KEY, STORAGE_HISTORY_KEY, ANSWERS_STORE_KEY, LEGACY_POWER_KEY):
             for path in storage.glob(f"{key}*"):
                 try:
                     path.unlink()

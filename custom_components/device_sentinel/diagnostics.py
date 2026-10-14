@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.26.0 (2026-10-12)
+# File: diagnostics.py, Version: 0.26.2 (2026-10-13)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -42,7 +42,7 @@ from homeassistant.util import dt as dt_util
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from . import DeviceSentinelConfigEntry
+from . import DeviceSentinelConfigEntry, history_file
 from .const import (
     DATA_SIGNAL_STRESS,
     BROKER_SCOPE,
@@ -57,6 +57,7 @@ from .const import (
     CONF_NORMAL_PRIORITY_TARGETS,
     DAILY_MAX_KEEP,
     DATA_DEVICES,
+    DATA_HISTORY_LINE,
     DATA_LAST_VERSION,
     DATA_STATS_EPOCH,
     DATA_TODO_ITEMS,
@@ -523,6 +524,18 @@ async def async_get_config_entry_diagnostics(
             # start is verifiable from a download (ruling #303 gave
             # it a job; this made it visible).
             "last_version": coordinator.data.get(DATA_LAST_VERSION),
+            # The history file (0.26.2): which copy the load joined, or
+            # why none was, what it holds, and how often it was written
+            # this session.
+            "history": {
+                **coordinator._history_state,
+                "pairs_with": coordinator._history_generation,
+                "line": coordinator.data.get(DATA_HISTORY_LINE),
+                "size": await hass.async_add_executor_job(
+                    history_file.file_size, hass
+                ),
+                "written_this_session": coordinator._history_writes,
+            },
         },
         "tunables": {
             "startup_grace_seconds": STARTUP_GRACE_SECONDS,

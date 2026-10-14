@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: backup.py, Version: 0.23.19 (2026-09-30)
+# File: backup.py, Version: 0.26.2 (2026-10-13)
 
 """A one-shot copy of both storage files, taken before a release removes
 something it cannot put back.
@@ -48,8 +48,10 @@ from .const import (
     BACKUP_TAKEN_KEY,
     LOGGER,
     STORAGE_CLOCKS_KEY,
+    STORAGE_HISTORY_KEY,
     STORAGE_KEY,
     TRIM_BACKUP_DIR,
+    TRIM_BACKUP_KEEP_DAYS,
 )
 
 
@@ -106,7 +108,14 @@ async def async_take_backup(
             _storage_path(hass, key),
             _storage_path(hass, f"{key}.{suffix}"),
         )
-        for key in (STORAGE_KEY, STORAGE_CLOCKS_KEY)
+        # The history file and its copy since 0.26.2: the main file
+        # alone holds only the newest thirty days.
+        for key in (
+            STORAGE_KEY,
+            STORAGE_CLOCKS_KEY,
+            STORAGE_HISTORY_KEY,
+            f"{STORAGE_HISTORY_KEY}.{BACKUP_LAST_GOOD_SUFFIX}",
+        )
     ]
 
     def _copy_all() -> bool:
@@ -174,6 +183,26 @@ async def async_rotate_last_good(hass: HomeAssistant) -> bool:
     except OSError as err:
         LOGGER.warning("Storage last-good rotation failed: %s", err)
         return False
+
+
+def copy_main_over_last_good(hass: HomeAssistant) -> bool:
+    """Copy the live main file over last-good, after a history write.
+
+    The fifth step of a save that wrote the history file (ruling #660):
+    the rotation made last-good the file from before the history
+    changed, so the new main file is copied over it, and the main
+    last-good copy pairs with the history files again at once. To a
+    temporary name and swapped in, so a stop part way leaves the old
+    copy or the new one. A missing live file copies nothing.
+    """
+    live = _storage_path(hass, STORAGE_KEY)
+    copy = _storage_path(hass, f"{STORAGE_KEY}.{BACKUP_LAST_GOOD_SUFFIX}")
+    if not live.exists():
+        return False
+    temporary = copy.with_name(copy.name + ".tmp")
+    shutil.copyfile(live, temporary)
+    os.replace(temporary, copy)
+    return True
 
 
 async def async_delete_clocks_last_good(hass: HomeAssistant) -> bool:
@@ -279,6 +308,20 @@ async def async_copy_evidence(
                 f"{stamp}.storage.last-good",
                 "the storage backup",
             ),
+            # The history file and its copy (0.26.2): what a restore
+            # joins is evidence as much as the main file is.
+            (
+                _storage_path(hass, STORAGE_HISTORY_KEY),
+                f"{stamp}.history.evidence",
+                "the history file",
+            ),
+            (
+                _storage_path(
+                    hass, f"{STORAGE_HISTORY_KEY}.{BACKUP_LAST_GOOD_SUFFIX}"
+                ),
+                f"{stamp}.history.last-good",
+                "the history backup",
+            ),
         ]
         written: list[str] = []
         for source, name, said in sources:
@@ -322,33 +365,54 @@ async def async_last_good_taken(hass: HomeAssistant) -> float | None:
 async def async_prune_backups(
     hass: HomeAssistant, retention_days: int
 ) -> int:
-    """Delete trim-backup files older than the retention window.
+    """Delete trim-backup copies past their keep (rulings #343, #634).
 
-    The same `history_days` setting that bounds every daily series
-    bounds this directory, one retention idea rather than two
-    (ruling #343). No file is special: a copy older than the window
-    describes a fleet state older than anything else the integration
-    still remembers.
+    A copy is the set of files one moment wrote, named by its stamp.
+    Every copy, all its files alike, is deleted after thirty days,
+    except the newest copy, which is kept for the full History
+    retention: the one way back is never pruned while it describes a
+    state the integration still remembers (#634, amending #343).
 
     Returns how many files were removed.
     """
     directory = hass.config.path(TRIM_BACKUP_DIR)
-    horizon = dt_util.utcnow().timestamp() - retention_days * 86400.0
+    now = dt_util.utcnow().timestamp()
+    short = now - TRIM_BACKUP_KEEP_DAYS * 86400.0
+    long = now - max(retention_days, TRIM_BACKUP_KEEP_DAYS) * 86400.0
+
+    def _stamp_of(name: str) -> str:
+        rest = name[len("device_sentinel_"):]
+        return rest.split(".", 1)[0]
 
     def _prune() -> int:
         if not os.path.isdir(directory):
             return 0
-        removed = 0
+        copies: dict[str, list[tuple[str, float]]] = {}
         for name in os.listdir(directory):
             if not name.startswith("device_sentinel_"):
                 continue
             path = os.path.join(directory, name)
             try:
-                if os.path.getmtime(path) < horizon:
-                    os.remove(path)
-                    removed += 1
+                taken = os.path.getmtime(path)
             except OSError:
                 continue
+            copies.setdefault(_stamp_of(name), []).append((path, taken))
+        if not copies:
+            return 0
+        newest = max(
+            copies, key=lambda stamp: max(taken for _path, taken in copies[stamp])
+        )
+        removed = 0
+        for stamp, files in copies.items():
+            horizon = long if stamp == newest else short
+            if max(taken for _path, taken in files) >= horizon:
+                continue
+            for path, _taken in files:
+                try:
+                    os.remove(path)
+                    removed += 1
+                except OSError:
+                    continue
         return removed
 
     try:

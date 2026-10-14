@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.26.0 (2026-10-12)
+# File: normalise.py, Version: 0.26.2 (2026-10-13)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (ruling #370).
@@ -126,6 +126,8 @@ from .const import (
     DATA_FIRST_INSTALLED,
     DATA_INCIDENTS,
     DATA_BRIEF_CLOSED_DAY,
+    DATA_HISTORY_GENERATION,
+    DATA_HISTORY_LINE,
     DATA_LAST_VERSION,
     DATA_SAVED_AT,
     DATA_CLEAN_STOP,
@@ -762,6 +764,10 @@ SCALARS: dict[str, str] = {
     BACKUP_TAKEN_KEY: TEXT_LIST,
     # A damaged list dates no return (ruling #648).
     DATA_ASIDE_SEEN: TEXT_LIST,
+    # The history file's pairing and the rows' line (0.26.2, #660). A
+    # damaged one joins no history, so it is restored or dropped.
+    DATA_HISTORY_GENERATION: INTEGER,
+    DATA_HISTORY_LINE: MOMENT,
 }
 
 # How many rows of one table are reported before the rest are counted.
@@ -1160,3 +1166,17 @@ def repair_containers(data: Any) -> dict[str, int]:
             _count("keys dropped")
 
     return counts
+
+
+def series_fault(field: str, value: Any) -> str | None:
+    """Return why a daily series does not fit its field's kind, or None.
+
+    For the history file (0.26.2): its older entries are checked with
+    the same kinds as the record's own fields before they are joined,
+    so a damaged history copy is refused whole rather than joined and
+    then repaired out of a record the main file holds clean.
+    """
+    kind = EXPECTED.get(field)
+    if kind is None:
+        return "not a daily series"
+    return _fault(kind, value)

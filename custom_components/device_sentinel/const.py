@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.26.1 (2026-10-13)
+# File: const.py, Version: 0.26.2 (2026-10-13)
 
 """Constants for the Device Sentinel integration."""
 
@@ -390,6 +390,21 @@ STORAGE_VERSION = 1
 # merges the two, taking the clocks from here when this file's stamp
 # proves it the newer of the pair.
 STORAGE_CLOCKS_KEY = f"{DOMAIN}.clocks"
+# The history file (0.26.2, rulings #633, #655, #660): the part of each
+# daily series older than its newest HISTORY_KEEP_ENTRIES entries, and
+# the leading system events and signal stress rows older than the line.
+# Written only when that part changes, in four steps (#660).
+STORAGE_HISTORY_KEY = f"{DOMAIN}.history"
+STORAGE_HISTORY_VERSION = 1
+HISTORY_KEEP_ENTRIES = 30
+# A trim backup copy is kept this many days, except the newest copy,
+# kept for the full History retention (ruling #634, amending #343).
+TRIM_BACKUP_KEEP_DAYS = 30
+# On the main file: the generation of the history file it pairs with,
+# None when nothing is held there, and the line rows cross at, set at
+# each fold to local midnight less HISTORY_KEEP_ENTRIES days.
+DATA_HISTORY_GENERATION = "history_generation"
+DATA_HISTORY_LINE = "history_line"
 STORAGE_CLOCKS_VERSION = 1
 
 
@@ -2444,7 +2459,7 @@ SYS_DEVICE_ID = "device_id"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 659
+HIGHEST_RULING = 662
 
 # How long a registry rebuild waits after the last one before the next
 # (0.24.2). Every device, entity or label change rebuilt Device
