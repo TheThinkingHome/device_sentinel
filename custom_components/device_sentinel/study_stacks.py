@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study_stacks.py, Version: 0.23.19 (2026-09-30)
+# File: study_stacks.py, Version: 0.26.4 (2026-10-15)
 
 """What six stacks say about their devices, gathered so their support
 can be built: Z-Wave and Matter in depth, and Hue, SmartThings, Tuya
@@ -34,6 +34,18 @@ node listeners of `zwave_nodes` and the controller counters of
 beside Device Sentinel's own view of the device, the readers in shadow.
 They too detect nothing.
 
+Hue and SmartThings are read more fully from 0.26.4. For Hue: each
+bridge's event stream, firmware and update state, when the library last
+lost the stream and the bridge's clock on its newest event; each
+device's link, marked stale while the stream is down, its place on
+Hue's ignore list, whether it is Hue certified, its battery and its
+light's on or off. For SmartThings: each location's event stream, its
+retries and subscription, and whether Home Assistant is asking for it
+to be signed in again; each device's availability and how it reaches
+the cloud. Two of these readings are private to the libraries and two
+to Home Assistant, allowed because this records and never judges
+(#515). Each is taken from memory once a minute.
+
 Everything is read defensively. A library that renames an attribute,
 or a version that never had it, is recorded as absent rather than
 raising, and the name that was found is recorded beside the value so
@@ -43,7 +55,7 @@ a later release knows which shape it is reading.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any
 
@@ -87,7 +99,9 @@ def _plain(value: Any) -> Any:
         return value
     if isinstance(value, datetime):
         return value.isoformat()
-    name = getattr(value, "value", None)
+    # An enum's value; read through _read, since an object whose
+    # attributes raise would otherwise escape here (0.26.4).
+    name = _read(value, "value")
     if isinstance(name, (str, int, float)):
         return name
     return type(value).__name__
@@ -462,15 +476,15 @@ def zwave_route(node: Any) -> str:
     return f"route via {', '.join(ids)}" if ids else "route direct"
 
 
-def zwave_health(hass: HomeAssistant) -> list[tuple[str, dict[str, int], str]]:
+def zwave_health(hass: HomeAssistant) -> list[tuple[str, str, dict[str, int], str]]:
     """Each Z-Wave controller's counters and background noise (0.23.11).
 
     The counters only ever rise, so the caller writes the day's change.
     Background noise is the controller's own reading of each channel,
     the sign of interference that no counter shows.
     """
-    found: list[tuple[str, dict[str, int], str]] = []
-    for entry in hass.config_entries.async_entries(ZWAVE_DOMAIN):
+    found: list[tuple[str, str, dict[str, int], str]] = []
+    for entry, node in entry_nodes(live_entries(hass, ZWAVE_DOMAIN), "controller"):
         controller = _read(
             _read(_read(_read(entry, "runtime_data"), "client"), "driver"),
             "controller",
@@ -492,14 +506,14 @@ def zwave_health(hass: HomeAssistant) -> list[tuple[str, dict[str, int], str]]:
                     average = reading.get("average")
                     if isinstance(average, (int, float)) and not isinstance(average, bool):
                         channels.append(f"ch{index} {average} dBm")
-        found.append((str(entry.entry_id), counters, ", ".join(channels)))
+        found.append((str(entry.entry_id), node, counters, ", ".join(channels)))
     return found
 
 
 def zwave_nodes(hass: HomeAssistant) -> list[tuple[Any, str, str]]:
     """Each Z-Wave node object with its id and device, to listen to."""
     nodes_found: list[tuple[Any, str, str]] = []
-    for entry in hass.config_entries.async_entries(ZWAVE_DOMAIN):
+    for entry, tag in entry_tags(live_entries(hass, ZWAVE_DOMAIN)):
         controller = _read(
             _read(_read(_read(entry, "runtime_data"), "client"), "driver"),
             "controller",
@@ -509,7 +523,7 @@ def zwave_nodes(hass: HomeAssistant) -> list[tuple[Any, str, str]]:
             if _read(node, "is_controller_node"):
                 continue
             node_id = str(_plain(_read(node, "node_id")))
-            nodes_found.append((node, node_id, devices.get(node_id, "")))
+            nodes_found.append((node, tagged(tag, node_id), devices.get(node_id, "")))
     return nodes_found
 
 
@@ -577,7 +591,7 @@ def _failed(on_failure: StackFailure | None, domain: str, err: Exception) -> Non
 def _zwave_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
     """Each Z-Wave node, with its device, status and last seen."""
     rows: list[dict[str, Any]] = []
-    for entry in hass.config_entries.async_entries(ZWAVE_DOMAIN):
+    for entry, tag in entry_tags(live_entries(hass, ZWAVE_DOMAIN)):
         controller = _read(
             _read(_read(_read(entry, "runtime_data"), "client"), "driver"),
             "controller",
@@ -606,7 +620,7 @@ def _zwave_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
             route = zwave_route(node)
             rows.append({
                 "stack": ZWAVE_DOMAIN,
-                "node": node_id,
+                "node": tagged(tag, node_id),
                 "device_id": devices.get(node_id, ""),
                 "now": status,
                 "seen": _zwave_seen(node),
@@ -621,7 +635,7 @@ def _zwave_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
 def _matter_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
     """Each Matter node, with its device, availability and network."""
     rows: list[dict[str, Any]] = []
-    for entry in hass.config_entries.async_entries(MATTER_DOMAIN):
+    for entry, tag in entry_tags(live_entries(hass, MATTER_DOMAIN)):
         client = _read(
             _read(_read(entry, "runtime_data"), "adapter"), "matter_client"
         )
@@ -641,7 +655,7 @@ def _matter_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
             detail = [part for part in (_matter_detail(node), _matter_radio(node)) if part]
             rows.append({
                 "stack": MATTER_DOMAIN,
-                "node": node_id,
+                "node": tagged(tag, node_id),
                 "device_id": devices.get(node_id, ""),
                 "now": "available" if _read(node, "available") else "away",
                 "quiet": not _read(node, "available"),
@@ -690,72 +704,231 @@ def _listed(container: Any) -> list[Any]:
         return []
 
 
+def _called(function: Any, *args: Any) -> Any:
+    """A library call's answer, or None where it throws (0.26.4).
+
+    Every Hue and SmartThings reading is taken through `_read` or
+    here, so a library that renames, removes or breaks something costs
+    that one reading and never the minute check.
+    """
+    if not callable(function):
+        return None
+    try:
+        return function(*args)
+    except Exception as err:  # noqa: BLE001 - a library call
+        LOGGER.debug("device_sentinel: a stack reading failed (%s), recorded as absent", err)
+        return None
+
+
+def _option_list(entry: Any, key: str) -> set[str]:
+    """An entry option holding a list, as strings, or nothing."""
+    options = _read(entry, "options")
+    if not isinstance(options, Mapping):
+        return set()
+    value = options.get(key)
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return set()
+    return {str(item) for item in value}
+
+
+def _hue_stream(api: Any) -> str | None:
+    """The event stream's status name: CONNECTED, CONNECTING or
+    DISCONNECTED, or None where it cannot be read."""
+    name = _read(_read(_read(api, "events"), "status"), "name")
+    return name if isinstance(name, str) else None
+
+
+def _hue_services(device: Any) -> dict[str, list[str]]:
+    """A Hue device's services, by resource type."""
+    found: dict[str, list[str]] = {}
+    for service in _listed(_read(device, "services")):
+        kind = _plain(_read(service, "rtype"))
+        rid = _read(service, "rid")
+        if isinstance(kind, str) and isinstance(rid, str):
+            found.setdefault(kind, []).append(rid)
+    return found
+
+
+def _hue_resource(controller: Any, rid: str) -> Any:
+    """One resource from an aiohue controller, or None."""
+    return _called(_read(controller, "get"), rid)
+
+
+def _hue_light_on(api: Any, services: dict[str, list[str]]) -> bool | None:
+    """Whether the device's first light is on, or None without one."""
+    for rid in services.get("light", []):
+        on = _read(_read(_hue_resource(_read(api, "lights"), rid), "on"), "on")
+        if isinstance(on, bool):
+            return on
+    return None
+
+
+def _hue_battery(api: Any, services: dict[str, list[str]]) -> str:
+    """The device's battery as the bridge reports it, or nothing."""
+    store = _read(_read(api, "sensors"), "device_power")
+    for rid in services.get("device_power", []):
+        power = _read(_hue_resource(store, rid), "power_state")
+        state = _plain(_read(power, "battery_state"))
+        level = _read(power, "battery_level")
+        parts = [
+            f"{level}%" if isinstance(level, int) and not isinstance(level, bool) else "",
+            str(state) if isinstance(state, str) else "",
+        ]
+        if any(parts):
+            return "battery " + ", ".join(part for part in parts if part)
+    return ""
+
+
 def _hue_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
     """Each Hue device's Zigbee connectivity, as the bridge judges it.
 
     The bridge says connected, disconnected, connectivity issue,
     unidirectional incoming (heard but not reachable) or pending
-    discovery; Home Assistant makes that available or not. A device on
-    Hue's ignore-availability list stays available while disconnected,
-    so Device Sentinel can only see it as silent, and the line says so.
-    A v1 bridge exposes none of this and gives no rows.
+    discovery; Home Assistant makes that available or not. While the
+    bridge's event stream is down nothing new arrives, Home Assistant
+    keeps every entity on its last state, and the bridge's word is
+    stale, so the row says so and gives no opinion (0.26.4). Hue's
+    ignore list keeps a device's light available whatever the bridge
+    says, and does nothing for a device without a light. A Green Power
+    switch has no Zigbee link to report and is named. A v1 bridge
+    exposes none of this and gives no rows.
     """
     rows: list[dict[str, Any]] = []
     for entry in hass.config_entries.async_entries(HUE_DOMAIN):
         bridge = _read(entry, "runtime_data")
         if _read(bridge, "api_version") != 2:
             continue
-        devices = _read(_read(bridge, "api"), "devices")
+        api = _read(bridge, "api")
+        devices = _read(api, "devices")
         lookup = _read(devices, "get_zigbee_connectivity")
         if not callable(lookup):
             continue
-        ignored = set((_read(entry, "options") or {}).get("ignore_availability") or [])
+        stale = _hue_stream(api) != "CONNECTED"
+        ignored = _option_list(entry, "ignore_availability")
         mapped = node_devices(hass, entry, HUE_DOMAIN)
         for device in _listed(devices):
-            node_id = str(_read(device, "id") or "")
-            try:
-                connectivity = lookup(node_id)
-            except Exception as err:  # noqa: BLE001 - a library call
-                LOGGER.debug("device_sentinel: Hue connectivity unreadable (%s)", err)
+            node_id = _read(device, "id")
+            if not isinstance(node_id, str) or not node_id:
                 continue
-            if connectivity is None:
+            services = _hue_services(device)
+            if "bridge" in services:
                 continue
-            status = str(_plain(_read(connectivity, "status")) or "unknown")
+            status = _plain(_read(_called(lookup, node_id), "status"))
+            if not isinstance(status, str):
+                now = (
+                    "no link reported (Green Power)" if "zgp_connectivity" in services
+                    else "no link reported"
+                )
+                quiet: bool | None = None
+            else:
+                now, quiet = status, status != "connected"
+                if stale:
+                    now, quiet = f"{status} (stale while the bridge stream is down)", None
+            light_on = _hue_light_on(api, services)
+            parts = []
+            if node_id in ignored:
+                parts.append(
+                    "on Hue's ignore list, its light stays available" if "light" in services
+                    else "on Hue's ignore list, which does nothing without a light"
+                )
+            if _read(_read(device, "product_data"), "certified") is False:
+                parts.append("not Hue certified")
+            parts.append(_hue_battery(api, services))
             rows.append({
                 "stack": HUE_DOMAIN,
                 "node": node_id[:8],
                 "device_id": mapped.get(node_id, ""),
-                "now": status,
-                "quiet": status != "connected",
-                "detail": "availability ignored in Hue's options" if node_id in ignored else "",
+                "now": now,
+                "quiet": quiet,
+                "light_on": light_on,
+                "detail": ", ".join(part for part in parts if part),
             })
     return rows
 
 
-def _smartthings_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
-    """Each SmartThings device's type, and whether it hangs off a hub.
+# SmartThings device types by how the device reaches the cloud
+# (pysmartthings 4.0.3, read 15 October 2026): through a SmartThings
+# hub, or on its own. The hub's own health is never published.
+SMARTTHINGS_HUB_TYPES = frozenset({"HUB"})
+SMARTTHINGS_BEHIND_HUB_TYPES = frozenset({"ZIGBEE", "ZWAVE", "MATTER", "LAN", "EDGE_CHILD"})
+SMARTTHINGS_CLOUD_TYPES = frozenset({"VIPER", "OCF", "MOBILE", "ENDPOINT_APP", "BLE_D2D"})
 
-    The cloud's online or offline already reaches Device Sentinel as
-    unavailable, and the online flag Home Assistant stores is set only
-    at start, so the stack's side of the line is the device's type:
-    which devices share a hub, and which reach the cloud on their own.
+
+def smartthings_network(kind: str) -> str:
+    """How a SmartThings device reaches the cloud, from its type."""
+    if kind in SMARTTHINGS_HUB_TYPES:
+        return "a SmartThings hub"
+    if kind in SMARTTHINGS_BEHIND_HUB_TYPES:
+        return "behind a SmartThings hub"
+    if kind in SMARTTHINGS_CLOUD_TYPES:
+        return "on its own to the cloud"
+    return "reach not known"
+
+
+def _entity_availability(hass: HomeAssistant, device_id: str) -> tuple[str, bool | None]:
+    """What Home Assistant shows for a device's enabled entities."""
+    if not device_id:
+        return "no device", None
+    # Only SmartThings' own entities: another integration's entity on
+    # the device, a Battery Notes battery type say, stays available
+    # while the device is offline and is not the device speaking (#404).
+    states = [
+        hass.states.get(entity.entity_id)
+        for entity in er.async_entries_for_device(er.async_get(hass), device_id)
+        if entity.platform == SMARTTHINGS_DOMAIN
+    ]
+    known = [state.state for state in states if state is not None]
+    if not known:
+        return "no entity states", None
+    if all(state == "unavailable" for state in known):
+        return "unavailable", True
+    return "available", False
+
+
+def _smartthings_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
+    """Each SmartThings device's availability, and how it reaches the cloud.
+
+    Home Assistant keeps a SmartThings entity available while the
+    cloud says its device is online, live, so the stack's word is what
+    the entities show (0.26.4). The online flag Home Assistant stores
+    is set only at start and is not read. The device's type says
+    whether it is a hub, sits behind one, or reaches the cloud on its
+    own; before 0.26.4 a hub was taken for a device behind one.
     """
     rows: list[dict[str, Any]] = []
     for entry in hass.config_entries.async_entries(SMARTTHINGS_DOMAIN):
-        full_devices = _read(_read(entry, "runtime_data"), "devices") or {}
+        # Home Assistant moves a SmartThings entity's availability only
+        # on health events, which arrive over the stream; with it down
+        # every entity keeps its last word, so the rows say so and give
+        # no opinion, as Hue's do (0.26.4).
+        stale = _smartthings_stream_down(hass, entry)
         mapped = node_devices(hass, entry, SMARTTHINGS_DOMAIN)
-        for full in _listed(full_devices):
+        for full in _listed(_read(_read(entry, "runtime_data"), "devices")):
             device = _read(full, "device")
-            node_id = str(_read(device, "device_id") or "")
-            kind = str(_plain(_read(device, "type")) or "unknown").lower()
-            behind = _read(device, "hub") is not None or bool(_read(device, "parent_device_id"))
+            node_id = _read(device, "device_id")
+            if not isinstance(node_id, str) or not node_id:
+                continue
+            kind = _plain(_read(device, "type"))
+            kind = kind.upper() if isinstance(kind, str) else "UNKNOWN"
+            device_id = mapped.get(node_id, "")
+            now, quiet = _entity_availability(hass, device_id)
+            if stale and quiet is not None:
+                now, quiet = f"{now} (stale while the cloud stream is down)", None
+            parent = _read(device, "parent_device_id")
+            firmware = _read(_read(device, "hub"), "firmware_version") if kind == "HUB" else None
+            parts = [
+                smartthings_network(kind),
+                f"type {kind.lower()}",
+                f"parent {parent[:8]}" if isinstance(parent, str) and parent else "",
+                f"firmware {firmware}" if isinstance(firmware, str) and firmware else "",
+            ]
             rows.append({
                 "stack": SMARTTHINGS_DOMAIN,
                 "node": node_id[:8],
-                "device_id": mapped.get(node_id, ""),
-                "now": kind,
-                "quiet": None,
-                "detail": "behind a SmartThings hub" if behind else "",
+                "device_id": device_id,
+                "now": now,
+                "quiet": quiet,
+                "detail": ", ".join(part for part in parts if part),
             })
     return rows
 
@@ -798,7 +971,7 @@ _CONTROLLER_WORDS = {0: "ready", 1: "unresponsive", 2: "jammed"}
 def _zwave_controller_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
     """Each Z-Wave entry's client, driver and controller."""
     rows: list[dict[str, Any]] = []
-    for entry in hass.config_entries.async_entries(ZWAVE_DOMAIN):
+    for entry, node in entry_nodes(live_entries(hass, ZWAVE_DOMAIN), "controller"):
         client = _read(_read(entry, "runtime_data"), "client")
         driver = _read(client, "driver")
         raw = _read(_read(driver, "controller"), "status")
@@ -817,7 +990,7 @@ def _zwave_controller_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
         )
         rows.append({
             "stack": ZWAVE_DOMAIN,
-            "node": "controller",
+            "node": node,
             "now": now,
             "detail": f"entry {state}",
         })
@@ -827,35 +1000,91 @@ def _zwave_controller_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
 def _matter_server_rows(hass: HomeAssistant) -> list[dict[str, Any]]:
     """Each Matter entry's server connection."""
     rows: list[dict[str, Any]] = []
-    for entry in hass.config_entries.async_entries(MATTER_DOMAIN):
+    for entry, node in entry_nodes(live_entries(hass, MATTER_DOMAIN), "server"):
         client = _read(_read(_read(entry, "runtime_data"), "adapter"), "matter_client")
         connected = _read(_read(client, "connection"), "connected")
         state = getattr(entry.state, "value", str(entry.state))
         rows.append({
             "stack": MATTER_DOMAIN,
-            "node": "server",
+            "node": node,
             "now": "connected" if connected else "disconnected",
             "detail": f"entry {state}",
         })
     return rows
 
 
+def live_entries(hass: HomeAssistant, domain: str) -> list[Any]:
+    """A stack's entries that are set up to run: an ignored discovery or
+    a disabled entry is not a controller, bridge, hub or cloud (0.26.4)."""
+    return hass.config_entries.async_entries(domain, include_ignore=False, include_disabled=False)
+
+
+def entry_tags(entries: list[Any]) -> list[tuple[Any, str]]:
+    """Each entry with the tag its nodes carry (0.26.4): nothing for a
+    lone entry, as before, and the end of the entry's id where there
+    are several. The start of an id is a timestamp, which two entries
+    made in one second share. Not the title: Hue titles an entry with
+    its bridge's id, which is the bridge's address, and Tuya with the
+    account's email or phone number, and stack_probe.md is a file
+    people attach to issues.
+    """
+    if len(entries) <= 1:
+        return [(entry, "") for entry in entries]
+    return [(entry, str(_read(entry, "entry_id") or "")[-8:]) for entry in entries]
+
+
+def tagged(tag: str, name: str) -> str:
+    """A node's name with its entry's tag, where it has one."""
+    return f"{name} {tag}" if tag else name
+
+
+def entry_nodes(entries: list[Any], base: str) -> list[tuple[Any, str]]:
+    """Each entry with a node name of its own (0.26.4).
+
+    Two Z-Wave networks, two bridges or two SmartThings locations
+    shared one name, so the probe, which keys a line by stack and node,
+    read them as one node flipping between their two states, a line
+    each minute for good.
+    """
+    return [(entry, tagged(tag, base)) for entry, tag in entry_tags(entries)]
+
+
+HubReader = Callable[[HomeAssistant, Any], dict[str, Any]]
+
+
 def _hub_rows(
     hass: HomeAssistant,
     domain: str,
-    reader: Callable[[Any], tuple[str, str, str]],
+    base: str,
+    reader: HubReader,
+    members: bool = False,
 ) -> list[dict[str, Any]]:
-    """Each entry of a hub or cloud stack, through its reader."""
+    """Each entry of a hub or cloud stack, through its reader.
+
+    A reader gives what the entry says now and the detail that rides
+    with it, and may add readings that change every minute; those are
+    written with a line but never cause one. With members, the row
+    also lists the entry's devices, so the recorder can say when
+    Device Sentinel last heard any of them (0.26.4).
+    """
     rows: list[dict[str, Any]] = []
-    for entry in hass.config_entries.async_entries(domain):
-        node, now, detail = reader(entry)
+    for entry, node in entry_nodes(live_entries(hass, domain), base):
+        said = reader(hass, entry)
         state = getattr(entry.state, "value", str(entry.state))
-        rows.append({
+        row: dict[str, Any] = {
             "stack": domain,
             "node": node,
-            "now": now,
-            "detail": ", ".join(part for part in (detail, f"entry {state}") if part),
-        })
+            "now": str(said.get("now") or "unknown"),
+            "detail": ", ".join(
+                part for part in (str(said.get("detail") or ""), f"entry {state}") if part
+            ),
+        }
+        for key in ("lost_at", "bridge_event"):
+            if said.get(key) is not None:
+                row[key] = said[key]
+        if members:
+            row["members"] = sorted(set(node_devices(hass, entry, domain).values()))
+        rows.append(row)
     return rows
 
 
@@ -871,17 +1100,21 @@ def coordinator_rows(
     controller's own status. Matter: the entry's state and whether the
     server connection is open. A stick pulled or a server restarted
     shows here, which is what a reader must tell from a real outage
-    (research findings 1, 6 and 10). A stack that throws is handed to
-    on_failure and the others are read as usual (0.23.10).
+    (research findings 1, 6 and 10). Hue: the bridge's event stream.
+    SmartThings: the event stream to Samsung's cloud (0.26.4). A stack
+    that throws is handed to on_failure and the others are read as
+    usual (0.23.10).
     """
     rows: list[dict[str, Any]] = []
     readers: tuple[tuple[str, Callable[[], list[dict[str, Any]]]], ...] = (
         (ZWAVE_DOMAIN, lambda: _zwave_controller_rows(hass)),
         (MATTER_DOMAIN, lambda: _matter_server_rows(hass)),
-        (HUE_DOMAIN, lambda: _hub_rows(hass, HUE_DOMAIN, _hue_bridge)),
-        (SMARTTHINGS_DOMAIN, lambda: _hub_rows(hass, SMARTTHINGS_DOMAIN, _smartthings_cloud)),
-        (TUYA_DOMAIN, lambda: _hub_rows(hass, TUYA_DOMAIN, _tuya_cloud)),
-        (LUTRON_DOMAIN, lambda: _hub_rows(hass, LUTRON_DOMAIN, _lutron_hub)),
+        (HUE_DOMAIN, lambda: _hub_rows(hass, HUE_DOMAIN, "bridge", _hue_bridge, members=True)),
+        (SMARTTHINGS_DOMAIN, lambda: _hub_rows(
+            hass, SMARTTHINGS_DOMAIN, "cloud", _smartthings_cloud, members=True
+        )),
+        (TUYA_DOMAIN, lambda: _hub_rows(hass, TUYA_DOMAIN, "cloud", _tuya_cloud)),
+        (LUTRON_DOMAIN, lambda: _hub_rows(hass, LUTRON_DOMAIN, "hub", _lutron_hub)),
     )
     for domain, read in readers:
         if domain not in studied:
@@ -893,43 +1126,183 @@ def coordinator_rows(
     return rows
 
 
-def _hue_bridge(entry: Any) -> tuple[str, str, str]:
-    """The Hue bridge's event stream: connected, connecting or not."""
+# The event stream's status in words (aiohue 4.9.0). The library sets
+# CONNECTING at the start of every try to reconnect and holds it
+# through the wait, so an outage samples as CONNECTING; it reads down.
+HUE_STREAM_WORDS = {
+    "CONNECTED": "connected",
+    "CONNECTING": "down, retrying",
+    "DISCONNECTED": "down, stopped",
+}
+
+
+def _hue_bridge(_hass: HomeAssistant, entry: Any) -> dict[str, Any]:
+    """The Hue bridge's event stream, firmware and update state.
+
+    A v2 bridge's entities do not go unavailable when the stream
+    drops; they keep their last state, so the stream is the one sign
+    of a bridge gone. The library's private record of when it last
+    lost the stream, and the bridge's clock on the newest event it
+    sent, are read too (#515): recorded, never judged. A v1 bridge is
+    polled, and the poll's last result is its sign.
+    """
     bridge = _read(entry, "runtime_data")
     if bridge is None:
-        return "bridge", "not loaded", ""
+        return {"now": "not loaded"}
     if _read(bridge, "api_version") == 1:
-        return "bridge", "v1 bridge, not read", ""
-    status = _read(_read(_read(bridge, "api"), "events"), "status")
-    name = getattr(status, "name", None)
-    return "bridge", (name.lower() if isinstance(name, str) else "unknown"), ""
+        success = _read(_read(_read(bridge, "sensor_manager"), "coordinator"), "last_update_success")
+        return {
+            "now": (
+                "v1 bridge, polling" if success is True
+                else "v1 bridge, polling failing" if success is False
+                else "v1 bridge, not read"
+            ),
+        }
+    api = _read(bridge, "api")
+    stream = _hue_stream(api)
+    config = _read(api, "config")
+    firmware = _read(config, "software_version")
+    bridge_id = _read(_read(config, "bridge_device"), "id")
+    update = (
+        _plain(_read(_called(_read(_read(api, "devices"), "get_software_update"), bridge_id), "state"))
+        if isinstance(bridge_id, str) else None
+    )
+    parts = [
+        f"firmware {firmware}" if isinstance(firmware, str) and firmware else "",
+        f"update {str(update).replace('_', ' ')}" if isinstance(update, str) and update != "no_update" else "",
+    ]
+    said: dict[str, Any] = {
+        "now": HUE_STREAM_WORDS.get(stream, "unknown") if stream else "unknown",
+        "detail": ", ".join(part for part in parts if part),
+    }
+    lost = _read(api, "_disconnect_timestamp")
+    if isinstance(lost, (int, float)) and not isinstance(lost, bool) and lost > 0:
+        said["lost_at"] = float(lost)
+    history = _read(_read(api, "events"), "last_events")
+    try:
+        newest = history[-1] if history else None
+    except Exception as err:  # noqa: BLE001 - a library's container
+        LOGGER.debug("device_sentinel: Hue event history unreadable (%s)", err)
+        newest = None
+    stamp = newest.get("creationtime") if isinstance(newest, dict) else None
+    if isinstance(stamp, str) and stamp:
+        said["bridge_event"] = stamp[:40]
+    return said
 
 
-def _smartthings_cloud(entry: Any) -> tuple[str, str, str]:
-    """Whether SmartThings holds its event subscription with the cloud.
+def _smartthings_task(entry: Any) -> str:
+    """Whether the entry's event stream task is running.
 
-    Home Assistant keeps the subscription's id in the entry and clears
-    it when the subscription goes; a Samsung outage should show here.
+    Home Assistant holds an entry's background tasks in a private set
+    and drops each one as it ends; the SmartThings stream is the task
+    named "smartthings_socket" (Home Assistant 2026.10.1, #515).
     """
-    subscribed = bool((_read(entry, "data") or {}).get("subscription_id"))
-    return "cloud", "subscribed" if subscribed else "not subscribed", ""
+    tasks = _read(entry, "_background_tasks")
+    if tasks is None:
+        return "not read"
+    try:
+        held = list(tasks)
+    except Exception as err:  # noqa: BLE001 - a private container
+        LOGGER.debug("device_sentinel: SmartThings tasks unreadable (%s)", err)
+        return "not read"
+    for task in held:
+        if _called(_read(task, "get_name")) == "smartthings_socket":
+            return "stopped" if _called(_read(task, "done")) is True else "running"
+    return "stopped"
 
 
-def _tuya_cloud(entry: Any) -> tuple[str, str, str]:
+def _smartthings_retries(client: Any) -> str:
+    """The stream's retry count and the wait it implies.
+
+    pysmartthings 4.0.3 waits two to the power of the count, in
+    seconds, with no ceiling, and sets the count back to nought when
+    the stream opens. The count is private (#515).
+    """
+    count = _read(client, "_SmartThings__retry_count")
+    if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+        return ""
+    wait = f"{2 ** count} s" if count <= 16 else "over 18 hours"
+    return f"retry {count}, wait {wait}"
+
+
+def _smartthings_reauth(hass: HomeAssistant, entry: Any) -> bool:
+    """Whether Home Assistant is asking for SmartThings to be signed in again."""
+    flows = _called(_read(entry, "async_get_active_flows"), hass, {"reauth"})
+    if flows is None:
+        return False
+    try:
+        return any(True for _flow in flows)
+    except Exception as err:  # noqa: BLE001 - a flow manager
+        LOGGER.debug("device_sentinel: SmartThings flows unreadable (%s)", err)
+        return False
+
+
+def _smartthings_stream_down(hass: HomeAssistant, entry: Any) -> bool:
+    """Whether the entry's event stream is known to be down: not
+    loaded, waiting to be signed in again, its task ended, or retrying.
+    A task Device Sentinel cannot read is not taken as down."""
+    if getattr(_read(entry, "state"), "value", None) != "loaded":
+        return True
+    if _smartthings_reauth(hass, entry):
+        return True
+    if _smartthings_task(entry) == "stopped":
+        return True
+    return bool(_smartthings_retries(_read(_read(entry, "runtime_data"), "client")))
+
+
+def _smartthings_cloud(hass: HomeAssistant, entry: Any) -> dict[str, Any]:
+    """The SmartThings entry's event stream to Samsung's cloud.
+
+    The stream is the task that carries every device's events and its
+    online or offline, so a dead task leaves Home Assistant on its
+    last word for every device. Home Assistant keeps the stream's
+    subscription id in the entry and replaces it when the stream is
+    made again; its first eight characters ride with the line, so a
+    change of subscription is a line (0.26.4).
+    """
+    data = _read(entry, "data")
+    subscription = data.get("subscription_id") if isinstance(data, Mapping) else None
+    state = getattr(_read(entry, "state"), "value", None)
+    retries = (
+        _smartthings_retries(_read(_read(entry, "runtime_data"), "client"))
+        if state == "loaded" else ""
+    )
+    if _smartthings_reauth(hass, entry):
+        now = "needs signing in again"
+    elif state != "loaded":
+        now = "not loaded"
+    else:
+        task = _smartthings_task(entry)
+        now = (
+            f"stream {task}" if task != "running"
+            else "stream retrying" if retries
+            else "stream running"
+        )
+    reason = _read(entry, "reason") if state != "loaded" else None
+    parts = [
+        f"subscription {subscription[:8]}" if isinstance(subscription, str) and subscription
+        else "no subscription",
+        retries,
+        f"reason {reason}" if isinstance(reason, str) and reason else "",
+    ]
+    return {"now": now, "detail": ", ".join(part for part in parts if part)}
+
+
+def _tuya_cloud(_hass: HomeAssistant, entry: Any) -> dict[str, Any]:
     """Whether Tuya's cloud push connection is up."""
     queue = _read(_read(_read(entry, "runtime_data"), "manager"), "mq")
     if queue is None:
-        return "cloud", "no cloud link", ""
+        return {"now": "no cloud link"}
     check = _read(_read(queue, "client"), "is_connected")
     try:
         connected = bool(check()) if callable(check) else False
     except Exception as err:  # noqa: BLE001 - a library call
         LOGGER.debug("device_sentinel: Tuya connection unreadable (%s)", err)
-        return "cloud", "unknown", ""
-    return "cloud", "connected" if connected else "disconnected", ""
+        return {"now": "unknown"}
+    return {"now": "connected" if connected else "disconnected"}
 
 
-def _lutron_hub(entry: Any) -> tuple[str, str, str]:
+def _lutron_hub(_hass: HomeAssistant, entry: Any) -> dict[str, Any]:
     """Whether the Lutron library holds a live session with its hub.
 
     The Lutron integration checks its hub once, at setup, and its
@@ -942,7 +1315,7 @@ def _lutron_hub(entry: Any) -> tuple[str, str, str]:
     """
     bridge = _read(_read(entry, "runtime_data"), "bridge")
     if bridge is None:
-        return "hub", "not loaded", ""
+        return {"now": "not loaded"}
     session = "session held" if getattr(bridge, "_leap", None) is not None else "no session"
     check = _read(bridge, "is_connected")
     try:
@@ -950,4 +1323,4 @@ def _lutron_hub(entry: Any) -> tuple[str, str, str]:
     except Exception as err:  # noqa: BLE001 - a library call
         LOGGER.debug("device_sentinel: Lutron connection unreadable (%s)", err)
         said = ""
-    return "hub", session, f"library {said}" if said else ""
+    return {"now": session, "detail": f"library {said}" if said else ""}

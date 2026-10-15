@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.23.19 (2026-09-30)
+# File: study.py, Version: 0.26.4 (2026-10-15)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -48,6 +48,14 @@ the same device, and writes a line to `stack_probe.md` when either
 changes: the readers in shadow, which judge nothing. That file is not
 dropped at the fold; it is kept and rolled at its cap like the other
 reports.
+
+Hue and SmartThings are read more fully from 0.26.4, still by sampling
+once a minute from memory: no callback is added to either library and
+nothing is sent to a bridge or a cloud. Each bridge's or cloud's line
+also carries when Device Sentinel last heard any of its devices, how
+often its state changed in the last hour, and, for Hue, the bridge's
+clock on its newest event and when the library last lost its stream.
+The diagnostics download gains a section for each.
 """
 
 from __future__ import annotations
@@ -67,6 +75,7 @@ from .const import (
     LOGGER,
     DATA_DEVICES,
     DEV_DAILY_MAX,
+    DEV_LAST_ACTIVITY,
     LEARNING_MIN_DAYS,
     STATUS_LEARNING,
     DATA_STACK_PROBE,
@@ -90,6 +99,7 @@ from .study_stacks import (
     HUE_DOMAIN,
     LUTRON_DOMAIN,
     MATTER_DOMAIN,
+    NODE_ROW_CAP,
     SMARTTHINGS_DOMAIN,
     TUYA_DOMAIN,
     ZWAVE_DOMAIN,
@@ -149,7 +159,13 @@ PROBED_DOMAINS = {
     ZWAVE_DOMAIN, MATTER_DOMAIN, HUE_DOMAIN, SMARTTHINGS_DOMAIN, TUYA_DOMAIN, LUTRON_DOMAIN,
 }
 
+# The stacks whose bridge or cloud line carries notes (0.26.4).
+NOTED_STACKS = {HUE_DOMAIN, SMARTTHINGS_DOMAIN}
+
 ROUTER = "router"
+# A bridge's or cloud's state changes kept for the last hour's count
+# (0.26.4); a stream flapping once a minute fills it.
+PROBE_CHANGES_KEPT = 60
 IGNORED_KEYS = {"friendly_name", "icon", "device_class"}
 
 
@@ -212,10 +228,17 @@ class StudyMixin:
     _probe_pending: list[str]
     _probe_recent: deque[str]
     _probe_failed: set[str]
-    # 0.23.11: node event subscriptions keyed by the node object's id,
-    # each controller's counters at the last fold, and the border router
-    # discovery with what each router last said.
-    _zwave_listeners: dict[int, list[Callable[[], None]]]
+    # 0.26.4: when each node was first seen in its state, each Hue
+    # light's last on or off, and each bridge's or cloud's state
+    # changes, for the last hour's count.
+    _probe_since: dict[tuple[str, str], tuple[str, float]]
+    _probe_light: dict[tuple[str, str], bool]
+    _probe_changes: dict[tuple[str, str], deque[float]]
+    # 0.23.11: node event subscriptions keyed by the node object's id
+    # and, since 0.26.4, its name; each controller's counters at the
+    # last fold, and the border router discovery with what each router
+    # last said.
+    _zwave_listeners: dict[tuple[int, str], list[Callable[[], None]]]
     _zwave_counters: dict[str, dict[str, int]]
     _thread_discovery: Any
     _thread_starting: bool
@@ -430,8 +453,10 @@ class StudyMixin:
                 None if state in ("unknown", "None") else False
             )
         else:
-            # Matter, Hue and Tuya say quiet or not on the row; a
-            # SmartThings row carries only the device's type (None).
+            # Matter, Hue, SmartThings and Tuya say quiet or not on the
+            # row, None where the stack's word cannot be taken: a Hue
+            # row while its bridge's stream is down, a device with no
+            # link status or no entity state (0.26.4).
             stack_quiet = row.get("quiet")
         agrees = (
             "" if stack_quiet is None or sentinel_quiet is None
@@ -500,6 +525,9 @@ class StudyMixin:
         studied = self.studied
         if not studied & PROBED_DOMAINS:
             self._probe_last.clear()
+            self._probe_since.clear()
+            self._probe_light.clear()
+            self._probe_changes.clear()
             self._zwave_unlisten()
             self._thread_stop()
             return
@@ -512,11 +540,20 @@ class StudyMixin:
         else:
             self._thread_stop()
         wifi_nodes: dict[str, bool] = {}
+        since: dict[tuple[str, str], tuple[str, float]] = {}
+        lights: dict[tuple[str, str], bool] = {}
         for row in probe_rows(self.hass, studied, self._probe_failure):
             views = self._probe_views(row, now)
             if row["stack"] == MATTER_DOMAIN and "wifi" in (row.get("network") or ""):
                 wifi_nodes[self._probe_name(row)] = row["now"] == "available"
             key = (row["stack"], row["node"])
+            held = self._probe_since.get(key)
+            since[key] = held if held is not None and held[0] == views["now"] else (views["now"], now)
+            switched = self._probe_switched(key, row, lights)
+            if switched:
+                views["detail"] = ", ".join(
+                    part for part in ("light switched while not connected", views["detail"]) if part
+                )
             # A Z-Wave node's route is part of what it says (0.23.11):
             # a repeater dying moves or breaks the routes through it.
             route = row.get("route") or ""
@@ -531,7 +568,7 @@ class StudyMixin:
                 # The first reading of a node is its own line, so a
                 # file read months later knows where each node began.
                 was = ""
-            elif before == said:
+            elif before == said and not switched:
                 # The numbers move constantly and the state does not;
                 # a line is worth writing when a state changes, and the
                 # numbers ride on that line.
@@ -549,11 +586,24 @@ class StudyMixin:
                 PROBE_AGREES: views["agrees"],
                 PROBE_DETAIL: views["detail"],
             })
+        # A stack that gave no rows this tick, while its entry reloads or
+        # its reader fails, keeps what was known of it (0.26.4).
+        read = {key[0] for key in since}
+        for held_map, fresh in ((self._probe_since, since), (self._probe_light, lights)):
+            for key, value in held_map.items():
+                if key[0] not in read and key[0] in studied:
+                    fresh.setdefault(key, value)  # type: ignore[arg-type]
+        self._probe_since = since
+        self._probe_light = lights
+        changes: dict[tuple[str, str], deque[float]] = {}
         for row in coordinator_rows(self.hass, studied, self._probe_failure):
             key = (row["stack"], row["node"])
             stated = (row["now"], row["detail"])
             before = self._probe_last.get(key)
             self._probe_last[key] = stated
+            changes[key] = self._probe_changes.get(key) or deque(maxlen=PROBE_CHANGES_KEPT)
+            if before is not None and before[0] != row["now"]:
+                changes[key].append(now)
             if before == stated:
                 continue
             self._probe_queue({
@@ -565,8 +615,14 @@ class StudyMixin:
                 PROBE_NOW: row["now"],
                 PROBE_SENTINEL: "",
                 PROBE_AGREES: "",
-                PROBE_DETAIL: row["detail"],
+                PROBE_DETAIL: ", ".join(
+                    part for part in (
+                        row["detail"],
+                        self._probe_note(row, changes[key], now) if row["stack"] in NOTED_STACKS else "",
+                    ) if part
+                ),
             })
+        self._probe_changes = changes
         # Matter over Wi-Fi in a Wi-Fi outage (#412's exception): when
         # Device Sentinel's Wi-Fi outage opens or closes, which Matter
         # Wi-Fi nodes were away and which were not.
@@ -590,6 +646,60 @@ class StudyMixin:
                     ),
                 })
             self._probe_wifi_down = wifi_down
+
+    def _probe_switched(
+        self, key: tuple[str, str], row: dict[str, Any], lights: dict[tuple[str, str], bool]
+    ) -> bool:
+        """Whether a Hue light changed on or off while the bridge said
+        its link was not connected (0.26.4).
+
+        Home Assistant's Hue integration logs the same thing once per
+        start, as a sign the bridge's judgment of that light is wrong;
+        here it is a line each time, beside the bridge's word.
+        """
+        light = row.get("light_on")
+        if not isinstance(light, bool):
+            return False
+        lights[key] = light
+        was = self._probe_light.get(key)
+        return row.get("quiet") is True and was is not None and was != light
+
+    def _probe_newest(self, members: Any) -> float | None:
+        """When Device Sentinel last heard any of these devices."""
+        records = self.data.get(DATA_DEVICES) or {}
+        newest: float | None = None
+        for device_id in members if isinstance(members, list) else []:
+            heard = (records.get(device_id) or {}).get(DEV_LAST_ACTIVITY)
+            if isinstance(heard, (int, float)) and not isinstance(heard, bool):
+                newest = heard if newest is None else max(newest, heard)
+        return newest
+
+    def _probe_note(self, row: dict[str, Any], changed: deque[float], now: float) -> str:
+        """What rides with a bridge's or cloud's line without causing one
+        (0.26.4): when Device Sentinel last heard any of its devices,
+        how often its state changed in the last hour, and for Hue when
+        the library last lost the stream and the bridge's clock on its
+        newest event. Each changes every minute, so none is compared.
+        """
+        parts: list[str] = []
+        if "members" in row:
+            newest = self._probe_newest(row["members"])
+            parts.append(
+                f"Device Sentinel last heard one of its devices {self._episode_stamp(newest)}"  # type: ignore[attr-defined]
+                if newest is not None else "Device Sentinel has not heard its devices"
+            )
+        recent = sum(1 for moment in changed if now - moment <= 3600)
+        if recent:
+            parts.append(f"{recent} {'change' if recent == 1 else 'changes'} in the last hour")
+        lost = row.get("lost_at")
+        if isinstance(lost, float):
+            # aiohue stamps this on every failed try to reconnect as well
+            # as on the drop, so it is the last loss, not when an outage
+            # began.
+            parts.append(f"stream last dropped or failed to reconnect {self._episode_stamp(lost)}")  # type: ignore[attr-defined]
+        if isinstance(row.get("bridge_event"), str):
+            parts.append(f"newest event {row['bridge_event']} on the bridge's clock")
+        return ", ".join(parts)
 
     def _probe_name(self, row: dict[str, Any]) -> str:
         """A node's device name, or its node id where it has none."""
@@ -672,11 +782,15 @@ class StudyMixin:
         Recording only: the library already announces these to Home
         Assistant, and listening sends nothing to the network. A node
         object is replaced when the driver reconnects, so subscriptions
-        are keyed by the object and a new one is listened to afresh.
+        are keyed by the object and a new one is listened to afresh. The
+        node's name is in the key too: it gains its network's tag when a
+        second network is added and loses it when one goes (0.26.4), and
+        a listener holding the old name would write lines the minute
+        check's lines do not match.
         """
-        seen: set[int] = set()
+        seen: set[tuple[int, str]] = set()
         for node, node_id, device_id in zwave_nodes(self.hass):  # type: ignore[attr-defined]
-            key = id(node)
+            key = (id(node), node_id)
             seen.add(key)
             if key in self._zwave_listeners:
                 continue
@@ -745,7 +859,7 @@ class StudyMixin:
         count since then. Background noise is the controller's own
         reading of each channel.
         """
-        for entry_id, counters, noise in zwave_health(self.hass):  # type: ignore[attr-defined]
+        for entry_id, node, counters, noise in zwave_health(self.hass):  # type: ignore[attr-defined]
             before = self._zwave_counters.get(entry_id) or {}
             self._zwave_counters[entry_id] = counters
             changes = []
@@ -757,7 +871,7 @@ class StudyMixin:
             self._probe_queue({
                 PROBE_WHEN: now,
                 PROBE_STACK: ZWAVE_DOMAIN,
-                PROBE_NODE: "controller",
+                PROBE_NODE: node,
                 PROBE_DEVICE_ID: "",
                 PROBE_WAS: "",
                 PROBE_NOW: "health",
@@ -947,6 +1061,54 @@ class StudyMixin:
                     ),
                 })
         self._probe_flush()
+
+    # ------------------------------------- Hue and SmartThings, 0.26.4
+
+    def stack_diagnostics(self, domain: str) -> dict[str, Any]:
+        """What Hue or SmartThings says now, for the download (0.26.4).
+
+        The same readings as the minute check, with when each device
+        was first seen in its state this start and each entry's notes.
+        Empty unless the stack is ticked under Extended Diagnostics.
+        """
+        if domain not in self.studied:
+            return {}
+        now = dt_util.utcnow().timestamp()
+        failures: list[str] = []
+
+        def failed(_what: str, err: Exception) -> None:
+            failures.append(f"{type(err).__name__}: {err}")
+
+        entries = []
+        for row in coordinator_rows(self.hass, {domain}, failed):
+            key = (row["stack"], row["node"])
+            changed = self._probe_changes.get(key) or deque()
+            entries.append({
+                "node": row["node"],
+                "now": row["now"],
+                "detail": row["detail"],
+                "notes": self._probe_note(row, changed, now),
+                "devices": len(row.get("members") or []),
+            })
+        devices = []
+        for row in probe_rows(self.hass, {domain}, failed)[:NODE_ROW_CAP]:
+            held = self._probe_since.get((row["stack"], row["node"]))
+            devices.append({
+                "node": row["node"],
+                "device_id": row.get("device_id") or "",
+                "now": row["now"],
+                "quiet": row.get("quiet"),
+                "since": (
+                    dt_util.utc_from_timestamp(held[1]).isoformat()
+                    if held is not None and held[0] == row["now"] else None
+                ),
+                "detail": row.get("detail") or "",
+                **({"light_on": row["light_on"]} if "light_on" in row else {}),
+            })
+        found: dict[str, Any] = {"entries": entries, "devices": devices}
+        if failures:
+            found["unreadable"] = failures[:5]
+        return found
 
     # --------------------------------------------------- the fold, #393
 

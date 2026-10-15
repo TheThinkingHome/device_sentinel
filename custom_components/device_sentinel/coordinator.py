@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.26.3 (2026-10-14)
+# File: coordinator.py, Version: 0.26.4 (2026-10-15)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -799,6 +799,12 @@ class DeviceSentinelCoordinator(
         # What each studied stack's nodes last said, so a line is
         # written when that changes (0.22.26).
         self._probe_last: dict[tuple[str, str], tuple[str, str]] = {}
+        # When each node was first seen in its state, each Hue light's
+        # last on or off, and each bridge's or cloud's recent state
+        # changes (0.26.4). Rebuilt each minute from what was read.
+        self._probe_since: dict[tuple[str, str], tuple[str, float]] = {}
+        self._probe_light: dict[tuple[str, str], bool] = {}
+        self._probe_changes: dict[tuple[str, str], deque[float]] = {}
         # Probe lines rendered and waiting for the next flush, and the
         # lock that keeps two flushes from rolling the file at once
         # (0.23.9).
@@ -817,7 +823,7 @@ class DeviceSentinelCoordinator(
         self._probe_wifi_down: bool | None = None
         # 0.23.11: Z-Wave node event subscriptions, each controller's
         # counters at the last fold, and the Thread border routers.
-        self._zwave_listeners: dict[int, list[Any]] = {}
+        self._zwave_listeners: dict[tuple[int, str], list[Any]] = {}
         self._zwave_counters: dict[str, dict[str, int]] = {}
         self._thread_discovery: Any = None
         self._thread_starting = False

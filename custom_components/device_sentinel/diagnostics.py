@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.26.3 (2026-10-14)
+# File: diagnostics.py, Version: 0.26.4 (2026-10-15)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -83,7 +83,9 @@ from .const import (
 from .study import studied_domains
 from .study_lutron import lutron_study
 from .study_stacks import (
+    HUE_DOMAIN,
     MATTER_DOMAIN,
+    SMARTTHINGS_DOMAIN,
     ZWAVE_DOMAIN,
     matter_study,
     zwave_study,
@@ -605,6 +607,13 @@ async def async_get_config_entry_diagnostics(
                 await _studied(lambda: matter_study(hass))
                 if MATTER_DOMAIN in studied_domains(entry.options)
                 else {}
+            ),
+            # Each Hue bridge's event stream and each device's link, and
+            # each SmartThings location's event stream and each device's
+            # availability, as the minute check reads them (0.26.4).
+            "hue": await _studied(lambda: coordinator.stack_diagnostics(HUE_DOMAIN)),
+            "smartthings": await _studied(
+                lambda: coordinator.stack_diagnostics(SMARTTHINGS_DOMAIN)
             ),
             "broker": coordinator.broker_attributes,
             # Each detected bridge's current state (running, binding,

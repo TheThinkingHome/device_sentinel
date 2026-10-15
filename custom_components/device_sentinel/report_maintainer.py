@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.26.3 (2026-10-14)
+# File: report_maintainer.py, Version: 0.26.4 (2026-10-15)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -264,8 +264,10 @@ class MaintainerReportMixin:
             "asleep, dead or unknown, and \"not heard within its window\" "
             "when it was last heard longer ago than the device's own freeze "
             "window; Matter says available or away; Hue gives the bridge's "
-            "own judgment of the device's Zigbee link; Tuya says online or "
-            "offline; SmartThings gives the device's type. SENTINEL is "
+            "own judgment of the device's Zigbee link, marked stale while "
+            "the bridge's event stream is down; Tuya says online or "
+            "offline; SmartThings says available or unavailable, as Home "
+            "Assistant shows the device. SENTINEL is "
             "Device Sentinel's view of the same device at that moment, and "
             "AGREES whether the two agree it is quiet. Lines for a "
             "controller, bridge, hub, server or cloud say whether the stack "
