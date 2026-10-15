@@ -1,0 +1,612 @@
+{
+ "Basement": {
+  "devices": {
+   "1": {
+    "device_id": "1",
+    "current_state": -1,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": null,
+    "name": "Smart Bridge 2",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "SmartBridge",
+    "model": "L-BDG2-WH",
+    "serial": 92481023,
+    "device_name": "Smart Bridge 2",
+    "area": null
+   },
+   "2": {
+    "device_id": "2",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "1",
+    "name": "Basement Room 2_Light 2",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallDimmer",
+    "model": "PD-6WCL-XX",
+    "serial": 26566860,
+    "device_name": "Light 2",
+    "area": "2"
+   },
+   "4": {
+    "device_id": "4",
+    "current_state": 100,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "2",
+    "name": "Basement Room 3_Light 4",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallDimmer",
+    "model": "PD-6WCL-XX",
+    "serial": 69297357,
+    "device_name": "Light 4",
+    "area": "3"
+   },
+   "5": {
+    "device_id": "5",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "3",
+    "name": "Basement Room 14_Light 5",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallDimmer",
+    "model": "PD-6WCL-XX",
+    "serial": 23607574,
+    "device_name": "Light 5",
+    "area": "14"
+   },
+   "6": {
+    "device_id": "6",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "4",
+    "name": "Basement Room 7_Light 6",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallDimmer",
+    "model": "PD-6WCL-XX",
+    "serial": 97811513,
+    "device_name": "Light 6",
+    "area": "7"
+   },
+   "8": {
+    "device_id": "8",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "6",
+    "name": "Basement Room 9_Light 8",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallDimmer",
+    "model": "PD-6WCL-XX",
+    "serial": 80244399,
+    "device_name": "Light 8",
+    "area": "9"
+   },
+   "9": {
+    "device_id": "9",
+    "current_state": 100,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "7",
+    "name": "Basement Room 10_Light 9",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallDimmer",
+    "model": "PD-6WCL-XX",
+    "serial": 54035068,
+    "device_name": "Light 9",
+    "area": "10"
+   },
+   "10": {
+    "device_id": "10",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "8",
+    "name": "Basement Room 17_Light 10",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallDimmer",
+    "model": "PD-6WCL-XX",
+    "serial": 23204195,
+    "device_name": "Light 10",
+    "area": "17"
+   },
+   "11": {
+    "device_id": "11",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "9",
+    "name": "Basement Room 11_Light 11",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallDimmer",
+    "model": "PD-6WCL-XX",
+    "serial": 97897448,
+    "device_name": "Light 11",
+    "area": "11"
+   },
+   "12": {
+    "device_id": "12",
+    "current_state": -1,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": null,
+    "name": "Basement Room 11_Pico 12",
+    "button_groups": [
+     "3"
+    ],
+    "occupancy_sensors": null,
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 78053671,
+    "device_name": "Pico 12",
+    "area": "11"
+   },
+   "13": {
+    "device_id": "13",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "10",
+    "name": "Basement Room 12_Light 13",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallDimmer",
+    "model": "PD-6WCL-XX",
+    "serial": 66686938,
+    "device_name": "Light 13",
+    "area": "12"
+   },
+   "14": {
+    "device_id": "14",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "11",
+    "name": "Basement Room 13_Light 14",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallDimmer",
+    "model": "PD-6WCL-XX",
+    "serial": 89695659,
+    "device_name": "Light 14",
+    "area": "13"
+   },
+   "15": {
+    "device_id": "15",
+    "current_state": -1,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": null,
+    "name": "Basement Room 11_Pico 15",
+    "button_groups": [
+     "4"
+    ],
+    "occupancy_sensors": null,
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 67907031,
+    "device_name": "Pico 15",
+    "area": "11"
+   },
+   "16": {
+    "device_id": "16",
+    "current_state": -1,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": null,
+    "name": "Basement Room 7_Pico 16",
+    "button_groups": [
+     "5"
+    ],
+    "occupancy_sensors": null,
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 37138041,
+    "device_name": "Pico 16",
+    "area": "7"
+   },
+   "19": {
+    "device_id": "19",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "14",
+    "name": "Basement Room 18_Light 19",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallDimmer",
+    "model": "PD-6WCL-XX",
+    "serial": 97510118,
+    "device_name": "Light 19",
+    "area": "18"
+   },
+   "21": {
+    "device_id": "21",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "16",
+    "name": "Basement Room 19_Switch 21",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallSwitch",
+    "model": "PD-8ANS-XX",
+    "serial": 71615004,
+    "device_name": "Switch 21",
+    "area": "19"
+   },
+   "25": {
+    "device_id": "25",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "19",
+    "name": "Basement Room 12_Switch 25",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallSwitch",
+    "model": "PD-8ANS-XX",
+    "serial": 51167127,
+    "device_name": "Switch 25",
+    "area": "12"
+   },
+   "27": {
+    "device_id": "27",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "21",
+    "name": "Basement Room 8_Light 27",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallDimmer",
+    "model": "PD-6WCL-XX",
+    "serial": 58985981,
+    "device_name": "Light 27",
+    "area": "8"
+   }
+  },
+  "buttons": {
+   "106": {
+    "device_id": "106",
+    "current_state": "Release",
+    "button_number": 0,
+    "name": "Basement Room 11_Pico 12",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 78053671,
+    "parent_device": "12"
+   },
+   "107": {
+    "device_id": "107",
+    "current_state": "Release",
+    "button_number": 1,
+    "name": "Basement Room 11_Pico 12",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 78053671,
+    "parent_device": "12"
+   },
+   "108": {
+    "device_id": "108",
+    "current_state": "Release",
+    "button_number": 2,
+    "name": "Basement Room 11_Pico 12",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 78053671,
+    "parent_device": "12"
+   },
+   "109": {
+    "device_id": "109",
+    "current_state": "Release",
+    "button_number": 3,
+    "name": "Basement Room 11_Pico 12",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 78053671,
+    "parent_device": "12"
+   },
+   "110": {
+    "device_id": "110",
+    "current_state": "Release",
+    "button_number": 4,
+    "name": "Basement Room 11_Pico 12",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 78053671,
+    "parent_device": "12"
+   },
+   "111": {
+    "device_id": "111",
+    "current_state": "Release",
+    "button_number": 0,
+    "name": "Basement Room 11_Pico 15",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 67907031,
+    "parent_device": "15"
+   },
+   "112": {
+    "device_id": "112",
+    "current_state": "Release",
+    "button_number": 1,
+    "name": "Basement Room 11_Pico 15",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 67907031,
+    "parent_device": "15"
+   },
+   "113": {
+    "device_id": "113",
+    "current_state": "Release",
+    "button_number": 2,
+    "name": "Basement Room 11_Pico 15",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 67907031,
+    "parent_device": "15"
+   },
+   "114": {
+    "device_id": "114",
+    "current_state": "Release",
+    "button_number": 3,
+    "name": "Basement Room 11_Pico 15",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 67907031,
+    "parent_device": "15"
+   },
+   "115": {
+    "device_id": "115",
+    "current_state": "Release",
+    "button_number": 4,
+    "name": "Basement Room 11_Pico 15",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 67907031,
+    "parent_device": "15"
+   },
+   "116": {
+    "device_id": "116",
+    "current_state": "Release",
+    "button_number": 0,
+    "name": "Basement Room 7_Pico 16",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 37138041,
+    "parent_device": "16"
+   },
+   "117": {
+    "device_id": "117",
+    "current_state": "Release",
+    "button_number": 1,
+    "name": "Basement Room 7_Pico 16",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 37138041,
+    "parent_device": "16"
+   },
+   "118": {
+    "device_id": "118",
+    "current_state": "Release",
+    "button_number": 2,
+    "name": "Basement Room 7_Pico 16",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 37138041,
+    "parent_device": "16"
+   },
+   "119": {
+    "device_id": "119",
+    "current_state": "Release",
+    "button_number": 3,
+    "name": "Basement Room 7_Pico 16",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 37138041,
+    "parent_device": "16"
+   },
+   "120": {
+    "device_id": "120",
+    "current_state": "Release",
+    "button_number": 4,
+    "name": "Basement Room 7_Pico 16",
+    "type": "Pico3ButtonRaiseLower",
+    "model": "PJ2-3BRL-GXX-X01",
+    "serial": 37138041,
+    "parent_device": "16"
+   }
+  },
+  "areas": {
+   "1": {
+    "id": "1",
+    "name": "root",
+    "parent_id": null
+   },
+   "2": {
+    "id": "2",
+    "name": "Basement Room 2",
+    "parent_id": "1"
+   },
+   "3": {
+    "id": "3",
+    "name": "Basement Room 3",
+    "parent_id": "1"
+   },
+   "4": {
+    "id": "4",
+    "name": "Basement Room 4",
+    "parent_id": "1"
+   },
+   "5": {
+    "id": "5",
+    "name": "Basement Room 5",
+    "parent_id": "1"
+   },
+   "6": {
+    "id": "6",
+    "name": "Basement Room 6",
+    "parent_id": "1"
+   },
+   "7": {
+    "id": "7",
+    "name": "Basement Room 7",
+    "parent_id": "1"
+   },
+   "8": {
+    "id": "8",
+    "name": "Basement Room 8",
+    "parent_id": "1"
+   },
+   "9": {
+    "id": "9",
+    "name": "Basement Room 9",
+    "parent_id": "1"
+   },
+   "10": {
+    "id": "10",
+    "name": "Basement Room 10",
+    "parent_id": "1"
+   },
+   "11": {
+    "id": "11",
+    "name": "Basement Room 11",
+    "parent_id": "1"
+   },
+   "12": {
+    "id": "12",
+    "name": "Basement Room 12",
+    "parent_id": "1"
+   },
+   "13": {
+    "id": "13",
+    "name": "Basement Room 13",
+    "parent_id": "1"
+   },
+   "14": {
+    "id": "14",
+    "name": "Basement Room 14",
+    "parent_id": "1"
+   },
+   "15": {
+    "id": "15",
+    "name": "Basement Room 15",
+    "parent_id": "1"
+   },
+   "16": {
+    "id": "16",
+    "name": "Basement Room 16",
+    "parent_id": "1"
+   },
+   "17": {
+    "id": "17",
+    "name": "Basement Room 17",
+    "parent_id": "1"
+   },
+   "18": {
+    "id": "18",
+    "name": "Basement Room 18",
+    "parent_id": "1"
+   },
+   "19": {
+    "id": "19",
+    "name": "Basement Room 19",
+    "parent_id": "1"
+   },
+   "20": {
+    "id": "20",
+    "name": "Basement Room 20",
+    "parent_id": "1"
+   },
+   "21": {
+    "id": "21",
+    "name": "Basement Room 21",
+    "parent_id": "1"
+   }
+  },
+  "occupancy_groups": {},
+  "smart_away_state": "Disabled"
+ },
+ "Garage": {
+  "devices": {
+   "1": {
+    "device_id": "1",
+    "current_state": -1,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": null,
+    "name": "Smart Bridge 2",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "SmartBridge",
+    "model": "L-BDG2-WH",
+    "serial": 85693120,
+    "device_name": "Smart Bridge 2",
+    "area": null
+   },
+   "2": {
+    "device_id": "2",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "1",
+    "name": "Garage Room 2_Switch 2",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallSwitch",
+    "model": "PD-8ANS-XX",
+    "serial": 34603507,
+    "device_name": "Switch 2",
+    "area": "2"
+   },
+   "3": {
+    "device_id": "3",
+    "current_state": 0,
+    "fan_speed": null,
+    "tilt": null,
+    "zone": "2",
+    "name": "Garage Room 3_Switch 3",
+    "button_groups": null,
+    "occupancy_sensors": null,
+    "type": "WallSwitch",
+    "model": "PD-8ANS-XX",
+    "serial": 32060783,
+    "device_name": "Switch 3",
+    "area": "3"
+   }
+  },
+  "buttons": {},
+  "areas": {
+   "1": {
+    "id": "1",
+    "name": "root",
+    "parent_id": null
+   },
+   "2": {
+    "id": "2",
+    "name": "Garage Room 2",
+    "parent_id": "1"
+   },
+   "3": {
+    "id": "3",
+    "name": "Garage Room 3",
+    "parent_id": "1"
+   }
+  },
+  "occupancy_groups": {},
+  "smart_away_state": "Disabled"
+ }
+}
