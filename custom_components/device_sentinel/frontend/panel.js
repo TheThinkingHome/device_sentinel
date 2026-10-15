@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.26.1 (2026-10-13)
+// File: panel.js, Version: 0.26.3 (2026-10-14)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -2680,7 +2680,7 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("div", { class: "actcol" }, ...parts);
   }
 
-  _mutedCell(who) {
+  _mutedCell(who, hub) {
     const mutes = who.actions.mutes;
     const e = this._edit(who.device_id);
     const everything = mutes.everything && mutes.everything.on;
@@ -2718,6 +2718,13 @@ class DeviceSentinelPanel extends HTMLElement {
       const m = mutes[kind];
       if (!m || !m.on || m.here || !m.source) continue;
       const source = String(m.source);
+      if (source === "hub") {
+        // A hub's mute covers the devices it controls (James, 14
+        // October 2026): it is lifted on the hub's page.
+        parts.push(el("div", { class: "actnote" }, `${words} is muted with its hub. Change it on `,
+          hub ? this._link(`${hub.name}'s page`, this._devicePath(hub.device_id)) : "the hub's page", "."));
+        continue;
+      }
       const from = source.startsWith("label: ") ? `the label ${source.slice(7)}`
         : source.startsWith("integration: ")
           ? `the integration ${source.slice(13) === who.integration && who.integration_title ? who.integration_title : source.slice(13)}`
@@ -2811,6 +2818,26 @@ class DeviceSentinelPanel extends HTMLElement {
     const quiet = status.last_activity ? (now - new Date(status.last_activity).getTime()) / 1000 : null;
     const fill = status.window && quiet !== null ? Math.min(1, quiet / status.window) : 0;
     const standing = who.watched ? (who.muted ? `Watched, muted: ${who.muted}` : "Watched") : `Set aside: ${who.set_aside}`;
+    // Judged by its hub (rulings #663 to #665, 0.26.3): a hub reads up
+    // or down from its connection, and a device it controls is judged by it.
+    const hub = page.hub || null;
+    const hubSelf = page.hub_self || null;
+    const clock = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "an unknown time");
+    // A verdict of its own, or a mute, is shown as on any page: the hub's
+    // words take the place of the plain "reporting" only.
+    const ownVerdict = ["frozen", "unavailable", "unknown", "never_reported", "flapping"].includes(status.category);
+    if (hub && !ownVerdict && !(who && who.muted)) {
+      word = hub.up === false ? "Its hub is down" : "Judged by its hub";
+      colour = hub.up === false ? "var(--error-color, #db4437)" : "var(--success-color, #43a047)";
+    }
+    if (hubSelf) {
+      word = hubSelf.up ? "Up" : "Down";
+      colour = hubSelf.up ? "var(--success-color, #43a047)" : "var(--error-color, #db4437)";
+      if (who && who.muted) {
+        word = `${word}, muted`;
+        colour = "var(--disabled-text-color, #888)";
+      }
+    }
     const head = el("div", { class: "pagehead" },
       el("div", {},
         el("h2", {}, who.name),
@@ -2916,16 +2943,21 @@ class DeviceSentinelPanel extends HTMLElement {
       group("Signal"),
       ...(byKind("signal").length ? [["Signal", valueCell("signal")]] : []),
       ...(byKind("signal").length ? [["Signal sensor", sensorLinks("signal")]] : []),
-      group("Last seen"),
-      ["Last seen", valueCell("last_seen")],
-      ["Last seen sensor", lastSeenSensor],
-      ...(who.first_observed ? [["First seen", moment(who.first_observed)]] : []),
-      ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
+      // Not on a hub's page (James, 14 October 2026): a Lutron hub's
+      // only entity changes at a restart, so its Last seen read as a
+      // fault while it was up. Its status box and outages say it.
+      ...(hubSelf ? [] : [
+        group("Last seen"),
+        ["Last seen", valueCell("last_seen")],
+        ["Last seen sensor", lastSeenSensor],
+        ...(who.first_observed ? [["First seen", moment(who.first_observed)]] : []),
+        ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
+      ]),
       // The freeze rule in use today and its wait (0.24.0): the
       // shorter of the Trimmed Maximum and the Log-Normal Percentile.
       ...(status.rule ? [["Wait rule", el("div", { class: "actcol" }, `${status.rule}, ${span(status.window)}`, useTrimmed)]] : []),
       // What is muted and why, with the toggles (0.24.5).
-      ...(acts ? [["Muted", this._mutedCell(who)]] : []),
+      ...(acts ? [["Muted", this._mutedCell(who, hub)]] : []),
       // Excluded, with its button (0.25.6).
       ...(acts ? [["Excluded", this._excludedCell(who)]] : []),
     ];
@@ -3003,6 +3035,52 @@ class DeviceSentinelPanel extends HTMLElement {
             : row.learned || ""))))))
       : el("p", { class: "muted", style: "margin:0" }, "No silence longer than its rhythm in the last 14 days.");
 
+    const mkHubLink = () => (hub ? this._link(hub.name, this._devicePath(hub.device_id)) : null);
+    const hubBox = hub || hubSelf ? el("div", { class: "devstatus" },
+      el("div", { class: "statusline" },
+        el("div", { style: "font-size:18px;font-weight:500;display:flex;align-items:center;gap:8px" },
+          el("span", { class: "dot", style: `background:${colour}` }), word),
+        el("div", { class: "muted" }, hub
+          ? (hub.up === null
+            ? el("span", {}, "Device Sentinel cannot read ", mkHubLink(), `'s connection right now. Lutron reports this ${hub.kind} only when someone uses it, so its silence cannot be judged.`)
+            : hub.up
+            ? el("span", {}, mkHubLink(), ` is up, connected since ${clock(hub.since)}. Lutron reports this ${hub.kind} only when someone uses it, so its silence cannot be judged.`)
+            : el("span", {}, mkHubLink(), ` went down at ${clock(hub.since)}. Until it is back, this ${hub.kind} is listed on the hub's page, not on the Problem List.`))
+          : (hubSelf.up
+            ? `Connected since ${clock(hubSelf.since)}. Home Assistant's Lutron integration checks the hub once a minute.`
+            : `Down since ${clock(hubSelf.since)}. ${hubSelf.behind.length === 1 ? "The device it controls is" : `The ${hubSelf.behind.length} devices it controls are`} listed on this page, not on the Problem List, until it is back.`)))) : null;
+    const judgedBlock = hub ? el("div", {}, el("h3", { class: "section" }, "How It Is Judged"),
+      el("p", { style: "margin:0 0 10px;line-height:1.6" }, "By its hub. Lutron tells Home Assistant whether ", mkHubLink(),
+        " is connected, and nothing about a single " + hub.kind + (hub.battery ? ": not when it last spoke, not when it loses power. " : ": not when it last spoke, not its battery, not when it loses power. ")
+        + "When the hub goes down, this " + hub.kind + " is listed on the hub's page, not on its own."),
+      ...(hub.kind === "remote" ? [el("p", { style: "margin:0 0 10px;line-height:1.6" },
+        "Each press of one of its buttons counts as the remote reporting, and shows as Last seen.")] : []),
+      el("p", { class: "small", style: "margin:0;line-height:1.6" },
+        "A " + hub.kind + " that loses power on its own while its hub stays up cannot be seen. Lutron does not report it."))
+      : hubSelf ? el("div", {}, el("h3", { class: "section" }, "How It Is Judged"),
+        el("p", { style: "margin:0 0 10px;line-height:1.6" }, "By its connection. Home Assistant's Lutron integration checks the hub once a minute. "
+          + "When a check fails, Device Sentinel reports the hub down within about two minutes and lists the devices it controls on this page."),
+        el("p", { class: "small", style: "margin:0;line-height:1.6" },
+          "Its own switch, Smart Away, changes only when Home Assistant restarts, so its silence cannot be judged.")) : null;
+    const behindTable = hubSelf ? el("div", { class: "scroll" }, el("table", {},
+      el("thead", {}, el("tr", {}, ...["DEVICE", "TYPE", "STANDING", "LAST SEEN", "PROBLEM"].map((h) => el("th", {}, h)))),
+      el("tbody", {}, ...hubSelf.behind.map((d) => el("tr", {},
+        el("td", {}, this._link(d.name, this._devicePath(d.device_id))),
+        el("td", {}, d.type), el("td", {}, d.standing), el("td", {}, d.last_seen ? ago(d.last_seen, now) : "never"),
+        el("td", {}, d.problem || "")))))) : null;
+    const hubOutages = hubSelf ? el("div", { class: "scroll" }, el("table", {},
+      el("thead", {}, el("tr", {}, ...["WENT DOWN", "BACK", "DOWN FOR", "DEVICES IT CONTROLS"].map((h) => el("th", {}, h)))),
+      el("tbody", {}, ...hubSelf.outages.map((o) => el("tr", {},
+        el("td", {}, moment(o.start)), el("td", {}, o.end ? clock(o.end) : "still down"),
+        el("td", {}, o.end ? span((new Date(o.end) - new Date(o.start)) / 1000) : ""), el("td", {}, String(hubSelf.behind.length))))))) : null;
+    if (hub || hubSelf) {
+      this._pane.replaceChildren(back, head, hubBox,
+        el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable), judgedBlock),
+        ...(hubSelf ? [el("h3", { class: "section" }, "Devices This Hub Controls ", el("span", { class: "small" }, `${hubSelf.behind.length}`)), behindTable,
+          el("h3", { class: "section" }, "Outages, last 14 days"), hubOutages] : []));
+      this._paintReadings();
+      return;
+    }
     this._pane.replaceChildren(back, head, statusBox,
       el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable), rhythm),
       el("h3", { class: "section" }, "Silences, last 14 days"), silences,
@@ -3548,7 +3626,7 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
         el("td", {}, this._link(row.integration, this._integrationPath(row.integration))),
         el("td", {}, this._typeLink(row.type, pick)),
-        el("td", {}, row.watched ? "\u2713" : ""),
+        el("td", {}, row.watched ? (row.judged ? `\u2713 ${row.judged}` : "\u2713") : ""),
         el("td", {}, row.muted),
         el("td", {}, row.set_aside),
         showCopies ? el("td", {}, row.copies > 1 ? String(row.copies) : "") : null))));
