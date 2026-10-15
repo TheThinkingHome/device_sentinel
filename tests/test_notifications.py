@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.24.2 (2026-10-03)
+# File: test_notifications.py, Version: 0.26.3 (2026-10-14)
 
 """The config-flow backbone, the notification surface, and the engine.
 
@@ -355,6 +355,10 @@ class _Harness(NotifierMixin):
 
     def _high_priority_targets(self):
         return self._high
+
+    def hub_problem_words(self, device_id):
+        # No hubs here (0.26.3).
+        return None
 
     def _in_startup_grace(self):
         """Long past any start: these tests are about what is pushed."""
