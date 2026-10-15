@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_probe_additions.py, Version: 0.23.11 (2026-09-27)
+# File: tests/test_probe_additions.py, Version: 0.26.4 (2026-10-15)
 
 """What the probe records from 0.23.11 (ruled 27 September 2026).
 
@@ -156,6 +156,33 @@ async def test_a_replaced_node_object_is_listened_to_afresh(hass: HomeAssistant)
     controller.nodes = {7: new}
     coord.probe_tick(1060.0)
     assert not old.listeners.get("dead") and len(new.listeners.get("dead", [])) == 1
+
+
+async def test_a_second_network_renames_the_listened_nodes(hass: HomeAssistant):
+    """A second Z-Wave network tags every node with its network
+    (0.26.4); the first network's listeners are made again under the
+    new name, so its event lines match its minute lines."""
+    node = _Node(7)
+    _zwave(hass, [node])
+    coord = await _study(hass, "zwave_js")
+    coord.probe_tick(1000.0)
+    _zwave(hass, [_Node(9)])
+    coord.probe_tick(1060.0)
+    assert all(len(node.listeners.get(event, [])) == 1 for event in ("wake up", "sleep", "dead", "alive"))
+    before = len(_lines(coord, "zwave_js"))
+    node.fire("dead")
+    (line,) = _lines(coord, "zwave_js")[before:]
+    tagged = line.split("|")[3].strip()
+    assert tagged.startswith("7 ") and len(tagged) == 10, line
+
+
+async def test_each_network_has_its_own_health_line(hass: HomeAssistant):
+    _zwave(hass, [_Node(7)], counters={"messages_dropped_rx": 1})
+    _zwave(hass, [_Node(9)], counters={"messages_dropped_rx": 2})
+    coord = await _study(hass, "zwave_js")
+    coord._zwave_health_line(1000.0)
+    names = sorted(line.split("|")[3].strip() for line in _lines(coord, "zwave_js") if "| health |" in line)
+    assert len(names) == 2 and all(name.startswith("controller ") for name in names) and names[0] != names[1]
 
 
 async def test_a_throwing_listener_leaves_the_tick_running(hass: HomeAssistant):

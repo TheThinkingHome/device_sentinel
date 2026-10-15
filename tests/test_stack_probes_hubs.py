@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_stack_probes_hubs.py, Version: 0.23.9 (2026-09-26)
+# File: tests/test_stack_probes_hubs.py, Version: 0.26.4 (2026-10-15)
 
 """Hue, SmartThings, Tuya and Lutron in Extended Diagnostics (0.23.9).
 
@@ -118,9 +118,10 @@ def test_the_four_stacks_are_offered():
 
 
 async def test_hue_gives_the_bridges_own_judgment(hass: HomeAssistant):
-    """A light on Hue's ignore list stays available while disconnected;
-    the line says so, and the bridge's judgment sits beside Device
-    Sentinel's."""
+    """The bridge's judgment sits beside Device Sentinel's. A device on
+    Hue's ignore list without a light is not helped by it, and since
+    0.26.4 the line says so (tests/test_hue_smartthings_probe.py reads
+    the real library)."""
     lamp_id, strip_id = "3a1b2c3d-0000-4000-8000-000000000001", "3a1b2c3d-0000-4000-8000-000000000002"
     entry = _hue(hass, {lamp_id: _Connectivity.CONNECTIVITY_ISSUE, strip_id: _Connectivity.CONNECTED},
                  ignored=[lamp_id])
@@ -133,7 +134,7 @@ async def test_hue_gives_the_bridges_own_judgment(hass: HomeAssistant):
     line = next(row for row in probe_lines(coord) if row[PROBE_DEVICE_ID] == "Hall lamp")
     assert line[PROBE_NOW] == "connectivity_issue"
     assert line[PROBE_SENTINEL] == "frozen" and line[PROBE_AGREES] == "yes"
-    assert line[PROBE_DETAIL] == "availability ignored in Hue's options"
+    assert line[PROBE_DETAIL] == "on Hue's ignore list, which does nothing without a light"
     bridge = next(row for row in probe_lines(coord, "bridge"))
     assert bridge[PROBE_NOW] == "connected"
 
@@ -145,7 +146,9 @@ async def test_a_v1_hue_bridge_is_named_and_not_read(hass: HomeAssistant):
 
 
 async def test_smartthings_records_its_cloud_subscription(hass: HomeAssistant):
-    """The cloud-outage question: a lost subscription is a line."""
+    """The cloud-outage question: a lost subscription is a line. Since
+    0.26.4 a device's type says how it reaches the cloud, and its line
+    says what Home Assistant shows for it."""
     runtime = SimpleNamespace(devices={
         "b7e1": SimpleNamespace(device=SimpleNamespace(device_id="b7e1", type=_Type.ZIGBEE, hub=SimpleNamespace(), parent_device_id=None)),
         "c9f2": SimpleNamespace(device=SimpleNamespace(device_id="c9f2", type=_Type.VIPER, hub=None, parent_device_id=None)),
@@ -155,10 +158,13 @@ async def test_smartthings_records_its_cloud_subscription(hass: HomeAssistant):
     coord = await _studied(hass, "SmartThings")
     coord.probe_tick(1000.0)
     contact = next(row for row in probe_lines(coord) if row[PROBE_DEVICE_ID] == "Garage contact")
-    assert contact[PROBE_NOW] == "zigbee" and contact[PROBE_DETAIL] == "behind a SmartThings hub"
+    assert contact[PROBE_NOW] == "no entity states"
+    assert contact[PROBE_DETAIL] == "behind a SmartThings hub, type zigbee"
     hass.config_entries.async_update_entry(entry, data={"subscription_id": None})
     coord.probe_tick(1060.0)
-    assert [row[PROBE_NOW] for row in probe_lines(coord, "cloud")] == ["subscribed", "not subscribed"]
+    assert [row[PROBE_DETAIL].split(", entry")[0] for row in probe_lines(coord, "cloud")] == [
+        "subscription abc", "no subscription",
+    ]
 
 
 async def test_tuya_records_its_cloud_link_and_each_device(hass: HomeAssistant):
