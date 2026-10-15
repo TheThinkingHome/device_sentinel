@@ -7,3 +7,6 @@ pytest-homeassistant-custom-component==0.13.372
 # The suite must run serially (no pytest -n). The harness shares one
 # testing_config/www/ across xdist workers, so parallel runs race the
 # daily brief's atomic write and fail intermittently. See pytest.ini.
+# The Lutron library Home Assistant 2026.10 pins, so the Lutron hub tests
+# run against the library itself (0.26.3, 2026-10-14, ruling #663).
+pylutron-caseta==0.29.0
