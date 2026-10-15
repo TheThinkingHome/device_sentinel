@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.26.1 (2026-10-13)
+# File: report_brief.py, Version: 0.26.3 (2026-10-14)
 
 """The daily brief: the one report written for a person.
 
@@ -356,16 +356,30 @@ class BriefMixin:
             # serves every channel, so nothing is described two ways
             # (ruling #120). The level belongs in both or neither.
             return self._battery_phrase(row[INC_DEVICE_ID], False)
+        hub = self.hub_unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
         wording = {
             TODO_KIND_FLAPPING: "started dropping out again and again",
             TODO_KIND_FROZEN: "stopped reporting",
             TODO_KIND_NEVER_REPORTED: "has never reported",
-            TODO_KIND_UNAVAILABLE: "went unavailable",
+            # A hub went down (James, 14 October 2026).
+            TODO_KIND_UNAVAILABLE: hub[0] if hub else "went unavailable",
             TODO_KIND_UNKNOWN: "went unknown",
             TODO_KIND_RAILED_SIGNAL: "signal railed",
             TODO_KIND_FALLING_BATTERY: "battery is running down",
         }
         return wording.get(kind, kind)
+
+    def _brief_unavailable_text(self, device_id: str) -> str:
+        """Unavailable, or for a hub what the Problem List says (#665).
+
+        "hub down, 2 devices that it controls" while the hub is down,
+        "down" for a hub otherwise (James, 14 October 2026).
+        """
+        words = self.hub_problem_words(device_id)  # type: ignore[attr-defined]
+        if words:
+            return f"{words[:1].lower()}{words[1:]}"
+        hub = self.hub_unavailable_words(device_id)  # type: ignore[attr-defined]
+        return hub[1] if hub else "unavailable"
 
     def _brief_falling_text(self, device_id: str) -> str:
         """Return the falling clause with its time left where known.
@@ -407,14 +421,18 @@ class BriefMixin:
             name = record.get(TODO_SORT_NAME) or device_id
             kinds = record.get(TODO_KINDS) or {}
             for kind, since in kinds.items():
-                if kind == TODO_KIND_UNAVAILABLE and TODO_KIND_FLAPPING in kinds:
+                hub_down = self.hub_problem_words(device_id)  # type: ignore[attr-defined]
+                if kind == TODO_KIND_FLAPPING and hub_down and TODO_KIND_UNAVAILABLE in kinds:
+                    # A hub that is down is named for that (#665).
+                    continue
+                if kind == TODO_KIND_UNAVAILABLE and TODO_KIND_FLAPPING in kinds and not hub_down:
                     # The flap is the row; its drops are not (0.23.2).
                     continue
                 problem = {
                     TODO_KIND_FLAPPING: self.flap_words(device_id),
                     TODO_KIND_FROZEN: "stopped reporting",
                     TODO_KIND_NEVER_REPORTED: "never reported",
-                    TODO_KIND_UNAVAILABLE: "unavailable",
+                    TODO_KIND_UNAVAILABLE: self._brief_unavailable_text(device_id),
                     TODO_KIND_UNKNOWN: "unknown",
                     TODO_KIND_RAILED_SIGNAL: "signal railed",
                     TODO_KIND_LOW_BATTERY: self._brief_battery_text(device_id),
@@ -1997,7 +2015,9 @@ class BriefMixin:
         """
         kind = opened.get(INC_KIND)
         if kind == TODO_KIND_UNAVAILABLE:
-            return "went unavailable", "unavailable"
+            # A hub went down (James, 14 October 2026).
+            hub = self.hub_unavailable_words(opened.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
+            return hub if hub else ("went unavailable", "unavailable")
         if kind == TODO_KIND_RAILED_SIGNAL:
             return "signal railed", "railed"
         # A battery crossing its line is not a silence: the device
@@ -2175,6 +2195,9 @@ class BriefMixin:
                 continue
             entry["name"] = self._repeat_name(entry)
             entry["what"] = self._repeat_verb(kind)
+            if kind == TODO_KIND_UNAVAILABLE and self.hub_unavailable_words(device_id):  # type: ignore[attr-defined]
+                # A hub went down (James, 14 October 2026).
+                entry["what"] = "went down"
             entry["when"] = self._repeat_when(entry["whens"])
             entry["typical"] = (
                 self._human_span(

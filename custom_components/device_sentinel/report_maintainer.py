@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.26.0 (2026-10-12)
+# File: report_maintainer.py, Version: 0.26.3 (2026-10-14)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -776,6 +776,11 @@ class MaintainerReportMixin:
             return f"label: {', '.join(names)}"
         if device_id in devices:
             return "device"
+        # A hub's mute covers the devices it controls (James, 14
+        # October 2026).
+        hub = self.watched_hub_of(device_id)  # type: ignore[attr-defined]
+        if hub is not None and self._mute_source(hub, integrations, labels, devices) is not None:
+            return "hub"
         return None
 
     def _global_mute_text(self, device_id: str) -> str:
@@ -795,6 +800,8 @@ class MaintainerReportMixin:
                 device_id, [], self.entry.options.get(CONF_MUTED_LABELS, []), []
             )
             return f"Global ({source})" if source else "Global (label)"
+        if level == "hub":
+            return "Global (with its hub)"
         return f"Global ({level})"
 
     def _family_mute_texts(self, device_id: str) -> list[str]:
@@ -822,7 +829,7 @@ class MaintainerReportMixin:
                 options.get(devices, []),
             )
             if source is not None:
-                found.append(f"{family} ({source})")
+                found.append(f"{family} ({'with its hub' if source == 'hub' else source})")
         return found
 
     def mute_text(self, device_id: str) -> str:
@@ -873,6 +880,12 @@ class MaintainerReportMixin:
                 "copies": name_copy_counts.get(name, 1),
                 # What the device is (0.25.3), for the tab's TYPE column.
                 "type": self.type_words(device_id),  # type: ignore[attr-defined]
+                # Judged by its hub (#665), beside the tick.
+                "judged": (
+                    "hub" if self.is_hub(device_id)  # type: ignore[attr-defined]
+                    else "judged by its hub" if self.judged_by_hub(device_id)  # type: ignore[attr-defined]
+                    else ""
+                ),
             })
         for device_id, (name, integration_domain, reason) in self._set_aside.items():
             rows.append({

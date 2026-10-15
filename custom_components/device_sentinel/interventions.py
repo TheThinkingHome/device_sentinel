@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.24.0 (2026-10-02)
+# File: interventions.py, Version: 0.26.3 (2026-10-14)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -682,6 +682,14 @@ class InterventionMixin:
         for device_id in self._watched:
             if self._stack_for_device(device_id) is not None:
                 continue
+            # A watched hub, and the devices it controls, are judged by
+            # the hub (#664): a hub whose integration cannot start reads
+            # down itself, one row, so its entry is not watched here as
+            # well. With no watched hub, this rule covers them as before
+            # (James, 14 October 2026). A muted hub keeps its entry and
+            # is silent, with its devices muted with it.
+            if self.hub_takes_over(device_id):  # type: ignore[attr-defined]
+                continue
             entry_id = self._entry_of_device.get(device_id)
             if entry_id is None or self._freeze_muted(device_id):
                 continue
@@ -697,9 +705,32 @@ class InterventionMixin:
         }
         self._resume_integration_outages()
 
+        hub_entries = {
+            entry_id
+            for hub, entry_id in self._hub_entry.items()  # type: ignore[attr-defined]
+            if self.hub_takes_over(hub)  # type: ignore[attr-defined]
+        }
         for entry_id in list(self._entry_down_at):
-            if entry_id not in behind:
-                self._entry_down_at.pop(entry_id, None)
+            if entry_id in behind:
+                continue
+            # An announced outage of an entry whose hub now speaks for
+            # it (#664): announced before 0.26.3, or while the hub was
+            # muted. It is closed when the entry is loaded again, as any
+            # outage is, and not before: closed at the handover, an
+            # unmute in mid-outage told the integration back while it
+            # was down, and each mute and unmute told it down and back
+            # again (fourth review round, 14 October 2026). Until then
+            # the hub alone is reported; integration_down_since claims
+            # nothing for the devices it controls.
+            if entry_id in hub_entries and entry_id in self._integration_told:
+                entry = self.hass.config_entries.async_get_entry(entry_id)
+                if entry is not None and entry.state is not ConfigEntryState.LOADED:
+                    continue
+                since = self._entry_down_at.pop(entry_id, None)
+                if entry is not None and since is not None:
+                    self._integration_back(entry, since, now)
+                continue
+            self._entry_down_at.pop(entry_id, None)
 
         for entry_id in behind:
             entry = self.hass.config_entries.async_get_entry(entry_id)
@@ -856,6 +887,11 @@ class InterventionMixin:
         at each restart as the outage was taken back. They are judged
         on their own, and the reason travels with the verdict.
         """
+        # A watched hub speaks for itself and the devices it controls
+        # (#664), so an entry outage still open from before the hub
+        # took over claims none of them (0.26.3).
+        if self.hub_takes_over(device_id):  # type: ignore[attr-defined]
+            return None
         entry_id = self._entry_of_device.get(device_id)
         if entry_id is None:
             return None

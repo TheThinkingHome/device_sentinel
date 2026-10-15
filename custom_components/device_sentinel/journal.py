@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.26.0 (2026-10-12)
+# File: journal.py, Version: 0.26.3 (2026-10-14)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -242,6 +242,10 @@ class JournalMixin:
             if device_id in self._muted_devices or self._freeze_muted(
                 device_id
             ):
+                continue
+            # A device judged by its hub is never judged frozen (#664),
+            # so its silences have no verdict to explain.
+            if self.judged_by_hub(device_id):  # type: ignore[attr-defined]
                 continue
             last = record.get(DEV_LAST_ACTIVITY)
             if last is None:

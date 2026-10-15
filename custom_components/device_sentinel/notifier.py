@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.24.9 (2026-10-06)
+# File: notifier.py, Version: 0.26.3 (2026-10-14)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -297,7 +297,14 @@ class NotifierMixin:
             # A device in a flap is named for the flap, down this
             # minute or not, and its drop is not named again (0.23.2).
             flapping = set()
+            down_rows = self.reportable_down_rows
+            down_ids = {row.get("device_id") for row in down_rows}
             for row in self.flapping_list:
+                # A hub that is down is named for that, as on the
+                # Problem List (#665): its drops stay on its page. Only
+                # once its down row is here to name it.
+                if row.get("device_id") in down_ids and self.hub_problem_words(row.get("device_id")):  # type: ignore[attr-defined]
+                    continue
                 flapping.add(row.get("device_id"))
                 if row.get("device_id") in acknowledged:
                     continue
@@ -306,17 +313,26 @@ class NotifierMixin:
                     _rank(TODO_KIND_FLAPPING), _since(row),
                     f"{name} {_SUMMARY_WORD[TODO_KIND_FLAPPING]}",
                 ))
-            for row in self.reportable_down_rows:
+            for row in down_rows:
                 if row.get("device_id") in acknowledged:
                     continue
                 if row.get("device_id") in flapping:
                     continue
                 name = row.get("name") or row.get("device_id")
                 kind = row.get("category") or "down"
-                entries.append((
-                    _rank(kind), _since(row),
-                    f"{name} {_SUMMARY_WORD.get(kind, kind)}",
-                ))
+                # A hub says what the Problem List says (James, 14
+                # October 2026): "hub down, 2 devices that it controls".
+                hub_words = (
+                    self.hub_problem_words(row.get("device_id"))  # type: ignore[attr-defined]
+                    if kind == TODO_KIND_UNAVAILABLE
+                    else None
+                )
+                word = (
+                    f"{hub_words[:1].lower()}{hub_words[1:]}"
+                    if hub_words
+                    else _SUMMARY_WORD.get(kind, kind)
+                )
+                entries.append((_rank(kind), _since(row), f"{name} {word}"))
         if not entries and not always:
             return "All clear."
         return self._capped(entries, always)

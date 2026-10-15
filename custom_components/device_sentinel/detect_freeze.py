@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.26.0 (2026-10-12)
+# File: detect_freeze.py, Version: 0.26.3 (2026-10-14)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -601,6 +601,13 @@ class FreezeMixin:
         ):
             return None
 
+        # A hub, or a device a hub controls, is judged by its hub
+        # (rulings #663 and #664): never frozen, never "never reported".
+        # A mute is a mute, as on every other device: a freeze-muted hub
+        # is silent, down and back (James, 14 October 2026).
+        if self.judged_by_hub(device_id):  # type: ignore[attr-defined]
+            return self._hub_category(device_id, record, now)  # type: ignore[attr-defined]
+
         # Never reported: zero lifetime events past the grace window.
         # Checked first because it is categorically different from a
         # device that reported and stopped, and because such a device
@@ -769,7 +776,21 @@ class FreezeMixin:
             # Debounce the transition: only publish once the device
             # has read down for longer than a quick-succession flip.
             since = record.get(DEV_FROZEN_SINCE)
-            if current is None:
+            # A hub's lost connection has already been confirmed over
+            # two readings (ruling #663): it is dated from when it was
+            # first seen gone and published without the debounce.
+            hub_lost = (
+                self.hub_down_since(device_id, now)  # type: ignore[attr-defined]
+                if category == FREEZE_CATEGORY_UNAVAILABLE
+                and self.is_hub(device_id)  # type: ignore[attr-defined]
+                else None
+            )
+            if hub_lost is not None:
+                # From when the connection went, whatever stood before
+                # it: a frozen verdict from 0.26.2 is not its start.
+                if current != FREEZE_CATEGORY_UNAVAILABLE:
+                    record[DEV_FROZEN_SINCE] = hub_lost
+            elif current is None:
                 if since is None:
                     # Dated from the saved start of the outage when one
                     # is held (ruling #647): the sweep sees a drop up
@@ -1363,7 +1384,11 @@ class FreezeMixin:
             options.get(CONF_FREEZE_MUTED_LABELS, [])
         ):
             return True
-        return device_id in options.get(CONF_FREEZE_MUTED_DEVICES, [])
+        if device_id in options.get(CONF_FREEZE_MUTED_DEVICES, []):
+            return True
+        # A hub's mute covers the devices it controls (James, 14
+        # October 2026).
+        return self.hub_mutes(device_id, self._freeze_muted)  # type: ignore[attr-defined]
 
     @staticmethod
     def _coerce_taint_reasons(devices: dict[str, dict[str, Any]]) -> int:

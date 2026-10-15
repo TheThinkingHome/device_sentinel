@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.26.1 (2026-10-13)
+# File: dashboard.py, Version: 0.26.3 (2026-10-14)
 
 """What the dashboard reads from the coordinator.
 
@@ -1164,6 +1164,11 @@ class DeviceViewMixin:
                 **self._rhythm_on_days(record),
             },
             "silences": silences,
+            # Judged by its hub (rulings #664 and #665): for a device a
+            # hub controls, its hub; for a hub, its state, the devices it
+            # controls and its outages. None for every other device.
+            "hub": self.hub_view(device_id, dt_util.utcnow().timestamp()),  # type: ignore[attr-defined]
+            "hub_self": self.hub_self_view(device_id, dt_util.utcnow().timestamp()),  # type: ignore[attr-defined]
             "battery": self._page_battery(record),
             "signal": self._page_signal(record),
             "outages": self.device_outages(domain),

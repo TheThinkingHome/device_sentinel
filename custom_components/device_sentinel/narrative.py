@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.25.5 (2026-10-10)
+# File: narrative.py, Version: 0.26.3 (2026-10-14)
 
 """How to say what happened: the composer.
 
@@ -307,6 +307,10 @@ class NarrativeMixin:
             phrase = self._battery_phrase(row[INC_DEVICE_ID], False)
             return f"{name} {phrase} at {when}"
         wording = self._EVENT_WORDING.get(kind, kind)
+        hub = self.hub_unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
+        if kind == TODO_KIND_UNAVAILABLE and hub:
+            # A hub went down (James, 14 October 2026).
+            wording = hub[0]
         return f"{name} {wording} at {when}"
 
     def _compose_event(self, row: dict[str, Any]) -> str:
@@ -516,6 +520,9 @@ class NarrativeMixin:
             with_age, without_age = self._STATE_TEMPLATE.get(
                 worst, ("{ago}", worst)
             )
+            if worst == TODO_KIND_UNAVAILABLE and self.hub_unavailable_words(device_id):  # type: ignore[attr-defined]
+                # A hub is down, not unavailable (James, 14 October 2026).
+                with_age, without_age = "has been down for {ago}", "is down"
             clause = with_age.format(ago=ago) if ago else without_age
         extra = len(ordered) - 1
         # The same device, so say so: "and 1 more problem" read as a

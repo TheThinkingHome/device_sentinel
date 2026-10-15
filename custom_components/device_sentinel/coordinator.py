@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.26.2 (2026-10-13)
+# File: coordinator.py, Version: 0.26.3 (2026-10-14)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -286,6 +286,7 @@ from .detect_freeze import FreezeMixin
 from .detect_signal import SignalMixin, _entity_unit, _is_percentage
 from .device_fields import child_devices, device_field
 from .events import EventMixin
+from .hubs import HUB_BUTTON_EVENTS, HubMixin
 from .interventions import InterventionMixin
 from .hardware_copies import choose_copies, find_groups, rank_of
 from .naming import display_name
@@ -356,6 +357,7 @@ def _forget_hold_verdicts(record: dict[str, Any]) -> None:
 
 
 class DeviceSentinelCoordinator(
+    HubMixin,
     DeviceActionsMixin,
     PowerMixin,
     TypeMixin,
@@ -686,6 +688,9 @@ class DeviceSentinelCoordinator(
         # that kept none dates no return.
         self._aside_seen: set[str] | None = None
         self._deep_sleep_unreadable: set[str] = set()
+        # Which devices are hubs, which they control, and whether each
+        # hub's connection is up (rulings #663 to #665).
+        self._init_hubs()
         self._entry_down_at: dict[str, float] = {}
         self._integration_told: set[str] = set()
         # Entry outages by entry (0.22.23): each one's detail, the one
@@ -1760,6 +1765,16 @@ class DeviceSentinelCoordinator(
                 event_filter=self._command_filter,
             )
         )
+        # A press on a Pico, which has no entity that would say so, is
+        # the Pico reporting (ruling #664).
+        for event_type in HUB_BUTTON_EVENTS:
+            self._unsubs.append(
+                self.hass.bus.async_listen(
+                    event_type,
+                    self._on_hub_button,
+                    event_filter=self._hub_button_filter,
+                )
+            )
         # One rebuild for a burst of registry changes, not one per
         # change: at once when none ran in the last cooldown, otherwise
         # once when it ends (0.24.2). Shut down with the listeners, so
@@ -2546,6 +2561,14 @@ class DeviceSentinelCoordinator(
         self._stack_keys = stack_keys
         self._radio_owned = radio_owned
         self._entry_of_device = entry_of
+        # Each device a hub controls, from the same walk (#664).
+        self._rebuild_hubs(all_devices)
+        # A hub muted from everything mutes the devices it controls
+        # with it (James, 14 October 2026). Derived here, never saved:
+        # unmuting the hub unmutes them, and a device's own mute stands.
+        for member, hub in self._hub_of.items():
+            if hub in muted_devices and hub in watched:
+                muted_devices.setdefault(member, "hub")
         self._device_names = device_names
         self._device_labels = device_labels
         self._set_aside = set_aside
@@ -4966,6 +4989,9 @@ class DeviceSentinelCoordinator(
         self._expire_maintenance(dt_util.utcnow().timestamp())
         await self._close_brief_if_skipped()
         self._sample_bridges()
+        # Each hub's connection, read before the devices are judged
+        # (ruling #663).
+        self._sample_hubs(dt_util.utcnow().timestamp())
         self._judge_all_devices()
         self._wifi_backdate()
         self._note_upstream_peaks()

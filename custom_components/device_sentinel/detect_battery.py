@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.26.0 (2026-10-12)
+# File: detect_battery.py, Version: 0.26.3 (2026-10-14)
 
 """Battery: the level threshold and what is tracked.
 
@@ -706,7 +706,11 @@ class BatteryMixin:
             options.get(CONF_BATTERY_MUTED_LABELS, [])
         ):
             return True
-        return device_id in options.get(CONF_BATTERY_MUTED_DEVICES, [])
+        if device_id in options.get(CONF_BATTERY_MUTED_DEVICES, []):
+            return True
+        # A hub's mute covers the devices it controls (James, 14
+        # October 2026).
+        return self.hub_mutes(device_id, self._battery_muted)  # type: ignore[attr-defined]
 
     @property
     def detected_batteries(self) -> list[dict[str, Any]]:

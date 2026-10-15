@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.26.0 (2026-10-12)
+# File: problem_list.py, Version: 0.26.3 (2026-10-14)
 
 """The problem list: the single memory every channel renders.
 
@@ -715,6 +715,17 @@ class ProblemListMixin:
 
         if UPSTREAM_KIND in kinds:
             return self._upstream_item_text(name, kinds, level)
+        # A hub that is down says so, and how many devices it controls
+        # (ruling #665), whether or not it has dropped out before: the
+        # count of what it controls is what a person needs while it is
+        # down, and its earlier drops stay on its page.
+        hub_words = (
+            self.hub_problem_words(device_id)  # type: ignore[attr-defined]
+            if device_id is not None and TODO_KIND_UNAVAILABLE in order
+            else None
+        )
+        if hub_words:
+            order = [kind for kind in order if kind != TODO_KIND_FLAPPING]
         if TODO_KIND_FLAPPING in order:
             # The flap is the problem; a drop inside it is not listed
             # beside it, whether or not the device is down this minute
@@ -723,6 +734,8 @@ class ProblemListMixin:
         words = [
             self.flap_words(device_id)
             if kind == TODO_KIND_FLAPPING and device_id is not None
+            else hub_words
+            if kind == TODO_KIND_UNAVAILABLE and hub_words
             else self._kind_word(kind, level, left)
             for kind in order
         ]
@@ -747,6 +760,9 @@ class ProblemListMixin:
                 lines.append(f"{word[:1].upper()}{word[1:]}.")
                 continue
             when = self._plausible_time(since)
+            if kind == TODO_KIND_UNAVAILABLE and hub_words:
+                lines.append(self.hub_problem_line(device_id, when))  # type: ignore[attr-defined]
+                continue
             if when is not None:
                 lines.append(f"{word.capitalize()} since {when}.")
             else:

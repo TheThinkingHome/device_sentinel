@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.26.2 (2026-10-13)
+# File: const.py, Version: 0.26.3 (2026-10-14)
 
 """Constants for the Device Sentinel integration."""
 
@@ -244,6 +244,10 @@ LEARNED_COMMANDED = "no (commanded)"
 # 36 hours, inside the flat part, so the card offers a mute early and
 # never late. Checked again as more houses report.
 SLOW_REPORTER_SECONDS = 36.0 * 3600.0
+# A hub reads down once its connection has been gone for two readings
+# of the minute check (ruling #663): the library's own reconnect after
+# a dropped connection takes a few seconds and is not an outage.
+HUB_DOWN_CONFIRM_SECONDS = 55.0
 
 # A taint records why learning was suppressed, not merely that it
 # was, so a row can name the bridge that felled a device instead of
@@ -2459,7 +2463,7 @@ SYS_DEVICE_ID = "device_id"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 662
+HIGHEST_RULING = 665
 
 # How long a registry rebuild waits after the last one before the next
 # (0.24.2). Every device, entity or label change rebuilt Device

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.26.0 (2026-10-12)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.26.3 (2026-10-14)
 
 """Recommendations about single devices, for the Recommendations tab (0.24.9).
 
@@ -235,6 +235,10 @@ class DeviceRecommendationsMixin:
             (self._awake_esphome(device_id) or self._dropped_esphome(device_id))  # type: ignore[attr-defined]
             and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
         ):
+            return False
+        # Judged by its hub (#664): never judged frozen, so a freeze
+        # mute offers nothing.
+        if self.judged_by_hub(device_id):  # type: ignore[attr-defined]
             return False
         window = self._freeze_window(record)  # type: ignore[attr-defined]
         return window is not None and window > SLOW_REPORTER_SECONDS

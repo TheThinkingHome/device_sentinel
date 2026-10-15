@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.26.1 (2026-10-13)
+# File: detect_signal.py, Version: 0.26.3 (2026-10-14)
 
 """Signal: the day's statistics, the bad-day judgment, and the rails.
 
@@ -938,7 +938,11 @@ class SignalMixin:
             options.get(CONF_SIGNAL_MUTED_LABELS, [])
         ):
             return True
-        return device_id in options.get(CONF_SIGNAL_MUTED_DEVICES, [])
+        if device_id in options.get(CONF_SIGNAL_MUTED_DEVICES, []):
+            return True
+        # A hub's mute covers the devices it controls (James, 14
+        # October 2026).
+        return self.hub_mutes(device_id, self._signal_muted)  # type: ignore[attr-defined]
 
     @property
     def detected_signals(self) -> list[dict[str, Any]]:
