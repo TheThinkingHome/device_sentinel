@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.26.3 (2026-10-14)
+// File: panel.js, Version: 0.26.5 (2026-10-16)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -2329,6 +2329,23 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("button", { class: "edit", type: "button", "aria-label": label, onclick }, icon);
   }
 
+  // The Z-Wave status row (ruling #671): what Z-Wave says of the node,
+  // or that its sensor is switched off, with the same button that turns
+  // on Last Seen, which turns this on too.
+  _nodeStatusCell(who, acts) {
+    const WORDS = { alive: "alive", asleep: "asleep", awake: "awake", dead: "dead", unknown: "not known yet" };
+    if (who.node_status === "off") {
+      return el("div", { class: "actcol" },
+        el("span", {}, "switched off"),
+        acts ? el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+          onclick: () => this._deviceAct({ type: "device_sentinel/device_last_seen", device_id: who.device_id }, "nodestatus") },
+          "Turn it on")) : null,
+        this._actNote("nodestatus"));
+    }
+    const word = WORDS[who.node_status] || who.node_status;
+    return el("span", who.node_status === "dead" ? { style: "color:var(--error-color, #db4437)" } : {}, word);
+  }
+
   _actNote(row) {
     const e = this._edit(this._page && this._page.identity && this._page.identity.device_id);
     if (!e || e.errorRow !== row || !e.error) return null;
@@ -2950,6 +2967,9 @@ class DeviceSentinelPanel extends HTMLElement {
         group("Last seen"),
         ["Last seen", valueCell("last_seen")],
         ["Last seen sensor", lastSeenSensor],
+        // Z-Wave's own word on the device (ruling #671): it is what tells
+        // Device Sentinel a Z-Wave device has become unavailable.
+        ...(who.node_status ? [["Z-Wave status", this._nodeStatusCell(who, acts)]] : []),
         ...(who.first_observed ? [["First seen", moment(who.first_observed)]] : []),
         ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
       ]),
