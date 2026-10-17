@@ -264,7 +264,7 @@
         "step": {
           "init": {
             "title": "Turn On the Entities Device Sentinel Watches",
-            "description": "Device Sentinel found {count} disabled {entities} that it reads: {detail}.\n\nThe integration relies on this data to protect your fleet. It needs each device to report its battery level to detect when a battery is low, a last seen entity to drive freeze detection, and a signal strength entity to report wireless anomalies before they cause a failure.\n\nOnly devices enabled in their own integrations and devices that are not excluded in the Device Sentinel settings will be changed.\n\nEnable turns on all {count} at once. To enable each kind individually, go to the Device Sentinel device page, where Enable Signals, Enable Last Seen, and Enable Battery each do one kind. Ignore hides this card until you choose to show ignored issues again.",
+            "description": "Device Sentinel found {count} disabled {entities} that it reads: {detail}.\n\nThe integration relies on this data to protect your fleet. It needs each device to report its battery level to detect when a battery is low, a last seen entity to drive freeze detection, and a signal strength entity to report wireless anomalies before they cause a failure.{zwave_need}\n\nOnly devices enabled in their own integrations and devices that are not excluded in the Device Sentinel settings will be changed.\n\nEnable turns on all {count} at once. To enable each kind individually, go to the Device Sentinel device page, where Enable Signals, Enable Last Seen, and Enable Battery each do one kind{zwave_enable}. Ignore hides this card until you choose to show ignored issues again.",
             "menu_options": {
               "confirm": "Enable",
               "ignore": "Ignore"
@@ -272,7 +272,7 @@
           },
           "confirm": {
             "title": "Turn On the Entities Device Sentinel Watches",
-            "description": "Device Sentinel found {count} disabled {entities} that it reads: {detail}.\n\nThe integration relies on this data to protect your fleet. It needs each device to report its battery level to detect when a battery is low, a last seen entity to drive freeze detection, and a signal strength entity to report wireless anomalies before they cause a failure.\n\nOnly devices enabled in their own integrations and devices that are not excluded in the Device Sentinel settings will be changed.\n\nEnable turns on all {count} at once. To enable each kind individually, go to the Device Sentinel device page, where Enable Signals, Enable Last Seen, and Enable Battery each do one kind. Ignore hides this card until you choose to show ignored issues again."
+            "description": "Device Sentinel found {count} disabled {entities} that it reads: {detail}.\n\nThe integration relies on this data to protect your fleet. It needs each device to report its battery level to detect when a battery is low, a last seen entity to drive freeze detection, and a signal strength entity to report wireless anomalies before they cause a failure.{zwave_need}\n\nOnly devices enabled in their own integrations and devices that are not excluded in the Device Sentinel settings will be changed.\n\nEnable turns on all {count} at once. To enable each kind individually, go to the Device Sentinel device page, where Enable Signals, Enable Last Seen, and Enable Battery each do one kind{zwave_enable}. Ignore hides this card until you choose to show ignored issues again."
           }
         }
       }

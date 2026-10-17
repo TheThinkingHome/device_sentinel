@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.26.3 (2026-10-14)
+# File: narrative.py, Version: 0.26.5 (2026-10-16)
 
 """How to say what happened: the composer.
 
@@ -26,6 +26,7 @@ ways.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from homeassistant.util import dt as dt_util
@@ -307,9 +308,10 @@ class NarrativeMixin:
             phrase = self._battery_phrase(row[INC_DEVICE_ID], False)
             return f"{name} {phrase} at {when}"
         wording = self._EVENT_WORDING.get(kind, kind)
-        hub = self.hub_unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
+        hub = self.unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
         if kind == TODO_KIND_UNAVAILABLE and hub:
-            # A hub went down (James, 14 October 2026).
+            # A hub went down (James, 14 October 2026); a Z-Wave device
+            # became unavailable (#670).
             wording = hub[0]
         return f"{name} {wording} at {when}"
 
@@ -419,8 +421,61 @@ class NarrativeMixin:
         if resolved.get(INC_DURATION) is None:
             when = self._clock(resolved[INC_WHEN])
             return f"{opening} and recovered at {when}{tail}."
+        frozen = self._frozen_span_sentence(opened, resolved, tail)
+        if frozen is not None:
+            return frozen
         span = self._human_span(resolved.get(INC_DURATION))
         return f"{opening} and recovered {span} later{tail}."
+
+    def _frozen_span_sentence(
+        self, opened: dict[str, Any], resolved: dict[str, Any], tail: str
+    ) -> str | None:
+        """A frozen device's silence, told from when it went quiet (0.26.5).
+
+        A freeze is called once a device has been silent past its wait,
+        so the verdict's time is hours after the device went quiet, and
+        the recovery's duration is the whole silence. Added to the
+        verdict's time, it put the recovery hours after it really came:
+        Presence Master, called frozen at 2:20 AM and back at 2:21 AM
+        after 3.7 hours of silence, read "recovered 3.7h later". The
+        sentence says when it went quiet and when it recovered.
+        None for any other kind, a change of kind, or a duration that
+        does not fit.
+        """
+        if opened.get(INC_KIND) != TODO_KIND_FROZEN or self._change_clause(opened) is not None:
+            return None
+        duration = resolved.get(INC_DURATION)
+        end = resolved.get(INC_WHEN)
+        if (
+            not isinstance(duration, (int, float))
+            or isinstance(duration, bool)
+            or not isinstance(end, (int, float))
+            or isinstance(end, bool)
+            or not math.isfinite(duration)
+            or not math.isfinite(end)
+            or duration <= 0
+        ):
+            return None
+        start = end - duration
+        if start > opened[INC_WHEN]:
+            # A silence that began after the verdict cannot be this one.
+            return None
+        local_start = dt_util.as_local(dt_util.utc_from_timestamp(start))
+        local_end = dt_util.as_local(dt_util.utc_from_timestamp(end))
+        quiet = self._clock(start)
+        back = self._clock(end)
+        if local_start.utcoffset() != local_end.utcoffset():
+            # The clock changed inside the silence: the zone names keep
+            # the two times true (adversarial rounds of 16 October 2026).
+            quiet = f"{quiet} {local_start.strftime('%Z')}"
+            back = f"{back} {local_end.strftime('%Z')}"
+        if local_start.date() != local_end.date():
+            quiet = local_start.strftime("%b %-d, ") + quiet
+        name = self._told_name(opened)
+        # "Recovered", not "reported again": a freeze can also clear
+        # because its wait grew, with no report (adversarial round of
+        # 16 October 2026), and the row cannot tell the two apart.
+        return f"{name} stopped reporting at {quiet} and recovered at {back}{tail}."
 
     def _pair_incidents(
         self, rows: list[dict[str, Any]]
@@ -520,7 +575,7 @@ class NarrativeMixin:
             with_age, without_age = self._STATE_TEMPLATE.get(
                 worst, ("{ago}", worst)
             )
-            if worst == TODO_KIND_UNAVAILABLE and self.hub_unavailable_words(device_id):  # type: ignore[attr-defined]
+            if worst == TODO_KIND_UNAVAILABLE and self.is_hub(device_id):  # type: ignore[attr-defined]
                 # A hub is down, not unavailable (James, 14 October 2026).
                 with_age, without_age = "has been down for {ago}", "is down"
             clause = with_age.format(ago=ago) if ago else without_age

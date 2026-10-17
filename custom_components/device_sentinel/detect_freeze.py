@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.26.3 (2026-10-14)
+# File: detect_freeze.py, Version: 0.26.5 (2026-10-16)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -43,9 +43,10 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from .records import BAD_STATES
-from .stacks import reader_for_domain
+from .stacks import node_dead, node_up, reader_for_domain
 
 from .rhythm_rules import lognormal_days, lognormal_rhythm
 from .const import (
@@ -84,6 +85,7 @@ from .const import (
     DEV_FIRST_OBSERVED,
     DEV_FROZEN_CATEGORY,
     DEV_DOWN_SINCE,
+    NODE_DEAD_STATE,
     DEV_FROZEN_SINCE,
     DEV_DOWN_BEGAN_AS,
     DEV_LAST_ACTIVITY,
@@ -279,6 +281,51 @@ class FreezeMixin:
         if self._watched.get(device_id) != "esphome":
             return False
         return self._esphome_flags(device_id) == (False, False)
+
+    def _dead_node(self, device_id: str) -> bool:
+        """Whether the device's own stack says its node is dead (#670).
+
+        Read from the node status sensor a stack keeps, as Z-Wave JS
+        does: such a device is unavailable while the sensor reads dead,
+        because Home Assistant keeps its other entities available and
+        nothing else would show it. Z-Wave learns a node is dead only
+        when a command to it fails, so this catches a device somebody
+        tried to reach; one nobody reaches is left to the freeze rule.
+        A sensor that is switched off, missing or unreadable says
+        nothing, and neither does a device on a stack without one.
+        """
+        entity_id = self._node_status_entity.get(device_id)
+        if entity_id is None:
+            self._dead_nodes.discard(device_id)
+            return False
+        entry = er.async_get(self.hass).async_get(entity_id)
+        if entry is None or entry.disabled_by is not None:
+            # Switched off says nothing from now on.
+            self._dead_nodes.discard(device_id)
+            return False
+        domain = self._watched.get(device_id)
+        state = self.hass.states.get(entity_id)
+        reading = state.state if state is not None else None
+        if reading is not None and node_dead(domain, reading):
+            self._dead_nodes.add(device_id)
+            return True
+        if reading is not None and node_up(domain, reading):
+            self._dead_nodes.discard(device_id)
+            return False
+        # Unreadable or not yet known, as through a reload or a restart:
+        # the last word holds until the stack says otherwise, also
+        # across a restart through the saved outage start.
+        if device_id in self._dead_nodes:
+            return True
+        record = self.data[DATA_DEVICES].get(device_id)
+        saved = record.get(DEV_DOWN_SINCE) if isinstance(record, dict) else None
+        # Only a node known dead is held: an outage that began some
+        # other way is not (third adversarial round of 16 October 2026).
+        return (
+            isinstance(saved, list)
+            and len(saved) == 2
+            and saved[1] == NODE_DEAD_STATE
+        )
 
     def _freeze_rhythm(self, record: dict[str, Any]) -> dict[str, Any] | None:
         """Return the rhythm in use for a device, kept in memory (0.24.0).
@@ -650,6 +697,11 @@ class FreezeMixin:
         if self._dropped_esphome(device_id):
             return FREEZE_CATEGORY_UNAVAILABLE
 
+        # A node its own stack calls dead is unavailable (ruling #670),
+        # and a frozen verdict standing moves to it, as for ESPHome.
+        if self._dead_node(device_id):
+            return FREEZE_CATEGORY_UNAVAILABLE
+
         # Frozen: armed, and silent past its window while entities
         # still hold values. Judged first because it is the timer's
         # own verdict.
@@ -681,6 +733,11 @@ class FreezeMixin:
             # this branch was written for: there is nothing to read
             # and nothing coming, so the clock is the whole story.
             if self._has_registered_entities(device_id):
+                if self._node_reads_up(device_id):  # type: ignore[attr-defined]
+                    # Nothing readable but the node status, and it says
+                    # the node is up (fifth adversarial round of 16
+                    # October 2026): judged by the clock alone.
+                    return FREEZE_CATEGORY_FROZEN if frozen else None
                 return record.get(DEV_FROZEN_CATEGORY)
             return FREEZE_CATEGORY_FROZEN if frozen else None
 

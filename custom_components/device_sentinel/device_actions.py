@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.26.1 (2026-10-13)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.26.5 (2026-10-16)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -205,6 +205,16 @@ class DeviceActionsMixin:
                 return str(ent.entity_id)
         return None
 
+    def _switched_off_node_status(self, device_id: str) -> bool:
+        """Whether the device's node status sensor is switched off (#671)."""
+        from homeassistant.helpers import entity_registry as er
+
+        entity_id = self._node_status_entity.get(device_id)  # type: ignore[attr-defined]
+        if entity_id is None:
+            return False
+        entry = er.async_get(self.hass).async_get(entity_id)
+        return entry is not None and entry.disabled_by is not None
+
     def _name_in_use(self, device_id: str, name: str) -> NameInUse | None:
         """Another device already showing this name, ignoring capitals."""
         wanted = name.strip().casefold()
@@ -332,14 +342,26 @@ class DeviceActionsMixin:
 
     def page_enable_last_seen(self, device_id: str) -> int:
         """Switch on this device's Last Seen entity alone (the house-wide
-        Enable, limited to one device)."""
+        Enable, limited to one device), and its node status sensor with
+        it (ruling #671)."""
         self._device(device_id)
+        last_seen_off = self._switched_off_last_seen(device_id) is not None
+        status_off = self._switched_off_node_status(device_id)
         found = self._enable_matching_entities(  # type: ignore[attr-defined]
-            self._is_last_seen, "last_seen", device_id=device_id  # type: ignore[attr-defined]
+            self._is_liveness, "last_seen", device_id=device_id  # type: ignore[attr-defined]
         )
         enabled = int(found.get("enabled", 0))
         if enabled:
-            self._page_done(device_id, "Last Seen turned on")
+            # Say what was turned on (adversarial round of 16 October
+            # 2026): on a Z-Wave device it may be the status alone.
+            status_too = status_off and not self._switched_off_node_status(device_id)
+            if last_seen_off and status_too:
+                done = "Last Seen and Z-Wave status turned on"
+            elif last_seen_off:
+                done = "Last Seen turned on"
+            else:
+                done = "Z-Wave status turned on"
+            self._page_done(device_id, done)
         return enabled
 
     def page_set_excluded(

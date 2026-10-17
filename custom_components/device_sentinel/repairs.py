@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.23.19 (2026-09-30)
+# File: repairs.py, Version: 0.26.5 (2026-10-16)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -322,6 +322,21 @@ def _evaluate_storage_repaired(
     )
 
 
+ZWAVE_NEED = (
+    " A Z-Wave device also needs its Z-Wave status sensor, the only place"
+    " Home Assistant shows that Z-Wave can no longer reach it."
+)
+ZWAVE_ENABLE = "; Enable Last Seen also turns on the Z-Wave status sensors"
+
+
+def zwave_placeholders(counts: dict[str, int]) -> dict[str, str]:
+    """The card's Z-Wave sentences (#671), empty unless a Z-Wave status
+    sensor is among the disabled entities."""
+    if counts.get("node_status", 0):
+        return {"zwave_need": ZWAVE_NEED, "zwave_enable": ZWAVE_ENABLE}
+    return {"zwave_need": "", "zwave_enable": ""}
+
+
 def entities_disabled_detail(
     counts: dict[str, int],
     devices: dict[str, list[str]] | None,
@@ -340,6 +355,8 @@ def entities_disabled_detail(
         ("signal", "signal"),
         ("last_seen", "last seen"),
         ("battery", "battery"),
+        # A stack's own status for its node, Z-Wave's today (#671).
+        ("node_status", "Z-Wave status"),
     ):
         count = counts.get(key, 0)
         if not count:
@@ -397,6 +414,10 @@ def _evaluate_entities_disabled(
             "count": str(total),
             "entities": "entity" if total == 1 else "entities",
             "detail": entities_disabled_detail(counts, devices, namer),
+            # Said only where a Z-Wave status sensor is off, so a house
+            # with no Z-Wave reads the card as 0.26.4 wrote it (eighth
+            # adversarial round of 16 October 2026).
+            **zwave_placeholders(counts),
         },
         data={"entry_id": entry_id},
     )

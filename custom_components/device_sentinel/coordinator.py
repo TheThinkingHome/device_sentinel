@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.26.4 (2026-10-15)
+# File: coordinator.py, Version: 0.26.5 (2026-10-16)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -202,6 +202,7 @@ from .const import (
     DEV_LAST_ACTIVITY,
     DEV_SET_ASIDE_SINCE,
     DEV_DOWN_SINCE,
+    NODE_DEAD_STATE,
     DEV_WATCHED_FROM,
     DEV_REMOVED_NAME,
     DEV_BATTERY_VALUE,
@@ -315,6 +316,7 @@ from .records import (
 from .reports import ReportWritingMixin
 from .stacks import detect as detect_stack
 from .stacks import device_key, is_plumbing, radio_owner
+from .stacks import is_node_status, node_dead, node_heard, node_up
 from .stacks import last_heard as stack_last_heard
 from .store import StorageMixin, _watched_seconds
 
@@ -533,6 +535,15 @@ class DeviceSentinelCoordinator(
         self._via_parents: set[str] = set()
         self._bluetooth_parents: set[str] = set()
         self._last_seen_entity: dict[str, str] = {}  # device_id -> entity_id
+        # Each watched device's node status sensor, where its stack
+        # keeps one (ruling #670), and the set of their entity ids.
+        self._node_status_entity: dict[str, str] = {}
+        self._node_status_ids: set[str] = set()
+        # Devices whose stack last called their node dead, held while
+        # the status cannot be read (a reload, a restart), so cached
+        # values coming back first are not taken for the device
+        # (second adversarial round of 16 October 2026).
+        self._dead_nodes: set[str] = set()
         self._device_entries: dict[str, set[str]] = {}
         self._signal_entities: set[str] = set()
         self._signal_devices: set[str] = set()
@@ -2394,6 +2405,7 @@ class DeviceSentinelCoordinator(
         # so a page can name them (0.22.22).
         foreign_ids: dict[str, dict[str, list[str]]] = {}
         last_seen_entity: dict[str, str] = {}
+        node_status_entity: dict[str, str] = {}
         device_entries: dict[str, set[str]] = {}
         signal_entities: set[str] = set()
         signal_units: Counter[str] = Counter()
@@ -2418,6 +2430,10 @@ class DeviceSentinelCoordinator(
             if ent.device_id not in watched:
                 continue
             entity_map[ent.entity_id] = (ent.device_id, ent.config_entry_id)
+            if is_node_status(watched.get(ent.device_id), ent):
+                # The stack's own word on the node (ruling #670): read
+                # for the dead-node check, never as the device speaking.
+                node_status_entity[ent.device_id] = ent.entity_id
             # The device's own integration published this entity, as
             # opposed to an integration that enriches somebody else's
             # devices (ruling #404). The registry records the author,
@@ -2598,6 +2614,8 @@ class DeviceSentinelCoordinator(
             for platform in counts
         } - owning_domains
         self._last_seen_entity = last_seen_entity
+        self._node_status_entity = node_status_entity
+        self._node_status_ids = set(node_status_entity.values())
         self._device_entries = device_entries
         self._signal_entities = signal_entities
         self._log_signal_census(
@@ -3018,7 +3036,8 @@ class DeviceSentinelCoordinator(
     def _down_now(self, device_id: str) -> str | None:
         """The state the device as a whole is down in now, "" if up.
 
-        Down means its ESPHome connection has dropped (ruling #640), or
+        Down means its ESPHome connection has dropped (ruling #640), its
+        stack calls its node dead (ruling #670), or
         every one of its own live entities reads unavailable or
         unknown. A foreign entity is not read, and an event entity at
         rest holds, as a kept value does. None when nothing can be
@@ -3027,12 +3046,32 @@ class DeviceSentinelCoordinator(
         """
         if self._dropped_esphome(device_id):
             return STATE_UNAVAILABLE
+        if self._dead_node(device_id):
+            # Saved with the outage start, so the dead word outlives a
+            # restart (third adversarial round of 16 October 2026).
+            return NODE_DEAD_STATE
         states = self._live_entity_states(device_id)
         if not states:
             return None
         if any(state not in BAD_STATES for state in states):
             return ""
         return STATE_UNAVAILABLE if STATE_UNAVAILABLE in states else STATE_UNKNOWN
+
+    def _node_heard_now(self, device_id: str) -> bool:
+        """Whether the node status sensor reads that the node was heard (#670)."""
+        entity_id = self._node_status_entity.get(device_id)
+        if entity_id is None:
+            return False
+        state = self.hass.states.get(entity_id)
+        return state is not None and node_heard(self._watched.get(device_id), state.state)
+
+    def _node_reads_up(self, device_id: str) -> bool:
+        """Whether the device's node status sensor says the node is up (#670)."""
+        entity_id = self._node_status_entity.get(device_id)
+        if entity_id is None:
+            return False
+        state = self.hass.states.get(entity_id)
+        return state is not None and node_up(self._watched.get(device_id), state.state)
 
     @staticmethod
     def _saved_down_since(record: dict[str, Any]) -> tuple[float, str] | None:
@@ -3063,7 +3102,7 @@ class DeviceSentinelCoordinator(
             return float(since), str(category)
         return None
 
-    def _settle_down(self, device_id: str, entity_id: str | None) -> None:
+    def _settle_down(self, device_id: str, entity_id: str | None) -> bool:
         """Start or end the device's outage, from what it reads now.
 
         One moment per device (ruling #647): saved when the device goes
@@ -3075,15 +3114,39 @@ class DeviceSentinelCoordinator(
         rename or a removal cannot either. With nothing saved, as at
         the upgrade from a release that saved no start or after a
         damaged one was cleared, a standing unavailable or unknown
-        verdict gives the start.
+        verdict gives the start. True when it recorded a node back from
+        dead as contact, so the caller does not record it a second time.
         """
         record = self.data[DATA_DEVICES].get(device_id)
         if not isinstance(record, dict):
-            return
+            return False
         down = self._down_now(device_id)
-        if down is None:
-            return
         saved = self._saved_down_since(record)
+        came_back = False
+        if (
+            down is None
+            and saved is not None
+            and self._node_reads_up(device_id)
+            and (saved[1] == NODE_DEAD_STATE or self._status_only(device_id))
+        ):
+            # A start saved some other way on a device whose status
+            # sensor is now its only enabled entity (switched off while
+            # down, or saved by 0.26.4, which read the sensor) ends here
+            # too, or it would date the node's next death (sixth
+            # adversarial round of 16 October 2026). Only a dead start
+            # counts as contact.
+            # A device whose only readable entity is its status sensor
+            # has nothing else to say it is up (fourth adversarial round
+            # of 16 October 2026): the node being heard ends the outage,
+            # and counts as contact as the change to alive would, since
+            # it may have come before Device Sentinel was listening
+            # (fifth round).
+            down = ""
+            came_back = saved[1] == NODE_DEAD_STATE and self._node_heard_now(device_id)
+            if came_back:
+                self._node_came_back(device_id)
+        if down is None:
+            return False
         if down:
             if saved is None:
                 now = dt_util.utcnow().timestamp()
@@ -3091,7 +3154,12 @@ class DeviceSentinelCoordinator(
                 began = verdict[0] if verdict is not None and verdict[0] < now else now
                 record[DEV_DOWN_SINCE] = [began, down]
                 self._dirty = True
-            return
+            elif down == NODE_DEAD_STATE and saved[1] != NODE_DEAD_STATE:
+                # Dead learned after the outage began some other way:
+                # keep the moment, mark it dead so it outlives a restart.
+                record[DEV_DOWN_SINCE] = [saved[0], NODE_DEAD_STATE]
+                self._dirty = True
+            return False
         if record.get(DEV_DOWN_SINCE) is not None:
             record[DEV_DOWN_SINCE] = None
             self._dirty = True
@@ -3099,6 +3167,31 @@ class DeviceSentinelCoordinator(
             saved = self._verdict_start(record)
         if saved is not None:
             self._taint_after_absence(device_id, entity_id or device_id, saved)
+        if came_back:
+            self._dead_nodes.discard(device_id)
+            self._record_activity(
+                device_id,
+                self._entry_of_device.get(device_id),
+                self._node_status_entity.get(device_id),
+                "alive",
+            )
+        return came_back
+
+    def _status_only(self, device_id: str) -> bool:
+        """Whether the node status sensor is the device's only enabled
+        entity of its own (#670), read from the registry, so an entity
+        still loading after a restart does not count as switched off.
+        An entity gone from the registry, as in a rename before the
+        rebuild maps its new id, is not taken as switched off either
+        (seventh adversarial round of 16 October 2026)."""
+        ent_reg = er.async_get(self.hass)
+        for entity_id in self._own_entities.get(device_id, ()):
+            if entity_id in self._node_status_ids:
+                continue
+            ent = ent_reg.async_get(entity_id)
+            if ent is None or ent.disabled_by is None:
+                return False
+        return device_id in self._node_status_entity
 
     @callback
     def _taint_after_absence(
@@ -3166,6 +3259,26 @@ class DeviceSentinelCoordinator(
             gone,
         )
 
+    def _node_came_back(self, device_id: str) -> None:
+        """A dead node its stack has heard again ends the outage (#670).
+
+        As a report ending a down verdict does, so the recovery counts
+        from when the device went down rather than from the opening,
+        which the debounce dates minutes later, even where the device's
+        Last Seen clock has not moved yet (adversarial rounds of 16
+        October 2026).
+        """
+        record = self.data[DATA_DEVICES].get(device_id)
+        if not isinstance(record, dict):
+            return
+        category = record.get(DEV_FROZEN_CATEGORY)
+        if category is None:
+            return
+        began_as = record.get(DEV_DOWN_BEGAN_AS)
+        if category == FREEZE_CATEGORY_FROZEN or began_as not in FREEZE_CATEGORY_PRIORITY:
+            began_as = category
+        self._report_ends_down[device_id] = (began_as, record.get(DEV_FROZEN_SINCE))
+
     @callback
     def _on_state_changed(self, event: Event) -> None:
         """Handle a state change for a watched device's entity."""
@@ -3181,6 +3294,40 @@ class DeviceSentinelCoordinator(
         if mapped is None:
             return
         device_id, entry_id = mapped
+        if entity_id in self._node_status_ids:
+            # The stack's word on the node (ruling #670): it can start
+            # or end the device's outage, and it is never the device
+            # speaking. A change to "dead" is the controller failing to
+            # reach the node, and "alive" can come from the stack before
+            # any value does.
+            old_state = event.data.get("old_state")
+            domain = self._watched.get(device_id)
+            record = self.data[DATA_DEVICES].get(device_id)
+            saved = self._saved_down_since(record) if isinstance(record, dict) else None
+            # Back from dead even through a reload or a restart, where
+            # the sensor passes through unavailable on the way (third
+            # adversarial round of 16 October 2026).
+            was_dead = (
+                (old_state is not None and node_dead(domain, old_state.state))
+                or device_id in self._dead_nodes
+                or (saved is not None and saved[1] == NODE_DEAD_STATE)
+            )
+            back = was_dead and node_heard(domain, new_state.state)
+            if back:
+                self._dead_nodes.discard(device_id)
+            if back:
+                self._node_came_back(device_id)
+            recorded = self._settle_down(device_id, entity_id)
+            if back and not recorded:
+                # Z-Wave JS calls a dead node alive only once it has
+                # heard it, so that change is the device speaking, the
+                # one status change that is (second adversarial round
+                # of 16 October 2026): Tim Plas's P03 came back on
+                # "alive" alone, with no value changing, and a device
+                # whose only enabled entity is the status sensor has
+                # nothing else to come back through.
+                self._record_activity(device_id, entry_id, entity_id, new_state.state)
+            return
         if entity_id in self._renamed_entities:
             self._renamed_entities.discard(entity_id)
             if event.data.get("old_state") is None and new_state.state not in BAD_STATES:
@@ -3209,11 +3356,17 @@ class DeviceSentinelCoordinator(
         # entity back at unknown as Zigbee2MQTT starts ends the outage
         # at its real length, not after the hours until the next press.
         self._settle_down(device_id, entity_id)
-        if new_state.state in BAD_STATES or self._dropped_esphome(device_id):
+        if (
+            new_state.state in BAD_STATES
+            or self._dropped_esphome(device_id)
+            or self._dead_node(device_id)
+        ):
             # An absence, or an event entity at rest, says nothing
             # new; and a value written while the connection is down,
             # such as the Status sensor turning off, is not the device
-            # speaking (ruling #640).
+            # speaking (ruling #640), nor one written while its stack
+            # calls the node dead (#670): statistics rewritten after a
+            # failed command, or cached values handed back by a reload.
             return
         old_state = event.data.get("old_state")
         if self._republished(device_id, old_state):
@@ -3351,12 +3504,17 @@ class DeviceSentinelCoordinator(
         if mapped is None:
             return
         device_id, entry_id = mapped
+        if entity_id in self._node_status_ids:
+            # Never the device speaking (ruling #670).
+            self._settle_down(device_id, entity_id)
+            return
         foreign = entity_id in self._foreign_entities
         if not foreign:
             self._settle_down(device_id, entity_id)
             # A same-value write while the connection is down is not
-            # the device speaking either (#640; adversarial round six).
-            if self._dropped_esphome(device_id):
+            # the device speaking either (#640; adversarial round six),
+            # nor one while the node is dead (#670).
+            if self._dropped_esphome(device_id) or self._dead_node(device_id):
                 return
         self._record_activity(
             device_id, entry_id, entity_id, new_state.state,
@@ -4894,6 +5052,11 @@ class DeviceSentinelCoordinator(
         states: list[str] = []
         resting = False
         for entity_id in self._own_entities.get(device_id, ()):
+            if entity_id in self._node_status_ids:
+                # The stack's word on the node, not a reading (ruling
+                # #670): alive while every reading is unavailable must
+                # not hold the device up, and dead is read on its own.
+                continue
             state = self.hass.states.get(entity_id)
             if state is None:
                 continue
@@ -5733,10 +5896,24 @@ class DeviceSentinelCoordinator(
         await self._write_reports_guarded("manual")
         return {"regenerated": 2}
 
+    def _is_node_status_entry(self, ent: er.RegistryEntry) -> bool:
+        """Whether this is a watched device's node status sensor (#670)."""
+        return is_node_status(self._watched.get(ent.device_id or ""), ent)
+
+    def _is_liveness(self, ent: er.RegistryEntry) -> bool:
+        """A Last Seen entity or a node status sensor (ruling #671).
+
+        Both say whether a device is alive, so Enable Last Seen turns on
+        both, on the house-wide button, the Repairs card and a device's
+        own page.
+        """
+        return self._is_last_seen(ent) or self._is_node_status_entry(ent)
+
     async def async_enable_last_seen_entities(self) -> dict[str, int]:
-        """Enable every disabled last_seen entity (ruling #257)."""
+        """Enable every disabled last_seen entity (ruling #257), and with
+        them every node status sensor (ruling #671)."""
         return self._enable_matching_entities(
-            self._is_last_seen, "last_seen"
+            self._is_liveness, "last_seen"
         )
 
     async def async_enable_battery_entities(self) -> dict[str, int]:
@@ -5762,7 +5939,7 @@ class DeviceSentinelCoordinator(
         set-aside device is counted by neither (ruling #302).
         """
         ent_reg = er.async_get(self.hass)
-        signal = last_seen = battery = 0
+        signal = last_seen = battery = node_status = 0
         for ent in list(ent_reg.entities.values()):
             if ent.device_id not in self._watched:
                 continue
@@ -5772,12 +5949,17 @@ class DeviceSentinelCoordinator(
                 signal += 1
             if self._is_last_seen(ent):
                 last_seen += 1
+            elif self._is_node_status_entry(ent):
+                # Counted apart so the card can name it, and turned on
+                # by Enable Last Seen (ruling #671).
+                node_status += 1
             if self._is_battery_percentage(ent):
                 battery += 1
         return {
             "signal": signal,
             "last_seen": last_seen,
             "battery": battery,
+            "node_status": node_status,
         }
 
     def awaiting_enable_devices(self) -> dict[str, list[str]]:
@@ -5790,7 +5972,8 @@ class DeviceSentinelCoordinator(
         """
         ent_reg = er.async_get(self.hass)
         found: dict[str, set[str]] = {
-            "signal": set(), "last_seen": set(), "battery": set()
+            "signal": set(), "last_seen": set(), "battery": set(),
+            "node_status": set(),
         }
         for ent in list(ent_reg.entities.values()):
             if ent.device_id not in self._watched:
@@ -5801,6 +5984,8 @@ class DeviceSentinelCoordinator(
                 found["signal"].add(ent.device_id)
             if self._is_last_seen(ent):
                 found["last_seen"].add(ent.device_id)
+            elif self._is_node_status_entry(ent):
+                found["node_status"].add(ent.device_id)
             if self._is_battery_percentage(ent):
                 found["battery"].add(ent.device_id)
         return {kind: sorted(ids) for kind, ids in found.items()}

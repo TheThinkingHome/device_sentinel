@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.26.3 (2026-10-14)
+# File: const.py, Version: 0.26.5 (2026-10-16)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2463,7 +2463,11 @@ SYS_DEVICE_ID = "device_id"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 665
+HIGHEST_RULING = 671
+
+# The state saved with a device's outage start when its stack called
+# its node dead (ruling #670), so the dead word outlives a restart.
+NODE_DEAD_STATE = "dead"
 
 # How long a registry rebuild waits after the last one before the next
 # (0.24.2). Every device, entity or label change rebuilt Device

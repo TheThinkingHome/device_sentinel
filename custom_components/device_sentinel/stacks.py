@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stacks.py, Version: 0.26.0 (2026-10-12)
+# File: stacks.py, Version: 0.26.5 (2026-10-16)
 
 """The one place a coordinator stack is registered.
 
@@ -181,3 +181,56 @@ def last_heard(
         seen = reader(hass, device) if reader is not None else None
         return (module.STACK, seen) if seen is not None else None
     return None
+
+
+def is_node_status(domain: str | None, ent: Any) -> bool:
+    """Whether this entity is the stack's own status for its node (#670).
+
+    A stack that keeps a per-node status sensor, as Z-Wave JS does,
+    answers through its module's `is_node_status`; every other stack
+    has none, and nothing is read for it.
+    """
+    if not domain:
+        return False
+    for module in STACK_MODULES:
+        if not module.owns_domain(domain):
+            continue
+        check = getattr(module, "is_node_status", None)
+        return bool(check(ent)) if check is not None else False
+    return False
+
+
+def node_dead(domain: str | None, state: str | None) -> bool:
+    """Whether a node status reading says the node is dead (#670)."""
+    if not domain or state is None:
+        return False
+    for module in STACK_MODULES:
+        if not module.owns_domain(domain):
+            continue
+        check = getattr(module, "node_dead", None)
+        return bool(check(state)) if check is not None else False
+    return False
+
+
+def node_heard(domain: str | None, state: str | None) -> bool:
+    """Whether a node status reading says the stack has heard the node (#670)."""
+    if not domain or state is None:
+        return False
+    for module in STACK_MODULES:
+        if not module.owns_domain(domain):
+            continue
+        check = getattr(module, "node_heard", None)
+        return bool(check(state)) if check is not None else False
+    return False
+
+
+def node_up(domain: str | None, state: str | None) -> bool:
+    """Whether a node status reading says the node is not dead (#670)."""
+    if not domain or state is None:
+        return False
+    for module in STACK_MODULES:
+        if not module.owns_domain(domain):
+            continue
+        check = getattr(module, "node_up", None)
+        return bool(check(state)) if check is not None else False
+    return False

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zwave.py, Version: 0.23.19 (2026-09-30)
+# File: stack_zwave.py, Version: 0.26.5 (2026-10-16)
 
 """Z-Wave JS: everything Device Sentinel knows about this stack.
 
@@ -12,20 +12,29 @@ three questions every stack module answers: does this device prove
 the stack is present, does this stack own a device on that
 integration domain, and give me a reader.
 
-WHAT IS BUILT. Detection only, and it is the detection this project
-already performs on every rebuild: a device whose integration domain
-is `zwave_js` means Z-Wave JS is running. That much is proven,
-because it is what the registry walk did before this file existed.
+WHAT IS BUILT. Detection: a device whose integration domain is
+`zwave_js` means Z-Wave JS is running. And, from 0.26.5, the dead-node
+check (ruling #670): Home Assistant keeps a dead Z-Wave node's entities
+available, so the node status sensor Z-Wave makes for each node is the
+only place a dead node shows, and a device whose sensor reads "dead" is
+unavailable until it reads anything else. `is_node_status` recognises
+the sensor and `node_dead` reads it; the stack-neutral files ask through
+`stacks.py` and name no stack. Measured on a tester's house, Tim
+Plas's, on 29 September and 15 October 2026: P03, a plug with no meter,
+unplugged, marked dead within two minutes of a failed command and alive
+within a minute of being plugged back, with no other entity changing.
+Z-Wave learns a node is dead only when a command to it fails, so a
+device nobody tries to reach stays "alive" and is left to the freeze
+rule. Over five days, 106 asleep and awake changes on battery devices
+were the sensor's whole other traffic, and say nothing.
 
 WHAT IS NOT BUILT, AND WHY. `make_reader` returns None, so no
-controller state and no inclusion window is read on Z-Wave. That is a
-statement about this project rather than about Z-Wave. There is no
+controller state and no inclusion window is read on Z-Wave. There is no
 Z-Wave hardware on the reference fleet, so every claim about its
-availability and inclusion model would be documentation repeated
-rather than measurement, and nothing ships for a stack the author
-cannot test (ruling #218). A house on Z-Wave gets every other family
-of judgment and falls to the per-device debounce for interventions
-(ruling #138).
+inclusion model would be documentation repeated rather than
+measurement, and nothing ships for a stack the author cannot test
+(ruling #218). A house on Z-Wave falls to the per-device debounce for
+interventions (ruling #138).
 
 WHAT IS KNOWN AND UNVERIFIED. The design was ruled from documentation
 and has never been measured. Inclusion is expected to be observable
@@ -132,3 +141,56 @@ def make_reader(hass: object) -> None:
     on itself, which is exactly true.
     """
     return None
+
+
+# The node status sensor's reading for a node the controller could not
+# reach (ruling #670).
+NODE_STATUS_DEAD = "dead"
+
+
+def is_node_status(ent: object) -> bool:
+    """Recognize Z-Wave's node status sensor (ruling #670).
+
+    Home Assistant's Z-Wave integration makes one per node, enabled by
+    default, with the unique id `<home id>.<node id>.node_status`. It
+    reads alive, asleep, awake, dead or unknown, and it is the only
+    place a dead node shows: Home Assistant keeps a node's other
+    entities available whether the node is dead or alive.
+    """
+    return (
+        getattr(ent, "platform", None) == STACK_ZWAVE
+        and str(getattr(ent, "entity_id", "")).startswith("sensor.")
+        and str(getattr(ent, "unique_id", "") or "").endswith(".node_status")
+    )
+
+
+def node_dead(state: str) -> bool:
+    """Whether the node status sensor says the node is dead (#670).
+
+    Z-Wave JS marks a node dead when a command to it fails, and alive
+    when it is heard again. Asleep and awake are a battery device's
+    ordinary cycle and say nothing about whether it is down.
+    """
+    return state == NODE_STATUS_DEAD
+
+
+# Readings that mean Z-Wave JS has heard the node: it marks a dead node
+# alive, and a sleeping one awake, only on hearing from it.
+NODE_STATUS_HEARD = ("alive", "awake")
+# Readings that say the node is not dead: heard, or asleep as a battery
+# device is between wake-ups.
+NODE_STATUS_UP = ("alive", "awake", "asleep")
+
+
+def node_heard(state: str) -> bool:
+    """Whether the status reading means the stack has just heard the node.
+
+    Unknown, unavailable or a missing state are none of these: the
+    sensor cannot be read, which is not the node coming back.
+    """
+    return state in NODE_STATUS_HEARD
+
+
+def node_up(state: str) -> bool:
+    """Whether the status reading says the node is not dead."""
+    return state in NODE_STATUS_UP

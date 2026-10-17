@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.26.3 (2026-10-14)
+# File: dashboard.py, Version: 0.26.5 (2026-10-16)
 
 """What the dashboard reads from the coordinator.
 
@@ -1092,6 +1092,10 @@ class DeviceViewMixin:
                         self.hass, self._watched.get(device_id), device_id))
                     else "recorded"
                 ),
+                # Z-Wave's own status for the node (ruling #671): what
+                # the sensor reads, "off" when it is switched off, or
+                # None for a device without one.
+                "node_status": self._node_status_view(device_id),
                 "watched": device_id in self._watched,
                 "set_aside": (self._set_aside.get(device_id) or (None, None, ""))[2],
                 "muted": self.mute_text(device_id),
@@ -1229,6 +1233,17 @@ class DeviceViewMixin:
         """A signal list laid out one slot a day, ending yesterday (0.24.4)."""
         end = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
         return on_calendar(record, FAMILY_SIGNAL, values, end)
+
+    def _node_status_view(self, device_id: str) -> str | None:
+        """The device's node status as its page shows it (ruling #671)."""
+        entity_id = self._node_status_entity.get(device_id)
+        if entity_id is None:
+            return None
+        entry = er.async_get(self.hass).async_get(entity_id)
+        if entry is not None and entry.disabled_by is not None:
+            return "off"
+        state = self.hass.states.get(entity_id)
+        return state.state if state is not None else "unknown"
 
     def _page_signal(self, record: dict[str, Any]) -> dict[str, Any]:
         """The signal history and each day's judgment, as the report

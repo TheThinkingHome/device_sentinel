@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: hubs.py, Version: 0.26.3 (2026-10-14)
+# File: hubs.py, Version: 0.26.5 (2026-10-16)
 
 """Judged by its hub (rulings #663 to #665).
 
@@ -272,6 +272,21 @@ class HubMixin:
         if device_id is None or not self.is_hub(device_id):
             return None
         return "went down", "down"
+
+    def unavailable_words(self, device_id: str | None) -> tuple[str, str] | None:
+        """The brief's words for this device going unavailable, if not the usual.
+
+        A hub's (James, 14 October 2026), or "became unavailable" for a
+        device whose stack keeps a node status, as Z-Wave does (James,
+        16 October 2026, with ruling #670), which is how a dead Z-Wave
+        node is told. None means the usual "went unavailable".
+        """
+        hub = self.hub_unavailable_words(device_id)
+        if hub is not None:
+            return hub
+        if device_id is not None and device_id in getattr(self, "_node_status_entity", {}):
+            return "became unavailable", "unavailable"
+        return None
 
     def hub_members(self, hub_id: str) -> list[str]:
         """The watched devices a hub controls, by name."""

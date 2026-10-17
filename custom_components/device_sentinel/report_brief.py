@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.26.3 (2026-10-14)
+# File: report_brief.py, Version: 0.26.5 (2026-10-16)
 
 """The daily brief: the one report written for a person.
 
@@ -356,7 +356,7 @@ class BriefMixin:
             # serves every channel, so nothing is described two ways
             # (ruling #120). The level belongs in both or neither.
             return self._battery_phrase(row[INC_DEVICE_ID], False)
-        hub = self.hub_unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
+        hub = self.unavailable_words(row.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
         wording = {
             TODO_KIND_FLAPPING: "started dropping out again and again",
             TODO_KIND_FROZEN: "stopped reporting",
@@ -1149,6 +1149,7 @@ class BriefMixin:
                     ("battery", "battery"),
                     ("signal", "signal"),
                     ("last_seen", "last seen"),
+                    ("node_status", "Z-Wave status"),
                 )
                 if counts.get(key)
             ]
@@ -1162,7 +1163,12 @@ class BriefMixin:
                 f"available. Press Fix on the Repairs card to turn "
                 f"{'it on' if one else 'them all on'}, or use the Enable "
                 f"buttons at the top of the Device Sentinel dashboard to "
-                f"turn {'it' if one else 'them'} on by kind."
+                f"turn {'it' if one else 'them'} on by kind"
+                + (
+                    "; Enable Last Seen also turns on the Z-Wave status."
+                    if counts.get("node_status")
+                    else "."
+                )
             )
         for reader in list(getattr(self, "_bridge_readers", {}).values()):
             # Off, not unknown: a reader that has not heard yet says
@@ -2016,7 +2022,7 @@ class BriefMixin:
         kind = opened.get(INC_KIND)
         if kind == TODO_KIND_UNAVAILABLE:
             # A hub went down (James, 14 October 2026).
-            hub = self.hub_unavailable_words(opened.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
+            hub = self.unavailable_words(opened.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
             return hub if hub else ("went unavailable", "unavailable")
         if kind == TODO_KIND_RAILED_SIGNAL:
             return "signal railed", "railed"
@@ -2195,9 +2201,11 @@ class BriefMixin:
                 continue
             entry["name"] = self._repeat_name(entry)
             entry["what"] = self._repeat_verb(kind)
-            if kind == TODO_KIND_UNAVAILABLE and self.hub_unavailable_words(device_id):  # type: ignore[attr-defined]
-                # A hub went down (James, 14 October 2026).
-                entry["what"] = "went down"
+            words = self.unavailable_words(device_id)  # type: ignore[attr-defined]
+            if kind == TODO_KIND_UNAVAILABLE and words:
+                # A hub went down (James, 14 October 2026); a Z-Wave
+                # device became unavailable (#670).
+                entry["what"] = words[0]
             entry["when"] = self._repeat_when(entry["whens"])
             entry["typical"] = (
                 self._human_span(

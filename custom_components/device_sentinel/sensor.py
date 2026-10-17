@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.25.2 (2026-10-09)
+# File: sensor.py, Version: 0.26.5 (2026-10-16)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -273,7 +273,9 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
             "wifi_networks_missing": (
                 self._coordinator.wifi_missing_networks or None
             ),
-            ATTR_AWAITING_LAST_SEEN: counts["last_seen"],
+            # What Enable Last Seen would turn on, node status sensors
+            # included (ruling #671).
+            ATTR_AWAITING_LAST_SEEN: counts["last_seen"] + counts.get("node_status", 0),
             ATTR_AWAITING_BATTERY: counts["battery"],
             # The backup's story (ruling #341, amended by #370):
             # when the last-good copy was made by the rotation, how
