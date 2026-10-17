@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_ignored_integrations.py, Version: 0.16.5 (2026-08-20)
+# File: test_ignored_integrations.py, Version: 0.26.5 (2026-10-16)
 
 """Integrations a person asks never to be watched.
 
@@ -320,7 +320,7 @@ async def test_the_enable_buttons_leave_an_ignored_device_alone(
     ignored = coordinator._excluded_device_ids
     assert ignored, "expected the phone to be set aside as ignored"
     counts = coordinator.awaiting_enable_counts()
-    assert counts == {"signal": 0, "last_seen": 0, "battery": 0}
+    assert counts == {"signal": 0, "last_seen": 0, "battery": 0, "node_status": 0}
 
 
 async def test_the_fold_discards_and_then_folds_the_survivors(

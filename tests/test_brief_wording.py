@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.26.0 (2026-10-12)
+# File: test_brief_wording.py, Version: 0.26.5 (2026-10-16)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -16,6 +16,8 @@ pooled, so each file reads on its own.
 
 
 
+
+from datetime import datetime
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -621,7 +623,7 @@ async def test_a_stop_and_its_recovery_are_one_sentence(
     prose = text[text.index("## In Short"): text.index("## Now")]
     assert (
         "Presence Guest stopped reporting at" in prose
-        and "and recovered 4.1h later." in prose
+        and "and recovered at" in prose
         and "revived by" not in prose
     )
     # One sentence, so the name is said once rather than twice.
@@ -632,11 +634,13 @@ async def test_the_recovery_clock_time_is_dropped_from_a_pair(
     hass: HomeAssistant, read_brief
 ):
     """The opening time plus the span gives it, and the table below
-    carries exact times for anyone looking one up."""
+    carries exact times for anyone looking one up. A device that went
+    unavailable; a frozen one is told from when it went quiet (0.26.5)."""
     coord = await setup_coordinator(hass)
     _seed(coord, [
-        ("d1", "Paired Sensor", INCIDENT_OPENED, {}),
-        ("d1", "Paired Sensor", INCIDENT_RESOLVED, {INC_DURATION: 3600.0}),
+        ("d1", "Paired Sensor", INCIDENT_OPENED, {INC_KIND: TODO_KIND_UNAVAILABLE}),
+        ("d1", "Paired Sensor", INCIDENT_RESOLVED,
+         {INC_KIND: TODO_KIND_UNAVAILABLE, INC_DURATION: 3600.0}),
     ])
     await hass.async_add_executor_job(coord._write_reports, "test")
     prose = read_brief(hass)
@@ -1950,3 +1954,55 @@ async def test_an_hour_apart_in_the_repeated_hour_keeps_between(hass: HomeAssist
     rows = opens + [{SYS_KIND: "storm_closed", SYS_SCOPE: "zha", SYS_WHEN: second + 5.0, SYS_DEVICES: 3}]
     text = coord._compose_storm_run("zha", opens, rows)
     assert "between 1:30 AM and 1:30 AM" in text, text
+
+
+
+async def test_a_frozen_device_is_told_from_when_it_went_quiet(hass: HomeAssistant):
+    """Presence Master on the reference rig, 16 October 2026 (0.26.5).
+
+    Called frozen at 02:20:01, back at 02:21:01, after 13,431 seconds of
+    silence. The brief said "stopped reporting at 2:20 AM and recovered
+    3.7h later", which put the recovery at about 6 AM. It went quiet at
+    10:37 PM the evening before and reported again at 2:21 AM.
+    """
+    coord = await setup_coordinator(hass)
+    local = dt_util.get_default_time_zone()
+    opened_at = datetime(2026, 10, 16, 2, 20, 1, tzinfo=local).timestamp()
+    back_at = datetime(2026, 10, 16, 2, 21, 1, tzinfo=local).timestamp()
+    opened = {
+        INC_DEVICE_ID: "pm", INC_NAME: "Presence Master", INC_KIND: TODO_KIND_FROZEN,
+        INC_EVENT: INCIDENT_OPENED, INC_WHEN: opened_at, INC_CAUSE: None, INC_DURATION: None,
+    }
+    resolved = dict(opened, **{INC_EVENT: INCIDENT_RESOLVED, INC_WHEN: back_at, INC_DURATION: 13431.0})
+    sentence = coord._compose_episode(opened, resolved)
+    assert sentence.startswith(
+        "Presence Master stopped reporting at Oct 15, 10:37 PM and recovered at 2:21 AM"
+    ), sentence
+    assert "3.7h later" not in sentence
+
+
+async def test_a_short_freeze_on_the_same_day_carries_no_date(hass: HomeAssistant):
+    coord = await setup_coordinator(hass)
+    local = dt_util.get_default_time_zone()
+    opened_at = datetime(2026, 10, 16, 14, 0, 0, tzinfo=local).timestamp()
+    opened = {
+        INC_DEVICE_ID: "d", INC_NAME: "Door Master", INC_KIND: TODO_KIND_FROZEN,
+        INC_EVENT: INCIDENT_OPENED, INC_WHEN: opened_at, INC_CAUSE: None, INC_DURATION: None,
+    }
+    resolved = dict(opened, **{INC_EVENT: INCIDENT_RESOLVED, INC_WHEN: opened_at + 600, INC_DURATION: 3 * 3600.0})
+    sentence = coord._compose_episode(opened, resolved)
+    assert sentence.startswith("Door Master stopped reporting at 11:10 AM and recovered at 2:10 PM"), sentence
+
+
+async def test_an_impossible_duration_keeps_the_old_sentence(hass: HomeAssistant):
+    """A silence that would begin after the verdict is not this one."""
+    coord = await setup_coordinator(hass)
+    now = dt_util.utcnow().timestamp()
+    opened = {
+        INC_DEVICE_ID: "d", INC_NAME: "Door Master", INC_KIND: TODO_KIND_FROZEN,
+        INC_EVENT: INCIDENT_OPENED, INC_WHEN: now - 7200, INC_CAUSE: None, INC_DURATION: None,
+    }
+    for bad in (60.0, float("nan"), -5.0, True):
+        resolved = dict(opened, **{INC_EVENT: INCIDENT_RESOLVED, INC_WHEN: now, INC_DURATION: bad})
+        sentence = coord._compose_episode(opened, resolved)
+        assert "stopped reporting at" not in sentence or "later" in sentence, (bad, sentence)

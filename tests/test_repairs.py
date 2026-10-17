@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_repairs.py, Version: 0.18.6 (2026-08-27)
+# File: test_repairs.py, Version: 0.26.5 (2026-10-16)
 
 """What reaches the Repairs panel, and what is kept out of it.
 
@@ -389,20 +389,20 @@ async def test_a_set_aside_device_never_raises_it(
     assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
 
 
-async def test_an_excluded_device_still_raises_it(
+async def test_a_muted_device_still_raises_it(
     hass: HomeAssistant,
 ) -> None:
-    """Exclusion suppresses judgment, never learning (ruling #302).
+    """Muting suppresses judgment, never learning (ruling #302).
 
-    So an excluded device is watched, its readings still feed the
+    So a muted device is watched, its readings still feed the
     statistics, and a disabled reading on one is still work the button
-    would do.
+    would do (James, 15 October 2026, from issue #20).
     """
     from custom_components.device_sentinel.const import (
         CONF_MUTED_DEVICES,
     )
 
-    device, (entity_id,) = register_device(hass, "dev_excluded")
+    device, (entity_id,) = register_device(hass, "dev_muted")
     registry = er.async_get(hass)
     registry.async_update_entity(
         entity_id,
@@ -420,6 +420,34 @@ async def test_an_excluded_device_still_raises_it(
     coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_ENTITIES_DISABLED) is not None
+
+
+async def test_an_excluded_device_raises_no_card(
+    hass: HomeAssistant,
+) -> None:
+    """An excluded device is not asked for (James, 15 October 2026, from
+    issue #20): a person who excluded it disabled its battery on purpose,
+    and the card would ask them to undo it."""
+    from custom_components.device_sentinel.const import CONF_EXCLUDED_DEVICES
+
+    device, (entity_id,) = register_device(hass, "dev_excluded")
+    registry = er.async_get(hass)
+    registry.async_update_entity(
+        entity_id,
+        device_class="battery",
+        unit_of_measurement="%",
+        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+    )
+    entry = await setup_entry(hass, {CONF_EXCLUDED_DEVICES: [device.id]})
+    coordinator = entry.runtime_data
+    coordinator._rebuild_registry_view()
+
+    assert device.id not in coordinator._watched
+    assert coordinator.awaiting_enable_counts()["battery"] == 0
+
+    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
+    await hass.async_block_till_done()
+    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
 
 
 # -------------------------------------------- notify_target_missing

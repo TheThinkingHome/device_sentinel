@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_journal.py, Version: 0.23.19 (2026-09-30)
+# File: test_journal.py, Version: 0.26.5 (2026-10-16)
 
 """The forensic record: incidents, episodes, and system events.
 
@@ -600,6 +600,7 @@ async def test_diagnostics_carry_the_support_fields(
         "signal",
         "last_seen",
         "battery",
+        "node_status",
     }
     rows = diag["devices"][device.id]["entities"]
     battery_rows = [r for r in rows if r["kind"] == "battery"]

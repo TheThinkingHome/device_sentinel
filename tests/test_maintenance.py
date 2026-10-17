@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_maintenance.py, Version: 0.26.0 (2026-10-12)
+# File: tests/test_maintenance.py, Version: 0.26.5 (2026-10-16)
 
 """Maintenance mode and the surfaces that shipped beside it.
 
@@ -279,7 +279,7 @@ async def test_status_counts_what_each_enable_button_would_do(
     coord = entry.runtime_data
 
     counts = coord.awaiting_enable_counts()
-    assert counts == {"signal": 1, "last_seen": 1, "battery": 0}
+    assert counts == {"signal": 1, "last_seen": 1, "battery": 0, "node_status": 0}
 
     status = hass.states.get("sensor.device_sentinel_status")
     assert status.attributes[ATTR_AWAITING_LAST_SEEN] == 1
