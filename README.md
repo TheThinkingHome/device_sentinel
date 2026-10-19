@@ -96,7 +96,7 @@ Device Sentinel is not in the default HACS store yet.
 
 Device Sentinel works with its defaults from the start. Two steps on day one make it far more useful:
 1. Open the integration settings and configure **Notifications and Daily Brief**.
-2. At the top of the Device Sentinel dashboard, press the three **Enable** buttons (Battery, Signals, Last Seen) so the integration has data to learn from.
+2. Open the Recommendations tab on the Device Sentinel dashboard. Where a card lists a device whose Battery, Signal or Last Seen sensor is switched off, turn it on so the integration has data to learn from.
 
 ![The Device Sentinel device page in Home Assistant, with its controls and sensors](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Page%20Full.png)
 
@@ -123,17 +123,18 @@ Device Sentinel's settings are designed to be set once and forgotten. For comple
 
 | Area | Status | Notes |
 |---|---|---|
-| **Dashboard** | Working | Everything Device Sentinel knows, one click apart, with each device's own page. Devices carry a type, and the tabs sort and filter by it. Administrators only. |
-| **Freeze Detection** | Stable | Catches frozen, unavailable and flapping devices, each on its own rhythm. Devices with four or more weeks of history get a steadier rhythm that a few bad days can't stretch. |
-| **Battery** | Stable | Warns on low batteries and on batteries falling or speeding up. |
-| **Storage** | Stable | Survives power cuts and restores itself from a backup. |
+| **Dashboard** | Working | Everything Device Sentinel knows, one click apart, with each device's own page. Simple shows what is broken and what to do about it; Advanced adds the trends, charts and setup. Administrators only. |
+| **Freeze Detection** | Stable | Catches frozen, unavailable and flapping devices, each on its own rhythm. Devices with four or more weeks of history get a steadier rhythm that a few bad days can't stretch. An ESPHome device is judged by its connection. Freeze and unavailable mute apart. |
+| **Battery** | Stable | Warns on low batteries and on batteries falling or speeding up, with the time left as a range drawn from each cell's own history. Records the day a battery was replaced and asks you to confirm it. |
+| **Storage** | Stable | Survives power cuts and restores itself from a backup. Long histories live in a file of their own. |
 | **Zigbee2MQTT** | Working | A bridge outage is one alert, and your re-pairs are never mistaken for faults. |
 | **MQTT** | Working | A broker outage is one alert, not one per device. |
 | **ZHA** | Working | A coordinator outage is one alert, and your re-pairs are recognized. |
 | **Signal** | Experimental | Weak links shown on the dashboard; stuck readings alert. |
 | **WiFi** | Experimental | A Wi-Fi outage is one alert. Needs a wireless adapter on your server or a supported router. |
-| **Z-Wave** | Basic Detection | Devices watched; an integration outage is one alert. Next: reading Z-Wave JS's own report of a dead device. |
-| **Matter** | Basic Detection | Devices watched; an integration outage is one alert. Next: a Thread network outage as one alert. |
+| **Z-Wave** | Working | A node Z-Wave JS reports dead makes its device unavailable, and an integration outage is one alert. |
+| **Lutron Caséta** | Experimental | Devices are judged by their hub: a hub that goes down is one alert. |
+| **Matter** | Basic Detection | Devices watched; an integration outage is one alert. Next: Matter's own view of each device. |
 
 ## AI Disclosure
 
@@ -141,13 +142,13 @@ Device Sentinel was built with AI assistance under my direction. Every design de
 
 ## Latest Releases
 
-Device Sentinel is under active development. The three newest releases published as Latest are below, and the [changelog](CHANGELOG.md) lists every release since the first. The 0.25 line, which gives every device a type and watches cloned hardware once, is in pre-release; the newest is [0.25.3](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.25.3).
+Device Sentinel is under active development. The three newest releases published as Latest are below, and the [changelog](CHANGELOG.md) lists every release since the first.
+
+**[0.25.6](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.25.6), October 11, 2026.** Each device has a type you can set from its page, and the tabs sort and filter by it. Hardware that several integrations list is watched once, and you can exclude a single device from its page or from Settings.
 
 **[0.24.11](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.24.11), October 6, 2026.** A bad night no longer delays your freeze alerts for two weeks, and an outage or restart can't teach a device to stay quiet. Each device's page shows what powers it, from the Battery Notes library or your own entry, and lets you rename it, give it a room, label it and mute it where you see the problem.
 
 **[0.23.20](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.23.20), October 1, 2026.** An outage caused by a hub, broker or integration reaches you as one alert, and a recovery is announced only when a device actually reports again. A device that keeps dropping out becomes one problem instead of dozens. Batteries are read by the week, so a half-point wobble no longer reads as falling, and your brief and reports sit behind Home Assistant's sign-in.
-
-**[0.22.29](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.22.29), September 27, 2026.** Device Sentinel starts on any house, whatever your other integrations register, and the diagnostics download works again.
 
 ## From The Thinking Home
 
