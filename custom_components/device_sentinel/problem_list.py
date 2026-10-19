@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.26.6 (2026-10-18)
+# File: problem_list.py, Version: 0.26.7 (2026-10-19)
 
 """The problem list: the single memory every channel renders.
 
@@ -1846,7 +1846,7 @@ class ProblemListMixin:
     def _problem_device_ids(self) -> set[str]:
         """Return the device_ids that currently have any fault.
 
-        The union of the three problem lists, the same sets the todo
+        The union of the problem lists, the same sets the todo
         sync reads. A device here is one the todo is expected to hold
         an item for; the report's status icon is judged against this
         set, not against the todo alone, so a healthy Reported device
@@ -1856,6 +1856,12 @@ class ProblemListMixin:
         for row in self.frozen_devices_list:
             ids.add(row["device_id"])
         for row in self.battery_low_list:
+            ids.add(row["device_id"])
+        # A falling cell's forecast is an item too (#213): left out
+        # here, a house with one counted a device short and held an
+        # item with nothing behind it (found by the fleet invariant
+        # once #704 put the rig's first forecast on the list).
+        for row in self.battery_falling_list:
             ids.add(row["device_id"])
         for row in self.signal_problem_list:
             ids.add(row["device_id"])

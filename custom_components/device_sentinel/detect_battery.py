@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.26.3 (2026-10-14)
+# File: detect_battery.py, Version: 0.26.7 (2026-10-19)
 
 """Battery: the level threshold and what is tracked.
 
@@ -268,7 +268,10 @@ class BatteryMixin:
             return
         if pending is not None:
             record[DEV_BATTERY_REPLACED_PENDING] = None
-            if not self._battery_replaced(pending, level):
+            # An empty history means the person already gave the day
+            # and the history split there (#702): nothing is left to
+            # confirm (found by review).
+            if not series or not self._battery_replaced(pending, level):
                 # The rise did not hold against the reading before
                 # it, so the day it appeared was a bad sample and the
                 # history it would have erased is still the truth.
@@ -286,16 +289,35 @@ class BatteryMixin:
             # being kept with the history it does not belong to or
             # discarded as though it never happened.
             carried = series[-1:]
-            record[DEV_BATTERY_DAILY_PREVIOUS] = list(series[:-1])
-            # The dates split as the entries do (0.24.4): the old cell's
-            # go with its history, the new cell's first day stays.
             day = getattr(self, "_folding_day", None) or dt_util.now().date()
             # Today's level is not in the series yet: its newest entry
             # is the day the rise first appeared, the previous fold.
             dates = dates_for(record, FAMILY_BATTERY, len(series), day - timedelta(days=1))
-            set_dates(record, FAMILY_BATTERY_PREVIOUS, dates[:-1])
+            # The old cell's history as a day the person entered set it
+            # aside, kept when this rise is that same replacement (found
+            # by review): the device reported its new level after the
+            # person gave the day, and those days are the old cell's too.
+            kept_previous: list[Any] = []
+            kept_dates: list[Any] = []
+            if dates and self._entered_just_before(device_id, dates[-1]):  # type: ignore[attr-defined]
+                kept_previous = list(record.get(DEV_BATTERY_DAILY_PREVIOUS) or [])
+                kept_dates = dates_for(
+                    record, FAMILY_BATTERY_PREVIOUS, len(kept_previous),
+                    (dates[0] if dates else day) - timedelta(days=1),
+                )
+            record[DEV_BATTERY_DAILY_PREVIOUS] = kept_previous + list(series[:-1])
+            # The dates split as the entries do (0.24.4): the old cell's
+            # go with its history, the new cell's first day stays.
+            set_dates(record, FAMILY_BATTERY_PREVIOUS, kept_dates + dates[:-1])
             set_dates(record, FAMILY_BATTERY, dates[-1:])
+            replaced_before = record.get(DEV_BATTERY_REPLACED_AT)
             record[DEV_BATTERY_REPLACED_AT] = dt_util.utcnow().isoformat()
+            # The replacement waits for a person, keeping what Cancel
+            # puts back (rulings #701, #702); a day the person gave
+            # just before stands (found by review).
+            self._note_detected_replacement(  # type: ignore[attr-defined]
+                record, device_id, dates[-1] if dates else None, replaced_before,
+            )
             # A fresh cell can change how often a device reports, so the
             # Log-Normal Percentile counts again from here (#542, amended).
             record[DEV_LOGNORMAL_DAYS] = 0
@@ -667,7 +689,7 @@ class BatteryMixin:
                 "name": row["name"],
                 "level": row["level"],
                 "per_day": round(row["slope"], 2),
-                "left": self.battery_time_left(row["days"]),
+                "left": self.battery_time_left_range(row["days"], row.get("days_far")),  # type: ignore[attr-defined]
             }
             for row in self._battery_brief_rows()
         ]

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.26.6 (2026-10-18)
+# File: report_brief.py, Version: 0.26.7 (2026-10-19)
 
 """The daily brief: the one report written for a person.
 
@@ -102,6 +102,7 @@ from .const import (
     SYS_DETAIL,
     SYS_DURATION,
     SYS_CLOCK_RESET,
+    SYS_CLOCKS_LOST,
     SYS_EPOCH_RESET,
     SYS_KIND,
     SYS_OPTIONS_CHANGED,
@@ -713,6 +714,21 @@ class BriefMixin:
                 f"{when}{extra}; every device's activity clock "
                 f"restarted then."
             )
+        if kind == SYS_CLOCKS_LOST:
+            # Told here since its Repairs card was retired (ruling
+            # #697), in that card's words, so the repair is not silent
+            # (#342).
+            count = str(detail or "").split(" ", 1)[0]
+            restarted = (
+                f"{count} device clocks restarted then"
+                if count.isdigit()
+                else "every device clock restarted then"
+            )
+            return (
+                f"The file that holds each device's last report time was "
+                f"missing or damaged when Device Sentinel started at {when}: "
+                f"{restarted}. Nothing learned was lost."
+            )
         if kind == SYS_OPTIONS_CHANGED:
             extra = f": {detail}" if detail else ""
             return f"Settings changed at {when}{extra}."
@@ -938,6 +954,12 @@ class BriefMixin:
                 if detail
                 else "system clock reset or paused"
             )
+        if kind == SYS_CLOCKS_LOST:
+            return (
+                f"activity clocks file missing or damaged ({detail})"
+                if detail
+                else "activity clocks file missing or damaged"
+            )
         if kind == SYS_OPTIONS_CHANGED:
             return f"settings changed ({detail})" if detail else "settings changed"
         if kind == SYS_INTEGRATION_PAGE:
@@ -1070,7 +1092,11 @@ class BriefMixin:
             return domain
 
     def _noisy_integration_advice(self) -> list[str]:
-        """Return one line per integration worth excluding for noise.
+        """Return one line per integration worth excluding for noise."""
+        return [text for _key, text in self._noisy_integration_entries()]
+
+    def _noisy_integration_entries(self) -> list[tuple[str, str]]:
+        """One keyed line per integration worth excluding for noise.
 
         Read from the storm tally, which since ruling #457 holds only
         storms nothing explains. An integration qualifies with at
@@ -1104,14 +1130,14 @@ class BriefMixin:
                 continue
             if int(row.get(STORM_DAY_COUNT) or 0) >= FLOOD_MIN_STORMS:
                 bad_days.setdefault(domain, []).append(row)
-        said: list[str] = []
+        said: list[tuple[str, str]] = []
         for domain, days in sorted(bad_days.items()):
             if len(days) < FLOOD_MIN_DAYS:
                 continue
             worst = max(days, key=lambda row: int(row.get(STORM_DAY_COUNT) or 0))
             every = self._plain_interval(worst.get(STORM_DAY_INTERVAL))
             cadence = f"every {every}" if every else "over and over"
-            said.append(
+            said.append((f"noisy:{domain}",
                 f"One of the integrations being monitored by Device "
                 f"Sentinel is a polling integration and consuming "
                 f"resources: the {domain} integration is a poller and is "
@@ -1119,11 +1145,22 @@ class BriefMixin:
                 f"can learn nothing useful from a poller integration and "
                 f"it should be excluded from the Exclusions and Muting "
                 f"settings screen."
-            )
+            ))
         return said
 
     def _recommendation_items(self) -> list[str]:
-        """Return every recommendation line, worst first.
+        """Return every recommendation line, worst first."""
+        return [entry["text"] for entry in self._recommendation_entries()]
+
+    def _recommendation_entries(self) -> list[dict[str, Any]]:
+        """Every recommendation line, worst first, each with its key and
+        whether Simple shows it.
+
+        The key is what an acknowledgement is kept under (ruling #699):
+        it names the condition, not the words, so a line whose count
+        moves keeps its tick. Simple shows the lines that stop a missed
+        alarm (#695): a target that is gone or not set, and a family
+        muted for every device.
 
         The order is what failing to act costs. A message that goes
         nowhere is lost the day it matters; a family muted for every
@@ -1132,93 +1169,75 @@ class BriefMixin:
         make the rest harder to read (ruling #458). The words are the
         project owner's, approved 18 September.
         """
-        items: list[str] = []
+        items: list[tuple[str, str]] = []
         screen = "the Notifications and Daily Brief settings screen"
         for target in missing_targets(self.hass, self.entry):
-            items.append(
+            items.append((f"target:{target}",
                 f"Notifications Recipient Not Valid: {target} no longer "
                 f"exists. Anything sent there is lost. Choose another "
                 f"notification target from {screen}."
-            )
+            ))
         if not delivery_is_configured(self.entry):
-            items.append(
+            items.append(("no_target",
                 f"Notifications Recipient Not Set: no phone or brief "
                 f"notification target is set. A problem reaches only the "
                 f"persistent card and this page. Targets are set from "
                 f"{screen}."
-            )
+            ))
         choice = self.entry.options.get(CONF_REPORT_LINKS, DEFAULT_REPORT_LINKS)
         if (
             choice in (REPORT_LINKS_EXTERNAL, REPORT_LINKS_INTERNAL)
             and self._configured_url(choice) is None
         ):
             which = "external" if choice == REPORT_LINKS_EXTERNAL else "internal"
-            items.append(
+            items.append(("links",
                 f"Your Home Assistant {which.title()} URL, which you have "
                 f"chosen, is missing or invalid: Device names in reports "
                 f"are set to be links with your {which} URL, and that URL "
                 f"is misconfigured or not set. Set that address in Home "
                 f"Assistant's network settings, or choose another under "
                 f"Links in Reports on {screen}."
-            )
-        items += self._family_muted_items()
+            ))
+        items += self._family_muted_entries()
         adapter = getattr(self, "_wifi_adapter_unused", None)
         if adapter and not self.wifi_capable:
-            items.append(
+            items.append(("wifi_network",
                 f"Wi-Fi network not set in Device Sentinel's WiFi "
                 f"settings: this machine is equipped with a wireless "
                 f"adapter ({adapter}) and no network is chosen for it to "
                 f"listen for. Naming your network on the WiFi screen "
                 f"enables Device Sentinel to detect a wireless network "
                 f"outage."
-            )
-        counts = self.awaiting_enable_counts()
-        total = sum(counts.values())
-        if total:
-            kinds = [
-                label for key, label in (
-                    ("battery", "battery"),
-                    ("signal", "signal"),
-                    ("last_seen", "last seen"),
-                    ("node_status", "Z-Wave status"),
-                )
-                if counts.get(key)
-            ]
-            one = total == 1
-            items.append(
-                f"{'One' if one else 'Several'} of your devices' "
-                f"{_english_list(kinds, limit=len(kinds))} entities "
-                f"{'is' if one else 'are'} disabled: Device Sentinel "
-                f"requires {'this entity' if one else 'these entities'} "
-                f"to be enabled when {'it is' if one else 'they are'} "
-                f"available. Press Fix on the Repairs card to turn "
-                f"{'it on' if one else 'them all on'}, or use the Enable "
-                f"buttons at the top of the Device Sentinel dashboard to "
-                f"turn {'it' if one else 'them'} on by kind"
-                + (
-                    "; Enable Last Seen also turns on the Z-Wave status."
-                    if counts.get("node_status")
-                    else "."
-                )
-            )
+            ))
+        # Switched-off sensors are on the Recommendations tab, one card
+        # per kind, since the Enable buttons and their Repairs card were
+        # retired (rulings #696 to #698).
         for reader in list(getattr(self, "_bridge_readers", {}).values()):
             # Off, not unknown: a reader that has not heard yet says
             # nothing rather than guessing (ruling #236 surfaces this
             # setting and never writes it).
             if getattr(reader, "availability_enabled", None) is False:
-                items.append(
+                items.append(("z2m_availability",
                     "Zigbee2MQTT availability is disabled: Device Sentinel "
                     "uses Z2M availability as a confirmation for outage "
                     "detection. Turning on Availability in Zigbee2MQTT's "
                     "settings gives Device Sentinel that second opinion."
-                )
+                ))
                 break
-        items += self._router_watched_items()
-        items += self._noisy_integration_advice()
-        items += self._library_items()
-        return items
+        items += self._router_watched_entries()
+        items += self._noisy_integration_entries()
+        items += self._library_entries()
+        simple = ("target:", "no_target", "muted:")
+        return [
+            {"key": key, "text": text, "simple": key.startswith(simple)}
+            for key, text in items
+        ]
 
     def _library_items(self) -> list[str]:
+        """Name watched integrations the library knows to be noise."""
+        return [text for _key, text in self._library_entries()]
+
+    def _library_entries(self) -> list[tuple[str, str]]:
         """Name watched integrations the library knows to be noise.
 
         Known rather than measured, so last in the order. An
@@ -1239,7 +1258,7 @@ class BriefMixin:
                 and domain not in muted
             )
 
-        said: list[str] = []
+        said: list[tuple[str, str]] = []
         false_alerts = present(RECOMMENDATION_LIBRARY[LIBRARY_FALSE_ALERTS])
         if false_alerts:
             names = sorted(
@@ -1247,7 +1266,7 @@ class BriefMixin:
                 key=str.casefold,
             )
             plural = "s" if len(names) > 1 else ""
-            said.append(
+            said.append(("library_false_alerts",
                 f"Some integrations create false alerts: Exclude the "
                 f"{_english_list(names, limit=len(names))} "
                 f"integration{plural} to stop false alarms. Some "
@@ -1256,7 +1275,7 @@ class BriefMixin:
                 f"is turned off, leave the house WiFi, or contain "
                 f"batteries that are recharged daily. Exclude these in "
                 f"the Exclusions and Muting settings screen."
-            )
+            ))
         no_devices = present(RECOMMENDATION_LIBRARY[LIBRARY_NO_DEVICES])
         if no_devices:
             named = [
@@ -1265,7 +1284,7 @@ class BriefMixin:
                 for domain in no_devices
             ]
             one = len(no_devices) == 1
-            said.append(
+            said.append(("library_no_devices",
                 f"Some integrations own no devices and are not worth "
                 f"monitoring: {_english_list(named, limit=len(named))} "
                 f"{'is' if one else 'are'} watched. Integrations of this "
@@ -1273,10 +1292,14 @@ class BriefMixin:
                 f"so their devices go quiet for reasons that are not "
                 f"faults. Exclude {'it' if one else 'them'} in the "
                 f"Exclusions and Muting settings screen."
-            )
+            ))
         return said
 
     def _family_muted_items(self) -> list[str]:
+        """Name a detection family muted for every device it judges."""
+        return [text for _key, text in self._family_muted_entries()]
+
+    def _family_muted_entries(self) -> list[tuple[str, str]]:
         """Name a detection family muted for every device it judges.
 
         Muting every battery device is switching battery warnings off
@@ -1315,7 +1338,7 @@ class BriefMixin:
                 self._signal_muted,
             ),
         )
-        said: list[str] = []
+        said: list[tuple[str, str]] = []
         for title, warnings, nouns, noun, family, screen, judged, muted in families:
             if not judged:
                 continue
@@ -1328,17 +1351,21 @@ class BriefMixin:
                     if len(judged) == 1
                     else f"all {len(judged)} of your {nouns} are muted"
                 )
-                said.append(
+                said.append((f"muted:{family}",
                     f"{title}: You will not get any {warnings} because "
                     f"{why}. To receive {family} reports on the devices "
                     f"you wish to monitor, unmute or unexclude "
                     f"{'it' if len(judged) == 1 else 'them'} on the "
                     f"Exclusions and Muting, and the {screen} settings "
                     f"screen, or on each device's page."
-                )
+                ))
         return said
 
     def _router_watched_items(self) -> list[str]:
+        """Name a router integration the person has chosen to watch."""
+        return [text for _key, text in self._router_watched_entries()]
+
+    def _router_watched_entries(self) -> list[tuple[str, str]]:
         """Name a router integration the person has chosen to watch.
 
         Excluded once, when first seen (ruling #420); from then on the
@@ -1357,13 +1384,16 @@ class BriefMixin:
             ):
                 clients.setdefault(entity.platform, set()).add(entity.device_id)
         return [
-            f"Eliminate noise from integrations that own no actual "
-            f"devices: Device Sentinel is monitoring the {domain} "
-            f"integration, and it has registered {len(devices)} virtual "
-            f"device{'' if len(devices) == 1 else 's'} that duplicate "
-            f"hardware other integrations own and that are already being "
-            f"watched. It is recommended that the {domain} integration be "
-            f"excluded from the Exclusions and Muting settings screen."
+            (
+                f"router:{domain}",
+                f"Eliminate noise from integrations that own no actual "
+                f"devices: Device Sentinel is monitoring the {domain} "
+                f"integration, and it has registered {len(devices)} virtual "
+                f"device{'' if len(devices) == 1 else 's'} that duplicate "
+                f"hardware other integrations own and that are already being "
+                f"watched. It is recommended that the {domain} integration be "
+                f"excluded from the Exclusions and Muting settings screen.",
+            )
             for domain, devices in sorted(clients.items())
         ]
 
@@ -1378,7 +1408,12 @@ class BriefMixin:
         below it for as long as the ones above it stood (ruling #461,
         amending #458).
         """
-        items = self._recommendation_items()
+        # A line or a device a person ticked leaves the Brief (ruling
+        # #699); the emailed Brief is the whole Advanced list (#693).
+        items = [
+            entry["text"] for entry in self.recommendation_lines()
+            if not entry["acknowledged"]
+        ]
         # One line for each kind of device recommendation, with its
         # count, pointing to the tab that lists them (0.24.9). The
         # dashboard's Daily Brief tab is built elsewhere and leaves
@@ -1388,7 +1423,7 @@ class BriefMixin:
         self._brief_rec_links: dict[str, str] = {}
         for card in self.device_recommendations():
             if not card.get("brief"):
-                continue  # on the tab only (0.25.3)
+                continue  # on the tab only (0.25.3), or every row ticked (#699)
             line = f"{card['title']}: {card['brief']}"
             url = self._report_link(f"/{PANEL_URL_PATH}/recommendations?open={card['kind']}")
             if url:
@@ -2635,7 +2670,7 @@ class BriefMixin:
         fallers = self._battery_brief_rows()
         if fallers:
             named = ", ".join(
-                f"{row['name']} ({self.battery_time_left(row['days'])})"
+                f"{row['name']} ({self.battery_time_left_range(row['days'], row.get('days_far'))})"
                 for row in fallers[:5]
             )
             # The battery report retired with the www folder (0.23.5);

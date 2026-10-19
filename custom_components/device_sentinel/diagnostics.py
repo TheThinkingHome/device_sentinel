@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.26.4 (2026-10-15)
+# File: diagnostics.py, Version: 0.26.7 (2026-10-19)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -126,8 +126,8 @@ def _diagnostic_entities(
     """Return the device's diagnostic entities, enabled or not.
 
     Read live from the registry at download time and stored nowhere,
-    the same sources the enable buttons walk, so what this reports
-    and what a press would do cannot drift apart.
+    the same matchers the Switched Off cards read (ruling #698), so
+    what this reports and what a card lists cannot drift apart.
     """
     ent_reg = er.async_get(hass)
     rows: list[dict[str, Any]] = []
@@ -636,11 +636,17 @@ async def async_get_config_entry_diagnostics(
                 }
             ),
         },
-        # The enable buttons' own counts, so the one Repair a new
-        # install is likely to raise can be supported from a download
-        # rather than from a screenshot of the Status sensor's
-        # attributes (ruling #305).
-        "awaiting_enable": coordinator.awaiting_enable_counts(),
+        # How many devices each Switched Off card lists, and how many
+        # of those a person switched off themselves (ruling #698), so a
+        # card on a house can be supported from a download.
+        "switched_off": {
+            kind: {
+                "devices": len(found),
+                "by_user": sum(1 for who in found.values() if who == "user"),
+            }
+            for kind in ("last_seen", "node_status", "battery", "signal")
+            for found in (coordinator.switched_off_devices(kind),)
+        },
         # The answers owners set on device pages (0.25.1): how many the
         # answers file holds, and the ones held for devices Device
         # Sentinel does not watch, in one place, so an excluded

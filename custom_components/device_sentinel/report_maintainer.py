@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.26.6 (2026-10-18)
+# File: report_maintainer.py, Version: 0.26.7 (2026-10-19)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -543,7 +543,12 @@ class MaintainerReportMixin:
             for row in dropping
         ]
 
-        count = len(self._problem_device_ids() | {row["device_id"] for row in dropping})
+        # The devices this section lists: a falling forecast alone has
+        # no line here, so it is not counted (found by review).
+        faults = {row["device_id"] for row in self.frozen_devices_list}
+        faults |= {row["device_id"] for row in self.battery_low_list}
+        faults |= {row["device_id"] for row in self.signal_problem_list}
+        count = len(faults | {row["device_id"] for row in dropping})
         if count == 0:
             return [
                 "## Devices With A Fault (0)",

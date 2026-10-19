@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.24.6 (2026-10-05)
+# File: report_battery.py, Version: 0.26.7 (2026-10-19)
 
 """Which cells are going to be low: the rows, rates and forecast.
 
@@ -31,6 +31,7 @@ from typing import Any
 
 
 from .records import SERIES_MEMO_SIZE, series_key
+from .battery_projection import battery_projection, time_left_range
 from homeassistant.util import dt as dt_util
 
 from .daily_dates import FAMILY_BATTERY, on_calendar
@@ -380,9 +381,22 @@ class BatteryReportMixin:
             row["fit"] = trend["fit"]
             if trend["reading"] and trend["pace"]:
                 # The Problem List's forecast item and the Battery:
-                # Falling sensor read a rate per day and days left.
+                # Falling sensor read a rate per day and days left. The
+                # days are a range since 0.26.7 (ruling #704), curved
+                # where the fall is speeding up; the near end decides
+                # Days Till Empty. A cell with too few heard days for
+                # the fit keeps its straight pace, one figure.
                 row["slope"] = -trend["pace"] / BATTERY_WEEK_DAYS
-                row["days"] = row["level"] / (trend["pace"] / BATTERY_WEEK_DAYS)
+                straight = row["level"] / (trend["pace"] / BATTERY_WEEK_DAYS)
+                knee = trend["fit"] or {}
+                projection = battery_projection(
+                    series, row["level"], knee.get("knee_ago") if knee.get("knee") else None
+                )
+                row["projection"] = projection
+                row["days"] = projection["near"] if projection else straight
+                row["days_far"] = (
+                    projection["far"] if projection else straight
+                )
                 falling.append(row)
             elif not row["low"]:
                 flat.append(row)
@@ -429,6 +443,11 @@ class BatteryReportMixin:
                 CONF_BATTERY_DAYS, DEFAULT_BATTERY_DAYS
             )
         )
+
+    @staticmethod
+    def battery_time_left_range(near: float, far: float | None) -> str:
+        """The time left as a range, in #197's words (ruling #704)."""
+        return time_left_range(near, far)
 
     @staticmethod
     def battery_time_left(days: float) -> str:

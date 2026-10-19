@@ -3,40 +3,31 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: button.py, Version: 0.23.19 (2026-09-30)
+# File: button.py, Version: 0.26.7 (2026-10-19)
 
 """Button platform for the Device Sentinel integration.
 
-Three enable-assist buttons, one per diagnostic kind: signals, last
-seen, and battery. Each walks the entity registry for entities of its
-kind that are turned off on a watched device, and turns them on,
-whoever turned them off (ruling #302).
+Two buttons, each touching only Device Sentinel's own state, so any
+user, automation or script may press them (ruling #696).
 
-Last seen is the one that changes the most. A door sensor's own
-entities move twice a day, so with only those enabled the learned
-rhythm is measured in hours and a sensor that dies just after the
-door closes stays unnoticed until the next opening. Its `last_seen`
-entity is the coordinator's own record of contact, updated every few
-minutes, and it carries a timestamp no republished state can fake.
-Turning it on moves that device from a twelve-hour window to a
-minutes-long one. Anything written for a reader should lead with
-that rather than listing three buttons evenly.
-
-Three buttons rather than one so a user can enable exactly the
-diagnostic they want. Battery is its own match rule (a percentage
-sensor with device_class battery), not a widening of the signal
-filter, and it earns its own press because a user reading only
-"signals" has no reason to expect a battery button to be hiding there.
-
-A fourth button rewrites every report on demand, for a person
+Regenerate Reports rewrites every report on demand, for a person
 mid-investigation who wants them to reflect a fix now rather than at
-the next tick.
+the next tick, or an automation that sends a fresh Daily Brief.
 
-A fifth opens and closes the maintenance window (rulings #225 and #238):
-pressed once it declares that a person is working on the hardware,
-pressed again it ends the declaration early. While the window is
-open, any device that recovers is attributed to the person's hands
-and its silence is not learned.
+Maintenance Mode opens and closes the maintenance window (rulings #225
+and #238): pressed once it declares that a person is working on the
+hardware, pressed again it ends the declaration early. While the
+window is open, any device that recovers is attributed to the person's
+hands and its silence is not learned.
+
+The three Enable buttons (signals, last seen, battery) are retired by
+ruling #696, from Frenck's review of the HACS default-list submission.
+A button entity can be pressed by any user, automation or script, and
+those turned on other integrations' entities on every watched device,
+including ones a person had switched off on purpose. A sensor is now
+switched on one device at a time, by an administrator, from the
+device's page or its Recommendations card; the retired-entity sweep
+removes the three registry entries.
 """
 
 from __future__ import annotations
@@ -59,28 +50,10 @@ async def async_setup_entry(
     entry: DeviceSentinelConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Device Sentinel enable-assist buttons."""
+    """Set up the Regenerate Reports and Maintenance Mode buttons."""
     coordinator = entry.runtime_data
     async_add_entities(
         [
-            DeviceSentinelActionButton(
-                coordinator,
-                key="enable_signal_entities",
-                icon="mdi:signal",
-                action=coordinator.async_enable_signal_entities,
-            ),
-            DeviceSentinelActionButton(
-                coordinator,
-                key="enable_last_seen_entities",
-                icon="mdi:clock-check-outline",
-                action=coordinator.async_enable_last_seen_entities,
-            ),
-            DeviceSentinelActionButton(
-                coordinator,
-                key="enable_battery_entities",
-                icon="mdi:battery-heart-variant",
-                action=coordinator.async_enable_battery_entities,
-            ),
             DeviceSentinelActionButton(
                 coordinator,
                 key="regenerate_reports",
@@ -100,14 +73,9 @@ async def async_setup_entry(
 class DeviceSentinelActionButton(ButtonEntity):
     """A Device Sentinel button that runs one coordinator action.
 
-    The enable buttons each walk the entity registry for disabled
-    entities of their kind and turn them on, whoever disabled them,
-    on watched devices only (ruling #302). A muted device is
-    watched and is reached; a set-aside device is not, because its
-    entities cannot be usefully turned on.
-    The regenerate button judges every device and rewrites every
-    report on demand. Each button is a thin wrapper around the async
-    action it is given; the action carries the behavior.
+    Each button is a thin wrapper around the async action it is given;
+    the action carries the behavior, and touches only Device Sentinel's
+    own state (ruling #696).
     """
 
     _attr_has_entity_name = True

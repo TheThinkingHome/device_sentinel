@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/answers_store.py, Version: 0.25.5 (2026-10-10)
+# File: custom_components/device_sentinel/answers_store.py, Version: 0.26.7 (2026-10-19)
 
 """The one file that holds what the owner set with a pencil (0.25.1).
 
@@ -15,7 +15,17 @@ and is restored from it at start when it cannot be read.
 
 The file:
     {"power": {"models": {...}, "devices": {...}},
-     "types": {"models": {...}, "devices": {...}}}
+     "types": {"models": {...}, "devices": {...}},
+     "acknowledged": {"devices": {card: {device: bool}},
+                      "lines": {key: bool}},
+     "battery": {device: {"day": "YYYY-MM-DD", "how": "confirmed"}}}
+
+The acknowledgements of the Recommendations tab joined in 0.26.7
+(ruling #699): a person's own tick is an answer too; so did a battery
+replacement's day a person confirmed or entered (#701). A release before
+0.26.7 that saves this file writes the power and type answers alone,
+so going back loses the ticks and the battery days; that is said in
+the release note.
 
 "models" holds an answer per model, keyed by model_key; "devices" holds
 the answer of a device with no manufacturer or no model.
@@ -187,6 +197,8 @@ class AnswersMixin:
         self._answers_lock = asyncio.Lock()
         self._power_reset()  # type: ignore[attr-defined]
         self._type_reset()  # type: ignore[attr-defined]
+        self._recommendation_acks: dict[str, Any] = {"devices": {}, "lines": {}}
+        self._battery_replacement_answers: dict[str, dict[str, Any]] = {}
         # Sentences for the events log, recorded once the session has
         # loaded (0.25.2, #342's rule: a repair nobody can see did not
         # happen as far as the person is concerned).
@@ -256,6 +268,8 @@ class AnswersMixin:
         types = payload.get("types")
         dropped = self._power_read(power if isinstance(power, dict) else {})  # type: ignore[attr-defined]
         dropped += self._type_read(types if isinstance(types, dict) else {})  # type: ignore[attr-defined]
+        dropped += self._acks_read(payload.get("acknowledged"))  # type: ignore[attr-defined]
+        dropped += self._battery_answers_read(payload.get("battery"))  # type: ignore[attr-defined]
         await self._note_dropped(dropped)
         bad = _bad_tables(payload, ("power", "types"))
         await self._note_bad_tables(bad)
@@ -437,10 +451,21 @@ class AnswersMixin:
     # ------------------------------------------------------------- saving
 
     def _answers_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "power": self._power_payload(),  # type: ignore[attr-defined]
             "types": self._type_payload(),  # type: ignore[attr-defined]
         }
+        # Written only once something is ticked, so a house that never
+        # ticks keeps the file an older release wrote (#699).
+        acks = self._acks_payload()  # type: ignore[attr-defined]
+        if acks["devices"] or acks["lines"]:
+            payload["acknowledged"] = acks
+        # The day a person gave for a battery replacement, or confirmed
+        # (#701), likewise only once there is one.
+        battery = self._battery_answers_payload()  # type: ignore[attr-defined]
+        if battery:
+            payload["battery"] = battery
+        return payload
 
     def _answers_count(self, part: str) -> int:
         if part == "power":
@@ -451,11 +476,11 @@ class AnswersMixin:
         """Write a second from now, so a burst of pencil saves makes one write."""
         if self._answers_store is None:
             return
+        hass = self.hass  # type: ignore[attr-defined]
         self._answers_pending = True
         cancel = getattr(self, "_answers_timer", None)
         if cancel is not None:
             cancel()
-        hass = self.hass  # type: ignore[attr-defined]
 
         @callback
         def _due(_now: Any) -> None:

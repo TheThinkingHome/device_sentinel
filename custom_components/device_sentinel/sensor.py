@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.26.6 (2026-10-17)
+# File: sensor.py, Version: 0.26.7 (2026-10-19)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -56,9 +56,6 @@ from . import DeviceSentinelConfigEntry
 from .const import (
     SIGNAL_SCALE_LQI,
     SIGNAL_SCALE_RSSI,
-    ATTR_AWAITING_BATTERY,
-    ATTR_AWAITING_LAST_SEEN,
-    ATTR_AWAITING_SIGNAL,
     ATTR_BRIDGE_AVAILABILITY,
     ATTR_BRIDGE_BASE_TOPIC,
     ATTR_BRIDGE_LAST_HEARD,
@@ -245,14 +242,11 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the identity and storage-proof attributes, plus one
-        exact count per enable button (ruling #237): non-zero means a press
-        would do something, so a dashboard can show each button only
-        while it has work. No entity lists; the count is the reader's
-        whole question and a hundred names on a fresh install would be
-        recorder weight with no reader.
+        """Return the identity and storage-proof attributes.
+
+        The three awaiting-enable counts went with the Enable buttons
+        they counted for (ruling #696).
         """
-        counts = self._coordinator.awaiting_enable_counts()
         taken = self._coordinator.last_good_taken
         age_days = None
         if taken is not None:
@@ -264,7 +258,6 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
             ATTR_FIRST_INSTALLED: self._coordinator.first_installed,
             ATTR_STORAGE_HEALTHY: self._coordinator.storage_healthy,
             ATTR_SETUP_COUNT: self._coordinator.setup_count,
-            ATTR_AWAITING_SIGNAL: counts["signal"],
             # A network chosen for WiFi detection that the radio
             # cannot currently hear. Named here rather than silently
             # unselected on the settings screen, because a network
@@ -273,10 +266,6 @@ class DeviceSentinelStatusSensor(DeviceSentinelBaseSensor):
             "wifi_networks_missing": (
                 self._coordinator.wifi_missing_networks or None
             ),
-            # What Enable Last Seen would turn on, node status sensors
-            # included (ruling #671).
-            ATTR_AWAITING_LAST_SEEN: counts["last_seen"] + counts.get("node_status", 0),
-            ATTR_AWAITING_BATTERY: counts["battery"],
             # The backup's story (ruling #341, amended by #370):
             # when the last-good copy was made by the rotation, how
             # old it is, and how many repairs the load performed. The

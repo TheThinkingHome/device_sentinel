@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.26.6 (2026-10-17)
+# File: dashboard_api.py, Version: 0.26.7 (2026-10-19)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -74,17 +74,6 @@ def mutes_for_kinds(kinds: Any) -> list[str]:
     return [mute for mute, test in wanted if any(test(kind) for kind in kinds)]
 
 ACTION_MAINTENANCE = "maintenance"
-ACTION_ENABLE_SIGNALS = "enable_signals"
-ACTION_ENABLE_LAST_SEEN = "enable_last_seen"
-ACTION_ENABLE_BATTERY = "enable_battery"
-
-# The top row's enable buttons, each the device page button's own call.
-_ENABLE_CALLS = {
-    ACTION_ENABLE_SIGNALS: "async_enable_signal_entities",
-    ACTION_ENABLE_LAST_SEEN: "async_enable_last_seen_entities",
-    ACTION_ENABLE_BATTERY: "async_enable_battery_entities",
-}
-
 _MINUTES = list(
     range(
         MAINTENANCE_MINUTES_MIN,
@@ -119,7 +108,10 @@ def async_register_dashboard_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_device_label)
     websocket_api.async_register_command(hass, ws_device_new_area)
     websocket_api.async_register_command(hass, ws_device_new_label)
-    websocket_api.async_register_command(hass, ws_device_last_seen)
+    websocket_api.async_register_command(hass, ws_device_turn_on)
+    websocket_api.async_register_command(hass, ws_device_label_mute)
+    websocket_api.async_register_command(hass, ws_recommendation_ack)
+    websocket_api.async_register_command(hass, ws_device_battery)
     websocket_api.async_register_command(hass, ws_device_mute)
     websocket_api.async_register_command(hass, ws_device_exclude)
     websocket_api.async_register_command(hass, ws_integration_exclude)
@@ -165,7 +157,7 @@ def ws_status(
     {
         vol.Required("type"): "device_sentinel/action",
         vol.Required("action"): vol.In(
-            [ACTION_MAINTENANCE, *_ENABLE_CALLS]
+            [ACTION_MAINTENANCE]
         ),
         vol.Optional("minutes"): vol.In(_MINUTES),
     }
@@ -186,11 +178,7 @@ async def ws_action(
     if coordinator is None:
         _not_loaded(connection, msg["id"])
         return
-    action = msg["action"]
-    if action == ACTION_MAINTENANCE:
-        result = await coordinator.async_toggle_maintenance(msg.get("minutes"))
-    else:
-        result = await getattr(coordinator, _ENABLE_CALLS[action])()
+    result = await coordinator.async_toggle_maintenance(msg.get("minutes"))
     connection.send_result(msg["id"], result if isinstance(result, dict) else {})
 
 
@@ -365,7 +353,9 @@ async def ws_recommendations(
     connection.send_result(
         msg["id"],
         {
-            "lines": coordinator._recommendation_items(),
+            # Each written line with its key, whether Simple shows it,
+            # and whether it is acknowledged (rulings #695, #699).
+            "lines": coordinator.recommendation_lines(),
             "closing": RECOMMENDATIONS_CLOSING,
             # Recommendations about single devices, each with its list,
             # and the Power choices to set them from the list (0.24.9).
@@ -629,6 +619,32 @@ def ws_device_label(
 @websocket_api.require_admin
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "device_sentinel/device_label_mute",
+        vol.Required("device_id"): str,
+        vol.Required("kind"): vol.In(["everything", "freeze", "unavailable", "battery", "signal"]),
+        vol.Exclusive("label_id", "label"): str,
+        vol.Exclusive("name", "label"): str,
+    }
+)
+@callback
+def ws_device_label_mute(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Mute by label from the device page (ruling #706)."""
+    if "label_id" not in msg and "name" not in msg:
+        connection.send_error(msg["id"], "invalid_format", "A label or a new label's name is needed")
+        return
+    _page_act(
+        hass, connection, msg,
+        lambda c: c.page_label_mute(
+            msg["device_id"], msg["kind"], label_id=msg.get("label_id"), name=msg.get("name")
+        ),
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "device_sentinel/device_new_area",
         vol.Required("device_id"): str,
         vol.Required("name"): str,
@@ -660,16 +676,73 @@ def ws_device_new_label(
 
 @websocket_api.require_admin
 @websocket_api.websocket_command(
-    {vol.Required("type"): "device_sentinel/device_last_seen", vol.Required("device_id"): str}
+    {
+        vol.Required("type"): "device_sentinel/device_battery",
+        vol.Required("device_id"): str,
+        vol.Required("action"): vol.In(["confirm", "cancel", "date"]),
+        vol.Optional("day"): str,
+    }
 )
 @callback
-def ws_device_last_seen(
+def ws_device_battery(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Switch on one device's Last Seen entity."""
+    """Confirm, cancel, or set the day of a battery replacement (#701, #702)."""
     _page_act(
         hass, connection, msg,
-        lambda c: {"enabled": c.page_enable_last_seen(msg["device_id"])},
+        lambda c: c.battery_answer(msg["device_id"], msg["action"], msg.get("day")),
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/recommendation_ack",
+        vol.Required("on"): bool,
+        vol.Exclusive("line", "which"): str,
+        vol.Exclusive("kind", "which"): str,
+        vol.Optional("device_id"): str,
+    }
+)
+@callback
+def ws_recommendation_ack(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Tick or untick one device on one card, or one written line (#699)."""
+    coordinator = _coordinator(hass)
+    if coordinator is None:
+        _not_loaded(connection, msg["id"])
+        return
+    try:
+        coordinator.set_recommendation_ack(
+            msg["on"], kind=msg.get("kind"), device_id=msg.get("device_id"), line=msg.get("line"),
+        )
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_found", str(err))
+        return
+    connection.send_result(msg["id"], {})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "device_sentinel/device_turn_on",
+        vol.Required("device_id"): str,
+        vol.Required("kind"): vol.In(["last_seen", "node_status", "battery", "signal"]),
+    }
+)
+@callback
+def ws_device_turn_on(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Switch on one device's own entities of one kind (ruling #696).
+
+    Admin only, one device and one kind: the only way left to switch on
+    another integration's entity since the Enable buttons went.
+    """
+    _page_act(
+        hass, connection, msg,
+        lambda c: {"enabled": c.page_turn_on(msg["device_id"], msg["kind"])},
     )
 
 

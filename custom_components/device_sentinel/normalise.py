@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.26.2 (2026-10-13)
+# File: normalise.py, Version: 0.26.7 (2026-10-19)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (ruling #370).

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.26.6 (2026-10-18)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.26.7 (2026-10-19)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -36,6 +36,7 @@ from homeassistant.helpers import label_registry as lr
 
 from .const import (
     CONF_UNAVAILABLE_MUTED_LABELS,
+    LOGGER,
     CONF_BATTERY_MUTED_DEVICES,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
@@ -55,6 +56,15 @@ from .const import (
     SYS_DEVICE_PAGE,
     SYS_INTEGRATION_PAGE,
 )
+
+# What a "Turn it on" switches on, as the brief's row names it (ruling
+# #696). Last Seen and the Z-Wave status are apart since #698.
+TURN_ON_WORDS = {
+    "last_seen": "Last Seen",
+    "node_status": "Z-Wave status",
+    "battery": "Battery sensor",
+    "signal": "Signal sensor",
+}
 
 # Each mute kind's three settings lists, in the order every mute is
 # read: the integration, the device's labels, the device itself.
@@ -166,6 +176,10 @@ class DeviceActionsMixin:
             "integration_name": device.name,
             "labels": shown,
             "last_seen_off": self._switched_off_last_seen(device_id) is not None,
+            # The Battery and Signal sensor rows' "Turn it on" (0.26.7,
+            # point 1 of the repair-card rulings of 18 October).
+            "battery_off": self.switched_off(device_id, "battery") is not None,
+            "signal_off": self.switched_off(device_id, "signal") is not None,
             "mutes": self.page_mutes(device_id),
             "excluded": self.page_excluded(device_id),
         }
@@ -186,30 +200,89 @@ class DeviceActionsMixin:
             "integration": domain is not None and domain in self.excluded_integrations,  # type: ignore[attr-defined]
         }
 
-    def page_choices(self) -> dict[str, list[dict[str, str]]]:
+    def page_choices(self) -> dict[str, list[dict[str, Any]]]:
         """The areas and labels a picker offers, fetched when it opens."""
         areas = [
             {"id": area.id, "name": area.name}
             for area in ar.async_get(self.hass).async_list_areas()
         ]
+        devices = dr.async_get(self.hass)
+        # How many devices carry each label, so the Mute by label picker
+        # can say what a label mute reaches before it saves (#706).
         labels = [
-            {"id": label.label_id, "name": label.name, "meaning": self.label_meaning(label.label_id)}
+            {
+                "id": label.label_id,
+                "name": label.name,
+                "meaning": self.label_meaning(label.label_id),
+                "devices": len(dr.async_entries_for_label(devices, label.label_id)),
+            }
             for label in lr.async_get(self.hass).async_list_labels()
         ]
         areas.sort(key=lambda item: item["name"].casefold())
         labels.sort(key=lambda item: item["name"].casefold())
         return {"areas": areas, "labels": labels}
 
-    def _switched_off_last_seen(self, device_id: str) -> str | None:
-        """The device's switched-off Last Seen entity, if it has one."""
+    def _own_entities_of(self, device_id: str, kind: str) -> list[Any]:
+        """The device's own registry entries of one kind (ruling #698).
+
+        Own means the integration that owns the device wrote them
+        (#404, #463): a battery sensor Battery Notes adds, or any other
+        integration's entity on the device, never counts.
+        """
         from homeassistant.helpers import entity_registry as er
 
-        for ent in er.async_entries_for_device(
-            er.async_get(self.hass), device_id, include_disabled_entities=True
-        ):
-            if ent.disabled_by is not None and self._is_last_seen(ent):  # type: ignore[attr-defined]
-                return str(ent.entity_id)
-        return None
+        domain = self._watched.get(device_id)  # type: ignore[attr-defined]
+        if domain is None:
+            return []
+        matches = {
+            "last_seen": self._is_last_seen,  # type: ignore[attr-defined]
+            "node_status": self._is_node_status_entry,  # type: ignore[attr-defined]
+            "battery": self._is_battery_percentage,  # type: ignore[attr-defined]
+            "signal": self._is_signal,  # type: ignore[attr-defined]
+        }[kind]
+        return [
+            ent
+            for ent in er.async_entries_for_device(
+                er.async_get(self.hass), device_id, include_disabled_entities=True
+            )
+            if ent.platform == domain and matches(ent)
+        ]
+
+    def switched_off(self, device_id: str, kind: str) -> str | None:
+        """Whether a watched device's kind is switched off (ruling #698).
+
+        "user" when a person switched off every one of its own entities
+        of that kind, "other" when Home Assistant or the integration did,
+        None when one of them is on or it has none. A device with one
+        entity of the kind on and another off reports that kind already,
+        so it is not listed: a ZHA device with its RSSI on and its LQI
+        off has a signal.
+        """
+        from homeassistant.helpers import entity_registry as er
+
+        own = self._own_entities_of(device_id, kind)
+        if not own or any(ent.disabled_by is None for ent in own):
+            return None
+        if all(ent.disabled_by is er.RegistryEntryDisabler.USER for ent in own):
+            return "user"
+        return "other"
+
+    def switched_off_devices(self, kind: str) -> dict[str, str]:
+        """Every watched device whose kind is switched off, with who did it."""
+        found: dict[str, str] = {}
+        for device_id in list(self._watched):  # type: ignore[attr-defined]
+            who = self.switched_off(device_id, kind)
+            if who is not None:
+                found[device_id] = who
+        return found
+
+    def _switched_off_last_seen(self, device_id: str) -> str | None:
+        """The device's switched-off Last Seen entity, if its Last Seen
+        is switched off (ruling #698)."""
+        if self.switched_off(device_id, "last_seen") is None:
+            return None
+        own = self._own_entities_of(device_id, "last_seen")
+        return str(own[0].entity_id) if own else None
 
     def _switched_off_node_status(self, device_id: str) -> bool:
         """Whether the device's node status sensor is switched off (#671)."""
@@ -333,6 +406,52 @@ class DeviceActionsMixin:
         )
         self._page_done(device_id, f"label {label.name} added{'' if held else ', a new label'}")
 
+    def page_label_mute(
+        self, device_id: str, kind: str, label_id: str | None = None, name: str | None = None
+    ) -> dict[str, Any]:
+        """Mute by label, from the device page (ruling #706, Advanced).
+
+        One of the person's labels, or a new one by name, goes on the
+        device and onto the kind's label list, the list Settings writes,
+        so every device carrying it is muted for that kind. Unavailable
+        has a label list and no integration list; every kind here has a
+        label list.
+        """
+        device = self._device(device_id)
+        if kind not in MUTE_KINDS:
+            raise ValueError(f"no mute kind {kind}")
+        labels_reg = lr.async_get(self.hass)
+        made = False
+        if label_id is not None:
+            label = labels_reg.async_get_label(label_id)
+            if label is None:
+                raise ValueError("Home Assistant has no such label")
+        else:
+            wanted = self._new_registry_name(name)
+            label = labels_reg.async_get_label_by_name(wanted)
+            if label is None:
+                label = labels_reg.async_create(wanted)
+                made = True
+        if label.label_id not in (device.labels or ()):
+            dr.async_get(self.hass).async_update_device(
+                device_id, labels=set(device.labels or ()) | {label.label_id}
+            )
+        key = MUTE_KINDS[kind][1]
+        current = list(self.entry.options.get(key, []))
+        if label.label_id not in current:
+            current.append(label.label_id)
+            self._page_option_keys.add(key)
+            self.hass.config_entries.async_update_entry(
+                self.entry, options={**self.entry.options, key: current}
+            )
+        reach = len(dr.async_entries_for_label(dr.async_get(self.hass), label.label_id))
+        self._page_done(
+            device_id,
+            f"{kind} muted by label {label.name}{', a new label' if made else ''}, "
+            f"on {reach} device{'' if reach == 1 else 's'}",
+        )
+        return {"label_id": label.label_id, "devices": reach}
+
     def page_label(self, device_id: str, label_id: str, add: bool) -> None:
         device = self._device(device_id)
         label = lr.async_get(self.hass).async_get_label(label_id)
@@ -346,28 +465,34 @@ class DeviceActionsMixin:
         dr.async_get(self.hass).async_update_device(device_id, labels=labels)
         self._page_done(device_id, f"label {label.name} {'added' if add else 'removed'}")
 
-    def page_enable_last_seen(self, device_id: str) -> int:
-        """Switch on this device's Last Seen entity alone (the house-wide
-        Enable, limited to one device), and its node status sensor with
-        it (ruling #671)."""
+    def page_turn_on(self, device_id: str, kind: str) -> int:
+        """Switch on one device's own entities of one kind (ruling #696).
+
+        The one way Device Sentinel switches on another integration's
+        entity since the three Enable buttons were retired: one device,
+        one kind, pressed by an administrator on the device's page or
+        its Recommendations card. Last Seen and the Z-Wave status are
+        separate kinds since #698 gave the status its own card. Returns
+        how many entities were switched on.
+        """
+        from homeassistant.helpers import entity_registry as er
+
         self._device(device_id)
-        last_seen_off = self._switched_off_last_seen(device_id) is not None
-        status_off = self._switched_off_node_status(device_id)
-        found = self._enable_matching_entities(  # type: ignore[attr-defined]
-            self._is_liveness, "last_seen", device_id=device_id  # type: ignore[attr-defined]
-        )
-        enabled = int(found.get("enabled", 0))
+        if kind not in TURN_ON_WORDS:
+            raise ValueError("Device Sentinel cannot switch that on")
+        registry = er.async_get(self.hass)
+        enabled = 0
+        for ent in self._own_entities_of(device_id, kind):
+            if ent.disabled_by is None:
+                continue
+            registry.async_update_entity(ent.entity_id, disabled_by=None)
+            enabled += 1
         if enabled:
-            # Say what was turned on (adversarial round of 16 October
-            # 2026): on a Z-Wave device it may be the status alone.
-            status_too = status_off and not self._switched_off_node_status(device_id)
-            if last_seen_off and status_too:
-                done = "Last Seen and Z-Wave status turned on"
-            elif last_seen_off:
-                done = "Last Seen turned on"
-            else:
-                done = "Z-Wave status turned on"
-            self._page_done(device_id, done)
+            LOGGER.info(
+                "Turned on %d %s entities on %s, from Device Sentinel's dashboard",
+                enabled, kind, self._device_name(device_id),  # type: ignore[attr-defined]
+            )
+            self._page_done(device_id, f"{TURN_ON_WORDS[kind]} turned on")
         return enabled
 
     def page_set_excluded(

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.26.6 (2026-10-18)
+# File: __init__.py, Version: 0.26.7 (2026-10-19)
 
 """The Device Sentinel integration.
 
@@ -51,7 +51,9 @@ from .const import (
     LEGACY_LOW_THRESHOLD,
     OPTIONS_MINOR_VERSION,
     PANEL_URL_PATH,
+    CONF_DASHBOARD_MODE,
     CONF_PERSISTENT_ENABLED,
+    DASHBOARD_ADVANCED,
     RETIRED_SLIDER_KEYS,
     REPORT_BRIEF_HTML,
     REPORT_DIR,
@@ -112,6 +114,8 @@ async def async_migrate_entry(
         options = _migrate_persistent_default(options)
     if entry.minor_version < 6:
         options = _migrate_unavailable_mutes(options)
+    if entry.minor_version < 7:
+        options = _migrate_dashboard_mode(options)
     hass.config_entries.async_update_entry(
         entry, options=options, minor_version=OPTIONS_MINOR_VERSION
     )
@@ -157,6 +161,18 @@ def _string_list(value: Any) -> list[str]:
         if isinstance(item, str) and item not in out:
             out.append(item)
     return out
+
+
+def _migrate_dashboard_mode(options: dict[str, Any]) -> dict[str, Any]:
+    """Step 7: an install that upgrades keeps the dashboard it knows.
+
+    0.26.7 adds a Simple dashboard and makes it the default for a new
+    install (ruling #693). An install that upgrades opens in Advanced,
+    the dashboard as it was, until someone changes the setting.
+    """
+    migrated = dict(options)
+    migrated.setdefault(CONF_DASHBOARD_MODE, DASHBOARD_ADVANCED)
+    return migrated
 
 
 def _migrate_persistent_default(options: dict[str, Any]) -> dict[str, Any]:

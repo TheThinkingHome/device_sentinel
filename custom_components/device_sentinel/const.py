@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.26.6 (2026-10-18)
+# File: const.py, Version: 0.26.7 (2026-10-19)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1141,13 +1141,6 @@ SENTINEL_TYPE_LEARNING = "learning_progress"
 SENTINEL_TYPE_CLASSIFICATION = "classification"
 SENTINEL_TYPE_MAINTENANCE = "maintenance"
 
-# The awaiting-enable counts on Status (ruling #237): one exact number
-# per enable button, no entity lists, so a dashboard can show each
-# button exactly while there is something for it to do.
-ATTR_AWAITING_SIGNAL = "signal_awaiting_enable"
-ATTR_AWAITING_LAST_SEEN = "last_seen_awaiting_enable"
-ATTR_AWAITING_BATTERY = "battery_awaiting_enable"
-
 # Whether Zigbee2MQTT's availability feature is on, read from bridge
 # info and surfaced on the bridge sensor (ruling #236). Reported, never
 # written: enabling it is Zigbee2MQTT's configuration, not this
@@ -1241,6 +1234,8 @@ BATTERY_REPLACED_FROM_BELOW = 90.0
 # describe the cell that is in the device now.
 DEV_BATTERY_DAILY_PREVIOUS = "battery_daily_previous"
 DEV_BATTERY_REPLACED_AT = "battery_replaced_at"
+# What the Battery Last Replaced row shows is kept in the answers file,
+# one entry per device (rulings #701, #702; battery_replacement.py).
 # The reading a rise was measured against, held for one day while a
 # suspected replacement waits for a second sample to confirm it
 # (ruling #405). None when nothing is pending.
@@ -1776,6 +1771,15 @@ RAIL_CONFIRM_DAYS = 3
 CONF_HIGH_PRIORITY_TARGETS = "high_priority_targets"
 CONF_NORMAL_PRIORITY_TARGETS = "normal_priority_targets"
 CONF_PERSISTENT_ENABLED = "persistent_enabled"
+
+# The dashboard each window opens in (ruling #693, 0.26.7): Simple on a
+# new install, Advanced on one that upgraded (options step 7). The
+# dashboard's own switch holds only while the person stays on it.
+CONF_DASHBOARD_MODE = "dashboard_mode"
+DASHBOARD_SIMPLE = "simple"
+DASHBOARD_ADVANCED = "advanced"
+DASHBOARD_MODES = (DASHBOARD_SIMPLE, DASHBOARD_ADVANCED)
+DEFAULT_DASHBOARD_MODE = DASHBOARD_SIMPLE
 CONF_QUIET_ENABLED = "quiet_hours_enabled"
 CONF_QUIET_START = "quiet_hours_start"
 CONF_QUIET_END = "quiet_hours_end"
@@ -2459,6 +2463,10 @@ SYS_RESTART = "restart"
 # The system clock moved while Device Sentinel ran (ruling #538): the
 # detail says how far and which way, the duration is the size.
 SYS_CLOCK_RESET = "clock_reset"
+# The clocks file was missing or damaged at a start, so each device's
+# clock restarted (0.22.28). Told in the brief since its Repairs card
+# was retired (ruling #697).
+SYS_CLOCKS_LOST = "clocks_lost"
 SYS_INTEGRATION_DOWN = "integration_down"
 SYS_INTEGRATION_UP = "integration_up"
 SYS_BRIDGE_DOWN = "bridge_down"
@@ -2510,7 +2518,7 @@ SYS_DEVICE_ID = "device_id"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 671
+HIGHEST_RULING = 709
 
 # The state saved with a device's outage start when its stack called
 # its node dead (ruling #670), so the dead word outlives a restart.
@@ -2700,10 +2708,17 @@ REPAIR_CLOCK_RESET = "clock_reset"
 REPAIRS_ALL = (
     REPAIR_STORAGE_REPAIRED,
     REPAIR_CONTAINERS_REPAIRED,
-    REPAIR_ENTITIES_DISABLED,
     REPAIR_NOTIFY_TARGET_MISSING,
-    REPAIR_NO_DELIVERY,
     REPAIR_STORAGE_RESTORED,
+)
+# Cards retired by ruling #697: a card is for what stops Device
+# Sentinel working now, or a repair it made. Switched-off sensors moved
+# to the Recommendations tab, a house with no target has its
+# recommendation, and the two clock notices are told in the brief.
+# Cleared at every evaluation, so an install that held one loses it.
+REPAIRS_RETIRED = (
+    REPAIR_ENTITIES_DISABLED,
+    REPAIR_NO_DELIVERY,
     REPAIR_CLOCKS_RESET,
     REPAIR_CLOCK_RESET,
 )
@@ -2965,7 +2980,7 @@ DEAD_OPTION_KEYS = (
 # nothing changes on an upgraded house. An integration's freeze mute
 # stays freeze only: Home Assistant reports a device unavailable well,
 # and a freeze mute hiding it was a fault (James, 18 October 2026).
-OPTIONS_MINOR_VERSION = 6
+OPTIONS_MINOR_VERSION = 7
 
 # The muting keys, old spelling to new, in the order a person meets
 # them on the screens. Read by the migration and by the guard that
@@ -3103,12 +3118,13 @@ ATTR_SETUP_COUNT = "setup_count"
 # treatment DEAD_OPTION_KEYS gets. Append a sentinel type here when a
 # sensor is retired, and drop it again once every install is past it.
 DEAD_ENTITY_SENTINEL_TYPES: tuple[str, ...] = (
-    # Empty since 0.23.19. Every entry it held, from the clock-source
-    # sensor through the soak six of 0.20.11 (ruling #394), was
-    # satisfied: the sweep runs at every start, every install has
-    # started many releases since, and the reference rig's 0.23.18
-    # start removed nothing. Under ruling #82 the mechanism stays for
-    # the next retired entity and the satisfied entries go.
+    # The three Enable buttons, retired by ruling #696 (Frenck's review
+    # of the HACS default-list submission). The unique id is the entry
+    # id and the button's key, so Regenerate Reports and Maintenance
+    # Mode, which share the platform, are untouched.
+    "enable_signal_entities",
+    "enable_last_seen_entities",
+    "enable_battery_entities",
 )
 
 

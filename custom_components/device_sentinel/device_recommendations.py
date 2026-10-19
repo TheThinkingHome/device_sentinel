@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.26.3 (2026-10-14)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.26.7 (2026-10-19)
 
 """Recommendations about single devices, for the Recommendations tab (0.24.9).
 
@@ -12,13 +12,24 @@ a device with no power set, one whose Last Seen sensor is switched
 off, one with no area, devices sharing a name, two about types
 (0.25.3): a device with no type, and a model whose devices have more
 than one; and a device slow to judge for freeze (0.26.0, ruling #637),
-offered a freeze mute. Watched devices only. Nothing is stored or dismissed: a device leaves its card when
-its condition is gone, as the other recommendations do.
+offered a freeze mute. Watched devices only. A device leaves its card when its condition is gone,
+as the other recommendations do.
+
+Since 0.26.7: three more cards, Battery Sensor Switched Off, Signal
+Sensor Switched Off and Z-Wave Status Switched Off (ruling #698), read
+from a device's own entities only; and each row, and each written
+recommendation, is acknowledged on its own with a checkbox that can be
+unchecked again (#699). An acknowledgement is kept in the answers file
+and forgotten when its device leaves the card, or its line goes, so a
+problem that comes back is active again. A sensor a person switched
+off themselves starts acknowledged. Each card and line says whether
+Simple shows it (#695); the dashboard counts what is unchecked in the
+cards its mode shows (#700).
 
 The tab lists every device, and each can be put right from the list.
 The emailed brief, and its file, carries one line for each kind, with
-its count, pointing to the tab; the dashboard's Daily Brief tab does
-not (James, 6 October 2026). The two type cards stay out of the brief:
+its count of devices not acknowledged, pointing to the tab (James, 6
+October 2026; #699). The two type cards stay out of the brief:
 a missing or mixed type is not a fault (James, 9 October 2026).
 """
 
@@ -43,10 +54,37 @@ KIND_NAMES = "names"
 KIND_TYPE = "type"
 KIND_MIXED_TYPES = "mixed_types"
 KIND_SLOW = "slow"
+KIND_BATTERY_OFF = "battery_off"
+KIND_SIGNAL_OFF = "signal_off"
+KIND_NODE_STATUS_OFF = "node_status_off"
+
+# The switched-off cards and the kind of sensor each one turns on
+# (ruling #698).
+SWITCHED_OFF_CARDS = {
+    KIND_LAST_SEEN: "last_seen",
+    KIND_BATTERY_OFF: "battery",
+    KIND_SIGNAL_OFF: "signal",
+    KIND_NODE_STATUS_OFF: "node_status",
+}
+# The cards Simple shows (ruling #695): the ones that stop a missed or
+# false alarm. Confirm Battery Replacement joins them (#701).
+KIND_BATTERY_CONFIRM = "battery_confirm"
+SIMPLE_CARDS = frozenset({
+    KIND_LAST_SEEN, KIND_BATTERY_OFF, KIND_NODE_STATUS_OFF, KIND_NAMES, KIND_SLOW,
+    KIND_BATTERY_CONFIRM,
+})
 
 
 def _count(count: int, one: str, many: str) -> str:
     return f"{count} {one if count == 1 else many}"
+
+
+def _short_day(iso: str) -> str:
+    """A day as the brief writes one: Oct 18."""
+    from datetime import date
+
+    day = date.fromisoformat(iso)
+    return f"{day.strftime('%b')} {day.day}"
 
 
 class DeviceRecommendationsMixin:
@@ -72,6 +110,35 @@ class DeviceRecommendationsMixin:
             return sorted(listed, key=lambda row: (str(row["name"]).casefold(), row["device_id"]))
 
         cards: list[dict[str, Any]] = []
+        # A detected battery replacement waits for a person (ruling #701):
+        # first, because it is a question, and in Simple as well.
+        confirm = [row for row in self.battery_confirm_rows() if row["device_id"] in watched]  # type: ignore[attr-defined]
+        if confirm:
+            by_id = {row["device_id"]: row for row in confirm}
+            listed = rows(list(by_id))
+            for row in listed:
+                row["day"] = by_id[row["device_id"]]["day"]
+                row["words"] = by_id[row["device_id"]]["words"]
+            charged = all(row["words"]["done"] == "charged" for row in listed)
+            cards.append({
+                "kind": KIND_BATTERY_CONFIRM,
+                "title": "Confirm Battery Charge" if charged else "Confirm Battery Replacement",
+                "body": (
+                    f"Device Sentinel detected a new or charged battery in "
+                    f"{_count(len(listed), 'device', 'devices')}. Confirm each one, change the day "
+                    "if it is wrong, or cancel it if the battery was not changed. The days left "
+                    "and the battery charts follow your answer."
+                ),
+                "devices": listed,
+                "brief_words": lambda n, listed=listed: (
+                    "Battery " + ", ".join(
+                        f"{row['words']['done']} on {row['name']}, detected {_short_day(row['day'])}"
+                        for row in listed
+                    ) + ". Confirm "
+                    + ("it" if len(listed) == 1 else "them")
+                    + " on the Recommendations tab."
+                ),
+            })
         power = [d for d in watched if self.power_of(d) is None]  # type: ignore[attr-defined]
         if power:
             cards.append({
@@ -83,27 +150,50 @@ class DeviceRecommendationsMixin:
                     "the battery to buy."
                 ),
                 "devices": rows(power),
-                "brief": (
-                    f"{_count(len(power), 'device has', 'devices have')} no battery or power "
+                "brief_words": lambda n: (
+                    f"{_count(n, 'device has', 'devices have')} no battery or power "
                     "source set. Set them from the Recommendations tab, and a low battery "
                     "warning names the battery to buy."
                 ),
             })
-        last_seen = [d for d in watched if self._switched_off_last_seen(d)]  # type: ignore[attr-defined]
-        if last_seen:
+        # The switched-off cards (ruling #698): a device is listed when
+        # none of its own entities of the kind is on.
+        off = {
+            kind: self.switched_off_devices(sensor)  # type: ignore[attr-defined]
+            for kind, sensor in SWITCHED_OFF_CARDS.items()
+        }
+        switched_off_words = (
+            (KIND_LAST_SEEN, "Last Seen Sensor Switched Off", "a Last Seen sensor",
+             "With it on, Device Sentinel notices the device going quiet sooner."),
+            (KIND_BATTERY_OFF, "Battery Sensor Switched Off", "a battery sensor",
+             "With it on, Device Sentinel warns you when the battery runs low."),
+            (KIND_NODE_STATUS_OFF, "Z-Wave Status Switched Off", "a Z-Wave status sensor",
+             "It is the only place Home Assistant shows that Z-Wave can no longer reach "
+             "a device, so with it on, Device Sentinel reports the device unavailable."),
+            (KIND_SIGNAL_OFF, "Signal Sensor Switched Off", "a signal sensor",
+             "With it on, Device Sentinel charts the device's signal and tells you when "
+             "a signal reading is stuck."),
+        )
+        for kind, title, sensor_words, gain in switched_off_words:
+            ids = [d for d in watched if d in off[kind]]
+            if not ids:
+                continue
+            listed = rows(ids)
+            for row in listed:
+                row["by_user"] = off[kind][row["device_id"]] == "user"
             cards.append({
-                "kind": KIND_LAST_SEEN,
-                "title": "Last Seen Sensor Switched Off",
+                "kind": kind,
+                "title": title,
                 "body": (
-                    f"{_count(len(last_seen), 'device has', 'devices have')} a Last Seen "
-                    "sensor that is switched off. With it on, Device Sentinel notices "
-                    "the device going quiet sooner. Turn each one on here."
+                    f"{_count(len(ids), 'device has', 'devices have')} {sensor_words} "
+                    f"that is switched off. {gain} Turn each one on here."
                 ),
-                "devices": rows(last_seen),
-                "brief": (
-                    f"{_count(len(last_seen), 'device has', 'devices have')} a Last Seen "
-                    "sensor that is switched off. With it on, Device Sentinel notices a "
-                    "device going quiet sooner. Turn them on from the Recommendations tab."
+                "devices": listed,
+                "brief_words": (
+                    lambda n, sensor_words=sensor_words, gain=gain: (
+                        f"{_count(n, 'device has', 'devices have')} {sensor_words} that "
+                        f"is switched off. {gain} Turn them on from the Recommendations tab."
+                    )
                 ),
             })
         no_area = [d for d in watched if area_of(d) is None]
@@ -117,8 +207,8 @@ class DeviceRecommendationsMixin:
                     "so these appear without one. Open a device to assign its area."
                 ),
                 "devices": rows(no_area),
-                "brief": (
-                    f"{_count(len(no_area), 'device has', 'devices have')} no area, so the "
+                "brief_words": lambda n: (
+                    f"{_count(n, 'device has', 'devices have')} no area, so the "
                     "Daily Brief and the Problem List show them without a room. Assign "
                     "them from the Recommendations tab."
                 ),
@@ -139,8 +229,8 @@ class DeviceRecommendationsMixin:
                     "apart. Open a device to rename it."
                 ),
                 "devices": rows(shared),
-                "brief": (
-                    f"{_count(len(shared), 'device shares', 'devices share')} a name with "
+                "brief_words": lambda n: (
+                    f"{_count(n, 'device shares', 'devices share')} a name with "
                     "another, so they cannot be told apart in this brief or in "
                     "notifications. Rename them from the Recommendations tab."
                 ),
@@ -210,7 +300,152 @@ class DeviceRecommendationsMixin:
                 ),
                 "devices": listed_mixed,
             })
+        return self._acknowledged_cards(cards)
+
+    # ------------------------------------------------- acknowledgement
+
+    def _acks(self) -> dict[str, Any]:
+        """The acknowledgements, read from the answers file (#699)."""
+        found = getattr(self, "_recommendation_acks", None)
+        if not isinstance(found, dict):
+            found = {"devices": {}, "lines": {}}
+            self._recommendation_acks = found
+        return found
+
+    def _acknowledged_cards(self, cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Mark each row acknowledged or not, and word each card's brief
+        line for the rows still active (ruling #699).
+
+        A row's tick is the person's own. A switched-off sensor the
+        person switched off themselves starts ticked (Frenck's review,
+        19 October 2026): it is shown, so the person sees Device
+        Sentinel would like it on, and left out of the count and the
+        Brief. This only reads: ticks are forgotten at the midnight run
+        alone (`prune_recommendation_acks`), so the report writer, off
+        Home Assistant's own thread, never changes them (found by
+        review).
+        """
+        kept: dict[str, dict[str, bool]] = self._acks().get("devices") or {}
+        for card in cards:
+            kind = card["kind"]
+            own = kept.get(kind) or {}
+            active = 0
+            for row in card["devices"]:
+                default = bool(row.get("by_user"))
+                # A battery replacement is answered, not ticked (#701).
+                row["acknowledged"] = (
+                    False if kind == KIND_BATTERY_CONFIRM
+                    else bool(own.get(row["device_id"], default))
+                )
+                if not row["acknowledged"]:
+                    active += 1
+            card["active"] = active
+            card["simple"] = kind in SIMPLE_CARDS
+            words = card.pop("brief_words", None)
+            if words is not None:
+                card["brief"] = words(active) if active else None
         return cards
+
+    def recommendation_lines(self) -> list[dict[str, Any]]:
+        """The written recommendations, each marked acknowledged or not
+        (ruling #699). Reads only, as `_acknowledged_cards` does."""
+        entries = self._recommendation_entries()  # type: ignore[attr-defined]
+        kept: dict[str, bool] = self._acks().get("lines") or {}
+        for entry in entries:
+            entry["acknowledged"] = bool(kept.get(entry["key"], False))
+        return entries
+
+    def prune_recommendation_acks(self) -> None:
+        """Forget each tick whose device has left its card or whose
+        line is gone (ruling #699), at the midnight run only.
+
+        One place, on Home Assistant's own thread, at a time every
+        reader has long since been heard: a start is not a midnight, so
+        a line missing for a moment while a reader starts never loses
+        its tick (found by review). The new dictionaries are put in
+        place whole.
+        """
+        acks = self._acks()
+        cards = {card["kind"]: {row["device_id"] for row in card["devices"]}
+                 for card in self.device_recommendations()}
+        old_devices: dict[str, dict[str, bool]] = acks.get("devices") or {}
+        devices = {
+            kind: {d: on for d, on in ticks.items() if d in cards.get(kind, set())}
+            for kind, ticks in old_devices.items()
+        }
+        devices = {kind: ticks for kind, ticks in devices.items() if ticks}
+        present = {entry["key"] for entry in self._recommendation_entries()}  # type: ignore[attr-defined]
+        old_lines: dict[str, bool] = acks.get("lines") or {}
+        lines = {key: on for key, on in old_lines.items() if key in present}
+        if devices != old_devices or lines != old_lines:
+            acks["devices"] = devices
+            acks["lines"] = lines
+            self._answers_save()  # type: ignore[attr-defined]
+
+    def set_recommendation_ack(
+        self, on: bool, *, kind: str | None = None, device_id: str | None = None,
+        line: str | None = None,
+    ) -> None:
+        """Tick or untick one device on one card, or one written line.
+
+        Kept as the person left it, true or false, so a sensor they
+        switched off can be unticked to count again.
+        """
+        acks = self._acks()
+        if line is not None:
+            present = {entry["key"] for entry in self._recommendation_entries()}  # type: ignore[attr-defined]
+            if line not in present:
+                raise ValueError("That recommendation is no longer shown")
+            acks.setdefault("lines", {})[line] = bool(on)
+        else:
+            cards = {card["kind"]: card for card in self.device_recommendations()}
+            card = cards.get(kind or "")
+            if card is None or device_id not in {row["device_id"] for row in card["devices"]}:
+                raise ValueError("That device is no longer on that card")
+            acks.setdefault("devices", {}).setdefault(str(kind), {})[str(device_id)] = bool(on)
+        self._answers_save()  # type: ignore[attr-defined]
+        self._mark_changed()  # type: ignore[attr-defined]
+
+    def _acks_read(self, payload: Any) -> int:
+        """Take the acknowledgements from the answers file; anything not
+        in their shape is dropped and counted (#370's rule)."""
+        dropped = 0
+        devices: dict[str, dict[str, bool]] = {}
+        lines: dict[str, bool] = {}
+        if not isinstance(payload, dict):
+            dropped += payload is not None
+            payload = {}
+        raw_devices = payload.get("devices", {})
+        if isinstance(raw_devices, dict):
+            for kind, ticks in raw_devices.items():
+                if not isinstance(ticks, dict):
+                    dropped += 1
+                    continue
+                for device_id, value in ticks.items():
+                    if isinstance(value, bool):
+                        devices.setdefault(str(kind), {})[str(device_id)] = value
+                    else:
+                        dropped += 1
+        else:
+            dropped += 1
+        raw_lines = payload.get("lines", {})
+        if isinstance(raw_lines, dict):
+            for key, value in raw_lines.items():
+                if isinstance(value, bool):
+                    lines[str(key)] = value
+                else:
+                    dropped += 1
+        else:
+            dropped += 1
+        self._recommendation_acks = {"devices": devices, "lines": lines}
+        return dropped
+
+    def _acks_payload(self) -> dict[str, Any]:
+        acks = self._acks()
+        return {
+            "devices": {kind: dict(ticks) for kind, ticks in acks.get("devices", {}).items() if ticks},
+            "lines": dict(acks.get("lines", {})),
+        }
 
     def _slow_reporter(self, device_id: str) -> bool:
         """Whether a watched device's wait in use is over the slow line (#637).

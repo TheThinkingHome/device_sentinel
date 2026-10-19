@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: repairs.py, Version: 0.26.5 (2026-10-16)
+# File: repairs.py, Version: 0.26.7 (2026-10-19)
 
 """What Device Sentinel asks a person to fix, and the flows that fix it.
 
@@ -37,11 +37,17 @@ storage; `critical` is never used (ruling #295).
 
 An issue is fixable only where a fix flow exists (ruling #296): the
 three storage notices (repaired containers, a repaired record, a
-restored file), disabled entities and a missing notify target have
-one; no delivery and the two clock notices have none, because
-what they ask is the person's own to do. `storage_shape` is no longer
-raised: storage is repaired where the fault is found since #370, and
-the identifier is only cleared, for installs that raised it before.
+restored file) and a missing notify target have one.
+`storage_shape` is no longer raised: storage is repaired where the
+fault is found since #370, and the identifier is only cleared, for
+installs that raised it before.
+
+A card is for what stops Device Sentinel working now, or a repair it
+made (ruling #697). Four cards were retired by it and are cleared at
+every evaluation: disabled entities (switched-off sensors are on the
+Recommendations tab, one device at a time, #698), nothing to send to
+(a recommendation says so), and the two clock notices (told in the
+brief).
 
 Issues are not persistent (ruling #297). They live in memory and are
 re-raised on load if the condition still holds, which makes the
@@ -76,15 +82,12 @@ from .const import (
     CONF_NORMAL_PRIORITY_TARGETS,
     DOMAIN,
     LOGGER,
-    NO_DELIVERY_MIN_DAYS,
     PERSISTENT_TARGET,
     REPAIRS_ALL,
+    REPAIRS_RETIRED,
     REPAIR_DETAIL_MAX,
-    REPAIR_NAMED_PER_KIND,
-    REPAIR_ENTITIES_DISABLED,
     REPAIR_MOMENT_BRIEF,
     REPAIR_MOMENT_GRACE,
-    REPAIR_NO_DELIVERY,
     REPAIR_NOTIFY_TARGET_MISSING,
     REPAIR_STORAGE_SHAPE,
     REPAIR_STORAGE_REPAIRED,
@@ -92,8 +95,6 @@ from .const import (
     WIKI_LINK_NOTIFICATIONS,
     WIKI_LINK_REPAIRS,
     REPAIR_STORAGE_RESTORED,
-    REPAIR_CLOCK_RESET,
-    REPAIR_CLOCKS_RESET,
     STORAGE_KEY,
 )
 
@@ -250,7 +251,7 @@ def async_clear_all(hass: HomeAssistant) -> None:
     anyway; this covers the reload and the uninstall, where there is
     no restart to do it.
     """
-    for issue_id in REPAIRS_ALL:
+    for issue_id in (*REPAIRS_ALL, *REPAIRS_RETIRED):
         _clear(hass, issue_id)
     # The retired three-option card's identifier (ruling #370),
     # cleared so an install upgraded mid-issue leaves nothing lit.
@@ -322,107 +323,6 @@ def _evaluate_storage_repaired(
     )
 
 
-ZWAVE_NEED = (
-    " A Z-Wave device also needs its Z-Wave status sensor, the only place"
-    " Home Assistant shows that Z-Wave can no longer reach it."
-)
-ZWAVE_ENABLE = "; Enable Last Seen also turns on the Z-Wave status sensors"
-
-
-def zwave_placeholders(counts: dict[str, int]) -> dict[str, str]:
-    """The card's Z-Wave sentences (#671), empty unless a Z-Wave status
-    sensor is among the disabled entities."""
-    if counts.get("node_status", 0):
-        return {"zwave_need": ZWAVE_NEED, "zwave_enable": ZWAVE_ENABLE}
-    return {"zwave_need": "", "zwave_enable": ""}
-
-
-def entities_disabled_detail(
-    counts: dict[str, int],
-    devices: dict[str, list[str]] | None,
-    namer: Any,
-) -> str:
-    """Return what is switched off, by kind, naming the devices.
-
-    Shared by the Repairs card and the brief's recommendations, so
-    the two can never word the same condition differently. Ten names
-    per kind in alphabetical order, the rest counted (ruling #456).
-    Kinds part on semicolons, because the names inside each carry
-    commas of their own.
-    """
-    named = []
-    for key, kind in (
-        ("signal", "signal"),
-        ("last_seen", "last seen"),
-        ("battery", "battery"),
-        # A stack's own status for its node, Z-Wave's today (#671).
-        ("node_status", "Z-Wave status"),
-    ):
-        count = counts.get(key, 0)
-        if not count:
-            continue
-        ids = (devices or {}).get(key) or []
-        names = sorted(
-            (namer(device_id) if namer else device_id for device_id in ids),
-            key=str.casefold,
-        )
-        where = _english_list(names, limit=REPAIR_NAMED_PER_KIND)
-        named.append(f"{count} {kind} on {where}" if where else f"{count} {kind}")
-    return "; ".join(named)
-
-
-@callback
-def _evaluate_entities_disabled(
-    hass: HomeAssistant,
-    counts: dict[str, int],
-    entry_id: str,
-    devices: dict[str, list[str]] | None = None,
-    namer: Any = None,
-) -> None:
-    """Raise or clear the disabled-entities issue.
-
-    One issue rather than three, so a fresh install lights the badge
-    once and clears it once. The counts are the enable buttons' own,
-    so a non-zero count is exactly a press that would do something
-    (ruling #237), and both now read watched devices alone, so a
-    device Home Assistant disabled can no longer raise an issue whose
-    fix Home Assistant immediately undoes (ruling #302).
-
-    The fix is a confirmation rather than a form with a checkbox per
-    kind. The form was the plan and was dropped on James's ruling: a
-    person who opens this dialog wants the entities Device Sentinel
-    needs turned on, and asking them to choose which of three kinds
-    they meant is a question with one answer. A person who wants only
-    one kind has three buttons on the device page that do exactly
-    that.
-
-    Each kind names the devices it would change, ten of them in
-    alphabetical order and a count of the rest, because a number says
-    something is off and a name says where (ruling #456, issue #13).
-    """
-    total = sum(counts.values())
-    if not total:
-        _clear(hass, REPAIR_ENTITIES_DISABLED)
-        return
-    _raise(
-        hass,
-        REPAIR_ENTITIES_DISABLED,
-        severity=ir.IssueSeverity.WARNING,
-        is_fixable=True,
-        learn_more_url=WIKI_LINK_REPAIRS,
-        placeholders={
-            "count": str(total),
-            "entities": "entity" if total == 1 else "entities",
-            "detail": entities_disabled_detail(counts, devices, namer),
-            # Said only where a Z-Wave status sensor is off, so a house
-            # with no Z-Wave reads the card as 0.26.4 wrote it (eighth
-            # adversarial round of 16 October 2026).
-            **zwave_placeholders(counts),
-        },
-        data={"entry_id": entry_id},
-    )
-
-
 @callback
 def _evaluate_notify_targets(
     hass: HomeAssistant, missing: list[str], entry_id: str
@@ -460,92 +360,6 @@ def _evaluate_notify_targets(
     )
 
 
-@callback
-def _evaluate_no_delivery(
-    hass: HomeAssistant, configured: bool, days_installed: float | None
-) -> None:
-    """Raise or clear the nothing-configured issue.
-
-    Evaluated at the brief's send alone (ruling #309, which moved it
-    from the fold) and only once the install is old enough (ruling
-    #301's floor, which #309 kept). A person setting the integration
-    up should not be interrupted on their first evening by a badge telling them
-    they have not finished, and the seven days are the same week
-    freeze detection already asks for: by then they have had seven
-    daily briefs they never received, which is the evidence that this
-    is a state they have settled into rather than passed through.
-
-    Never fixable. Choosing where a notification goes is a decision
-    only the person can make, and a Fix button that opened the
-    options screen would be a link wearing a button's clothes.
-    """
-    if configured or days_installed is None:
-        _clear(hass, REPAIR_NO_DELIVERY)
-        return
-    if days_installed < NO_DELIVERY_MIN_DAYS:
-        _clear(hass, REPAIR_NO_DELIVERY)
-        return
-    _raise(
-        hass,
-        REPAIR_NO_DELIVERY,
-        severity=ir.IssueSeverity.WARNING,
-        is_fixable=False,
-        learn_more_url=WIKI_LINK_NOTIFICATIONS,
-        placeholders={"days": str(int(days_installed))},
-    )
-
-
-@callback
-@callback
-def _evaluate_clocks_reset(hass: HomeAssistant, reset_at: str | None) -> None:
-    """Raise or clear the clocks-reset notice (0.22.28).
-
-    A lost clocks file used to leave no mark anywhere a person looks,
-    only a line in the log, while every device's clock started over.
-    The card says so, with the moment, and asks nothing: the clocks
-    are already running again. It is Device Sentinel's own storage
-    failing, which is what Repairs is for (ruling #292). Not
-    persistent (ruling #297), so the next start that loads the file
-    whole clears it.
-    """
-    if reset_at is None:
-        _clear(hass, REPAIR_CLOCKS_RESET)
-        return
-    _raise(
-        hass,
-        REPAIR_CLOCKS_RESET,
-        severity=ir.IssueSeverity.WARNING,
-        is_fixable=False,
-        learn_more_url=WIKI_LINK_REPAIRS,
-        placeholders={"time": reset_at},
-    )
-
-
-def _evaluate_clock_reset(
-    hass: HomeAssistant, reset: tuple[str, str] | None
-) -> None:
-    """Raise or clear the clock-reset notice (ruling #538).
-
-    The system clock moved while Device Sentinel ran, so every device
-    clock was restarted at that moment. A person set the clock or let
-    something set it, so the card says what happened and when, and
-    asks nothing. Not persistent (ruling #297): the next start clears
-    it.
-    """
-    if reset is None:
-        _clear(hass, REPAIR_CLOCK_RESET)
-        return
-    at, shift = reset
-    _raise(
-        hass,
-        REPAIR_CLOCK_RESET,
-        severity=ir.IssueSeverity.WARNING,
-        is_fixable=False,
-        learn_more_url=WIKI_LINK_REPAIRS,
-        placeholders={"time": at, "shift": shift},
-    )
-
-
 def async_evaluate(
     hass: HomeAssistant,
     entry: Any,
@@ -553,13 +367,6 @@ def async_evaluate(
     *,
     repair_notice: dict[str, str] | None,
     container_notice: dict[str, str] | None,
-    awaiting: dict[str, int],
-    awaiting_devices: dict[str, list[str]] | None = None,
-    days_installed: float | None,
-    version_changed: bool,
-    namer: Any,
-    clocks_reset: str | None = None,
-    clock_reset: tuple[str, str] | None = None,
 ) -> None:
     """Reconcile every issue against the conditions as they stand now.
 
@@ -567,50 +374,26 @@ def async_evaluate(
     issue can never be left open by a path that forgot to clear it.
     The caller supplies the readings rather than this module reaching
     back into the coordinator for them, which keeps the rules here and
-    the measurements where they are taken.
-
-    Two of the checks are narrower than the two moments (ruling #303).
-    Disabled entities are judged when the brief is sent, and
-    also on the first start after Device Sentinel's own
-    version changed, because that is when an integration update
-    re-ships its diagnostics turned off and it is the only way the
-    state arrives. Judging it at every grace close meant a person who
-    restarted seven times in a day met the same badge seven times
-    over a condition that had not moved. Nothing configured is the
-    brief moment alone (ruling #309, which moved #301's fold moment).
-
-    Both were the fold's until ruling #309 moved them. A card raised
-    at midnight is read by nobody, and an install that reboots
-    nightly after midnight closes its grace and clears the card
-    before morning, so the condition was judged at the hour least
-    likely to reach a person. The brief hour is the hour a person
-    looks, and the two arrive together.
+    the measurements where they are taken. The moment is kept for the
+    log, which says when each pass ran.
     """
     _evaluate_storage_repaired(hass, repair_notice, entry.entry_id)
     _evaluate_containers_repaired(hass, container_notice, entry.entry_id)
-    _evaluate_clocks_reset(hass, clocks_reset)
-    _evaluate_clock_reset(hass, clock_reset)
     # The identifier the retired three-option card used. Cleared
     # unconditionally so an install upgraded mid-issue does not
     # carry a card whose flow no longer exists (ruling #370).
     _clear(hass, REPAIR_STORAGE_SHAPE)
+    # The four cards ruling #697 retired, cleared for an install that
+    # holds one from before 0.26.7.
+    for issue_id in REPAIRS_RETIRED:
+        _clear(hass, issue_id)
     _evaluate_notify_targets(
         hass, missing_targets(hass, entry), entry.entry_id
     )
-    if moment == REPAIR_MOMENT_BRIEF or version_changed:
-        _evaluate_entities_disabled(
-            hass, awaiting, entry.entry_id, awaiting_devices, namer
-        )
-    if moment == REPAIR_MOMENT_BRIEF:
-        _evaluate_no_delivery(
-            hass, delivery_is_configured(entry), days_installed
-        )
     LOGGER.debug(
-        "Repairs evaluated at %s: repair notice %s, %d entity/entities "
-        "awaiting enable",
+        "Repairs evaluated at %s: repair notice %s",
         moment,
         "standing" if (repair_notice or container_notice) else "none",
-        sum(awaiting.values()),
     )
 
 
@@ -655,48 +438,6 @@ class _SentinelRepairFlow(RepairsFlow):
         again.
         """
         ir.async_ignore_issue(self.hass, DOMAIN, self.issue_id, True)
-        return self.async_create_entry(data={})
-
-
-class EnableEntitiesFlow(_SentinelRepairFlow):
-    """Turn on the entities the three enable buttons would turn on."""
-
-    async def async_step_init(
-        self, user_input: dict[str, str] | None = None
-    ) -> Any:
-        """Offer the fix and the ignore side by side (ruling #325)."""
-        return self.async_show_menu(
-            step_id="init",
-            menu_options=["confirm", "ignore"],
-            description_placeholders=self._placeholders(),
-        )
-
-    async def async_step_confirm(
-        self, user_input: dict[str, str] | None = None
-    ) -> Any:
-        """Enable the entities, then let the next pass clear the issue.
-
-        The issue is deleted here as well as at the next evaluation.
-        Waiting for the fold would leave a badge lit over a condition
-        the person has just cleared, and re-checking rather than
-        assuming would still find the registry mid-update.
-        """
-        if user_input is None:
-            return self.async_show_form(
-                step_id="confirm",
-                data_schema=vol.Schema({}),
-                description_placeholders=self._placeholders(),
-            )
-        entry = self.hass.config_entries.async_get_entry(self._entry_id)
-        if entry is not None and entry.state.recoverable:
-            coordinator = entry.runtime_data
-            for action in (
-                coordinator.async_enable_signal_entities,
-                coordinator.async_enable_last_seen_entities,
-                coordinator.async_enable_battery_entities,
-            ):
-                await action()
-        _clear(self.hass, REPAIR_ENTITIES_DISABLED)
         return self.async_create_entry(data={})
 
 
@@ -772,8 +513,10 @@ async def async_create_fix_flow(
     """
     payload = data or {}
     entry_id = str(payload.get("entry_id") or "")
-    if issue_id == REPAIR_ENTITIES_DISABLED:
-        return EnableEntitiesFlow(entry_id)
+    if issue_id in REPAIRS_RETIRED:
+        # A card retired by #697 that an install still showed when
+        # Fix was pressed: nothing is left to fix, so it closes.
+        return ConfirmRepairFlow()
     if issue_id == REPAIR_NOTIFY_TARGET_MISSING:
         return RemoveDeadTargetsFlow(entry_id)
     if issue_id == REPAIR_CONTAINERS_REPAIRED:

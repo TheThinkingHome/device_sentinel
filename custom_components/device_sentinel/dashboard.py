@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.26.6 (2026-10-17)
+# File: dashboard.py, Version: 0.26.7 (2026-10-19)
 
 """What the dashboard reads from the coordinator.
 
@@ -34,6 +34,7 @@ from datetime import date, timedelta
 
 from .daily_dates import FAMILY_GAP, FAMILY_SIGNAL, dates_for, on_calendar
 from .device_addresses import addresses, shown
+from .battery_projection import battery_projection
 from .report_battery import (
     battery_calendar,
     battery_month_drop,
@@ -42,6 +43,9 @@ from .report_battery import (
 )
 from . import stacks
 from .const import (
+    CONF_DASHBOARD_MODE,
+    DASHBOARD_MODES,
+    DEFAULT_DASHBOARD_MODE,
     SET_ASIDE_NO_ENTITIES,
     SET_ASIDE_NOTICES_ONLY,
     STANDING_NOTICES_ONLY,
@@ -287,7 +291,15 @@ class DashboardMixin:
                 "default_minutes": self.maintenance_minutes,
             },
             "marker": self._change_marker,
+            # The dashboard a window opens in (ruling #693).
+            "dashboard": self.dashboard_mode,
         }
+
+    @property
+    def dashboard_mode(self) -> str:
+        """Simple or Advanced, as the Advanced settings screen holds it."""
+        mode = self.entry.options.get(CONF_DASHBOARD_MODE, DEFAULT_DASHBOARD_MODE)
+        return mode if mode in DASHBOARD_MODES else DEFAULT_DASHBOARD_MODE
 
 
 # A bridge's outage belongs to the integration that carries it.
@@ -1124,6 +1136,8 @@ class DeviceViewMixin:
                 # the sensor reads, "off" when it is switched off, or
                 # None for a device without one.
                 "node_status": self._node_status_view(device_id),
+                # Battery Last Replaced (ruling #701): None on mains.
+                "battery_replaced": self.battery_replacement_view(device_id),  # type: ignore[attr-defined]
                 "watched": device_id in self._watched,
                 "set_aside": (self._set_aside.get(device_id) or (None, None, ""))[2],
                 "muted": self.mute_text(device_id),
@@ -1266,14 +1280,27 @@ class DeviceViewMixin:
         )
         falling = bool(trend["reading"] and trend["pace"])
         days = current / (trend["pace"] / BATTERY_WEEK_DAYS) if falling else None
+        # The range a falling cell runs empty in (ruling #704); the near
+        # end decides Days Till Empty, as on the Problem List.
+        knee = trend["fit"] or {}
+        projection = (
+            battery_projection(series, current, knee.get("knee_ago") if knee.get("knee") else None)
+            if falling else None
+        )
+        far = days
+        if projection is not None:
+            days, far = projection["near"], projection["far"]
         page.update({
             "weeks": trend["weeks"],
             "reading": trend["reading"],
             "fit": trend["fit"] if falling else None,
             "sentence": battery_sentence(trend, dt_util.now().date() - timedelta(days=1)),
             "falling": falling,
-            "left": self.battery_time_left(days) if days is not None else None,
+            "left": self.battery_time_left_range(days, far) if days is not None else None,
             "left_soon": days is not None and days <= self._battery_days(),
+            # What the chart with its future draws (rulings #703, #705).
+            "projection": projection,
+            "days_setting": self._battery_days(),
         })
         return page
 
@@ -1702,7 +1729,7 @@ class TrendsViewMixin:
                         "weeks": row.get("weeks") or [],
                         "reading": row.get("reading"),
                         "pace": -row["slope"] * BATTERY_WEEK_DAYS,
-                        "left": self.battery_time_left(row["days"]),
+                        "left": self.battery_time_left_range(row["days"], row.get("days_far")),
                         "left_soon": row["days"] <= self._battery_days(),
                     })
                 else:

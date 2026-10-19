@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: store.py, Version: 0.26.2 (2026-10-14)
+# File: store.py, Version: 0.26.7 (2026-10-19)
 
 """Storage: the two files, the merge, and the unclean restart.
 
@@ -142,6 +142,7 @@ class StorageMixin:
     _started_at: float | None
     _pending_unclean: int | None
     _clocks_reset_at: float | None
+    _clocks_reset_count: int
     # The history file's bookkeeping (0.26.2), set by the coordinator.
     _history_digest: str | None
     _history_generation: int | None
@@ -1127,6 +1128,7 @@ class StorageMixin:
             record[DEV_TAINTED] = False
             restarted += 1
         self._clocks_reset_at = now
+        self._clocks_reset_count = restarted
         return restarted
 
     @staticmethod

@@ -1,0 +1,278 @@
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: custom_components/device_sentinel/battery_projection.py, Version: 0.26.7 (2026-10-19)
+
+"""When a falling cell runs empty, as a range (ruling #704).
+
+Until 0.26.7 a falling cell's time left was its level over its pace:
+one straight line, one number. A coin cell's fall speeds up near the
+end, and a straight line through a curve misses it by months. Door 2nd
+Bedroom on the reference rig read about 91 days on 19 October 2026
+while its fall had been bending down since late September; the curve
+said about a month.
+
+The projection, for a cell Device Sentinel already calls falling or
+accelerating (#502, #503):
+
+- The last six weeks of heard days are fitted twice, with a straight
+  line and with a curve (a second-order fit). The curve is used only
+  when it fits clearly better, by the same test the accelerating rule
+  uses for its knee (an F of 10 or more), only when it bends downward,
+  a fall that is speeding up, and only for a cell at or under 50
+  percent (#708). Otherwise the straight line.
+- The range comes from the cell's own data, not a fixed allowance.
+  Each day's miss from the fit is kept, the misses are reshuffled a
+  week at a time, so a run of low readings stays a run, and the fit is
+  made again on each of 200 reshuffled histories. Each is projected
+  from today's reading to empty. The near and far ends are the 10th
+  and 90th percentiles of those days. The reshuffle is seeded from the
+  history, so the same history always gives the same range.
+- Worked out once for each history and reading, and kept, as the knee
+  is (0.23.19), so the minute check does not pay for it.
+
+The near end decides Days Till Empty, for the chart and for the
+falling forecast on the Problem List (#704).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import math
+import random
+from typing import Any
+
+from .const import (
+    BATTERY_KNEE_MIN_DAYS,
+    BATTERY_KNEE_MIN_F,
+    BATTERY_KNEE_WINDOW_DAYS,
+    BATTERY_WEEK_DAYS,
+)
+from .records import SERIES_MEMO_SIZE
+
+# How many reshuffled histories make the range, and which of their
+# answers are its ends.
+PROJECTION_RESAMPLES = 200
+PROJECTION_NEAR = 0.10
+PROJECTION_FAR = 0.90
+# Days further than this are said as "over a year" and drawn no
+# further: past it the arithmetic is guesswork (#197).
+PROJECTION_LONGEST = 3 * 365
+# The curve is used only for a cell at or under this level (ruling
+# #708). Above it a fall that bends at today's rate all the way down
+# reads months too short: on the replay of 19 October 2026, cells near
+# 90 percent read about two months against five to seven on the
+# straight pace.
+PROJECTION_CURVE_LEVEL = 50.0
+# Days after a knee needed before the straight fit reads only them.
+PROJECTION_KNEE_MIN_DAYS = 7
+
+_MEMO: dict[tuple[Any, ...], dict[str, Any] | None] = {}
+
+
+def _solve(columns: list[list[float]], y: list[float]) -> list[float] | None:
+    """Least squares for two or three columns, by the normal equations."""
+    size = len(columns)
+    gram = [[sum(a * b for a, b in zip(columns[i], columns[j], strict=True)) for j in range(size)] for i in range(size)]
+    right = [sum(a * b for a, b in zip(columns[i], y, strict=True)) for i in range(size)]
+    # Gaussian elimination with partial pivoting.
+    rows = [gram[i] + [right[i]] for i in range(size)]
+    for col in range(size):
+        pivot = max(range(col, size), key=lambda r: abs(rows[r][col]))
+        if abs(rows[pivot][col]) < 1e-12:
+            return None
+        rows[col], rows[pivot] = rows[pivot], rows[col]
+        for r in range(size):
+            if r != col:
+                factor = rows[r][col] / rows[col][col]
+                rows[r] = [a - factor * b for a, b in zip(rows[r], rows[col], strict=True)]
+    return [rows[i][size] / rows[i][i] for i in range(size)]
+
+
+def _fit(t: list[float], y: list[float], curved: bool) -> list[float] | None:
+    """[a, b, c] of a + b t + c t², c zero for a straight line."""
+    ones = [1.0] * len(t)
+    if curved:
+        found = _solve([ones, t, [v * v for v in t]], y)
+        return found
+    found = _solve([ones, t], y)
+    return None if found is None else [found[0], found[1], 0.0]
+
+
+def _value(p: list[float], t: float) -> float:
+    return p[0] + p[1] * t + p[2] * t * t
+
+
+def _sse(p: list[float], t: list[float], y: list[float]) -> float:
+    return sum((_value(p, a) - b) ** 2 for a, b in zip(t, y, strict=True))
+
+
+def days_to_empty(level: float, slope: float, curve: float) -> float | None:
+    """Days until level + slope d + curve d² reaches zero, or None if a
+    path that stops falling never does."""
+    if level <= 0:
+        return 0.0
+    if abs(curve) < 1e-12:
+        return level / -slope if slope < 0 else None
+    # curve d² + slope d + level = 0, the first root after today.
+    disc = slope * slope - 4.0 * curve * level
+    if disc < 0:
+        return None
+    root = math.sqrt(disc)
+    found = [d for d in ((-slope - root) / (2 * curve), (-slope + root) / (2 * curve)) if d > 0]
+    return min(found) if found else None
+
+
+def battery_projection(
+    series: list[Any], level: float, since: int | None = None
+) -> dict[str, Any] | None:
+    """The range of days until a falling cell is empty.
+
+    series is the battery history one slot a day ending yesterday,
+    None for a day the device was not heard (#561). Returns None when
+    fewer days were heard than the knee needs, or when no path empties.
+    The caller has already judged the cell falling. since is the days
+    since the accelerating rule's knee, when it found one: a straight
+    fit then reads only the days after it, the pace the knee reads
+    (#708), so a cell above half keeps the pace it was given before
+    0.26.7.
+    """
+    key = (tuple(series[-BATTERY_KNEE_WINDOW_DAYS:]), round(float(level), 2), since)
+    if key in _MEMO:
+        found = _MEMO[key]
+        return dict(found) if found is not None else None
+    found = _project(series, float(level), since)
+    _MEMO[key] = found
+    while len(_MEMO) > SERIES_MEMO_SIZE:
+        _MEMO.pop(next(iter(_MEMO)))
+    return dict(found) if found is not None else None
+
+
+def _project(series: list[Any], level: float, since: int | None = None) -> dict[str, Any] | None:
+    window = series[-BATTERY_KNEE_WINDOW_DAYS:]
+    span = len(window)
+    pairs = [
+        (float(i), float(v)) for i, v in enumerate(window)
+        if isinstance(v, (int, float)) and not isinstance(v, bool)
+    ]
+    if len(pairs) < BATTERY_KNEE_MIN_DAYS:
+        return None
+    t = [p[0] for p in pairs]
+    y = [p[1] for p in pairs]
+    n = len(pairs)
+    line = _fit(t, y, False)
+    bend = _fit(t, y, True)
+    if line is None:
+        return None
+    curved = False
+    if bend is not None and bend[2] < 0 and level <= PROJECTION_CURVE_LEVEL:
+        sse1, sse2 = _sse(line, t, y), _sse(bend, t, y)
+        f_value = (sse1 - sse2) / (sse2 / (n - 3)) if sse2 > 1e-9 else math.inf
+        curved = f_value >= BATTERY_KNEE_MIN_F
+    if not curved and isinstance(since, int) and since > 0:
+        # The straight pace after the knee (#708): the days since it,
+        # when enough were heard to fit.
+        after = [(a, b) for a, b in pairs if a >= span - 1 - since]
+        if len(after) >= PROJECTION_KNEE_MIN_DAYS:
+            pairs = after
+            t = [p[0] for p in pairs]
+            y = [p[1] for p in pairs]
+            n = len(pairs)
+            refit = _fit(t, y, False)
+            if refit is not None:
+                line = refit
+    model = bend if curved and bend is not None else line
+    # Today is the slot after the newest, yesterday.
+    today = float(span)
+
+    def path(p: list[float]) -> tuple[float, float]:
+        return p[1] + 2.0 * p[2] * today, p[2]
+
+    slope, curve = path(model)
+    centre = days_to_empty(level, slope, curve)
+    # Each day's miss, reshuffled a week at a time: a run of low days
+    # stays together, so the range carries the cell's own swings.
+    misses = [b - _value(model, a) for a, b in zip(t, y, strict=True)]
+    weeks = [misses[i:i + int(BATTERY_WEEK_DAYS)] for i in range(0, n, int(BATTERY_WEEK_DAYS))]
+    seed = int.from_bytes(hashlib.sha256(repr(tuple(y)).encode()).digest()[:8], "big")
+    draw = random.Random(seed)  # noqa: S311  # nosec B311 - a repeatable reshuffle, not security
+    answers: list[tuple[float, float, float]] = []
+    for _ in range(PROJECTION_RESAMPLES):
+        shuffled: list[float] = []
+        while len(shuffled) < n:
+            shuffled.extend(draw.choice(weeks))
+        y_star = [_value(model, a) + e for a, e in zip(t, shuffled[:n], strict=True)]
+        refit = _fit(t, y_star, curved)
+        if refit is None:
+            continue
+        s_star, c_star = path(refit)
+        days = days_to_empty(level, s_star, c_star)
+        answers.append((math.inf if days is None else days, s_star, c_star))
+    finite = [a for a in answers if math.isfinite(a[0])]
+    if not finite or centre is None:
+        return None
+    answers.sort(key=lambda a: a[0])
+    near = answers[int(PROJECTION_NEAR * (len(answers) - 1))]
+    far = answers[int(PROJECTION_FAR * (len(answers) - 1))]
+    if not math.isfinite(near[0]):
+        return None
+    far_days = far[0] if math.isfinite(far[0]) else None
+    return {
+        "curved": curved,
+        "level": level,
+        "near": round(min(near[0], PROJECTION_LONGEST), 1),
+        "far": round(min(far_days, PROJECTION_LONGEST), 1) if far_days is not None else None,
+        "centre": round(min(centre, PROJECTION_LONGEST), 1),
+        # Each end's path from today, level + slope d + curve d², so the
+        # chart draws what was fitted rather than fitting again.
+        "near_path": [round(near[1], 5), round(near[2], 7)],
+        "far_path": [round(far[1], 5), round(far[2], 7)] if far_days is not None else None,
+    }
+
+
+def time_left_range(near: float, far: float | None) -> str:
+    """The range in words, as #197 says time left (ruling #704).
+
+    "under a week", "about 4 to 5 weeks", "about 2 to 3 months",
+    "about 3 weeks to 2 months", "about 8 months to over a year",
+    "over a year". Each end is said in its own unit, so a near end
+    inside Days Till Empty never reads as months (found by review); an
+    end that never empties reads as over a year.
+    """
+    near = max(0.0, near)
+    far_days = PROJECTION_LONGEST + 1 if far is None else max(far, near)
+    if far_days < BATTERY_WEEK_DAYS:
+        return "under a week"
+    if near > 365:
+        return "over a year"
+    month = 30.4
+
+    def unit(days: float) -> tuple[int, str]:
+        if days <= 10 * BATTERY_WEEK_DAYS:
+            return max(1, round(days / BATTERY_WEEK_DAYS)), "weeks"
+        return max(1, round(days / month)), "months"
+
+    def said(count: int, name: str) -> str:
+        return f"{count} {name}" if count != 1 else f"1 {name[:-1]}"
+
+    low, low_unit = unit(near)
+    low_words = "under a week" if near < BATTERY_WEEK_DAYS else None
+    if far_days > 365:
+        start = low_words or f"about {said(low, low_unit)}"
+        return f"{start} to over a year"
+    high, high_unit = unit(far_days)
+    if low_words:
+        if high_unit == "weeks" and high <= 1:
+            return "about 1 week"
+        return f"under a week to about {said(high, high_unit)}"
+    if low_unit != high_unit and high * month <= low * BATTERY_WEEK_DAYS:
+        # Months that round below the near end in weeks would read
+        # backwards ("9 weeks to 2 months"): both ends in weeks then
+        # (found by review).
+        high, high_unit = max(low, round(far_days / BATTERY_WEEK_DAYS)), low_unit
+    if low_unit == high_unit:
+        high = max(low, high)
+        return f"about {said(low, low_unit)}" if low == high else f"about {low} to {high} {low_unit}"
+    return f"about {said(low, low_unit)} to {said(high, high_unit)}"

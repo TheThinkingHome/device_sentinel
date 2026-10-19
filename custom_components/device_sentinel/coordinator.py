@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.26.6 (2026-10-18)
+# File: coordinator.py, Version: 0.26.7 (2026-10-19)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -55,7 +55,6 @@ import math
 import threading
 import time
 from collections import Counter, deque
-from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Any
 
@@ -129,6 +128,7 @@ from .power_source import PowerMixin
 from .device_type import TypeMixin
 from .answers_store import AnswersMixin
 from .device_recommendations import DeviceRecommendationsMixin
+from .battery_replacement import BatteryReplacementMixin
 from .history_file import fold_line
 from .const import (
     ACTIVE_REPORT_SECONDS,
@@ -275,6 +275,7 @@ from .const import (
     SYS_RESTART,
     SYS_TRIMMED,
     SYS_UNCLEAN_RESTART,
+    SYS_CLOCKS_LOST,
     TAINT_UNAVAILABLE,
     TAINT_UNKNOWN,
     TODO_ACKED_AT,
@@ -370,6 +371,7 @@ class DeviceSentinelCoordinator(
     TypeMixin,
     AnswersMixin,
     DeviceRecommendationsMixin,
+    BatteryReplacementMixin,
     EventMixin,
     ReportWritingMixin,
     NarrativeMixin,
@@ -900,8 +902,9 @@ class DeviceSentinelCoordinator(
         # found, kept for the diagnostics rather than acted on.
         self._pending_unclean = None
         # When this start restarted the clocks of a lost clocks file,
-        # for the Repair card raised when the grace closes (0.22.28).
+        # and how many, for the brief's row written at setup (#697).
         self._clocks_reset_at: float | None = None
+        self._clocks_reset_count = 0
         # The last minute check's wall clock and a clock nobody can
         # set, and the reset the two last disagreed on (ruling #538).
         self._tick_wall: float | None = None
@@ -1797,6 +1800,10 @@ class DeviceSentinelCoordinator(
         # start, so the exclusion is in force for this session rather
         # than only the next one.
         await self._sight_router_integrations()
+        # Battery Last Replaced entries are stored before a catch-up fold
+        # can detect a new cell over a replacement not yet stored (found
+        # by review).
+        self._settle_battery_entries()
         await self._fold_if_a_midnight_was_missed()
 
         self._unsubs.append(
@@ -1960,6 +1967,16 @@ class DeviceSentinelCoordinator(
                 when=self._started_at,
             )
             self._pending_unclean = None
+        if self._clocks_reset_at is not None:
+            # A lost or damaged clocks file (0.22.28) is told in the
+            # brief rather than on a Repairs card since #697, so the
+            # repair is never silent (#342).
+            self._record_system_event(
+                SYS_CLOCKS_LOST,
+                detail=f"{self._clocks_reset_count} clocks restarted",
+                when=self._clocks_reset_at,
+            )
+            self._clocks_reset_at = None
         if self._pending_epoch_wipe is not None:
             self._record_system_event(
                 SYS_EPOCH_RESET,
@@ -1993,6 +2010,10 @@ class DeviceSentinelCoordinator(
             len(self._set_aside),
             self.deviceless_count,
         )
+        # A replacement no Battery Last Replaced entry carries yet, from
+        # before 0.26.7 or from 0.26.6 after a downgrade, is dated once
+        # and stored (#701).
+        self._settle_battery_entries()
         await self._write_reports_guarded("setup")
 
 
@@ -4777,46 +4798,15 @@ class DeviceSentinelCoordinator(
         the grace (ruling #291), which is why the load-time shape
         check stores its result rather than raising from where it
         runs, and why this is the first chance a fault found at load
-        has to reach a person.
-
-        Every reading is taken here and handed over, so repairs.py
-        holds the rules and the coordinator holds the measurements.
-        The registry walk behind the awaiting counts is the expensive
-        part, and running it twice a day rather than on a tick is the
-        reason there is no tick.
+        has to reach a person. Since #697 only what stops Device
+        Sentinel working, or reports a repair it made, is a card.
         """
-        days_installed: float | None = None
-        first = self.first_installed
-        if first:
-            try:
-                installed = dt_util.parse_datetime(first)
-            except (TypeError, ValueError):
-                installed = None
-            if installed is not None:
-                days_installed = (
-                    dt_util.utcnow() - installed
-                ).total_seconds() / 86400.0
         async_evaluate(
             self.hass,
             self.entry,
             moment,
             repair_notice=self._repair_notice,
             container_notice=self._container_notice,
-            awaiting=self.awaiting_enable_counts(),
-            awaiting_devices=self.awaiting_enable_devices(),
-            days_installed=days_installed,
-            version_changed=self._version_changed,
-            namer=self._device_name,
-            clocks_reset=(
-                self._clock(self._clocks_reset_at)
-                if self._clocks_reset_at is not None
-                else None
-            ),
-            clock_reset=(
-                (self._clock(self._clock_reset[0]), _shift(self._clock_reset[1]))
-                if self._clock_reset is not None
-                else None
-            ),
         )
 
     def _integration_finished_loading(self, domain: str | None) -> bool:
@@ -5278,6 +5268,13 @@ class DeviceSentinelCoordinator(
             pushed,
             len(self.data[DATA_DEVICES]),
         )
+        # Ticks whose device left its card or whose line is gone are
+        # forgotten here and only here (ruling #699): at a real
+        # midnight, never at the catch-up fold a start runs, when the
+        # readers have not all been heard yet.
+        self._settle_battery_entries()
+        if _now is not None:
+            self.prune_recommendation_acks()
         await self._write_reports_guarded()
 
 
@@ -5880,6 +5877,12 @@ class DeviceSentinelCoordinator(
         # the clock entry with it and the next save writes a clock
         # file that no longer names the device.
         removed = trim.trim_devices(self.data, targets)
+        # A trimmed device's Battery Last Replaced entry goes with its
+        # history (found by review): a fresh record starts with none.
+        answers = self._battery_answers()
+        dropped = [device_id for device_id in targets if answers.pop(device_id, None) is not None]
+        if dropped:
+            self._answers_save()
         trim.log_result(stamp, removed, names)
         self._record_system_event(
             SYS_TRIMMED,
@@ -6028,77 +6031,6 @@ class DeviceSentinelCoordinator(
         rows.sort(key=lambda row: row["name"].lower())
         return rows
 
-    def _enable_matching_entities(
-        self,
-        matches: Callable[[er.RegistryEntry], bool],
-        kind: str,
-        device_id: str | None = None,
-    ) -> dict[str, int]:
-        """Enable every disabled entity a matcher recognizes.
-
-        On a watched device, whoever disabled the entity (ruling
-        #302). A person pressing Enable Battery is asking for the
-        battery entities to come on: declining part of the job
-        because they turned one off themselves reads as the tool
-        second-guessing them, and they would then have to go and do
-        by hand exactly what they just asked for. A muted device
-        is watched and still learns, so it is reached like any other;
-        muting suppresses judgment and reporting, never learning.
-
-        A set-aside device is not reached, which corrects the third
-        consequence of #257. Its entities cannot be usefully turned
-        on: Home Assistant re-disables the entities of a disabled
-        device at the next registry write, so the sweep enabled them,
-        the registry put them back, and the count never reached zero.
-        An excluded integration is set aside too, and a person who
-        asked for a phone never to be watched is not waiting for its
-        battery sensor to be switched on. Home Assistant reloads the
-        owning config entries a short delay after.
-
-        Split by kind (signals, last_seen, battery) so a user can
-        enable exactly the diagnostic they want without turning on the
-        others. Each kind is its own button, its own press.
-        """
-        ent_reg = er.async_get(self.hass)
-        enabled = 0
-        enabled_ids: list[str] = []
-        by_hand = 0
-        for ent in list(ent_reg.entities.values()):
-            if ent.device_id not in self._watched:
-                continue
-            # One device's, from its page (0.24.5); every device's
-            # from the house-wide button.
-            if device_id is not None and ent.device_id != device_id:
-                continue
-            if not matches(ent):
-                continue
-            if ent.disabled_by is None:
-                continue
-            if ent.disabled_by is er.RegistryEntryDisabler.USER:
-                # Counted as well as enabled, because a sweep that
-                # reverses a person's own choice should say how often
-                # it did so.
-                by_hand += 1
-            ent_reg.async_update_entity(ent.entity_id, disabled_by=None)
-            enabled += 1
-            enabled_ids.append(ent.entity_id)
-        LOGGER.info(
-            "Enable %s: enabled %d entities, %d of them disabled by "
-            "hand. Home Assistant reloads the owning integrations "
-            "shortly",
-            kind,
-            enabled,
-            by_hand,
-        )
-        if enabled_ids:
-            # Named, so a person who wonders where a count on the
-            # Status sensor came from (ruling #237 keeps the attribute a
-            # bare number) finds the answer where the press left it.
-            LOGGER.info(
-                "Enable %s turned on: %s", kind, ", ".join(enabled_ids)
-            )
-        return {"enabled": enabled, "by_hand": by_hand}
-
     @callback
     def _in_startup_grace(self) -> bool:
         """Is the integration still inside its startup grace?
@@ -6177,10 +6109,6 @@ class DeviceSentinelCoordinator(
                 ", ".join(sorted(refused)),
             )
 
-    async def async_enable_signal_entities(self) -> dict[str, int]:
-        """Enable every disabled signal-strength entity (ruling #257)."""
-        return self._enable_matching_entities(self._is_signal, "signals")
-
     async def async_regenerate_reports(self) -> dict[str, int]:
         """Judge every device now, then rewrite every report.
 
@@ -6197,96 +6125,6 @@ class DeviceSentinelCoordinator(
     def _is_node_status_entry(self, ent: er.RegistryEntry) -> bool:
         """Whether this is a watched device's node status sensor (#670)."""
         return is_node_status(self._watched.get(ent.device_id or ""), ent)
-
-    def _is_liveness(self, ent: er.RegistryEntry) -> bool:
-        """A Last Seen entity or a node status sensor (ruling #671).
-
-        Both say whether a device is alive, so Enable Last Seen turns on
-        both, on the house-wide button, the Repairs card and a device's
-        own page.
-        """
-        return self._is_last_seen(ent) or self._is_node_status_entry(ent)
-
-    async def async_enable_last_seen_entities(self) -> dict[str, int]:
-        """Enable every disabled last_seen entity (ruling #257), and with
-        them every node status sensor (ruling #671)."""
-        return self._enable_matching_entities(
-            self._is_liveness, "last_seen"
-        )
-
-    async def async_enable_battery_entities(self) -> dict[str, int]:
-        """Enable every disabled battery-percentage entity (ruling #257).
-
-        Percentage batteries only (the sensor, not the binary low
-        flag): the percentage is what the discharge series records,
-        and the low flag is caught by the battery threshold whether
-        or not this entity is on.
-        """
-        return self._enable_matching_entities(
-            self._is_battery_percentage, "battery"
-        )
-
-    def awaiting_enable_counts(self) -> dict[str, int]:
-        """Return how many entities each enable button would turn on.
-
-        One registry pass, three counters (ruling #237). The filter is
-        the buttons' own, so a non-zero count is exactly a press that
-        would do something and zero means the button can hide. On a
-        watched device every disabled entity is counted, whoever
-        disabled it, because the buttons enable every one of them; a
-        set-aside device is counted by neither (ruling #302).
-        """
-        ent_reg = er.async_get(self.hass)
-        signal = last_seen = battery = node_status = 0
-        for ent in list(ent_reg.entities.values()):
-            if ent.device_id not in self._watched:
-                continue
-            if ent.disabled_by is None:
-                continue
-            if self._is_signal(ent):
-                signal += 1
-            if self._is_last_seen(ent):
-                last_seen += 1
-            elif self._is_node_status_entry(ent):
-                # Counted apart so the card can name it, and turned on
-                # by Enable Last Seen (ruling #671).
-                node_status += 1
-            if self._is_battery_percentage(ent):
-                battery += 1
-        return {
-            "signal": signal,
-            "last_seen": last_seen,
-            "battery": battery,
-            "node_status": node_status,
-        }
-
-    def awaiting_enable_devices(self) -> dict[str, list[str]]:
-        """Return, for each enable button, the devices it would change.
-
-        The same filter as the counts beside it, so the names and the
-        numbers can never disagree about which devices are meant. A
-        device with two disabled entities of one kind is listed once:
-        a person fixes a device, not an entity (ruling #456).
-        """
-        ent_reg = er.async_get(self.hass)
-        found: dict[str, set[str]] = {
-            "signal": set(), "last_seen": set(), "battery": set(),
-            "node_status": set(),
-        }
-        for ent in list(ent_reg.entities.values()):
-            if ent.device_id not in self._watched:
-                continue
-            if ent.disabled_by is None:
-                continue
-            if self._is_signal(ent):
-                found["signal"].add(ent.device_id)
-            if self._is_last_seen(ent):
-                found["last_seen"].add(ent.device_id)
-            elif self._is_node_status_entry(ent):
-                found["node_status"].add(ent.device_id)
-            if self._is_battery_percentage(ent):
-                found["battery"].add(ent.device_id)
-        return {kind: sorted(ids) for kind, ids in found.items()}
 
     # ----------------------------------------------- maintenance mode
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.26.6 (2026-10-18)
+# File: config_flow.py, Version: 0.26.7 (2026-10-19)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -86,6 +86,10 @@ from .const import (
     CONF_BATTERY_MUTED_LABELS,
     CONF_BRIEF_TARGETS,
     CONF_COALESCE_MINUTES,
+    CONF_DASHBOARD_MODE,
+    DASHBOARD_ADVANCED,
+    DASHBOARD_SIMPLE,
+    DEFAULT_DASHBOARD_MODE,
     CONF_REPEAT_FLOOR,
     CONF_TRIM_DEVICES,
     CONF_TRIM_INTEGRATIONS,
@@ -2125,6 +2129,19 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             description_placeholders={"wiki_link": WIKI_LINK_ADVANCED},
             data_schema=vol.Schema(
                 {
+                    # The dashboard each window opens in (ruling #693).
+                    vol.Required(
+                        CONF_DASHBOARD_MODE,
+                        default=options.get(
+                            CONF_DASHBOARD_MODE, DEFAULT_DASHBOARD_MODE
+                        ),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[DASHBOARD_SIMPLE, DASHBOARD_ADVANCED],
+                            translation_key="dashboard_mode",
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
                     vol.Required(
                         CONF_REPEAT_FLOOR,
                         default=options.get(
