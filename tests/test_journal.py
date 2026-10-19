@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_journal.py, Version: 0.26.5 (2026-10-16)
+# File: test_journal.py, Version: 0.26.7 (2026-10-19)
 
 """The forensic record: incidents, episodes, and system events.
 
@@ -596,7 +596,9 @@ async def test_diagnostics_carry_the_support_fields(
     diag = await async_get_config_entry_diagnostics(hass, entry)
 
     assert diag["storage"]["last_version"] == coord.version
-    assert set(diag["awaiting_enable"]) == {
+    # The Switched Off cards' counts (ruling #698), in place of the
+    # retired Enable buttons' awaiting counts (#696).
+    assert set(diag["switched_off"]) == {
         "signal",
         "last_seen",
         "battery",

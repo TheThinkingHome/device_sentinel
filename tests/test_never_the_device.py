@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_never_the_device.py, Version: 0.26.6 (2026-10-18)
+# File: test_never_the_device.py, Version: 0.26.7 (2026-10-19)
 
 """What is never the device speaking.
 
@@ -508,7 +508,7 @@ async def test_r20_5_hue_page_has_no_node_status(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _hue(hass, freezer, "r20e")
     assert coord._node_status_view(device.id) is None
     assert device.id not in coord._node_status_entity
-    assert coord.awaiting_enable_counts()["node_status"] == 0
+    assert coord.switched_off_devices("node_status") == {}
 
 
 # 6. Unavailable mute on a Hue light: no verdict while down; lifted while

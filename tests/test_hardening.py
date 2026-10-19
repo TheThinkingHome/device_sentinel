@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.23.19 (2026-09-30)
+# File: test_hardening.py, Version: 0.26.7 (2026-10-19)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -344,13 +344,17 @@ def test_filled_lists_are_not_shared_between_devices():
 def test_dead_types_tuple_is_the_sweep_source():
     """The sweep reads its targets from the dead-types tuple (ruling
     #82): the mechanism is permanent, its entries go once satisfied.
-    Emptied in 0.23.19 after the reference rig's start removed nothing,
-    so the tuple exists, holds nothing, and the sweep still runs."""
+    Emptied in 0.23.19 after the reference rig's start removed nothing;
+    since 0.26.7 it holds the three retired Enable buttons (#696)."""
     import inspect
 
     from custom_components.device_sentinel import _drop_dead_entities
 
-    assert DEAD_ENTITY_SENTINEL_TYPES == ()
+    assert DEAD_ENTITY_SENTINEL_TYPES == (
+        "enable_signal_entities",
+        "enable_last_seen_entities",
+        "enable_battery_entities",
+    )
     assert "DEAD_ENTITY_SENTINEL_TYPES" in inspect.getsource(_drop_dead_entities)
 
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_repairs.py, Version: 0.26.5 (2026-10-16)
+# File: test_repairs.py, Version: 0.26.7 (2026-10-19)
 
 """What reaches the Repairs panel, and what is kept out of it.
 
@@ -41,12 +41,10 @@ from custom_components.device_sentinel.const import (
     CONF_NORMAL_PRIORITY_TARGETS,
     DATA_FIRST_INSTALLED,
     DOMAIN,
-    NO_DELIVERY_MIN_DAYS,
     REPAIRS_ALL,
-    REPAIR_ENTITIES_DISABLED,
+    REPAIRS_RETIRED,
     REPAIR_MOMENT_BRIEF,
     REPAIR_MOMENT_GRACE,
-    REPAIR_NO_DELIVERY,
     REPAIR_NOTIFY_TARGET_MISSING,
     REPAIR_STORAGE_SHAPE,
     REPAIR_STORAGE_REPAIRED,
@@ -248,206 +246,62 @@ async def test_recurrence_updates_rather_than_stacks(
     assert issue.translation_placeholders["what"] == "second"
 
 
-async def test_entities_disabled_raised_and_fixed(
+# ------------------------------------------------ the retired cards
+
+
+async def test_the_four_retired_cards_are_never_raised(
     hass: HomeAssistant,
 ) -> None:
-    """Raised on a disabled entity, and the fix flow enables it.
-
-    Grace close raises it here because a test install has no stored
-    version, so every setup reads as an upgrade, which is the
-    condition of ruling #303. The two tests below pin that rather
-    than leaving it as an accident of the fixture.
-    """
+    """Ruling #697: a switched-off battery sensor on a long-settled
+    install with nowhere to send anything, and both clock notices'
+    conditions standing, raise no card at either moment. The sensor
+    is a Recommendations card now (#698), the target a recommendation,
+    and the clocks are told in the brief."""
     entry = await setup_entry(hass)
     coordinator = entry.runtime_data
     _disabled_battery_entity(hass, "dev_batt")
     coordinator._rebuild_registry_view()
-    coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
-    await hass.async_block_till_done()
-
-    issue = _issue(hass, REPAIR_ENTITIES_DISABLED)
-    assert issue is not None
-    assert issue.is_fixable is True
-    assert issue.severity == ir.IssueSeverity.WARNING
-
-    flow = await repairs_module.async_create_fix_flow(
-        hass, REPAIR_ENTITIES_DISABLED, {"entry_id": entry.entry_id}
-    )
-    flow.hass = hass
-    flow.handler = DOMAIN
-    flow.issue_id = REPAIR_ENTITIES_DISABLED
-    menu = await flow.async_step_init()
-    assert menu["type"] == "menu"
-    assert menu["menu_options"] == ["confirm", "ignore"]
-    await flow.async_step_confirm({})
-    await hass.async_block_till_done()
-
-    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
-    assert coordinator.awaiting_enable_counts()["battery"] == 0
+    old = dt_util.utcnow() - dt_util.dt.timedelta(days=90)
+    coordinator.data[DATA_FIRST_INSTALLED] = old.isoformat()
+    coordinator._clocks_reset_at = dt_util.utcnow().timestamp()
+    coordinator._clock_reset = (dt_util.utcnow().timestamp(), 7200.0)
+    for moment in (REPAIR_MOMENT_GRACE, REPAIR_MOMENT_BRIEF):
+        coordinator._evaluate_repairs(moment)
+        await hass.async_block_till_done()
+        for issue_id in REPAIRS_RETIRED:
+            assert _issue(hass, issue_id) is None, (moment, issue_id)
 
 
-async def test_entities_disabled_absent_when_nothing_is_off(
+async def test_a_retired_card_held_from_before_is_cleared(
     hass: HomeAssistant,
 ) -> None:
-    """A tidy system sees no issue at all."""
-    coordinator = await setup_coordinator(hass)
-    register_device(hass, "dev_clean")
-    coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
-    await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
-
-
-async def test_disabled_entities_are_not_raised_at_every_restart(
-    hass: HomeAssistant, hass_storage
-) -> None:
-    """An ordinary restart says nothing about disabled entities
-    (ruling #303).
-
-    Seven restarts in one day on the reference fleet is what this
-    exists for: the condition has not moved, so meeting the badge
-    seven times is noise. Storage is seeded with the running version
-    so this start is not an upgrade.
-    """
-    from custom_components.device_sentinel.const import (
-        DATA_LAST_VERSION,
-        DATA_DEVICES as _DEVICES,
-    )
-
-    hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "key": STORAGE_KEY,
-        "data": {_DEVICES: {}, DATA_LAST_VERSION: "0.16.1"},
-    }
+    """An install that showed one of the four cards under 0.26.6 loses
+    it at the first evaluation (ruling #697), and its Fix button, if
+    pressed first, only closes it."""
     entry = await setup_entry(hass)
     coordinator = entry.runtime_data
-    coordinator.version = "0.16.1"
-    coordinator._version_changed = False
-    _disabled_battery_entity(hass, "dev_quiet")
-    coordinator._rebuild_registry_view()
-
+    for issue_id in REPAIRS_RETIRED:
+        ir.async_create_issue(
+            hass, DOMAIN, issue_id, is_fixable=False,
+            severity=ir.IssueSeverity.WARNING, translation_key=issue_id,
+        )
+        flow = await repairs_module.async_create_fix_flow(
+            hass, issue_id, {"entry_id": entry.entry_id}
+        )
+        assert type(flow).__name__ == "ConfirmRepairFlow"
     coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
     await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
-
-    # The brief send is where it does reach a person (ruling #309).
-    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
-    await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is not None
+    for issue_id in REPAIRS_RETIRED:
+        assert _issue(hass, issue_id) is None, issue_id
 
 
-async def test_an_upgrade_raises_it_without_waiting_for_the_brief(
-    hass: HomeAssistant,
-) -> None:
-    """The first start on a new version checks straight away
-    (ruling #303).
-
-    An integration update is when diagnostics arrive turned off, so a
-    person who has just upgraded is the one person for whom this is
-    news the same day.
-    """
-    entry = await setup_entry(hass)
-    coordinator = entry.runtime_data
-    assert coordinator._version_changed is True
-    _disabled_battery_entity(hass, "dev_upgraded")
-    coordinator._rebuild_registry_view()
-    coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
-    await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is not None
-
-
-async def test_a_set_aside_device_never_raises_it(
-    hass: HomeAssistant,
-) -> None:
-    """A device Home Assistant disabled raises nothing (ruling #302).
-
-    The loop this closes: the sweep enabled the entities of a disabled
-    device, Home Assistant re-disabled them at the next registry
-    write, and the count never reached zero. As a button that was a
-    number nobody watched; as a Repair it is a badge that returns
-    after every Fix.
-    """
-    from homeassistant.helpers import device_registry as dr
-
-    entry = await setup_entry(hass)
-    coordinator = entry.runtime_data
-    device, (entity_id,) = register_device(hass, "dev_off")
-    registry = er.async_get(hass)
-    registry.async_update_entity(
-        entity_id, device_class="battery", unit_of_measurement="%"
-    )
-    dr.async_get(hass).async_update_device(
-        device.id, disabled_by=dr.DeviceEntryDisabler.USER
-    )
-    await hass.async_block_till_done()
-    coordinator._rebuild_registry_view()
-
-    assert device.id in coordinator._set_aside
-    assert coordinator.awaiting_enable_counts()["battery"] == 0
-
-    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
-    await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
-
-
-async def test_a_muted_device_still_raises_it(
-    hass: HomeAssistant,
-) -> None:
-    """Muting suppresses judgment, never learning (ruling #302).
-
-    So a muted device is watched, its readings still feed the
-    statistics, and a disabled reading on one is still work the button
-    would do (James, 15 October 2026, from issue #20).
-    """
-    from custom_components.device_sentinel.const import (
-        CONF_MUTED_DEVICES,
-    )
-
-    device, (entity_id,) = register_device(hass, "dev_muted")
-    registry = er.async_get(hass)
-    registry.async_update_entity(
-        entity_id,
-        device_class="battery",
-        unit_of_measurement="%",
-        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
-    )
-    entry = await setup_entry(hass, {CONF_MUTED_DEVICES: [device.id]})
-    coordinator = entry.runtime_data
-    coordinator._rebuild_registry_view()
-
-    assert device.id in coordinator._watched
-    assert coordinator.awaiting_enable_counts()["battery"] == 1
-
-    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
-    await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is not None
-
-
-async def test_an_excluded_device_raises_no_card(
-    hass: HomeAssistant,
-) -> None:
-    """An excluded device is not asked for (James, 15 October 2026, from
-    issue #20): a person who excluded it disabled its battery on purpose,
-    and the card would ask them to undo it."""
-    from custom_components.device_sentinel.const import CONF_EXCLUDED_DEVICES
-
-    device, (entity_id,) = register_device(hass, "dev_excluded")
-    registry = er.async_get(hass)
-    registry.async_update_entity(
-        entity_id,
-        device_class="battery",
-        unit_of_measurement="%",
-        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
-    )
-    entry = await setup_entry(hass, {CONF_EXCLUDED_DEVICES: [device.id]})
-    coordinator = entry.runtime_data
-    coordinator._rebuild_registry_view()
-
-    assert device.id not in coordinator._watched
-    assert coordinator.awaiting_enable_counts()["battery"] == 0
-
-    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
-    await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
+def test_the_four_retired_cards_have_no_strings() -> None:
+    """Ruling #697: the retired identifiers are out of REPAIRS_ALL and
+    their words are gone from both string files."""
+    strings = json.loads((COMPONENT / "strings.json").read_text())
+    for issue_id in REPAIRS_RETIRED:
+        assert issue_id not in strings["issues"]
+        assert issue_id not in REPAIRS_ALL
 
 
 # -------------------------------------------- notify_target_missing
@@ -499,68 +353,6 @@ async def test_persistent_target_is_never_called_missing(
     entry.runtime_data._evaluate_repairs(REPAIR_MOMENT_GRACE)
     await hass.async_block_till_done()
     assert _issue(hass, REPAIR_NOTIFY_TARGET_MISSING) is None
-
-
-# ------------------------------------------- no_delivery_configured
-
-
-async def test_no_delivery_waits_for_the_seventh_day(
-    hass: HomeAssistant,
-) -> None:
-    """A fresh install is not interrupted; a settled one is told
-    (ruling #301)."""
-    coordinator = await setup_coordinator(hass)
-
-    young = dt_util.utcnow() - dt_util.dt.timedelta(days=1)
-    coordinator.data[DATA_FIRST_INSTALLED] = young.isoformat()
-    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
-    await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_NO_DELIVERY) is None
-
-    old = dt_util.utcnow() - dt_util.dt.timedelta(
-        days=NO_DELIVERY_MIN_DAYS + 1
-    )
-    coordinator.data[DATA_FIRST_INSTALLED] = old.isoformat()
-    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
-    await hass.async_block_till_done()
-
-    issue = _issue(hass, REPAIR_NO_DELIVERY)
-    assert issue is not None
-    assert issue.is_fixable is False
-    assert issue.severity == ir.IssueSeverity.WARNING
-
-
-async def test_no_delivery_is_a_brief_question_only(
-    hass: HomeAssistant,
-) -> None:
-    """Grace close never raises it, however old the install
-    (ruling #300)."""
-    coordinator = await setup_coordinator(hass)
-    old = dt_util.utcnow() - dt_util.dt.timedelta(days=90)
-    coordinator.data[DATA_FIRST_INSTALLED] = old.isoformat()
-
-    coordinator._evaluate_repairs(REPAIR_MOMENT_GRACE)
-    await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_NO_DELIVERY) is None
-
-    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
-    await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_NO_DELIVERY) is not None
-
-
-async def test_one_configured_target_is_enough(
-    hass: HomeAssistant,
-) -> None:
-    """Any target at all clears it, including the brief's own."""
-    entry = await setup_entry(
-        hass, {CONF_BRIEF_TARGETS: ["persistent_notification"]}
-    )
-    coordinator = entry.runtime_data
-    old = dt_util.utcnow() - dt_util.dt.timedelta(days=90)
-    coordinator.data[DATA_FIRST_INSTALLED] = old.isoformat()
-    coordinator._evaluate_repairs(REPAIR_MOMENT_BRIEF)
-    await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_NO_DELIVERY) is None
 
 
 # --------------------------------------------------------- the words
@@ -666,32 +458,22 @@ async def test_the_brief_send_is_what_evaluates_repairs(
     clears the card before morning. Driving the two real scheduled
     callbacks rather than calling the evaluator by hand is the
     point: it proves the wiring, which is exactly where 0.16.9's
-    stitch went wrong.
+    stitch went wrong. Since #697 the missing target is the card a
+    person can cause, so it carries the proof.
     """
-    from custom_components.device_sentinel.const import (
-        DATA_LAST_VERSION,
-        DATA_DEVICES as _DEVICES,
+    entry = await setup_entry(
+        hass, {CONF_HIGH_PRIORITY_TARGETS: ["notify.gone_phone"]}
     )
-
-    hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "key": STORAGE_KEY,
-        "data": {_DEVICES: {}, DATA_LAST_VERSION: "0.16.1"},
-    }
-    entry = await setup_entry(hass)
     coordinator = entry.runtime_data
-    coordinator.version = "0.16.1"
-    coordinator._version_changed = False
-    _disabled_battery_entity(hass, "dev_brief")
-    coordinator._rebuild_registry_view()
+    ir.async_delete_issue(hass, DOMAIN, REPAIR_NOTIFY_TARGET_MISSING)
 
     await coordinator._on_midnight(dt_util.utcnow())
     await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is None
+    assert _issue(hass, REPAIR_NOTIFY_TARGET_MISSING) is None
 
     await coordinator._on_brief_time(dt_util.utcnow())
     await hass.async_block_till_done()
-    assert _issue(hass, REPAIR_ENTITIES_DISABLED) is not None
+    assert _issue(hass, REPAIR_NOTIFY_TARGET_MISSING) is not None
 
 
 def test_every_fixable_issue_carries_a_flow_and_no_description():

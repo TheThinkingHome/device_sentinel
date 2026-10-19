@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_classification_sources.py, Version: 0.26.6 (2026-10-18)
+# File: tests/test_classification_sources.py, Version: 0.26.7 (2026-10-19)
 
 """Classification says why: the source of every mute and exclusion.
 
@@ -220,21 +220,15 @@ async def test_the_tab_receives_the_same_key(hass: HomeAssistant, hass_ws_client
     ]
 
 
-async def test_the_disabled_entities_advice_points_to_the_dashboard(hass: HomeAssistant):
-    """The Enable buttons are at the top of the dashboard now.
-
-    The advice sent a person to the Device Sentinel device page, while
-    the reader of this line is already on the dashboard, where the
-    same three buttons sit in the top row.
-    """
+async def test_the_disabled_entities_advice_is_gone(hass: HomeAssistant):
+    """The brief's line sent a person to the Enable buttons and the
+    Repairs card, both retired (rulings #696, #697); a switched-off
+    sensor is a Recommendations card of its own now (#698)."""
     coord = await setup_coordinator(hass)
-    coord.awaiting_enable_counts = lambda: {"battery": 1, "signal": 0, "last_seen": 0}
-    line = next(
+    assert not [
         item for item in coord._recommendation_items()
-        if "disabled: Device Sentinel requires" in item
-    )
-    assert "Enable buttons at the top of the Device Sentinel dashboard" in line
-    assert "device page" not in line
+        if "disabled: Device Sentinel requires" in item or "Enable buttons" in item
+    ]
 
 
 async def test_a_renamed_label_is_named_by_its_new_name(hass: HomeAssistant):

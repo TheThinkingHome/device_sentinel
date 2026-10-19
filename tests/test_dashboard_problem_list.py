@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_problem_list.py, Version: 0.25.6 (2026-10-11)
+# File: tests/test_dashboard_problem_list.py, Version: 0.26.7 (2026-10-19)
 
 """The Problem List and Recommendations tabs.
 
@@ -106,8 +106,10 @@ async def test_recommendations_are_the_briefs_own(hass: HomeAssistant, hass_ws_c
     reply = await _call(client, type="device_sentinel/recommendations")
     assert reply["success"], reply
     lines = reply["result"]["lines"]
-    assert lines == coord._recommendation_items()
-    assert any("(wlan0)" in line for line in lines)
+    # Each line carries its key, whether Simple shows it and its tick
+    # since 0.26.7 (rulings #695, #699); the words are the brief's own.
+    assert [line["text"] for line in lines] == coord._recommendation_items()
+    assert any("(wlan0)" in line["text"] for line in lines)
     assert reply["result"]["closing"].startswith("These are suggestions")
 
 

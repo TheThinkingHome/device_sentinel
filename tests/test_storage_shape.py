@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.25.5 (2026-10-10)
+# File: test_storage_shape.py, Version: 0.26.7 (2026-10-19)
 
 """The shape check reports and touches nothing; last-good follows it.
 
@@ -1627,7 +1627,7 @@ async def test_every_real_writer_goes_through_the_seam(hass: HomeAssistant):
 
 
 SENSOR_PROPERTIES = [
-    "awaiting_enable_counts", "battery_falling_count", "battery_falling_list",
+    "device_recommendations", "battery_falling_count", "battery_falling_list",
     "battery_low_count", "battery_low_list", "bridge_stacks",
     "broker_attributes", "broker_state", "classification_breakdown",
     "deviceless_count", "frozen_devices_count", "frozen_devices_list", "last_good_taken",

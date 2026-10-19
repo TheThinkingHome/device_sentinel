@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_registry_bursts.py, Version: 0.24.2 (2026-10-03)
+# File: tests/test_registry_bursts.py, Version: 0.26.7 (2026-10-19)
 
 """A burst of registry changes rebuilds Device Sentinel's view once, not once per change.
 
@@ -80,23 +80,6 @@ async def test_a_burst_of_changes_rebuilds_at_once_then_once_more(hass: HomeAssi
     assert tally[0] == 1, f"{tally[0]} rebuilds for one burst of 100 changes"
     await _quiet(hass)
     assert tally[0] == 2, "the burst's last changes were not rebuilt when the cooldown ended"
-
-
-async def test_the_enable_sweep_rebuilds_twice_not_once_per_entity(hass: HomeAssistant):
-    _entry, coord, made = await _house(hass)
-    ents = er.async_get(hass)
-    for i, (device, _entities) in enumerate(made):
-        ents.async_get_or_create(
-            "sensor", "test", f"rb{i}_last_seen", device_id=device.id,
-            original_name="Last seen", original_device_class="timestamp",
-            disabled_by=er.RegistryEntryDisabler.INTEGRATION,
-        )
-    await _quiet(hass)
-    tally = _count(coord)
-    await coord.async_enable_last_seen_entities()
-    await hass.async_block_till_done()
-    await _quiet(hass)
-    assert tally[0] <= 2, f"the Enable sweep rebuilt {tally[0]} times"
 
 
 async def test_a_single_edit_after_a_quiet_spell_rebuilds_at_once(hass: HomeAssistant):

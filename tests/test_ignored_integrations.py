@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_ignored_integrations.py, Version: 0.26.5 (2026-10-16)
+# File: test_ignored_integrations.py, Version: 0.26.7 (2026-10-19)
 
 """Integrations a person asks never to be watched.
 
@@ -304,13 +304,12 @@ async def test_another_devices_episode_is_left_alone(hass: HomeAssistant):
     assert len(coordinator.data.get(DATA_EPISODES) or []) == 1
 
 
-async def test_the_enable_buttons_leave_an_ignored_device_alone(
+async def test_an_ignored_device_is_on_no_switched_off_card(
     hass: HomeAssistant,
 ):
-    """Ruling #257 made the buttons reach a set-aside device, because
-    a disabled one comes back by having its entities switched on.
-    Ignoring inverts that: a person who put an integration on the list
-    is not waiting for its battery sensors to be enabled."""
+    """A person who put an integration on the exclusion list is not
+    waiting for its battery sensors to be switched on, so no Switched
+    Off card lists its devices (rulings #271, #698)."""
     register_device(hass, "phone", name="James S24+", entity_domain="sensor")
     coordinator, _entry = await _coordinator(
         hass, {CONF_EXCLUDED_INTEGRATIONS: ["test"]}
@@ -319,8 +318,8 @@ async def test_the_enable_buttons_leave_an_ignored_device_alone(
 
     ignored = coordinator._excluded_device_ids
     assert ignored, "expected the phone to be set aside as ignored"
-    counts = coordinator.awaiting_enable_counts()
-    assert counts == {"signal": 0, "last_seen": 0, "battery": 0, "node_status": 0}
+    for kind in ("signal", "last_seen", "battery", "node_status"):
+        assert coordinator.switched_off_devices(kind) == {}, kind
 
 
 async def test_the_fold_discards_and_then_folds_the_survivors(

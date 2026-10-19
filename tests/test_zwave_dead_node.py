@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_zwave_dead_node.py, Version: 0.26.6 (2026-10-18)
+# File: test_zwave_dead_node.py, Version: 0.26.7 (2026-10-19)
 
 """The Z-Wave dead-node check (ruling #670).
 
@@ -293,32 +293,13 @@ async def test_a_muted_node_is_recorded_and_not_reported(hass: HomeAssistant, fr
 # ------------------------------------------------- ruling #671
 
 
-async def test_a_switched_off_status_sensor_is_on_the_card(hass: HomeAssistant, freezer):
-    """The card names it, Enable Last Seen turns it on, and the Status
-    sensor's Last Seen count includes it."""
-    from homeassistant.helpers import issue_registry as ir
-
-    from custom_components.device_sentinel.const import (
-        DOMAIN,
-        REPAIR_ENTITIES_DISABLED,
-        REPAIR_MOMENT_BRIEF,
-    )
-    from custom_components.device_sentinel.repairs import entities_disabled_detail
-
+async def test_a_switched_off_status_sensor_is_found_and_turned_on(hass: HomeAssistant, freezer):
+    """Its own kind since #698: found switched off, Last Seen not, and
+    turned on by its own press (#696)."""
     coord, device, ids, record = await _house(hass, freezer, status_on=False)
-    counts = coord.awaiting_enable_counts()
-    assert counts["node_status"] == 1 and counts["last_seen"] == 0
-    assert coord.awaiting_enable_devices()["node_status"] == [device.id]
-    detail = entities_disabled_detail(
-        counts, coord.awaiting_enable_devices(), coord._device_name
-    )
-    assert detail == "1 Z-Wave status on P10 Z-Wave Smart plug"
-    coord._evaluate_repairs(REPAIR_MOMENT_BRIEF)
-    await hass.async_block_till_done()
-    assert ir.async_get(hass).async_get_issue(DOMAIN, REPAIR_ENTITIES_DISABLED) is not None
-
-    found = await coord.async_enable_last_seen_entities()
-    assert found.get("enabled") == 1
+    assert coord.switched_off_devices("node_status") == {device.id: "other"}
+    assert coord.switched_off(device.id, "last_seen") is None
+    assert coord.page_turn_on(device.id, "node_status") == 1
     entry = er.async_get(hass).async_get(ids["status"])
     assert entry.disabled_by is None
 
@@ -326,7 +307,7 @@ async def test_a_switched_off_status_sensor_is_on_the_card(hass: HomeAssistant, 
 async def test_the_device_page_turns_it_on_and_shows_it(hass: HomeAssistant, freezer):
     coord, device, ids, record = await _house(hass, freezer, status_on=False)
     assert coord.dashboard_device(device.id)["identity"]["node_status"] == "off"
-    assert coord.page_enable_last_seen(device.id) == 1
+    assert coord.page_turn_on(device.id, "node_status") == 1
     assert er.async_get(hass).async_get(ids["status"]).disabled_by is None
     hass.states.async_set(ids["status"], "dead")
     await hass.async_block_till_done()
@@ -340,7 +321,7 @@ async def test_a_device_without_one_shows_no_row(hass: HomeAssistant, freezer):
     other, _ids = register_device(hass, "plain")
     coord = await setup_coordinator(hass)
     assert coord.dashboard_device(other.id)["identity"]["node_status"] is None
-    assert coord.awaiting_enable_counts()["node_status"] == 0
+    assert coord.switched_off_devices("node_status") == {}
 
 
 # ------------------- a firmware notice beside the node status (0.26.6)

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entity_defaults.py, Version: 0.23.19 (2026-09-30)
+# File: tests/test_entity_defaults.py, Version: 0.26.7 (2026-10-19)
 
 """Which entities a first install presents, and what deletion leaves.
 
@@ -53,9 +53,7 @@ EXPECTED_DEFAULTS = {
     # category, so they sit under the device page's own heading
     # rather than on the dashboard.
     "todo.device_sentinel_problem_list": True,
-    "button.device_sentinel_enable_signals": True,
-    "button.device_sentinel_enable_last_seen": True,
-    "button.device_sentinel_enable_battery": True,
+    # The three Enable buttons went in 0.26.7 (ruling #696).
     "button.device_sentinel_regenerate_reports": True,
     "button.device_sentinel_maintenance_mode": True,
     # Dashboard-builder detail: off, the problem list carries what is

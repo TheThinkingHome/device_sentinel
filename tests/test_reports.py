@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.24.0 (2026-10-02)
+# File: test_reports.py, Version: 0.26.7 (2026-10-19)
 
 """The diagnostic files: telemetry and classification.
 
@@ -416,21 +416,16 @@ async def test_headers_show_k_and_threshold(hass: HomeAssistant):
         assert _cells(line) == header_cells, line
 
 
-async def test_three_enable_buttons_exist_and_press(hass: HomeAssistant):
-    """The enable assist is three buttons now, one per diagnostic
-    kind, each pressable without error."""
+async def test_the_enable_buttons_are_gone(hass: HomeAssistant):
+    """Ruling #696: the three Enable buttons went in 0.26.7; a device's
+    own switched-off entities are turned on from its device page."""
     await _marks_coordinator(hass)
     for entity_id in (
         "button.device_sentinel_enable_signals",
         "button.device_sentinel_enable_last_seen",
         "button.device_sentinel_enable_battery",
     ):
-        assert hass.states.get(entity_id) is not None, entity_id
-        await hass.services.async_call(
-            "button", "press",
-            {"entity_id": entity_id},
-            blocking=True,
-        )
+        assert hass.states.get(entity_id) is None, entity_id
 
 
 # ==================================================================

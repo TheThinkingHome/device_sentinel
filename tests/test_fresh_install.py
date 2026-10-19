@@ -1,7 +1,7 @@
 """What a stranger gets: an empty install, driven end to end.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_fresh_install.py, Version: 0.23.5 (2026-09-25)
+# File: test_fresh_install.py, Version: 0.26.7 (2026-10-19)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -17,7 +17,6 @@ import os
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
-    ATTR_AWAITING_BATTERY,
     DATA_DEVICES,
     DEV_SIGNAL_DAILY_P5,
     REPORT_DIR,
@@ -104,19 +103,19 @@ async def test_the_first_midnight_records_a_day(hass: HomeAssistant):
     assert coord.recording_depth["signal"]["complete_days"] == 1
 
 
-async def test_a_fresh_install_offers_what_it_can_enable(
+async def test_a_fresh_install_status_carries_no_enable_counts(
     hass: HomeAssistant,
 ):
-    """The first useful thing a person does is press Enable Battery,
-    so the count behind that button has to be right on a system that
-    has never run before."""
+    """A fresh install's Status sensor reads a state, and carries no
+    awaiting-enable counts: they went with the Enable buttons (ruling
+    #696). A switched-off sensor is a Recommendations card now."""
     await setup_coordinator(hass)
 
     status = hass.states.get("sensor.device_sentinel_status")
 
     assert status is not None
     assert status.state in ("watching", "learning", "problem")
-    assert status.attributes[ATTR_AWAITING_BATTERY] == 0
+    assert not any(key.endswith("_awaiting_enable") for key in status.attributes)
 
 
 async def test_an_empty_house_is_not_an_error(hass: HomeAssistant):

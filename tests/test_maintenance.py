@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_maintenance.py, Version: 0.26.5 (2026-10-16)
+# File: tests/test_maintenance.py, Version: 0.26.7 (2026-10-19)
 
 """Maintenance mode and the surfaces that shipped beside it.
 
@@ -15,9 +15,7 @@ dashboard can count down from, and pairing keeps precedence where
 both windows are open because it names the stack where maintenance
 names only the person.
 
-Beside it: the awaiting-enable counts on Status (ruling #237), so a
-dashboard shows each enable button only while a press would do
-something; the availability attribute on the Z2M bridge sensor
+Beside it: the availability attribute on the Z2M bridge sensor
 (ruling #236), reported and never written; and the battery intervention
 sentence (ruling #235), because a convicted battery device cannot be
 reached by radio and the push should say what fixes it.
@@ -26,17 +24,11 @@ reached by radio and the push should say what fixes it.
 from __future__ import annotations
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     TODO_KIND_LOW_BATTERY,
-    ATTR_AWAITING_BATTERY,
-    ATTR_AWAITING_LAST_SEEN,
-    ATTR_AWAITING_SIGNAL,
     CONF_MAINTENANCE_MINUTES,
     DATA_DEVICES,
     DATA_SYSTEM_EVENTS,
@@ -247,49 +239,6 @@ async def test_the_button_entity_exists_and_presses(hass: HomeAssistant):
         blocking=True,
     )
     assert coord.maintenance_until is not None
-
-
-async def test_status_counts_what_each_enable_button_would_do(
-    hass: HomeAssistant,
-):
-    """The awaiting-enable counts (ruling #237): exact, no lists, and
-    every disabled entity is counted, whoever disabled it, because
-    the buttons enable every one of them (ruling #257)."""
-    source = MockConfigEntry(domain="test")
-    source.add_to_hass(hass)
-    device = dr.async_get(hass).async_get_or_create(
-        config_entry_id=source.entry_id,
-        identifiers={("test", "await1")},
-        name="Await One",
-    )
-    ent_reg = er.async_get(hass)
-    ent_reg.async_get_or_create(
-        "sensor", "test", "aw_ls",
-        suggested_object_id="await_last_seen",
-        device_id=device.id, config_entry=source,
-        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
-    )
-    ent_reg.async_get_or_create(
-        "sensor", "test", "aw_lq",
-        suggested_object_id="await_linkquality",
-        device_id=device.id, config_entry=source,
-        disabled_by=er.RegistryEntryDisabler.USER,
-    )
-    entry = await setup_entry(hass)
-    coord = entry.runtime_data
-
-    counts = coord.awaiting_enable_counts()
-    assert counts == {"signal": 1, "last_seen": 1, "battery": 0, "node_status": 0}
-
-    status = hass.states.get("sensor.device_sentinel_status")
-    assert status.attributes[ATTR_AWAITING_LAST_SEEN] == 1
-    assert status.attributes[ATTR_AWAITING_SIGNAL] == 1
-    assert status.attributes[ATTR_AWAITING_BATTERY] == 0
-
-    # Pressing the button empties its count: the attribute and the
-    # press read the same registry through the same filter.
-    await coord.async_enable_last_seen_entities()
-    assert coord.awaiting_enable_counts()["last_seen"] == 0
 
 
 async def test_the_battery_conviction_carries_the_intervention_line(

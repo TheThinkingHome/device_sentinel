@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_clock_loss.py, Version: 0.25.0 (2026-10-08)
+# File: tests/test_clock_loss.py, Version: 0.26.7 (2026-10-19)
 
 """A lost clocks file, and a startup grace that holds everything.
 
@@ -63,6 +63,7 @@ from custom_components.device_sentinel.const import (
     INCIDENT_RESOLVED,
     REPAIR_CLOCK_RESET,
     REPAIR_CLOCKS_RESET,
+    SYS_CLOCKS_LOST,
     STARTUP_GRACE_SECONDS,
     STORAGE_CLOCKS_KEY,
     STORAGE_KEY,
@@ -311,21 +312,30 @@ async def test_no_upstream_is_announced_inside_the_grace(
     assert coordinator._upstream_messages() == [("MQTT broker", 3, True)]
 
 
-async def test_the_repair_card_names_the_moment(
+async def test_the_lost_clocks_are_told_in_the_brief_not_on_a_card(
     hass: HomeAssistant, hass_storage, freezer
 ):
+    """Ruling #697 retired the "Activity Clocks Were Reset" card. The
+    repair is never silent (#342): the start writes one row, at the
+    load, and the brief tells it in the card's words."""
     entry, _devices, _phone = await _house(hass, freezer)
-    await _lose_the_clocks(hass, hass_storage, freezer, entry)
+    coordinator = await _lose_the_clocks(hass, hass_storage, freezer, entry)
     loaded_at = dt_util.as_local(dt_util.utcnow()).strftime("%-I:%M %p")
-    registry = ir.async_get(hass)
-    assert registry.async_get_issue(DOMAIN, REPAIR_CLOCKS_RESET) is None
     for _ in range(int(STARTUP_GRACE_SECONDS // 60) + 1):
         await _tick(hass, freezer)
-    issue = registry.async_get_issue(DOMAIN, REPAIR_CLOCKS_RESET)
-    assert issue is not None
-    assert issue.translation_placeholders["time"] == loaded_at
-    assert issue.severity == ir.IssueSeverity.WARNING
-    assert not issue.is_fixable
+    assert ir.async_get(hass).async_get_issue(DOMAIN, REPAIR_CLOCKS_RESET) is None
+    rows = [
+        row for row in coordinator.data[DATA_SYSTEM_EVENTS]
+        if row.get(SYS_KIND) == SYS_CLOCKS_LOST
+    ]
+    assert len(rows) == 1, rows
+    assert str(rows[0]["detail"]).endswith("clocks restarted")
+    sentence = coordinator._system_event_sentence(rows[0])
+    assert "missing or damaged" in sentence and loaded_at in sentence, sentence
+    assert "Nothing learned was lost." in sentence
+    assert coordinator._system_event_phrase(rows[0]).startswith(
+        "activity clocks file missing or damaged"
+    )
 
 
 async def test_a_whole_clocks_file_raises_no_card(
@@ -342,9 +352,15 @@ async def test_a_whole_clocks_file_raises_no_card(
         await _tick(hass, freezer)
     registry = ir.async_get(hass)
     assert registry.async_get_issue(DOMAIN, REPAIR_CLOCKS_RESET) is None
+    coordinator = entry.runtime_data
+    assert not [
+        row for row in coordinator.data[DATA_SYSTEM_EVENTS]
+        if row.get(SYS_KIND) == SYS_CLOCKS_LOST
+    ]
 
 
-# A clock reset or a paused system restarts the clocks, with a Repair card (#538).
+# A clock reset or a paused system restarts the clocks (#538), told in
+# the brief rather than on a Repair card since #697.
 
 
 async def _stepped(hass, freezer, seconds: float):
@@ -367,7 +383,7 @@ async def _stepped(hass, freezer, seconds: float):
     return coord, device, record, bus
 
 @pytest.mark.parametrize("seconds", [2 * HOUR, -2 * HOUR], ids=["forward", "backward"])
-async def test_a_clock_reset_restarts_the_clocks_with_a_repair_card(hass: HomeAssistant, freezer, seconds):
+async def test_a_clock_reset_restarts_the_clocks_told_in_the_brief(hass: HomeAssistant, freezer, seconds):
     coord, device, record, bus = await _stepped(hass, freezer, seconds)
     now = dt_util.utcnow().timestamp()
     assert abs(record[DEV_LAST_ACTIVITY] - now) < 5, "the clock did not restart at the reset"
@@ -376,8 +392,9 @@ async def test_a_clock_reset_restarts_the_clocks_with_a_repair_card(hass: HomeAs
     events = [e for e in coord.data[DATA_SYSTEM_EVENTS] if e.get(SYS_KIND) == SYS_CLOCK_RESET]
     assert len(events) == 1 and abs(events[0][SYS_DURATION] - abs(seconds)) < 5, events
     assert ("+" if seconds > 0 else "-") in str(events[0].get("detail")), events
-    issue = ir.async_get(hass).async_get_issue(DOMAIN, REPAIR_CLOCK_RESET)
-    assert issue is not None and issue.translation_placeholders and "shift" in issue.translation_placeholders
+    # The card is retired (ruling #697); the brief tells the reset.
+    assert ir.async_get(hass).async_get_issue(DOMAIN, REPAIR_CLOCK_RESET) is None
+    assert "system clock was reset" in coord._system_event_sentence(events[0])
 
 async def test_a_small_correction_is_not_a_reset(hass: HomeAssistant, freezer):
     coord, device, record, bus = await _stepped(hass, freezer, 120.0)

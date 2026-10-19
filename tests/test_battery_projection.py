@@ -1,0 +1,172 @@
+# Copyright (C) 2026 James Lander, The Thinking Home
+# Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
+# Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
+#   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
+#   Repository: https://github.com/TheThinkingHome/device_sentinel
+# File: tests/test_battery_projection.py, Version: 0.26.7 (2026-10-19)
+
+"""When a falling cell runs empty, as a range (ruling #704).
+
+A fall that is speeding up is projected on a curve, a steady one on a
+straight line; the range comes from the cell's own week-to-week
+swings; the near end decides Days Till Empty, on the Problem List as
+on the chart; and every days-left figure reads the range in words.
+"""
+
+from __future__ import annotations
+
+import math
+
+from homeassistant.core import HomeAssistant
+
+from custom_components.device_sentinel.battery_projection import (
+    battery_projection,
+    days_to_empty,
+    time_left_range,
+)
+from custom_components.device_sentinel.const import (
+    CONF_BATTERY_DAYS,
+    DATA_DEVICES,
+    DEV_BATTERY_DAILY,
+    DEV_BATTERY_VALUE,
+)
+
+from tests.helpers import register_device, setup_coordinator
+
+# Door 2nd Bedroom on the reference rig, its last 63 kept days to
+# 19 October 2026: flat near 25 through August, bending down since late
+# September. The straight pace read about 91 days left.
+DOOR = [
+    24.5, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 25.0, 24.5, 24.0, 24.5, 24.5, 24.0, 24.5,
+    24.5, 24.5, 24.0, 24.0, 24.0, 24.5, 24.0, 23.5, 23.0, 23.0, 23.0, 22.5, 23.0, 23.5, 23.0,
+    23.0, 23.0, 22.0, 23.0, 22.0, 23.5, 22.5, 23.5, 23.0, 22.0, 22.5, 23.0, 21.0, 21.5, 22.5,
+    21.5, 21.0, 21.0, 20.5, 20.5, 20.0, 19.5, 19.0, 19.0, 17.0, 19.5, 19.0, 17.0, 17.5, 15.0,
+    15.0, 18.0, 18.0, 17.5, 16.5,
+]
+
+
+def _wobble(i: int) -> float:
+    return ((i * 37) % 11 - 5) / 20.0
+
+
+def test_a_fall_that_is_speeding_up_is_projected_on_a_curve():
+    found = battery_projection(DOOR, 16.5)
+    assert found is not None and found["curved"] is True
+    # About a month, not three: the straight pace said about 91 days.
+    assert 20 <= found["near"] <= found["centre"] <= found["far"] <= 45, found
+    assert time_left_range(found["near"], found["far"]) == "about 4 to 5 weeks"
+
+
+def test_a_steady_fall_is_projected_on_a_straight_line():
+    steady = [80 - 0.3 * i + _wobble(i) for i in range(60)]
+    found = battery_projection(steady, steady[-1])
+    assert found is not None and found["curved"] is False
+    straight = steady[-1] / 0.3
+    assert found["near"] <= straight <= found["far"], (found, straight)
+
+
+def test_the_same_history_gives_the_same_range():
+    """Seeded from the history, so a page never changes on a refresh."""
+    first = battery_projection(DOOR, 16.5)
+    from custom_components.device_sentinel import battery_projection as module
+
+    module._MEMO.clear()
+    assert battery_projection(DOOR, 16.5) == first
+
+
+def test_a_jumpier_cell_gets_a_wider_range():
+    calm = [80 - 0.3 * i + _wobble(i) for i in range(60)]
+    jumpy = [80 - 0.3 * i + 6 * _wobble(i) for i in range(60)]
+    a = battery_projection(calm, calm[-1])
+    b = battery_projection(jumpy, jumpy[-1])
+    assert (b["far"] - b["near"]) > (a["far"] - a["near"])
+
+
+def test_too_few_days_heard_gives_no_range():
+    assert battery_projection([50 - i for i in range(10)], 40.0) is None
+
+
+def test_days_to_empty_on_a_curve_and_a_line():
+    assert days_to_empty(30.0, -1.0, 0.0) == 30.0
+    assert days_to_empty(30.0, 0.5, 0.0) is None
+    curved = days_to_empty(30.0, -1.0, -0.01)
+    assert curved is not None and curved < 30.0
+    assert math.isclose(30.0 - curved - 0.01 * curved * curved, 0.0, abs_tol=1e-6)
+
+
+def test_the_words_take_a_range():
+    assert time_left_range(3, 5) == "under a week"
+    assert time_left_range(26.9, 35.2) == "about 4 to 5 weeks"
+    assert time_left_range(91, 113) == "about 3 to 4 months"
+    assert time_left_range(300, 500) == "about 10 months to over a year"
+    assert time_left_range(400, None) == "over a year"
+
+
+async def test_the_near_end_decides_the_falling_forecast(hass: HomeAssistant):
+    """Door 2nd Bedroom with Days Till Empty at 30: the straight pace
+    kept it off the Problem List; the near end of its range puts it on,
+    with the range in words (#704)."""
+    device, (entity_id,) = register_device(hass, "door", name="Door 2nd Bedroom")
+    coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_BATTERY_DAILY] = list(DOOR)
+    record[DEV_BATTERY_VALUE] = 16.5
+    falling = coord.battery_falling_list
+    row = next(r for r in falling if r["device_id"] == device.id)
+    assert row["left"] == "about 4 to 5 weeks"
+    page = coord._page_battery(record)
+    assert page["left"] == "about 4 to 5 weeks" and page["left_soon"] is True
+    assert page["projection"]["curved"] is True and page["days_setting"] == 30.0
+
+
+def test_a_cell_above_half_keeps_the_straight_pace():
+    """Ruling #708: the curve is used only at or under 50 percent. A
+    cell near 90 percent speeding up read about two months on the
+    curve against five to seven on its pace (replay, 19 October)."""
+    high = [v + 70.0 for v in DOOR]
+    found = battery_projection(high, high[-1])
+    assert found is not None and found["curved"] is False
+    assert battery_projection(DOOR, DOOR[-1])["curved"] is True
+
+
+def test_each_end_of_the_range_has_its_own_unit():
+    """A near end inside Days Till Empty never reads as months (found
+    by review)."""
+    assert time_left_range(3, 75) == "under a week to about 2 months"
+    assert time_left_range(13, 72) == "about 2 weeks to 2 months"
+    assert time_left_range(0, None) == "under a week to over a year"
+    assert time_left_range(50, 80) == "about 7 weeks to 3 months"
+    # Never backwards (found by review).
+    assert time_left_range(69, 72) == "about 10 weeks"
+    assert time_left_range(66, 75) == "about 9 to 11 weeks"
+
+
+def test_above_half_a_knee_keeps_the_pace_after_it():
+    """Ruling #708: above half, a cell the accelerating rule found a
+    knee in is projected at the straight pace since the knee, the pace
+    it was given before 0.26.7, not a line through the flat weeks."""
+    knee = [90.0 + _wobble(i) / 4 for i in range(30)] + [90.0 - 0.5 * i + _wobble(i) / 4 for i in range(1, 22)]
+    level = knee[-1]
+    since_knee = battery_projection(knee, level, since=21)
+    whole = battery_projection(knee, level)
+    assert since_knee["curved"] is False
+    assert since_knee["near"] <= level / 0.5 <= since_knee["far"], since_knee
+    assert whole["near"] > since_knee["far"]
+
+
+def test_the_range_edges_found_by_review():
+    assert time_left_range(60, 72) == "about 9 to 10 weeks"
+    assert time_left_range(3, 9) == "about 1 week"
+
+
+async def test_a_forecast_alone_is_not_counted_among_listed_faults(hass: HomeAssistant):
+    """The maintainer report counts the devices it lists; a falling
+    forecast has no line there (found by review). The Problem List's
+    own set keeps it (#213)."""
+    device, _ = register_device(hass, "door", name="Door 2nd Bedroom")
+    coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
+    record = coord.data[DATA_DEVICES][device.id]
+    record[DEV_BATTERY_DAILY] = list(DOOR)
+    record[DEV_BATTERY_VALUE] = 16.5
+    assert device.id in coord._problem_device_ids()
+    assert "## Devices With A Fault (0)" in "\n".join(coord._reporting_lines())

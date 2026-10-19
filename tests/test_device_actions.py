@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_actions.py, Version: 0.26.0 (2026-10-12)
+# File: tests/test_device_actions.py, Version: 0.26.7 (2026-10-19)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -115,7 +115,8 @@ async def test_a_labels_meaning_is_read_from_the_mute_settings(hass: HomeAssista
     )
     await hass.async_block_till_done()
     reply = await _ws(client, type="device_sentinel/device_choices")
-    assert {"id": garage.label_id, "name": "Garage", "meaning": "mutes freeze"} in reply["result"]["labels"]
+    # With how many devices carry it, for Mute by label (#706).
+    assert {"id": garage.label_id, "name": "Garage", "meaning": "mutes freeze", "devices": 0} in reply["result"]["labels"]
 
 
 async def test_last_seen_is_turned_on_for_this_device_alone(hass: HomeAssistant, hass_ws_client):
@@ -139,7 +140,7 @@ async def test_last_seen_is_turned_on_for_this_device_alone(hass: HomeAssistant,
                                      original_name="Last seen", disabled_by=off)
     coord._rebuild_registry_view()
     assert coord.page_actions(device.id)["last_seen_off"] is True
-    reply = await _ws(client, type="device_sentinel/device_last_seen", device_id=device.id)
+    reply = await _ws(client, type="device_sentinel/device_turn_on", device_id=device.id, kind="last_seen")
     assert reply["success"] and reply["result"] == {"enabled": 1}, reply
     assert ent.async_get(mine.entity_id).disabled_by is None
     assert ent.async_get(theirs.entity_id).disabled_by is off, "another device's Last Seen was turned on"
@@ -189,7 +190,7 @@ async def test_every_act_answers_not_found_for_an_unknown_device(hass: HomeAssis
         {"type": "device_sentinel/device_rename", "name": "x"},
         {"type": "device_sentinel/device_area", "area_id": None},
         {"type": "device_sentinel/device_label", "label_id": "x", "add": True},
-        {"type": "device_sentinel/device_last_seen"},
+        {"type": "device_sentinel/device_turn_on", "kind": "last_seen"},
         {"type": "device_sentinel/device_mute", "kind": "freeze", "on": True},
     ):
         reply = await _ws(client, device_id="no-such-device", **payload)

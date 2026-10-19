@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_api.py, Version: 0.26.0 (2026-10-12)
+# File: tests/test_dashboard_api.py, Version: 0.26.7 (2026-10-19)
 
 """The dashboard's data layer: status, actions and the change marker.
 
@@ -26,7 +26,7 @@ from custom_components.device_sentinel.const import (
     DEFAULT_MAINTENANCE_MINUTES,
     SYS_RESTART,
 )
-from tests.helpers import setup_coordinator
+from tests.helpers import register_device, setup_coordinator
 
 
 class _Reader:
@@ -104,27 +104,39 @@ async def test_minutes_outside_the_steps_are_refused(hass: HomeAssistant, hass_w
         assert not reply["success"], minutes
 
 
-async def test_the_enable_actions_call_the_buttons_code(hass: HomeAssistant, hass_ws_client, monkeypatch):
-    coord = await setup_coordinator(hass)
-    called = []
-    for name in (
-        "async_enable_signal_entities",
-        "async_enable_last_seen_entities",
-        "async_enable_battery_entities",
-    ):
-        async def _spy(_name=name):
-            called.append(_name)
-            return {}
-
-        monkeypatch.setattr(coord, name, _spy)
+async def test_the_enable_actions_are_gone(hass: HomeAssistant, hass_ws_client):
+    """Ruling #696: the action command runs Maintenance only; the three
+    house-wide enable actions are refused."""
+    await setup_coordinator(hass)
     client = await hass_ws_client(hass)
     for action in ("enable_signals", "enable_last_seen", "enable_battery"):
-        assert (await _call(client, type="device_sentinel/action", action=action))["success"]
-    assert called == [
-        "async_enable_signal_entities",
-        "async_enable_last_seen_entities",
-        "async_enable_battery_entities",
-    ]
+        assert not (await _call(client, type="device_sentinel/action", action=action))["success"]
+
+
+async def test_a_turn_on_is_one_device_and_admin_only(
+    hass: HomeAssistant, hass_ws_client, hass_read_only_access_token
+):
+    """Ruling #696: device_turn_on switches on one device's own sensor
+    of one kind, and a user who is not an administrator is refused."""
+    from homeassistant.helpers import entity_registry as er
+
+    device, (entity_id,) = register_device(hass, "turn_on_plug")
+    registry = er.async_get(hass)
+    registry.async_update_entity(
+        entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+        original_name="Last seen",
+    )
+    await setup_coordinator(hass)
+    reader = await hass_ws_client(hass, hass_read_only_access_token)
+    reply = await _call(reader, type="device_sentinel/device_turn_on", device_id=device.id, kind="last_seen")
+    assert not reply["success"]
+    assert registry.async_get(entity_id).disabled_by is not None
+    client = await hass_ws_client(hass)
+    reply = await _call(client, type="device_sentinel/device_turn_on", device_id=device.id, kind="last_seen")
+    assert reply["success"] and reply["result"]["enabled"] == 1
+    assert registry.async_get(entity_id).disabled_by is None
+    reply = await _call(client, type="device_sentinel/device_turn_on", device_id=device.id, kind="everything")
+    assert not reply["success"]
 
 
 async def test_an_unknown_action_is_refused(hass: HomeAssistant, hass_ws_client):
