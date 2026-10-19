@@ -206,12 +206,14 @@
         "title": "Advanced",
         "description": "Settings most people never need to change. [Advanced on the wiki]({wiki_link})",
         "data": {
+          "dashboard_mode": "Dashboard: Simple or Advanced",
           "repeat_floor": "Repeat Offender Threshold",
           "storage_write_minutes": "Storage Write Interval",
           "history_days": "How Much History to Keep",
           "maintenance_minutes": "Maintenance Window in Minutes"
         },
         "data_description": {
+          "dashboard_mode": "The dashboard each window opens in. Simple shows what is broken and what to do about it; Advanced adds the trends, charts and setup. The switch on the dashboard changes it until you leave the dashboard.",
           "repeat_floor": "How many unexplained interruptions in a week put a device in the daily brief's Repeat Offenders section. An interruption is unexplained when no restart, outage, reload, or pairing window accounts for it. Lower names devices sooner; higher waits for a stronger pattern.",
           "storage_write_minutes": "The amount of time routine activity is held in memory before it is written to disk. Set longer for slower hardware and hubs writing data to an SD card. Longer risks losing timer data should your system suffer a power loss. Events are written when they happen, so risk is minimal.",
           "history_days": "How many days of daily battery, signal, and unavailable and freeze gap records are kept for studying long trends. 30 days is necessary, but some trends can only be seen with longer time periods.",
@@ -267,28 +269,15 @@
         "overnight": "Only When Something Needs Attention",
         "none": "Never"
       }
+    },
+    "dashboard_mode": {
+      "options": {
+        "simple": "Simple",
+        "advanced": "Advanced"
+      }
     }
   },
   "issues": {
-    "entities_disabled": {
-      "title": "Device Sentinel Cannot See Everything It Watches",
-      "fix_flow": {
-        "step": {
-          "init": {
-            "title": "Turn On the Entities Device Sentinel Watches",
-            "description": "Device Sentinel found {count} disabled {entities} that it reads: {detail}.\n\nThe integration relies on this data to protect your fleet. It needs each device to report its battery level to detect when a battery is low, a last seen entity to drive freeze detection, and a signal strength entity to report wireless anomalies before they cause a failure.{zwave_need}\n\nOnly devices enabled in their own integrations and devices that are not excluded in the Device Sentinel settings will be changed.\n\nEnable turns on all {count} at once. To enable each kind individually, go to the Device Sentinel device page, where Enable Signals, Enable Last Seen, and Enable Battery each do one kind{zwave_enable}. Ignore hides this card until you choose to show ignored issues again.",
-            "menu_options": {
-              "confirm": "Enable",
-              "ignore": "Ignore"
-            }
-          },
-          "confirm": {
-            "title": "Turn On the Entities Device Sentinel Watches",
-            "description": "Device Sentinel found {count} disabled {entities} that it reads: {detail}.\n\nThe integration relies on this data to protect your fleet. It needs each device to report its battery level to detect when a battery is low, a last seen entity to drive freeze detection, and a signal strength entity to report wireless anomalies before they cause a failure.{zwave_need}\n\nOnly devices enabled in their own integrations and devices that are not excluded in the Device Sentinel settings will be changed.\n\nEnable turns on all {count} at once. To enable each kind individually, go to the Device Sentinel device page, where Enable Signals, Enable Last Seen, and Enable Battery each do one kind{zwave_enable}. Ignore hides this card until you choose to show ignored issues again."
-          }
-        }
-      }
-    },
     "notify_target_missing": {
       "title": "A Device Sentinel Notification Target No Longer Exists",
       "fix_flow": {
@@ -307,18 +296,6 @@
           }
         }
       }
-    },
-    "no_delivery_configured": {
-      "title": "Device Sentinel Has Nowhere to Send Anything",
-      "description": "Device Sentinel has been watching your devices for {days} days and has no way to tell you about a problem. No targets are set for alerts or for the daily brief.\n\nThe persistent card is on, so problems do appear in Home Assistant's notification panel, but nothing reaches a phone or an inbox.\n\nSet a target under Settings, Devices and Services, Device Sentinel, Configure, Notifications and Daily Brief."
-    },
-    "clock_reset": {
-      "title": "The System Clock Was Reset or Paused",
-      "description": "Home Assistant's clock moved {shift} at {time} while Device Sentinel was running. Either the clock was set, or the system was paused or suspended, as a virtual machine can be during a backup. Every device's activity clock was restarted at that moment, so nothing is judged on time nobody was watching, and nothing learned was lost. If neither happened, check the time synchronisation on your Home Assistant host."
-    },
-    "clocks_reset": {
-      "title": "Activity Clocks Were Reset",
-      "description": "The file that holds each device's last report time was missing or damaged when Device Sentinel started. Every clock was restarted at {time}. Nothing learned was lost. If this happens again, check the storage on your Home Assistant host."
     },
     "storage_restored": {
       "title": "Device Sentinel Restored Its Storage",
@@ -400,15 +377,6 @@
       }
     },
     "button": {
-      "enable_signal_entities": {
-        "name": "Enable Signals"
-      },
-      "enable_last_seen_entities": {
-        "name": "Enable Last Seen"
-      },
-      "enable_battery_entities": {
-        "name": "Enable Battery"
-      },
       "regenerate_reports": {
         "name": "Regenerate Reports"
       },
