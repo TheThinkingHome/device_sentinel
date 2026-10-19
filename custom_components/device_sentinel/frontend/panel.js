@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.26.5 (2026-10-16)
+// File: panel.js, Version: 0.26.6 (2026-10-18)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -57,7 +57,9 @@ const SETTINGS_PATH = "/config/integrations/integration/device_sentinel";
 // (0.24.11).
 const MUTE_SOURCES = [
   ["everything", "Everything", "Exclusions and Muting"],
-  ["freeze", "Freeze", "Freeze Detection"],
+  ["freeze", "Freeze", "Freeze and Unavailable Detection"],
+  // By label or device, never integration (James, 18 October 2026).
+  ["unavailable", "Unavailable", "Freeze and Unavailable Detection"],
   ["battery", "Battery", "Low Battery"],
   ["signal", "Signal", "Signal Strength"],
 ];
@@ -69,6 +71,7 @@ const INTEGRATION_FILTERS = [
   ["service", "Service only"],
   ["no_hardware", "No hardware"],
   ["helper", "Helper"],
+  ["notices_only", "Nothing switched on to read"],
 ];
 const DEVICE_FILTERS = [
   ["all", "All"],
@@ -180,6 +183,7 @@ const STANDING = {
   service: "Service only",
   no_hardware: "No hardware",
   helper: "Helper",
+  notices_only: "Nothing switched on to read",
 };
 // The key under the Integrations table, the same words as
 // classification.md's (0.22.21). A test holds the two to one text.
@@ -190,6 +194,7 @@ const STANDING_KEY = [
   ["Service only", "Its devices report themselves as services, so there is nothing to watch."],
   ["No hardware", "An add-on with no hardware of its own. It puts its entities on devices other integrations own, as Battery Notes does, and they never count as the device reporting."],
   ["Helper", "A Home Assistant helper you linked to a device. Its entities never count as the device reporting."],
+  ["Nothing switched on to read", "Its devices have nothing switched on that can report."],
 ];
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -1301,6 +1306,11 @@ class DeviceSentinelPanel extends HTMLElement {
       : "")
       + (counts.helper
         ? ` ${counts.helper} ${counts.helper === 1 ? "is a helper you linked to a device" : "are helpers you linked to devices"}.`
+        : "")
+      // Devices with nothing but firmware notices or command buttons
+      // switched on (James, 17 October 2026).
+      + (counts.notices_only
+        ? ` ${counts.notices_only} ${counts.notices_only === 1 ? "has" : "have"} nothing switched on to read.`
         : "");
     const summary = el("p", { style: "margin:0;line-height:1.5" },
       `${owners} ${owners === 1 ? "integration owns" : "integrations own"} devices in your house. `
@@ -2704,7 +2714,8 @@ class DeviceSentinelPanel extends HTMLElement {
     const toggle = (kind, words) => {
       const m = mutes[kind] || { on: false, here: false };
       // Fixed when the mute comes from a label or an integration, or
-      // when Mute everything covers this kind.
+      // when Mute everything covers this kind. Freeze and unavailable
+      // are each their own (James, 18 October 2026).
       const covered = kind !== "everything" && everything;
       const fixed = (m.on && !m.here) || covered;
       const lit = Boolean(m.on || covered);
@@ -2725,8 +2736,8 @@ class DeviceSentinelPanel extends HTMLElement {
     };
     // The buttons say what is muted; "nothing" went (ruling #646).
     const parts = [
-      el("div", { class: "actrow" }, toggle("freeze", "Mute freeze"), toggle("battery", "Mute battery"),
-        toggle("signal", "Mute signal"), toggle("everything", "Mute everything"))];
+      el("div", { class: "actrow" }, toggle("freeze", "Mute freeze"), toggle("unavailable", "Mute unavailable"),
+        toggle("battery", "Mute battery"), toggle("signal", "Mute signal"), toggle("everything", "Mute everything"))];
     // A mute set by a label or an integration cannot be lifted here,
     // and its greyed button said nothing about why (Tim Plas, 6
     // October). Each says where it comes from and where it is changed
@@ -2751,7 +2762,7 @@ class DeviceSentinelPanel extends HTMLElement {
     }
     if (e && e.row === "muteall") {
       parts.push(el("div", { class: "actnote ask", role: "alert" },
-        `Mute everything for ${who.name}? Device Sentinel will stop judging and reporting it for freeze, battery and signal. It keeps learning.`),
+        `Mute everything for ${who.name}? Device Sentinel will stop judging and reporting it for freeze, unavailable, battery and signal. It keeps learning.`),
         el("div", { class: "actrow" },
           el("button", { class: "chip", type: "button",
             onclick: () => this._deviceAct({ type: "device_sentinel/device_mute", device_id: who.device_id, kind: "everything", on: true }, "muted") },
@@ -2868,12 +2879,15 @@ class DeviceSentinelPanel extends HTMLElement {
       el("div", { class: "statusline" },
         el("div", { style: "font-size:18px;font-weight:500;display:flex;align-items:center;gap:8px" },
           el("span", { class: "dot", style: `background:${colour}` }), word),
-        el("div", { class: "muted" }, status.window
-          ? `Last report ${ago(status.last_activity, now)}. Called frozen after ${span(status.window)} of silence.`
-          : `Last report ${ago(status.last_activity, now)}. Still learning its rhythm, so it is not yet judged for freezing.`)),
-      status.window ? el("div", { class: "bar", role: "img", "aria-label": `${Math.round(fill * 100)} percent of its window used` },
+        el("div", { class: "muted" }, status.connection
+          // Judged by its connection alone (James, 17 October 2026).
+          ? `Judged by its connection: ${status.connection}.`
+          : status.window
+            ? `Last report ${ago(status.last_activity, now)}. Called frozen after ${span(status.window)} of silence.`
+            : `Last report ${ago(status.last_activity, now)}. Still learning its rhythm, so it is not yet judged for freezing.`)),
+      status.window && !status.connection ? el("div", { class: "bar", role: "img", "aria-label": `${Math.round(fill * 100)} percent of its window used` },
         el("div", { style: `width:${(fill * 100).toFixed(1)}%;background:${colour}` })) : null,
-      status.window ? el("div", { class: "statusline small" },
+      status.window && !status.connection ? el("div", { class: "statusline small" },
         el("span", {}, "0"), el("span", {}, `rhythm ${span(status.rhythm)}`), el("span", {}, `window ${span(status.window)}`)) : null);
 
     // The Identity section (0.24.9): who the device is first, then three
@@ -3620,13 +3634,13 @@ class DeviceSentinelPanel extends HTMLElement {
       set_aside: (row) => (row.set_aside || "\uffff").toLowerCase(),
       copies: (row) => -(row.copies || 1),
     });
-    // All six reasons, and no count of entities with no device: those
+    // All seven reasons, and no count of entities with no device: those
     // are never watched, and "seen only as entities" said they were
     // (0.22.13, from the second fleet's review).
     const summary = el("p", { style: "margin:0;line-height:1.5" },
       `Watching ${data.watched} of ${data.rows.length} devices. ${data.set_aside} are set aside: integrations you `
       + "excluded, service devices, disabled devices, duplicate coordinators, hardware already watched through "
-      + "another device, and devices with no entities. MUTED "
+      + "another device, devices with nothing switched on that can report, and devices with no entities. MUTED "
       + "names every mute on a device and its source.");
     const chips = el("div", { class: "chips" }, ...FILTERS.map(([key, label]) =>
       el("button", {
