@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.26.6 (2026-10-18)
+// File: panel.js, Version: 0.26.7 (2026-10-19)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -36,6 +36,8 @@ const TABS = [
 // and a bookmark all return to the tab that was on screen (0.22.14,
 // from the second fleet's review). The Daily Brief owns the bare
 // address, so opening the dashboard lands on it.
+// The tabs Simple leaves off the row (ruling #694).
+const SIMPLE_HIDDEN_TABS = ["Signal Trends", "Integrations"];
 const TAB_SLUG = Object.fromEntries(TABS.map((name) => [name, name.toLowerCase().replace(/ /g, "-")]));
 const TAB_BY_SLUG = Object.fromEntries(TABS.map((name) => [TAB_SLUG[name], name]));
 // A device no type could be found for (0.25.1), as the Type filters name it.
@@ -335,6 +337,13 @@ const STATE_COLOURS = {
   down: "var(--error-color, #db4437)",
 };
 
+// A day in the browser's own time zone, as a date input reads it: the
+// UTC day is tomorrow in an evening west of Greenwich (found by review).
+function localDay(d) {
+  const pad = (v) => String(v).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -379,6 +388,15 @@ const STYLE = `
     background: var(--card-background-color); color: var(--primary-text-color); border: 1px solid var(--divider-color); }
   .pill:disabled { opacity: 0.6; cursor: default; }
   .pill.new { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }
+  .modes { display: inline-flex; gap: 0; }
+  .modes .pill.mode { border-radius: 0; }
+  .modes .pill.mode:first-child { border-radius: 22px 0 0 22px; }
+  .modes .pill.mode:last-child { border-radius: 0 22px 22px 0; }
+  .pill.mode[aria-pressed="true"] { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }
+  .pill.active-recs { background: var(--warning-color, #ffa600); color: #1a1a1a; border-color: var(--warning-color, #ffa600); font-weight: 600; }
+  .pill[hidden] { display: none; }
+  .rec.acked, tr.acked { opacity: 0.6; }
+  label.ack { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; }
   .maint { display: flex; align-items: center; border: 1px solid var(--divider-color); border-radius: 22px;
     background: var(--card-background-color); }
   .maint .pill { border: 0; background: transparent; }
@@ -538,6 +556,11 @@ class DeviceSentinelPanel extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._tab = "Daily Brief";
+    // The dashboard's own Simple or Advanced switch (ruling #693): held
+    // only while this page is open, and nothing is kept in the browser.
+    // Leaving the dashboard, closing the window or reloading returns it
+    // to the setting the status reply carries.
+    this._modeChoice = null;
     this._filter = "all";
     this._problemFilter = "all";
     this._problemSort = null;
@@ -731,6 +754,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener(UPDATED_EVENT, this._onUpdated);
+    this._modeChoice = null;
     if (this._liveTimer) {
       clearInterval(this._liveTimer);
       this._liveTimer = null;
@@ -828,16 +852,18 @@ class DeviceSentinelPanel extends HTMLElement {
     this._maintButton = el("button", { class: "pill", type: "button", onclick: () => this._maintenance() }, "Maintenance Mode");
     this._minutes = el("select", { "aria-label": "Maintenance length" });
     this._asOf = el("span", { class: "asof" });
-    const enable = (label, action) =>
-      el("button", { class: "pill", type: "button", onclick: () => this._enable(label, action) }, label);
+    // One highlighted button in place of the three Enable buttons
+    // (ruling #700): the recommendations not yet acknowledged, hidden
+    // at zero, opening the tab.
+    this._activeButton = el("button", { class: "pill active-recs", type: "button", hidden: "",
+      onclick: () => this._navigate(this._tabPath("Recommendations")) }, "");
     const actions = el(
       "section",
       { class: "actions", "aria-label": "Actions" },
       this._refreshButton,
       el("div", { class: "maint" }, this._maintButton, this._minutes),
-      enable("Enable Signals", "enable_signals"),
-      enable("Enable Last Seen", "enable_last_seen"),
-      enable("Enable Battery", "enable_battery"),
+      this._activeButton,
+      this._modeSwitch = el("div", { class: "modes", role: "group", "aria-label": "Dashboard" }),
       this._asOf,
     );
 
@@ -931,6 +957,13 @@ class DeviceSentinelPanel extends HTMLElement {
         this._call({ type: "device_sentinel/signal_trends" }),
       ]);
       this._snapshot = { status, classification, problems, recommendations, integrations, devices, brief, battery, signal, at: new Date() };
+      // An open "Change date" is dropped once its device waits on no
+      // detection, answered here or anywhere else (found by review).
+      if (this._batteryDayOpen) {
+        const confirm = (recommendations.devices || []).find((card) => card.kind === "battery_confirm");
+        const waiting = new Set(confirm ? confirm.devices.map((row) => row.device_id) : []);
+        for (const id of Object.keys(this._batteryDayOpen)) if (!waiting.has(id)) delete this._batteryDayOpen[id];
+      }
       this._noteServed(status.panel);
       if (this._view) this._page = await this._fetchView();
       this._shownMarker = status.marker;
@@ -974,10 +1007,69 @@ class DeviceSentinelPanel extends HTMLElement {
     this._minutes.replaceChildren(...[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map((m) =>
       el("option", { value: String(m), ...(String(m) === chosen ? { selected: "" } : {}) }, `${m} min`)));
     this._asOf.textContent = `As of ${longMoment(at)}`;
+    this._paintModes();
+    this._paintActiveRecs();
+  }
+
+  // The recommendations this view shows (ruling #695): Simple shows
+  // the cards and lines that stop a missed or false alarm.
+  _recsInView() {
+    const recs = (this._snapshot && this._snapshot.recommendations) || {};
+    const simple = this._isSimple();
+    return {
+      lines: (recs.lines || []).filter((line) => !simple || line.simple),
+      cards: (recs.devices || []).filter((card) => !simple || card.simple),
+    };
+  }
+
+  // What is not acknowledged in the cards and lines this view shows
+  // (ruling #700).
+  _activeRecs() {
+    const { lines, cards } = this._recsInView();
+    return lines.filter((line) => !line.acknowledged).length
+      + cards.reduce((n, card) => n + card.devices.filter((row) => !row.acknowledged).length, 0);
+  }
+
+  // Simple or Advanced (rulings #693, #694): the switch while it is
+  // held, else the setting.
+  _mode() {
+    if (this._modeChoice) return this._modeChoice;
+    const set = this._snapshot && this._snapshot.status && this._snapshot.status.dashboard;
+    return set === "simple" ? "simple" : "advanced";
+  }
+
+  _isSimple() {
+    return this._mode() === "simple";
+  }
+
+  _paintModes() {
+    if (!this._modeSwitch) return;
+    const mode = this._mode();
+    this._modeSwitch.replaceChildren(...[["simple", "Simple"], ["advanced", "Advanced"]].map(([key, label]) =>
+      el("button", { class: "pill mode", type: "button", "aria-pressed": String(mode === key),
+        onclick: () => {
+          if (this._mode() === key) return;
+          this._modeChoice = key;
+          this._devEdit = null;
+          this._paintStatus();
+          this._paintPane();
+        } }, label)));
+  }
+
+  _paintActiveRecs() {
+    if (!this._activeButton) return;
+    const active = this._snapshot ? this._activeRecs() : 0;
+    this._activeButton.hidden = active === 0;
+    this._activeButton.textContent = `Active Recommendations (${active})`;
+    this._paintTabs();
   }
 
   _paintTabs() {
-    this._tabRow.replaceChildren(...TABS.map((name) =>
+    // Simple hides Signal Trends and Integrations (ruling #694); either
+    // still opens from a link, and its tab shows while it is open.
+    const hidden = this._snapshot && this._isSimple() ? SIMPLE_HIDDEN_TABS : [];
+    const shown = TABS.filter((name) => !hidden.includes(name) || name === this._tab);
+    this._tabRow.replaceChildren(...shown.map((name) =>
       el("button", {
         class: "tab", type: "button", role: "tab", "aria-selected": String(name === this._tab),
         onclick: () => {
@@ -986,7 +1078,8 @@ class DeviceSentinelPanel extends HTMLElement {
           if (!this._view && name === this._tab) return;
           this._navigate(this._tabPath(name));
         },
-      }, name)));
+      }, name === "Recommendations" && this._snapshot && this._activeRecs()
+        ? `Recommendations (${this._activeRecs()})` : name)));
   }
 
   _paintPane() {
@@ -1124,21 +1217,24 @@ class DeviceSentinelPanel extends HTMLElement {
   }
 
   _paintRecommendations() {
-    const { lines, closing } = this._snapshot.recommendations;
-    const devices = this._snapshot.recommendations.devices || [];
+    const { closing } = this._snapshot.recommendations;
+    const { lines, cards: devices } = this._recsInView();
     if (!lines.length && !devices.length) {
       this._pane.replaceChildren(el("p", {}, "Nothing to recommend right now."));
       return;
     }
     const cards = lines.map((line) => {
-      const at = line.indexOf(":");
-      const title = at > 0 ? line.slice(0, at) : "";
-      const rest = (at > 0 ? line.slice(at + 1) : line).trim();
+      const text = line.text;
+      const at = text.indexOf(":");
+      const title = at > 0 ? text.slice(0, at) : "";
+      const rest = (at > 0 ? text.slice(at + 1) : text).trim();
       const body = rest.charAt(0).toUpperCase() + rest.slice(1);
-      return el("article", { class: "rec" },
+      return el("article", { class: line.acknowledged ? "rec acked" : "rec" },
         title ? el("h3", {}, title) : null,
         el("p", {}, body),
-        el("p", {}, this._link("Open Device Sentinel settings", SETTINGS_PATH)));
+        el("div", { class: "actrow" },
+          this._link("Open Device Sentinel settings", SETTINGS_PATH),
+          this._ackBox(line.acknowledged, { line: line.key })));
     });
     // Recommendations about single devices (0.24.9), each listing its
     // devices; a brief's "Open the list" arrives with its card open.
@@ -1156,6 +1252,24 @@ class DeviceSentinelPanel extends HTMLElement {
     if (target && typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "start" });
   }
 
+  // The acknowledgement tick (ruling #699): one device on one card, or
+  // one written line, and it can be unticked again.
+  _ackBox(on, which) {
+    const box = el("input", { type: "checkbox", "aria-label": "Acknowledged", ...(on ? { checked: "" } : {}) });
+    box.addEventListener("change", async () => {
+      box.disabled = true;
+      try {
+        await this._call({ type: "device_sentinel/recommendation_ack", on: box.checked, ...which });
+        this._snapshot.recommendations = await this._call({ type: "device_sentinel/recommendations" });
+      } catch (err) {
+        box.checked = !box.checked;
+      }
+      this._paintActiveRecs();
+      if (this._tab === "Recommendations" && !this._view) this._paintRecommendations();
+    });
+    return el("label", { class: "ack small" }, box, " Acknowledged");
+  }
+
   _recDeviceCard(card, open) {
     const ids = card.devices.map((row) => row.device_id);
     const from = TAB_SLUG.Recommendations;
@@ -1170,6 +1284,7 @@ class DeviceSentinelPanel extends HTMLElement {
     }, row.name);
     const refresh = async () => {
       this._snapshot.recommendations = await this._call({ type: "device_sentinel/recommendations" });
+      this._paintActiveRecs();
       this._paintRecommendations();
     };
     const rows = card.devices.map((row) => {
@@ -1181,10 +1296,23 @@ class DeviceSentinelPanel extends HTMLElement {
       // A model split between types (0.25.3): which model, and what
       // this device is.
       if (card.kind === "mixed_types") action = el("span", { class: "small" }, `${row.model || "Unknown model"}: ${row.type}`);
-      if (card.kind === "last_seen") {
+      // The switched-off cards (rulings #696, #698): one device, one kind.
+      const TURN_ON = {
+        last_seen: ["last_seen", "Turn on its Last Seen"],
+        battery_off: ["battery", "Turn on its battery sensor"],
+        signal_off: ["signal", "Turn on its signal sensor"],
+        node_status_off: ["node_status", "Turn on its Z-Wave status"],
+      };
+      if (card.kind === "battery_confirm") {
+        action = this._batteryAnswers(row.device_id, async (error) => {
+          if (error) fail({ message: error }); else await refresh();
+        }, el("span", { class: "small" }, `detected ${this._dayWords(row.day)}`));
+      }
+      if (TURN_ON[card.kind]) {
+        const [kind, words] = TURN_ON[card.kind];
         action = el("button", { class: "chip", type: "button", onclick: async () => {
-          try { await this._call({ type: "device_sentinel/device_last_seen", device_id: row.device_id }); await refresh(); } catch (err) { fail(err); }
-        } }, "Turn on its Last Seen");
+          try { await this._call({ type: "device_sentinel/device_turn_on", device_id: row.device_id, kind }); await refresh(); } catch (err) { fail(err); }
+        } }, words);
       }
       // A device slow to judge for freeze (0.26.0, ruling #637): the
       // same mute its device page offers, in the list. The device
@@ -1194,8 +1322,12 @@ class DeviceSentinelPanel extends HTMLElement {
           try { await this._call({ type: "device_sentinel/device_mute", device_id: row.device_id, kind: "freeze", on: true, source: "recommendations" }); await refresh(); } catch (err) { fail(err); }
         } }, "Mute freeze");
       }
-      return el("tr", {}, el("td", {}, nameLink(row)), el("td", { class: "small" }, row.area || "no area"),
-        el("td", {}, el("div", { class: "actrow" }, action, note)));
+      return el("tr", row.acknowledged ? { class: "acked" } : {},
+        el("td", {}, nameLink(row)), el("td", { class: "small" }, row.area || "no area"),
+        el("td", {}, el("div", { class: "actrow" }, action, note)),
+        // A battery replacement is answered, not ticked (#701).
+        el("td", {}, card.kind === "battery_confirm" ? null
+          : this._ackBox(row.acknowledged, { kind: card.kind, device_id: row.device_id })));
     });
     return el("article", { class: "rec", "data-kind": card.kind },
       el("h3", {}, card.title),
@@ -1421,7 +1553,9 @@ class DeviceSentinelPanel extends HTMLElement {
         this._link("Device Sentinel settings", SETTINGS_PATH)));
     // Exclude the integration, or take it back, here as well as in
     // Settings (0.26.1, ruling #659).
-    const exclusion = el("div", { class: "actrow" },
+    // Simple hides the button (ruling #694); an exclusion already made
+    // still shows, with its way back.
+    const exclusion = this._isSimple() && !page.excluded ? null : el("div", { class: "actrow" },
       el("button", { class: "chip", type: "button",
         onclick: async () => {
           this._integrationNote = null;
@@ -1475,7 +1609,7 @@ class DeviceSentinelPanel extends HTMLElement {
             el("td", {}, d.watched ? (d.muted ? `Watched, muted: ${d.muted}` : "Watched") : `Set aside: ${d.set_aside}`),
             el("td", {}, d.problem ? `${d.problem}${d.acknowledged ? ", acknowledged" : ""}` : ""))))))
       : null;
-    this._pane.replaceChildren(back, head, exclusion, stats,
+    this._pane.replaceChildren(back, head, ...(exclusion ? [exclusion] : []), stats,
       el("h3", { class: "section" }, "Recommendations"), ...recs,
       el("h3", { class: "section" }, "Outages, last 14 days"), outages,
       el("h3", { class: "section" }, `Devices `, el("span", { class: "small" }, `${page.devices.length}, problems first`)), devices,
@@ -1590,7 +1724,21 @@ class DeviceSentinelPanel extends HTMLElement {
 
     // Empty parts left out: the browser writes a missing one as "null"
     // (0.25.3).
-    this._pane.replaceChildren(...[nav,
+    // A line at the top while recommendations are not acknowledged
+    // (ruling #700), counting what this view shows, as the emailed
+    // Brief already does (#590).
+    const active = this._activeRecs();
+    const recLine = active ? el("p", { class: "recline", style: "margin:0" },
+      `${active} active ${active === 1 ? "recommendation" : "recommendations"} on the `,
+      el("a", { href: this._tabPath("Recommendations"), onclick: (ev) => {
+        ev.preventDefault();
+        this._navigate(this._tabPath("Recommendations"));
+      } }, "Recommendations tab"), ".") : null;
+    // A detected battery replacement names the device and the day
+    // (ruling #701), as the emailed Brief does.
+    const confirm = this._recsInView().cards.find((card) => card.kind === "battery_confirm");
+    const confirmLine = confirm && confirm.brief ? el("p", { class: "recline", style: "margin:0" }, confirm.brief) : null;
+    this._pane.replaceChildren(...[recLine, confirmLine, nav,
       el("h3", { class: "section" }, "Now"),
       nowLine ? el("p", { style: "margin:0" }, nowLine) : null, nowTable,
       el("h3", { class: "section" }, "Repeat Offenders"), ...repeat,
@@ -2340,20 +2488,31 @@ class DeviceSentinelPanel extends HTMLElement {
   }
 
   // The Z-Wave status row (ruling #671): what Z-Wave says of the node,
-  // or that its sensor is switched off, with the same button that turns
-  // on Last Seen, which turns this on too.
+  // or that its sensor is switched off, with its own Turn it on (#698).
   _nodeStatusCell(who, acts) {
     const WORDS = { alive: "alive", asleep: "asleep", awake: "awake", dead: "dead", unknown: "not known yet" };
     if (who.node_status === "off") {
       return el("div", { class: "actcol" },
         el("span", {}, "switched off"),
         acts ? el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
-          onclick: () => this._deviceAct({ type: "device_sentinel/device_last_seen", device_id: who.device_id }, "nodestatus") },
+          onclick: () => this._deviceAct({ type: "device_sentinel/device_turn_on", device_id: who.device_id, kind: "node_status" }, "nodestatus") },
           "Turn it on")) : null,
         this._actNote("nodestatus"));
     }
     const word = WORDS[who.node_status] || who.node_status;
     return el("span", who.node_status === "dead" ? { style: "color:var(--error-color, #db4437)" } : {}, word);
+  }
+
+  // A Battery or Signal sensor switched off (0.26.7, the repair-card
+  // rulings of 18 October), with the button that switches on this
+  // device's own sensor of that kind (ruling #696).
+  _switchedOffCell(who, kind, row) {
+    return el("div", { class: "actcol" },
+      el("span", {}, "switched off"),
+      el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+        onclick: () => this._deviceAct({ type: "device_sentinel/device_turn_on", device_id: who.device_id, kind }, row) },
+        "Turn it on")),
+      this._actNote(row));
   }
 
   _actNote(row) {
@@ -2461,6 +2620,85 @@ class DeviceSentinelPanel extends HTMLElement {
       svg("path", { d: "M6.5 12.5 H9.4 L10.9 9.2 L13.1 15.6 L14.6 12.5 H17.5", fill: "none", stroke: c.trace,
         "stroke-width": 1.6, "stroke-linecap": "round", "stroke-linejoin": "round" }));
     return el("span", { class: "powericon", title: "Entered on this page", role: "img", "aria-label": "Entered on this page" }, icon);
+  }
+
+  // A day as the dashboard writes one: Oct 18, 2026.
+  _dayWords(iso) {
+    const day = new Date(`${iso}T12:00:00`);
+    return day.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  // The answers to a detected replacement (rulings #701, #702): Confirm,
+  // Change date and Cancel, on the device page and on its card.
+  _batteryAnswers(deviceId, after, row) {
+    const send = async (message) => {
+      try {
+        await this._call({ type: "device_sentinel/device_battery", device_id: deviceId, ...message });
+        await after(null);
+      } catch (err) {
+        await after((err && err.message) || "That did not save.");
+      }
+    };
+    // An open "Change date" and the day picked so far are kept by device,
+    // so the page's minute refresh does not close it mid-pick (found by
+    // review). Kept in memory only, and dropped once an answer is sent.
+    this._batteryDayOpen = this._batteryDayOpen || {};
+    const held = this._batteryDayOpen[deviceId];
+    const day = el("input", { class: "actinput", type: "date", "aria-label": "The day the battery was changed",
+      max: localDay(new Date()), value: held ? held.value : "" });
+    day.style.display = held ? "" : "none";
+    day.addEventListener("input", () => { this._batteryDayOpen[deviceId] = { value: day.value }; });
+    const sendAndForget = (message) => { delete this._batteryDayOpen[deviceId]; return send(message); };
+    const save = el("button", { class: "chip", type: "button", style: held ? "" : "display:none",
+      onclick: () => day.value && sendAndForget({ action: "date", day: day.value }) }, "Save");
+    return el("div", { class: "actrow" },
+      el("button", { class: "chip", type: "button", onclick: () => sendAndForget({ action: "confirm" }) }, "Confirm"),
+      el("button", { class: "chip", type: "button", onclick: () => {
+        this._batteryDayOpen[deviceId] = { value: day.value };
+        day.style.display = ""; save.style.display = "";
+      } }, "Change date"),
+      day, save,
+      el("button", { class: "chip", type: "button", onclick: () => sendAndForget({ action: "cancel" }) }, "Cancel"),
+      row);
+  }
+
+  _batteryReplacedCell(who) {
+    const view = who.battery_replaced;
+    const acts = who.actions;
+    const after = async (error) => {
+      if (error) {
+        this._devEdit = { device: who.device_id, row: null, errorRow: "batteryreplaced", error };
+      } else {
+        this._devEdit = null;
+        await this._refresh();
+      }
+      this._paintDevicePage();
+    };
+    if (view.waiting) {
+      return el("div", { class: "actcol" },
+        el("span", {}, `Detected ${view.words.done} on ${this._dayWords(view.day)}`),
+        acts ? this._batteryAnswers(who.device_id, after, null) : null,
+        this._actNote("batteryreplaced"));
+    }
+    const e = this._edit(who.device_id);
+    const words = view.day ? this._dayWords(view.day) : view.words.none;
+    const shown = el("div", { class: "actrow" }, el("span", {}, words),
+      view.how === "entered" ? el("span", { class: "muted small" }, "set by you") : null,
+      acts ? this._editMark(`Change the day the battery was ${view.words.done}`, () => {
+        this._devEdit = { device: who.device_id, row: "batteryreplaced" };
+        this._paintDevicePage();
+      }) : null);
+    if (!acts || !e || e.row !== "batteryreplaced") {
+      return el("div", { class: "actcol" }, shown, this._actNote("batteryreplaced"));
+    }
+    const day = el("input", { class: "actinput", type: "date", "aria-label": "The day the battery was changed",
+      max: localDay(new Date()), value: view.day || "" });
+    return el("div", { class: "actcol" }, shown,
+      el("div", { class: "actrow" }, day,
+        el("button", { class: "chip", type: "button", onclick: () => day.value && this._deviceAct(
+          { type: "device_sentinel/device_battery", device_id: who.device_id, action: "date", day: day.value }, "batteryreplaced") }, "Save"),
+        el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel")),
+      this._actNote("batteryreplaced"));
   }
 
   _powerCell(who) {
@@ -2707,6 +2945,97 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("div", { class: "actcol" }, ...parts);
   }
 
+  // Labels in Simple (ruling #694): each with what Device Sentinel does
+  // with it, and nothing to press.
+  _plainLabels(who) {
+    const labels = (who.actions && who.actions.labels) || [];
+    if (!labels.length) return el("span", { class: "muted" }, "none");
+    return el("div", { class: "actrow" }, ...labels.map((label) => el("span", { class: "labelchip" }, label.name,
+      label.meaning ? el("span", { class: "meaning" }, label.meaning) : null)));
+  }
+
+  // Mute by label (ruling #706, Advanced): one of the person's labels,
+  // or a new one, and the kind. The page says how many devices carry
+  // the label before it saves.
+  _labelMute(who) {
+    const e = this._edit(who.device_id);
+    if (!e || e.row !== "labelmute" || !this._choices) {
+      return el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+        onclick: () => this._openPicker(who, "labelmute") }, "Mute by label"));
+    }
+    e.kind = e.kind || "freeze";
+    const KINDS = [["freeze", "Freeze"], ["unavailable", "Unavailable"], ["battery", "Battery"], ["signal", "Signal"], ["everything", "Everything"]];
+    const have = new Set(((who.actions && who.actions.labels) || []).map((l) => l.id));
+    const repaint = () => this._paintDevicePage();
+    const kind = el("select", { class: "actinput", "aria-label": "What to mute" },
+      ...KINDS.map(([key, label]) => el("option", { value: key, ...(e.kind === key ? { selected: "" } : {}) }, label)));
+    kind.addEventListener("change", () => { e.kind = kind.value; repaint(); });
+    const option = (l) => el("label", { class: "pick" },
+      el("input", { type: "radio", name: "ds-labelmute", ...(e.label === l.id ? { checked: "" } : {}),
+        onchange: () => { e.label = l.id; e.name = ""; repaint(); } }),
+      `${l.name}, on ${l.devices || 0} device${l.devices === 1 ? "" : "s"}`,
+      l.meaning ? el("span", { class: "muted" }, ` (${l.meaning})`) : null);
+    const input = el("input", { class: "actinput", type: "text", "aria-label": "New label", placeholder: "New label", value: e.name || "" });
+    const word = (KINDS.find(([key]) => key === e.kind) || ["", ""])[1].toLowerCase();
+    const fold = (text) => text.trim().toLowerCase();
+    // A typed name Home Assistant already holds is that label, and the
+    // page says how many devices carry it (found by review).
+    const chosenNow = () => {
+      const typed = (e.name || "").trim();
+      if (e.label) return this._choices.labels.find((l) => l.id === e.label) || null;
+      return typed ? this._choices.labels.find((l) => fold(l.name) === fold(typed)) || null : null;
+    };
+    const reachWords = () => {
+      const chosen = chosenNow();
+      const typed = (e.name || "").trim();
+      if (chosen) {
+        const n = (chosen.devices || 0) + (have.has(chosen.id) ? 0 : 1);
+        return `${chosen.name} is on ${chosen.devices || 0} device${chosen.devices === 1 ? "" : "s"}${have.has(chosen.id) ? "" : " and goes on this one too"}. `
+          + `Muting it for ${word} mutes all ${n} for ${word}.`;
+      }
+      return typed ? `A new label, ${typed}, goes on this device and mutes it for ${word}.` : "";
+    };
+    const note = el("div", { class: "actnote ask" }, "");
+    const saveButton = el("button", { class: "chip", type: "button", onclick: () => save() }, "Mute by label");
+    // Updated where it stands as the name is typed, never by a repaint:
+    // a repaint on leaving the box replaced the button under the first
+    // click (found by review).
+    const showReach = () => {
+      const words = reachWords();
+      note.textContent = words;
+      note.hidden = !words;
+      if (words) saveButton.removeAttribute("aria-disabled");
+      else saveButton.setAttribute("aria-disabled", "true");
+    };
+    input.addEventListener("input", () => {
+      e.name = input.value;
+      e.label = null;
+      for (const radio of this._pane.querySelectorAll('input[name="ds-labelmute"]')) radio.checked = false;
+      showReach();
+    });
+    const save = () => {
+      const chosen = chosenNow();
+      const typed = (e.name || "").trim();
+      const message = { type: "device_sentinel/device_label_mute", device_id: who.device_id, kind: e.kind };
+      if (chosen) message.label_id = chosen.id;
+      else if (typed) message.name = typed;
+      else return;
+      this._deviceAct(message, "labelmute");
+    };
+    showReach();
+    return el("div", { class: "actcol" },
+      el("div", { class: "actrow" }, el("span", {}, "Mute"), kind, el("span", {}, "by label")),
+      el("fieldset", { style: "border:none;margin:0;padding:0" },
+        el("legend", { class: "muted", style: "padding:0 0 4px" }, "Label"),
+        ...this._choices.labels.map(option)),
+      el("div", { class: "actrow" }, input),
+      note,
+      el("div", { class: "actrow" },
+        saveButton,
+        el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; repaint(); } }, "Cancel")),
+      this._actNote("labelmute"));
+  }
+
   _mutedCell(who, hub) {
     const mutes = who.actions.mutes;
     const e = this._edit(who.device_id);
@@ -2770,6 +3099,8 @@ class DeviceSentinelPanel extends HTMLElement {
           el("button", { class: "chip", type: "button", onclick: () => { this._devEdit = null; this._paintDevicePage(); } }, "Cancel")));
     }
     parts.push(this._actNote("muted"));
+    // Advanced only (ruling #706).
+    if (!this._isSimple()) parts.push(this._labelMute(who));
     return el("div", { class: "actcol" }, ...parts);
   }
 
@@ -2875,6 +3206,10 @@ class DeviceSentinelPanel extends HTMLElement {
           `. ${standing}.`)),
       el("div", { class: "links" },
         el("span", { class: "small" }, "Live, updates every minute")));
+    // Simple shows the freeze window and the rhythm only for a device
+    // that is frozen or never reported (ruling #694).
+    const simple = this._isSimple();
+    const rhythmShown = !simple || ["frozen", "never_reported"].includes(status.category);
     const statusBox = el("div", { class: "devstatus" },
       el("div", { class: "statusline" },
         el("div", { style: "font-size:18px;font-weight:500;display:flex;align-items:center;gap:8px" },
@@ -2885,9 +3220,9 @@ class DeviceSentinelPanel extends HTMLElement {
           : status.window
             ? `Last report ${ago(status.last_activity, now)}. Called frozen after ${span(status.window)} of silence.`
             : `Last report ${ago(status.last_activity, now)}. Still learning its rhythm, so it is not yet judged for freezing.`)),
-      status.window && !status.connection ? el("div", { class: "bar", role: "img", "aria-label": `${Math.round(fill * 100)} percent of its window used` },
+      rhythmShown && status.window && !status.connection ? el("div", { class: "bar", role: "img", "aria-label": `${Math.round(fill * 100)} percent of its window used` },
         el("div", { style: `width:${(fill * 100).toFixed(1)}%;background:${colour}` })) : null,
-      status.window && !status.connection ? el("div", { class: "statusline small" },
+      rhythmShown && status.window && !status.connection ? el("div", { class: "statusline small" },
         el("span", {}, "0"), el("span", {}, `rhythm ${span(status.rhythm)}`), el("span", {}, `window ${span(status.window)}`)) : null);
 
     // The Identity section (0.24.9): who the device is first, then three
@@ -2923,7 +3258,7 @@ class DeviceSentinelPanel extends HTMLElement {
       : acts && acts.last_seen_off ? el("div", { class: "actcol" },
         el("span", {}, "switched off"),
         el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
-          onclick: () => this._deviceAct({ type: "device_sentinel/device_last_seen", device_id: who.device_id }, "heartbeat") },
+          onclick: () => this._deviceAct({ type: "device_sentinel/device_turn_on", device_id: who.device_id, kind: "last_seen" }, "heartbeat") },
           "Turn on its Last Seen")),
         this._actNote("heartbeat"))
         // ZHA keeps its own Last Seen for every device (ruling #652).
@@ -2942,14 +3277,25 @@ class DeviceSentinelPanel extends HTMLElement {
         } catch (err) { /* the next refresh shows the rule as it stands */ }
       } }, "Use the 14-Day Trimmed Maximum") : null;
     const group = (title) => ["__group__", title];
+    // Read-only in Simple (ruling #694): the value when set, "Not set"
+    // when not, and nothing that asks for more.
+    const plain = (text) => (text ? el("span", {}, text) : el("span", { class: "muted" }, "Not set"));
+    const signalTrouble = (() => {
+      const rail = (page.signal && page.signal.railed_days) || [];
+      const last = [...rail].reverse().find((v) => v !== null && v !== undefined);
+      return Boolean(last);
+    })();
+    const showSignal = !simple || signalTrouble;
+    const nodeTrouble = who.node_status === "dead" || who.node_status === "off";
+    const exclusion = (acts && acts.excluded) || {};
     const identity = [
       ["Name", acts ? this._nameCell(who) : who.name],
       // What it is (0.25.1).
-      ["Type", this._typeCell(who)],
+      ["Type", simple ? plain(who.type && who.type.words) : this._typeCell(who)],
       ["Device ID", who.device_id],
-      ["Area", acts ? this._areaCell(who) : (who.area || "none assigned")],
+      ["Area", simple ? plain(who.area) : acts ? this._areaCell(who) : (who.area || "none assigned")],
       // Labels, each with what Device Sentinel does with it (0.24.5).
-      ...(acts ? [["Labels", this._labelsCell(who)]] : []),
+      ...(acts ? [["Labels", simple ? this._plainLabels(who) : this._labelsCell(who)]] : []),
       // A row with nothing to show is left out (0.25.5); a row with
       // an action, such as Area or Power, always stays. The server
       // sends nothing for a field that is empty or only zeros.
@@ -2967,33 +3313,46 @@ class DeviceSentinelPanel extends HTMLElement {
       ...addressRows,
       group("Power"),
       ...(byKind("battery").length ? [["Battery level", valueCell("battery")]] : []),
-      ...(byKind("battery").length ? [["Battery sensor", sensorLinks("battery")]] : []),
+      ...(byKind("battery").length ? [["Battery sensor", sensorLinks("battery")]]
+        : acts && acts.battery_off ? [["Battery sensor", this._switchedOffCell(who, "battery", "batterysensor")]] : []),
       // What powers it (0.24.7): words, where they came from, pencil.
-      ["Power", this._powerCell(who)],
+      ["Power", simple ? plain(who.power && who.power.source ? who.power.words : null) : this._powerCell(who)],
+      // Battery Last Replaced, in both modes (ruling #701): the day, or
+      // a detected one waiting for an answer, with a pencil.
+      ...(who.battery_replaced ? [[who.battery_replaced.words.row, this._batteryReplacedCell(who)]] : []),
       ...(who.battery_steps ? [["Battery steps", who.battery_steps]] : []),
-      group("Signal"),
-      ...(byKind("signal").length ? [["Signal", valueCell("signal")]] : []),
-      ...(byKind("signal").length ? [["Signal sensor", sensorLinks("signal")]] : []),
+      // Simple shows the signal only when it is the trouble (#694).
+      ...(showSignal ? [
+        group("Signal"),
+        ...(byKind("signal").length ? [["Signal", valueCell("signal")]] : []),
+        ...(byKind("signal").length ? [["Signal sensor", sensorLinks("signal")]]
+          : acts && acts.signal_off ? [["Signal sensor", this._switchedOffCell(who, "signal", "signalsensor")]] : []),
+      ] : []),
       // Not on a hub's page (James, 14 October 2026): a Lutron hub's
       // only entity changes at a restart, so its Last seen read as a
       // fault while it was up. Its status box and outages say it.
       ...(hubSelf ? [] : [
         group("Last seen"),
         ["Last seen", valueCell("last_seen")],
-        ["Last seen sensor", lastSeenSensor],
+        // Simple: only when its sensor is switched off (#694).
+        ...(!simple || (acts && acts.last_seen_off && !byKind("last_seen").length)
+          ? [["Last seen sensor", lastSeenSensor]] : []),
         // Z-Wave's own word on the device (ruling #671): it is what tells
-        // Device Sentinel a Z-Wave device has become unavailable.
-        ...(who.node_status ? [["Z-Wave status", this._nodeStatusCell(who, acts)]] : []),
+        // Device Sentinel a Z-Wave device has become unavailable. Simple:
+        // only when the node is dead or its sensor is off (#694).
+        ...(who.node_status && (!simple || nodeTrouble) ? [["Z-Wave status", this._nodeStatusCell(who, acts)]] : []),
         ...(who.first_observed ? [["First seen", moment(who.first_observed)]] : []),
         ["Events seen", who.event_count != null ? Number(who.event_count).toLocaleString() : "0"],
       ]),
       // The freeze rule in use today and its wait (0.24.0): the
       // shorter of the Trimmed Maximum and the Log-Normal Percentile.
-      ...(status.rule ? [["Wait rule", el("div", { class: "actcol" }, `${status.rule}, ${span(status.window)}`, useTrimmed)]] : []),
+      ...(status.rule && rhythmShown ? [["Wait rule", el("div", { class: "actcol" }, `${status.rule}, ${span(status.window)}`, useTrimmed)]] : []),
       // What is muted and why, with the toggles (0.24.5).
       ...(acts ? [["Muted", this._mutedCell(who, hub)]] : []),
       // Excluded, with its button (0.25.6).
-      ...(acts ? [["Excluded", this._excludedCell(who)]] : []),
+      // Simple hides Exclude this device (#694); an exclusion already
+      // made still shows, with its way back.
+      ...(acts && (!simple || exclusion.here || exclusion.integration) ? [["Excluded", this._excludedCell(who)]] : []),
     ];
     // A group left with no rows under it is not drawn either.
     const ungrouped = new Set(["Muted", "Excluded"]);
@@ -3115,6 +3474,27 @@ class DeviceSentinelPanel extends HTMLElement {
       this._paintReadings();
       return;
     }
+    if (simple) {
+      // Simple's page (ruling #694): the rhythm and its silences only
+      // for a device frozen or never reported, and the battery as one
+      // chart with its expected fall (#703).
+      const b = page.battery || {};
+      const batteryChart = (b.daily || []).some((v) => typeof v === "number") && b.readable !== false
+        ? el("div", { class: "chart" },
+          el("div", { class: "statusline" }, el("strong", {}, "Battery"),
+            el("span", { class: "small" }, b.now != null ? `${b.now}% now` : "")),
+          b.sentence ? el("p", { class: "small", style: "margin:0;line-height:1.5" }, b.sentence) : null,
+          this._batteryFutureChart(b, { future: "simple" }))
+        : null;
+      this._pane.replaceChildren(...[back, head, statusBox,
+        rhythmShown
+          ? el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable), rhythm)
+          : el("div", {}, el("h3", { class: "section" }, "Identity"), idTable),
+        ...(rhythmShown ? [el("h3", { class: "section" }, "Silences, last 14 days"), silences] : []),
+        ...(batteryChart ? [el("h3", { class: "section" }, "Battery"), batteryChart] : [])]);
+      this._paintReadings();
+      return;
+    }
     this._pane.replaceChildren(back, head, statusBox,
       el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable), rhythm),
       el("h3", { class: "section" }, "Silences, last 14 days"), silences,
@@ -3122,6 +3502,115 @@ class DeviceSentinelPanel extends HTMLElement {
       el("p", { class: "muted", style: "margin:0" },
         "The Battery and Signal tabs open this page for any device, so these two graphs are where a battery or signal question ends."));
     this._paintReadings();
+  }
+
+  // The battery chart with its future (rulings #703 to #705): every kept
+  // day as a light dot under a smoothed line, the expected fall as a
+  // shaded range between two lines from today, and the low battery line
+  // only where the history or the range reaches it. Simple draws the
+  // future only when the near end is inside Days Till Empty; the
+  // Advanced "Future" view draws it up to half the days kept or Days
+  // Till Empty, whichever is longer, and says "empty after N days" past
+  // that.
+  _batteryFutureChart(battery, { future }) {
+    const daily = battery.daily || [];
+    const n = daily.length;
+    const proj = battery.projection;
+    const level = typeof battery.now === "number" ? battery.now : null;
+    let ahead = 0;
+    let beyond = null;
+    if (proj && level !== null) {
+      const far = proj.far != null ? proj.far : proj.near * 1.5;
+      if (future === "simple") {
+        // To the far end, or twice the near end when the far end is a
+        // long way off, so the history keeps its room (found by review).
+        if (battery.left_soon) ahead = Math.ceil(Math.min(far, Math.max(proj.near * 2, battery.days_setting || 0)));
+      } else {
+        const limit = Math.max(Math.ceil(n / 2), battery.days_setting || 0);
+        if (proj.near > limit) beyond = limit;
+        else {
+          ahead = Math.min(Math.ceil(far), limit);
+          if (far > limit) beyond = limit;
+        }
+      }
+    }
+    ahead = Math.min(ahead, 3 * 365);
+    const total = Math.max(1, n + ahead);
+    const left = 44;
+    const right = 1090;
+    const x = (i) => left + (i / Math.max(1, total - 1)) * (right - left);
+    const y = (v) => 190 - (Math.max(0, Math.min(100, v)) / 100) * 170;
+    const g = svg("svg", { viewBox: "0 0 1100 220", role: "img", "aria-label": "Battery level, with its expected fall" });
+    for (const v of [0, 25, 50, 75, 100]) {
+      g.append(svg("line", { x1: left, y1: y(v), x2: right, y2: y(v), stroke: "var(--divider-color)" }),
+        svg("text", { x: 38, y: y(v) + 4, class: "axis", "text-anchor": "end" }, `${v}%`));
+    }
+    // Month ticks across history and future, today at slot n.
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const dayAt = (i) => new Date(today.getTime() + (i - n) * 86400000);
+    for (let i = 1; i < total - 1; i += 1) {
+      const d = dayAt(i);
+      if (d.getDate() !== 1) continue;
+      g.append(svg("line", { x1: x(i), y1: 20, x2: x(i), y2: 190, stroke: "var(--divider-color)", "stroke-opacity": 0.5 }),
+        svg("text", { x: x(i), y: 210, class: "axis", "text-anchor": "middle" },
+          d.toLocaleDateString([], { month: "short" })));
+    }
+    // The kept days, and a local fit through them (each point weighted
+    // by its distance, fifteen days either side).
+    const points = daily.map((v, i) => [i, v]).filter(([, v]) => typeof v === "number");
+    for (const [i, v] of points) {
+      g.append(svg("circle", { cx: x(i), cy: y(v), r: 2.2, fill: "var(--primary-color, #03a9f4)", "fill-opacity": 0.28 }));
+    }
+    const smooth = points.map(([i]) => {
+      let sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+      for (const [j, v] of points) {
+        const d = Math.abs(j - i) / 15;
+        if (d >= 1) continue;
+        const w = (1 - d * d * d) ** 3;
+        sw += w; sx += w * j; sy += w * v; sxx += w * j * j; sxy += w * j * v;
+      }
+      const den = sw * sxx - sx * sx;
+      const b = Math.abs(den) < 1e-9 ? 0 : (sw * sxy - sx * sy) / den;
+      const a = (sy - b * sx) / sw;
+      return [i, a + b * i];
+    });
+    if (smooth.length > 1) {
+      g.append(svg("polyline", { fill: "none", stroke: "var(--primary-color, #03a9f4)", "stroke-width": 2.4,
+        points: smooth.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ") }));
+    }
+    g.append(svg("line", { x1: x(n), y1: 20, x2: x(n), y2: 190, stroke: "var(--secondary-text-color)", "stroke-opacity": 0.6 }),
+      svg("text", { x: x(n) + 4, y: 32, class: "axis" }, "today"));
+    let lowest = points.length ? Math.min(...points.map(([, v]) => v)) : 100;
+    if (ahead > 0) {
+      const path = (p) => (d) => level + p[0] * d + p[1] * d * d;
+      const near = path(proj.near_path);
+      const far = proj.far_path ? path(proj.far_path) : near;
+      const lo = [];
+      const hi = [];
+      for (let d = 0; d <= ahead; d += 1) {
+        lo.push([n + d, Math.max(0, near(d))]);
+        hi.push([n + d, Math.max(0, far(d))]);
+      }
+      lowest = Math.min(lowest, ...lo.map(([, v]) => v));
+      const band = lo.concat(hi.slice().reverse()).map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+      g.append(svg("polygon", { points: band, fill: "var(--warning-color, #c2410c)", "fill-opacity": 0.18 }));
+      for (const line of [lo, hi]) {
+        g.append(svg("polyline", { fill: "none", stroke: "var(--warning-color, #c2410c)", "stroke-width": 1.8,
+          points: line.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ") }));
+      }
+    }
+    // The low battery line, only where something reaches it.
+    const threshold = battery.threshold;
+    if (typeof threshold === "number" && lowest <= threshold) {
+      g.append(svg("line", { x1: left, y1: y(threshold), x2: right, y2: y(threshold),
+        stroke: "var(--error-color, #db4437)", "stroke-dasharray": "4 4" }),
+        svg("text", { x: left + 6, y: y(threshold) - 4, class: "axis", fill: "var(--error-color, #db4437)" },
+          `low battery ${threshold}%`));
+    }
+    const words = ahead > 0 && battery.left ? `Expected empty in ${battery.left}.`
+      : beyond !== null ? `Empty after ${beyond} days.` : "";
+    return el("div", { class: "futurechart" }, g, words ? el("p", { class: "small", style: "margin:4px 0 0" }, words) : null);
   }
 
   _graphs(page) {
@@ -3134,7 +3623,10 @@ class DeviceSentinelPanel extends HTMLElement {
     const wins = page.rhythm.windows || [];
     const outages = page.outages || [];
     const recorded = Math.max(battery.length, p50.length, gaps.length, 1);
-    const days = this._range === "all" ? recorded : Math.min(this._range, recorded);
+    // The Future view (ruling #705) shows every kept day in the other
+    // graphs and the battery with its expected fall.
+    const future = this._range === "future";
+    const days = this._range === "all" || future ? recorded : Math.min(this._range, recorded);
     const end = new Date(`${page.series_end}T12:00:00`);
     const dayOf = (back) => new Date(end.getFullYear(), end.getMonth(), end.getDate() - back);
     const fmt = (d) => d.toLocaleDateString([], { month: "short", day: "numeric" });
@@ -3184,6 +3676,15 @@ class DeviceSentinelPanel extends HTMLElement {
           },
         }, key === "all" ? `All (${recorded} days)` : label);
       }),
+      // Future (ruling #705): only a falling battery has one to draw.
+      ...(page.battery.projection ? [el("button", {
+        class: "chip", type: "button", "aria-pressed": String(future),
+        onclick: () => {
+          this._range = "future";
+          this._hover = null;
+          this._paintDevicePage();
+        },
+      }, "Future")] : []),
       el("span", { class: "small", style: "align-self:center" },
         `${recorded} days recorded; your history setting keeps up to ${page.history_days}.`));
     const readout = el("div", { class: "readout", "aria-live": "polite" }, "Point at a day for its values.");
@@ -3381,7 +3882,9 @@ class DeviceSentinelPanel extends HTMLElement {
         b.sentence || (weeks.length < 2
           ? "Steady: two whole weeks of history are needed before a fall can be judged."
           : "Steady: no week has fallen a point below the week before, so no time left is offered."));
-      batteryCard = card("Battery", b.now != null ? `${b.now}${unit} now` : "", figures, meaning, bat.g, el("div", { class: "legend" }, ...legend));
+      batteryCard = card("Battery", b.now != null ? `${b.now}${unit} now` : "", figures, meaning,
+        future && b.projection ? this._batteryFutureChart(b, { future: "advanced" }) : bat.g,
+        future && b.projection ? null : el("div", { class: "legend" }, ...legend));
     }
 
     // ----------------------------------------------------------------- signal
@@ -3681,13 +4184,6 @@ class DeviceSentinelPanel extends HTMLElement {
     const message = { type: "device_sentinel/action", action: "maintenance" };
     if (!open) message.minutes = Number(this._minutes.value);
     await this._call(message);
-    await this._refresh();
-  }
-
-  async _enable(label, action) {
-    // Enabling entities changes the person's registry, so it is asked first.
-    if (!window.confirm(`${label}: turn on every disabled entity of this kind that Device Sentinel reads?`)) return;
-    await this._call({ type: "device_sentinel/action", action });
     await this._refresh();
   }
 }
