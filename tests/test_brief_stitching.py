@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_brief_stitching.py, Version: 0.23.11 (2026-09-27)
+# File: tests/test_brief_stitching.py, Version: 0.26.6 (2026-10-17)
 
 """A silence the restarts segmented is told as one silence.
 
@@ -145,7 +145,7 @@ async def test_a_device_that_really_came_back_keeps_its_flapping_sentence(
     )
 
     assert len(told) == 1
-    assert "Presence Guest went unavailable 3 times" in told[0]
+    assert "Presence Guest became unavailable 3 times" in told[0]
     assert "has been silent since" not in told[0]
 
 
@@ -166,7 +166,7 @@ async def test_a_verdict_younger_than_its_fragments_is_not_stitched(
     told = coord._tell_episodes(pairs, _restarts(4))
 
     assert len(told) == 1
-    assert "Flapper went unavailable 4 times" in told[0]
+    assert "Flapper became unavailable 4 times" in told[0]
     assert "has been silent since" not in told[0]
 
 
@@ -288,7 +288,7 @@ async def test_the_table_drops_the_bookkeeping_rows(
     assert text is not None
     assert "SLZB-06 has been silent since" in text
     assert "recovered after" not in text
-    assert "| SLZB-06 | went unavailable |" not in text
+    assert "| SLZB-06 | became unavailable |" not in text
     assert "0 problems started, 0 ended." in text
     assert now
 

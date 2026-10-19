@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_brief_wording.py, Version: 0.26.5 (2026-10-16)
+# File: test_brief_wording.py, Version: 0.26.6 (2026-10-17)
 
 """How the brief says things: prose, device lines, pairing.
 
@@ -199,7 +199,7 @@ async def test_event_sentences_read_as_history(hass: HomeAssistant):
     assert text.endswith(".")
 
     text = _row(coord, "d", "Temperature LR", "unavailable", INCIDENT_OPENED)
-    assert "went unavailable at " in text
+    assert "became unavailable at " in text
 
 
 async def test_recovery_sentence_carries_span_and_cause(
@@ -1228,7 +1228,7 @@ async def test_a_multi_day_pattern_earns_both_sentences(
             [],
         )
     )
-    assert "went unavailable twice" in prose
+    assert "became unavailable twice" in prose
     # The repeat offenders left In Short for their own section
     # (ruling #374), so the prose carries the flapping sentence only.
     assert "unexplained" not in prose
@@ -1305,7 +1305,7 @@ async def test_an_acknowledgment_never_joins_a_flapping_count(
         for line in told
     )
     assert any(
-        "went unavailable" in line and "recovered 22s later" in line
+        "became unavailable" in line and "recovered 22s later" in line
         for line in told
     )
     # The acknowledgments keep their own sentences rather than
@@ -1370,7 +1370,7 @@ async def test_kinds_flap_separately_on_one_device(hass: HomeAssistant):
 
     assert len(told) == 2
     assert any(
-        line.startswith("Plug Office went unavailable twice")
+        line.startswith("Plug Office became unavailable twice")
         and "unavailable for 2m in total" in line
         for line in told
     )
@@ -1478,7 +1478,7 @@ async def test_repeat_offenders_are_a_table_below_now(
         "| DEVICE | WHAT HAPPENED | TIMES | WHEN | TYPICAL | WITH |"
         in text
     )
-    assert "| Closet Switch | went unavailable | 2 |" in text
+    assert "| Closet Switch | became unavailable | 2 |" in text
     assert "| 12m | alone |" in text
     assert "This table lists repeat offenders." in text
     # The paragraph states the same number the code reads, so one

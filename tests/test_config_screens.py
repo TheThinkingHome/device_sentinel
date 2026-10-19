@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_config_screens.py, Version: 0.25.6 (2026-10-11)
+# File: tests/test_config_screens.py, Version: 0.26.6 (2026-10-18)
 
 """What the configuration screens promise a person reading them.
 
@@ -289,28 +289,30 @@ async def test_the_excludes_live_in_a_section_and_store_flat(
 async def test_every_sectioned_screen_keeps_its_settings_loose(
     hass: HomeAssistant,
 ):
-    """One section per screen, holding only the excludes.
+    """Sections hold only the mutes; the settings stay loose.
 
     The pattern is Advanced's: what a person came for stays at the
-    top, and the one group that is different in kind sits below it
-    under its own heading. A screen that swept its settings into the
-    section too would bury them.
+    top, and the mutes sit below it under their own headings. A
+    screen that swept its settings into a section would bury them.
+    Freeze and Unavailable Detection has two sections, one per mute
+    (0.26.6).
     """
     entry = await setup_entry(hass)
     expected = {
-        "battery": ("battery_muting", 2),
-        "signal": ("signal_muting", 4),
-        "freeze": ("freeze_muting", 2),
-        "exclusions": ("muting", 1),
+        "battery": (("battery_muting",), 2),
+        "signal": (("signal_muting",), 4),
+        "freeze": (("freeze_muting", "unavailable_muting"), 2),
+        "exclusions": (("muting",), 1),
     }
-    for step, (section_key, loose_count) in expected.items():
+    for step, (section_keys, loose_count) in expected.items():
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"next_step_id": step}
         )
         keys = [str(key) for key in result["data_schema"].schema]
-        assert section_key in keys, step
-        assert len(keys) == loose_count + 1, (step, keys)
+        for section_key in section_keys:
+            assert section_key in keys, step
+        assert len(keys) == loose_count + len(section_keys), (step, keys)
 
 
 async def test_each_section_carries_a_heading_and_an_explanation(

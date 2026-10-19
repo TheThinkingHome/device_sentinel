@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_zwave_dead_node.py, Version: 0.26.5 (2026-10-16)
+# File: test_zwave_dead_node.py, Version: 0.26.6 (2026-10-18)
 
 """The Z-Wave dead-node check (ruling #670).
 
@@ -26,6 +26,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.device_sentinel.const import (
     DEV_DOWN_SINCE,
     DEV_FROZEN_CATEGORY,
+    DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     EVENT_FAULT,
     EVENT_RECOVERED,
@@ -34,7 +35,7 @@ from custom_components.device_sentinel.const import (
     INTEGRATION_DOWN_DWELL_SECONDS,
 )
 
-from .helpers import record_events, setup_coordinator
+from .helpers import record_events, registry_settled, setup_coordinator
 from .outage_helpers import PIN, arm, past_grace, walk
 
 DAY = 86400.0
@@ -340,3 +341,71 @@ async def test_a_device_without_one_shows_no_row(hass: HomeAssistant, freezer):
     coord = await setup_coordinator(hass)
     assert coord.dashboard_device(other.id)["identity"]["node_status"] is None
     assert coord.awaiting_enable_counts()["node_status"] == 0
+
+
+# ------------------- a firmware notice beside the node status (0.26.6)
+
+
+# 2. The round-six fix (a stale non-dead outage start on a device whose
+# node status is its only real entity) with Z-Wave JS's own firmware
+# update entity enabled beside it, as it is by default. Rule 9 makes the
+# update entity unreadable in _states_of, but _status_only still counts
+# it as an enabled entity, so the stale start is never ended.
+async def test_2_status_only_with_update_entity_stale_start(hass: HomeAssistant, freezer):
+    freezer.move_to(PIN)
+    node = 41
+    source = MockConfigEntry(domain="zwave_js")
+    source.add_to_hass(hass)
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id,
+        identifiers={("zwave_js", f"4191921521-{node}")},
+        name=f"P{node} Z-Wave Lonely",
+    )
+    reg = er.async_get(hass)
+    switch = reg.async_get_or_create(
+        "switch", "zwave_js", f"4191921521.{node}-37-0-currentValue",
+        device_id=device.id, config_entry=source,
+    ).entity_id
+    status = reg.async_get_or_create(
+        "sensor", "zwave_js", f"4191921521.{node}.node_status",
+        device_id=device.id, config_entry=source, original_name="Node status",
+    ).entity_id
+    update = reg.async_get_or_create(
+        "update", "zwave_js", f"4191921521.{node}.firmware_update",
+        device_id=device.id, config_entry=source,
+    ).entity_id
+    hass.states.async_set(switch, "on")
+    hass.states.async_set(status, "alive")
+    hass.states.async_set(update, "off")
+    coord = await setup_coordinator(hass)
+    record = arm(coord, device.id, rhythm=3.05 * DAY)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+
+    hass.states.async_set(switch, "unavailable")
+    await hass.async_block_till_done()
+    await walk(hass, freezer, 60)
+    assert record.get(DEV_DOWN_SINCE) is not None
+    reg.async_update_entity(switch, disabled_by=er.RegistryEntryDisabler.USER)
+    hass.states.async_remove(switch)
+    await hass.async_block_till_done()
+    await registry_settled(hass)
+    await walk(hass, freezer, 10 * 60)
+    assert record[DEV_FROZEN_CATEGORY] is None
+
+    await walk(hass, freezer, 2 * 3600)
+    death = dt_util.utcnow().timestamp()
+    hass.states.async_set(status, "dead")
+    await hass.async_block_till_done()
+    await walk(hass, freezer, 120)
+    assert record[DEV_FROZEN_CATEGORY] is None, (
+        "the death skipped its debounce on a stale saved start",
+        record.get(DEV_FROZEN_SINCE), record.get(DEV_DOWN_SINCE),
+    )
+    await walk(hass, freezer, 15 * 60)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+    assert record[DEV_FROZEN_SINCE] >= death - 1, (
+        "the death was dated from an outage that ended hours before",
+        record[DEV_FROZEN_SINCE], death,
+    )

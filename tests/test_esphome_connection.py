@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_esphome_connection.py, Version: 0.26.0 (2026-10-12)
+# File: test_esphome_connection.py, Version: 0.26.6 (2026-10-18)
 
 """An ESPHome device's connection through a drop and a return (ruling #640).
 
@@ -23,6 +23,7 @@ from datetime import timedelta
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -32,12 +33,15 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 from custom_components.device_sentinel.const import (
     DATA_DEVICES,
     DEV_DAILY_MAX,
+    DEV_DOWN_SINCE,
     DEV_FROZEN_CATEGORY,
+    DEV_FROZEN_SINCE,
     DEV_LAST_ACTIVITY,
     DEV_TODAY_MAX,
     EVENT_RECOVERED,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
+    FREEZE_CATEGORY_NEVER_REPORTED,
     FREEZE_CATEGORY_UNAVAILABLE,
     STARTUP_GRACE_SECONDS,
     CONF_FREEZE_MUTED_DEVICES,
@@ -45,8 +49,10 @@ from custom_components.device_sentinel.const import (
 )
 
 from .helpers import record_events, setup_coordinator
+from .outage_helpers import arm, past_grace, walk
 
 PIN = "2026-10-11 15:00:00+00:00"
+HOUR = 3600.0
 
 
 def _dropped(coord, device_id):
@@ -581,3 +587,379 @@ async def test_a_restart_before_esphome_connects_costs_no_gap(hass: HomeAssistan
     # Two hours quiet and three minutes down: 7,385 s, 7,205 s with the
     # downtime taken out (#541).
     assert learned is not None and 7000 < learned < 7400, learned
+
+
+# ----------------------------- judged by its connection alone (0.26.6)
+
+
+def _esp(hass, source, uid, shape):
+    """shape: (domain, enabled, entity_category) per entity."""
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id, identifiers={("esphome", uid)}, name=f"Proxy {uid}")
+    reg = er.async_get(hass)
+    eids = []
+    for index, (domain, enabled, category) in enumerate(shape):
+        eids.append(reg.async_get_or_create(
+            domain, "esphome", f"{uid}_{index}", device_id=device.id, config_entry=source,
+            entity_category=category,
+            disabled_by=None if enabled else er.RegistryEntryDisabler.INTEGRATION,
+        ).entity_id)
+    return device, eids
+
+
+PROXY = (
+    ("update", True, er.EntityCategory.CONFIG),
+    ("button", True, er.EntityCategory.CONFIG),
+    ("sensor", False, er.EntityCategory.DIAGNOSTIC),  # Wi-Fi signal, off by default
+)
+
+
+async def test_3_esphome_proxy_buttons_and_update_recovers_on_reconnect(hass: HomeAssistant, freezer):
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    device, eids = _esp_device(hass, source, "r12bt", ("button", "button", "update"))
+    values = ("unknown", "unknown", "off")
+    coord = await setup_coordinator(hass)
+    record = _arm(coord, device.id)
+    for eid, value in zip(eids, values):
+        hass.states.async_set(eid, value)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    back = record_events(hass, EVENT_RECOVERED)
+
+    source.runtime_data.available = False
+    for eid in eids:
+        hass.states.async_set(eid, "unavailable")
+    await hass.async_block_till_done()
+    await walk(hass, freezer, 10 * 60)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+
+    source.runtime_data.available = True
+    for eid, value in zip(eids, values):
+        hass.states.async_set(eid, value)
+    await hass.async_block_till_done()
+    await walk(hass, freezer, 6 * HOUR, step=600)
+    assert record[DEV_FROZEN_CATEGORY] is None, (
+        "connected again for six hours and still listed unavailable",
+        record[DEV_FROZEN_CATEGORY], record.get(DEV_DOWN_SINCE), coord._live_entity_states(device.id),
+        [e for e in back if e.get("device_id") == device.id],
+    )
+
+
+# 4. The same proxy, newly added: never reported after the wait, though
+# its connection has been up the whole time.
+async def test_4_new_esphome_proxy_is_not_never_reported(hass: HomeAssistant, freezer):
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    device, eids = _esp_device(hass, source, "r12bn", ("button", "button", "update"))
+    for eid, value in zip(eids, ("unknown", "unknown", "off")):
+        hass.states.async_set(eid, value)
+    coord = await setup_coordinator(hass)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    record = coord.data[DATA_DEVICES][device.id]
+    for _ in range(int(50 * HOUR // 1800)):
+        hass.states.async_set(eids[2], "off", force_update=True)
+        await hass.async_block_till_done()
+        await walk(hass, freezer, 1800, step=600)
+    assert record[DEV_FROZEN_CATEGORY] != FREEZE_CATEGORY_NEVER_REPORTED, (
+        "a connected ESPHome proxy called never reported",
+    )
+
+
+async def test_7_esphome_sensor_down_on_a_live_device_is_not_back_on_reconnect(
+    hass: HomeAssistant, freezer
+):
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    device, eids = _esp_device(hass, source, "r12s", ("sensor", "update"))
+    coord = await setup_coordinator(hass)
+    record = _arm(coord, device.id)
+    hass.states.async_set(eids[0], "21.5")
+    hass.states.async_set(eids[1], "off")
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    source.runtime_data.available = False
+    hass.states.async_set(eids[0], "unavailable")
+    await hass.async_block_till_done()
+    await walk(hass, freezer, 10 * 60)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+    back = record_events(hass, EVENT_RECOVERED)
+    source.runtime_data.available = True
+    await walk(hass, freezer, 10 * 60)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE, "its sensor still reads unavailable"
+    assert not [e for e in back if e.get("device_id") == device.id]
+
+
+# A. Rule 9: an ESPHome device whose only entities switched on are a
+# firmware notice and a command button is judged by its connection
+# alone, never frozen, whatever it has switched off.
+async def test_a_esphome_proxy_with_a_switched_off_sensor_is_not_frozen(hass: HomeAssistant, freezer):
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    device, eids = _esp(hass, source, "r14a", PROXY)
+    hass.states.async_set(eids[0], "off")
+    hass.states.async_set(eids[1], "unknown")
+    coord = await setup_coordinator(hass)
+    await hass.async_block_till_done()
+    record = arm(coord, device.id)
+    await past_grace(hass, freezer)
+    assert device.id in coord._watched
+    await walk(hass, freezer, 6 * HOUR, step=600)
+    assert record[DEV_FROZEN_CATEGORY] is None, (
+        "a connected ESPHome proxy, its only switched-on entities a notice and a button, judged",
+        record[DEV_FROZEN_CATEGORY], coord._connection_only(device.id),
+    )
+
+
+# B. The same proxy newly added: never reported after the wait.
+async def test_b_new_esphome_proxy_with_a_switched_off_sensor_is_not_never_reported(hass: HomeAssistant, freezer):
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    device, eids = _esp(hass, source, "r14b", PROXY)
+    hass.states.async_set(eids[0], "off")
+    hass.states.async_set(eids[1], "unknown")
+    coord = await setup_coordinator(hass)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    record = coord.data[DATA_DEVICES][device.id]
+    await walk(hass, freezer, 50 * HOUR, step=1800)
+    assert record[DEV_FROZEN_CATEGORY] != FREEZE_CATEGORY_NEVER_REPORTED, (
+        "a connected ESPHome proxy called never reported",
+    )
+
+
+# C. The same proxy drops: unavailable, and back when it reconnects.
+async def test_c_esphome_proxy_with_a_switched_off_sensor_drop_and_return(hass: HomeAssistant, freezer):
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    device, eids = _esp(hass, source, "r14c", PROXY)
+    hass.states.async_set(eids[0], "off")
+    hass.states.async_set(eids[1], "unknown")
+    coord = await setup_coordinator(hass)
+    await hass.async_block_till_done()
+    record = arm(coord, device.id, rhythm=30 * HOUR)
+    await past_grace(hass, freezer)
+    source.runtime_data.available = False
+    for eid in eids[:2]:
+        hass.states.async_set(eid, "unavailable")
+    await hass.async_block_till_done()
+    await walk(hass, freezer, 10 * 60)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+    source.runtime_data.available = True
+    hass.states.async_set(eids[0], "off")
+    hass.states.async_set(eids[1], "unknown")
+    await hass.async_block_till_done()
+    await walk(hass, freezer, 2 * HOUR, step=600)
+    assert record[DEV_FROZEN_CATEGORY] is None, ("reconnected, still listed", record[DEV_FROZEN_CATEGORY])
+
+
+# 1. Rule 9: a connected ESPHome proxy whose only switched-on entities are a
+# firmware notice and a command button is never "never reported". Its
+# verdict says so; the Devices tab and its page must not show the red
+# "Never reported" word either.
+async def test_r15_1_connection_only_proxy_page_not_never_reported(hass: HomeAssistant, freezer):
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    device, eids = _esp(hass, source, "r15a", (
+        ("update", True, er.EntityCategory.CONFIG),
+        ("button", True, er.EntityCategory.CONFIG),
+    ))
+    hass.states.async_set(eids[0], "off")
+    hass.states.async_set(eids[1], "unknown")
+    coord = await setup_coordinator(hass)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    record = coord.data[DATA_DEVICES][device.id]
+    await walk(hass, freezer, 50 * HOUR, step=1800)
+    assert coord._connection_only(device.id)
+    assert record[DEV_FROZEN_CATEGORY] != FREEZE_CATEGORY_NEVER_REPORTED
+    row = next(r for r in coord.dashboard_devices() if r["device_id"] == device.id)
+    page = coord.dashboard_device(device.id)
+    assert (row["status"], page["status"]["category"]) == ("reporting", "reporting"), (
+        "connected proxy shown as", row["status"], page["status"]["category"],
+    )
+
+
+# 3. An ESPHome device with everything switched off, no notice or button at
+# all: in 0.26.5 the never-reported row was the prompt to switch its
+# entities on (#369); now it is judged by its connection and never told.
+async def test_r15_3_esphome_all_switched_off_is_judged_by_its_connection(hass: HomeAssistant, freezer):
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    device, _eids = _esp(hass, source, "r15c", (
+        ("sensor", False, None),
+        ("binary_sensor", False, None),
+    ))
+    coord = await setup_coordinator(hass)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    record = coord.data[DATA_DEVICES][device.id]
+    await walk(hass, freezer, 50 * HOUR, step=1800)
+    # Connected, so never "never reported" (James, 17 October 2026).
+    assert record[DEV_FROZEN_CATEGORY] != FREEZE_CATEGORY_NEVER_REPORTED
+    assert coord._connection_only(device.id)
+
+
+# 2. Rule 9: a connection-only ESPHome proxy that drops and reconnects.
+# The outage start saved at the drop is never cleared (_down_now reads
+# nothing on a device with no real entity), so the next drop, days later,
+# is dated from the first and published with no debounce.
+async def test_r16_2_connection_only_outage_start_clears_on_reconnect(hass: HomeAssistant, freezer):
+    freezer.move_to(PIN)
+    runtime = _Runtime(False)
+    source = _source(hass, runtime)
+    device, eids = _esp(hass, source, "r16b", (
+        ("update", True, er.EntityCategory.CONFIG),
+        ("button", True, er.EntityCategory.CONFIG),
+    ))
+    hass.states.async_set(eids[0], "off")
+    hass.states.async_set(eids[1], "unknown")
+    coord = await setup_coordinator(hass)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    record = coord.data[DATA_DEVICES][device.id]
+    assert coord._connection_only(device.id)
+    first_drop = dt_util.utcnow().timestamp()
+    runtime.available = False
+    await walk(hass, freezer, 10 * 60)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+    runtime.available = True
+    await walk(hass, freezer, 5 * 60)
+    assert record[DEV_FROZEN_CATEGORY] is None, "reconnect is the device speaking"
+    await walk(hass, freezer, 2 * 24 * HOUR, step=1800)
+    second_drop = dt_util.utcnow().timestamp()
+    runtime.available = False
+    await walk(hass, freezer, 60)
+    # One minute into the second drop: inside the 180 s debounce.
+    assert record[DEV_FROZEN_CATEGORY] is None, (
+        "published inside the debounce", record[DEV_DOWN_SINCE], record[DEV_FROZEN_SINCE]
+    )
+    await walk(hass, freezer, 10 * 60)
+    since = record[DEV_FROZEN_SINCE]
+    assert since is not None and since >= second_drop - 120, (
+        "second drop dated from the first", since, first_drop, second_drop
+    )
+
+
+# 3. Rule 9: a connected Bluetooth proxy reads as reporting, but its page's
+# line under the word reads "Last report never." (panel.js ago(null)), and
+# "Still learning its rhythm, so it is not yet judged for freezing", for a
+# device that is never judged for freezing.
+async def test_r17_3_connection_only_page_last_report(hass: HomeAssistant, freezer):
+
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    device, eids = _esp(hass, source, "r17c", (
+        ("update", True, er.EntityCategory.CONFIG),
+        ("button", True, er.EntityCategory.CONFIG),
+    ))
+    hass.states.async_set(eids[0], "off")
+    hass.states.async_set(eids[1], "unknown")
+    coord = await setup_coordinator(hass)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    await walk(hass, freezer, 50 * HOUR, step=1800)
+    page = coord.dashboard_device(device.id)
+    assert page["status"]["category"] == "reporting"
+    # Judged by its connection: the page says so (James, 17 October 2026).
+    assert page["status"]["connection"] == "connected"
+
+
+# 2. Rule 9: a Bluetooth proxy carried over from 0.26.5 with a learned
+# rhythm. Its page says it is judged by its connection, with no window bar,
+# but the payload still carries a window, so the bar's scale row is drawn.
+async def test_r18_2_connection_only_page_carries_window(hass: HomeAssistant, freezer):
+
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(False))
+    device = __import__("homeassistant.helpers.device_registry", fromlist=["x"]).async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id, identifiers={("esphome", "r18b")}, name="Proxy r18b")
+    reg = er.async_get(hass)
+    upd = reg.async_get_or_create("update", "esphome", "r18b_u", device_id=device.id, config_entry=source,
+                                  entity_category=EntityCategory.CONFIG).entity_id
+    hass.states.async_set(upd, "off")
+    coord = await setup_coordinator(hass)
+    arm(coord, device.id)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    page = coord.dashboard_device(device.id)
+    assert page["status"]["connection"] == "connected"
+    assert page["status"]["window"] is None, ("window shown on a page judged by connection", page["status"]["window"])
+
+
+# 3. Rule 9: a connection-only proxy whose connection cannot be read holds a
+# standing unavailable verdict; its page says "connected".
+async def test_r18_3_connection_only_unreadable_says_connected(hass: HomeAssistant, freezer):
+
+    freezer.move_to(PIN)
+    runtime = _Runtime(False, available=False)
+    source = _source(hass, runtime)
+    from homeassistant.helpers import device_registry as dr
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id, identifiers={("esphome", "r18c")}, name="Proxy r18c")
+    reg = er.async_get(hass)
+    upd = reg.async_get_or_create("update", "esphome", "r18c_u", device_id=device.id, config_entry=source,
+                                  entity_category=EntityCategory.CONFIG).entity_id
+    hass.states.async_set(upd, "off")
+    coord = await setup_coordinator(hass)
+    record = arm(coord, device.id)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    await walk(hass, freezer, 10 * 60)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+    runtime.available = None  # unreadable from here
+    await walk(hass, freezer, 5 * 60)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE
+    page = coord.dashboard_device(device.id)
+    assert page["status"]["connection"] != "connected", page["status"]
+
+
+# 4. #529 with rule 9: a connection-only proxy carried over with a frozen
+# verdict, its connection unreadable: the verdict ends with no report.
+async def test_r18_4_connection_only_frozen_cleared_without_report(hass: HomeAssistant, freezer):
+
+    freezer.move_to(PIN)
+    runtime = _Runtime(False)
+    runtime.available = None
+    source = _source(hass, runtime)
+    from homeassistant.helpers import device_registry as dr
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id, identifiers={("esphome", "r18d")}, name="Proxy r18d")
+    reg = er.async_get(hass)
+    upd = reg.async_get_or_create("update", "esphome", "r18d_u", device_id=device.id, config_entry=source,
+                                  entity_category=EntityCategory.CONFIG).entity_id
+    hass.states.async_set(upd, "off")
+    coord = await setup_coordinator(hass)
+    record = arm(coord, device.id)
+    from homeassistant.util import dt as dt_util
+    now = dt_util.utcnow().timestamp()
+    record[DEV_LAST_ACTIVITY] = now - 3 * 24 * HOUR
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
+    record[DEV_FROZEN_SINCE] = now - 2 * 24 * HOUR
+    back = record_events(hass, EVENT_RECOVERED)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    await walk(hass, freezer, 5 * 60)
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_FROZEN or not _mine(back, device.id), (
+        "frozen verdict ended as a recovery with no report", _mine(back, device.id))
+
+
+# 3b. As 3, a deep-sleep proxy asleep (connection down): its page says
+# "connected".
+async def test_r18_3b_connection_only_asleep_says_connected(hass: HomeAssistant, freezer):
+    from homeassistant.helpers import device_registry as dr
+
+    freezer.move_to(PIN)
+    source = _source(hass, _Runtime(True, available=False))
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id, identifiers={("esphome", "r18e")}, name="Sleeper r18e")
+    reg = er.async_get(hass)
+    upd = reg.async_get_or_create("update", "esphome", "r18e_u", device_id=device.id, config_entry=source,
+                                  entity_category=EntityCategory.CONFIG).entity_id
+    hass.states.async_set(upd, "off")
+    coord = await setup_coordinator(hass)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    page = coord.dashboard_device(device.id)
+    assert page["status"]["connection"] != "connected", page["status"]

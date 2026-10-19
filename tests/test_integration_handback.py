@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_integration_handback.py, Version: 0.21.12 (2026-09-17)
+# File: tests/test_integration_handback.py, Version: 0.26.6 (2026-10-18)
 
 """An integration coming back gives its devices time to rejoin (#441).
 
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -27,17 +28,24 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
     BRIDGE_HANDBACK_SECONDS,
+    CONF_UNAVAILABLE_MUTED_DEVICES,
     DATA_DEVICES,
     DATA_SYSTEM_EVENTS,
     DEV_FROZEN_CATEGORY,
     DEV_FROZEN_SINCE,
+    DEV_LAST_ACTIVITY,
+    EVENT_FAULT,
+    EVENT_RECOVERED,
     INTEGRATION_DOWN_DWELL_SECONDS,
     SYS_INTEGRATION_UP,
     SYS_KIND,
     SYS_WORST,
     UPSTREAM_KIND,
 )
-from tests.helpers import setup_coordinator
+from tests.helpers import record_events, setup_coordinator
+from tests.outage_helpers import PIN, arm, past_grace, walk
+
+HOUR = 3600.0
 
 
 async def _outage_and_return(hass: HomeAssistant, domain: str, freezer):
@@ -152,3 +160,75 @@ async def test_the_return_records_the_worst_moment(
         if r[SYS_KIND] == SYS_INTEGRATION_UP
     ][-1]
     assert row[SYS_WORST] == 2
+
+
+# ----------------- an integration outage holds frozen devices (0.26.6)
+
+
+def _pair(hass, n=2, domain="shelly"):
+    source = MockConfigEntry(domain=domain, title=domain)
+    source.add_to_hass(hass)
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    reg = er.async_get(hass)
+    out = []
+    for i in range(n):
+        device = dr.async_get(hass).async_get_or_create(
+            config_entry_id=source.entry_id, identifiers={(domain, f"d{i}")}, name=f"Sensor d{i}")
+        ids = {"main": reg.async_get_or_create("binary_sensor", domain, f"d{i}_main", device_id=device.id, config_entry=source).entity_id,
+               "x0": reg.async_get_or_create("sensor", domain, f"d{i}_x0", device_id=device.id, config_entry=source,
+                                             entity_category=EntityCategory.DIAGNOSTIC).entity_id}
+        out.append((device, ids))
+    return source, out
+
+
+@pytest.mark.parametrize("dwell", ["real", "zero"])
+@pytest.mark.parametrize("mode", ["none", "muteB", "muteBoth"])
+async def test_integration_outage_holds_frozen(hass: HomeAssistant, freezer, mode, dwell, monkeypatch):
+    if dwell == "zero":
+        from custom_components.device_sentinel import interventions as iv
+        monkeypatch.setattr(iv, "INTEGRATION_DOWN_DWELL_SECONDS", 0.0)
+    freezer.move_to(PIN)
+    source, devs = _pair(hass)
+    for _, ids in devs:
+        hass.states.async_set(ids["main"], "off")
+        hass.states.async_set(ids["x0"], "87")
+    muted = {"none": [], "muteB": [devs[1][0].id], "muteBoth": [d.id for d, _ in devs]}[mode]
+    coord = await setup_coordinator(hass, {CONF_UNAVAILABLE_MUTED_DEVICES: muted} if muted else None)
+    recs = [arm(coord, d.id) for d, _ in devs]
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    for _, ids in devs:
+        hass.states.async_set(ids["main"], "on")
+    await hass.async_block_till_done()
+    await walk(hass, freezer, 6 * HOUR, step=600)
+    cats = [r[DEV_FROZEN_CATEGORY] for r in recs]
+    assert cats == ["frozen", "frozen"], cats
+    heard = [r[DEV_LAST_ACTIVITY] for r in recs]
+    back = record_events(hass, EVENT_RECOVERED)
+    faults = record_events(hass, EVENT_FAULT)
+    # The integration fails for ten minutes (a cloud outage, a reload
+    # that retries): everything unavailable, then the cached values back.
+    source.mock_state(hass, ConfigEntryState.SETUP_RETRY)
+    for _, ids in devs:
+        for eid in ids.values():
+            hass.states.async_set(eid, "unavailable")
+    await hass.async_block_till_done()
+    for k in range(10):
+        await walk(hass, freezer, 60)
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    for _, ids in devs:
+        hass.states.async_set(ids["main"], "on")
+        hass.states.async_set(ids["x0"], "87")
+    await hass.async_block_till_done()
+    await walk(hass, freezer, 30 * 60)
+    info = dict(
+        mode=mode, dwell=dwell,
+        moved=[r[DEV_LAST_ACTIVITY] != h for r, h in zip(recs, heard)],
+        cats=[r[DEV_FROZEN_CATEGORY] for r in recs],
+        back=[(e.get("device_id") == devs[0][0].id and "A" or "B", e.get("kind"), e.get("kinds"), e.get("cause")) for e in back],
+        faults=[(e.get("device_id") == devs[0][0].id and "A" or "B", e.get("kind") or e.get("category")) for e in faults],
+        held=[coord.upstream_down_since(d.id) for d, _ in devs],
+    )
+    assert info["moved"] == [False, False], info
+    assert info["cats"] == ["frozen", "frozen"], info
+    assert not info["back"], info

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_classification_sources.py, Version: 0.26.0 (2026-10-12)
+# File: tests/test_classification_sources.py, Version: 0.26.6 (2026-10-18)
 
 """Classification says why: the source of every mute and exclusion.
 
@@ -194,7 +194,10 @@ async def test_the_report_keys_every_set_aside_reason(hass: HomeAssistant):
     for reason, meaning in SET_ASIDE_MEANINGS:
         assert f"- {reason}: {meaning}" in text
     assert [reason for reason, _ in SET_ASIDE_MEANINGS] == [
-        "excluded", "service", "disabled", "duplicate coordinator", "clone", "no entities",
+        "excluded", "service", "disabled", "duplicate coordinator", "clone",
+        # James, 17 October 2026 (0.26.6).
+        "nothing switched on that can report",
+        "no entities",
     ]
 
 

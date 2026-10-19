@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_attribution.py, Version: 0.23.12 (2026-09-27)
+# File: tests/test_attribution.py, Version: 0.26.6 (2026-10-17)
 
 """What explains an incident, and what a flood reads as.
 
@@ -215,7 +215,7 @@ async def test_the_flood_collapses_to_one_sentence(hass: HomeAssistant):
 
     told = coord._tell_episodes(pairs, BROKER_OUTAGE)
     assert len(told) == 1
-    assert told[0].startswith("74 devices went unavailable at ")
+    assert told[0].startswith("74 devices became unavailable at ")
     # #535: an outage revives nothing; the group is told as recovering
     # during it, never as revived by it.
     assert told[0].endswith(
@@ -236,7 +236,7 @@ async def test_openings_collapse_too(hass: HomeAssistant):
         pairs.append((_incident(device_id, f"Device {index}", T0 + 180), None))
     told = coord._tell_episodes(pairs, BROKER_OUTAGE)
     assert len(told) == 1
-    assert told[0].startswith("74 devices went unavailable at ")
+    assert told[0].startswith("74 devices became unavailable at ")
 
 
 async def test_one_device_keeps_its_own_sentence(hass: HomeAssistant):
@@ -256,7 +256,7 @@ async def test_one_device_keeps_its_own_sentence(hass: HomeAssistant):
     closed["duration"] = 844.0
     told = coord._tell_episodes([(opened, closed)], BROKER_OUTAGE)
     assert len(told) == 1
-    assert told[0].startswith("Door 2nd Bedroom went unavailable at ")
+    assert told[0].startswith("Door 2nd Bedroom became unavailable at ")
     # #535: one device matched to an outage recovers plainly.
     assert "revived by" not in told[0]
     assert "reboot" not in told[0]
@@ -275,7 +275,7 @@ async def test_unrelated_devices_are_not_swept_in(hass: HomeAssistant):
     ]
     told = coord._tell_episodes(pairs, BROKER_OUTAGE)
     assert len(told) == 2
-    assert any(line.startswith("2 devices went unavailable") for line in told)
+    assert any(line.startswith("2 devices became unavailable") for line in told)
     assert any(line.startswith("HomeKit One") for line in told)
 
 

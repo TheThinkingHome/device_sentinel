@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_hardware_copies.py, Version: 0.25.6 (2026-10-11)
+# File: tests/test_hardware_copies.py, Version: 0.26.6 (2026-10-18)
 
 """One piece of hardware shown as several devices (0.25.2).
 
@@ -33,7 +33,8 @@ from custom_components.device_sentinel.const import CONF_EXCLUDED_INTEGRATIONS, 
 from custom_components.device_sentinel.diagnostics import async_get_config_entry_diagnostics
 from custom_components.device_sentinel.hardware_copies import choose_copies, find_groups, mac_of, rank_of
 
-from .helpers import MULTI_OWNER_POSSIBLE, setup_entry
+from .helpers import MULTI_OWNER_POSSIBLE, setup_coordinator, setup_entry
+from .outage_helpers import PIN, past_grace
 
 MAC = "aa:bb:cc:dd:ee:01"
 IOT = {"esphome": "local_push", "bluesight": "local_polling", "unifi": "local_polling", "bluetooth": "local_push",
@@ -587,3 +588,65 @@ async def test_the_bluesight_service_device_stays_watched(hass: HomeAssistant):
     coord = (await setup_entry(hass)).runtime_data
     assert service.id in coord._watched
     assert service.id not in coord._copy_of
+
+
+# ---- a copy with nothing but notices, and a connection-only proxy (0.26.6)
+
+
+# 5. Two copies of one box: the more direct one (local push) has nothing
+# switched on but a firmware notice and a command button, the other a real
+# sensor. The copy rank still counts notices as entities of its own, so the
+# notice copy is kept, the sensor copy set aside as a clone, and then the
+# kept copy is set aside as notices only: the box is watched through
+# nothing.
+async def test_r15_5_notice_copy_kept_over_real_copy(hass: HomeAssistant, freezer, monkeypatch):
+    import pytest as _pytest
+
+    from custom_components.device_sentinel.coordinator import DeviceSentinelCoordinator
+
+    from .helpers import MULTI_OWNER_POSSIBLE
+
+    if MULTI_OWNER_POSSIBLE:
+        _pytest.skip("one device per box before 2026.8")
+    iot = {"hue": "local_push", "tuyacloud": "cloud_polling"}
+    monkeypatch.setattr(DeviceSentinelCoordinator, "iot_class_of", lambda self, domain: iot.get(domain))
+    freezer.move_to(PIN)
+    mac = "aa:bb:cc:dd:ee:51"
+    notice = _device(hass, "hue", "n15", "Box n15", entities=(("update", None), ("button", "identify")),
+                     connections={(dr.CONNECTION_NETWORK_MAC, mac)})
+    real = _device(hass, "tuyacloud", "r15", "Box r15", entities=(("sensor", "temperature"),),
+                   connections={(dr.CONNECTION_NETWORK_MAC, mac)})
+    coord = await setup_coordinator(hass)
+    await hass.async_block_till_done()
+    await past_grace(hass, freezer)
+    assert notice.id in coord._watched or real.id in coord._watched, (
+        "box watched through nothing", coord._set_aside.get(notice.id), coord._set_aside.get(real.id),
+    )
+
+
+# 3. Rule 9 with the 18:29 copy-rank change: a Bluetooth proxy with only a
+# firmware notice and a restart button switched on, and the Bluetooth
+# adapter Home Assistant registers under it. 0.26.5 kept the proxy and set
+# the adapter aside as its copy. Now the proxy ranks as having nothing, is
+# no candidate, and both stay watched: one box, two devices, two items
+# when it drops.
+async def test_r16_3_connection_only_proxy_and_its_adapter_are_one_box(hass: HomeAssistant, monkeypatch):
+    import pytest as _pytest
+
+    from homeassistant.helpers import device_registry as dr
+
+    from custom_components.device_sentinel.coordinator import DeviceSentinelCoordinator
+
+    from .helpers import MULTI_OWNER_POSSIBLE, setup_entry
+
+    if MULTI_OWNER_POSSIBLE:
+        _pytest.skip("one device per box before 2026.8")
+    _entries.clear()
+    monkeypatch.setattr(DeviceSentinelCoordinator, "iot_class_of", lambda self, domain: IOT.get(domain))
+    proxy = _device(hass, "esphome", "e16", "Proxy", entities=(("update", None), ("button", "restart")),
+                        connections={(dr.CONNECTION_NETWORK_MAC, "aa:bb:cc:dd:ee:16")})
+    adapter = _device(hass, "bluetooth", "bt16", "Proxy adapter", entities=(("sensor", None),),
+                          connections={(dr.CONNECTION_BLUETOOTH, "aa:bb:cc:dd:ee:f6")}, via=proxy.id)
+    coord = (await setup_entry(hass)).runtime_data
+    both = proxy.id in coord._watched and adapter.id in coord._watched
+    assert not both, ("one box watched twice", coord._copy_of)

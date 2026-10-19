@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze.py, Version: 0.26.0 (2026-10-12)
+# File: test_freeze.py, Version: 0.26.6 (2026-10-17)
 
 """The freeze, unavailable, unknown, and never-reported detector.
 
@@ -55,7 +55,6 @@ from custom_components.device_sentinel.const import (
     FREEZE_CATEGORY_FROZEN,
     FREEZE_CATEGORY_NEVER_REPORTED,
     FREEZE_CATEGORY_UNAVAILABLE,
-    FREEZE_CATEGORY_UNKNOWN,
     FREEZE_NOT_REPORTED_SECONDS,
     FREEZE_UNAVAILABLE_DEBOUNCE,
 )
@@ -230,8 +229,10 @@ async def test_all_entities_unavailable_is_unavailable(hass: HomeAssistant):
     )
 
 
-async def test_all_entities_unknown_is_unknown(hass: HomeAssistant):
-    """When every live entity reads unknown, the device is unknown."""
+async def test_all_entities_unknown_is_not_down(hass: HomeAssistant):
+    """When every live entity reads unknown, the device is not down:
+    unknown counts as nothing (James, 17 October 2026), and a device
+    heard 10 seconds ago is not frozen either."""
     device, entities = register_device(hass, "un2", entity_count=2)
     coord = await setup_coordinator(hass)
     for e in entities:
@@ -240,10 +241,7 @@ async def test_all_entities_unknown_is_unknown(hass: HomeAssistant):
     record = _new_device_record("2026-07-11T00:00:00+00:00", None)
     record[DEV_LAST_ACTIVITY] = now - 10
     coord.data["devices"][device.id] = record
-    assert (
-        coord._device_down_category(device.id, record, now)
-        == FREEZE_CATEGORY_UNKNOWN
-    )
+    assert coord._device_down_category(device.id, record, now) is None
 
 
 async def test_mixed_down_state_worst_category_wins(hass: HomeAssistant):
@@ -1089,16 +1087,17 @@ async def test_a_device_already_frozen_keeps_its_verdict_until_it_reports(hass: 
     assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_FROZEN
 
 
-async def test_an_awake_device_reading_unknown_is_unknown_not_frozen(hass: HomeAssistant):
+async def test_an_awake_device_reading_unknown_is_not_down_and_not_frozen(hass: HomeAssistant):
     """Unknown is a value Home Assistant shows while the device is
     connected, as a device of buttons does until one is pressed: the
-    connection rule keeps frozen off it, and unknown is still told
-    (ruling #636; adversarial round three, 12 October 2026)."""
+    connection rule keeps frozen off it (ruling #636; adversarial round
+    three, 12 October 2026), and unknown counts as nothing (James, 17
+    October 2026)."""
     device, eid = _esphome_device(hass, "unknownawake", _Runtime(False))
     coord = await setup_coordinator(hass)
     hass.states.async_set(eid, STATE_UNKNOWN)
     record, now = await _silent_past_window(coord, device.id)
-    assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_UNKNOWN
+    assert coord._device_down_category(device.id, record, now) is None
     record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_FROZEN
     assert coord._device_down_category(device.id, record, now) == FREEZE_CATEGORY_FROZEN, (
         "a verdict already standing waits for the device to report (#529)"

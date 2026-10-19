@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_lutron_hub.py, Version: 0.26.3 (2026-10-14)
+# File: test_lutron_hub.py, Version: 0.26.6 (2026-10-18)
 
 """Lutron: judged by its hub (rulings #663 to #665).
 
@@ -40,8 +40,11 @@ from custom_components.device_sentinel.const import (
     EVENT_RECOVERED,
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
+    FREEZE_CATEGORY_UNAVAILABLE,
+    FREEZE_CATEGORY_UNKNOWN,
     NOTIFY_FAMILY_FREEZE,
     CONF_FREEZE_MUTED_DEVICES,
+    CONF_UNAVAILABLE_MUTED_DEVICES,
     CONF_MUTED_DEVICES,
     STARTUP_GRACE_SECONDS,
     SYS_INTEGRATION_DOWN,
@@ -49,6 +52,7 @@ from custom_components.device_sentinel.const import (
 )
 
 from .helpers import record_events, setup_coordinator
+from .test_freeze_unavailable_split import _mine
 
 PIN = "2026-09-20 16:00:00+00:00"
 DOMAIN = "lutron_caseta"
@@ -373,9 +377,10 @@ async def test_the_reader_follows_the_library_through_a_drop(hass: HomeAssistant
 # Found by the adversarial round of 14 October 2026.
 
 
-async def test_a_freeze_muted_hub_is_silent_down_and_back(hass: HomeAssistant, freezer):
-    """A mute is a mute (James, 14 October 2026)."""
-    h = await _house(hass, freezer, options=lambda b, g: {CONF_FREEZE_MUTED_DEVICES: [g.id]})
+async def test_a_hub_muted_for_unavailable_is_silent_down_and_back(hass: HomeAssistant, freezer):
+    """A mute is a mute (James, 14 October 2026). From 17 October 2026 it
+    is the unavailable mute that silences a hub going down."""
+    h = await _house(hass, freezer, options=lambda b, g: {CONF_UNAVAILABLE_MUTED_DEVICES: [g.id]})
     faults = record_events(hass, EVENT_FAULT)
     recovered = record_events(hass, EVENT_RECOVERED)
     await _past_grace(hass, freezer)
@@ -385,6 +390,24 @@ async def test_a_freeze_muted_hub_is_silent_down_and_back(hass: HomeAssistant, f
     h.garage.runtime_data.bridge._leap = SESSION
     await _tick(hass, freezer, n=2)
     assert faults == [] and recovered == []
+
+
+async def test_a_freeze_muted_hub_that_goes_down_is_reported(hass: HomeAssistant, freezer):
+    """A freeze mute silences only judgments made from silence (James, 17
+    October 2026, reversing the 14 October amendment to #664): a hub
+    muted for freeze that goes down is one row, and back is told."""
+    h = await _house(hass, freezer, options=lambda b, g: {CONF_FREEZE_MUTED_DEVICES: [g.id]})
+    faults = record_events(hass, EVENT_FAULT)
+    recovered = record_events(hass, EVENT_RECOVERED)
+    await _past_grace(hass, freezer)
+    h.garage.runtime_data.bridge._leap = None
+    await _tick(hass, freezer, n=3)
+    assert _item(h.coord, h.g_hub.id)["summary"].endswith("Hub down, 2 devices that it controls")
+    h.garage.runtime_data.bridge._leap = SESSION
+    await _tick(hass, freezer, n=2)
+    assert [e["device_id"] for e in faults] == [h.g_hub.id]
+    assert [e["device_id"] for e in recovered] == [h.g_hub.id]
+    assert _item(h.coord, h.g_hub.id) is None
 
 
 async def test_a_hub_with_no_entity_still_speaks_for_its_devices(hass: HomeAssistant, freezer):
@@ -498,16 +521,16 @@ async def _garage_back(hass, h):
 async def _mute_garage(hass, h, muted):
     entry = h.coord.entry
     hass.config_entries.async_update_entry(
-        entry, options={**entry.options, CONF_FREEZE_MUTED_DEVICES: [h.g_hub.id] if muted else []})
+        entry, options={**entry.options, CONF_UNAVAILABLE_MUTED_DEVICES: [h.g_hub.id] if muted else []})
     await hass.async_block_till_done()
 
 
 async def test_a_muted_hub_that_cannot_start_is_silent_and_keeps_its_entry(hass: HomeAssistant, freezer):
     """A hub's mute covers its devices (James, 14 October 2026)."""
-    h = await _house(hass, freezer, options=lambda b, g: {CONF_FREEZE_MUTED_DEVICES: [g.id]})
+    h = await _house(hass, freezer, options=lambda b, g: {CONF_UNAVAILABLE_MUTED_DEVICES: [g.id]})
     c = h.coord
     await _past_grace(hass, freezer)
-    assert c.hub_takes_over(h.flood.id) and c._freeze_muted(h.flood.id)
+    assert c.hub_takes_over(h.flood.id) and c._unavailable_muted(h.flood.id)
     await _garage_fails_to_start(hass, h)
     await _tick(hass, freezer, n=10)
     assert _kinds(c, SYS_INTEGRATION_DOWN) == []
@@ -515,7 +538,7 @@ async def test_a_muted_hub_that_cannot_start_is_silent_and_keeps_its_entry(hass:
 
 
 async def test_unmuting_a_hub_mid_outage_reports_only_the_hub(hass: HomeAssistant, freezer):
-    h = await _house(hass, freezer, options=lambda b, g: {CONF_FREEZE_MUTED_DEVICES: [g.id]})
+    h = await _house(hass, freezer, options=lambda b, g: {CONF_UNAVAILABLE_MUTED_DEVICES: [g.id]})
     c = h.coord
     await _past_grace(hass, freezer)
     for eid in ("switch.backyard_flood_lights", "switch.garage_main_lights"):
@@ -562,7 +585,7 @@ async def test_an_outage_from_before_the_upgrade_still_down_waits_for_the_integr
 
 async def test_unmuting_a_cut_off_hub_does_not_list_its_lights(hass: HomeAssistant, freezer):
     """The case the fifth and sixth review rounds found (14 October 2026)."""
-    h = await _house(hass, freezer, options=lambda b, g: {CONF_FREEZE_MUTED_DEVICES: [g.id]})
+    h = await _house(hass, freezer, options=lambda b, g: {CONF_UNAVAILABLE_MUTED_DEVICES: [g.id]})
     c = h.coord
     await _past_grace(hass, freezer)
     for eid in ("switch.backyard_flood_lights", "switch.garage_main_lights"):
@@ -649,7 +672,7 @@ async def test_the_card_and_the_brief_say_hub_down(hass: HomeAssistant, freezer)
     text = c._last_brief_text
     assert "hub down, 2 devices that it controls" in text
     assert "Garage Lutron Caseta went down at" in text
-    assert "Garage Lutron Caseta went unavailable" not in text
+    assert "Garage Lutron Caseta became unavailable" not in text
 
 
 # Found by the seventh adversarial round of 14 October 2026.
@@ -664,3 +687,56 @@ async def test_a_hub_that_is_not_watched_mutes_nothing(hass: HomeAssistant, free
     assert not c._freeze_muted(h.kitchen.id)
     assert c.mute_text(h.kitchen.id) == ""
     assert c.page_mutes(h.kitchen.id)["everything"]["on"] is False
+
+
+# ------------------------- unknown on a device a hub controls (0.26.6)
+
+
+# R2-2. hubs.py 385-391: the hub path has no all-unknown hold. A device a
+# hub controls with an unknown verdict standing from 0.26.5, its entity
+# still unknown, gets None on the first sweep (detect_freeze.py 670-674
+# returns _hub_category directly), the item retires and a recovery is
+# fired though the device said nothing. Round one added the hold only
+# to the non-hub branch (detect_freeze.py 794-795).
+async def test_a_hub_controlled_device_with_a_standing_unknown_is_not_told_recovered(
+    hass: HomeAssistant, freezer
+):
+    h = await _house(hass, freezer)
+    c = h.coord
+    await _past_grace(hass, freezer)
+    await _tick(hass, freezer)
+    hass.states.async_set(h.kitchen_eid, "unknown")
+    await hass.async_block_till_done()
+    record = c.data[DATA_DEVICES][h.kitchen.id]
+    record[DEV_FROZEN_CATEGORY] = FREEZE_CATEGORY_UNKNOWN
+    record["frozen_since"] = dt_util.utcnow().timestamp() - 3600
+    c._sync_problem_list()
+    await hass.async_block_till_done()
+    assert _item(c, h.kitchen.id) is not None, "precondition: the 0.26.5 unknown item stands"
+    back = record_events(hass, EVENT_RECOVERED)
+    await _tick(hass, freezer, n=3)
+    assert not _mine(back, h.kitchen.id), "a rule change is not a recovery (#529)"
+    assert _item(c, h.kitchen.id) is not None
+
+
+# R2-2b. The same hole reached live: a controlled light unavailable (its
+# hub up) whose entity passes to unknown is cleared by _hub_category and
+# told recovered, though nothing was heard. 0.26.5 held it as unknown.
+async def test_a_hub_controlled_device_going_from_unavailable_to_unknown_is_not_recovered(
+    hass: HomeAssistant, freezer
+):
+    h = await _house(hass, freezer)
+    c = h.coord
+    await _past_grace(hass, freezer)
+    await _tick(hass, freezer)
+    hass.states.async_set(h.kitchen_eid, "unavailable")
+    await hass.async_block_till_done()
+    await _tick(hass, freezer, n=8)
+    record = c.data[DATA_DEVICES][h.kitchen.id]
+    assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE, "precondition"
+    back = record_events(hass, EVENT_RECOVERED)
+    hass.states.async_set(h.kitchen_eid, "unknown")
+    await hass.async_block_till_done()
+    await _tick(hass, freezer, n=3)
+    assert not _mine(back, h.kitchen.id), "unknown is not the device speaking"
+    assert _item(c, h.kitchen.id) is not None

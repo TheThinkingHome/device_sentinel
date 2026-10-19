@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: helpers.py, Version: 0.24.2 (2026-10-03)
+# File: helpers.py, Version: 0.26.6 (2026-10-18)
 
 """Shared test helpers, one canonical version of each.
 
@@ -211,13 +211,18 @@ def nest_for(step: str, payload: dict) -> dict:
     if step not in sections:
         return dict(payload)
     name, prefix = sections[step]
-    loose, nested = {}, {}
+    loose, nested, unavailable = {}, {}, {}
     for key, value in payload.items():
         if key.startswith(prefix):
             nested[key] = value
+        elif step == "freeze" and key.startswith("unavailable_muted_"):
+            # Its own section on the same screen (0.26.6).
+            unavailable[key] = value
         else:
             loose[key] = value
     loose[name] = nested
+    if unavailable:
+        loose["unavailable_muting"] = unavailable
     return loose
 
 

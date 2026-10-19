@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recovery_one_way.py, Version: 0.26.0 (2026-10-12)
+# File: tests/test_recovery_one_way.py, Version: 0.26.6 (2026-10-18)
 
 """A recovery goes one way, and what else 0.23.12 settles (#529 to #533).
 
@@ -78,7 +78,9 @@ async def test_getting_worse_is_not_a_recovery(hass: HomeAssistant, freezer):
     assert coord.data[DATA_DEVICES][device.id][DEV_FROZEN_CATEGORY] == "frozen"
     hass.states.async_set(value, "unavailable")
     hass.states.async_set(seen, "unavailable")
-    await _minutes(hass, coord, freezer, 2)
+    # Past the debounce a frozen device waits before it turns
+    # unavailable (round 29 of 0.26.6).
+    await _minutes(hass, coord, freezer, 4)
     rows = [(r["kind"], r["event"], bool(r.get("superseded"))) for r in coord.data[DATA_INCIDENTS]]
     assert rows == [("frozen", "opened", False), ("unavailable", "opened", False), ("frozen", "resolved", True)], rows
     assert bus == [("fault", ["frozen"])], bus
@@ -91,7 +93,9 @@ async def test_the_step_back_is_not_reported(hass: HomeAssistant, freezer):
     await _minutes(hass, coord, freezer, 3)
     hass.states.async_set(value, "unavailable")
     hass.states.async_set(seen, "unavailable")
-    await _minutes(hass, coord, freezer, 2)
+    # Past the debounce a frozen device waits before it turns
+    # unavailable (round 29 of 0.26.6).
+    await _minutes(hass, coord, freezer, 4)
     before = list(coord.data[DATA_INCIDENTS])
     hass.states.async_set(value, "56")
     hass.states.async_set(seen, heard)
