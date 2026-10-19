@@ -156,14 +156,49 @@ const excludedPage = (excluded) => (p) => {
   }));
   const all = rowCell(root, "Muted");
   const lit = [...all.querySelectorAll("button")].filter((b) => b.classList.contains("on")).map((b) => b.textContent);
-  check("Muted: with Mute everything on, all four are filled and checked",
-    lit.join() === "\u2713 Mute freeze,\u2713 Mute battery,\u2713 Mute signal,\u2713 Mute everything", lit);
-  check("Muted: the three it covers cannot be pressed",
-    ["\u2713 Mute freeze", "\u2713 Mute battery", "\u2713 Mute signal"].every((t) => buttonIn(all, t) && buttonIn(all, t).getAttribute("aria-disabled") === "true"));
+  // Mute unavailable joined the row in 0.26.6 (James, 17 October 2026).
+  check("Muted: with Mute everything on, all five are filled and checked",
+    lit.join() === "\u2713 Mute freeze,\u2713 Mute unavailable,\u2713 Mute battery,\u2713 Mute signal,\u2713 Mute everything", lit);
+  check("Muted: the four it covers cannot be pressed",
+    ["\u2713 Mute freeze", "\u2713 Mute unavailable", "\u2713 Mute battery", "\u2713 Mute signal"].every((t) => buttonIn(all, t) && buttonIn(all, t).getAttribute("aria-disabled") === "true"));
   const allButton = buttonIn(all, "\u2713 Mute everything");
   if (allButton) await click(allButton);
   const lift = calls.filter((c) => c.type === "device_sentinel/device_mute");
   check("Muted: pressing Mute everything again lifts it", lift.length === 1 && lift[0].kind === "everything" && lift[0].on === false, lift);
+
+  // Each mute its own kind (James, 18 October 2026): Mute unavailable
+  // on leaves Mute freeze plain and pressable, and a label's unavailable
+  // mute names its section.
+  ({ root, calls } = await open({}, (p) => {
+    p.identity.actions.mutes = {
+      everything: { on: false, source: null, here: false },
+      freeze: { on: false, source: null, here: false },
+      unavailable: { on: true, source: "device", here: true },
+      battery: { on: false, source: null, here: false },
+      signal: { on: false, source: null, here: false },
+    };
+  }));
+  const una = rowCell(root, "Muted");
+  const unaLit = [...una.querySelectorAll("button")].filter((b) => b.classList.contains("on")).map((b) => b.textContent);
+  check("Muted: with Mute unavailable on, only it is lit", unaLit.join() === "\u2713 Mute unavailable", unaLit);
+  check("Muted: no note ties freeze to unavailable", !/muted with unavailable/.test(una.textContent), una.textContent);
+  await click(buttonIn(una, "Mute freeze"));
+  const fz = calls.filter((c) => c.type === "device_sentinel/device_mute");
+  check("Muted: Mute freeze can still be set", fz.length === 1 && fz[0].kind === "freeze" && fz[0].on === true, fz);
+  ({ root, calls } = await open({}, (p) => {
+    p.identity.actions.mutes = {
+      everything: { on: false, source: null, here: false },
+      freeze: { on: false, source: null, here: false },
+      unavailable: { on: true, source: "label: Wall switched", here: false },
+      battery: { on: false, source: null, here: false },
+      signal: { on: false, source: null, here: false },
+    };
+  }));
+  const unl = rowCell(root, "Muted");
+  check("Muted: a label's unavailable mute names its section",
+    /Unavailable is muted by the label Wall switched\. Change it in Device Sentinel's settings, Configure, Freeze and Unavailable Detection\./.test(unl.textContent), unl.textContent);
+  check("Muted: a label's unavailable mute cannot be pressed here",
+    buttonIn(unl, "\u2713 Mute unavailable").getAttribute("aria-disabled") === "true");
 
   console.log("\nRenaming");
   ({ root, calls } = await open({

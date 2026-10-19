@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_device_page_text.js, Version: 0.26.1 (2026-10-13)
+// File: tools/panel_checks/check_device_page_text.js, Version: 0.26.6 (2026-10-17)
 //
 // Panel checks: the device page reads at one size (0.26.1). Secondary
 // text such as "heard by Device Sentinel 9m ago" and "heartbeat: when ZHA
@@ -245,6 +245,14 @@ const PAGES = [
     const small = host.querySelector(".pane .small");
     check("Other tabs keep their sizes (the Integrations tab's small text reads 12px)",
       small && sizeOf(window, small) === "12px", small && [small.textContent.slice(0, 40), sizeOf(window, small)]);
+  }
+  // A device judged by its connection alone (James, 17 October 2026,
+  // 0.26.6): one line, no window bar, no "still learning".
+  for (const [word, expected] of [["connected", "Judged by its connection: connected."], ["dropped", "Judged by its connection: dropped."]]) {
+    const { root } = await open({ tweak: (p) => { p.status.connection = word; p.status.window = null; } });
+    const line = root.querySelector(".statusline .muted");
+    check(`A connection-only device reads "${expected}"`, line && line.textContent === expected, line && line.textContent);
+    check(`A connection-only device ${word} has no window bar`, !root.querySelector(".devstatus .bar"));
   }
   {
     const source = fs.readFileSync(PANEL, "utf8");

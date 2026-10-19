@@ -189,7 +189,7 @@ const realPage = (tweak = () => {}) => (m) => {
     check("A label's mute says so and names its section",
       notes.includes("Battery is muted by the label Quiet. Change it in Device Sentinel's settings, Configure, Low Battery."), notes);
     check("An integration's mute names the integration, MQTT, not the device's Zigbee2MQTT",
-      notes.includes("Freeze is muted by the integration MQTT. Change it in Device Sentinel's settings, Configure, Freeze Detection."), notes);
+      notes.includes("Freeze is muted by the integration MQTT. Change it in Device Sentinel's settings, Configure, Freeze and Unavailable Detection."), notes);
     check("A mute set on the device itself, which the page can lift, adds no note",
       !notes.some((n) => n.startsWith("Signal is muted")), notes);
     const links = cell ? [...cell.querySelectorAll(".actnote a")] : [];
