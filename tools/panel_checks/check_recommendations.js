@@ -1,7 +1,11 @@
+// File: tools/panel_checks/check_recommendations.js, Version: 0.26.7 (2026-10-19)
 // Panel checks: the Recommendations tab. Its opening line counts the
 // recommendations, says they help Device Sentinel run better, and says
 // none of them is required; no card is singled out (#626, 0.25.6).
 // Since 0.26.0 it also draws the Slow Reporting Devices card (#637).
+// Since 0.26.7: the switched-off cards' Turn on chips (#696, #698), a
+// tick on each row and each written line (#699), and the count on the
+// tab, the highlighted top-band button and the Daily Brief tab (#700).
 // Run with: LC_ALL=en_US.UTF-8 node check_recommendations.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -156,6 +160,78 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   check("The opening line counts the new card", slow.root.querySelector("p").textContent.startsWith(`${count2} recommendations`),
     slow.root.querySelector("p").textContent);
 
+  // Acknowledgement and the count (rulings #696 to #700).
+  console.log("\nTicks, the count and the Active Recommendations button (rulings #696 to #700)");
+  let ticks = { line: false, [ROWS[0].device_id]: false };
+  const OFF = {
+    kind: "battery_off", title: "Battery Sensor Switched Off", simple: true, active: 1,
+    body: "2 devices have a battery sensor that is switched off.",
+    devices: [
+      { device_id: ROWS[0].device_id, name: "Hall Motion", area: "Hall", acknowledged: false },
+      { device_id: ROWS[1].device_id, name: "Shed Leak", area: null, acknowledged: true, by_user: true },
+    ],
+  };
+  const LINE = { key: "no_target", text: "Notifications Recipient Not Set: no target is set.", simple: true, acknowledged: false };
+  const recs = () => {
+    const card = JSON.parse(JSON.stringify(OFF));
+    card.devices[0].acknowledged = ticks[ROWS[0].device_id];
+    return { lines: [{ ...LINE, acknowledged: ticks.line }], devices: [card], closing: "", power: {}, types: { choices: [], other: "Other" } };
+  };
+  const acks = await open({ path: `${PREFIX}/recommendations`, answers: {
+    recommendations: recs,
+    recommendation_ack: (message) => {
+      if (message.line) ticks.line = message.on; else ticks[message.device_id] = message.on;
+      return {};
+    },
+  } });
+  const tabLabel = () => [...acks.root.querySelectorAll(".tab")].map((t) => t.textContent).find((t) => t.startsWith("Recommendations"));
+  const band = () => acks.root.querySelector("button.active-recs");
+  check("The tab counts what is not acknowledged: one device and one line", tabLabel() === "Recommendations (2)", tabLabel());
+  check("The top band carries Active Recommendations (2), shown", !!band() && !band().hidden && band().textContent === "Active Recommendations (2)",
+    band() && band().textContent);
+  check("No Enable button is left in the top band (ruling #696)", !/Enable (Signals|Last Seen|Battery)/.test(acks.root.querySelector(".actions").textContent));
+  const offCard = [...acks.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "battery_off");
+  const offRows = offCard ? [...offCard.querySelectorAll("tbody tr")] : [];
+  check("A sensor its person switched off is shown ticked and faded", offRows[1] && offRows[1].classList.contains("acked")
+    && offRows[1].querySelector('input[type="checkbox"]').checked);
+  const turnOn = offRows[0] && offRows[0].querySelector("button.chip");
+  check("Each row offers Turn on its battery sensor", !!turnOn && turnOn.textContent === "Turn on its battery sensor", turnOn && turnOn.textContent);
+  turnOn.click();
+  await settle(); await settle();
+  const turnCall = acks.calls.find((c) => c.type === "device_sentinel/device_turn_on");
+  check("Turn on asks for this device's battery sensor alone", !!turnCall && turnCall.kind === "battery" && turnCall.device_id === ROWS[0].device_id, turnCall);
+  const box = [...acks.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "battery_off")
+    .querySelector("tbody tr").querySelector('input[type="checkbox"]');
+  box.checked = true;
+  box.dispatchEvent(new acks.window.Event("change"));
+  await settle(); await settle();
+  const ackCall = acks.calls.find((c) => c.type === "device_sentinel/recommendation_ack");
+  check("A tick names the card and the device", !!ackCall && ackCall.kind === "battery_off" && ackCall.device_id === ROWS[0].device_id && ackCall.on === true, ackCall);
+  check("The tab then counts one", tabLabel() === "Recommendations (1)", tabLabel());
+  const lineBox = acks.root.querySelector("article.rec:not([data-kind]) input[type=checkbox]");
+  lineBox.checked = true;
+  lineBox.dispatchEvent(new acks.window.Event("change"));
+  await settle(); await settle();
+  const lineCall = acks.calls.filter((c) => c.type === "device_sentinel/recommendation_ack").pop();
+  check("A written line is ticked by its key", !!lineCall && lineCall.line === "no_target" && lineCall.on === true, lineCall);
+  check("With everything ticked the tab reads plain", tabLabel() === "Recommendations", tabLabel());
+  check("And the button hides", !!band() && band().hidden);
+  const undo = [...acks.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "battery_off")
+    .querySelector("tbody tr").querySelector('input[type="checkbox"]');
+  undo.checked = false;
+  undo.dispatchEvent(new acks.window.Event("change"));
+  await settle(); await settle();
+  check("A tick can be taken back, and counts again", tabLabel() === "Recommendations (1)", tabLabel());
+
+  console.log("\nThe Daily Brief tab's line (ruling #700)");
+  ticks = { line: false, [ROWS[0].device_id]: false };
+  const brief = await open({ path: PREFIX, answers: { recommendations: recs } });
+  const recLine = brief.root.querySelector("p.recline");
+  check("It opens with the count and a link to the tab", !!recLine && recLine.textContent === "2 active recommendations on the Recommendations tab."
+    && !!recLine.querySelector("a"), recLine && recLine.textContent);
+  ticks = { line: true, [ROWS[0].device_id]: true };
+  const quiet = await open({ path: PREFIX, answers: { recommendations: recs } });
+  check("With nothing active it says nothing", quiet.root.querySelector("p.recline") === null);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

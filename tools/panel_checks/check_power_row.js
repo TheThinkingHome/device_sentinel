@@ -1,6 +1,8 @@
+// File: tools/panel_checks/check_power_row.js, Version: 0.26.7 (2026-10-19)
 // Panel checks: the Power row (0.24.7, 0.24.8). Words, the source icon in light
 // and dark, the library icon's link, the pencil's choices, Save, the
-// report button after a save, and Use the library.
+// report button after a save, and Use the library. Since 0.26.7 the
+// Battery Last Replaced row beside it (rulings #701, #702).
 // Run with: LC_ALL=en_US.UTF-8 node check_power_row.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -34,8 +36,8 @@ const CHOICES = { areas: [{ id: "bedroom", name: "Master Bedroom" }, { id: "laun
   labels: [{ id: "garage", name: "Garage", meaning: "mutes freeze" }, { id: "quiet", name: "Quiet", meaning: "mutes battery and signal" }] };
 
 let current = {};
-async function open(answers, power, dark = false) {
-  current = { power };
+async function open(answers, power, dark = false, replaced = null) {
+  current = { power, replaced };
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", (err) => {
     if (!String(err.message).includes("Not implemented")) console.log("jsdom:", err.message);
@@ -67,6 +69,7 @@ async function open(answers, power, dark = false) {
         page.identity.muted = "battery (label: Quiet); signal (label: Quiet)";
         page.identity.actions = JSON.parse(JSON.stringify(ACTIONS));
         page.identity.power = JSON.parse(JSON.stringify(current.power));
+        page.identity.battery_replaced = current.replaced ? JSON.parse(JSON.stringify(current.replaced)) : null;
         page.status.rule = "14-Day Trimmed Maximum";
         page.status.window = 43200;
         return page;
@@ -194,6 +197,35 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   const css = [...root.querySelectorAll("style")].map((s) => s.textContent).join("\n");
   check("Dropdown choices take the theme's card and text colours",
     /select option, select optgroup \{ background-color: var\(--card-background-color, #ffffff\);\s*color: var\(--primary-text-color, #212121\); \}/.test(css));
+
+  console.log("\nBattery Last Replaced (rulings #701, #702)");
+  const WORDS = { row: "Battery Last Replaced", none: "No battery replacement yet", card: "Confirm Battery Replacement", done: "replaced" };
+  let bpage = await open({}, LIBRARY, false, null);
+  check("A device on mains has no row", rowCell(bpage.root, "Battery Last Replaced") === null);
+  bpage = await open({}, LIBRARY, false, { words: WORDS, day: null, how: null, waiting: false });
+  let bcell = rowCell(bpage.root, "Battery Last Replaced");
+  check("Never seen replaced reads so, with a pencil", !!bcell && /No battery replacement yet/.test(bcell.textContent)
+    && !!bcell.querySelector("button.edit"), bcell && bcell.textContent);
+  await click(bcell.querySelector("button.edit"));
+  bcell = rowCell(bpage.root, "Battery Last Replaced");
+  const input = bcell.querySelector('input[type="date"]');
+  check("The pencil offers a day, no later than today", !!input && !!input.getAttribute("max"));
+  input.value = "2026-10-01";
+  await click(buttonIn(bcell, "Save"));
+  const saved = bpage.calls.find((c) => c.type === "device_sentinel/device_battery");
+  check("Save sends the day as the person's own", !!saved && saved.action === "date" && saved.day === "2026-10-01", saved);
+  bpage = await open({}, LIBRARY, false, { words: WORDS, day: "2026-10-18", how: "detected", waiting: true });
+  bcell = rowCell(bpage.root, "Battery Last Replaced");
+  check("A detected replacement waits with Confirm, Change date and Cancel",
+    !!bcell && /Detected replaced on/.test(bcell.textContent) && ["Confirm", "Change date", "Cancel"].every((t) => buttonIn(bcell, t)),
+    bcell && bcell.textContent);
+  await click(buttonIn(bcell, "Confirm"));
+  const confirm = bpage.calls.find((c) => c.type === "device_sentinel/device_battery");
+  check("Confirm asks to keep the detected day", !!confirm && confirm.action === "confirm" && confirm.device_id === DEVICE, confirm);
+  bpage = await open({}, LIBRARY, false, { words: { ...WORDS, row: "Battery Last Charged", none: "No battery charge seen yet", done: "charged" },
+    day: "2026-10-18", how: "detected", waiting: true });
+  bcell = rowCell(bpage.root, "Battery Last Charged");
+  check("A rechargeable cell reads charged", !!bcell && /Detected charged on/.test(bcell.textContent), bcell && bcell.textContent);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

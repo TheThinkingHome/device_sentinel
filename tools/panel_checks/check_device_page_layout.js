@@ -1,3 +1,4 @@
+// File: tools/panel_checks/check_device_page_layout.js, Version: 0.26.7 (2026-10-19)
 // Panel checks: the device page's top half and the Recommendations tab's
 // device cards (0.24.9). The Identity section's order and groups, live
 // values, sensor links, both rule charts, Previous and Next, and setting
@@ -234,7 +235,7 @@ const rowCell = (root, label) => {
   ({ root, calls } = await open({ path: `${PREFIX}/recommendations`, answers: { recommendations: () => JSON.parse(JSON.stringify(RECS)) } }));
   [...root.querySelectorAll("article.rec")[1].querySelectorAll("button")].find((b) => b.textContent === "Turn on its Last Seen").click();
   await settle();
-  check("Last Seen is switched on from the list", calls.some((c) => c.type === "device_sentinel/device_last_seen" && c.device_id === ROWS[2].device_id));
+  check("Last Seen is switched on from the list", calls.some((c) => c.type === "device_sentinel/device_turn_on" && c.kind === "last_seen" && c.device_id === ROWS[2].device_id));
   ({ window, root } = await open({ path: `${PREFIX}/recommendations`, answers: { recommendations: () => JSON.parse(JSON.stringify(RECS)) } }));
   const areaCard = root.querySelectorAll("article.rec")[2];
   const cardLink = [...areaCard.querySelectorAll("a")].find((a) => a.textContent === ROWS[0].name);

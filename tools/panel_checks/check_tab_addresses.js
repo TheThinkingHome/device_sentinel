@@ -1,3 +1,4 @@
+// File: tools/panel_checks/check_tab_addresses.js, Version: 0.26.7 (2026-10-19)
 // Panel checks: every tab has its own address.
 // Written for 0.22.14; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_tab_addresses.js [path/to/panel.js]
@@ -62,7 +63,8 @@ const selected = (root) => {
   const tab = root.querySelector('.tab[aria-selected="true"]');
   return tab ? tab.textContent : null;
 };
-const clickTab = (root, name) => [...root.querySelectorAll(".tab")].find((b) => b.textContent === name).click();
+// A tab's label may carry its count, "Recommendations (2)" (ruling #700).
+const clickTab = (root, name) => [...root.querySelectorAll(".tab")].find((b) => b.textContent === name || b.textContent.startsWith(`${name} (`)).click();
 const where = (window) => window.location.pathname + window.location.search;
 const backLink = (root) => {
   const link = root.querySelector(".pane > p:first-child a");
@@ -99,7 +101,7 @@ const ADDRESSES = [
   console.log("Every tab has its own address");
   for (const [name, address] of ADDRESSES) {
     ({ window, root } = await open(address));
-    check(`${address} opens ${name}, as a reload would`, selected(root) === name, selected(root));
+    check(`${address} opens ${name}, as a reload would`, selected(root).replace(/ \(\d+\)$/, "") === name, selected(root));
   }
   ({ window, root } = await open(PREFIX));
   for (const [name, address] of ADDRESSES.slice(1)) {

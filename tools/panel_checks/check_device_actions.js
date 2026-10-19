@@ -1,3 +1,4 @@
+// File: tools/panel_checks/check_device_actions.js, Version: 0.26.7 (2026-10-19)
 // Panel checks: the device page's actions (0.24.5). Rename with its
 // duplicate-name warning, the area and label pickers, the Heartbeat chip,
 // the mute toggles and their confirmation, a refused write shown under
@@ -120,7 +121,22 @@ const excludedPage = (excluded) => (p) => {
   ({ root, calls } = await open({}));
   // In the Last seen group since 0.24.9, where the Heartbeat row was.
   await click(buttonIn(rowCell(root, "Last seen sensor"), "Turn on its Last Seen"));
-  check("Last seen sensor: the chip switches on this device's Last Seen", calls.some((c) => c.type === "device_sentinel/device_last_seen" && c.device_id === DEVICE));
+  check("Last seen sensor: the chip switches on this device's Last Seen", calls.some((c) => c.type === "device_sentinel/device_turn_on" && c.kind === "last_seen" && c.device_id === DEVICE));
+
+  // A Battery or Signal sensor switched off (0.26.7): the row says so
+  // and Turn it on asks for this device's own sensor of that kind
+  // (rulings #696, #698).
+  for (const [label, kind] of [["Battery sensor", "battery"], ["Signal sensor", "signal"]]) {
+    ({ root, calls } = await open({}, (page) => {
+      page.readings = (page.readings || []).filter((r) => r.kind !== kind);
+      page.identity.actions[`${kind}_off`] = true;
+    }));
+    const cell = rowCell(root, label);
+    check(`${label}: switched off reads so`, !!cell && /switched off/.test(cell.textContent), cell && cell.textContent);
+    await click(buttonIn(cell, "Turn it on"));
+    check(`${label}: Turn it on switches on this device's ${kind} sensor`,
+      calls.some((c) => c.type === "device_sentinel/device_turn_on" && c.kind === kind && c.device_id === DEVICE));
+  }
 
   ({ root, calls } = await open({}));
   const muted = rowCell(root, "Muted");
