@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: hubs.py, Version: 0.26.5 (2026-10-16)
+# File: hubs.py, Version: 0.26.6 (2026-10-17)
 
 """Judged by its hub (rulings #663 to #665).
 
@@ -45,18 +45,18 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    EVENT_RESTING,
     DATA_DEVICES,
     DATA_INCIDENTS,
     DEV_FROZEN_CATEGORY,
     DEV_LAST_ACTIVITY,
     FREEZE_CATEGORY_FROZEN,
-    FREEZE_CATEGORY_PRIORITY,
     FREEZE_CATEGORY_UNAVAILABLE,
     FREEZE_CATEGORY_UNKNOWN,
     HUB_DOWN_CONFIRM_SECONDS,
@@ -278,8 +278,8 @@ class HubMixin:
 
         A hub's (James, 14 October 2026), or "became unavailable" for a
         device whose stack keeps a node status, as Z-Wave does (James,
-        16 October 2026, with ruling #670), which is how a dead Z-Wave
-        node is told. None means the usual "went unavailable".
+        16 October 2026, with ruling #670). None means the usual words,
+        also "became unavailable" since 17 October 2026 (James).
         """
         hub = self.hub_unavailable_words(device_id)
         if hub is not None:
@@ -360,9 +360,10 @@ class HubMixin:
 
         Never frozen and never "never reported": these devices report
         only when used or at a restart. A hub whose connection is down
-        is unavailable. Otherwise a device is down only when every
-        entity it has reads down, which happens at a restart with its
-        hub away. A frozen verdict standing from before 0.26.3 stays
+        is unavailable. Otherwise a device is down only when the
+        entities that decide (_live_entity_states, its main entities
+        first) all read unavailable, an unknown among them counting as
+        nothing, which happens at a restart with its hub away. A frozen verdict standing from before 0.26.3 stays
         until the device reports, as #529 keeps one through a rule
         change.
         """
@@ -384,15 +385,18 @@ class HubMixin:
             # verdict as it stood.
             return current
         states = self._live_entity_states(device_id)  # type: ignore[attr-defined]
-        if states and all(s in BAD_STATES for s in states):
-            present = {
-                FREEZE_CATEGORY_UNAVAILABLE: STATE_UNAVAILABLE in states,
-                FREEZE_CATEGORY_UNKNOWN: STATE_UNKNOWN in states,
-            }
-            for category in FREEZE_CATEGORY_PRIORITY:
-                if present.get(category):
-                    return category
+        # Unknown counts as nothing (James, 17 October 2026).
+        known = [s for s in states if s not in (STATE_UNKNOWN, EVENT_RESTING)]
+        if known and all(s in BAD_STATES for s in known):
+            # Alive while another entity of its own reports (James, 17
+            # October 2026).
+            if self._reporting_through_others(device_id):  # type: ignore[attr-defined]
+                return None
             return FREEZE_CATEGORY_UNAVAILABLE
+        if states and not known and current in (FREEZE_CATEGORY_UNAVAILABLE, FREEZE_CATEGORY_UNKNOWN):
+            # Nothing but unknown: down stays down until the device says
+            # something (#529; second adversarial round of 0.26.6).
+            return current
         if current == FREEZE_CATEGORY_FROZEN and not self.is_hub(device_id):
             return FREEZE_CATEGORY_FROZEN
         return None

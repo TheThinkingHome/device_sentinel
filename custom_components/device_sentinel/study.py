@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: study.py, Version: 0.26.4 (2026-10-15)
+# File: study.py, Version: 0.26.6 (2026-10-17)
 
 """Gather what building support for somebody's hardware requires.
 
@@ -428,7 +428,11 @@ class StudyMixin:
         # (0.23.11). The second fleet's S81, dead to Z-Wave for a week
         # and a half and muted, read as a disagreement.
         if record is not None and sentinel == STATUS_REPORTING:
-            if device_id in getattr(self, "_muted_devices", set()) or self._freeze_muted(device_id):  # type: ignore[attr-defined]
+            if (
+                device_id in getattr(self, "_muted_devices", set())
+                or self._freeze_muted(device_id)  # type: ignore[attr-defined]
+                or self._unavailable_muted(device_id)  # type: ignore[attr-defined]
+            ):
                 sentinel = PROBE_MUTED
             elif len(record.get(DEV_DAILY_MAX) or []) < LEARNING_MIN_DAYS:
                 sentinel = STATUS_LEARNING

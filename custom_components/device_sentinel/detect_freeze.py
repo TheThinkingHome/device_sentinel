@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.26.5 (2026-10-16)
+# File: detect_freeze.py, Version: 0.26.6 (2026-10-18)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -40,7 +40,6 @@ from __future__ import annotations
 import math
 from typing import Any
 from homeassistant.const import (
-    STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
 from homeassistant.helpers import entity_registry as er
@@ -50,6 +49,8 @@ from .stacks import node_dead, node_up, reader_for_domain
 
 from .rhythm_rules import lognormal_days, lognormal_rhythm
 from .const import (
+    CONF_UNAVAILABLE_MUTED_LABELS,
+    EVENT_RESTING,
     DEV_LOGNORMAL_DAYS,
     RULE_LOGNORMAL,
     RULE_TRIMMED,
@@ -72,6 +73,7 @@ from .const import (
     CONF_FREEZE_DELTA_HIGH,
     CONF_FREEZE_DELTA_LOW,
     CONF_FREEZE_MUTED_DEVICES,
+    CONF_UNAVAILABLE_MUTED_DEVICES,
     CONF_FREEZE_MUTED_INTEGRATIONS,
     CONF_FREEZE_MUTED_LABELS,
     DAILY_MAX_KEEP,
@@ -95,7 +97,6 @@ from .const import (
     FREEZE_ARMING_DAYS,
     FREEZE_CATEGORY_FROZEN,
     FREEZE_CATEGORY_NEVER_REPORTED,
-    FREEZE_CATEGORY_PRIORITY,
     FREEZE_CATEGORY_UNAVAILABLE,
     FREEZE_CATEGORY_UNKNOWN,
     FREEZE_NOT_REPORTED_SECONDS,
@@ -281,6 +282,44 @@ class FreezeMixin:
         if self._watched.get(device_id) != "esphome":
             return False
         return self._esphome_flags(device_id) == (False, False)
+
+    def _connection_only(self, device_id: str) -> bool:
+        """Whether an ESPHome device has nothing to report but its
+        connection: every entity of its own switched on is a firmware
+        notice or a command button, whatever it has switched off (James,
+        17 October 2026; fourteenth adversarial round of 0.26.6)."""
+        return (
+            self._watched.get(device_id) == "esphome"
+            and device_id in self._devices_with_entities
+            and device_id not in self._devices_enabled_real  # type: ignore[attr-defined]
+        )
+
+    def _esphome_back(self, device_id: str, record: dict[str, Any]) -> None:
+        """An ESPHome connection coming back is the device speaking (James,
+        17 October 2026): ESPHome connects only when the device answers.
+
+        Read each sweep, so a reconnect is noticed whatever its entities
+        do; after a restart the first reading counts as coming back. Taken
+        only while a down verdict stands, and not while the entities that
+        decide still say unavailable: that is a sensor down on a live
+        device, not a device back.
+        """
+        if self._watched.get(device_id) != "esphome":
+            return
+        connected = self._esphome_flags(device_id) == (False, True)
+        before = self._esphome_was_connected.get(device_id)  # type: ignore[attr-defined]
+        self._esphome_was_connected[device_id] = connected  # type: ignore[attr-defined]
+        if not connected or before is True:
+            return
+        if record.get(DEV_FROZEN_CATEGORY) is None:
+            return
+        states = self._live_entity_states(device_id)  # type: ignore[attr-defined]
+        known = [s for s in states if s not in (STATE_UNKNOWN, EVENT_RESTING)]
+        if known and all(s in BAD_STATES for s in known):
+            return
+        self._record_activity(  # type: ignore[attr-defined]
+            device_id, self._entry_of_device.get(device_id)
+        )
 
     def _dead_node(self, device_id: str) -> bool:
         """Whether the device's own stack says its node is dead (#670).
@@ -623,37 +662,78 @@ class FreezeMixin:
         return floor + window * share
 
     def _device_down_category(
-        self, device_id: str, record: dict[str, Any], now: float
+        self, device_id: str, record: dict[str, Any], now: float, mutes: bool = True
     ) -> str | None:
         """Return the down category for a device, or None if alive.
 
         The device-level rule: if any live entity is fresh, the
         device is alive, whatever its other entities read. A device is
         down only when nothing on it is reporting. Then the category
-        is read from what the entities show, and a mix resolves to the
-        most definite state (unavailable dominates frozen dominates
-        unknown), because a device with most entities unavailable is a
-        dead device whose remaining entities have simply not flipped
-        yet.
+        is read from what the entities that decide show
+        (_live_entity_states, its main entities first): unavailable when
+        every one that says anything says unavailable, an unknown among
+        them counting as nothing, and frozen when they hold values the
+        clock says are stale (James, 17 October 2026). A device whose main
+        entities are unavailable while another entity of its own is
+        actively reporting is alive (_reporting_through_others).
         """
-        # A globally-muted or freeze-muted device keeps its
+        # A globally-muted device keeps its
         # clock and rhythm but is never given a verdict of any kind.
         # Global muting suppresses all judgment, so it is checked
         # here rather than only filtered from the report: no verdict
         # is computed or stored for a device the person has told the
         # integration to exclude.
-        if (
-            device_id in self._muted_devices
-            or self._freeze_muted(device_id)
-        ):
+        if device_id in self._muted_devices:
             return None
+        # Two mutes, each its own kind (James, 18 October 2026): the
+        # freeze mute silences frozen and never reported, the unavailable
+        # mute unavailable. A device muted for both is given no verdict.
+        # With mutes False, the verdict as it would be with no freeze or
+        # unavailable mute: whether the device is still down at all.
+        muted_freeze = mutes and self._freeze_muted(device_id)
+        muted_unavailable = mutes and self._unavailable_muted(device_id)
+        if muted_freeze and muted_unavailable:
+            return None
+        standing = record.get(DEV_FROZEN_CATEGORY)
+        # What a device gone while muted for unavailable is given: nothing,
+        # unless its trouble began as a freeze the freeze mute does not
+        # cover, which stands until the device reports (#529; first and
+        # second adversarial rounds of 0.26.6). How the trouble began
+        # decides, not the order of the two.
+        gone = (
+            FREEZE_CATEGORY_FROZEN
+            if not muted_freeze
+            and (
+                standing == FREEZE_CATEGORY_FROZEN
+                or (
+                    standing in (FREEZE_CATEGORY_UNAVAILABLE, None)
+                    and record.get(DEV_DOWN_BEGAN_AS) == FREEZE_CATEGORY_FROZEN
+                )
+            )
+            else None
+        )
 
         # A hub, or a device a hub controls, is judged by its hub
         # (rulings #663 and #664): never frozen, never "never reported".
-        # A mute is a mute, as on every other device: a freeze-muted hub
-        # is silent, down and back (James, 14 October 2026).
+        # A freeze-muted hub that goes down is reported (James, 17
+        # October 2026, reversing the 14 October amendment).
         if self.judged_by_hub(device_id):  # type: ignore[attr-defined]
-            return self._hub_category(device_id, record, now)  # type: ignore[attr-defined]
+            category = self._hub_category(device_id, record, now)  # type: ignore[attr-defined]
+            if category == FREEZE_CATEGORY_UNAVAILABLE and muted_unavailable:
+                return gone
+            return self._muted_away(category, muted_freeze, muted_unavailable)
+
+        # An ESPHome device with nothing but firmware notices and command
+        # buttons, such as a Bluetooth proxy, is judged by its connection
+        # alone, its only report (James, 17 October 2026): unavailable
+        # while it is dropped, never frozen or never reported.
+        if self._connection_only(device_id):
+            if self._dropped_esphome(device_id):
+                return None if muted_unavailable else FREEZE_CATEGORY_UNAVAILABLE
+            if standing == FREEZE_CATEGORY_UNAVAILABLE and not self._awake_esphome(device_id):
+                # Its connection cannot be read: held until it can.
+                return None if muted_unavailable else standing
+            return None
 
         # Never reported: zero lifetime events past the grace window.
         # Checked first because it is categorically different from a
@@ -663,8 +743,12 @@ class FreezeMixin:
         # whatever its clock and counter say now: a lost clocks file
         # empties both, and 31 healthy devices on the reference rig
         # read "never reported" for it (0.22.28).
+        # A freeze-muted device is never called never reported, and is
+        # read on below for the rest, so one that is unavailable, dead
+        # or dropped is still told (first adversarial round of 0.26.6).
         if (
-            record[DEV_EVENT_COUNT] == 0
+            not muted_freeze
+            and record[DEV_EVENT_COUNT] == 0
             and record[DEV_LAST_ACTIVITY] is None
             and not record.get(DEV_DAILY_MAX)
         ):
@@ -695,12 +779,12 @@ class FreezeMixin:
         # An ESPHome device whose connection is down is unavailable
         # (ruling #640), and a frozen verdict standing escalates to it.
         if self._dropped_esphome(device_id):
-            return FREEZE_CATEGORY_UNAVAILABLE
+            return self._gone_under_mute(device_id, record, now, gone) if muted_unavailable else FREEZE_CATEGORY_UNAVAILABLE
 
         # A node its own stack calls dead is unavailable (ruling #670),
         # and a frozen verdict standing moves to it, as for ESPHome.
         if self._dead_node(device_id):
-            return FREEZE_CATEGORY_UNAVAILABLE
+            return self._gone_under_mute(device_id, record, now, gone) if muted_unavailable else FREEZE_CATEGORY_UNAVAILABLE
 
         # Frozen: armed, and silent past its window while entities
         # still hold values. Judged first because it is the timer's
@@ -710,6 +794,7 @@ class FreezeMixin:
             window is not None
             and silence is not None
             and silence >= window
+            and not muted_freeze
         )
 
         states = self._live_entity_states(device_id)
@@ -738,37 +823,70 @@ class FreezeMixin:
                     # the node is up (fifth adversarial round of 16
                     # October 2026): judged by the clock alone.
                     return FREEZE_CATEGORY_FROZEN if frozen else None
-                return record.get(DEV_FROZEN_CATEGORY)
+                if muted_unavailable and standing == FREEZE_CATEGORY_UNAVAILABLE:
+                    # A standing unavailable verdict hidden by the mute has
+                    # passed the debounce already (round 25 of 0.26.6).
+                    self._gone_under_mute(device_id, record, now, gone, listed=True)
+                return self._held(standing, gone, muted_freeze, muted_unavailable)
             return FREEZE_CATEGORY_FROZEN if frozen else None
 
-        any_unavailable = STATE_UNAVAILABLE in states
-        any_unknown = STATE_UNKNOWN in states
-        all_bad = all(s in BAD_STATES for s in states)
-
-        # If every live entity reads bad, the device is down now,
-        # regardless of the clock: this is the unavailable/unknown
-        # path, which needs no arming because it reads present state.
-        if all_bad:
+        # Unknown is neither down nor alive (James, 17 October 2026): a
+        # button reads unknown until it is first pressed, so a device
+        # whose entities say nothing but unknown is judged by its clock.
+        known = [s for s in states if s not in (STATE_UNKNOWN, EVENT_RESTING)]
+        if not known or all(s in BAD_STATES for s in known):
             # An awake ESPHome device whose entities read unknown is
-            # still connected (ruling #636): unknown is shown, frozen
-            # is not, unless a frozen verdict already stands (#529).
-            # Found by the adversarial round of 12 October 2026: a
-            # device of buttons reads unknown until one is pressed.
+            # still connected (ruling #636): frozen is not shown unless
+            # a frozen verdict already stands (#529). Found by the
+            # adversarial round of 12 October 2026: a device of buttons
+            # reads unknown until one is pressed.
             if (
                 frozen
                 and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
                 and self._awake_esphome(device_id)
             ):
                 frozen = False
-            present = {
-                FREEZE_CATEGORY_UNAVAILABLE: any_unavailable,
-                FREEZE_CATEGORY_UNKNOWN: any_unknown,
-                FREEZE_CATEGORY_FROZEN: frozen,
-            }
-            for category in FREEZE_CATEGORY_PRIORITY:
-                if present.get(category):
-                    return category
-            return FREEZE_CATEGORY_UNAVAILABLE
+            if known:
+                # Every entity that says anything says unavailable: the
+                # device is down now, regardless of the clock, which
+                # needs no arming because it reads present state. Unless
+                # another entity of its own has reported since: a device
+                # actively reporting is alive, whatever its main entity
+                # reads (James, 17 October 2026; eighteenth adversarial
+                # round of 0.26.6).
+                if self._reporting_through_others(device_id):  # type: ignore[attr-defined]
+                    return FREEZE_CATEGORY_FROZEN if frozen else None
+                return self._gone_under_mute(device_id, record, now, gone) if muted_unavailable else FREEZE_CATEGORY_UNAVAILABLE
+            # Nothing but unknown: a device already down stays down
+            # until it says something (#529), as an unknown problem
+            # from before 0.26.6 does, never told as a recovery (first
+            # adversarial round of 0.26.6).
+            # Unavailable outranks frozen, and frozen unknown, as they
+            # always have; a standing unknown no longer stops the clock
+            # (second adversarial round of 0.26.6).
+            if standing == FREEZE_CATEGORY_UNAVAILABLE:
+                if muted_unavailable and standing == FREEZE_CATEGORY_UNAVAILABLE:
+                    # A standing unavailable verdict hidden by the mute has
+                    # passed the debounce already (round 25 of 0.26.6).
+                    self._gone_under_mute(device_id, record, now, gone, listed=True)
+                return self._held(standing, gone, muted_freeze, muted_unavailable)
+            if self._gone_as_unavailable(record) and (  # type: ignore[attr-defined]
+                muted_unavailable or self._listed_but_for_mute(device_id, record)
+            ):
+                # Nothing but unknown on a device muted for unavailable
+                # whose outage began as unavailable: still that outage,
+                # not a new freeze (fourth and fifth adversarial rounds
+                # of 0.26.6). Once the mute is lifted it reads as a
+                # device never muted does: unavailable if the outage
+                # lasted long enough to be listed (James, 18 October
+                # 2026, round 23), judged by its clock if it was a blip
+                # (round 24). A device never gone is judged by its clock.
+                return gone if muted_unavailable else FREEZE_CATEGORY_UNAVAILABLE
+            if frozen:
+                return FREEZE_CATEGORY_FROZEN
+            if standing == FREEZE_CATEGORY_UNKNOWN:
+                return self._muted_away(standing, muted_freeze, muted_unavailable)
+            return None
 
         # Some entity is not bad. If the clock says frozen and the
         # non-bad entities are stale (not fresh), the device is
@@ -790,6 +908,53 @@ class FreezeMixin:
             return FREEZE_CATEGORY_FROZEN
         return None
 
+    def _frozen_start(self, device_id: str, record: dict[str, Any], now: float) -> float:
+        """When a freeze began: the device's last report plus its freeze
+        window, counting only time someone was listening, the moment it
+        would have been listed. Used for every new frozen listing, and
+        worked out rather than kept, so a device listed again when a mute
+        is lifted, or one that froze while muted, is dated from when the
+        freeze began, as an unavailable device is from its saved outage
+        start (James, 17 October 2026). Now, when that cannot be read."""
+        window = self._freeze_window(record)
+        if window is None:
+            return now
+        found = self._silence_spans(record, now, device_id, window)
+        if found is None:
+            return now
+        last, spans = found
+        # The wall time at which the counted silence reached the window:
+        # walk forward from the last report, stepping over each span
+        # nobody was listening, however long (ninth adversarial round of
+        # 0.26.6).
+        at, remaining = last, window
+        for start, end in sorted((max(a, last), b) for a, b in spans if b > last):
+            if end <= at:
+                continue
+            start = max(start, at)
+            if at + remaining <= start:
+                break
+            remaining -= start - at
+            at = end
+        return min(now, at + remaining)
+
+    @staticmethod
+    def _never_reported_start(record: dict[str, Any], now: float) -> float:
+        """When a device qualified as never reported: first seen plus the
+        wait (James, 17 October 2026), worked out as a freeze's start is,
+        so a mute lifted later does not date it from the lift. Now, when
+        that cannot be read."""
+        first = record.get(DEV_FIRST_OBSERVED)
+        if not isinstance(first, str):
+            return now
+        try:
+            observed = dt_util.parse_datetime(first)
+        except (ValueError, TypeError):
+            return now
+        if observed is None:
+            return now
+        return min(now, observed.timestamp() + FREEZE_NOT_REPORTED_SECONDS)
+
     @staticmethod
     def _outage_began(record: dict[str, Any], now: float) -> float:
         """When the device as a whole went down, from its saved start, or now."""
@@ -803,6 +968,32 @@ class FreezeMixin:
         ):
             return float(saved[0])
         return now
+
+    def _gone_under_mute(
+        self,
+        device_id: str,
+        record: dict[str, Any],
+        now: float,
+        gone: str | None,
+        *,
+        listed: bool = False,
+    ) -> str | None:
+        """An unavailable verdict an unavailable mute hides, remembered
+        once the outage has lasted past the debounce, so that a lift
+        after its entities turn to unknown lists it as a device never
+        muted would have been (round 24 of 0.26.6). Not persisted: after
+        a restart such a device is judged by its clock."""
+        saved = self._saved_down_since(record)  # type: ignore[attr-defined]
+        if saved is not None and (listed or now - saved[0] >= FREEZE_UNAVAILABLE_DEBOUNCE):
+            self._unavailable_under_mute[device_id] = saved[0]  # type: ignore[attr-defined]
+        return gone
+
+    def _listed_but_for_mute(self, device_id: str, record: dict[str, Any]) -> bool:
+        """Whether this outage was hidden by an unavailable mute after it
+        had lasted long enough to be listed (see _gone_under_mute)."""
+        saved = self._saved_down_since(record)  # type: ignore[attr-defined]
+        start = self._unavailable_under_mute.get(device_id)  # type: ignore[attr-defined]
+        return saved is not None and start is not None and saved[0] == start
 
     def _apply_freeze_verdict(
         self, device_id: str, record: dict[str, Any], now: float
@@ -825,6 +1016,15 @@ class FreezeMixin:
         record.setdefault(DEV_FROZEN_CATEGORY, None)
         record.setdefault(DEV_FROZEN_SINCE, None)
         current = record[DEV_FROZEN_CATEGORY]
+        # A verdict a mute takes away while the device is still down is
+        # remembered, so its item leaves silently (#537) whichever kind
+        # it showed (first adversarial round of 0.26.6). Read before the
+        # verdict is stored, while the record still holds it.
+        if category is None and current is not None:
+            if self._device_down_category(device_id, record, now, mutes=False) is not None:
+                self._muted_down.add(device_id)  # type: ignore[attr-defined]
+        elif category is not None:
+            self._muted_down.discard(device_id)  # type: ignore[attr-defined]
 
         if category in (
             FREEZE_CATEGORY_UNAVAILABLE,
@@ -847,6 +1047,14 @@ class FreezeMixin:
                 # it: a frozen verdict from 0.26.2 is not its start.
                 if current != FREEZE_CATEGORY_UNAVAILABLE:
                     record[DEV_FROZEN_SINCE] = hub_lost
+            elif current == FREEZE_CATEGORY_FROZEN:
+                # A frozen device turns unavailable only once it has
+                # been gone past the debounce, as any device does: a
+                # stack restart's first minute, before its outage is
+                # confirmed and held, is not one (round 29 of 0.26.6).
+                saved = self._saved_down_since(record)  # type: ignore[attr-defined]
+                if saved is None or (now - saved[0]) < FREEZE_UNAVAILABLE_DEBOUNCE:
+                    return False
             elif current is None:
                 if since is None:
                     # Dated from the saved start of the outage when one
@@ -891,9 +1099,12 @@ class FreezeMixin:
         # How the trouble began, saved with the record so a restart
         # cannot turn a freeze that went unavailable into a drop (#644,
         # amended; adversarial round thirteen).
-        if category is None:
+        # Kept while a mute is all that took the verdict away, so lifting
+        # one of two mutes finds how the trouble began (round 26 of
+        # 0.26.6); the device's next report clears it.
+        if category is None and device_id not in self._muted_down:  # type: ignore[attr-defined]
             record[DEV_DOWN_BEGAN_AS] = None
-        elif current is None:
+        elif current is None and category is not None:
             record[DEV_DOWN_BEGAN_AS] = category
         if category == FREEZE_CATEGORY_FROZEN and current != FREEZE_CATEGORY_FROZEN:
             self._note_frozen_listing(device_id, record, now)
@@ -902,7 +1113,13 @@ class FreezeMixin:
         if category is None:
             record[DEV_FROZEN_SINCE] = None
         elif current is None:
-            record[DEV_FROZEN_SINCE] = record.get(DEV_FROZEN_SINCE) or now
+            record[DEV_FROZEN_SINCE] = record.get(DEV_FROZEN_SINCE) or (
+                self._frozen_start(device_id, record, now)
+                if category == FREEZE_CATEGORY_FROZEN
+                else self._never_reported_start(record, now)
+                if category == FREEZE_CATEGORY_NEVER_REPORTED
+                else now
+            )
         self._dirty = True
         self._critical = True
         LOGGER.debug(
@@ -940,6 +1157,10 @@ class FreezeMixin:
             # clear it silently, no verdict was ever shown.
             record[DEV_FROZEN_SINCE] = None
             self._dirty = True
+        if record.get(DEV_DOWN_BEGAN_AS) is not None:
+            # Kept under a mute (round 26 of 0.26.6): a report ends it.
+            record[DEV_DOWN_BEGAN_AS] = None
+            self._dirty = True
 
     def _judge_all_devices(self) -> None:
         """Judge every watched device for a freeze verdict.
@@ -974,6 +1195,7 @@ class FreezeMixin:
             # refreshing for every device, which once crashed the
             # sixty-second tick.
             try:
+                self._esphome_back(device_id, record)
                 if self._apply_freeze_verdict(device_id, record, now):
                     flipped = True
             except Exception:  # noqa: BLE001
@@ -1040,6 +1262,21 @@ class FreezeMixin:
         device already silent beforehand carries that silence into
         the sum and is still caught the instant the system returns.
         """
+        found = self._silence_spans(record, now, device_id, window)
+        if found is None:
+            return None
+        last, spans = found
+        return max(0.0, (now - last) - _covered(spans, last, now))
+
+    def _silence_spans(
+        self,
+        record: dict[str, Any],
+        now: float,
+        device_id: str | None = None,
+        window: float | None = None,
+    ) -> tuple[float, list[tuple[float, float]]] | None:
+        """Where a device's silence is counted from, and the spans inside
+        it that count against nobody (_observed_silence)."""
         last = record.get(DEV_LAST_ACTIVITY)
         if not isinstance(last, (int, float)):
             return None
@@ -1061,7 +1298,7 @@ class FreezeMixin:
             spans.append((self._last_alive, self._last_alive + self._downtime))
         if device_id is not None:
             spans.extend(self._outage_spans_for(device_id, last, window))
-        return max(0.0, (now - last) - _covered(spans, last, now))
+        return float(last), spans
 
     def _gap_untrusted(
         self, device_id: str, record: dict[str, Any], last: float, stamp: float
@@ -1309,8 +1546,9 @@ class FreezeMixin:
         The Device: Frozen problem sensor. One row per down device, carrying its
         category (the worst of what its entities show) and the UTC time the
         verdict began, so a person sees what is down, how, and for how long.
-        Muted devices are suppressed from the report but keep their verdict, so
-        undoing a mute shows them again at once.
+        A device muted for the kind its verdict is, is left out at once,
+        even while its verdict is held behind a down upstream, where the
+        sweep does not judge it (sixth adversarial round of 0.26.6).
         """
         rows: list[dict[str, Any]] = []
         for device_id, record in self.watched_records():
@@ -1318,6 +1556,12 @@ class FreezeMixin:
                 continue
             category = record.get(DEV_FROZEN_CATEGORY)
             if category is None:
+                continue
+            if self._muted_away(
+                category,
+                self._freeze_muted(device_id),
+                self._unavailable_muted(device_id),
+            ) is None:
                 continue
             rows.append(
                 {
@@ -1423,12 +1667,13 @@ class FreezeMixin:
         return len(self.frozen_devices_list)
 
     def _freeze_muted(self, device_id: str) -> bool:
-        """Return whether a device is muted from freeze judgment
-        only. The same broad-to-narrow ladder as battery and signal,
+        """Return whether a device is muted from freeze judgment:
+        frozen and never reported. The same broad-to-narrow ladder as battery and signal,
         and the same principle: the device keeps its clock and its
         learned rhythm, so re-including it is instant and arrives with
-        history; it simply is never given a freeze, unavailable,
-        unknown, or not-reported verdict. This is the release valve
+        history; it simply is never given a freeze or not-reported
+        verdict. Unavailable has its own mute (James, 18 October 2026).
+        This is the release valve
         for a device that is intermittent by nature, silenced in the
         freeze report without being hidden from the rest.
         """
@@ -1446,6 +1691,58 @@ class FreezeMixin:
         # A hub's mute covers the devices it controls (James, 14
         # October 2026).
         return self.hub_mutes(device_id, self._freeze_muted)  # type: ignore[attr-defined]
+
+    def _freeze_muted_own(self, device_id: str) -> bool:
+        """The freeze mute, as the reports name it (FRZ)."""
+        return self._freeze_muted(device_id)
+
+    def _unavailable_muted(self, device_id: str) -> bool:
+        """Whether a device is muted from unavailable judgment: unavailable
+        and dropping out, nothing else (James, 18 October 2026).
+
+        Set by label or on the device, never by integration; a hub's mute
+        covers the devices it controls, as every other mute does.
+        """
+        options = self.entry.options
+        if self._device_labels.get(device_id, frozenset()) & set(
+            options.get(CONF_UNAVAILABLE_MUTED_LABELS, [])
+        ):
+            return True
+        if device_id in options.get(CONF_UNAVAILABLE_MUTED_DEVICES, []):
+            return True
+        return self.hub_mutes(device_id, self._unavailable_muted)  # type: ignore[attr-defined]
+
+    def _held(
+        self,
+        standing: str | None,
+        gone: str | None,
+        muted_freeze: bool,
+        muted_unavailable: bool,
+    ) -> str | None:
+        """A standing verdict kept while nothing new can be read, with the
+        device's mutes applied: an unavailable that began as a freeze
+        keeps the freeze under an unavailable mute (third adversarial
+        round of 0.26.6)."""
+        if standing == FREEZE_CATEGORY_UNAVAILABLE and muted_unavailable:
+            return gone
+        return self._muted_away(standing, muted_freeze, muted_unavailable)
+
+    @staticmethod
+    def _muted_away(
+        category: str | None, muted_freeze: bool, muted_unavailable: bool
+    ) -> str | None:
+        """A verdict with the kinds the device's mutes take away removed."""
+        if muted_freeze and category in (
+            FREEZE_CATEGORY_FROZEN,
+            FREEZE_CATEGORY_NEVER_REPORTED,
+        ):
+            return None
+        if muted_unavailable and category in (
+            FREEZE_CATEGORY_UNAVAILABLE,
+            FREEZE_CATEGORY_UNKNOWN,
+        ):
+            return None
+        return category
 
     @staticmethod
     def _coerce_taint_reasons(devices: dict[str, dict[str, Any]]) -> int:

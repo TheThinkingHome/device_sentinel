@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: flapping.py, Version: 0.25.5 (2026-10-10)
+# File: flapping.py, Version: 0.26.6 (2026-10-17)
 
 """A device that keeps dropping out, learned and held (0.23.2).
 
@@ -164,7 +164,10 @@ class FlapMixin:
                 continue
             if device_id not in self._watched or device_id in self._muted_devices:
                 continue
-            if self._freeze_muted(device_id):
+            # Dropping out is unavailable, again and again: the
+            # unavailable mute takes it, the freeze mute does not
+            # (James, 17 October 2026).
+            if self._unavailable_muted(device_id):
                 continue
             rows.append({
                 "device_id": device_id,

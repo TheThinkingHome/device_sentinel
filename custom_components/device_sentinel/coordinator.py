@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.26.5 (2026-10-16)
+# File: coordinator.py, Version: 0.26.6 (2026-10-18)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -131,6 +131,10 @@ from .answers_store import AnswersMixin
 from .device_recommendations import DeviceRecommendationsMixin
 from .history_file import fold_line
 from .const import (
+    ACTIVE_REPORT_SECONDS,
+    SET_ASIDE_NOTICES_ONLY,
+    NOTICE_DOMAINS,
+    EVENT_RESTING,
     DATA_HISTORY_LINE,
     CLIP_MAX_DAYS,
     DEV_LOGNORMAL_DAYS,
@@ -160,6 +164,7 @@ from .const import (
     CONF_MUTED_INTEGRATIONS,
     CONF_MUTED_LABELS,
     CONF_FREEZE_MUTED_DEVICES,
+    CONF_UNAVAILABLE_MUTED_DEVICES,
     CONF_MAINTENANCE_MINUTES,
     CONF_SIGNAL_MUTED_DEVICES,
     DAILY_MAX_KEEP,
@@ -254,6 +259,7 @@ from .const import (
     SIGNAL_RSSI_LOWEST,
     SIGNAL_WEIGHTING_MARK,
     STARTUP_GRACE_SECONDS,
+    FREEZE_UNAVAILABLE_DEBOUNCE,
     TRIM_BACKUP_DIR,
     STATS_EPOCH,
     STORAGE_CLOCKS_KEY,
@@ -287,7 +293,7 @@ from .detect_freeze import FreezeMixin
 from .detect_signal import SignalMixin, _entity_unit, _is_percentage
 from .device_fields import child_devices, device_field
 from .events import EventMixin
-from .hubs import HUB_BUTTON_EVENTS, HubMixin
+from .hubs import HUB_BUTTON_EVENTS, HUB_READERS, HubMixin
 from .interventions import InterventionMixin
 from .hardware_copies import choose_copies, find_groups, rank_of
 from .naming import display_name
@@ -328,14 +334,13 @@ def _plain(name: object, limit: int = 120) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "\u2026"
 
 
-# What a device whose only live entities are at rest reads as: not a
-# bad state, so it is judged by its clock (round sixteen).
-EVENT_RESTING = "resting"
 
 # Entities that read unknown until first used: an event entity until
 # its next event after every restart (0.24.3), a button until it is
 # first pressed. At rest they hold, as a kept value does, and say
 # nothing about the device (adversarial rounds sixteen and seventeen).
+# Since 0.26.6 a command button is never the device at all
+# (NOTICE_DOMAINS), so the entities that decide skip it first.
 RESTING_DOMAINS = frozenset({"event", "button"})
 
 
@@ -467,6 +472,18 @@ class DeviceSentinelCoordinator(
         # reading one device's states does not walk every entity in
         # the house (adversarial round seventeen).
         self._own_entities: dict[str, list[str]] = {}
+        # Each device's main entities, the ones Home Assistant puts in no
+        # category: they decide whether the device is down (James, 17
+        # October 2026).
+        self._main_entities: dict[str, set[str]] = {}
+        # Devices whose verdict a mute took away while they were still
+        # down, so their item leaves silently (#537); cleared when the
+        # device reports or is judged down again.
+        self._muted_down: set[str] = set()
+        # Outages an unavailable mute hid after they had lasted past
+        # the debounce, by device, keyed to the saved outage start
+        # (round 24 of 0.26.6).
+        self._unavailable_under_mute: dict[str, float] = {}
         # The day a fold is folding, and the one a catch-up fold sets
         # for it (0.24.4): the daily histories' new entries take it.
         # Options a device-page mute just wrote (0.24.5): the update
@@ -482,6 +499,9 @@ class DeviceSentinelCoordinator(
         # entity, disabled or not. A device with none has nothing
         # that could report (ruling #369).
         self._devices_with_entities: set[str] = set()
+        # Devices with an entity of their own switched on that is not a
+        # firmware notice or a command button (James, 17 October 2026).
+        self._devices_enabled_real: set[str] = set()
         self._foreign_entities: set[str] = set()
         self._foreign_by_device: dict[str, Counter[str]] = {}
         self._foreign_ids: dict[str, dict[str, list[str]]] = {}
@@ -536,7 +556,9 @@ class DeviceSentinelCoordinator(
         self._bluetooth_parents: set[str] = set()
         self._last_seen_entity: dict[str, str] = {}  # device_id -> entity_id
         # Each watched device's node status sensor, where its stack
-        # keeps one (ruling #670), and the set of their entity ids.
+        # keeps one (ruling #670), and the set of the entity ids that are
+        # the stack's word on a node: those sensors and, since 0.26.6, the
+        # Hue bridge's Zigbee connectivity sensors.
         self._node_status_entity: dict[str, str] = {}
         self._node_status_ids: set[str] = set()
         # Devices whose stack last called their node dead, held while
@@ -544,6 +566,13 @@ class DeviceSentinelCoordinator(
         # values coming back first are not taken for the device
         # (second adversarial round of 16 October 2026).
         self._dead_nodes: set[str] = set()
+        # Each ESPHome device's connection as last seen by the sweep, so
+        # a reconnect is noticed as the device speaking (James, 17
+        # October 2026).
+        self._esphome_was_connected: dict[str, bool] = {}
+        # When each device last spoke in this run, for "a device actively
+        # reporting is alive" (James, 17 October 2026).
+        self._reported_at: dict[str, float] = {}
         self._device_entries: dict[str, set[str]] = {}
         self._signal_entities: set[str] = set()
         self._signal_devices: set[str] = set()
@@ -668,8 +697,12 @@ class DeviceSentinelCoordinator(
         # told. Held is what the startup grace swallowed and owes an
         # announcement; said is what has been announced and is
         # therefore owed a recovery (ruling #291).
+        # Keyed by the outage, which for an integration is its config
+        # entry (round 31 of 0.26.6): several plugs of one integration
+        # can each be down at once, and each is owed its own recovery.
+        # Held carries the name the bus is told last.
         self._upstream_held: dict[
-            str, tuple[str, str | None, float, int | None]
+            str, tuple[str, str | None, float, int | None, str]
         ] = {}
         self._upstream_said: dict[
             str, tuple[str, str | None, float, int | None]
@@ -708,6 +741,15 @@ class DeviceSentinelCoordinator(
         # device an entry carries, and whether the open outages in the
         # events log have been taken back this run.
         self._integration_detail: dict[str, str] = {}
+        # How many watched devices each failed entry carried when it was
+        # announced, so its recovery says the same (round 31 of 0.26.6).
+        self._integration_behind: dict[str, int] = {}
+        # Each announced entry's integration, so an entry deleted while
+        # down can still be closed under its name (round 32 of 0.26.6).
+        self._integration_domain: dict[str, str] = {}
+        # Outages announced before this run, whose recovery is owed even
+        # inside the startup grace (round 33 of 0.26.6).
+        self._upstream_owed: set[str] = set()
         self._entry_only_device: dict[str, str] = {}
         self._integration_resumed = False
         self._entry_seen_loaded: set[str] = set()
@@ -2225,6 +2267,18 @@ class DeviceSentinelCoordinator(
                     e for e in er.async_entries_for_device(ent_reg, device_id)
                     if e.platform == domain and e.disabled_by is None
                 ]
+                # Firmware notices and command buttons are never the
+                # device (James, 17 October 2026), so a copy holding
+                # only those ranks as one with nothing, never kept over
+                # one that reports (fifteenth adversarial round of
+                # 0.26.6). Beside a real entity they still count, as
+                # they always have, in choosing between two real copies.
+                # An ESPHome device's connection is something it reports
+                # (James, 17 October 2026), so a Bluetooth proxy with only
+                # notices switched on is still the box its adapter copies
+                # (sixteenth adversarial round of 0.26.6).
+                if domain != "esphome" and all(e.domain in NOTICE_DOMAINS for e in own):
+                    own = []
                 ranks[device_id] = rank_of(
                     self.iot_class_of(domain),  # type: ignore[attr-defined]
                     {e.domain for e in own},
@@ -2423,6 +2477,12 @@ class DeviceSentinelCoordinator(
         signal_own_entities: set[str] = set()
         deviceless = 0
         with_entities: set[str] = set()
+        stack_words: set[str] = set()
+        main_entities: dict[str, set[str]] = {}
+        # Devices with an enabled entity of their own that can report, and
+        # devices with an enabled firmware notice or command button.
+        enabled_real: set[str] = set()
+        enabled_notice: set[str] = set()
         for ent in ent_reg.entities.values():
             if ent.device_id is None:
                 deviceless += 1
@@ -2430,6 +2490,17 @@ class DeviceSentinelCoordinator(
             if ent.device_id not in watched:
                 continue
             entity_map[ent.entity_id] = (ent.device_id, ent.config_entry_id)
+            if (
+                ent.entity_category is None
+                and ent.domain not in NOTICE_DOMAINS
+                and ent.disabled_by is None
+            ):
+                # A main entity: what the device is for, not a setting,
+                # a diagnostic or a firmware notice, which Home Assistant
+                # or the coordinator can hold for a device that is gone.
+                main_entities.setdefault(ent.device_id, set()).add(ent.entity_id)
+            if ent.platform == "hue" and getattr(ent, "translation_key", None) == "zigbee_connectivity":
+                stack_words.add(ent.entity_id)
             if is_node_status(watched.get(ent.device_id), ent):
                 # The stack's own word on the node (ruling #670): read
                 # for the dead-node check, never as the device speaking.
@@ -2457,7 +2528,27 @@ class DeviceSentinelCoordinator(
                     ent.platform, []
                 ).append(ent.entity_id)
             else:
-                with_entities.add(ent.device_id)
+                # A firmware notice or a command button is never the
+                # device, so it does not count as the device having
+                # something that could report; an ESPHome device's
+                # connection does (James, 17 October 2026), and so does
+                # the hub that speaks for a Lutron Pico, whose only
+                # entities are its buttons (#664).
+                if (
+                    ent.domain not in NOTICE_DOMAINS
+                    or watched.get(ent.device_id) == "esphome"
+                    or watched.get(ent.device_id) in HUB_READERS
+                ):
+                    with_entities.add(ent.device_id)
+                if ent.disabled_by is None:
+                    # The Hue bridge's word on a light is no more the
+                    # device than a firmware notice is: a device with
+                    # nothing else switched on is set aside the same way
+                    # (twenty-first adversarial round of 0.26.6).
+                    if ent.domain in NOTICE_DOMAINS or ent.entity_id in stack_words:
+                        enabled_notice.add(ent.device_id)
+                    else:
+                        enabled_real.add(ent.device_id)
                 if ent.config_entry_id is not None:
                     device_entries.setdefault(ent.device_id, set()).add(
                         ent.config_entry_id
@@ -2515,6 +2606,16 @@ class DeviceSentinelCoordinator(
                     )
                     battery_own[ent.device_id] = own
 
+        # A device whose only entities switched on are firmware notices or
+        # command buttons has nothing that can report, whatever it has
+        # switched off: set aside with a reason of its own (James, 17
+        # October 2026). An infrared light's buttons are Home Assistant
+        # sending, never the light answering. An ESPHome device and a
+        # hub-judged one keep their own voice.
+        for device_id in enabled_notice - enabled_real:
+            if watched.get(device_id) == "esphome" or watched.get(device_id) in HUB_READERS:
+                continue
+            with_entities.discard(device_id)
         in_grace = dt_util.utcnow().timestamp() < self._grace_until
         for device_id in [d for d in watched if d not in with_entities]:
             if in_grace and not self._integration_finished_loading(
@@ -2546,11 +2647,14 @@ class DeviceSentinelCoordinator(
             # entities are all disabled is a different case and stays
             # watched: those entities exist, the never-reported row
             # is the prompt, and the person can enable them or
-            # mute the device.
+            # mute the device. One with nothing but firmware notices or
+            # command buttons switched on is set aside with its own
+            # words, since switching another entity on brings it back
+            # (James, 17 October 2026).
             set_aside[device_id] = (
                 device_names.get(device_id, device_id),
                 watched.pop(device_id),
-                SET_ASIDE_NO_ENTITIES,
+                SET_ASIDE_NOTICES_ONLY if device_id in enabled_notice else SET_ASIDE_NO_ENTITIES,
             )
             device_names.pop(device_id, None)
 
@@ -2578,6 +2682,7 @@ class DeviceSentinelCoordinator(
         # to know whether a device has any entity at all, and that is
         # the only place the registry has been walked (ruling #369).
         self._devices_with_entities = with_entities
+        self._devices_enabled_real = enabled_real
         self._clear_verdicts_for_set_aside(set_aside)
         self._stacks = stacks
         self._stack_keys = stack_keys
@@ -2602,6 +2707,10 @@ class DeviceSentinelCoordinator(
             if entity_id not in foreign_entities:
                 own_entities.setdefault(owner, []).append(entity_id)
         self._own_entities = own_entities
+        self._main_entities = {
+            device_id: {e for e in entities if e not in foreign_entities}
+            for device_id, entities in main_entities.items()
+        }
         self._foreign_by_device = foreign_by_device
         self._foreign_ids = foreign_ids
         # An integration whose entities all sit on devices other
@@ -2615,7 +2724,11 @@ class DeviceSentinelCoordinator(
         } - owning_domains
         self._last_seen_entity = last_seen_entity
         self._node_status_entity = node_status_entity
-        self._node_status_ids = set(node_status_entity.values())
+        # The stack's word on a node is never the device speaking (#670):
+        # Z-Wave's node status, and the Hue bridge's Zigbee connectivity
+        # sensor, which the bridge writes when it loses a light
+        # (nineteenth adversarial round of 0.26.6).
+        self._node_status_ids = set(node_status_entity.values()) | stack_words
         self._device_entries = device_entries
         self._signal_entities = signal_entities
         self._log_signal_census(
@@ -2967,6 +3080,7 @@ class DeviceSentinelCoordinator(
             CONF_BATTERY_MUTED_DEVICES,
             CONF_FREEZE_MUTED_DEVICES,
             CONF_SIGNAL_MUTED_DEVICES,
+            CONF_UNAVAILABLE_MUTED_DEVICES,
         )
         options = self.entry.options
         if not any(device_id in options.get(key, []) for key in keys):
@@ -3037,8 +3151,8 @@ class DeviceSentinelCoordinator(
         """The state the device as a whole is down in now, "" if up.
 
         Down means its ESPHome connection has dropped (ruling #640), its
-        stack calls its node dead (ruling #670), or
-        every one of its own live entities reads unavailable or
+        stack calls its node dead (ruling #670), or every one of the
+        entities that decide (_live_entity_states) reads unavailable or
         unknown. A foreign entity is not read, and an event entity at
         rest holds, as a kept value does. None when nothing can be
         read yet, as while its integration loads after a restart: an
@@ -3052,10 +3166,78 @@ class DeviceSentinelCoordinator(
             return NODE_DEAD_STATE
         states = self._live_entity_states(device_id)
         if not states:
+            if self._connection_only(device_id) and self._awake_esphome(device_id):
+                # A device whose connection is its only report is up
+                # while connected (James, 17 October 2026; sixteenth
+                # adversarial round of 0.26.6).
+                return ""
             return None
+        # For learning and for the outage start, unknown still counts as
+        # gone (#647): a spell with nothing but unknown is not a gap the
+        # device made. Judging is another matter, where unknown counts as
+        # nothing (James, 17 October 2026; _device_down_category).
         if any(state not in BAD_STATES for state in states):
             return ""
+        if self._reporting_through_others(device_id):
+            # Main entities unavailable while another of its own reports:
+            # alive (James, 17 October 2026).
+            return ""
+        if (
+            self._main_entities.get(device_id)
+            and all(state in (STATE_UNKNOWN, EVENT_RESTING) for state in states)
+            and any(
+                state not in BAD_STATES
+                for state in self._states_of(self._own_entities.get(device_id, ()))
+            )
+        ):
+            # Main entities saying nothing while another of its own holds
+            # a value: for the outage start the device is up, as before
+            # 0.26.6, so a remote whose action reads unknown while its
+            # link quality reports is not down for days (seventeenth
+            # adversarial round of 0.26.6). Judging still reads the main
+            # entities (_live_entity_states).
+            return ""
         return STATE_UNAVAILABLE if STATE_UNAVAILABLE in states else STATE_UNKNOWN
+
+    def _reporting_through_others(self, device_id: str) -> bool:
+        """Whether the device has reported since its main entities went
+        unavailable (James, 17 October 2026): a device whose main entity
+        is unavailable is still alive while any entity of its own is
+        actively reporting. Read from its last report, which only the
+        device moves (not a held value, a firmware notice, a command
+        button or another integration's entity), against the
+        moment the last of its main entities became unavailable. Only a
+        report heard in this run counts: a clock step moves the clock
+        without the device speaking (eighteenth adversarial round of
+        0.26.6)."""
+        last = self._reported_at.get(device_id)
+        if last is None:
+            return False
+        # For as long as its freeze window, or an hour while it is still
+        # learning: one old report does not keep a dead device alive
+        # (James, 18 October 2026).
+        record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
+        window = self._freeze_window(record) if record else None
+        if dt_util.utcnow().timestamp() - last > (window or ACTIVE_REPORT_SECONDS):
+            return False
+        main = self._main_entities.get(device_id)
+        if not main:
+            return False
+        # And something of its own still holds a value: a device whose
+        # every entity has since gone unavailable is not reporting,
+        # whatever it said before (nineteenth adversarial round of
+        # 0.26.6).
+        others = [e for e in self._own_entities.get(device_id, ()) if e not in main]
+        if not any(state not in BAD_STATES for state in self._states_of(others)):
+            return False
+        gone_at = None
+        for entity_id in main:
+            state = self.hass.states.get(entity_id)
+            if state is None or state.state != STATE_UNAVAILABLE:
+                continue
+            changed = state.last_changed.timestamp()
+            gone_at = changed if gone_at is None else max(gone_at, changed)
+        return gone_at is not None and float(last) > gone_at
 
     def _node_heard_now(self, device_id: str) -> bool:
         """Whether the node status sensor reads that the node was heard (#670)."""
@@ -3072,6 +3254,13 @@ class DeviceSentinelCoordinator(
             return False
         state = self.hass.states.get(entity_id)
         return state is not None and node_up(self._watched.get(device_id), state.state)
+
+    def _gone_as_unavailable(self, record: dict[str, Any]) -> bool:
+        """Whether the device's saved outage began with it unavailable or
+        dead, rather than reading unknown (fifth adversarial round of
+        0.26.6, James's choice A of 17 October 2026)."""
+        saved = self._saved_down_since(record)
+        return saved is not None and saved[1] in (STATE_UNAVAILABLE, NODE_DEAD_STATE)
 
     @staticmethod
     def _saved_down_since(record: dict[str, Any]) -> tuple[float, str] | None:
@@ -3186,7 +3375,9 @@ class DeviceSentinelCoordinator(
         (seventh adversarial round of 16 October 2026)."""
         ent_reg = er.async_get(self.hass)
         for entity_id in self._own_entities.get(device_id, ()):
-            if entity_id in self._node_status_ids:
+            if entity_id in self._node_status_ids or entity_id.split(".", 1)[0] in NOTICE_DOMAINS:
+                # A firmware notice is not the device (James, 17 October
+                # 2026; twelfth adversarial round of 0.26.6).
                 continue
             ent = ent_reg.async_get(entity_id)
             if ent is None or ent.disabled_by is None:
@@ -3299,7 +3490,8 @@ class DeviceSentinelCoordinator(
             # or end the device's outage, and it is never the device
             # speaking. A change to "dead" is the controller failing to
             # reach the node, and "alive" can come from the stack before
-            # any value does.
+            # any value does. A Hue bridge's connectivity sensor takes
+            # this branch too and only settles the outage (0.26.6).
             old_state = event.data.get("old_state")
             domain = self._watched.get(device_id)
             record = self.data[DATA_DEVICES].get(device_id)
@@ -3349,12 +3541,29 @@ class DeviceSentinelCoordinator(
                         notify_on_change=True,
                     )
             return
+        if entity_id.split(".", 1)[0] in NOTICE_DOMAINS:
+            # A firmware notice or a command button is not the device
+            # speaking (James, 17 October 2026): it never moves the
+            # device's clock or ends a verdict. The outage bookkeeping
+            # still reads the device.
+            self._settle_down(device_id, entity_id)
+            return
         # The device's outage starts when it goes down as a whole and
-        # ends when any of its own entities holds a value again (ruling
-        # #647). An event entity reads unknown until its next event,
+        # ends when the entities that decide hold a value again (ruling
+        # #647, read through _live_entity_states since 0.26.6). An event entity reads unknown until its next event,
         # after every restart (0.24.3): at rest, holding, so an action
         # entity back at unknown as Zigbee2MQTT starts ends the outage
         # at its real length, not after the hours until the next press.
+        # Whether the device was gone as a whole before this change, read
+        # before the outage start is taken, for the republish check (fifth
+        # adversarial round of 0.26.6).
+        record_before = self.data[DATA_DEVICES].get(device_id)
+        # The saved outage, read before the settle clears it.
+        was_gone = (
+            self._saved_down_since(record_before)
+            if isinstance(record_before, dict)
+            else None
+        )
         self._settle_down(device_id, entity_id)
         if (
             new_state.state in BAD_STATES
@@ -3369,7 +3578,7 @@ class DeviceSentinelCoordinator(
             # failed command, or cached values handed back by a reload.
             return
         old_state = event.data.get("old_state")
-        if self._republished(device_id, old_state):
+        if self._republished(device_id, old_state, was_gone):
             # A value coming back through a restart or an outage is the
             # stack republishing it, not the device speaking (#535,
             # reversing #125 and generalising #530). Kept as a reading,
@@ -3388,7 +3597,12 @@ class DeviceSentinelCoordinator(
                 notify_on_change=True,
             )
 
-    def _republished(self, device_id: str, old_state: Any) -> bool:
+    def _republished(
+        self,
+        device_id: str,
+        old_state: Any,
+        was_gone: tuple[float, str] | None = None,
+    ) -> bool:
         """Whether a value coming back is the stack republishing it (#535).
 
         Only a value returning from unavailable or unknown while the
@@ -3427,9 +3641,37 @@ class DeviceSentinelCoordinator(
             )
         if record.get(DEV_FROZEN_CATEGORY) == FREEZE_CATEGORY_UNAVAILABLE:
             return False
-        return self._in_startup_grace() or self._held_by_upstream(
-            device_id, dt_util.utcnow().timestamp()
-        )
+        now = dt_util.utcnow().timestamp()
+        held = self._held_by_upstream(device_id, now)
+        if not (self._in_startup_grace() or held):
+            return False
+        if was_gone is not None and self._unavailable_muted(device_id):
+            # Gone as a whole while muted for unavailable, so judged
+            # nothing: its return is the recovery an unavailable verdict
+            # would have had (fifth adversarial round of 0.26.6). Only an
+            # outage that began before the restart or the stack's hold
+            # and outlasted the debounce: a restart's own minute of
+            # unavailable is not one (round 28).
+            saved = was_gone
+            # Up to when Device Sentinel last listened: on a full
+            # restart Zigbee2MQTT stops a second or two before Home
+            # Assistant, and the time the system is off is no part of
+            # the device's own outage (round 29 of 0.26.6).
+            last_alive = getattr(self, "_last_alive", None)
+            began = (
+                self.upstream_down_since(device_id)[1]  # type: ignore[index]
+                if held
+                else last_alive
+                if isinstance(last_alive, (int, float))
+                else self._grace_until - STARTUP_GRACE_SECONDS
+            )
+            if (
+                saved is not None
+                and saved[1] in (STATE_UNAVAILABLE, NODE_DEAD_STATE)
+                and saved[0] + FREEZE_UNAVAILABLE_DEBOUNCE <= began
+            ):
+                return False
+        return True
 
     @callback
     def _command_filter(self, event_data: Any) -> bool:
@@ -3504,8 +3746,11 @@ class DeviceSentinelCoordinator(
         if mapped is None:
             return
         device_id, entry_id = mapped
-        if entity_id in self._node_status_ids:
-            # Never the device speaking (ruling #670).
+        if entity_id in self._node_status_ids or entity_id.split(".", 1)[0] in NOTICE_DOMAINS:
+            # Never the device speaking: the stack's word on the node
+            # (ruling #670), or a firmware notice or command button
+            # rewritten at a refresh (James, 17 October 2026; eleventh
+            # adversarial round of 0.26.6).
             self._settle_down(device_id, entity_id)
             return
         foreign = entity_id in self._foreign_entities
@@ -3569,6 +3814,8 @@ class DeviceSentinelCoordinator(
         nor counts toward an integration's update burst.
         """
         now = dt_util.utcnow().timestamp()
+        if not foreign:
+            self._muted_down.discard(device_id)
         record = self.data[DATA_DEVICES].get(device_id)
         if record is None:
             record = _new_device_record(dt_util.utcnow().isoformat(), None)
@@ -3636,6 +3883,11 @@ class DeviceSentinelCoordinator(
             record[DEV_EVENT_COUNT] = int(record[DEV_EVENT_COUNT]) + 1
             self._dirty = True
             return
+        # When the device itself last spoke, past the protocol clock's
+        # word that it did, never moved by a clock step or a restart
+        # (_reporting_through_others; twenty-second adversarial round
+        # of 0.26.6).
+        self._reported_at[device_id] = now
 
         # When the silence this report ends began (ruling #644): a
         # recovery's "down for" counts from here, the device's last
@@ -4022,6 +4274,9 @@ class DeviceSentinelCoordinator(
         self._shift_moments(drift)
         self._clock_reset = (wall, drift)
         self._clock_step = (previous_wall, wall)
+        # A report heard before the step cannot be set against a moment
+        # after it (eighteenth adversarial round of 0.26.6).
+        self._reported_at.clear()
         # A restart's downtime credit was measured in the old clock:
         # with the clocks restarted here it has nothing left to cover,
         # and kept, it put a frozen device back inside its window
@@ -5037,25 +5292,66 @@ class DeviceSentinelCoordinator(
         has not loaded yet from a device with nothing to load.
         """
         return any(
-            owner == device_id and entity_id not in self._foreign_entities
+            owner == device_id
+            and entity_id not in self._foreign_entities
+            and entity_id.split(".", 1)[0] not in NOTICE_DOMAINS
             for entity_id, (owner, _) in self._entity_map.items()
         )
 
     def _live_entity_states(self, device_id: str) -> list[str]:
-        """Return the current states of a device's live (enabled)
-        entities. A missing state object means the entity is not live
-        and is skipped, so the judgment reads only what a person could
-        see reporting. A foreign entity (0.22.21) is not read: holding a
-        value, it would read the device as up while every entity of its
-        own is down.
+        """Return the current states of the entities that decide whether
+        a device is down. A missing state object means the entity is not
+        live and is skipped, so the judgment reads only what a person
+        could see reporting. A foreign entity (0.22.21) is not read:
+        holding a value, it would read the device as up while every
+        entity of its own is down.
+
+        The device's main entities decide (James, 17 October 2026): a
+        setting, a diagnostic or a firmware notice that Home Assistant
+        or the coordinator still holds cannot keep a dead motion or door
+        sensor looking alive. A device with no main entity, or whose main
+        entities are not loaded, is read on all its own entities, as
+        before. One whose main entities all read unknown or rest is read
+        on the others only when they say the device is gone. Unknown is returned as read; callers
+        count it as neither down nor alive (James, 17 October 2026).
         """
+        main = self._main_entities.get(device_id)
+        if main:
+            ordered = [e for e in self._own_entities.get(device_id, ()) if e in main]
+            states = self._states_of(ordered)
+            # A button or an event at rest says nothing either (first
+            # adversarial round of 0.26.6): only a value read decides.
+            if any(state not in (STATE_UNKNOWN, EVENT_RESTING) for state in states):
+                return states
+            if states:
+                # Main entities loaded but saying nothing. The others may
+                # only tell that the device is gone, never that it is
+                # alive: a battery or signal value the stack still holds
+                # cannot end an outage (tenth adversarial round of
+                # 0.26.6). So they are read only when every one that says
+                # anything says unavailable.
+                others = self._states_of(self._own_entities.get(device_id, ()))
+                said = [s for s in others if s not in (STATE_UNKNOWN, EVENT_RESTING)]
+                if said and all(s in BAD_STATES for s in said):
+                    return others
+                return states
+        return self._states_of(self._own_entities.get(device_id, ()))
+
+    def _states_of(self, entity_ids: Any) -> list[str]:
+        """The states of these entities, as _live_entity_states reads them."""
         states: list[str] = []
         resting = False
-        for entity_id in self._own_entities.get(device_id, ()):
+        for entity_id in entity_ids:
             if entity_id in self._node_status_ids:
                 # The stack's word on the node, not a reading (ruling
                 # #670): alive while every reading is unavailable must
                 # not hold the device up, and dead is read on its own.
+                continue
+            if entity_id.split(".", 1)[0] in NOTICE_DOMAINS:
+                # A firmware notice or a command button is never the
+                # device (James, 17 October 2026): it can show the device
+                # neither alive nor gone (eleventh adversarial round of
+                # 0.26.6).
                 continue
             state = self.hass.states.get(entity_id)
             if state is None:
@@ -5648,9 +5944,11 @@ class DeviceSentinelCoordinator(
         )
         self._schedule_brief()
         self._evaluate_all_batteries()
-        # Muting changed here remove verdicts at the source, so
-        # the sync sees the shrunken lists and deletes the items of
-        # anything the person just muted, immediately.
+        # A device muted here leaves the down list at once
+        # (frozen_devices_list and the held kinds read the mutes), so
+        # the sync deletes its items now. Its verdict clears on the next
+        # sweep that judges it; one held behind a down upstream keeps
+        # it, unshown, until the upstream is back.
         self._sync_problem_list()
         if self._dirty or self._critical:
             await self._save_now()

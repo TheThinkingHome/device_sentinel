@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.26.5 (2026-10-16)
+# File: sensor.py, Version: 0.26.6 (2026-10-17)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -372,10 +372,11 @@ class DeviceSentinelClassificationSensor(DeviceSentinelBaseSensor):
     integration rides in an attribute, kept out of the recorder."""
 
     # Named for what it counts rather than for one of its reasons.
-    # It began as service devices alone and now holds six: service,
+    # It began as service devices alone and now holds seven: service,
     # disabled, no entities, a duplicate coordinator (#400), an
-    # integration the person excludes, and hardware already watched
-    # through another device (0.25.2).
+    # integration the person excludes, hardware already watched
+    # through another device (0.25.2), and nothing but firmware notices
+    # or command buttons switched on (0.26.6).
     _attr_translation_key = "devices_set_aside"
     # Live for automations, kept out of the recorder's history: a
     # device list or a setting's mirror at every change is only bulk

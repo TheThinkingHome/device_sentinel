@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: outage_detail.py, Version: 0.22.23 (2026-09-22)
+# File: outage_detail.py, Version: 0.26.6 (2026-10-18)
 
 """Which config entry an integration outage was, and which device.
 
@@ -28,6 +28,12 @@ from typing import Any
 
 FAILED = "failed"
 DOWN = "down"
+# An entry deleted from Home Assistant while it was down: its outage is
+# closed as removed, never told as back (round 32 of 0.26.6).
+REMOVED = "removed"
+# An entry still in Home Assistant whose devices Device Sentinel stopped
+# watching while it was down, excluded or set aside (round 33 of 0.26.6).
+UNWATCHED = "unwatched"
 
 
 def make_detail(entry_id: str, device_id: str | None, how: str) -> str:
@@ -45,7 +51,7 @@ def parse_detail(detail: Any) -> tuple[str | None, str | None, str | None]:
             entry_id = part[6:] or None
         elif part.startswith("device:"):
             device_id = None if part[7:] in ("", "-") else part[7:]
-        elif part in (FAILED, DOWN):
+        elif part in (FAILED, DOWN, REMOVED, UNWATCHED):
             how = part
     return entry_id, device_id, how
 

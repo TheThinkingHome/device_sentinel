@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.26.3 (2026-10-14)
+# File: problem_list.py, Version: 0.26.6 (2026-10-18)
 
 """The problem list: the single memory every channel renders.
 
@@ -828,7 +828,8 @@ class ProblemListMixin:
         or a kind that leaves the list because its device, its freeze
         or its battery was muted, by device, integration or label, has
         nothing to announce. Read per kind, because a freeze mute takes
-        only the down kinds and a battery mute only the battery kinds,
+        only frozen and never reported, the unavailable mute every down
+        kind, and a battery mute only the battery kinds,
         and the other family on the same item may still be a genuine
         recovery. A whole-device mute takes every kind.
         """
@@ -836,12 +837,44 @@ class ProblemListMixin:
             return True
         family = TODO_KIND_FAMILIES.get(kind)
         if family == "down":
-            return bool(self._freeze_muted(device_id))  # type: ignore[attr-defined]
+            # A freeze mute takes what is judged from silence; the
+            # unavailable mute takes every down kind, dropping out
+            # included (James, 17 October 2026).
+            if self._kind_muted_plain(device_id, kind):
+                return True
+            # A kind held from before while a mute took the device's
+            # verdict away: the device is still down and the mute is
+            # why it leaves (first adversarial round of 0.26.6).
+            return self._down_but_muted(device_id)
         if family == "battery":
             return bool(self._battery_muted(device_id))  # type: ignore[attr-defined]
         if family == "signal":
             return bool(self._signal_muted(device_id))  # type: ignore[attr-defined]
         return False
+
+    def _kind_muted_plain(self, device_id: str, kind: str) -> bool:
+        """Whether a person's mute covers this down kind on the device."""
+        if kind in (TODO_KIND_FROZEN, TODO_KIND_NEVER_REPORTED):
+            return bool(self._freeze_muted(device_id))  # type: ignore[attr-defined]
+        if TODO_KIND_FAMILIES.get(kind) == "down":
+            return bool(self._unavailable_muted(device_id))  # type: ignore[attr-defined]
+        return False
+
+    def _down_but_muted(self, device_id: str) -> bool:
+        """Whether a mute took the device's verdict away while it was
+        still down (detect_freeze._apply_freeze_verdict), or covers the
+        verdict that still stands, which the down list leaves out at once
+        (frozen_devices_list), before any sweep has run (seventh
+        adversarial round of 0.26.6)."""
+        if device_id in getattr(self, "_muted_down", set()):
+            return True
+        record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
+        category = record.get(DEV_FROZEN_CATEGORY)
+        return category is not None and self._muted_away(  # type: ignore[attr-defined]
+            category,
+            self._freeze_muted(device_id),  # type: ignore[attr-defined]
+            self._unavailable_muted(device_id),  # type: ignore[attr-defined]
+        ) is None
 
     def _still_judged_down(self, device_id: str | None) -> bool:
         """Whether a device's own verdict still says it is not reporting.
@@ -860,10 +893,19 @@ class ProblemListMixin:
         """
         if device_id is None or device_id not in self._watched:
             return False
-        if device_id in getattr(self, "_muted_devices", set()) or self._freeze_muted(device_id):  # type: ignore[attr-defined]
+        if device_id in getattr(self, "_muted_devices", set()):
             return False
         record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
-        return record.get(DEV_FROZEN_CATEGORY) is not None
+        category = record.get(DEV_FROZEN_CATEGORY)
+        if category is None:
+            return False
+        # Muted for the kind its verdict is: not held (James, 17
+        # October 2026).
+        return self._muted_away(  # type: ignore[attr-defined]
+            category,
+            self._freeze_muted(device_id),  # type: ignore[attr-defined]
+            self._unavailable_muted(device_id),  # type: ignore[attr-defined]
+        ) is not None
 
     def _plausible_time(self, since: Any) -> str | None:
         """A start time as a person reads it, or None when it cannot be one.
@@ -908,7 +950,13 @@ class ProblemListMixin:
         opened, though the switch never spoke.
         """
         order = self._KIND_SEVERITY
-        standing = [k for k in stored_kinds if k in self._HELD_DOWN]
+        # A kind the person has muted is never held (first adversarial
+        # round of 0.26.6).
+        standing = [
+            k for k in stored_kinds
+            if k in self._HELD_DOWN
+            and not (device_id is not None and self._kind_muted_plain(device_id, k))
+        ]
         arriving = [k for k in incoming if k in self._HELD_DOWN]
         if not standing:
             return incoming
@@ -1659,10 +1707,18 @@ class ProblemListMixin:
                 kept.append(record)
                 continue
             if device_id in held:
+                # A kind a mute now covers is not kept: the hold keeps a
+                # verdict, not one the person has muted (seventh
+                # adversarial round of 0.26.6).
                 standing = {
                     kind: since
                     for kind, since in (record.get(TODO_KINDS) or {}).items()
                     if TODO_KIND_FAMILIES.get(kind) == "down"
+                    and device_id not in getattr(self, "_muted_devices", set())
+                    and not (
+                        isinstance(device_id, str)
+                        and self._kind_muted_plain(device_id, kind)
+                    )
                 }
                 if standing:
                     if problem is None:

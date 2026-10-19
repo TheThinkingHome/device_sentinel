@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.26.4 (2026-10-15)
+# File: report_maintainer.py, Version: 0.26.6 (2026-10-18)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -31,10 +31,12 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_UNAVAILABLE_MUTED_LABELS,
     CONF_BATTERY_MUTED_DEVICES,
     CONF_BATTERY_MUTED_INTEGRATIONS,
     CONF_BATTERY_MUTED_LABELS,
     CONF_FREEZE_MUTED_DEVICES,
+    CONF_UNAVAILABLE_MUTED_DEVICES,
     CONF_FREEZE_MUTED_INTEGRATIONS,
     CONF_FREEZE_MUTED_LABELS,
     CONF_MUTED_LABELS,
@@ -618,7 +620,8 @@ class MaintainerReportMixin:
             "",
             "STATUS is Reported (judged for everything) or Muted "
             "with the reason in parentheses: GLB global (all judgment "
-            "off), BAT battery, SIG signal, FRZ freeze. GLB shows "
+            "off), BAT battery, SIG signal, FRZ freeze, UNAV "
+            "unavailable. GLB shows "
             "alone; the section reasons combine, Muted (BAT, FRZ). "
             "A muted device keeps recording; muting suppresses "
             "judgment, not observation.",
@@ -807,7 +810,7 @@ class MaintainerReportMixin:
         return f"Global ({level})"
 
     def _family_mute_texts(self, device_id: str) -> list[str]:
-        """Freeze, battery and signal mutes, each with its source.
+        """Freeze, battery, signal and unavailable mutes, each with its source.
 
         Invisible on Classification until 0.22.13, so a device muted
         for battery alone read as if nothing were muted (from the
@@ -823,6 +826,8 @@ class MaintainerReportMixin:
              CONF_BATTERY_MUTED_LABELS, CONF_BATTERY_MUTED_DEVICES),
             ("signal", CONF_SIGNAL_MUTED_INTEGRATIONS,
              CONF_SIGNAL_MUTED_LABELS, CONF_SIGNAL_MUTED_DEVICES),
+            # By label or device (James, 18 October 2026).
+            ("unavailable", "", CONF_UNAVAILABLE_MUTED_LABELS, CONF_UNAVAILABLE_MUTED_DEVICES),
         ):
             source = self._mute_source(
                 device_id,
@@ -959,7 +964,8 @@ class MaintainerReportMixin:
             f"{total}; {len(self._set_aside)} set aside (integrations "
             f"and devices you asked to exclude, service devices, disabled devices, "
             f"duplicate coordinators, hardware already watched through "
-            f"another device, and devices with no entities). "
+            f"another device, devices with nothing switched on that can "
+            f"report, and devices with no entities). "
             f"Every watched device is recorded; MUTED only "
             f"suppresses judgment and reporting, and names every mute "
             f"and its source. COPIES above 1 is a "

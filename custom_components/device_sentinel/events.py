@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.25.5 (2026-10-10)
+# File: events.py, Version: 0.26.6 (2026-10-18)
 
 """What Device Sentinel says on the Home Assistant bus.
 
@@ -282,6 +282,7 @@ class EventMixin:
     def fire_upstream_restored(
         self, kind: str, name: str, since: str, devices: int,
         for_seconds: float,
+        owed: bool = False,
     ) -> None:
         """The closing half of the pair.
 
@@ -298,6 +299,7 @@ class EventMixin:
                 "devices": devices,
                 "for_seconds": round(float(for_seconds), 1),
             },
+            owed=owed,
         )
 
     @callback
@@ -328,7 +330,9 @@ class EventMixin:
         )
 
     @callback
-    def _fire(self, event_type: str, payload: dict[str, Any]) -> None:
+    def _fire(
+        self, event_type: str, payload: dict[str, Any], owed: bool = False
+    ) -> None:
         """Put one event on the bus, and never raise into the sync.
 
         The sync is the path that keeps the list, the reports and the
@@ -348,7 +352,10 @@ class EventMixin:
         # stopped closes the fault an automation paired it with, so it is
         # fired inside the startup grace too (0.25.5, found by the
         # adversarial round).
-        if self._in_startup_grace() and event_type != EVENT_WITHDRAWN:
+        # So is a recovery owed to a down announced before the restart:
+        # the automation that heard the down is waiting for it (round 33
+        # of 0.26.6).
+        if self._in_startup_grace() and event_type != EVENT_WITHDRAWN and not owed:
             return
         try:
             self.hass.bus.async_fire(event_type, payload)

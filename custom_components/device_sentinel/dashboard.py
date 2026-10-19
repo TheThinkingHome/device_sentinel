@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.26.5 (2026-10-16)
+# File: dashboard.py, Version: 0.26.6 (2026-10-17)
 
 """What the dashboard reads from the coordinator.
 
@@ -42,6 +42,9 @@ from .report_battery import (
 )
 from . import stacks
 from .const import (
+    SET_ASIDE_NO_ENTITIES,
+    SET_ASIDE_NOTICES_ONLY,
+    STANDING_NOTICES_ONLY,
     SET_ASIDE_EXCLUDED,
     RULE_LOGNORMAL,
     STACK_DISPLAY_NAMES,
@@ -443,6 +446,13 @@ class IntegrationViewMixin:
             }
             if reasons == {SET_ASIDE_EXCLUDED}:
                 return "excluded"
+            # Every device set aside for having nothing but firmware
+            # notices or command buttons switched on (James, 17 October
+            # 2026), which "service only" would misdescribe.
+            if reasons and reasons <= {SET_ASIDE_NOTICES_ONLY, SET_ASIDE_NO_ENTITIES}:
+                # Either reason, alone or together (James, 17 October
+                # 2026; fifteenth adversarial round of 0.26.6).
+                return STANDING_NOTICES_ONLY
         return "watched" if watched else "service"
 
     # Which kind a phrase in a problem summary came from (0.22.24).
@@ -865,14 +875,32 @@ class DeviceViewMixin:
         never reported has not reported.
         """
         # A device in a flap reads as the flap, the same word the list
-        # gives it, whether or not it is down this minute (0.23.2).
-        if device_id in self._watched and self.is_flapping(device_id):
+        # gives it, whether or not it is down this minute (0.23.2). A
+        # device muted for unavailable, or for everything, is off the
+        # list and reads no flap either (James, 17 October 2026).
+        if (
+            device_id in self._watched
+            and device_id not in self._muted_devices
+            and not self._unavailable_muted(device_id)  # type: ignore[attr-defined]
+            and self.is_flapping(device_id)
+        ):
             return TODO_KIND_FLAPPING
         verdict = record.get(DEV_FROZEN_CATEGORY)
-        if verdict:
+        # A verdict held behind a down upstream is kept while the device
+        # is not judged, but one its mutes cover is not shown (seventh
+        # adversarial round of 0.26.6).
+        if verdict and device_id not in self._muted_devices and self._muted_away(  # type: ignore[attr-defined]
+            verdict,
+            self._freeze_muted(device_id),  # type: ignore[attr-defined]
+            self._unavailable_muted(device_id),  # type: ignore[attr-defined]
+        ):
             return verdict
         if device_id not in self._watched:
             return STATUS_SET_ASIDE
+        if self._connection_only(device_id):  # type: ignore[attr-defined]
+            # Its connection is its report, and it is not down (James,
+            # 17 October 2026; fifteenth adversarial round of 0.26.6).
+            return STATUS_REPORTING
         if record.get(DEV_LAST_ACTIVITY) is None:
             return STATUS_NEVER_REPORTED
         return STATUS_REPORTING
@@ -1126,15 +1154,35 @@ class DeviceViewMixin:
             "status": {
                 "category": self._page_status(device_id, record),
                 # How big the flap is, beside the word (0.23.2).
+                # Not for a device muted for unavailable or for
+                # everything, which reads no flap (James, 17 October
+                # 2026; sixteenth adversarial round of 0.26.6).
                 "flap": (
                     self.flap_words(device_id).removeprefix("flapping, ")
                     if self.is_flapping(device_id)
+                    and device_id not in self._muted_devices
+                    and not self._unavailable_muted(device_id)  # type: ignore[attr-defined]
                     else ""
                 ),
                 "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
+                # A device judged by its connection alone: "connected" or
+                # "dropped", else None (James, 17 October 2026).
+                # "not known" when it cannot be read, or the device
+                # sleeps (eighteenth adversarial round of 0.26.6).
+                "connection": (
+                    (
+                        "dropped" if self._dropped_esphome(device_id)  # type: ignore[attr-defined]
+                        else "connected" if self._awake_esphome(device_id)  # type: ignore[attr-defined]
+                        else "not known"
+                    )
+                    if self._connection_only(device_id)  # type: ignore[attr-defined]
+                    else None
+                ),
                 # The rule in use, as the window is (0.24.10).
                 "rhythm": self._rhythm_in_use(record) if record.get(DEV_DAILY_MAX) else rhythm,
-                "window": self._freeze_window(record),
+                # No freeze window for a device judged by its connection
+                # alone (eighteenth adversarial round of 0.26.6).
+                "window": None if self._connection_only(device_id) else self._freeze_window(record),  # type: ignore[attr-defined]
                 # The rule in use, as people read it: "37-Day
                 # Log-Normal Percentile" (0.24.0).
                 "rule": self.rule_label(self._freeze_rhythm(record)),

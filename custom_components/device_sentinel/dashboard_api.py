@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.26.1 (2026-10-13)
+# File: dashboard_api.py, Version: 0.26.6 (2026-10-17)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -51,9 +51,27 @@ from .const import (
     MAINTENANCE_MINUTES_STEP,
     SET_ASIDE_MEANINGS,
     TODO_KIND_FAMILIES,
+    TODO_KIND_FROZEN,
+    TODO_KIND_NEVER_REPORTED,
 )
 
 _REGISTERED = f"{DOMAIN}_dashboard_api"
+
+
+def mutes_for_kinds(kinds: Any) -> list[str]:
+    """The mutes offered beside a Problem List item, one per kind it has.
+
+    A silence is the freeze mute's; a device gone, or dropping out, the
+    unavailable mute's (James, 17 October 2026); then battery and signal.
+    """
+    silence = (TODO_KIND_FROZEN, TODO_KIND_NEVER_REPORTED)
+    wanted = (
+        ("freeze", lambda k: k in silence),
+        ("unavailable", lambda k: TODO_KIND_FAMILIES.get(k) == "down" and k not in silence),
+        ("battery", lambda k: TODO_KIND_FAMILIES.get(k) == "battery"),
+        ("signal", lambda k: TODO_KIND_FAMILIES.get(k) == "signal"),
+    )
+    return [mute for mute, test in wanted if any(test(kind) for kind in kinds)]
 
 ACTION_MAINTENANCE = "maintenance"
 ACTION_ENABLE_SIGNALS = "enable_signals"
@@ -279,11 +297,10 @@ def ws_problem_list(
             "since": dt_util.utc_from_timestamp(since).isoformat() if since is not None else None,
             "acknowledged": item.get(TODO_STATUS) == "completed",
             # The mute beside each problem (0.24.5): the one that
-            # matches it, by the kinds' families.
-            "mutes": [
-                mute for family, mute in (("down", "freeze"), ("battery", "battery"), ("signal", "signal"))
-                if any(TODO_KIND_FAMILIES.get(kind) == family for kind in kinds)
-            ],
+            # matches it. A silence is the freeze mute's, a device gone
+            # or dropping out the unavailable mute's (James, 17 October
+            # 2026).
+            "mutes": mutes_for_kinds(kinds),
             # What powers it, beside a battery problem (0.24.7).
             "power": (
                 coordinator.power_text(item[TODO_DEVICE_ID])
@@ -661,7 +678,7 @@ def ws_device_last_seen(
     {
         vol.Required("type"): "device_sentinel/device_mute",
         vol.Required("device_id"): str,
-        vol.Required("kind"): vol.In(["everything", "freeze", "battery", "signal"]),
+        vol.Required("kind"): vol.In(["everything", "freeze", "unavailable", "battery", "signal"]),
         vol.Required("on"): bool,
         # Where the press was made, for the brief's line (ruling #643).
         vol.Optional("source", default="device_page"): vol.In(list(MUTE_SOURCES_SAID)),

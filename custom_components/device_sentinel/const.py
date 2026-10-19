@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.26.5 (2026-10-16)
+# File: const.py, Version: 0.26.6 (2026-10-18)
 
 """Constants for the Device Sentinel integration."""
 
@@ -618,6 +618,11 @@ SET_ASIDE_DISABLED = "disabled"
 # is the device speaking. The stored value is unchanged.
 SET_ASIDE_NO_ENTITIES = "no entities"
 SET_ASIDE_EXCLUDED = "excluded"
+# A device whose only entities switched on are firmware notices, command
+# buttons or a hub's word on it, whatever it has switched off (James, 17
+# and 18 October 2026). The stored value is the words shown after "Set
+# aside:".
+SET_ASIDE_NOTICES_ONLY = "nothing switched on that can report"
 # A coordinator already watched properly by something else, reaching
 # the registry a second time as an ordinary device (ruling #400).
 # Today that is the Zigbee2MQTT bridge and nothing else; each stack
@@ -646,6 +651,10 @@ STANDING_NO_HARDWARE = "no_hardware"
 # helper integrations as helpers, and a Derivative linked to one sensor
 # is not what anyone pictures reading "as Battery Notes does".
 STANDING_HELPER = "helper"
+# An integration whose devices are all set aside for having nothing but
+# firmware notices or command buttons switched on (James, 17 October
+# 2026).
+STANDING_NOTICES_ONLY = "notices_only"
 STANDING_MEANINGS: tuple[tuple[str, str], ...] = (
     ("Watched", "It owns devices Device Sentinel watches."),
     ("Excluded", "It is on your exclusion list, in Exclusions and Muting."),
@@ -661,6 +670,10 @@ STANDING_MEANINGS: tuple[tuple[str, str], ...] = (
         "Helper",
         "A Home Assistant helper you linked to a device. Its entities "
         "never count as the device reporting.",
+    ),
+    (
+        "Nothing switched on to read",
+        "Its devices have nothing switched on that can report.",
     ),
 )
 SET_ASIDE_MEANINGS: tuple[tuple[str, str], ...] = (
@@ -691,8 +704,13 @@ SET_ASIDE_MEANINGS: tuple[tuple[str, str], ...] = (
         "reaches it most directly.",
     ),
     (
+        SET_ASIDE_NOTICES_ONLY,
+        "Switch on one of its other entities and Device Sentinel watches it.",
+    ),
+    (
         SET_ASIDE_NO_ENTITIES,
-        "It has no entities of its own, so nothing could ever report. "
+        "It has no entities of its own that can report, so nothing could "
+        "ever report. "
         "Entities another integration added to it do not count.",
     ),
 )
@@ -1665,14 +1683,43 @@ CONF_SIGNAL_MUTED_DEVICES = "signal_muted_devices"
 CONF_SIGNAL_MUTED_INTEGRATIONS = "signal_muted_integrations"
 CONF_SIGNAL_MUTED_LABELS = "signal_muted_labels"
 
+# Entities that are never the device (James, 17 October 2026): a
+# firmware notice is Home Assistant or the coordinator checking for
+# firmware, and a command button (restart, identify, safe mode) is a
+# thing Home Assistant can tell the device to do, holding only when it
+# was last pressed there. Neither moves the device's clock, ends a
+# verdict, or shows the device alive or gone. A device with nothing else
+# switched on is set aside with a reason of its own, whatever it has
+# switched off, unless it is an ESPHome device, whose connection is its
+# report, or a device its hub speaks for, such as a Lutron Pico.
+NOTICE_DOMAINS = frozenset({"update", "button"})
+
+# How long a report through another entity keeps a device whose main
+# entities are unavailable alive, while it has no freeze window yet
+# (James, 18 October 2026). With a window, the window decides.
+ACTIVE_REPORT_SECONDS = 3600.0
+
+# What a device whose only live entities are at rest reads as (round
+# sixteen of 0.24.3): like unknown, it says nothing, so the device is
+# judged by its clock and a standing verdict is held (eleventh
+# adversarial round of 0.26.6).
+EVENT_RESTING = "resting"
+
 # Freeze-only muting, the same three-tier ladder as battery and
 # signal. A device on this list is still watched and clocked, so its
 # rhythm keeps learning and re-including it is instant, but it is
-# never given a freeze, unavailable, unknown, or not-reported verdict.
+# never given a frozen or not-reported verdict; it is still told when
+# it becomes unavailable (James, 17 October 2026).
 # For a device that is intermittent by nature (a car sensor that
 # travels, a seasonal device) this silences the freeze report without
 # hiding the device from everything.
 CONF_FREEZE_MUTED_DEVICES = "freeze_muted_devices"
+# The unavailable mute, by label or device (James, 18 October 2026): no
+# integration list, since muting a whole stack for unavailable would hide
+# every device on it going at once. It silences unavailable and dropping
+# out only; frozen and never reported are the freeze mute's.
+CONF_UNAVAILABLE_MUTED_LABELS = "unavailable_muted_labels"
+CONF_UNAVAILABLE_MUTED_DEVICES = "unavailable_muted_devices"
 CONF_FREEZE_MUTED_INTEGRATIONS = "freeze_muted_integrations"
 CONF_FREEZE_MUTED_LABELS = "freeze_muted_labels"
 
@@ -2913,7 +2960,12 @@ DEAD_OPTION_KEYS = (
 # Step 5 writes the persistent card's old default into an install that
 # never saved it, so the new default of off reaches new installs only
 # (ruling #462).
-OPTIONS_MINOR_VERSION = 5
+# Step 6 gives each label and device muted for freeze an unavailable
+# mute too, since a freeze mute covered unavailable before 0.26.6, so
+# nothing changes on an upgraded house. An integration's freeze mute
+# stays freeze only: Home Assistant reports a device unavailable well,
+# and a freeze mute hiding it was a fault (James, 18 October 2026).
+OPTIONS_MINOR_VERSION = 6
 
 # The muting keys, old spelling to new, in the order a person meets
 # them on the screens. Read by the migration and by the guard that

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.26.2 (2026-10-13)
+# File: __init__.py, Version: 0.26.6 (2026-10-18)
 
 """The Device Sentinel integration.
 
@@ -36,6 +36,10 @@ from homeassistant.loader import async_get_integration
 
 from .dashboard_api import async_register_dashboard_api
 from .const import (
+    CONF_FREEZE_MUTED_DEVICES,
+    CONF_FREEZE_MUTED_LABELS,
+    CONF_UNAVAILABLE_MUTED_DEVICES,
+    CONF_UNAVAILABLE_MUTED_LABELS,
     DATA_PANEL_FILE,
     DEAD_ENTITY_SENTINEL_TYPES,
     DEAD_OPTION_KEYS,
@@ -106,10 +110,53 @@ async def async_migrate_entry(
         options = _migrate_retired_sliders(options)
     if entry.minor_version < 5:
         options = _migrate_persistent_default(options)
+    if entry.minor_version < 6:
+        options = _migrate_unavailable_mutes(options)
     hass.config_entries.async_update_entry(
         entry, options=options, minor_version=OPTIONS_MINOR_VERSION
     )
     return True
+
+
+def _migrate_unavailable_mutes(options: dict[str, Any]) -> dict[str, Any]:
+    """Step 6: a label or device muted for freeze is muted for unavailable.
+
+    Before 0.26.6 a freeze mute also silenced unavailable. From 0.26.6
+    the two are separate, and so nothing changes on an upgraded house,
+    each label and device muted for freeze is given the unavailable mute
+    as well, once. An integration muted for freeze stays freeze only, the
+    one change of behaviour (James, 18 October 2026). Lists already set
+    are kept, with the freeze picks added to them.
+    """
+    migrated = dict(options)
+    for freeze_key, unavailable_key in (
+        (CONF_FREEZE_MUTED_LABELS, CONF_UNAVAILABLE_MUTED_LABELS),
+        (CONF_FREEZE_MUTED_DEVICES, CONF_UNAVAILABLE_MUTED_DEVICES),
+    ):
+        picks = _string_list(options.get(freeze_key))
+        if not picks:
+            continue
+        merged = _string_list(options.get(unavailable_key))
+        for pick in picks:
+            if pick not in merged:
+                merged.append(pick)
+        migrated[unavailable_key] = merged
+    return migrated
+
+
+def _string_list(value: Any) -> list[str]:
+    """The strings of a stored list, once each, in order.
+
+    Anything that is not a list (a hand-edited string, a mapping) gives
+    nothing, rather than its characters or keys.
+    """
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        if isinstance(item, str) and item not in out:
+            out.append(item)
+    return out
 
 
 def _migrate_persistent_default(options: dict[str, Any]) -> dict[str, Any]:

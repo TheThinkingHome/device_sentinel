@@ -18,7 +18,7 @@
           "exclusions": "Exclusions and Muting",
           "battery": "Low Battery",
           "signal": "Signal Strength",
-          "freeze": "Freeze Detection",
+          "freeze": "Freeze and Unavailable Detection",
           "wifi": "WiFi",
           "advanced": "Advanced",
           "extended": "Extended Diagnostics"
@@ -163,8 +163,8 @@
         }
       },
       "freeze": {
-        "title": "Freeze Detection",
-        "description": "How long a device may go silent before it is called frozen. Each device is judged against its own learned rhythm, so you are not setting a single timeout; you are setting the grace on top of each device's normal. Delta low is the grace a fast device gets, delta high the grace a slow one gets, and the curve between them is shaped by the two. Raise delta low if a chatty device is flagged too soon; lower delta high if a slow device should be caught faster. [Freeze Detection on the wiki]({wiki_link}).",
+        "title": "Freeze and Unavailable Detection",
+        "description": "How long a device may go silent before it is called frozen, and which devices are muted for freeze or for unavailable. Each device is judged against its own learned rhythm, so you are not setting a single timeout; you are setting the grace on top of each device's normal. Delta low is the grace a fast device gets, delta high the grace a slow one gets, and the curve between them is shaped by the two. Raise delta low if a chatty device is flagged too soon; lower delta high if a slow device should be caught faster. [Freeze Detection on the wiki]({wiki_link}).",
         "data": {
           "freeze_delta_low": "Delta Low (Fast-Device Grace, Minutes)",
           "freeze_delta_high": "Delta High (Slow-Device Grace, Hours)"
@@ -176,16 +176,28 @@
         "sections": {
           "freeze_muting": {
             "name": "Freeze Muting",
-            "description": "Which devices are never called frozen, unavailable, or not reported. Each keeps its clock and its learned rhythm, so re-including one is instant. The three lists run broad to narrow: integration, label, device. Mute at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
+            "description": "Which devices are never called frozen or not reported. Device Sentinel still reports a device muted here when it becomes unavailable or keeps dropping out; to stop that, use Unavailable Muting below. Each keeps its clock and its learned rhythm, so re-including one is instant. The three lists run broad to narrow: integration, label, device. Mute at a higher level and save, and everything it covers disappears as a choice from the lists below it.",
             "data": {
               "freeze_muted_integrations": "Integrations Muted for Freeze Reporting",
               "freeze_muted_labels": "Labels Muted for Freeze Reporting",
               "freeze_muted_devices": "Devices Muted for Freeze Reporting"
             },
             "data_description": {
-              "freeze_muted_integrations": "Every device from a ticked integration stops being called frozen, unavailable, or not reported.",
-              "freeze_muted_labels": "Devices carrying a ticked label stop being called down. Set the label on the device's own page and it applies here.",
-              "freeze_muted_devices": "A ticked device is never called down. It keeps its clock and rhythm, so re-including it is instant."
+              "freeze_muted_integrations": "Every device from a ticked integration stops being called frozen or not reported.",
+              "freeze_muted_labels": "Devices carrying a ticked label stop being called frozen or not reported. Set the label on the device's own page and it applies here.",
+              "freeze_muted_devices": "A ticked device is never called frozen or not reported. It keeps its clock and rhythm, so re-including it is instant."
+            }
+          },
+          "unavailable_muting": {
+            "name": "Unavailable Muting",
+            "description": "Which devices are never called unavailable or dropping out. Use it for a device that goes unavailable on purpose, such as a TV switched off at the wall. Device Sentinel still reports a device muted here when it is frozen or never reports; to stop that, use Freeze Muting above. The two lists run broad to narrow: label, device. Mute by label and save, and the devices it covers disappear as a choice from the list below it. The device list is the same one the Mute unavailable button on a device's page sets.",
+            "data": {
+              "unavailable_muted_labels": "Labels Muted for Unavailable Reporting",
+              "unavailable_muted_devices": "Devices Muted for Unavailable Reporting"
+            },
+            "data_description": {
+              "unavailable_muted_labels": "Devices carrying a ticked label stop being called unavailable or dropping out. Set the label on the device's own page and it applies here.",
+              "unavailable_muted_devices": "A ticked device is never called unavailable or dropping out. It keeps its clock and rhythm, so re-including it is instant."
             }
           }
         }

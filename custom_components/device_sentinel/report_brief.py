@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.26.5 (2026-10-16)
+# File: report_brief.py, Version: 0.26.6 (2026-10-18)
 
 """The daily brief: the one report written for a person.
 
@@ -139,7 +139,7 @@ from .const import (
     SYS_INTEGRATION_PAGE,
     SYS_DEVICE_ID,
 )
-from .outage_detail import FAILED, parse_detail
+from .outage_detail import FAILED, REMOVED, UNWATCHED, parse_detail
 
 
 def _plural(count: int) -> str:
@@ -362,7 +362,7 @@ class BriefMixin:
             TODO_KIND_FROZEN: "stopped reporting",
             TODO_KIND_NEVER_REPORTED: "has never reported",
             # A hub went down (James, 14 October 2026).
-            TODO_KIND_UNAVAILABLE: hub[0] if hub else "went unavailable",
+            TODO_KIND_UNAVAILABLE: hub[0] if hub else "became unavailable",
             TODO_KIND_UNKNOWN: "went unknown",
             TODO_KIND_RAILED_SIGNAL: "signal railed",
             TODO_KIND_FALLING_BATTERY: "battery is running down",
@@ -464,6 +464,15 @@ class BriefMixin:
             plain = "device" if worst == 1 else "devices"
             text = f"{count} {plain} went down"
             return f"{text}." if sentence else text.lower()
+        if total == 0:
+            # Nothing behind it to count: "None of its 0 devices" says
+            # nothing (round 32 of 0.26.6).
+            return None
+        if total == 1 and worst == 0:
+            # A one-device entry's own sentence already names the device;
+            # "None of its 1 device went down" adds nothing (round 31 of
+            # 0.26.6).
+            return None
         if total == 1 and worst == 1:
             # "1 of its 1 device went down" reads as arithmetic where
             # a sentence would do (ruling #452), and matches the row's
@@ -510,6 +519,10 @@ class BriefMixin:
                     else "went down"
                 )
                 return f"{device} is offline: its {title} connection {how} at {when}."
+            if parse_detail(detail)[2] == REMOVED:
+                return f"{device}'s {title} connection was removed from Home Assistant at {when}, while down."
+            if parse_detail(detail)[2] == UNWATCHED:
+                return f"Device Sentinel stopped watching {device} at {when}, while its {title} connection was down."
             worst = self._worst_words(row, sentence=True)
             said = (
                 f"{device} is back: its {title} connection came back at {when} after {held}."
@@ -520,6 +533,16 @@ class BriefMixin:
         if kind == SYS_INTEGRATION_DOWN:
             return f"The {self._integration_title(str(scope))} integration went down at {when}."
         worst = self._worst_words(row, sentence=True)
+        if kind == SYS_INTEGRATION_UP and parse_detail(detail)[2] == REMOVED:
+            return (
+                f"The {self._integration_title(str(scope))} integration was removed from "
+                f"Home Assistant at {when}, while down."
+            )
+        if kind == SYS_INTEGRATION_UP and parse_detail(detail)[2] == UNWATCHED:
+            return (
+                f"Device Sentinel stopped watching the {self._integration_title(str(scope))} "
+                f"integration at {when}, while it was down."
+            )
         if kind == SYS_INTEGRATION_UP:
             said = (
                 f"The {self._integration_title(str(scope))} integration came back at {when} after "
@@ -795,6 +818,10 @@ class BriefMixin:
                     else "went down"
                 )
                 return f"{device} offline, its {title} connection {how}"
+            if parse_detail(detail)[2] == REMOVED:
+                return f"{device}'s {title} connection removed while down"
+            if parse_detail(detail)[2] == UNWATCHED:
+                return f"{device} no longer watched while its {title} connection was down"
             return (
                 f"{device} back, its {title} connection came back after {held}"
                 if held
@@ -808,6 +835,10 @@ class BriefMixin:
             )
         if kind == SYS_INTEGRATION_DOWN:
             return f"{self._integration_title(str(scope))} integration went down"
+        if kind == SYS_INTEGRATION_UP and parse_detail(detail)[2] == REMOVED:
+            return f"{self._integration_title(str(scope))} integration removed while down"
+        if kind == SYS_INTEGRATION_UP and parse_detail(detail)[2] == UNWATCHED:
+            return f"{self._integration_title(str(scope))} integration no longer watched while down"
         if kind == SYS_INTEGRATION_UP:
             return (
                 f"{self._integration_title(str(scope))} integration came back after {held}"
@@ -1258,7 +1289,7 @@ class BriefMixin:
             (
                 "All devices are muted or excluded for freeze reporting",
                 "frozen-device warnings", "devices", "device",
-                "freeze", "Freeze Detection",
+                "freeze", "Freeze and Unavailable Detection",
                 watched, self._freeze_muted,
             ),
             (
@@ -1303,7 +1334,7 @@ class BriefMixin:
                     f"you wish to monitor, unmute or unexclude "
                     f"{'it' if len(judged) == 1 else 'them'} on the "
                     f"Exclusions and Muting, and the {screen} settings "
-                    f"screen."
+                    f"screen, or on each device's page."
                 )
         return said
 
@@ -2023,7 +2054,7 @@ class BriefMixin:
         if kind == TODO_KIND_UNAVAILABLE:
             # A hub went down (James, 14 October 2026).
             hub = self.unavailable_words(opened.get(INC_DEVICE_ID))  # type: ignore[attr-defined]
-            return hub if hub else ("went unavailable", "unavailable")
+            return hub if hub else ("became unavailable", "unavailable")
         if kind == TODO_KIND_RAILED_SIGNAL:
             return "signal railed", "railed"
         # A battery crossing its line is not a silence: the device
@@ -2237,7 +2268,7 @@ class BriefMixin:
     def _repeat_verb(kind: str) -> str:
         """Return what the device did, as the table's second column."""
         if kind == TODO_KIND_UNAVAILABLE:
-            return "went unavailable"
+            return "became unavailable"
         if kind == TODO_KIND_RAILED_SIGNAL:
             return "signal railed"
         noun = _REPEAT_NOUNS.get(kind)

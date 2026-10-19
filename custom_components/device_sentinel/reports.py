@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.24.11 (2026-10-07)
+# File: reports.py, Version: 0.26.6 (2026-10-18)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -306,8 +306,8 @@ class ReportWritingMixin(
         or "Muted (...)" naming why. GLB is the global mute,
         shown alone because it covers everything and a globally
         muted device is never offered to the section lists. BAT,
-        SIG, and FRZ are the section muting, listed in column order
-        when more than one applies.
+        SIG, FRZ and UNAV are the section muting, listed in column
+        order when more than one applies.
 
         A todo icon lived here for one release and moved to the
         Devices With A Fault section: the same state shown twice was
@@ -321,8 +321,12 @@ class ReportWritingMixin(
             tags.append("BAT")
         if self._signal_muted(device_id):
             tags.append("SIG")
-        if self._freeze_muted(device_id):
+        # Each mute that is set is named, each its own kind (James, 18
+        # October 2026).
+        if self._freeze_muted_own(device_id):
             tags.append("FRZ")
+        if self._unavailable_muted(device_id):
+            tags.append("UNAV")
         if tags:
             return f"Muted ({', '.join(tags)})"
         return "Reported"

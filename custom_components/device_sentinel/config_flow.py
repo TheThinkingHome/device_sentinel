@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.26.1 (2026-10-13)
+# File: config_flow.py, Version: 0.26.6 (2026-10-18)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -60,6 +60,7 @@ from .naming import display_name
 from .wifi import scan_networks, wireless_interfaces
 
 from .const import (
+    CONF_UNAVAILABLE_MUTED_LABELS,
     SMTP_DOMAIN,
     SMTP_TARGET_PREFIX,
     CONF_REPORT_LINKS,
@@ -98,6 +99,7 @@ from .const import (
     CONF_FREEZE_MUTED_DEVICES,
     CONF_FREEZE_MUTED_INTEGRATIONS,
     CONF_FREEZE_MUTED_LABELS,
+    CONF_UNAVAILABLE_MUTED_DEVICES,
     CONF_HIGH_PRIORITY_TARGETS,
     CONF_LOW_THRESHOLD,
     CONF_MAINTENANCE_MINUTES,
@@ -623,6 +625,19 @@ def settle_options(
         settled[devices] = _surviving_picks(
             names(devices), covered | globally, dev_reg
         )
+    # The unavailable mute, by label or device (James, 18 October 2026):
+    # an exclusion, a global mute or a muted label supersedes a device
+    # pick, and a device Home Assistant no longer has goes, as every
+    # other pick does.
+    if CONF_UNAVAILABLE_MUTED_DEVICES in settled or CONF_UNAVAILABLE_MUTED_LABELS in settled:
+        gone = globally | (
+            {row["device_id"] for row in rows if row["integration"] in excluded}
+            if excluded
+            else set()
+        ) | _devices_covered_by(rows, [], names(CONF_UNAVAILABLE_MUTED_LABELS))
+        settled[CONF_UNAVAILABLE_MUTED_DEVICES] = _surviving_picks(
+            names(CONF_UNAVAILABLE_MUTED_DEVICES), gone, dev_reg
+        )
     return settled
 
 class DeviceSentinelConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -746,6 +761,7 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             CONF_BATTERY_MUTED_DEVICES,
             CONF_FREEZE_MUTED_DEVICES,
             CONF_SIGNAL_MUTED_DEVICES,
+            CONF_UNAVAILABLE_MUTED_DEVICES,
         ):
             previous = before.get(key)
             if not isinstance(previous, (list, tuple)):
@@ -1240,8 +1256,10 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         The muting lists run the same broad-to-narrow ladder as battery
         and signal: integration, label, device. A freeze-muted
         device keeps its clock and rhythm and is simply never given a
-        freeze verdict, so a device intermittent by nature can be
-        silenced here without being hidden everywhere.
+        freeze or not-reported verdict, so a device intermittent by
+        nature can be silenced here without being hidden everywhere.
+        Unavailable has its own section below, by label and device
+        (James, 18 October 2026).
         """
         device_rows = self.config_entry.runtime_data.watched_device_rows
         if user_input is not None:
@@ -1275,6 +1293,19 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             device_rows,
             options.get(CONF_FREEZE_MUTED_DEVICES, []),
             covered,
+            lambda row: f"{row['name']} ({row['integration']})",
+            dev_reg,
+            self.config_entry.runtime_data._device_name,
+        )
+        # The unavailable mute, by label or device (James, 18 October
+        # 2026), with the same ladder and pruning as freeze.
+        unavailable_covered = _devices_covered_by(
+            device_rows, [], options.get(CONF_UNAVAILABLE_MUTED_LABELS, [])
+        ) | globally
+        unavailable_device_options = _device_options(
+            device_rows,
+            options.get(CONF_UNAVAILABLE_MUTED_DEVICES, []),
+            unavailable_covered,
             lambda row: f"{row['name']} ({row['integration']})",
             dev_reg,
             self.config_entry.runtime_data._device_name,
@@ -1383,6 +1414,47 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         ),
                         {"collapsed": True},
                     ),
+                    # Unavailable muting, its own section under freeze
+                    # (James, 18 October 2026): labels and devices only.
+                    vol.Optional("unavailable_muting"): section(
+                        vol.Schema(
+                            {
+                                vol.Optional(
+                                    CONF_UNAVAILABLE_MUTED_LABELS,
+                                    default=options.get(
+                                        CONF_UNAVAILABLE_MUTED_LABELS, []
+                                    ),
+                                ): selector.LabelSelector(
+                                    selector.LabelSelectorConfig(
+                                        multiple=True
+                                    )
+                                ),
+                                vol.Optional(
+                                    CONF_UNAVAILABLE_MUTED_DEVICES,
+                                    default=_surviving_picks(
+                                        options.get(
+                                            CONF_UNAVAILABLE_MUTED_DEVICES,
+                                            [],
+                                        ),
+                                        unavailable_covered,
+                                        dev_reg,
+                                    ),
+                                ): selector.SelectSelector(
+                                    selector.SelectSelectorConfig(
+                                        options=unavailable_device_options,
+                                        multiple=True,
+                                        sort=True,
+                                        mode=(
+                                            selector
+                                            .SelectSelectorMode
+                                            .DROPDOWN
+                                        ),
+                                    )
+                                ),
+                            }
+                        ),
+                        {"collapsed": True},
+                    ),
                 }
             ),
         )
@@ -1407,6 +1479,15 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
         pruned[CONF_FREEZE_MUTED_DEVICES] = _surviving_picks(
             pruned.get(CONF_FREEZE_MUTED_DEVICES, []), covered, dev_reg
         )
+        # Only when the section came back with the form: a save without
+        # it leaves the unavailable lists as they were.
+        if CONF_UNAVAILABLE_MUTED_DEVICES in pruned or CONF_UNAVAILABLE_MUTED_LABELS in pruned:
+            unavailable_covered = _devices_covered_by(
+                device_rows, [], pruned.get(CONF_UNAVAILABLE_MUTED_LABELS, [])
+            )
+            pruned[CONF_UNAVAILABLE_MUTED_DEVICES] = _surviving_picks(
+                pruned.get(CONF_UNAVAILABLE_MUTED_DEVICES, []), unavailable_covered, dev_reg
+            )
         return pruned
 
     async def async_step_exclusions(

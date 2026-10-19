@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.26.5 (2026-10-16)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.26.6 (2026-10-18)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -35,6 +35,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import label_registry as lr
 
 from .const import (
+    CONF_UNAVAILABLE_MUTED_LABELS,
     CONF_BATTERY_MUTED_DEVICES,
     CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
@@ -42,6 +43,7 @@ from .const import (
     CONF_BATTERY_MUTED_INTEGRATIONS,
     CONF_BATTERY_MUTED_LABELS,
     CONF_FREEZE_MUTED_DEVICES,
+    CONF_UNAVAILABLE_MUTED_DEVICES,
     CONF_FREEZE_MUTED_INTEGRATIONS,
     CONF_FREEZE_MUTED_LABELS,
     CONF_MUTED_DEVICES,
@@ -73,6 +75,10 @@ MUTE_KINDS: dict[str, tuple[str, str, str]] = {
     "freeze": (CONF_FREEZE_MUTED_INTEGRATIONS, CONF_FREEZE_MUTED_LABELS, CONF_FREEZE_MUTED_DEVICES),
     "battery": (CONF_BATTERY_MUTED_INTEGRATIONS, CONF_BATTERY_MUTED_LABELS, CONF_BATTERY_MUTED_DEVICES),
     "signal": (CONF_SIGNAL_MUTED_INTEGRATIONS, CONF_SIGNAL_MUTED_LABELS, CONF_SIGNAL_MUTED_DEVICES),
+    # A device only: no integration or label list (James, 17 October
+    # 2026), so those two keys are never set.
+    # By label or device, never integration (James, 18 October 2026).
+    "unavailable": ("", CONF_UNAVAILABLE_MUTED_LABELS, CONF_UNAVAILABLE_MUTED_DEVICES),
 }
 
 
@@ -108,7 +114,7 @@ class DeviceActionsMixin:
         if label_id in options.get(CONF_MUTED_LABELS, []):
             return "mutes everything"
         kinds = [
-            kind for kind in ("freeze", "battery", "signal")
+            kind for kind in ("freeze", "unavailable", "battery", "signal")
             if label_id in options.get(MUTE_KINDS[kind][1], [])
         ]
         return f"mutes {_and_list(kinds)}" if kinds else ""
@@ -431,6 +437,11 @@ class DeviceActionsMixin:
         )
         self._mark_changed()  # type: ignore[attr-defined]
 
+    def _mute_words(self, device_id: str, kind: str, on: bool) -> str:
+        """What a mute set or lifted on the device page covers, for its
+        system event: each mute its own kind (James, 18 October 2026)."""
+        return kind
+
     def page_set_mute(
         self, device_id: str, kind: str, on: bool, source: str = "device_page"
     ) -> None:
@@ -456,7 +467,7 @@ class DeviceActionsMixin:
         )
         self._record_system_event(  # type: ignore[attr-defined]
             SYS_DEVICE_PAGE,
-            detail=f"{kind} {'muted' if on else 'unmuted'}, {MUTE_SOURCES_SAID.get(source, MUTE_SOURCES_SAID['device_page'])}",
+            detail=f"{self._mute_words(device_id, kind, on)} {'muted' if on else 'unmuted'}, {MUTE_SOURCES_SAID.get(source, MUTE_SOURCES_SAID['device_page'])}",
             device_id=device_id,
         )
         self._mark_changed()  # type: ignore[attr-defined]

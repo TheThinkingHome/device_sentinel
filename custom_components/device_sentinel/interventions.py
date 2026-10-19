@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.26.3 (2026-10-14)
+# File: interventions.py, Version: 0.26.6 (2026-10-18)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -45,6 +45,7 @@ from .const import (
     DEV_LOGNORMAL_DAYS,
     FLAP_CHECK_WORDS,
     SYS_DETAIL,
+    SYS_DEVICES,
     DATA_SYSTEM_EVENTS,
     STORM_EXPLAINED_SECONDS,
     SYS_KIND,
@@ -82,6 +83,7 @@ from .const import (
     BRIDGE_DOWN,
     BRIDGE_HANDBACK_SECONDS,
     DATA_DEVICES,
+    DEV_REMOVED_NAME,
     DEV_FROZEN_CATEGORY,
     BROKER_LABEL,
     BRIDGE_SEEN_SINCE,
@@ -119,7 +121,7 @@ from .const import (
     SYS_PAIRING_CLOSED,
     SYS_PAIRING_OPEN,
 )
-from .outage_detail import DOWN, FAILED, make_detail, pair_key, parse_detail
+from .outage_detail import DOWN, FAILED, REMOVED, UNWATCHED, make_detail, pair_key, parse_detail
 
 
 def _spell_minutes(minutes: int) -> str:
@@ -173,6 +175,14 @@ def _reader_loaded(reader: Any) -> bool:
     except Exception as err:  # noqa: BLE001 - never break the tick
         LOGGER.debug("A reader could not say whether it loaded: %s", err)
         return True
+
+
+def _entry_key(entry: Any) -> str:
+    """The key an integration outage is announced under: its entry.
+
+    The same shape is built from a domain and an entry id where the
+    entry itself is gone (round 32 of 0.26.6)."""
+    return f"{entry.domain}|{entry.entry_id}"
 
 class InterventionMixin:
     """Interventions and upstreams, mixed into the coordinator."""
@@ -557,30 +567,30 @@ class InterventionMixin:
         on both halves of the pair, and is what an automation deciding
         whether to wake somebody actually wants.
 
-        Watched and not freeze-muted. A muted device is never given an
-        unavailable verdict, so it would never have been reported and
-        must not swell a number a person acts on. Excluded and
-        set-aside devices are not in `_watched` at all.
+        Watched, muted or not: an upstream that goes down carries every
+        device behind it, and the count reads the same on a bridge, a
+        broker and an integration (James, 18 October 2026, round 30 of
+        0.26.6). Excluded and set-aside devices are not in `_watched`
+        at all.
 
-        A broker, with stack None, carries every watched device on
-        every stack that has a reader, because that is what a stopped
-        broker takes with it.
+        A broker, with stack None, carries the devices that reach Home
+        Assistant through it (`_rides_the_broker`, since 0.23.12), not
+        every device on a stack with a reader: a Z-Wave or ZHA device
+        does not go down with the broker (round 31 of 0.26.6).
         """
+        if stack is None:
+            return len([d for d in self._watched if self._rides_the_broker(d)])
         return sum(
             1
             for device_id in self._watched
-            if (
-                self._stack_for_device(device_id) is not None
-                if stack is None
-                else self._stack_for_device(device_id) == stack
-            )
-            and not self._freeze_muted(device_id)
+            if self._stack_for_device(device_id) == stack
         )
 
     def _say_upstream_down(
         self, kind: str, name: str, stack: str | None, since: float,
         devices: int | None = None,
         confirmed: int | None = None,
+        key: str | None = None,
     ) -> None:
         """Put an upstream failure on the bus, or hold it for grace.
 
@@ -596,10 +606,12 @@ class InterventionMixin:
         `_announce_held_upstreams` fires it on the first sample after
         the grace, carrying the moment it really happened.
         """
+        # The outage's own key; an integration's is its config entry.
+        key = key or name
         if self._in_startup_grace():
-            self._upstream_held[name] = (kind, stack, since, devices)
+            self._upstream_held[key] = (kind, stack, since, devices, name)
             return
-        self._upstream_said[name] = (kind, stack, since, devices)
+        self._upstream_said[key] = (kind, stack, since, devices)
         self.fire_upstream_down(
             kind,
             name,
@@ -618,8 +630,8 @@ class InterventionMixin:
             return
         held = dict(self._upstream_held)
         self._upstream_held.clear()
-        for name, (kind, stack, since, devices) in held.items():
-            self._say_upstream_down(kind, name, stack, since, devices)
+        for key, (kind, stack, since, devices, name) in held.items():
+            self._say_upstream_down(kind, name, stack, since, devices, key=key)
 
     def _say_upstream_restored(
         self,
@@ -629,6 +641,7 @@ class InterventionMixin:
         since: float | None,
         now: float,
         devices: int | None = None,
+        key: str | None = None,
     ) -> None:
         """Put an upstream recovery on the bus."""
         # An outage nobody was told about gets no recovery. The held
@@ -636,8 +649,11 @@ class InterventionMixin:
         # ended; this covers the narrower one where it came and went
         # entirely inside it, which is a restart artifact and not an
         # event a person needs.
-        self._upstream_held.pop(name, None)
-        said = self._upstream_said.pop(name, None)
+        key = key or name
+        self._upstream_held.pop(key, None)
+        said = self._upstream_said.pop(key, None)
+        owed = key in self._upstream_owed
+        self._upstream_owed.discard(key)
         if said is None:
             return
         # The pair must agree about what it was about, so the count
@@ -656,6 +672,7 @@ class InterventionMixin:
             if devices is None
             else devices,
             max(0.0, now - began),
+            owed=owed,
         )
 
     def _sample_integrations(self, now: float) -> None:
@@ -691,8 +708,12 @@ class InterventionMixin:
             if self.hub_takes_over(device_id):  # type: ignore[attr-defined]
                 continue
             entry_id = self._entry_of_device.get(device_id)
-            if entry_id is None or self._freeze_muted(device_id):
+            if entry_id is None:
                 continue
+            # A device muted for unavailable still counts (round 29 of
+            # 0.26.6): an integration that goes down outranks the
+            # device's own verdicts and holds them, muted or not (James,
+            # 18 October 2026).
             behind[entry_id] = behind.get(entry_id, 0) + 1
             carried[entry_id] = device_id
         # The one device an entry carries, where it carries one
@@ -703,7 +724,14 @@ class InterventionMixin:
             for entry_id, count in behind.items()
             if count == 1
         }
-        self._resume_integration_outages()
+        # That entry failing is that device unavailable, so a mute on
+        # the device silences it, as it always has.
+        muted_only: set[str] = set()
+        for entry_id, device_id in self._entry_only_device.items():
+            if self._unavailable_muted(device_id):  # type: ignore[attr-defined]
+                behind.pop(entry_id, None)
+                muted_only.add(entry_id)
+        self._resume_integration_outages(behind)
 
         hub_entries = {
             entry_id
@@ -730,7 +758,31 @@ class InterventionMixin:
                 if entry is not None and since is not None:
                     self._integration_back(entry, since, now)
                 continue
-            self._entry_down_at.pop(entry_id, None)
+            if entry_id in muted_only and entry_id in self._integration_told:
+                # Still watched through a device muted for unavailable,
+                # which the mute keeps silent: not "no longer watched"
+                # (round 34 of 0.26.6). Closed when it loads, as any.
+                entry = self.hass.config_entries.async_get_entry(entry_id)
+                if entry is not None and entry.state is not ConfigEntryState.LOADED:
+                    continue
+                since = self._entry_down_at.pop(entry_id, None)
+                if entry is not None and since is not None:
+                    self._integration_back(entry, since, now)
+                    continue
+                if since is not None:
+                    self._integration_removed(entry_id, since, now)
+                continue
+            since = self._entry_down_at.pop(entry_id, None)
+            if since is not None and entry_id in self._integration_told:
+                # Deleted from Home Assistant while down: closed as
+                # removed (round 32 of 0.26.6). Still there but nothing
+                # of it watched any more, excluded or set aside: closed as
+                # no longer watched (round 33). Either way the bus pair
+                # and the log both end.
+                gone = self.hass.config_entries.async_get_entry(entry_id) is None
+                self._integration_removed(
+                    entry_id, since, now, REMOVED if gone else UNWATCHED
+                )
 
         for entry_id in behind:
             entry = self.hass.config_entries.async_get_entry(entry_id)
@@ -773,7 +825,7 @@ class InterventionMixin:
             if entry is not None and self._integration_new(entry_id):
                 self._integration_gone(entry, first, behind[entry_id])
 
-    def _resume_integration_outages(self) -> None:
+    def _resume_integration_outages(self, behind: dict[str, int]) -> None:
         """Take back, once a run, the entry outages still open in the
         events log (0.22.23).
 
@@ -807,13 +859,40 @@ class InterventionMixin:
             self._integration_told.add(entry_id)
             self._integration_detail[entry_id] = row[SYS_DETAIL]
             self._entry_down_at[entry_id] = float(when)
+            # The bus heard it go down before the restart, so it is owed
+            # its recovery after (round 32 of 0.26.6), with the count it
+            # was announced with where the log kept it.
+            scope = row.get(SYS_SCOPE)
+            if isinstance(scope, str):
+                self._integration_domain[entry_id] = scope
+                # The count the down was announced with, kept on its row
+                # since 0.26.6; an older row is counted as it is now.
+                devices = row.get(SYS_DEVICES)
+                if not isinstance(devices, int) or isinstance(devices, bool):
+                    devices = behind.get(entry_id, 0)
+                key = f"{scope}|{entry_id}"
+                self._upstream_said[key] = (
+                    UPSTREAM_INTEGRATION, None, float(when), devices,
+                )
+                self._upstream_owed.add(key)
 
     def outage_device_name(self, detail: Any) -> str | None:
         """The device an entry outage was, by its name, or None."""
         device_id = parse_detail(detail)[1]
         if device_id is None:
             return None
-        return self._device_names.get(device_id)
+        name = self._device_names.get(device_id)
+        if name is not None:
+            return name
+        # Set aside or excluded since, or removed and held: the name it
+        # had, so a one-device entry is still told as that device (round
+        # 34 of 0.26.6).
+        aside = getattr(self, "_set_aside", {}).get(device_id)
+        if aside:
+            return aside[0]
+        record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
+        held = record.get(DEV_REMOVED_NAME)
+        return held if isinstance(held, str) and held else None
 
     def _integration_new(self, entry_id: str) -> bool:
         """True the first time an outage passes the dwell."""
@@ -833,10 +912,41 @@ class InterventionMixin:
         # confirmed it (0.22.23), so an outage resumed after a restart
         # keeps its own start.
         self._record_system_event(
-            SYS_INTEGRATION_DOWN, scope=entry.domain, detail=detail, when=since
+            SYS_INTEGRATION_DOWN, scope=entry.domain, detail=detail, when=since,
+            devices=behind,
         )
+        self._integration_behind[entry.entry_id] = behind
+        self._integration_domain[entry.entry_id] = entry.domain
         self._say_upstream_down(
-            UPSTREAM_INTEGRATION, entry.domain, None, since, behind
+            UPSTREAM_INTEGRATION, entry.domain, None, since, behind,
+            key=_entry_key(entry),
+        )
+
+    def _integration_removed(
+        self, entry_id: str, since: float, now: float, how: str = REMOVED
+    ) -> None:
+        """Close the outage of an entry deleted, or no longer watched,
+        while it was down.
+
+        Not a recovery: the brief says which. The bus hears its
+        restored half, so an automation waiting on the pair ends.
+        """
+        self._integration_told.discard(entry_id)
+        self._integration_behind.pop(entry_id, None)
+        domain = self._integration_domain.pop(entry_id, None)
+        old = self._integration_detail.pop(entry_id, None)
+        device_id = parse_detail(old)[1]
+        if domain is None:
+            return
+        self._record_system_event(
+            SYS_INTEGRATION_UP,
+            scope=domain,
+            detail=make_detail(entry_id, device_id, how),
+            duration=now - since,
+        )
+        self._say_upstream_restored(
+            UPSTREAM_INTEGRATION, domain, None, since, now,
+            key=f"{domain}|{entry_id}",
         )
 
     def _integration_back(self, entry, since: float, now: float) -> None:
@@ -861,8 +971,21 @@ class InterventionMixin:
         self._integration_fell[domain] = self._integration_casualties(
             domain
         )
-        # Read while the window holds the claim.
+        # Read while the window holds the claim. The total is this
+        # entry's devices, not the whole integration's: one plug of
+        # five coming back says "its device" (round 31 of 0.26.6).
         ended = self._upstream_ended(domain)
+        carried = self._integration_behind.pop(entry.entry_id, None)
+        if carried is None:
+            # Not announced in this run (resumed after a restart): count
+            # the entry's watched devices as they are now.
+            carried = len([
+                device_id
+                for device_id in self._watched
+                if self._entry_of_device.get(device_id) == entry.entry_id
+            ])
+        if carried:
+            ended["devices"] = max(carried, ended["worst"])
         self._integration_told.discard(entry.entry_id)
         self._record_system_event(
             SYS_INTEGRATION_UP,
@@ -872,7 +995,8 @@ class InterventionMixin:
             **ended,
         )
         self._say_upstream_restored(
-            UPSTREAM_INTEGRATION, entry.domain, None, since, now
+            UPSTREAM_INTEGRATION, entry.domain, None, since, now,
+            key=_entry_key(entry),
         )
 
     def integration_down_since(self, device_id: str) -> tuple[str, float] | None:
@@ -1232,9 +1356,15 @@ class InterventionMixin:
             return len(getattr(self, "_wifi_ties", {}) or {})
         if name in self._stacks:
             return self._upstream_devices(name)
+        # Every device of the integration, muted or not, as on a bridge
+        # (round 30 of 0.26.6), except one that is its entry's only
+        # device and muted for unavailable: that entry failing is the
+        # device, and its mute keeps it silent.
+        only = set(getattr(self, "_entry_only_device", {}).values())
         return sum(
             1 for device_id, domain in self._watched.items()
-            if domain == name and not self._freeze_muted(device_id)
+            if domain == name
+            and not (device_id in only and self._unavailable_muted(device_id))  # type: ignore[attr-defined]
         )
 
     def upstream_down_since_for(self, name: str) -> float | None:
@@ -1386,7 +1516,7 @@ class InterventionMixin:
                 # would arrive with no failure before it, and an
                 # automation pairing the two would never close.
                 self._upstream_held[stack] = (
-                    UPSTREAM_BRIDGE, stack, float(since), None
+                    UPSTREAM_BRIDGE, stack, float(since), None, stack
                 )
 
     def _read_bridge(

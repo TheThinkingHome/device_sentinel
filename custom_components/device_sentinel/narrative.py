@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.26.5 (2026-10-16)
+# File: narrative.py, Version: 0.26.6 (2026-10-17)
 
 """How to say what happened: the composer.
 
@@ -138,7 +138,8 @@ class NarrativeMixin:
     _EVENT_WORDING = {
         TODO_KIND_FLAPPING: "started dropping out again and again",
         TODO_KIND_FROZEN: "stopped reporting",
-        TODO_KIND_UNAVAILABLE: "went unavailable",
+        # "became unavailable" (James, 17 October 2026).
+        TODO_KIND_UNAVAILABLE: "became unavailable",
         TODO_KIND_UNKNOWN: "went unknown",
         TODO_KIND_RAILED_SIGNAL: "signal railed",
         # Present tense, because nothing happened to the device: what
