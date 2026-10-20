@@ -6,7 +6,7 @@ Device Sentinel is under active development. These are the releases published as
 
 A device that is plugged in and quiet is no longer called frozen: ESPHome devices are judged by their connection, and Matter lights and plugs by being available. A Z-Wave device its network calls dead is reported unavailable, Lutron Caséta is judged by its hub, and freeze and unavailable mute apart. The dashboard opens in Simple, a falling battery's time left comes from its own history, and Music Assistant and your televisions are excluded for you.
 
-- Co-authored with Tim Plas (@tplas).
+Co-authored with Tim Plas (@tplas).
 
 ## [0.25.6](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.25.6), October 11, 2026
 
