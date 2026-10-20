@@ -1,6 +1,6 @@
-// File: tools/panel_checks/check_battery_future.js, Version: 0.26.7 (2026-10-19)
-// Panel checks: the device page's Future view (rulings #703 to #705).
-// Written for 0.26.7 (2026-10-19).
+// File: tools/panel_checks/check_battery_future.js, Version: 0.26.8 (2026-10-20)
+// Panel checks: the device page's Future view (rulings #703 to #705, #713).
+// Written for 0.26.7 (2026-10-19); the chart James reviewed on 19 October in 0.26.8.
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_future.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -99,10 +99,47 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   check("every kept day as a light dot", a.root.querySelectorAll(".futurechart circle").length === DOOR.length);
   check("the low battery line, since the range reaches it", lowLine(a.root));
   check("the range in words", text(a.root).includes("Expected empty in about 4 to 5 weeks."));
+  // James's review of 19 October (#713).
+  const today = a.root.querySelector(".futurechart line[stroke='var(--secondary-text-color)']");
+  const history = [...a.root.querySelectorAll(".futurechart polyline")].find((l) => !l.classList.contains("futureline"));
+  const lastPoint = history.getAttribute("points").split(" ").pop().split(",").map(Number);
+  const yOf = (v) => 190 - (v / 100) * 170;
+  check("the history runs to today's reading", Math.abs(lastPoint[0] - Number(today.getAttribute("x1"))) < 0.2
+    && Math.abs(lastPoint[1] - yOf(16.5)) < 0.2, lastPoint);
+  const lines = [...a.root.querySelectorAll(".futurechart polyline.futureline")];
+  check("the future is red, nothing orange", lines.length === 2
+    && lines.every((l) => l.getAttribute("stroke") === "var(--error-color, #db4437)")
+    && a.root.querySelector(".futurechart polygon").getAttribute("fill") === "var(--error-color, #db4437)"
+    && !chart(a.root).innerHTML.includes("warning-color"));
+  check("both lines bold", lines.every((l) => Number(l.getAttribute("stroke-width")) >= 2.4));
+  const floor = (l) => l.getAttribute("points").split(" ").filter((pt) => Math.abs(Number(pt.split(",")[1]) - 190) < 0.05).length;
+  check("each line stops where it empties, none runs along the floor", lines.every((l) => floor(l) === 1),
+    lines.map(floor));
+  const ends = lines.map((l) => Number(l.getAttribute("points").split(" ").pop().split(",")[0]));
+  check("the two lines end apart", Math.abs(ends[0] - ends[1]) > 20, ends);
+  const dates = [...a.root.querySelectorAll(".futurechart text.zerodate")].map((t) => t.textContent);
+  const when = (days) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + Math.round(days));
+    return d.toLocaleDateString([], { month: "short", day: "numeric" }); };
+  check("the day each line empties, under the axis", dates.length === 2 && dates[0] === when(26.9) && dates[1] === when(35.2),
+    [dates, when(26.9), when(35.2)]);
+  check("a tick on the axis at each", a.root.querySelectorAll(".futurechart line.zerotick").length === 2);
   check("the Future button reads pressed", button(a.root, "Future").getAttribute("aria-pressed") === "true");
   button(a.root, "30 Days").click();
   await settle();
   check("another range brings back the history chart", !chart(a.root));
+
+  console.log("A far end that does not empty in view");
+  const wide = withBattery({ ...JSON.parse(JSON.stringify(door.device({}).battery)),
+    projection: { ...DOOR_PROJECTION, far: 200, far_path: [-0.08, 0] } });
+  const w = await open(`${PREFIX}/device/${DEVICE}`, wide);
+  button(w.root, "Future").click();
+  await settle();
+  const pts = w.root.querySelector(".futurechart polygon").getAttribute("points").split(" ").map((p) => p.split(",").map(Number));
+  const farLines = [...w.root.querySelectorAll(".futurechart polyline.futureline")];
+  const farEnd = farLines[1].getAttribute("points").split(" ").pop().split(",").map(Number);
+  check("the band closes along empty under the far line's last point", pts.some(([px, py]) => Math.abs(px - farEnd[0]) < 0.2 && Math.abs(py - 190) < 0.2),
+    farEnd);
+  check("only the near end's day is written", w.root.querySelectorAll(".futurechart text.zerodate").length === 1);
 
   console.log("A slow steady fall, far past the limit");
   const b = await open(`${PREFIX}/device/${DEVICE}`, slow);

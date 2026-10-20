@@ -1,7 +1,7 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.26.7 (2026-10-19)
-// Panel checks: Simple and Advanced (rulings #693, #694, #703, #706).
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.26.8 (2026-10-20)
+// Panel checks: Simple and Advanced (rulings #693, #694, #703, #706, #716).
 // The setting opens the dashboard; the switch holds while the page is
-// open and nothing is kept; Simple's tabs, its read-only device page
+// open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
 // and its battery chart; Mute by label in Advanced.
 // Run with: LC_ALL=en_US.UTF-8 node check_simple_dashboard.js [path/to/panel.js]
 const fs = require("fs");
@@ -117,12 +117,19 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   await click(modeButton(root, "Advanced"));
   check("the switch moves the page to Advanced", tabs(root).length === 8, tabs(root));
   check("and shows Advanced pressed", modeButton(root, "Advanced").getAttribute("aria-pressed") === "true");
+  // A tab hidden for five minutes: Home Assistant takes the dashboard
+  // out of the page and puts the same one back when it is shown (#716).
   panel.remove();
   window.document.body.append(panel);
   await panel._refresh();
   await settle();
-  check("leaving the dashboard returns it to the setting", tabs(root).length === 6, tabs(root));
+  check("a hidden tab shown again keeps the switch (#716)", tabs(root).length === 8
+    && modeButton(root, "Advanced").getAttribute("aria-pressed") === "true", tabs(root));
   check("nothing is kept in the browser", window.localStorage.length === 0 && window.sessionStorage.length === 0);
+  // Leaving for another page of Home Assistant: the dashboard opened
+  // again is a new one, which starts from the setting.
+  ({ root } = await open({ __mode: "simple", __path: "" }));
+  check("leaving the dashboard returns it to the setting", tabs(root).length === 6, tabs(root));
   ({ root } = await open({ __mode: "simple", __path: "/signal-trends" }));
   check("a hidden tab still opens from a link, and shows while open", tabs(root).includes("Signal Trends"), tabs(root));
   ({ root } = await open({ __mode: "advanced", __path: "" }));

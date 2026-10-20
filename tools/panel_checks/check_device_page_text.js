@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: tools/panel_checks/check_device_page_text.js, Version: 0.26.6 (2026-10-17)
+// File: tools/panel_checks/check_device_page_text.js, Version: 0.26.8 (2026-10-20)
 //
 // Panel checks: the device page reads at one size (0.26.1). Secondary
 // text such as "heard by Device Sentinel 9m ago" and "heartbeat: when ZHA
@@ -253,6 +253,16 @@ const PAGES = [
     const line = root.querySelector(".statusline .muted");
     check(`A connection-only device reads "${expected}"`, line && line.textContent === expected, line && line.textContent);
     check(`A connection-only device ${word} has no window bar`, !root.querySelector(".devstatus .bar"));
+  }
+  // A Matter device with no battery (#710; adversarial round of 0.26.8):
+  // its page says how it is judged, with no window bar or wait rule.
+  {
+    const { root } = await open({ tweak: (p) => { p.status.available_rule = true; p.status.window = 7200; } });
+    const line = root.querySelector(".statusline .muted");
+    check("A Matter device judged by being available says so",
+      line && line.textContent.endsWith("Not called frozen while Home Assistant shows it available."), line && line.textContent);
+    check("It has no window bar", !root.querySelector(".devstatus .bar"));
+    check("Nor a wait rule", !root.querySelector(".pane").textContent.includes("Wait rule"));
   }
   {
     const source = fs.readFileSync(PANEL, "utf8");

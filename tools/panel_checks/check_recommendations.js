@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_recommendations.js, Version: 0.26.7 (2026-10-19)
+// File: tools/panel_checks/check_recommendations.js, Version: 0.26.8 (2026-10-20)
 // Panel checks: the Recommendations tab. Its opening line counts the
 // recommendations, says they help Device Sentinel run better, and says
 // none of them is required; no card is singled out (#626, 0.25.6).
@@ -6,6 +6,8 @@
 // Since 0.26.7: the switched-off cards' Turn on chips (#696, #698), a
 // tick on each row and each written line (#699), and the count on the
 // tab, the highlighted top-band button and the Daily Brief tab (#700).
+// Since 0.26.8: a card stays open, and the page stays put, after a
+// tick or an answer (#714).
 // Run with: LC_ALL=en_US.UTF-8 node check_recommendations.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -222,6 +224,55 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   undo.dispatchEvent(new acks.window.Event("change"));
   await settle(); await settle();
   check("A tick can be taken back, and counts again", tabLabel() === "Recommendations (1)", tabLabel());
+
+  console.log("\nA card stays open after an answer (ruling #714)");
+  ticks = { line: false, [ROWS[0].device_id]: false };
+  const SLOW_CARD = { kind: "slow", title: "Slow Reporting Devices", simple: true, active: 1, body: "One device.",
+    devices: [{ device_id: ROWS[2].device_id, name: "Garage Door", area: "Garage", acknowledged: false }] };
+  const stay = await open({ path: `${PREFIX}/recommendations?open=battery_off`, answers: {
+    recommendations: () => { const r = recs(); r.devices.push(JSON.parse(JSON.stringify(SLOW_CARD))); return r; },
+    recommendation_ack: (message) => { if (message.line) ticks.line = message.on; else ticks[message.device_id] = message.on; return {}; },
+  } });
+  const cardOf = (kind) => [...stay.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === kind);
+  const isOpen = (kind) => cardOf(kind).querySelector("details").hasAttribute("open");
+  // The page's scroll, kept by the host here; a redraw that moved it
+  // is what the browser does when the tab is rebuilt.
+  let top = 0;
+  Object.defineProperty(stay.panel, "scrollTop", { configurable: true, get: () => top, set: (v) => { top = v; } });
+  const pane = stay.root.querySelector(".pane");
+  const replace = pane.replaceChildren.bind(pane);
+  pane.replaceChildren = (...nodes) => { top = 0; replace(...nodes); };
+  let scrolled = 0;
+  stay.window.Element.prototype.scrollIntoView = function () { scrolled += 1; };
+  await stay.panel._refresh(); await settle();
+  check("The address opens its card", isOpen("battery_off") && !isOpen("slow"));
+  const scrolledFirst = scrolled;
+  top = 640;
+  const tick = cardOf("battery_off").querySelector("tbody tr input[type=checkbox]");
+  tick.checked = true;
+  tick.dispatchEvent(new stay.window.Event("change"));
+  await settle(); await settle();
+  check("A tick leaves the card open", isOpen("battery_off"));
+  check("And the page where it was", top === 640, top);
+  check("The address's card is scrolled to once, not at each answer", scrolled === scrolledFirst, [scrolledFirst, scrolled]);
+  cardOf("battery_off").querySelector("button.chip").click();
+  await settle(); await settle();
+  check("An action leaves the card open", isOpen("battery_off"));
+  const slowDetails = cardOf("slow").querySelector("details");
+  slowDetails.open = true;
+  slowDetails.dispatchEvent(new stay.window.Event("toggle"));
+  cardOf("slow").querySelector("button.chip").click();
+  await settle(); await settle();
+  check("A card the person opened stays open after its own action", isOpen("slow") && isOpen("battery_off"));
+  const offDetails = cardOf("battery_off").querySelector("details");
+  offDetails.open = false;
+  offDetails.dispatchEvent(new stay.window.Event("toggle"));
+  const again = cardOf("battery_off").querySelector("tbody tr input[type=checkbox]");
+  again.checked = false;
+  again.dispatchEvent(new stay.window.Event("change"));
+  await settle(); await settle();
+  check("A card the person closed stays closed", !isOpen("battery_off") && isOpen("slow"));
+  check("Nothing is kept in the browser", stay.window.localStorage.length === 0 && stay.window.sessionStorage.length === 0);
 
   console.log("\nThe Daily Brief tab's line (ruling #700)");
   ticks = { line: false, [ROWS[0].device_id]: false };
