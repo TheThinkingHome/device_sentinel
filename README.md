@@ -134,7 +134,7 @@ Device Sentinel's settings are designed to be set once and forgotten. For comple
 | **WiFi** | Experimental | A Wi-Fi outage is one alert. Needs a wireless adapter on your server or a supported router. |
 | **Z-Wave** | Working | A node Z-Wave JS reports dead makes its device unavailable, and an integration outage is one alert. |
 | **Lutron Caséta** | Experimental | Devices are judged by their hub: a hub that goes down is one alert. |
-| **Matter** | Basic Detection | Devices watched; an integration outage is one alert. Next: Matter's own view of each device. |
+| **Matter** | Working | A device that loses power is reported unavailable within minutes, and one with no battery is never called frozen while it is available. Next: battery devices on Thread. |
 
 ## AI Disclosure
 
@@ -142,7 +142,9 @@ Device Sentinel was built with AI assistance under my direction. Every design de
 
 ## Latest Releases
 
-Device Sentinel is under active development. The three newest releases published as Latest are below, and the [changelog](CHANGELOG.md) lists every release since the first.
+Device Sentinel is under active development. The release candidate for the next Latest and the three newest releases published as Latest are below, and the [changelog](CHANGELOG.md) lists every release since the first.
+
+**[0.26.8](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.26.8), October 20, 2026, release candidate for Latest.** A device that is plugged in and quiet is no longer called frozen: ESPHome devices are judged by their connection, and Matter lights and plugs by being available. A Z-Wave device its network calls dead is reported unavailable, Lutron Caséta is judged by its hub, and freeze and unavailable mute apart. The dashboard opens in Simple, a falling battery's time left comes from its own history, and Music Assistant and your televisions are excluded for you.
 
 **[0.25.6](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.25.6), October 11, 2026.** Each device has a type you can set from its page, and the tabs sort and filter by it. Hardware that several integrations list is watched once, and you can exclude a single device from its page or from Settings.
 
