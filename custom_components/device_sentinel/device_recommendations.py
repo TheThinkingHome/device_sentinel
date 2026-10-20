@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.26.7 (2026-10-19)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.26.8 (2026-10-20)
 
 """Recommendations about single devices, for the Recommendations tab (0.24.9).
 
@@ -240,7 +240,8 @@ class DeviceRecommendationsMixin:
         # person's habits rather than a rhythm, and a freeze verdict for
         # it comes late and is often noise. The card offers a freeze
         # mute and changes nothing itself; a device already muted for
-        # freeze or for everything, and an awake ESPHome device #636 never judges frozen,
+        # freeze or for everything, and an awake ESPHome device #636 or an
+        # available Matter device with no battery #710 never judges frozen,
         # are left off. Not in the emailed brief: a slow device is not
         # a fault (#617's reasoning). The text is James's.
         slow = [d for d in watched if self._slow_reporter(d)]  # type: ignore[attr-defined]
@@ -467,7 +468,12 @@ class DeviceRecommendationsMixin:
         # the card still offers the mute (adversarial round five,
         # 12 October 2026).
         if (
-            (self._awake_esphome(device_id) or self._dropped_esphome(device_id))  # type: ignore[attr-defined]
+            (
+                self._awake_esphome(device_id)  # type: ignore[attr-defined]
+                or self._dropped_esphome(device_id)  # type: ignore[attr-defined]
+                # A Matter device with no battery, available (#710).
+                or self._matter_available_now(device_id)  # type: ignore[attr-defined]
+            )
             and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
         ):
             return False

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.26.7 (2026-10-19)
+# File: dashboard.py, Version: 0.26.8 (2026-10-20)
 
 """What the dashboard reads from the coordinator.
 
@@ -97,6 +97,7 @@ from .const import (
     DEV_EVENT_COUNT,
     DEV_FIRST_OBSERVED,
     DEV_FROZEN_CATEGORY,
+    FREEZE_CATEGORY_FROZEN,
     DEV_LAST_ACTIVITY,
     DEV_SIGNAL_DAILY_P5,
     DEV_SIGNAL_DAILY_P50,
@@ -917,6 +918,15 @@ class DeviceViewMixin:
             return STATUS_NEVER_REPORTED
         return STATUS_REPORTING
 
+    def _judged_available(self, device_id: str, record: dict[str, Any]) -> bool:
+        """Whether the device is judged by being available rather than by a
+        window (#710): a Matter device with no battery, with no frozen
+        verdict standing."""
+        return bool(
+            self._matter_available_now(device_id)  # type: ignore[attr-defined]
+            and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
+        )
+
     def dashboard_devices(self) -> list[dict[str, Any]]:
         """One row per watched device, by name."""
         records = self.data.get(DATA_DEVICES) or {}
@@ -937,7 +947,12 @@ class DeviceViewMixin:
                 "acknowledged": bool(problem and problem["acknowledged"]),
                 "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
                 "rhythm": rhythm,
-                "window": self._freeze_window(record) if record.get(DEV_DAILY_MAX) else None,
+                # No window for a device judged by being available (#710).
+                "window": (
+                    self._freeze_window(record)
+                    if record.get(DEV_DAILY_MAX) and not self._judged_available(device_id, record)
+                    else None
+                ),
                 "type": self.type_words(device_id),
                 # For the tab's Area and Label filters (ruling #658).
                 **self._area_and_labels(device_id),
@@ -1197,6 +1212,10 @@ class DeviceViewMixin:
                 # No freeze window for a device judged by its connection
                 # alone (eighteenth adversarial round of 0.26.6).
                 "window": None if self._connection_only(device_id) else self._freeze_window(record),  # type: ignore[attr-defined]
+                # A Matter device with no battery, never newly called
+                # frozen while available (#710): the page says so in
+                # place of its window (adversarial round of 0.26.8).
+                "available_rule": self._judged_available(device_id, record),
                 # The rule in use, as people read it: "37-Day
                 # Log-Normal Percentile" (0.24.0).
                 "rule": self.rule_label(self._freeze_rhythm(record)),
@@ -1294,7 +1313,7 @@ class DeviceViewMixin:
             "weeks": trend["weeks"],
             "reading": trend["reading"],
             "fit": trend["fit"] if falling else None,
-            "sentence": battery_sentence(trend, dt_util.now().date() - timedelta(days=1)),
+            "sentence": battery_sentence(trend, dt_util.now().date() - timedelta(days=1), projection),
             "falling": falling,
             "left": self.battery_time_left_range(days, far) if days is not None else None,
             "left_soon": days is not None and days <= self._battery_days(),
@@ -1485,7 +1504,8 @@ class BriefViewMixin:
                 opened.pop(key, None)
         rows = []
         for (device_id, kind), row in opened.items():
-            if device_id in self._muted_devices:
+            if self._brief_muted(device_id, kind):  # type: ignore[attr-defined]
+                # The kinds its mutes cover, as the written brief (#715).
                 continue
             rows.append({
                 "device_id": device_id,
@@ -1540,7 +1560,7 @@ class BriefViewMixin:
             row
             for row in withdrawals_once(fold(self.incident_rows()))
             if start <= row[INC_WHEN] < end
-            and row[INC_DEVICE_ID] not in self._muted_devices
+            and self._brief_keeps(row)  # type: ignore[attr-defined]
             and row[INC_DEVICE_ID] not in silenced
         ]
         system = [

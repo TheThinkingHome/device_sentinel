@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.26.6 (2026-10-18)
+# File: detect_freeze.py, Version: 0.26.8 (2026-10-20)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -42,10 +42,12 @@ from typing import Any
 from homeassistant.const import (
     STATE_UNKNOWN,
 )
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+from .device_fields import device_field
 from .records import BAD_STATES
-from .stacks import node_dead, node_up, reader_for_domain
+from .stacks import available_speaks, node_dead, node_up, reader_for_domain
 
 from .rhythm_rules import lognormal_days, lognormal_rhythm
 from .const import (
@@ -270,6 +272,43 @@ class FreezeMixin:
         if self._watched.get(device_id) != "esphome":
             return False
         return self._esphome_flags(device_id) == (False, True)
+
+    def _awake_matter(self, device_id: str) -> bool:
+        """Whether this is a Matter device with no battery, whose being
+        available speaks for it (ruling #710).
+
+        A Matter device that is always awake is never newly judged
+        frozen while any of its entities reads available, as an awake
+        ESPHome device is (#636). Tim Plas's test of 19 October 2026: an
+        unplugged lamp and plug were marked away by the Matter server
+        and unavailable by Home Assistant in the same second, about five
+        minutes after they were last heard, so a quiet one that stays
+        available is plugged in and well. A Matter device with a battery
+        entity may sleep and check in, and keeps the freeze rule; so
+        does a device whose entities read nothing but unknown, and a
+        device behind a Matter bridge, which may keep a dead sensor
+        reachable (adversarial round of 0.26.8).
+        """
+        if not available_speaks(self._watched.get(device_id)):
+            return False
+        if device_id in self._battery_entity:
+            return False
+        # A child device, or one gone from the registry, keeps the rule.
+        device = dr.async_get(self.hass).async_get(device_id)
+        return device_field(device, "via_device_id", "") is None
+
+    def _matter_available_now(self, device_id: str) -> bool:
+        """Whether _awake_matter applies now: some entity of the device
+        reads something other than unknown or unavailable, which is when
+        the freeze rule spares it (#710). The page and the Slow
+        Reporting Devices card read this, so neither says it is spared
+        while its entities read nothing but unknown (second adversarial
+        round of 0.26.8)."""
+        if not self._awake_matter(device_id):
+            return False
+        states = self._live_entity_states(device_id)  # type: ignore[attr-defined]
+        known = [s for s in states if s not in (STATE_UNKNOWN, EVENT_RESTING)]
+        return bool(known) and not all(s in BAD_STATES for s in known)
 
     def _dropped_esphome(self, device_id: str) -> bool:
         """Whether an ESPHome device that does not sleep has lost its connection.
@@ -897,11 +936,12 @@ class FreezeMixin:
         # whose connection is up has nothing new to say, which is not
         # a freeze. A verdict already standing is kept until the
         # device reports (#529): a device frozen when 0.26.0 starts is
-        # not told as recovered by a rule changing.
+        # not told as recovered by a rule changing. An available Matter
+        # device with no battery is the same (ruling #710).
         if (
             frozen
             and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
-            and self._awake_esphome(device_id)
+            and (self._awake_esphome(device_id) or self._awake_matter(device_id))
         ):
             return None
         if frozen:

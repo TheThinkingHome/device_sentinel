@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_type.py, Version: 0.26.0 (2026-10-11)
+# File: custom_components/device_sentinel/device_type.py, Version: 0.26.8 (2026-10-20)
 
 """What each device is, in plain words (0.25.1, Project__Device_Type.md).
 
@@ -91,6 +91,9 @@ IR_REMOTE = "IR Remote"
 ROUTER = "Router"
 NAS = "NAS"
 UPS = "UPS"
+# From Tim Plas's robot vacuum, D80, typed through Other (James, 20
+# October 2026, #712).
+VACUUM = "Vacuum"
 
 # The kinds of entity that settle a type on their own, checked first.
 # A camera with a switch for its spotlight is still a camera, and a
@@ -98,6 +101,10 @@ UPS = "UPS"
 # with a door contact is a lock, a thermostat that reports temperature
 # is a thermostat, and a valve with a leak probe is a valve (0.25.2).
 DOMAIN_TYPES: tuple[tuple[str, str], ...] = (
+    # A robot vacuum reports a vacuum entity (#712), and some add a
+    # camera for their map, so it is read first (adversarial round of
+    # 0.26.8).
+    ("vacuum", VACUUM),
     ("camera", CAMERA),
     ("assist_satellite", VOICE_ASSISTANT),
     # A blind and a shade are both a cover (James, 8 October 2026):
@@ -166,10 +173,38 @@ TYPE_CHOICES: tuple[str, ...] = (
         THREAD_BORDER_ROUTER, MATTER_BRIDGE, ZIGBEE_ROUTER, ZWAVE_REPEATER,
         THREAD_ROUTER, HUB, PRINTER, DASHBOARD, PLANT_WATERER, MULTI_SENSOR,
         LOCK, THERMOSTAT, VALVE, SIREN, FAN, LIGHT, BLUETOOTH_PROXY, ESPHOME_DEVICE,
-        APPLIANCE, IR_REMOTE, ROUTER, NAS, UPS,
+        APPLIANCE, IR_REMOTE, ROUTER, NAS, UPS, VACUUM,
     }, key=str.casefold),
     TYPE_OTHER,
 )
+
+# Earlier names for a type now on the list, typed through Other before
+# the list named it (#717): the reference rig's two SLZB coordinators,
+# typed on 9 October 2026 before 0.25.2 named them, its Z-Wave stick,
+# and Tim Plas's Broadlink. Keys are folded as _folded folds them.
+EARLIER_TYPE_NAMES: dict[str, str] = {
+    "zhacoordinator": ZIGBEE_COORDINATOR_ZHA,
+    "zigbee2mqttcoordinator": ZIGBEE_COORDINATOR_Z2M,
+    "z2mcoordinator": ZIGBEE_COORDINATOR_Z2M,
+    "zwavecoordinator": ZWAVE_CONTROLLER,
+    "rfirremote": IR_REMOTE,
+}
+
+
+def _folded(words: str) -> str:
+    """A type's words with case, spaces and punctuation set aside."""
+    return "".join(ch for ch in words.casefold() if ch.isalnum())
+
+
+_LIST_BY_FOLD = {_folded(name): name for name in TYPE_CHOICES if name != TYPE_OTHER}
+
+
+def list_name(words: str) -> str:
+    """An owner's own words, or the list's name when they name a type on
+    the list (#717): the same words in another case or spacing, or an
+    earlier name for it. Anything else is kept as the owner wrote it."""
+    folded = _folded(words)
+    return _LIST_BY_FOLD.get(folded) or EARLIER_TYPE_NAMES.get(folded) or words
 
 
 def _main(entities: list[Any]) -> list[Any]:
@@ -340,7 +375,7 @@ def _clean_entry(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict) or not isinstance(raw.get("type"), str):
         return None
     try:
-        words = clean_type(raw["type"])
+        words = list_name(clean_type(raw["type"]))
     except ValueError:
         return None
     set_at = raw.get("set") if isinstance(raw.get("set"), str) else None
@@ -558,7 +593,8 @@ class TypeMixin:
             self._page_done(device_id, f"type entry removed{used}{many}")  # type: ignore[attr-defined]
             return
         if choice == TYPE_OTHER:
-            words = clean_type(other)
+            # Words that name a type on the list are saved as its name (#717).
+            words = list_name(clean_type(other))
         elif choice in TYPE_CHOICES:
             words = choice
         else:

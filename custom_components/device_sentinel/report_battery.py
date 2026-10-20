@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.26.7 (2026-10-19)
+# File: report_battery.py, Version: 0.26.8 (2026-10-20)
 
 """Which cells are going to be low: the rows, rates and forecast.
 
@@ -269,12 +269,20 @@ def battery_month_drop(series: list[float]) -> float | None:
     return averaged[0] - averaged[-1]
 
 
-def battery_sentence(trend: dict[str, Any], last_day: date | None = None) -> str:
+def battery_sentence(
+    trend: dict[str, Any],
+    last_day: date | None = None,
+    projection: dict[str, Any] | None = None,
+) -> str:
     """One sentence under the device page's table, saying what the
     weeks show (0.23.6); empty for a cell that is not falling.
 
     last_day is the day the newest point describes, yesterday, so the
-    knee can be named as a date rather than a count of days.
+    knee can be named as a date rather than a count of days. A fall the
+    time left follows as a curve is said as speeding up, at the curve's
+    pace today, so the sentence agrees with the range beside it (ruling
+    #713): Door 2nd Bedroom read "at a steady pace" beside a curved
+    range of about 4 to 5 weeks.
     """
     fit = trend.get("fit") or {}
     if trend.get("reading") == READING_ACCELERATING:
@@ -289,6 +297,9 @@ def battery_sentence(trend: dict[str, Any], last_day: date | None = None) -> str
             f"then falling about {trend['pace']:.1f} points a week since."
         )
     if trend.get("reading") == READING_FALLING and trend.get("pace"):
+        pace = (projection or {}).get("pace")
+        if (projection or {}).get("curved") and isinstance(pace, (int, float)) and pace > 0:
+            return f"Falling faster each week, about {pace:.1f} points a week today."
         return f"Falling about {trend['pace']:.1f} points a week, at a steady pace."
     return ""
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stacks.py, Version: 0.26.5 (2026-10-16)
+# File: stacks.py, Version: 0.26.8 (2026-10-20)
 
 """The one place a coordinator stack is registered.
 
@@ -197,6 +197,17 @@ def is_node_status(domain: str | None, ent: Any) -> bool:
             continue
         check = getattr(module, "is_node_status", None)
         return bool(check(ent)) if check is not None else False
+    return False
+
+
+def available_speaks(domain: str | None) -> bool:
+    """Whether a device of this domain with no battery, not behind a
+    bridge, is judged by being available (ruling #710)."""
+    if not domain:
+        return False
+    for module in STACK_MODULES:
+        if module.owns_domain(domain):
+            return bool(getattr(module, "AVAILABLE_SPEAKS", False))
     return False
 
 

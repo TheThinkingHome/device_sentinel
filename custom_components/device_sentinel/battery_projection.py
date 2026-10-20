@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/battery_projection.py, Version: 0.26.7 (2026-10-19)
+# File: custom_components/device_sentinel/battery_projection.py, Version: 0.26.8 (2026-10-20)
 
 """When a falling cell runs empty, as a range (ruling #704).
 
@@ -225,6 +225,9 @@ def _project(series: list[Any], level: float, since: int | None = None) -> dict[
         "near": round(min(near[0], PROJECTION_LONGEST), 1),
         "far": round(min(far_days, PROJECTION_LONGEST), 1) if far_days is not None else None,
         "centre": round(min(centre, PROJECTION_LONGEST), 1),
+        # The fitted pace today, points a week, positive for a fall: what
+        # the sentence above the chart says of a curved fall (#713).
+        "pace": round(-slope * BATTERY_WEEK_DAYS, 1),
         # Each end's path from today, level + slope d + curve d², so the
         # chart draws what was fitted rather than fitting again.
         "near_path": [round(near[1], 5), round(near[2], 7)],

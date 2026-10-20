@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.23.19 (2026-09-30)
+# File: router_ties.py, Version: 0.26.8 (2026-10-20)
 
 """Router ties: which watched devices a router says have left.
 
@@ -70,6 +70,7 @@ trackers reading home, a fault this detector cannot see.
 
 from __future__ import annotations
 
+import asyncio
 import math
 
 import re
@@ -91,14 +92,31 @@ from .const import (
     SYS_WIFI_RECOVERING,
     SYS_WIFI_RECOVERY_WITHDRAWN,
     UPSTREAM_WIFI,
+    CONF_BATTERY_MUTED_DEVICES,
+    CONF_BATTERY_MUTED_INTEGRATIONS,
+    CONF_BATTERY_MUTED_LABELS,
+    CONF_EXCLUDED_DEVICES,
     CONF_EXCLUDED_INTEGRATIONS,
+    CONF_FREEZE_MUTED_DEVICES,
+    CONF_FREEZE_MUTED_INTEGRATIONS,
+    CONF_FREEZE_MUTED_LABELS,
+    CONF_MUTED_DEVICES,
+    CONF_MUTED_INTEGRATIONS,
+    CONF_MUTED_LABELS,
+    CONF_SIGNAL_MUTED_DEVICES,
+    CONF_SIGNAL_MUTED_INTEGRATIONS,
+    CONF_SIGNAL_MUTED_LABELS,
+    CONF_UNAVAILABLE_MUTED_DEVICES,
+    CONF_UNAVAILABLE_MUTED_LABELS,
     DATA_DEVICES,
     DATA_ROUTERS_SEEN,
     DATA_WIFI_MEDIUM,
     DATA_WIFI_MEDIUM_REJECTED,
     DEV_FROZEN_SINCE,
+    AUTO_EXCLUDED_INTEGRATIONS,
     DEFAULT_EXCLUDED_INTEGRATIONS,
     ROUTER_INTEGRATIONS,
+    SYS_FIRST_SEEN_EXCLUDED,
     WIFI_BURST_FLOOR,
     WIFI_HANDBACK_SECONDS,
     WIFI_LOOKBACK_SECONDS,
@@ -490,63 +508,182 @@ class RouterTiesMixin:
             and entry.platform in ROUTER_INTEGRATIONS
         }
 
+    def _first_seen_exclusions_present(self) -> set[str]:
+        """The integrations excluded when first seen that this house has:
+        its router integrations (#420), and those of
+        AUTO_EXCLUDED_INTEGRATIONS with an entry in Home Assistant
+        (ruling #711)."""
+        present = self._router_integrations_present()
+        entries = self.hass.config_entries
+        # An entry a person ignored or disabled is not an integration
+        # the house has (adversarial round of 0.26.8).
+        present |= {
+            domain
+            for domain in AUTO_EXCLUDED_INTEGRATIONS
+            if entries.async_entries(domain, include_ignore=False, include_disabled=False)
+        }
+        return present
+
+    def _choice_made(self, domain: str) -> bool:
+        """Whether the person has already decided something about this
+        integration (James, 20 October 2026): muted it for anything, or
+        muted or excluded any of its devices, on the device or by a
+        label. Their choice stands, and a first sighting does not
+        exclude it over them.
+
+        Read from the options and the registry, not from the watched
+        view, because a device the default list already sets aside has
+        no place in that view (seventh adversarial round of 0.26.8).
+        """
+        options = self.entry.options
+
+        def listed(key: str) -> set[str]:
+            value = options.get(key)
+            return {v for v in value if isinstance(v, str)} if isinstance(value, (list, tuple)) else set()
+
+        for key in (
+            CONF_MUTED_INTEGRATIONS,
+            CONF_FREEZE_MUTED_INTEGRATIONS,
+            CONF_BATTERY_MUTED_INTEGRATIONS,
+            CONF_SIGNAL_MUTED_INTEGRATIONS,
+        ):
+            if domain in listed(key):
+                return True
+        devices: set[str] = set()
+        for key in (
+            CONF_EXCLUDED_DEVICES,
+            CONF_MUTED_DEVICES,
+            CONF_FREEZE_MUTED_DEVICES,
+            CONF_UNAVAILABLE_MUTED_DEVICES,
+            CONF_BATTERY_MUTED_DEVICES,
+            CONF_SIGNAL_MUTED_DEVICES,
+        ):
+            devices |= listed(key)
+        labels: set[str] = set()
+        for key in (
+            CONF_MUTED_LABELS,
+            CONF_FREEZE_MUTED_LABELS,
+            CONF_UNAVAILABLE_MUTED_LABELS,
+            CONF_BATTERY_MUTED_LABELS,
+            CONF_SIGNAL_MUTED_LABELS,
+        ):
+            labels |= listed(key)
+        registry = dr.async_get(self.hass)
+        for entry in self.hass.config_entries.async_entries(domain):
+            for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+                if device.id in devices:
+                    return True
+                if labels & set(device_field(device, "labels", set()) or ()):
+                    return True
+        return False
+
+    def _leave_as_chosen(self, domain: str) -> bool:
+        """A #711 integration the person decided about; never a router
+        integration, which #420 excludes whatever was muted."""
+        return domain in AUTO_EXCLUDED_INTEGRATIONS and self._choice_made(domain)
+
     async def _sight_router_integrations(self) -> None:
         """Exclude a router integration the first time it is seen
-        (ruling #420).
+        (ruling #420), and each of AUTO_EXCLUDED_INTEGRATIONS (#711).
 
-        Fires once per integration, ever. A new install gets these
-        from the default list and never reaches here; an install that
-        already exists gets one added the first time it appears. After
-        that the integration is recorded and never new again, so a
-        person who unexcludes it keeps that choice, which is what
-        keeps this from being a default that reasserts itself.
+        Fires once per integration, ever. A new install gets these from
+        the default list; an install that already exists gets one added
+        the first time it appears, at a start or within a minute of the
+        integration being added while running (James, 20 October 2026),
+        so it is excluded before it can raise a false alarm. One the
+        person has already decided about, by a mute or an exclusion of
+        it or its devices, is left as they chose. After that the
+        integration is recorded and never new again, so a person who
+        takes it off the list keeps that choice.
 
-        The write is grow-only. Updating options reloads the entry, so
-        a sighting that adds nothing must not write at all, or every
-        upgrade on every system with an already-excluded router does a
-        pointless reload and re-runs this on the way back up.
+        The write is grow-only: a sighting that adds nothing writes no
+        options. Runs one at a time.
         """
-        present = self._router_integrations_present()
-        if not present:
+        if self._stopped:  # type: ignore[attr-defined]
             return
+        lock = getattr(self, "_sighting_lock", None)
+        if lock is None:
+            lock = self._sighting_lock = asyncio.Lock()
+        async with lock:
+            # Checked again once the lock is held: a reload may have come
+            # while it waited (eighth adversarial round of 0.26.8).
+            if self._stopped:  # type: ignore[attr-defined]
+                return
+            await self._sight_once()
+
+    async def _sight_once(self) -> None:
+        """One sighting; see _sight_router_integrations.
+
+        Reads the list and writes it with no wait between, so a change
+        the person makes at the same moment is never written over; the
+        file is saved last (sixth adversarial round of 0.26.8).
+        """
+        present = self._first_seen_exclusions_present()
         seen = set(self.data.get(DATA_ROUTERS_SEEN) or [])
         fresh = present - seen
-
-        # Recorded whether or not anything is added, and before the
-        # options are touched. Whether or not: a router already on
-        # the person's list must still stop being new, or the day
-        # they unexclude it the next restart excludes it again, which
-        # is the reasserting default this rule exists to avoid.
-        # Before: updating options reloads the entry, and a reload
-        # that reads these as unseen would add them again on the way
-        # back up, forever.
-        if fresh:
-            self.data[DATA_ROUTERS_SEEN] = sorted(seen | present)
-            await self._save_now()
+        # Recorded whether or not anything is added: one already on the
+        # person's list must still stop being new, or the day they take
+        # it off, the next sighting would add it again.
         if not fresh:
             return
-
+        default = set(DEFAULT_EXCLUDED_INTEGRATIONS)
         stored = self.entry.options.get(CONF_EXCLUDED_INTEGRATIONS)
-        current = list(
-            stored if stored is not None else DEFAULT_EXCLUDED_INTEGRATIONS
-        )
-        adding = [name for name in sorted(fresh) if name not in current]
-        if not adding:
-            return
-
-        LOGGER.info(
-            "device_sentinel: router integration(s) %s seen for the "
-            "first time and excluded from watching; unexclude on the "
-            "Configure screen to watch them",
-            ", ".join(adding),
-        )
-        self.hass.config_entries.async_update_entry(
-            self.entry,
-            options={
-                **self.entry.options,
-                CONF_EXCLUDED_INTEGRATIONS: current + adding,
-            },
-        )
+        if stored is None:
+            # A list never saved is the default. Those the default
+            # already holds are excluded by it; a #711 name the person
+            # has decided about is taken off it, as they chose; one the
+            # default lacks, such as a FRITZ!Box router, is added (sixth
+            # adversarial round of 0.26.8).
+            current = list(DEFAULT_EXCLUDED_INTEGRATIONS)
+            kept_out = [n for n in sorted(fresh & set(AUTO_EXCLUDED_INTEGRATIONS)) if self._choice_made(n)]
+            # A router is excluded as #420 always did, whatever was muted
+            # (seventh adversarial round of 0.26.8).
+            adding = [n for n in sorted(fresh - default) if not self._leave_as_chosen(n)]
+            told = sorted(((fresh & default) - set(kept_out)) | set(adding))
+            write = bool(kept_out or adding)
+            new_list = [n for n in current if n not in kept_out] + adding
+        else:
+            if isinstance(stored, (list, tuple)):
+                current = [name for name in stored if isinstance(name, str)]
+            else:
+                # A list damaged by hand is not a reason to fail the
+                # start (fifth adversarial round of 0.26.8).
+                current = []
+            adding = [
+                name for name in sorted(fresh)
+                if name not in current and not self._leave_as_chosen(name)
+            ]
+            told = adding
+            write = bool(adding)
+            new_list = current + adding
+        # Each one excluded is told in the brief, so a person who watched
+        # it on purpose sees it and can take it back; before the next
+        # midnight, its devices' history is kept.
+        for name in told:
+            self._record_system_event(SYS_FIRST_SEEN_EXCLUDED, scope=name)  # type: ignore[attr-defined]
+        self.data[DATA_ROUTERS_SEEN] = sorted(seen | present)
+        if write:
+            if adding:
+                LOGGER.info(
+                    "device_sentinel: integration(s) %s seen for the "
+                    "first time and excluded from watching; unexclude on the "
+                    "Configure screen to watch them",
+                    ", ".join(adding),
+                )
+            options = {**self.entry.options, CONF_EXCLUDED_INTEGRATIONS: new_list}
+            # The snapshot the update listener compares with is set
+            # first, so neither the listener (which may run at once,
+            # while running) nor the next settings change names the
+            # exclusion list as a setting the person changed. At a start
+            # the listener is not yet in place, so the view is rebuilt
+            # here for the devices to be set aside at once; while
+            # running, the listener rebuilds it again, which is harmless
+            # (adversarial rounds of 0.26.8).
+            self._options_seen = dict(options)
+            self.hass.config_entries.async_update_entry(self.entry, options=options)
+            self._rebuild_registry_view()  # type: ignore[attr-defined]
+        if not self._stopped:  # type: ignore[attr-defined]
+            await self._save_now()
 
     @property
     def wifi_recovering_at(self) -> float | None:

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.26.7 (2026-10-19)
+# File: const.py, Version: 0.26.8 (2026-10-20)
 
 """Constants for the Device Sentinel integration."""
 
@@ -733,6 +733,33 @@ DEFAULT_EXCLUDED_INTEGRATIONS = (
     "ping",
     "tplink_router",
     "unifi",
+    # Ruling #711 (James, 20 October 2026); AUTO_EXCLUDED_INTEGRATIONS.
+    "music_assistant",
+    "webostv",
+    "androidtv",
+    "androidtv_remote",
+    "samsungtv",
+    "apple_tv",
+    "dlna_dmr",
+)
+
+# Integrations excluded once, the first time a house is seen with them,
+# as router trackers are (#420), and on a new install's list from the
+# start (ruling #711). Music Assistant adds a player for each speaker it
+# drives, a copy of hardware watched through its own integration that
+# nothing ties to it: on the reference rig its player brought back an
+# LG television excluded through webostv. Televisions and media
+# renderers go away when switched off. Each was excluded by hand on the
+# reference rig, Tim Plas's house or Roger's (Main__Watch_List.md has
+# where and when). A person who takes one off the list keeps it off.
+AUTO_EXCLUDED_INTEGRATIONS = (
+    "music_assistant",
+    "webostv",
+    "androidtv",
+    "androidtv_remote",
+    "samsungtv",
+    "apple_tv",
+    "dlna_dmr",
 )
 
 # The integrations that publish a tracker per client on the network
@@ -762,6 +789,9 @@ ROUTER_INTEGRATIONS = (
     "ubus",
     "upc_connect",
 )
+# Every integration excluded when first seen (#420, #711), routers and
+# AUTO_EXCLUDED_INTEGRATIONS alike: once listed here, never new again.
+# The name is from 0.18, when only routers were.
 DATA_ROUTERS_SEEN = "routers_seen"
 
 # The devices set aside (disabled, excluded or held after a removal)
@@ -2518,7 +2548,7 @@ SYS_DEVICE_ID = "device_id"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 709
+HIGHEST_RULING = 717
 
 # The state saved with a device's outage start when its stack called
 # its node dead (ruling #670), so the dead word outlives a restart.
@@ -2625,6 +2655,9 @@ SYS_DEVICE_PAGE = "device_page"
 # A person excluded an integration, or took it back, from its page on
 # the dashboard (0.26.1, ruling #659). Its scope is the integration.
 SYS_INTEGRATION_PAGE = "integration_page"
+# An integration added to the exclusion list the first time it is seen
+# (#420, #711), its domain in the scope.
+SYS_FIRST_SEEN_EXCLUDED = "first_seen_excluded"
 
 # A person deliberately erased a device's or an integration's learned
 # history from the Advanced screen (ruling #307). Recorded because it

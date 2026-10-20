@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.26.7 (2026-10-19)
+# File: report_brief.py, Version: 0.26.8 (2026-10-20)
 
 """The daily brief: the one report written for a person.
 
@@ -137,6 +137,7 @@ from .const import (
     TODO_SORT_NAME,
     TODO_STATUS,
     SYS_DEVICE_PAGE,
+    SYS_FIRST_SEEN_EXCLUDED,
     SYS_INTEGRATION_PAGE,
     SYS_DEVICE_ID,
 )
@@ -737,6 +738,13 @@ class BriefMixin:
             # names: "Button Randy Night Table: battery muted, from its
             # device page, at 9:14 AM."
             return f"{self._system_event_who(row)}: {detail or 'changed from its device page'}, at {when}."
+        if kind == SYS_FIRST_SEEN_EXCLUDED:
+            # Excluded the first time it was seen (#420, #711): "Music
+            # Assistant: excluded when first seen, at 9:14 AM."
+            return (
+                f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))}: "
+                f"excluded when first seen, at {when}."
+            )
         if kind == SYS_INTEGRATION_PAGE:
             # An integration excluded or taken back from its page on the
             # dashboard (0.26.1, ruling #659): "ZHA: excluded, from its
@@ -962,6 +970,8 @@ class BriefMixin:
             )
         if kind == SYS_OPTIONS_CHANGED:
             return f"settings changed ({detail})" if detail else "settings changed"
+        if kind == SYS_FIRST_SEEN_EXCLUDED:
+            return f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))} excluded when first seen"
         if kind == SYS_INTEGRATION_PAGE:
             return (
                 f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))} "
@@ -2212,6 +2222,9 @@ class BriefMixin:
             if self.is_held(device_id):  # type: ignore[attr-defined]
                 # Removed from Home Assistant (ruling #622): nothing to act on.
                 continue
+            if self._brief_muted(device_id, row.get(INC_KIND)):
+                # Muted for this kind now (ruling #715), whenever it opened.
+                continue
             ends = [
                 t
                 for t in resolved.get(
@@ -2389,6 +2402,45 @@ class BriefMixin:
             return "alone"
         return "; ".join(partners)
 
+    def _brief_muted(self, device_id: Any, kind: Any) -> bool:
+        """Whether the brief leaves out a device's row of this kind
+        (ruling #715): the kinds its mutes cover, as the Problem List
+        leaves them out. Read as the device is muted now, so a row
+        that opened before the mute goes with it.
+
+        Mute everything covers every kind; a freeze mute covers frozen
+        and never reported; an unavailable mute covers unavailable,
+        unknown and dropping out; the battery and signal mutes cover
+        their own. Found on Tim Plas's house on 20 October 2026: D48,
+        L20 and L21, muted for freeze or unavailable, stayed in Last
+        24 Hours and Repeat Offenders.
+        """
+        if not isinstance(device_id, str):
+            return False
+        if device_id in self._muted_devices:
+            return True
+        if kind in (TODO_KIND_FROZEN, TODO_KIND_NEVER_REPORTED):
+            return bool(self._freeze_muted(device_id))  # type: ignore[attr-defined]
+        if kind in (TODO_KIND_UNAVAILABLE, TODO_KIND_UNKNOWN, TODO_KIND_FLAPPING):
+            return bool(self._unavailable_muted(device_id))  # type: ignore[attr-defined]
+        if kind in (TODO_KIND_LOW_BATTERY, TODO_KIND_FALLING_BATTERY):
+            return bool(self._battery_muted(device_id))  # type: ignore[attr-defined]
+        if kind == TODO_KIND_RAILED_SIGNAL:
+            return bool(self._signal_muted(device_id))  # type: ignore[attr-defined]
+        return False
+
+    def _brief_keeps(self, row: dict[str, Any]) -> bool:
+        """Whether an incident row stays in Last 24 Hours and the Brief tab
+        (#715). The line saying a device was muted stays, as it did
+        before 0.26.8, unless the device is muted for everything
+        (adversarial round of 0.26.8)."""
+        device_id = row.get(INC_DEVICE_ID)
+        if isinstance(device_id, str) and device_id in self._muted_devices:
+            return False
+        if row.get(INC_EVENT) == INCIDENT_ACTION and row.get(INC_CAUSE) == ACTION_MUTED:
+            return True
+        return not self._brief_muted(device_id, row.get(INC_KIND))
+
     def _repeat_offenders_section(self, now: float) -> list[str]:
         """Return the Repeat Offenders section, or nothing.
 
@@ -2523,7 +2575,7 @@ class BriefMixin:
             row
             for row in escalation.withdrawals_once(escalation.fold(self.incident_rows()))
             if window_start <= row[INC_WHEN] <= window_end
-            and row[INC_DEVICE_ID] not in self._muted_devices
+            and self._brief_keeps(row)
             and row[INC_DEVICE_ID] not in silenced
         ]
         incidents.sort(key=lambda row: row[INC_WHEN], reverse=True)

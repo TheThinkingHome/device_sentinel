@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.26.7 (2026-10-19)
+# File: coordinator.py, Version: 0.26.8 (2026-10-20)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -1794,17 +1794,21 @@ class DeviceSentinelCoordinator(
         )
 
         self._rebuild_registry_view(audit=True)
-        # A router integration seen for the first time is excluded
-        # once, ever (ruling #420). After the registry view, because
-        # the sighting reads the registry, and before the readers
-        # start, so the exclusion is in force for this session rather
-        # than only the next one.
-        await self._sight_router_integrations()
         # Battery Last Replaced entries are stored before a catch-up fold
         # can detect a new cell over a replacement not yet stored (found
         # by review).
         self._settle_battery_entries()
         await self._fold_if_a_midnight_was_missed()
+        # A router integration seen for the first time is excluded
+        # once, ever (ruling #420), as is Music Assistant or a
+        # television integration (#711). After the registry view, because
+        # the sighting reads the registry, and before the readers
+        # start, so the exclusion is in force for this session rather
+        # than only the next one. After the catch-up fold, so a restart
+        # that spans midnight does not discard the newly excluded
+        # devices' history at once: it goes at the next midnight, as the
+        # brief says (fourth adversarial round of 0.26.8).
+        await self._sight_router_integrations()
 
         self._unsubs.append(
             self.hass.bus.async_listen(
@@ -3067,6 +3071,13 @@ class DeviceSentinelCoordinator(
     def _rebuild_and_notify(self) -> None:
         """Rebuild the registry view, then tell the entities."""
         self._rebuild_registry_view()
+        # An integration added while running is sighted within the
+        # debounce, before it can raise a false alarm (#711; James, 20
+        # October 2026).
+        if not self._stopped:
+            self.hass.async_create_task(
+                self._sight_router_integrations(), "device_sentinel first-seen exclusions"
+            )
         if getattr(self, "_held_unsynced", False):
             self._held_unsynced = False
             self._sync_problem_list()
