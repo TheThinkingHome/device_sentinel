@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.26.7 (2026-10-19)
+// File: panel.js, Version: 0.26.8 (2026-10-20)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -559,8 +559,18 @@ class DeviceSentinelPanel extends HTMLElement {
     // The dashboard's own Simple or Advanced switch (ruling #693): held
     // only while this page is open, and nothing is kept in the browser.
     // Leaving the dashboard, closing the window or reloading returns it
-    // to the setting the status reply carries.
+    // to the setting the status reply carries. Held on the dashboard
+    // itself, never cleared when Home Assistant takes it out of a tab
+    // hidden for five minutes and puts the same one back (ruling #716):
+    // leaving for another page of Home Assistant builds a new dashboard
+    // when it is opened again, which starts from the setting.
     this._modeChoice = null;
+    // The Recommendations cards a person has open (ruling #714): kept
+    // while this dashboard is open, in memory only, so an answer or a
+    // tick redraws the tab with the same cards open and the page where
+    // it was. The address's ?open= opens its card once.
+    this._openCards = new Set();
+    this._openFromAddress = null;
     this._filter = "all";
     this._problemFilter = "all";
     this._problemSort = null;
@@ -754,7 +764,6 @@ class DeviceSentinelPanel extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener(UPDATED_EVENT, this._onUpdated);
-    this._modeChoice = null;
     if (this._liveTimer) {
       clearInterval(this._liveTimer);
       this._liveTimer = null;
@@ -1237,19 +1246,42 @@ class DeviceSentinelPanel extends HTMLElement {
           this._ackBox(line.acknowledged, { line: line.key })));
     });
     // Recommendations about single devices (0.24.9), each listing its
-    // devices; a brief's "Open the list" arrives with its card open.
+    // devices; a brief's "Open the list" arrives with its card open,
+    // and is scrolled to once, not again at each answer (#714).
     const open = new URLSearchParams(window.location.search).get("open");
-    const deviceCards = devices.map((card) => this._recDeviceCard(card, card.kind === open));
+    let scrollTo = null;
+    if (open && this._openFromAddress !== window.location.href) {
+      this._openFromAddress = window.location.href;
+      this._openCards.add(open);
+      scrollTo = open;
+    }
+    const deviceCards = devices.map((card) => this._recDeviceCard(card, this._openCards.has(card.kind)));
     const count = lines.length + devices.length;
-    this._pane.replaceChildren(
+    this._keepScroll(() => this._pane.replaceChildren(
       // Every card is a suggestion and none is required (0.25.6):
       // no card is singled out as more needed than another.
       el("p", { style: "margin:0" }, `${count} ${count === 1 ? "recommendation" : "recommendations"} to help Device Sentinel run better. None of them is required.`),
       ...cards, ...deviceCards,
-      el("p", { class: "muted", style: "margin:0;font-size:13px;line-height:1.5" }, closing));
-    const target = open ? [...this._pane.querySelectorAll("article.rec")].find((a) => a.dataset.kind === open) : null;
+      el("p", { class: "muted", style: "margin:0;font-size:13px;line-height:1.5" }, closing)));
+    const target = scrollTo ? [...this._pane.querySelectorAll("article.rec")].find((a) => a.dataset.kind === scrollTo) : null;
     // A scroll is a nicety; a browser without one still shows the tab.
     if (target && typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "start" });
+  }
+
+  // Redraw without moving the page (ruling #714): every scrolled
+  // element from the pane up through Home Assistant's own, across the
+  // shadow roots, is put back where it was.
+  _keepScroll(redraw) {
+    const kept = [];
+    let node = this._pane;
+    while (node) {
+      if (node.scrollTop) kept.push([node, node.scrollTop]);
+      node = node.parentNode || (node.host !== undefined ? node.host : null);
+    }
+    const page = document.scrollingElement;
+    if (page && page.scrollTop && !kept.some(([n]) => n === page)) kept.push([page, page.scrollTop]);
+    redraw();
+    for (const [n, top] of kept) n.scrollTop = top;
   }
 
   // The acknowledgement tick (ruling #699): one device on one card, or
@@ -1332,9 +1364,20 @@ class DeviceSentinelPanel extends HTMLElement {
     return el("article", { class: "rec", "data-kind": card.kind },
       el("h3", {}, card.title),
       el("p", {}, card.body),
-      el("details", open ? { open: "" } : {},
+      this._recDetails(card.kind, open,
         el("summary", {}, `Show the ${card.devices.length} ${card.devices.length === 1 ? "device" : "devices"}`),
         el("div", { class: "scroll" }, el("table", {}, el("tbody", {}, ...rows)))));
+  }
+
+  // A card's device list, remembered open or closed as the person
+  // leaves it (ruling #714).
+  _recDetails(kind, open, ...children) {
+    const details = el("details", open ? { open: "" } : {}, ...children);
+    details.addEventListener("toggle", () => {
+      if (details.open) this._openCards.add(kind);
+      else this._openCards.delete(kind);
+    });
+    return details;
   }
 
   // The Power choices in a list row (0.24.9), as the device page's pencil
@@ -3217,12 +3260,15 @@ class DeviceSentinelPanel extends HTMLElement {
         el("div", { class: "muted" }, status.connection
           // Judged by its connection alone (James, 17 October 2026).
           ? `Judged by its connection: ${status.connection}.`
+          // A Matter device with no battery (#710).
+          : status.available_rule
+            ? `Last report ${ago(status.last_activity, now)}. Not called frozen while Home Assistant shows it available.`
           : status.window
             ? `Last report ${ago(status.last_activity, now)}. Called frozen after ${span(status.window)} of silence.`
             : `Last report ${ago(status.last_activity, now)}. Still learning its rhythm, so it is not yet judged for freezing.`)),
-      rhythmShown && status.window && !status.connection ? el("div", { class: "bar", role: "img", "aria-label": `${Math.round(fill * 100)} percent of its window used` },
+      rhythmShown && status.window && !status.connection && !status.available_rule ? el("div", { class: "bar", role: "img", "aria-label": `${Math.round(fill * 100)} percent of its window used` },
         el("div", { style: `width:${(fill * 100).toFixed(1)}%;background:${colour}` })) : null,
-      rhythmShown && status.window && !status.connection ? el("div", { class: "statusline small" },
+      rhythmShown && status.window && !status.connection && !status.available_rule ? el("div", { class: "statusline small" },
         el("span", {}, "0"), el("span", {}, `rhythm ${span(status.rhythm)}`), el("span", {}, `window ${span(status.window)}`)) : null);
 
     // The Identity section (0.24.9): who the device is first, then three
@@ -3346,7 +3392,7 @@ class DeviceSentinelPanel extends HTMLElement {
       ]),
       // The freeze rule in use today and its wait (0.24.0): the
       // shorter of the Trimmed Maximum and the Log-Normal Percentile.
-      ...(status.rule && rhythmShown ? [["Wait rule", el("div", { class: "actcol" }, `${status.rule}, ${span(status.window)}`, useTrimmed)]] : []),
+      ...(status.rule && rhythmShown && !status.available_rule ? [["Wait rule", el("div", { class: "actcol" }, `${status.rule}, ${span(status.window)}`, useTrimmed)]] : []),
       // What is muted and why, with the toggles (0.24.5).
       ...(acts ? [["Muted", this._mutedCell(who, hub)]] : []),
       // Excluded, with its button (0.25.6).
@@ -3529,13 +3575,17 @@ class DeviceSentinelPanel extends HTMLElement {
         const limit = Math.max(Math.ceil(n / 2), battery.days_setting || 0);
         if (proj.near > limit) beyond = limit;
         else {
-          ahead = Math.min(Math.ceil(far), limit);
-          if (far > limit) beyond = limit;
+          // On to the far end's empty day when it is near enough to
+          // show, so both dates can be said under the axis (#713).
+          ahead = Math.min(Math.ceil(far), 2 * limit);
+          if (far > 2 * limit) beyond = 2 * limit;
         }
       }
     }
     ahead = Math.min(ahead, 3 * 365);
-    const total = Math.max(1, n + ahead);
+    // A little room after the last day drawn, so the far end's empty
+    // day is not drawn on the chart's edge.
+    const total = Math.max(1, n + ahead + (ahead > 0 ? Math.max(2, Math.round(ahead / 20)) : 0));
     const left = 44;
     const right = 1090;
     const x = (i) => left + (i / Math.max(1, total - 1)) * (right - left);
@@ -3575,6 +3625,9 @@ class DeviceSentinelPanel extends HTMLElement {
       const a = (sy - b * sx) / sw;
       return [i, a + b * i];
     });
+    // The history runs into today: today's reading is the line's last
+    // point, where the expected fall begins (ruling #713).
+    if (level !== null && n > 0) smooth.push([n, level]);
     if (smooth.length > 1) {
       g.append(svg("polyline", { fill: "none", stroke: "var(--primary-color, #03a9f4)", "stroke-width": 2.4,
         points: smooth.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ") }));
@@ -3582,22 +3635,63 @@ class DeviceSentinelPanel extends HTMLElement {
     g.append(svg("line", { x1: x(n), y1: 20, x2: x(n), y2: 190, stroke: "var(--secondary-text-color)", "stroke-opacity": 0.6 }),
       svg("text", { x: x(n) + 4, y: 32, class: "axis" }, "today"));
     let lowest = points.length ? Math.min(...points.map(([, v]) => v)) : 100;
+    // Each zero falls on its own day, said under the axis (ruling #713).
+    const zeroes = [];
     if (ahead > 0) {
       const path = (p) => (d) => level + p[0] * d + p[1] * d * d;
-      const near = path(proj.near_path);
-      const far = proj.far_path ? path(proj.far_path) : near;
-      const lo = [];
-      const hi = [];
-      for (let d = 0; d <= ahead; d += 1) {
-        lo.push([n + d, Math.max(0, near(d))]);
-        hi.push([n + d, Math.max(0, far(d))]);
+      // Each end drawn until it reaches empty, and no further: the two
+      // lines never run together along the floor (ruling #713).
+      const run = (fn) => {
+        const line = [[n, level]];
+        for (let d = 1; d <= ahead; d += 1) {
+          const v = fn(d);
+          if (v <= 0) {
+            const before = fn(d - 1);
+            const at = d - 1 + (before <= 0 ? 0 : before / (before - v));
+            line.push([n + at, 0]);
+            return { line, zero: n + at };
+          }
+          line.push([n + d, v]);
+        }
+        return { line, zero: null };
+      };
+      const near = run(path(proj.near_path));
+      const far = proj.far_path ? run(path(proj.far_path)) : near;
+      lowest = Math.min(lowest, ...near.line.map(([, v]) => v));
+      // The lighter red between the two lines, closed along empty where
+      // one has ended before the other.
+      // A far line that never empties in view closes the band along
+      // empty below its last point (adversarial round of 0.26.8).
+      const floorUnderFar = near.zero !== null && far.zero === null ? [[far.line[far.line.length - 1][0], 0]] : [];
+      const band = near.line.concat(floorUnderFar, far.line.slice().reverse())
+        .map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+      g.append(svg("polygon", { class: "futureband", points: band, fill: "var(--error-color, #db4437)", "fill-opacity": 0.16 }));
+      for (const line of far === near ? [near] : [near, far]) {
+        g.append(svg("polyline", { class: "futureline", fill: "none", stroke: "var(--error-color, #db4437)", "stroke-width": 2.6,
+          "stroke-linecap": "round", points: line.line.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ") }));
+        if (line.zero !== null) zeroes.push(line.zero);
       }
-      lowest = Math.min(lowest, ...lo.map(([, v]) => v));
-      const band = lo.concat(hi.slice().reverse()).map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-      g.append(svg("polygon", { points: band, fill: "var(--warning-color, #c2410c)", "fill-opacity": 0.18 }));
-      for (const line of [lo, hi]) {
-        g.append(svg("polyline", { fill: "none", stroke: "var(--warning-color, #c2410c)", "stroke-width": 1.8,
-          points: line.map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ") }));
+    }
+    const zeroText = (i) => dayAt(Math.round(i)).toLocaleDateString([], { month: "short", day: "numeric" });
+    const zeroX = zeroes.map(x);
+    for (const zx of zeroX) {
+      g.append(svg("line", { class: "zerotick", x1: zx, y1: 190, x2: zx, y2: 196, stroke: "var(--error-color, #db4437)", "stroke-width": 2 }));
+    }
+    if (zeroX.length) {
+      // Two dates too close to read apart are said as one range.
+      const apart = zeroX.length === 2 && Math.abs(zeroX[1] - zeroX[0]) >= 70;
+      const labels = apart ? zeroes.map((i, k) => [zeroX[k], zeroText(i)])
+        : [[(Math.min(...zeroX) + Math.max(...zeroX)) / 2, zeroes.length === 2 && zeroText(zeroes[0]) !== zeroText(zeroes[1])
+          ? `${zeroText(zeroes[0])} to ${zeroText(zeroes[1])}` : zeroText(zeroes[0])]];
+      for (const [lx, words] of labels) {
+        g.append(svg("text", { class: "axis zerodate", x: Math.min(right - 30, Math.max(left + 30, lx)), y: 210,
+          "text-anchor": "middle", fill: "var(--error-color, #db4437)" }, words));
+      }
+      // A month's name that would sit on a date gives way to it.
+      for (const label of [...g.querySelectorAll("text.axis")]) {
+        if (label.classList.contains("zerodate") || label.getAttribute("y") !== "210") continue;
+        const mx = Number(label.getAttribute("x"));
+        if (labels.some(([lx]) => Math.abs(lx - mx) < 60)) label.remove();
       }
     }
     // The low battery line, only where something reaches it.
