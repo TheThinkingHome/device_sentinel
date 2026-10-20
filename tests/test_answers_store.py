@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_answers_store.py, Version: 0.25.5 (2026-10-10)
+# File: tests/test_answers_store.py, Version: 0.26.8 (2026-10-20)
 
 """The one file of pencil answers (0.25.1).
 
@@ -279,10 +279,10 @@ async def test_a_damaged_answer_is_left_out_and_the_rest_kept(hass: HomeAssistan
         "power": {"models": {KEY: _power("AA", 4, device.id), "bad": {"kind": "battery", "type": 3}},
                   "devices": {}},
         "types": {"models": {"not json": {"type": 3}},
-                  "devices": {lonely.id: {"type": "Zigbee router", "set": None}}}})
+                  "devices": {lonely.id: {"type": "Range extender", "set": None}}}})
     coord = await setup_coordinator(hass)
     assert coord.power_view(device.id)["words"] == "4× AA"
-    assert coord.type_words(lonely.id) == "Zigbee router"
+    assert coord.type_words(lonely.id) == "Range extender"
     assert "left out 2 answers set on device pages" in caplog.text
     assert coord._answers_rotation_armed is False
 

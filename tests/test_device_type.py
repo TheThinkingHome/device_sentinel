@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_type.py, Version: 0.26.0 (2026-10-11)
+# File: tests/test_device_type.py, Version: 0.26.8 (2026-10-20)
 
 """What each device is (0.25.1, Project__Device_Type.md).
 
@@ -80,6 +80,11 @@ def _e(domain, device_class=None, category=None, disabled=None):
     ([_e("climate"), _e("sensor", "temperature")], "Thermostat"),
     ([_e("valve"), _e("binary_sensor", "moisture")], "Valve"),
     ([_e("fan"), _e("light")], "Fan"),
+    # #712, from Tim Plas's robot vacuum: its vacuum entity says it.
+    ([_e("vacuum"), _e("sensor", "battery", category=EntityCategory.DIAGNOSTIC), _e("select")], "Vacuum"),
+    # One that adds a camera for its map is still a vacuum (adversarial
+    # round of 0.26.8).
+    ([_e("camera"), _e("vacuum")], "Vacuum"),
     # A 4-in-1 is a multi sensor; with only two of the three readings
     # it is still a motion sensor (James, 9 October 2026).
     ([_e("binary_sensor", "occupancy"), _e("sensor", "temperature"), _e("sensor", "humidity"),
@@ -172,9 +177,10 @@ async def test_the_pencil_covers_the_model_and_says_so_in_the_brief(hass: HomeAs
 
 async def test_own_words_are_tidied_and_bad_answers_refused(hass: HomeAssistant, hass_ws_client):
     coord, client, _first, _second, _leak, radio = await _plugs(hass, hass_ws_client)
-    reply = await _ws(client, type="device_sentinel/device_type", device_id=radio.id, choice="Other", other="  Zigbee   router ")
+    reply = await _ws(client, type="device_sentinel/device_type", device_id=radio.id, choice="Other", other="  Range   extender ")
     assert reply["success"], reply
-    assert coord.type_words(radio.id) == "Zigbee router"
+    # Words not on the list; "Zigbee router" now takes the list's name (#717).
+    assert coord.type_words(radio.id) == "Range extender"
     for other, words in (("", "Type what the device is."), ("x" * 41, "Keep it to 40 characters."),
                          ("bad‮word", "That text holds characters that cannot be shown."),
                          # The page's own words for no type (found by testing).
@@ -230,6 +236,8 @@ def test_the_choices_are_the_approved_types_then_other():
         "Siren", "Fan", "Light", "Bluetooth Proxy", "ESPHome Device",
         # #627, from Tim Plas's answers under Other (James, 11 October 2026).
         "Appliance", "IR Remote", "Router", "NAS", "UPS",
+        # #712, from Tim Plas's robot vacuum (James, 20 October 2026).
+        "Vacuum",
     }
     listed = list(device_type.TYPE_CHOICES[:-1])
     assert listed == sorted(listed, key=str.casefold), "the list is not in reading order"

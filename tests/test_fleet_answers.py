@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_fleet_answers.py, Version: 0.25.6 (2026-10-11)
+# File: tests/test_fleet_answers.py, Version: 0.26.8 (2026-10-20)
 
 """Real houses' answers files through the Power and Type rows.
 
@@ -41,6 +41,7 @@ from homeassistant.helpers import device_registry as dr
 
 from custom_components.device_sentinel.answers_store import ANSWERS_STORE_KEY
 from custom_components.device_sentinel.power_source import SOURCE_OWNER, power_words
+from custom_components.device_sentinel.device_type import list_name
 
 from .conftest import fleet_param
 from .helpers import register_device, setup_coordinator
@@ -103,7 +104,8 @@ async def test_a_real_answers_file_loads_whole_and_answers_every_device(
         if kind is not None:
             known = coord.type_of(device_id)
             assert known["source"] == SOURCE_OWNER, f"{key}: type from {known['source']}"
-            assert known["words"] == kind["type"], key
+            # Words naming a listed type read as its name (#717).
+            assert known["words"] == list_name(kind["type"]), key
 
 
 @pytest.mark.parametrize("path", HOUSES)

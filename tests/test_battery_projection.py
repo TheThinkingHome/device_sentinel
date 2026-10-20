@@ -3,19 +3,21 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_projection.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_battery_projection.py, Version: 0.26.8 (2026-10-20)
 
 """When a falling cell runs empty, as a range (ruling #704).
 
 A fall that is speeding up is projected on a curve, a steady one on a
 straight line; the range comes from the cell's own week-to-week
 swings; the near end decides Days Till Empty, on the Problem List as
-on the chart; and every days-left figure reads the range in words.
+on the chart; and every days-left figure reads the range in words. The
+sentence above the chart agrees with the range (ruling #713).
 """
 
 from __future__ import annotations
 
 import math
+from datetime import date
 
 from homeassistant.core import HomeAssistant
 
@@ -24,6 +26,7 @@ from custom_components.device_sentinel.battery_projection import (
     days_to_empty,
     time_left_range,
 )
+from custom_components.device_sentinel.report_battery import battery_sentence
 from custom_components.device_sentinel.const import (
     CONF_BATTERY_DAYS,
     DATA_DEVICES,
@@ -170,3 +173,21 @@ async def test_a_forecast_alone_is_not_counted_among_listed_faults(hass: HomeAss
     record[DEV_BATTERY_VALUE] = 16.5
     assert device.id in coord._problem_device_ids()
     assert "## Devices With A Fault (0)" in "\n".join(coord._reporting_lines())
+
+
+def test_a_curved_fall_is_said_as_speeding_up():
+    """Ruling #713: Door 2nd Bedroom read "at a steady pace" beside a
+    curved range of about 4 to 5 weeks. A curved range says the fall is
+    speeding up, at the curve's pace today; a straight one keeps the
+    steady sentence."""
+    curved = battery_projection(DOOR, 16.5)
+    assert curved["curved"] is True and curved["pace"] > 0
+    steady = {"reading": "falling", "pace": 1.3, "fit": None}
+    words = battery_sentence(steady, date(2026, 10, 19), curved)
+    assert words == f"Falling faster each week, about {curved['pace']:.1f} points a week today."
+    assert "steady" not in words
+    straight = dict(curved, curved=False)
+    assert battery_sentence(steady, date(2026, 10, 19), straight).endswith("at a steady pace.")
+    assert battery_sentence(steady, date(2026, 10, 19)).endswith("at a steady pace.")
+    # The pace today is the fitted path's, faster than the weeks' average.
+    assert curved["pace"] > 1.3
