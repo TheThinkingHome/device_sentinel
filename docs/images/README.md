@@ -8,13 +8,13 @@ To use one from the wiki, link to its raw address: `https://raw.githubuserconten
 
 ### Device Page Full.png
 
-Device Sentinel's own page in Home Assistant, under Settings > Devices and Services. The controls are the Maintenance Mode button, the three Enable buttons and Regenerate Reports. The sensors beneath them count what is wrong, and the diagnostic sensors count what is watched, learned and set aside.
+Device Sentinel's own page in Home Assistant, under Settings > Devices and Services. The controls are the Maintenance Mode and Regenerate Reports buttons. The sensors beneath them count what is wrong, and the diagnostic sensors count what is watched, learned and set aside.
 
 ![Device Page Full](./Device%20Page%20Full.png)
 
 ### Integration Settings Main.png
 
-The configuration menu. Each entry opens one screen: Notifications and Daily Brief, Exclusions and Muting, Low Battery, Signal Strength, Freeze Detection, WiFi, Advanced and Extended Diagnostics.
+The configuration menu. Each entry opens one screen: Notifications and Daily Brief, Exclusions and Muting, Low Battery, Signal Strength, Freeze and Unavailable Detection, WiFi, Advanced and Extended Diagnostics.
 
 ![Integration Settings Main](./Integration%20Settings%20Main.png)
 
@@ -28,7 +28,7 @@ The Exclusions and Muting screen. Excluded integrations are set aside entirely. 
 
 ### Dashboard Daily Brief.png
 
-The Daily Brief tab: one calendar day at a time, with the Now table, Repeat Offenders and the Last 24 Hours timeline. The status row across the top shows each bridge, the broker, the Wi-Fi network and Maintenance Mode.
+The Daily Brief tab: one calendar day at a time, with the Now table, Repeat Offenders and the Last 24 Hours timeline. The status row across the top shows each bridge, the broker, the Wi-Fi network and Maintenance Mode, with the Active Recommendations button beside the controls when anything is left to look at.
 
 ![Dashboard Daily Brief](./Dashboard%20Daily%20Brief.png)
 
@@ -138,7 +138,7 @@ The rhythm graph: each day's longest gap, both rules' waits as dashed lines, the
 
 ### Dashboard Device Detail Battery Chart.png
 
-The battery graph: the level over three months, with the last four weeks' averages, the reading and the time left above it. A steady battery gets no forecast.
+The battery graph on Advanced: the level over three months, with five weekly averages, the reading and the time left above it. A steady battery gets no forecast; a falling one shows its time left as a range.
 
 ![Dashboard Device Detail Battery Chart](./Dashboard%20Device%20Detail%20Battery%20Chart.png)
 
@@ -169,12 +169,6 @@ The Battery: Low sensor. Its attributes name each low battery, its level, its ar
 A Repair card after Device Sentinel repaired a damaged data file. It says what was repaired and where the original is. Nothing is asked of you; Submit records that you read it.
 
 ![Repair Card Damaged Data File](./Repair%20Card%20Damaged%20Data%20File.png)
-
-### Repair Card Disabled Entities.png
-
-The Repair card that offers to turn on the entities Device Sentinel reads: battery, last seen and signal. Enable turns them all on at once; Ignore hides the card.
-
-![Repair Card Disabled Entities](./Repair%20Card%20Disabled%20Entities.png)
 
 ## The Brief and Your Automations
 
