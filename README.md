@@ -96,7 +96,7 @@ Device Sentinel is not in the default HACS store yet.
 
 Device Sentinel works with its defaults from the start. Two steps on day one make it far more useful:
 1. Open the integration settings and configure **Notifications and Daily Brief**.
-2. Open the Recommendations tab on the Device Sentinel dashboard. Where a card lists a device whose Battery, Signal or Last Seen sensor is switched off, turn it on so the integration has data to learn from.
+2. Open the Recommendations tab on the Device Sentinel dashboard. Where a card lists a device whose Battery, Last Seen or Z-Wave status sensor is switched off, turn it on so the integration has data to learn from. Signal sensors are listed when you switch the dashboard to Advanced.
 
 ![The Device Sentinel device page in Home Assistant, with its controls and sensors](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Page%20Full.png)
 
@@ -142,15 +142,13 @@ Device Sentinel was built with AI assistance under my direction. Every design de
 
 ## Latest Releases
 
-Device Sentinel is under active development. The release candidate for the next Latest and the three newest releases published as Latest are below, and the [changelog](CHANGELOG.md) lists every release since the first.
+Device Sentinel is under active development. The three newest releases published as Latest are below, and the [changelog](CHANGELOG.md) lists every release since the first.
 
-**[0.26.8](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.26.8), October 20, 2026, release candidate for Latest.** A device that is plugged in and quiet is no longer called frozen: ESPHome devices are judged by their connection, and Matter lights and plugs by being available. A Z-Wave device its network calls dead is reported unavailable, Lutron Caséta is judged by its hub, and freeze and unavailable mute apart. The dashboard opens in Simple, a falling battery's time left comes from its own history, and Music Assistant and your televisions are excluded for you.
+**[0.26.8](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.26.8), October 20, 2026.** A device that is plugged in and quiet is no longer called frozen: ESPHome devices are judged by their connection, and Matter lights and plugs by being available. A Z-Wave device its network calls dead is reported unavailable, Lutron Caséta is judged by its hub, and freeze and unavailable mute apart. The dashboard opens in Simple, a falling battery's time left comes from its own history, and Music Assistant and your televisions are excluded for you.
 
 **[0.25.6](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.25.6), October 11, 2026.** Each device has a type you can set from its page, and the tabs sort and filter by it. Hardware that several integrations list is watched once, and you can exclude a single device from its page or from Settings.
 
 **[0.24.11](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.24.11), October 6, 2026.** A bad night no longer delays your freeze alerts for two weeks, and an outage or restart can't teach a device to stay quiet. Each device's page shows what powers it, from the Battery Notes library or your own entry, and lets you rename it, give it a room, label it and mute it where you see the problem.
-
-**[0.23.20](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.23.20), October 1, 2026.** An outage caused by a hub, broker or integration reaches you as one alert, and a recovery is announced only when a device actually reports again. A device that keeps dropping out becomes one problem instead of dozens. Batteries are read by the week, so a half-point wobble no longer reads as falling, and your brief and reports sit behind Home Assistant's sign-in.
 
 ## From The Thinking Home
 
