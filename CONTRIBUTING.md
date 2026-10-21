@@ -1,6 +1,6 @@
 # Contributing to Device Sentinel
 
-Home Assistant works with almost any device. Device Sentinel knows only what it has alread seen, on a limited number of houses. Your setup almost certainly has a hub, an integration, or a device not seen before. Sharing your data is how Device Sentinel learns, and you don't need to write a line of code to do that. Your data, your problem reports and your opinion are what shape it.
+Home Assistant works with almost any device. Device Sentinel knows only what it has already seen, on a limited number of houses. Your setup almost certainly has a hub, an integration, or a device not seen before. Sharing your data is how Device Sentinel learns, and you don't need to write a line of code to do that. Your data, your problem reports and your opinion are what shape it.
 
 ## Your House Is What's Missing
 
@@ -61,7 +61,9 @@ Welcome, especially the real-situation kind: what happened in your home that thi
 
 ## Pull Requests
 
-Held until 1.0. Device Sentinel follows a single design under active development, and outside code, however good, would collide with work already in motion. After 1.0 this section changes.
+Code is held until 1.0. Device Sentinel follows a single design under active development, and outside code, however good, would collide with work already in motion. After 1.0 this section changes.
+
+Documentation is welcome now. A correction to a page in this repository, or a note of hardware you have run Device Sentinel on, can come as a pull request: open the file on GitHub, click the pencil, make the change and choose **Propose changes**.
 
 ## License
 
