@@ -1,8 +1,8 @@
 # Changelog
 
-Device Sentinel is under active development. These are the releases published as Latest, newest first, with the release candidate for the next Latest at the top, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases between them are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
+Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases between them are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
-## [0.26.8](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.26.8), October 20, 2026, Release Candidate for Latest
+## [0.26.8](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.26.8), October 20, 2026
 
 A device that is plugged in and quiet is no longer called frozen: ESPHome devices are judged by their connection, and Matter lights and plugs by being available. A Z-Wave device its network calls dead is reported unavailable, Lutron Caséta is judged by its hub, and freeze and unavailable mute apart. The dashboard opens in Simple, a falling battery's time left comes from its own history, and Music Assistant and your televisions are excluded for you.
 
