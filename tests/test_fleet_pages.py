@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_fleet_pages.py, Version: 0.25.0 (2026-10-08)
+# File: tests/test_fleet_pages.py, Version: 0.26.8 (2026-10-21)
 
 """Every device of a real house through the server's device page.
 
@@ -38,7 +38,7 @@ from homeassistant.util import dt as dt_util
 from custom_components.device_sentinel.const import DATA_DEVICES
 from custom_components.device_sentinel.records import _new_device_record
 
-from .conftest import fleet_param
+from .conftest import fleet_data, fleet_param
 from .helpers import register_device, setup_coordinator
 
 KEYS = ("daily_max", "daily_dates", "lognormal_days", "first_observed",
@@ -63,8 +63,7 @@ def _real(value) -> bool:
 async def test_every_device_page_of_a_real_house_draws(
     hass: HomeAssistant, freezer, storage, clocks
 ):
-    with open(storage, encoding="utf-8") as handle:
-        records = json.load(handle)["data"]["devices"]
+    records = fleet_data(storage)["devices"]
     with open(clocks, encoding="utf-8") as handle:
         clock_file = json.load(handle)["data"]
     freezer.move_to(dt_util.utc_from_timestamp(clock_file["saved_at"]))

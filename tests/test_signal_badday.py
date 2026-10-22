@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_signal_badday.py, Version: 0.23.19 (2026-09-30)
+# File: tests/test_signal_badday.py, Version: 0.26.8 (2026-10-21)
 
 """The bad signal day detector (ruling #310).
 
@@ -49,7 +49,7 @@ from custom_components.device_sentinel.const import (
 from custom_components.device_sentinel import detect_signal
 from custom_components.device_sentinel.detect_signal import _spread
 
-from .conftest import fleet_param
+from .conftest import fleet_data, fleet_param
 from .helpers import register_device, setup_coordinator
 
 STEADY_WEEK = [160.0, 162.0, 158.0, 161.0, 160.0, 159.0]
@@ -281,7 +281,7 @@ async def test_the_spread_changes_no_judgment_on_a_fleet(
     used. No verdict, normal or fall may move, and no spread by more
     than rounding."""
     coord = await setup_coordinator(hass)
-    devices = json.loads(path.read_text(encoding="utf-8"))["data"]["devices"]
+    devices = fleet_data(path)["devices"]
     records = [r for r in devices.values() if r.get("signal_daily_p5")]
     judged = 0
     for days in (BADDAY_BASELINE_DAYS_MIN, DEFAULT_BADDAY_BASELINE_DAYS, BADDAY_BASELINE_DAYS_MAX):

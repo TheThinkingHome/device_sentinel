@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: conftest.py, Version: 0.23.5 (2026-09-25)
+# File: conftest.py, Version: 0.26.8 (2026-10-21)
 
 """Shared test fixtures.
 
@@ -17,6 +17,7 @@ directory.
 """
 
 import importlib.util
+import json
 import logging
 import os
 import shutil
@@ -179,7 +180,8 @@ def read_brief():
 
 # The fleets are real houses' storage, anonymized and committed under
 # tests/fleets/ by tools/anonymise_fleet.py: reference/, second/ and
-# fourth/, and a folder for each tester after them. They are the set the
+# fourth/, a folder for each tester after them, and under upgrade/ the
+# first two houses as they stood on 0.25, before the history file. They are the set the
 # Test Baseline counts, and the set continuous integration runs. Point
 # DEVICE_SENTINEL_FLEET_DIR at another directory laid out the same way,
 # such as the private archive's real files, to run the fleet cases on
@@ -196,6 +198,51 @@ FLEET_ABSENT = "fleet file absent; see tests/fleets or DEVICE_SENTINEL_FLEET_DIR
 def fleet_path(*parts: str) -> Path:
     """A path under the fleet directory."""
     return FLEET_DIR.joinpath(*parts)
+
+
+# A house on 0.26.2 or later keeps every day older than its main file's
+# thirty in a history file beside it, under the storage file's spelling.
+HISTORY_FOR = {
+    "device_sentinel.storage": "device_sentinel.history",
+    "device_sentinel_storage.json": "device_sentinel_history.json",
+}
+
+
+def fleet_document(path: Path) -> dict:
+    """A fleet's storage document, with its history joined back in.
+
+    The committed houses of 21 October 2026 are on 0.26.8, so their main
+    file holds thirty days and the rest stands in the history file. A
+    test that reads a house reads all of it: the older part goes back in
+    front of each series and table, as the load does, and the two keys
+    that tie the main file to a history file are dropped, so what a test
+    seats is one whole file, as a house before 0.26.2 wrote it and as
+    the upgrade fixtures under `upgrade/` still are. A house with no
+    history file is returned as it stands.
+    """
+    from custom_components.device_sentinel import history_file
+    from custom_components.device_sentinel.const import (
+        DATA_HISTORY_GENERATION,
+        DATA_HISTORY_LINE,
+    )
+
+    with open(path, encoding="utf-8") as handle:
+        loaded = json.load(handle)
+    history = path.parent / HISTORY_FOR.get(path.name, "")
+    if path.name in HISTORY_FOR and history.exists():
+        with open(history, encoding="utf-8") as handle:
+            payload = json.load(handle)["data"]
+        data = loaded.get("data", loaded)
+        history_file.join(data, payload)
+        data.pop(DATA_HISTORY_GENERATION, None)
+        data.pop(DATA_HISTORY_LINE, None)
+    return loaded
+
+
+def fleet_data(path: Path) -> dict:
+    """The data part of `fleet_document`."""
+    loaded = fleet_document(path)
+    return loaded.get("data", loaded)
 
 
 def fleet_param(*parts: str, id: str, clocks: tuple[str, ...] | None = None):

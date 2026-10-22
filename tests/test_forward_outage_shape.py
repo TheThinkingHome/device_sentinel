@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_forward_outage_shape.py, Version: 0.23.17 (2026-09-29)
+# File: tests/test_forward_outage_shape.py, Version: 0.26.8 (2026-10-21)
 
 """Forward simulation of 0.21.12's stored shape on both fleets (#306).
 
@@ -41,7 +41,7 @@ from custom_components.device_sentinel.const import (
     SYS_WORST,
 )
 from custom_components.device_sentinel.normalise import damaged_rows
-from tests.conftest import FLEET_ABSENT, fleet_path
+from tests.conftest import FLEET_ABSENT, fleet_document, fleet_path
 from tests.test_fleet_invariants import _check_pages, _render_fleet
 
 FLEETS = {
@@ -91,8 +91,7 @@ async def test_the_new_shape_renders_on_the_fleet(
     source = FLEETS[fleet]
     if not source.exists():
         pytest.skip(FLEET_ABSENT)
-    with open(source, encoding="utf-8") as handle:
-        loaded = json.load(handle)
+    loaded = fleet_document(source)
     data = _synthesize(loaded.get("data", loaded))
     assert damaged_rows(data) == {}
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_clock_loss.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_clock_loss.py, Version: 0.26.8 (2026-10-21)
 
 """A lost clocks file, and a startup grace that holds everything.
 
@@ -21,7 +21,6 @@ These tests replay that start. The ones that are not guards fail on
 
 from __future__ import annotations
 
-import json
 import logging
 import random
 from datetime import timedelta
@@ -73,7 +72,7 @@ from custom_components.device_sentinel.const import (
     TODO_KINDS,
     TODO_SORT_NAME,
 )
-from tests.conftest import FLEET_ABSENT, fleet_path
+from tests.conftest import FLEET_ABSENT, fleet_data, fleet_path
 from tests.helpers import registry_settled, setup_coordinator
 
 from .helpers import record_events, register_device, setup_entry
@@ -466,11 +465,10 @@ ROUNDS = 150
 def _fleet(path: Path | None) -> list[dict]:
     if path is None or not path.exists():
         return [{} for _ in range(40)]
-    with open(path, encoding="utf-8") as handle:
-        return [
-            r for r in json.load(handle)["data"]["devices"].values()
-            if isinstance(r, dict)
-        ]
+    return [
+        r for r in fleet_data(path)["devices"].values()
+        if isinstance(r, dict)
+    ]
 
 class _House:
     """One randomized house around one or more restarts."""

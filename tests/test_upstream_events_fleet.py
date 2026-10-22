@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_events_fleet.py, Version: 0.22.20 (2026-09-21)
+# File: tests/test_upstream_events_fleet.py, Version: 0.26.8 (2026-10-21)
 
 """The upstream event pair, driven against both reference fleets.
 
@@ -49,7 +49,7 @@ from custom_components.device_sentinel.const import (
     EVENT_UPSTREAM_RESTORED,
 )
 
-from tests.conftest import FLEET_ABSENT, fleet_path
+from tests.conftest import FLEET_ABSENT, fleet_data, fleet_path
 from tests.helpers import record_labelled, setup_coordinator
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
@@ -103,9 +103,7 @@ async def _fleet(hass, path, stack="z2m"):
     the stack owns it, which is what makes the membership count real
     rather than zero.
     """
-    with open(path, encoding="utf-8") as handle:
-        loaded = json.load(handle)
-    data = loaded.get("data", loaded)
+    data = fleet_data(path)
     records = data.get("devices") or {}
 
     found = glob.glob(str(path.parent / "config_entry*.json"))

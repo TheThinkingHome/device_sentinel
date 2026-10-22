@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze.py, Version: 0.26.6 (2026-10-17)
+# File: test_freeze.py, Version: 0.26.8 (2026-10-21)
 
 """The freeze, unavailable, unknown, and never-reported detector.
 
@@ -59,7 +59,7 @@ from custom_components.device_sentinel.const import (
     FREEZE_UNAVAILABLE_DEBOUNCE,
 )
 from custom_components.device_sentinel.coordinator import _new_device_record
-from tests.conftest import fleet_path
+from tests.conftest import fleet_data, fleet_path
 from tests.helpers import register_device, setup_coordinator
 
 DOMAIN = "device_sentinel"
@@ -860,8 +860,7 @@ def _held(path: Path) -> bool:
     return path.exists() and (path.parent / CLOCKS_FOR[path.name]).exists()
 
 def _fleet(path: Path) -> list[dict]:
-    with open(path, encoding="utf-8") as handle:
-        devices = json.load(handle)["data"]["devices"]
+    devices = fleet_data(path)["devices"]
     with open(path.parent / CLOCKS_FOR[path.name], encoding="utf-8") as h:
         clocks = json.load(h)["data"].get("clocks") or {}
     out = []

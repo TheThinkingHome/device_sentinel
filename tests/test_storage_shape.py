@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_storage_shape.py, Version: 0.26.7 (2026-10-19)
+# File: test_storage_shape.py, Version: 0.26.8 (2026-10-21)
 
 """The shape check reports and touches nothing; last-good follows it.
 
@@ -83,7 +83,7 @@ from custom_components.device_sentinel.normalise import (
 )
 from custom_components.device_sentinel.records import _new_device_record
 from custom_components.device_sentinel.store import StorageMixin
-from tests.conftest import FLEET_ABSENT, fleet_param, fleet_path
+from tests.conftest import FLEET_ABSENT, fleet_data, fleet_param, fleet_path
 from tests.helpers import setup_coordinator
 
 from .helpers import register_device, setup_entry
@@ -498,8 +498,7 @@ FLEETS = [
 POISONS = [None, "junk", [1, 2], {"x": 1}, True, -7, 4.1e18, "", 3.5, [], {}]
 
 def _fleet(path: Path) -> dict:
-    with open(path, encoding="utf-8") as handle:
-        return json.load(handle)["data"]
+    return fleet_data(path)
 
 def _clocks(path: Path) -> dict:
     with open(path, encoding="utf-8") as handle:
@@ -1172,8 +1171,7 @@ CLOCKS_FOR = {
 def _fleet_checker(path: Path) -> list[dict]:
     """The fleet's records as the load path presents them: the main
     file with the companion clocks merged in."""
-    with open(path, encoding="utf-8") as handle:
-        devices = json.load(handle)["data"]["devices"]
+    devices = fleet_data(path)["devices"]
     with open(path.parent / CLOCKS_FOR[path.name], encoding="utf-8") as h:
         clocks = json.load(h)["data"].get("clocks") or {}
     merged_all: dict[str, dict] = {}
@@ -1322,8 +1320,7 @@ POISONS_boundary = [None, "junk", [1, 2], {"x": 1}, True, -7, 4.1e18, "", 3.5]
 ROUNDS = 40
 
 def _fleet_tables(path: Path) -> dict:
-    with open(path, encoding="utf-8") as handle:
-        data = json.load(handle)["data"]
+    data = fleet_data(path)
     return {key: data.get(key) for key in TABLES if isinstance(data.get(key), list)}
 
 def _damage(tables: dict, rng: random.Random) -> tuple[dict, int]:

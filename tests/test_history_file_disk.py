@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_history_file_disk.py, Version: 0.26.2 (2026-10-14)
+# File: tests/test_history_file_disk.py, Version: 0.26.8 (2026-10-21)
 
 """The history file on disk: the four steps, a stop between any two,
 the restores, the evidence, the backups and the uninstall (ruling #660).
@@ -39,7 +39,7 @@ from custom_components.device_sentinel.const import (
     TRIM_BACKUP_DIR,
 )
 
-from .conftest import fleet_param
+from .conftest import fleet_data, fleet_param
 from .helpers import register_device, setup_entry
 from .test_history_file import SERIES_FIELDS, furnish, learned, restart_with, series
 
@@ -286,12 +286,18 @@ async def test_backup_copies_go_after_thirty_days_except_the_newest(
         fleet_param("reference", "device_sentinel.storage", id="reference"),
         fleet_param("second", "device_sentinel_storage.json", id="second"),
         fleet_param("fourth", "device_sentinel_storage.json", id="fourth"),
+        fleet_param("upgrade", "reference", "device_sentinel.storage", id="upgrade_reference"),
+        fleet_param("upgrade", "second", "device_sentinel_storage.json", id="upgrade_second"),
     ],
 )
 def test_a_real_house_splits_and_joins_day_for_day(path):
-    """Every device's series and every row come back identical."""
-    with open(path, encoding="utf-8") as handle:
-        data = json.load(handle)["data"]
+    """Every device's series and every row come back identical.
+
+    The houses on 0.26.8 are read whole, their history file joined back
+    in, so the split has their full history to cut; the upgrade houses,
+    written before the history file existed, are one whole file as they
+    stand, which is the split an upgrade makes at its first save."""
+    data = fleet_data(path)
     data.setdefault(DATA_HISTORY_LINE, history_file.fold_line())
     original = copy.deepcopy(data)
     view, part = history_file.split(data)

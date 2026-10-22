@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_anonymise_fleet.py, Version: 0.25.6 (2026-10-11)
+# File: tests/test_anonymise_fleet.py, Version: 0.26.8 (2026-10-21)
 
 """The anonymizer, the power file and the answers file.
 
@@ -19,6 +19,12 @@ Since 0.25.1 a house keeps every pencil answer in the answers file,
 what powers a device and what it is, and the refresh of 11 October
 2026 was the first with houses on 0.25. Its two parts carry model keys
 of the same kind, and both are replaced the same way.
+
+Since 0.26.2 every day older than the main file's thirty lives in the
+history file beside it, keyed by the same device ids and carrying rows
+that can name devices. The refresh of 21 October 2026 was the first
+with houses on 0.26, so the history file is anonymized like the
+storage file, and a name that stands only in it is still caught.
 """
 
 from __future__ import annotations
@@ -186,3 +192,68 @@ def test_a_type_key_left_in_place_is_caught(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(tool, "_answers_models", forgetful)
     with pytest.raises(SystemExit, match="real values survived"):
         tool.main([str(tmp_path / "raw"), str(tmp_path / "out"), "--key", str(tmp_path / "k.json")])
+
+
+def _history_house(raw: Path, history: dict) -> None:
+    """The reference house of `_house`, with a history file beside it."""
+    _house(raw)
+    store = {"version": 1, "minor_version": 1, "key": "k"}
+    (raw / "reference" / "device_sentinel.history").write_text(
+        json.dumps({**store, "data": history}))
+
+
+def test_the_history_file_is_anonymized_beside_the_storage_file(tmp_path: Path):
+    tool = _tool()
+    _history_house(tmp_path / "raw", {
+        "generation": 4, "line": 1760000000.0,
+        "devices": {DEVICE: {"daily_max": [60.0, 61.0]}},
+        "system_events": [{"device_id": DEVICE, "name": "Carol Workshop Proxy",
+                           "summary": "Carol Workshop Proxy went quiet"}],
+    })
+    key = tmp_path / "key.json"
+    assert tool.main([str(tmp_path / "raw"), str(tmp_path / "out"), "--key", str(key)]) == 0
+    written = tmp_path / "out" / "reference" / "device_sentinel.history"
+    text = written.read_text(encoding="utf-8")
+    assert DEVICE not in text and "carol" not in text.lower()
+    history = json.loads(text)["data"]
+    storage = json.loads(
+        (tmp_path / "out" / "reference" / "device_sentinel.storage").read_text(encoding="utf-8")
+    )["data"]
+    assert list(history["devices"]) == list(storage["devices"])
+    assert history["devices"][next(iter(history["devices"]))]["daily_max"] == [60.0, 61.0]
+    assert history["generation"] == 4 and history["line"] == 1760000000.0
+
+
+def test_a_name_only_the_history_file_holds_is_replaced(tmp_path: Path):
+    """A device removed since keeps its name in the older rows only."""
+    tool = _tool()
+    gone = "fedcba9876543210fedcba9876543210"
+    _history_house(tmp_path / "raw", {
+        "generation": 1, "line": 1760000000.0, "devices": {},
+        "system_events": [
+            {"device_id": gone, "name": "Garage Freezer Dave"},
+            {"device_id": gone, "summary": "Garage Freezer Dave went quiet"},
+        ],
+    })
+    key = tmp_path / "key.json"
+    assert tool.main([str(tmp_path / "raw"), str(tmp_path / "out"), "--key", str(key)]) == 0
+    text = (tmp_path / "out" / "reference" / "device_sentinel.history").read_text(encoding="utf-8")
+    assert "Dave" not in text and gone not in text
+
+
+def test_a_removed_device_keeps_no_real_name(tmp_path: Path):
+    """A record held thirty days after its device was removed carries
+    the name it had, which is a person's name for a device too."""
+    tool = _tool()
+    raw = tmp_path / "raw"
+    _house(raw)
+    storage = raw / "reference" / "device_sentinel.storage"
+    data = json.loads(storage.read_text(encoding="utf-8"))
+    data["data"]["devices"]["fedcba9876543210fedcba9876543210"] = {
+        "removed_name": "Garage Freezer Dave"}
+    storage.write_text(json.dumps(data))
+    key = tmp_path / "key.json"
+    assert tool.main([str(raw), str(tmp_path / "out"), "--key", str(key)]) == 0
+    text = (tmp_path / "out" / "reference" / "device_sentinel.storage").read_text(encoding="utf-8")
+    assert "Dave" not in text
+

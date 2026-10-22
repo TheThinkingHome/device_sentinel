@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_model_groups.py, Version: 0.23.18 (2026-09-29)
+# File: tests/test_model_groups.py, Version: 0.26.8 (2026-10-21)
 
 """Model groups, the backbone (0.23.4).
 
@@ -55,7 +55,7 @@ from custom_components.device_sentinel.normalise import check_records
 from custom_components.device_sentinel.records import _new_device_record
 from custom_components.device_sentinel.report_battery import BatteryReportMixin
 
-from tests.conftest import fleet_param
+from tests.conftest import fleet_data, fleet_param
 from .helpers import setup_entry
 
 # A real moment for the fixtures' stamps: the storage check refuses
@@ -315,9 +315,7 @@ async def test_the_diagnostics_carry_the_section_and_each_model_id(hass: HomeAss
 
 
 def _fleet_inputs(path):
-    with open(path, encoding="utf-8") as handle:
-        loaded = json.load(handle)
-    records = loaded.get("data", loaded)["devices"]
+    records = fleet_data(path)["devices"]
     diagnostics = glob.glob(str(path.parent / "config_entry*.json"))[0]
     with open(diagnostics, encoding="utf-8") as handle:
         described = json.load(handle)["data"]["devices"]

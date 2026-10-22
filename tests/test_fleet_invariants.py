@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_fleet_invariants.py, Version: 0.25.0 (2026-10-08)
+# File: tests/test_fleet_invariants.py, Version: 0.26.8 (2026-10-21)
 
 """Pre-stable campaign: the changed paths stay consistent, and every
 report still renders.
@@ -80,7 +80,7 @@ from custom_components.device_sentinel.const import (
     SYS_WHEN,
     TODO_KIND_UNAVAILABLE,
 )
-from tests.conftest import FLEET_ABSENT, fleet_path
+from tests.conftest import FLEET_ABSENT, fleet_data, fleet_path
 from tests.helpers import devices_of_entry, register_device, setup_coordinator
 
 JAMES = fleet_path("reference", "device_sentinel.storage")
@@ -102,8 +102,7 @@ STEPS = 50
 
 
 def _fleet(path: Path) -> list[dict]:
-    with open(path, encoding="utf-8") as handle:
-        devices = json.load(handle)["data"]["devices"]
+    devices = fleet_data(path)["devices"]
     with open(path.parent / CLOCKS_FOR[path.name], encoding="utf-8") as h:
         clocks = json.load(h)["data"].get("clocks") or {}
     out = []
@@ -325,9 +324,7 @@ def _fleet_names(path):
 
 async def _render_fleet(hass, path):
     """Load a fleet, write every report, return the pages by name."""
-    with open(path, encoding="utf-8") as handle:
-        loaded = json.load(handle)
-    data = loaded.get("data", loaded)
+    data = fleet_data(path)
     records = data.get("devices") or {}
     names = _fleet_names(path)
 

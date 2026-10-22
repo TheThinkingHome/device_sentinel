@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/fleet_house.py, Version: 0.22.20 (2026-09-21)
+# File: tests/fleet_house.py, Version: 0.26.8 (2026-10-21)
 
 """Build a live coordinator shaped like a real reference fleet.
 
@@ -37,7 +37,7 @@ from custom_components.device_sentinel.const import (
     DATA_DEVICES,
 )
 
-from tests.conftest import fleet_path
+from tests.conftest import fleet_data, fleet_path
 from tests.helpers import setup_coordinator
 from tests.test_upstream_events_fleet import _stub
 
@@ -66,10 +66,7 @@ TIM_SHAPE = {
 
 def _records(path):
     """Return a fleet's real device records."""
-    with open(path, encoding="utf-8") as handle:
-        loaded = json.load(handle)
-    data = loaded.get("data", loaded)
-    return data.get("devices") or {}
+    return fleet_data(path).get("devices") or {}
 
 
 def _names(path):
