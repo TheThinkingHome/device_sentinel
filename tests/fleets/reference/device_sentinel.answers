@@ -33,12 +33,33 @@
      "set": "2026-10-06T22:00:21.730808+00:00",
      "device_id": "02fa0000000000000000000000000054"
     },
+    "[\"Maker 028\", \"Model 028\", \"\"]": {
+     "kind": "usb",
+     "type": "USB Direct to Server",
+     "quantity": null,
+     "set": "2026-10-19T19:20:59.830093+00:00",
+     "device_id": "02fa0000000000000000000000000071"
+    },
+    "[\"Maker 029\", \"Model 029\", \"\"]": {
+     "kind": "usb",
+     "type": "USB Powered",
+     "quantity": null,
+     "set": "2026-10-19T19:20:46.264804+00:00",
+     "device_id": "02fa0000000000000000000000000070"
+    },
     "[\"Maker 005\", \"Model 005\", \"\"]": {
      "kind": "usb",
      "type": "USB Powered",
      "quantity": null,
      "set": "2026-10-06T00:34:37.122555+00:00",
      "device_id": "02fa000000000000000000000000005e"
+    },
+    "[\"Maker 030\", \"Model 030\", \"\"]": {
+     "kind": "mains",
+     "type": "Mains Powered",
+     "quantity": null,
+     "set": "2026-10-19T19:20:38.082112+00:00",
+     "device_id": "02fa000000000000000000000000006f"
     },
     "[\"Maker 006\", \"Model 006\", \"Model ID 006\"]": {
      "kind": "mains",
@@ -152,6 +173,20 @@
      "set": "2026-10-06T22:02:29.158391+00:00",
      "device_id": "02fa0000000000000000000000000028"
     },
+    "[\"Maker 031\", \"Model 031\", \"\"]": {
+     "kind": "usb",
+     "type": "USB Powered",
+     "quantity": null,
+     "set": "2026-10-19T19:19:21.537851+00:00",
+     "device_id": "02fa000000000000000000000000006c"
+    },
+    "[\"Maker 032\", \"Model 032\", \"\"]": {
+     "kind": "usb",
+     "type": "USB Powered",
+     "quantity": null,
+     "set": "2026-10-19T19:20:52.790344+00:00",
+     "device_id": "02fa000000000000000000000000006e"
+    },
     "[\"Maker 022\", \"Model 022\", \"Model ID 022\"]": {
      "kind": "mains",
      "type": "Mains Powered",
@@ -174,9 +209,9 @@
      "device_id": "02fa0000000000000000000000000022"
     },
     "[\"Maker 025\", \"Model 025\", \"\"]": {
-     "kind": "battery",
+     "kind": "usb",
      "type": "USB Direct to Server",
-     "quantity": 1,
+     "quantity": null,
      "set": "2026-10-09T15:45:34.260872+00:00",
      "device_id": "02fa000000000000000000000000006b"
     }
@@ -200,18 +235,33 @@
      "set": "2026-10-09T12:21:02.032351+00:00",
      "device_id": "02fa0000000000000000000000000054"
     },
+    "[\"Maker 028\", \"Model 028\", \"\"]": {
+     "type": "Music Assistant",
+     "set": "2026-10-19T19:24:45.377401+00:00",
+     "device_id": "02fa0000000000000000000000000071"
+    },
+    "[\"Maker 029\", \"Model 029\", \"\"]": {
+     "type": "Music Assistant",
+     "set": "2026-10-19T19:25:38.754842+00:00",
+     "device_id": "02fa0000000000000000000000000070"
+    },
     "[\"Maker 005\", \"Model 005\", \"\"]": {
      "type": "Bluetooth Proxy",
      "set": "2026-10-09T12:45:55.375422+00:00",
      "device_id": "02fa000000000000000000000000005e"
     },
+    "[\"Maker 030\", \"Model 030\", \"\"]": {
+     "type": "Music Assistant",
+     "set": "2026-10-19T19:28:58.889621+00:00",
+     "device_id": "02fa000000000000000000000000006f"
+    },
     "[\"Maker 014\", \"Model 014\", \"\"]": {
-     "type": "ZHA Coordinator",
+     "type": "Zigbee Coordinator (ZHA)",
      "set": "2026-10-09T12:21:59.160176+00:00",
      "device_id": "02fa0000000000000000000000000026"
     },
     "[\"Maker 015\", \"Model 015\", \"\"]": {
-     "type": "Zigbee2MQTT Coordinator",
+     "type": "Zigbee Coordinator (Zigbee2MQTT)",
      "set": "2026-10-09T12:22:20.400871+00:00",
      "device_id": "02fa0000000000000000000000000023"
     },
@@ -240,6 +290,11 @@
      "set": "2026-10-09T12:27:51.909240+00:00",
      "device_id": "02fa0000000000000000000000000063"
     },
+    "[\"Maker 032\", \"Model 032\", \"\"]": {
+     "type": "Music Assistant",
+     "set": "2026-10-19T19:25:15.298019+00:00",
+     "device_id": "02fa000000000000000000000000006e"
+    },
     "[\"Maker 025\", \"Model 025\", \"\"]": {
      "type": "Z-Wave Controller",
      "set": "2026-10-09T12:45:27.699340+00:00",
@@ -247,6 +302,15 @@
     }
    },
    "devices": {}
+  },
+  "acknowledged": {
+   "devices": {
+    "area": {
+     "02fa0000000000000000000000000039": true,
+     "02fa0000000000000000000000000038": true
+    }
+   },
+   "lines": {}
   }
  }
 }

@@ -173,7 +173,7 @@
     "name": "Device 001"
    },
    "02fa000000000000000000000000003a": {
-    "name": "Device 105"
+    "name": "Device 111"
    },
    "02fa000000000000000000000000003b": {
     "name": "Device 049"
@@ -284,7 +284,7 @@
     "name": "Device 100"
    },
    "02fa000000000000000000000000005f": {
-    "name": "Device 011"
+    "name": "Device 107"
    },
    "02fa0000000000000000000000000060": {
     "name": "Device 086"
@@ -312,6 +312,9 @@
    },
    "02fa000000000000000000000000006b": {
     "name": "Device 106"
+   },
+   "02fa000000000000000000000000006c": {
+    "name": "Device 108"
    }
   },
   "entry_options": {
@@ -326,18 +329,23 @@
    "brief_document_targets": "**REDACTED**",
    "daily_reminder_mode": "daily",
    "daily_reminder_time": "07:00:00",
+   "dashboard_mode": "advanced",
+   "devices_to_exclude": [],
    "excluded_integrations": [
-    "fully_kiosk",
-    "spook",
-    "ping",
     "androidtv",
-    "webostv",
+    "fully_kiosk",
     "mobile_app",
-    "tplink_router"
+    "ping",
+    "spook",
+    "tplink_router",
+    "webostv",
+    "music_assistant"
    ],
    "freeze_delta_high": 8,
    "freeze_delta_low": 3,
-   "freeze_muted_devices": [],
+   "freeze_muted_devices": [
+    "02fa000000000000000000000000004e"
+   ],
    "freeze_muted_integrations": [],
    "freeze_muted_labels": [],
    "high_priority_targets": "**REDACTED**",
@@ -345,9 +353,9 @@
    "low_threshold": 15.0,
    "maintenance_minutes": 10.0,
    "muted_devices": [
+    "02fa000000000000000000000000005e",
     "02fa0000000000000000000000000025",
-    "02fa0000000000000000000000000024",
-    "02fa000000000000000000000000005e"
+    "02fa0000000000000000000000000024"
    ],
    "muted_integrations": [
     "bluetooth"
@@ -364,12 +372,12 @@
    "signal_muted_integrations": [],
    "signal_muted_labels": [],
    "storage_write_minutes": 20.0,
-   "study_hardware": [
-    "Matter",
-    "Z-Wave"
-   ],
+   "study_hardware": [],
    "trim_devices": [],
    "trim_integrations": [],
+   "unavailable_muted_devices": [
+    "02fa000000000000000000000000004e"
+   ],
    "wifi_confirm_seconds": 45.0,
    "wifi_networks": [
     "network_1"
