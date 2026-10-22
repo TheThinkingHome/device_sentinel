@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tools/anonymise_fleet.py, Version: 0.25.6 (2026-10-11)
+# File: tools/anonymise_fleet.py, Version: 0.26.8 (2026-10-21)
 
 """Build the committed fleet set from real houses' files.
 
@@ -17,14 +17,18 @@ owner in a private archive.
 
 RAW_DIR holds one folder per house (reference, second, fourth, and any
 tester after them), each with the house's storage file, its clocks file,
-its answers file or the older power file if it has one, and its
-diagnostics download (`config_entry-device_sentinel-*.json`). OUT_DIR
-receives the same folders: the storage, clocks and answers or power
-file under their own names, and in place of the diagnostics a small
+its answers file or the older power file if it has one, its history
+file if it has one, and its diagnostics download
+(`config_entry-device_sentinel-*.json`). OUT_DIR receives the same
+folders: the storage, clocks, answers or power, and history files under
+their own names, and in place of the diagnostics a small
 `config_entry-device_sentinel-fleet.json` holding only what the suite
 reads from it, each device's name and the entry's options. The answers
 file holds every pencil answer since 0.25.1, power and type alike, and
-its model keys are replaced as the power file's are.
+its model keys are replaced as the power file's are. The history file,
+written beside the main file since 0.26.2, holds every day older than
+the main file's thirty, keyed by the same device ids, and is replaced
+the same way the storage file is.
 
 What is replaced, with the same stand-in everywhere it occurs:
 
@@ -71,7 +75,10 @@ ANY_ID = re.compile(
 
 # The fields that carry a device's name, and the ones that carry a name
 # inside a sentence.
-NAME_FIELDS = {"name", "sort_name"}
+# A removed device's record keeps the name it had for thirty days
+# (0.25.5), first seen in a committed house at the refresh of
+# 21 October 2026.
+NAME_FIELDS = {"name", "sort_name", "removed_name"}
 # A problem-list item for an upstream, keyed "upstream:<domain>", names
 # an integration, not a person's device, and its name is the domain
 # the rest of the file carries as a scope. Anonymizing it as a device
@@ -95,6 +102,12 @@ STORAGE_NAMES = (
 ANSWER_NAMES = {
     "device_sentinel.storage": ("device_sentinel.answers", "device_sentinel.power"),
     "device_sentinel_storage.json": ("device_sentinel_answers.json", "device_sentinel_power.json"),
+}
+# The days older than the main file's thirty, in a file of their own
+# since 0.26.2, under the same spelling as the storage file.
+HISTORY_NAMES = {
+    "device_sentinel.storage": "device_sentinel.history",
+    "device_sentinel_storage.json": "device_sentinel_history.json",
 }
 DIAGNOSTICS_OUT = "config_entry-device_sentinel-fleet.json"
 KEEP_TARGETS = {"persistent_notification"}
@@ -333,6 +346,7 @@ def anonymise_house(raw: Path, out: Path, house: House) -> list[Path]:
     if storage_name is None:
         raise SystemExit(f"{raw}: no storage file")
     answers_name, power_name = ANSWER_NAMES[storage_name]
+    history_name = HISTORY_NAMES[storage_name]
     diagnostics = sorted(raw.glob("config_entry-device_sentinel-*.json"))
     if not diagnostics:
         raise SystemExit(f"{raw}: no diagnostics download")
@@ -345,14 +359,14 @@ def anonymise_house(raw: Path, out: Path, house: House) -> list[Path]:
     # Names the registry no longer holds live on in the records, for a
     # device since removed, and a sentence can carry one of those too.
     stored = set(raw_names)
-    for storage in (storage_name, clocks_name, answers_name, power_name):
+    for storage in (storage_name, clocks_name, answers_name, power_name, history_name):
         if (raw / storage).exists():
             _collect_names(json.loads((raw / storage).read_text(encoding="utf-8")), stored)
     names = sorted(stored, key=len, reverse=True)
 
     out.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    for name in (storage_name, clocks_name, answers_name, power_name):
+    for name in (storage_name, clocks_name, answers_name, power_name, history_name):
         source = raw / name
         if not source.exists():
             continue
