@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_scan.py, Version: 0.20.9 (2026-09-06)
+# File: tests/test_wifi_scan.py, Version: 0.27.0 (2026-10-22)
 
 """WiFi detection read from the host's own radio.
 
@@ -35,8 +35,8 @@ from custom_components.device_sentinel.const import (
 
 from tests.helpers import setup_coordinator
 
-IOT = "IKS_Rotarran-IoT"
-HOUSE = "IKS_Rotarran"
+IOT = "Harbor-IoT"
+HOUSE = "Harbor"
 
 # The two satellites of the reference mesh, near and far, with the
 # signal figures the host actually read.

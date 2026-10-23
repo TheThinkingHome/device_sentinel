@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_row.py, Version: 0.24.2 (2026-10-03)
+# File: tests/test_wifi_row.py, Version: 0.27.0 (2026-10-22)
 
 """The row a Wi-Fi outage writes. Rulings #411 to #414.
 
@@ -278,7 +278,7 @@ async def test_the_row_names_the_network(hass: HomeAssistant, freezer):
     coord, trackers, devices, _untied = await _house(hass, 14)
     hass.config_entries.async_update_entry(
         coord.entry,
-        options={**coord.entry.options, "wifi_networks": ["IKS_Rotarran-IoT"]},
+        options={**coord.entry.options, "wifi_networks": ["Harbor-IoT"]},
     )
     await hass.async_block_till_done()
     first = await _declared(hass, coord, trackers[:10], freezer, count=10)
@@ -289,7 +289,7 @@ async def test_the_row_names_the_network(hass: HomeAssistant, freezer):
         WIFI_KEY, {UPSTREAM_KIND: first}, 7
     )
     assert summary == "WiFi network unavailable: 7 of 14 total devices down"
-    assert "'IKS_Rotarran-IoT' WiFi network became unavailable" in description
+    assert "'Harbor-IoT' WiFi network became unavailable" in description
     assert "7 of its 14 total devices" in description
 
 
@@ -315,7 +315,7 @@ async def test_the_wording_with_two_networks(hass: HomeAssistant, freezer):
         coord.entry,
         options={
             **coord.entry.options,
-            "wifi_networks": ["IKS_Rotarran-IoT", "IKS_Rotarran"],
+            "wifi_networks": ["Harbor-IoT", "Harbor"],
         },
     )
     await hass.async_block_till_done()
@@ -327,7 +327,7 @@ async def test_the_wording_with_two_networks(hass: HomeAssistant, freezer):
         WIFI_KEY, {UPSTREAM_KIND: first}, 7
     )
     assert (
-        "The 'IKS_Rotarran-IoT' and 'IKS_Rotarran' WiFi networks became "
+        "The 'Harbor-IoT' and 'Harbor' WiFi networks became "
         "unavailable" in description
     )
     # "its" has no referent with two named.
@@ -455,7 +455,7 @@ async def test_the_scan_route_builds_a_fallen_set_too(
     coord._grace_until = 0.0
     hass.config_entries.async_update_entry(
         coord.entry,
-        options={**coord.entry.options, "wifi_networks": ["IKS_Rotarran-IoT"]},
+        options={**coord.entry.options, "wifi_networks": ["Harbor-IoT"]},
     )
     await hass.async_block_till_done()
 
@@ -465,7 +465,7 @@ async def test_the_scan_route_builds_a_fallen_set_too(
     await hass.async_block_till_done()
 
     since = dt_util.utcnow().timestamp()
-    coord.on_wifi_scan_down(since, ["IKS_Rotarran-IoT"])
+    coord.on_wifi_scan_down(since, ["Harbor-IoT"])
     await hass.async_block_till_done()
 
     assert coord.wifi_down_at is not None
@@ -493,7 +493,7 @@ async def test_the_row_says_recovering_once_the_network_is_back(
     coord, trackers, devices, _untied = await _house(hass, 12)
     hass.config_entries.async_update_entry(
         coord.entry,
-        options={**coord.entry.options, "wifi_networks": ["IKS_Rotarran-IoT"]},
+        options={**coord.entry.options, "wifi_networks": ["Harbor-IoT"]},
     )
     await hass.async_block_till_done()
     first = await _declared(hass, coord, trackers[:11], freezer, count=11)
@@ -511,7 +511,7 @@ async def test_the_row_says_recovering_once_the_network_is_back(
         "WiFi network recovering: 3 of the 11 devices that went down "
         "remain unavailable"
     )
-    assert "'IKS_Rotarran-IoT' WiFi network came back at" in body
+    assert "'Harbor-IoT' WiFi network came back at" in body
     assert "8 of the 11 devices that went down have already recovered" in body
     assert "Device Sentinel is monitoring the recovery" in body
     assert "reported as its own problem" in body
@@ -659,7 +659,7 @@ async def test_a_recovery_with_nothing_back_yet_says_so(
     coord, trackers, _devices, _untied = await _house(hass, 12)
     hass.config_entries.async_update_entry(
         coord.entry,
-        options={**coord.entry.options, "wifi_networks": ["IKS_Rotarran-IoT"]},
+        options={**coord.entry.options, "wifi_networks": ["Harbor-IoT"]},
     )
     await hass.async_block_till_done()
     first = await _declared(hass, coord, trackers[:11], freezer, count=11)
@@ -671,7 +671,7 @@ async def test_a_recovery_with_nothing_back_yet_says_so(
         WIFI_KEY, {UPSTREAM_KIND: first}, 11
     )
     assert summary == "WiFi network is back: waiting for 11 devices to reconnect"
-    assert "'IKS_Rotarran-IoT' WiFi network came back at" in body
+    assert "'Harbor-IoT' WiFi network came back at" in body
     assert "waiting for the 11 devices that went down to reconnect" in body
     assert "already recovered" not in body
     assert "reported as its own problem" in body

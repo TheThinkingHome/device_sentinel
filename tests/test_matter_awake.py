@@ -3,9 +3,10 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_matter_awake.py, Version: 0.26.8 (2026-10-20)
+# File: test_matter_awake.py, Version: 0.27.0 (2026-10-22)
 
-"""A Matter device with no battery is judged by being available (ruling #710).
+"""A Matter device of a type that reports only on use is judged by being
+available (ruling #710, narrowed by #718 to those types).
 
 Tim Plas's test of 19 October 2026: his Matter lamp L20 and plug P22,
 unplugged, were marked away by the Matter server and unavailable by
@@ -17,6 +18,16 @@ Matter device with a battery entity may sleep, and keeps the freeze
 rule; a frozen verdict already standing stays until the device
 reports (#529); and the Slow Reporting Devices card leaves the device
 off, since a freeze mute would change nothing for it.
+
+#718 decides by type rather than by power. Tim's button B13 lost its
+battery on 21 October 2026 and was marked away about fourteen minutes
+after it was last heard, so a Matter button, light, plug or switch is
+spared whatever powers it, and so is a cover, fan, valve, lock, siren,
+appliance, vacuum or Matter Bridge. His sensor S87 went silent on 13
+October while Matter still called it available, so a sensor, and any
+type that reports on a schedule, keeps the freeze rule whatever powers
+it, as does a device that measures something whatever its entities
+call it.
 """
 
 from __future__ import annotations
@@ -41,8 +52,11 @@ from custom_components.device_sentinel.coordinator import _new_device_record
 from .helpers import setup_coordinator
 
 
-def _device(hass, domain, uid, battery=False):
-    """A lamp on a loaded entry of this domain, with a battery when asked."""
+def _device(hass, domain, uid, battery=False, sensor=False, main="light"):
+    """A lamp on a loaded entry of this domain, with a battery when asked;
+    a temperature sensor in place of the lamp when asked; another main
+    entity's domain (a cover, a switch) in place of the light when
+    asked."""
     source = MockConfigEntry(domain=domain)
     source.add_to_hass(hass)
     source.mock_state(hass, ConfigEntryState.LOADED)
@@ -50,9 +64,15 @@ def _device(hass, domain, uid, battery=False):
         config_entry_id=source.entry_id, identifiers={(domain, uid)}, name=f"Device {uid}"
     )
     registry = er.async_get(hass)
-    light = registry.async_get_or_create(
-        "light", domain, f"{uid}_light", device_id=device.id, config_entry=source
-    ).entity_id
+    if sensor:
+        light = registry.async_get_or_create(
+            "sensor", domain, f"{uid}_temperature", device_id=device.id,
+            config_entry=source, original_device_class="temperature",
+        ).entity_id
+    else:
+        light = registry.async_get_or_create(
+            main, domain, f"{uid}_{main}", device_id=device.id, config_entry=source
+        ).entity_id
     if battery:
         registry.async_get_or_create(
             "sensor", domain, f"{uid}_battery", device_id=device.id, config_entry=source,
@@ -101,16 +121,92 @@ async def test_an_unplugged_matter_lamp_is_unavailable(hass: HomeAssistant):
     assert coord._device_down_category(lamp.id, record, now) == FREEZE_CATEGORY_UNAVAILABLE
 
 
-async def test_a_matter_device_with_a_battery_keeps_the_freeze_rule(hass: HomeAssistant):
-    """A battery device on Thread may sleep and check in: not tested yet,
-    so it is judged by its rhythm (the 0.27 test with Tim's buttons)."""
-    button, light = _device(hass, "matter", "b13", battery=True)
+async def test_a_matter_lamp_with_a_battery_is_spared_too(hass: HomeAssistant):
+    """What powers it no longer decides (#718): a light, plug, switch or
+    button is judged by being available on a battery as on mains."""
+    lamp, light = _device(hass, "matter", "b13", battery=True)
     coord = await setup_coordinator(hass)
     hass.states.async_set(light, "off")
-    record, now = _silent_past_window(coord, button.id)
+    record, now = _silent_past_window(coord, lamp.id)
 
-    assert coord._awake_matter(button.id) is False
-    assert coord._device_down_category(button.id, record, now) == FREEZE_CATEGORY_FROZEN
+    assert coord.type_words(lamp.id) == "Light"
+    assert coord._awake_matter(lamp.id) is True
+    assert coord._device_down_category(lamp.id, record, now) is None
+
+
+async def test_a_matter_sensor_keeps_the_freeze_rule(hass: HomeAssistant):
+    """S87, 13 October: a sensor silent while Matter called it available,
+    caught only by its frozen verdict. On a battery and on mains alike."""
+    sensors = {
+        uid: _device(hass, "matter", uid, battery=battery, sensor=True)
+        for uid, battery in (("s87", True), ("mains", False))
+    }
+    coord = await setup_coordinator(hass)
+    for uid, (sensor, entity) in sensors.items():
+        hass.states.async_set(entity, "21.5")
+        record, now = _silent_past_window(coord, sensor.id)
+
+        assert coord._watched.get(sensor.id) == "matter", uid
+        assert coord.type_words(sensor.id) == "Temperature Sensor"
+        assert coord._awake_matter(sensor.id) is False, uid
+        assert coord._device_down_category(sensor.id, record, now) == FREEZE_CATEGORY_FROZEN, uid
+
+
+async def test_the_owner_type_decides_in_any_spelling(hass: HomeAssistant):
+    """A type set with the pencil counts in the list's name or the
+    owner's own spelling of it (#717); a type that reports on a
+    schedule keeps the rule, such as a thermostat."""
+    lamp, light = _device(hass, "matter", "owner")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(light, "off")
+    record, now = _silent_past_window(coord, lamp.id)
+
+    coord._type_entries[lamp.id] = {"type": "plug", "device_id": lamp.id}
+    assert coord._awake_matter(lamp.id) is True
+    coord._type_entries[lamp.id] = {"type": "Thermostat", "device_id": lamp.id}
+    assert coord._awake_matter(lamp.id) is False
+    assert coord._device_down_category(lamp.id, record, now) == FREEZE_CATEGORY_FROZEN
+
+
+async def test_a_cover_on_mains_is_spared_as_in_0_26_8(hass: HomeAssistant):
+    """A cover, fan, valve, lock, siren, appliance, vacuum or Matter
+    Bridge reports when used, and 0.26.8 spared it on mains: 0.27.0
+    must not call it frozen on the upgrade (adversarial round of
+    0.27.0)."""
+    blind, entity = _device(hass, "matter", "blind", main="cover")
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity, "open")
+    record, now = _silent_past_window(coord, blind.id)
+
+    assert coord.type_words(blind.id) == "Cover"
+    assert coord._awake_matter(blind.id) is True
+    assert coord._device_down_category(blind.id, record, now) is None
+    for words in ("Fan", "Valve", "Lock", "Siren", "Appliance", "Vacuum", "Matter Bridge"):
+        coord._type_entries[blind.id] = {"type": words, "device_id": blind.id}
+        assert coord._awake_matter(blind.id) is True, words
+
+
+async def test_a_sensor_with_a_switch_keeps_the_freeze_rule(hass: HomeAssistant):
+    """Its entities read Switch, but it measures a temperature, and a
+    silent sensor is what S87 was (adversarial round of 0.27.0). The
+    owner's own type is trusted."""
+    sensor, entity = _device(hass, "matter", "s87switch", sensor=True)
+    switch = er.async_get(hass).async_get_or_create(
+        "switch", "matter", "s87switch_switch", device_id=sensor.id,
+        config_entry=hass.config_entries.async_get_entry(
+            er.async_get(hass).async_get(entity).config_entry_id
+        ),
+    ).entity_id
+    coord = await setup_coordinator(hass)
+    hass.states.async_set(entity, "21.5")
+    hass.states.async_set(switch, "off")
+    record, now = _silent_past_window(coord, sensor.id)
+
+    assert coord.type_words(sensor.id) == "Switch"
+    assert coord._awake_matter(sensor.id) is False
+    assert coord._device_down_category(sensor.id, record, now) == FREEZE_CATEGORY_FROZEN
+    coord._type_entries[sensor.id] = {"type": "Switch", "device_id": sensor.id}
+    assert coord._awake_matter(sensor.id) is True
 
 
 async def test_a_standing_frozen_verdict_stays_until_it_reports(hass: HomeAssistant):

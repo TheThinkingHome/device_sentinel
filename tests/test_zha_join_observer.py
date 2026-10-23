@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_zha_join_observer.py, Version: 0.21.11 (2026-09-16)
+# File: tests/test_zha_join_observer.py, Version: 0.27.0 (2026-10-22)
 
 # Tests for 0.19.2, the ZHA join observer (ruling #360).
 #
@@ -64,6 +64,11 @@ async def test_a_handling_is_recorded_by_registry_id(
     )
     observer.async_start()
     with caplog.at_level(logging.INFO):
+        # A re-pair: the join comes first, carrying the address (#719).
+        observer._on_message(PAIRING)
+        observer._on_message(
+            {"type": "device_joined", "device_info": {"ieee": "b4:0e:06:0f:ff:e0:fc:6f"}}
+        )
         observer._on_message(
             {
                 "type": "device_fully_initialized",
@@ -219,6 +224,10 @@ async def test_a_handling_is_filed_under_the_registry_id(
     )
 
     observer = stack_zha.make_join_observer(hass)
+    observer._on_message(PAIRING)
+    observer._on_message(
+        {"type": "device_joined", "device_info": {"ieee": "b4:0e:06:0f:ff:e0:fc:6f"}}
+    )
     observer._on_message(
         {
             "type": "device_fully_initialized",
@@ -270,3 +279,227 @@ async def test_a_removal_counts_as_handling(hass: HomeAssistant):
     assert observer.handled_since(
         "reg-2", dt_util.utcnow().timestamp()
     ) is not None
+
+
+# ------------------------- a full init alone is not a person (#719)
+
+# Pairing open: what ZHA's Add Device page leaves on the signal while it
+# is open, its own log relayed line by line.
+PAIRING = {"type": "log_output", "log_entry": {"message": "permit"}}
+
+_RIG_21_OCTOBER = (
+    ("75e24b03455f8289abdc2f77b6202ab9", "a4:c1:38:00:00:00:00:01", "ZHA Test Device - mmWave R"),
+    ("97bdcccf073c7ebc33adf6edd9ab8907", "b4:0e:06:0f:ff:e0:fc:6f", "ZHA Test Device - Motion"),
+    ("bc44cc1d3262aefa97d23153188aff5a", "a4:c1:38:00:00:00:00:02", "ZHA Test Device - mmWave J"),
+)
+
+
+def _full_init(registry_id, ieee, name):
+    return {
+        "type": "device_fully_initialized",
+        "device_info": {
+            "ieee": ieee, "device_reg_id": registry_id,
+            "user_given_name": name, "pairing_status": "CONFIGURED",
+        },
+    }
+
+
+async def test_a_full_init_alone_after_a_restart_is_not_handled(
+    hass: HomeAssistant, caplog
+):
+    """The rig, 21 October 2026: 9 to 18 seconds after Home Assistant
+    restarted, ZHA sent a full init alone for three test devices nobody
+    touched, and the brief said somebody re-paired them. Replayed, none
+    is filed, nothing reaches the coordinator, and the log says why."""
+    seen = []
+    observer = stack_zha.make_join_observer(
+        hass, lambda device_id, kind: seen.append((device_id, kind))
+    )
+    with caplog.at_level(logging.INFO):
+        for registry_id, ieee, name in _RIG_21_OCTOBER:
+            observer._on_message(_full_init(registry_id, ieee, name))
+    assert seen == []
+    assert observer.handled == {}
+    assert caplog.text.count("not counted as handled") == 3
+    # Still counted as messages heard.
+    assert observer.seen == 3
+
+
+async def test_a_reconfigure_still_counts(hass: HomeAssistant):
+    """A reconfigure sends raw, then the full init (29 August 2026)."""
+    seen = []
+    observer = stack_zha.make_join_observer(
+        hass, lambda device_id, kind: seen.append((device_id, kind))
+    )
+    registry_id, ieee, name = _RIG_21_OCTOBER[0]
+    observer._on_message({"type": "raw_device_initialized", "ieee": ieee, "nwk": 1})
+    observer._on_message(_full_init(registry_id, ieee, name))
+    assert seen == [(registry_id, "device_fully_initialized")]
+
+
+async def test_a_re_pair_counts_both_full_inits(hass: HomeAssistant):
+    """A re-pair sends the join, then the full init twice, while
+    pairing is open."""
+    seen = []
+    observer = stack_zha.make_join_observer(
+        hass, lambda device_id, kind: seen.append((device_id, kind))
+    )
+    registry_id, ieee, name = _RIG_21_OCTOBER[1]
+    observer._on_message(PAIRING)
+    observer._on_message({"type": "device_joined", "device_info": {"ieee": ieee}})
+    observer._on_message(_full_init(registry_id, ieee, name))
+    observer._on_message(_full_init(registry_id, ieee, name))
+    assert seen == [(registry_id, "device_fully_initialized")] * 2
+
+
+async def test_another_devices_join_explains_nothing(hass: HomeAssistant):
+    """A join is matched by its address, never by its timing alone."""
+    seen = []
+    observer = stack_zha.make_join_observer(
+        hass, lambda device_id, kind: seen.append((device_id, kind))
+    )
+    observer._on_message(PAIRING)
+    observer._on_message({"type": "device_joined", "device_info": {"ieee": "ff:ff"}})
+    for registry_id, ieee, name in _RIG_21_OCTOBER:
+        observer._on_message(_full_init(registry_id, ieee, name))
+    assert seen == []
+
+
+async def test_an_old_join_explains_nothing(hass: HomeAssistant, freezer):
+    """A join longer ago than the window is not the same handling."""
+    from custom_components.device_sentinel.const import ZHA_HANDLING_WINDOW_SECONDS
+
+    seen = []
+    observer = stack_zha.make_join_observer(
+        hass, lambda device_id, kind: seen.append((device_id, kind))
+    )
+    registry_id, ieee, name = _RIG_21_OCTOBER[2]
+    observer._on_message(PAIRING)
+    observer._on_message({"type": "device_joined", "device_info": {"ieee": ieee}})
+    freezer.tick(ZHA_HANDLING_WINDOW_SECONDS + 1)
+    observer._on_message(_full_init(registry_id, ieee, name))
+    assert seen == []
+
+
+async def test_odd_addresses_never_count(hass: HomeAssistant):
+    """No address, an empty one or a number: nothing to match, so a full
+    init with one is a device setting itself up, never a person."""
+    seen = []
+    observer = stack_zha.make_join_observer(
+        hass, lambda device_id, kind: seen.append((device_id, kind))
+    )
+    for ieee in (None, "", 7, ["a"]):
+        observer._on_message(PAIRING)
+        observer._on_message({"type": "device_joined", "device_info": {"ieee": ieee}})
+        observer._on_message(_full_init("reg-odd", ieee, "Odd"))
+    assert seen == []
+
+
+
+# ----------- a device moving on its own is not a person (0.27.0 round)
+
+
+async def test_a_device_changing_its_address_is_not_handled(hass: HomeAssistant, caplog):
+    """zigpy 2.3.0 sends a join, then ZHA two full inits, when a known
+    device turns up at a new network address, with nobody near it. With
+    pairing closed it is the device, not a person."""
+    seen = []
+    observer = stack_zha.make_join_observer(
+        hass, lambda device_id, kind: seen.append((device_id, kind))
+    )
+    registry_id, ieee, name = _RIG_21_OCTOBER[1]
+    with caplog.at_level(logging.INFO):
+        observer._on_message({"type": "device_joined", "device_info": {"ieee": ieee}})
+        observer._on_message(_full_init(registry_id, ieee, name))
+        observer._on_message(_full_init(registry_id, ieee, name))
+    assert seen == [] and observer.handled == {}
+    assert "joined with pairing closed" in caplog.text
+
+
+async def test_the_permit_action_opens_pairing_for_its_duration(hass: HomeAssistant, freezer):
+    """zha.permit opens pairing for as long as it asks; a join after
+    that is a device moving on its own."""
+    seen = []
+    observer = stack_zha.make_join_observer(
+        hass, lambda device_id, kind: seen.append((device_id, kind))
+    )
+    assert observer.async_start()
+    registry_id, ieee, name = _RIG_21_OCTOBER[0]
+    hass.bus.async_fire("call_service", {"domain": "zha", "service": "permit", "service_data": {"duration": 60}})
+    await hass.async_block_till_done()
+    observer._on_message({"type": "device_joined", "device_info": {"ieee": ieee}})
+    observer._on_message(_full_init(registry_id, ieee, name))
+    assert seen == [(registry_id, "device_fully_initialized")]
+    freezer.tick(61)
+    other_id, other_ieee, other_name = _RIG_21_OCTOBER[2]
+    observer._on_message({"type": "device_joined", "device_info": {"ieee": other_ieee}})
+    observer._on_message(_full_init(other_id, other_ieee, other_name))
+    assert seen == [(registry_id, "device_fully_initialized")]
+    # Another action opens nothing.
+    hass.bus.async_fire("call_service", {"domain": "light", "service": "turn_on", "service_data": {"duration": 60}})
+    await hass.async_block_till_done()
+    observer._on_message({"type": "device_joined", "device_info": {"ieee": other_ieee}})
+    observer._on_message(_full_init(other_id, other_ieee, other_name))
+    assert len(seen) == 1
+    observer.async_stop()
+
+
+async def test_the_add_device_page_closes_after_its_last_line(hass: HomeAssistant, freezer):
+    """The page relays the log while open; 254 seconds after the last
+    line, pairing is closed whatever the page did."""
+    from custom_components.device_sentinel.const import ZHA_PERMIT_LONGEST_SECONDS
+
+    seen = []
+    observer = stack_zha.make_join_observer(
+        hass, lambda device_id, kind: seen.append((device_id, kind))
+    )
+    registry_id, ieee, name = _RIG_21_OCTOBER[0]
+    observer._on_message(PAIRING)
+    freezer.tick(ZHA_PERMIT_LONGEST_SECONDS + 1)
+    observer._on_message({"type": "device_joined", "device_info": {"ieee": ieee}})
+    observer._on_message(_full_init(registry_id, ieee, name))
+    assert seen == []
+    # The relay is not a message about a device, and is not counted.
+    assert observer.seen == 2
+
+
+async def test_a_slow_reconfigure_still_counts(hass: HomeAssistant, freezer):
+    """A sleepy battery device can take minutes to configure; the raw
+    init's window holds for fifteen."""
+    seen = []
+    observer = stack_zha.make_join_observer(
+        hass, lambda device_id, kind: seen.append((device_id, kind))
+    )
+    registry_id, ieee, name = _RIG_21_OCTOBER[2]
+    observer._on_message({"type": "raw_device_initialized", "ieee": ieee, "nwk": 1})
+    freezer.tick(600)
+    observer._on_message(_full_init(registry_id, ieee, name))
+    assert seen == [(registry_id, "device_fully_initialized")]
+
+
+async def test_initialized_ends_the_handling(hass: HomeAssistant):
+    """ZHA's last full init of a pairing says INITIALIZED; a full init
+    after it is the device again, not the same handling."""
+    seen = []
+    observer = stack_zha.make_join_observer(
+        hass, lambda device_id, kind: seen.append((device_id, kind))
+    )
+    registry_id, ieee, name = _RIG_21_OCTOBER[1]
+    observer._on_message(PAIRING)
+    observer._on_message({"type": "device_joined", "device_info": {"ieee": ieee}})
+    observer._on_message(_full_init(registry_id, ieee, name))
+    done = _full_init(registry_id, ieee, name)
+    done["device_info"]["pairing_status"] = "INITIALIZED"
+    observer._on_message(done)
+    observer._on_message(_full_init(registry_id, ieee, name))
+    assert len(seen) == 2
+
+
+async def test_begun_handlings_are_bounded(hass: HomeAssistant):
+    from custom_components.device_sentinel.const import ZHA_BEGUN_KEPT
+
+    observer = stack_zha.make_join_observer(hass)
+    for n in range(ZHA_BEGUN_KEPT + 50):
+        observer._on_message({"type": "raw_device_initialized", "ieee": f"00:{n:06x}", "nwk": n})
+    assert len(observer._begun) == ZHA_BEGUN_KEPT
+    assert "00:000000" not in observer._begun

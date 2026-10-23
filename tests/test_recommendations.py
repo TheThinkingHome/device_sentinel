@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendations.py, Version: 0.26.0 (2026-10-12)
+# File: tests/test_recommendations.py, Version: 0.27.0 (2026-10-22)
 
 """The brief's Recommendations section (ruling #458).
 
@@ -468,8 +468,11 @@ async def test_the_emailed_brief_carries_one_line_each_with_its_link(hass: HomeA
 
     coord, *_ = await _house_for_cards(hass)
     text = _text(coord._recommendations_section())
-    for title in ("Power Not Set: ", "Last Seen Sensor Switched Off: ", "No Area Assigned: ", "Devices Sharing A Name: "):
-        assert title in text, title
+    # Each title counts the rows not ticked, as on the tab (ruling #724).
+    active = {card["title"]: card["active"] for card in coord.device_recommendations()}
+    for title in ("Power Not Set", "Last Seen Sensor Switched Off", "No Area Assigned", "Devices Sharing A Name"):
+        assert active[title] > 0, title
+        assert f"{title} ({active[title]}): " in text, title
     assert "from the Recommendations tab" in text
     hass.config.external_url = "https://home.example.org"
     hass.config_entries.async_update_entry(coord.entry, options={**coord.entry.options,

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.24.2 (2026-10-03)
+# File: test_battery_report.py, Version: 0.27.0 (2026-10-22)
 
 """Which cells are going to be low (ruling #194).
 
@@ -29,6 +29,7 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
     CONF_BATTERY_DAYS,
+    CONF_LOW_THRESHOLD,
     DATA_DEVICES,
     DATA_INCIDENTS,
     DATA_TODO_ITEMS,
@@ -51,6 +52,12 @@ DYING = [
 # A healthy cell drifting down at half a point a day.
 HEALTHY = [91.0, 92.0, 92.5, 92.0, 91.5, 92.0, 91.5, 91.0,
            91.0, 91.0, 89.5, 88.5, 87.0, 86.0, 84.0, 82.5]
+# Tim Plas's S63 carried down to 21.5 percent: steady, then speeding up.
+SPEEDING = [round(level - 36.0, 1) for level in [
+    73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
+    74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
+    68.5, 67.0, 67.5, 67.5, 65.0, 65.5, 65.0, 64.5, 63.0, 61.5, 60.5, 59.5,
+    58.0, 57.5, 57.5]]
 # A cell that has not moved at all.
 STEADY = [100.0] * 16
 # 20 percent falling 1.5 a day: a little over thirteen days.
@@ -90,9 +97,14 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
 
     Before 0.23.6 the dying cell's pace came from a seven-day slope,
     1.75 a day; it comes from the weekly averages now, since sixteen
-    days is too few for a knee.
+    days is too few for a six-week fit.
     """
     coord = await setup_coordinator(hass)
+    # Judged only at or under three times the low threshold (#725): raised so
+    # the high cells here are judged too.
+    hass.config_entries.async_update_entry(
+        coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 49}
+    )
     dying, _ = register_device(hass, "bat1", "Door 2nd Bedroom")
     healthy, _ = register_device(hass, "bat2", "Soil Moisture")
     await registry_settled(hass)
@@ -105,7 +117,10 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
     assert round(falling[0]["slope"], 3) == -0.939
     assert coord.battery_time_left(falling[0]["days"]) == "about 2 weeks"
     assert falling[0]["reading"] == "falling"
-    assert coord.battery_time_left(falling[1]["days"]) == "about 6 months"
+    # The healthy cell's time left runs to the 49 percent threshold
+    # (#730); the dying one, under it, runs to empty.
+    assert coord.battery_time_left(falling[1]["days"]) == "about 2 months"
+    assert falling[1]["target"] == 49.0 and falling[0]["target"] == 0.0
 
 
 async def test_the_sag_and_rebound_do_not_move_the_slope(
@@ -171,8 +186,9 @@ async def test_the_falling_sensor_is_a_different_set_from_low(
 
     The dying cell is at 12 percent and is counted low. The healthy
     faller is at 82 and is counted by neither, being two months out.
-    A third at 20 percent dropping fast is the case that belongs in
-    falling and nowhere else.
+    A third at 21.5 percent speeding up is the case that belongs in
+    falling and nowhere else. Since 0.27.0 a cell falling at a steady
+    pace is a battery to watch, not on the sensor (#731).
     """
     coord = await setup_coordinator(hass)
     low, _ = register_device(hass, "fs1", "Already Low")
@@ -180,9 +196,7 @@ async def test_the_falling_sensor_is_a_different_set_from_low(
     far, _ = register_device(hass, "fs3", "Months Away")
     await registry_settled(hass)
     _seed(coord, low.id, DYING, 12.0, low=True)
-    _seed(coord, soon.id,
-          [40.0, 38.5, 37.0, 35.5, 34.0, 32.5, 31.0, 29.5,
-           28.0, 26.5, 25.0, 23.5, 22.0, 20.5, 20.0, 20.0], 20.0)
+    _seed(coord, soon.id, SPEEDING, 21.5)
     _seed(coord, far.id, HEALTHY, 82.0)
 
     names = [row["name"] for row in coord.battery_falling_list]
@@ -192,12 +206,23 @@ async def test_the_falling_sensor_is_a_different_set_from_low(
     assert "Already Low" not in names
     # And the sensor agrees with the report and the brief.
     row = coord.battery_falling_list[0]
-    # A week-against-week pace (0.23.6): the last week averaged about
-    # ten points below the one before, so two weeks, where the old
-    # seven-day slope was flattened by the last three days' 20.5, 20
-    # and 20 and said a month.
-    assert row["left"] == "about 2 weeks"
+    assert row["until"] == "reaches 15% in under a week"
     assert row["device_id"] == soon.id
+
+
+async def test_a_steady_fall_is_watched_not_counted(hass: HomeAssistant):
+    """20 percent falling 1.5 a day: a week-against-week pace (0.23.6)
+    of about ten points, where the old seven-day slope was flattened by
+    the last three days' 20.5, 20 and 20. Sixteen days is too short to
+    call it speeding up, so it is a battery to watch (#731)."""
+    coord = await setup_coordinator(hass)
+    soon, _ = register_device(hass, "fs2", "Nearly Out")
+    await registry_settled(hass)
+    _seed(coord, soon.id, TWO_WEEKS, 20.0)
+    assert coord.battery_falling_list == []
+    watched = coord.battery_watch_rows()
+    assert [row["name"] for row in watched] == ["Nearly Out"]
+    assert coord.battery_until_words(watched[0]) == "reaches 15% in under a week"
 
 
 async def test_an_interrupted_write_leaves_no_fragment(
@@ -276,14 +301,20 @@ async def test_the_brief_names_a_cell_that_is_nearly_out(hass: HomeAssistant):
     """
     coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
     device, _ = register_device(hass, "brf1", "Door 2nd Bedroom")
+    steady, _ = register_device(hass, "brf2", "Nearly Out")
     await registry_settled(hass)
-    _seed(coord, device.id, DYING, 12.0)
+    _seed(coord, device.id, SPEEDING, 21.5)
+    _seed(coord, steady.id, TWO_WEEKS, 20.0)
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     brief = _brief(hass)
 
-    assert "Batteries falling: Door 2nd Bedroom (about 2 weeks)" in brief
-    assert "Details are in Battery Trends on the Device Sentinel dashboard." in brief
+    assert "Batteries falling faster each week: Door 2nd Bedroom (reaches 15% in under a week)." in brief
+    # A steady fall is named to watch, and the pointer is said once,
+    # after the last battery line.
+    assert ("Batteries to watch: Nearly Out (reaches 15% in under a week). "
+            "Details are in Battery Trends on the Device Sentinel dashboard.") in brief
+    assert brief.count("Details are in Battery Trends") == 1
     assert "battery_report" not in brief
     assert "/local/" not in brief
 
@@ -294,6 +325,11 @@ async def test_the_brief_leaves_out_what_nobody_can_act_on(hass: HomeAssistant):
     reference fleet the unfiltered list was sixteen devices.
     """
     coord = await setup_coordinator(hass)
+    # Judged only at or under three times the low threshold (#725): raised so
+    # the high cells here are judged too.
+    hass.config_entries.async_update_entry(
+        coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 49}
+    )
     near, _ = register_device(hass, "brf2", "Nearly Out")
     far, _ = register_device(hass, "brf3", "Months Away")
     await registry_settled(hass)

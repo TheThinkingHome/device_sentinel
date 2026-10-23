@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_projection.py, Version: 0.26.8 (2026-10-20)
+# File: tests/test_battery_projection.py, Version: 0.27.0 (2026-10-22)
 
 """When a falling cell runs empty, as a range (ruling #704).
 
@@ -17,11 +17,11 @@ sentence above the chart agrees with the range (ruling #713).
 from __future__ import annotations
 
 import math
-from datetime import date
 
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.battery_projection import (
+    accelerating_pace,
     battery_projection,
     days_to_empty,
     time_left_range,
@@ -106,9 +106,10 @@ def test_the_words_take_a_range():
 
 
 async def test_the_near_end_decides_the_falling_forecast(hass: HomeAssistant):
-    """Door 2nd Bedroom with Days Till Empty at 30: the straight pace
-    kept it off the Problem List; the near end of its range puts it on,
-    with the range in words (#704)."""
+    """Door 2nd Bedroom with Days Till Low Warning at 30: the straight
+    pace kept it off the Problem List; the near end of its range puts it
+    on, with the range in words (#704). At 16.5 percent its time left
+    runs to the 15 percent threshold, not to empty (#730)."""
     device, (entity_id,) = register_device(hass, "door", name="Door 2nd Bedroom")
     coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
     record = coord.data[DATA_DEVICES][device.id]
@@ -116,19 +117,20 @@ async def test_the_near_end_decides_the_falling_forecast(hass: HomeAssistant):
     record[DEV_BATTERY_VALUE] = 16.5
     falling = coord.battery_falling_list
     row = next(r for r in falling if r["device_id"] == device.id)
-    assert row["left"] == "about 4 to 5 weeks"
+    assert row["left"] == "under a week"
+    assert row["until"] == "reaches 15% in under a week"
     page = coord._page_battery(record)
-    assert page["left"] == "about 4 to 5 weeks" and page["left_soon"] is True
+    assert page["left"] == "under a week" and page["left_soon"] is True
+    assert page["projection"]["target"] == 15.0
     assert page["projection"]["curved"] is True and page["days_setting"] == 30.0
 
 
-def test_a_cell_above_half_keeps_the_straight_pace():
-    """Ruling #708: the curve is used only at or under 50 percent. A
-    cell near 90 percent speeding up read about two months on the
-    curve against five to seven on its pace (replay, 19 October)."""
+def test_the_curve_is_used_at_any_level():
+    """The 50 percent limit of #708 is gone (#725): a cell is judged only
+    at or under twice the threshold, so a bending fall is curved
+    wherever it is judged."""
     high = [v + 70.0 for v in DOOR]
-    found = battery_projection(high, high[-1])
-    assert found is not None and found["curved"] is False
+    assert battery_projection(high, high[-1])["curved"] is True
     assert battery_projection(DOOR, DOOR[-1])["curved"] is True
 
 
@@ -142,19 +144,6 @@ def test_each_end_of_the_range_has_its_own_unit():
     # Never backwards (found by review).
     assert time_left_range(69, 72) == "about 10 weeks"
     assert time_left_range(66, 75) == "about 9 to 11 weeks"
-
-
-def test_above_half_a_knee_keeps_the_pace_after_it():
-    """Ruling #708: above half, a cell the accelerating rule found a
-    knee in is projected at the straight pace since the knee, the pace
-    it was given before 0.26.7, not a line through the flat weeks."""
-    knee = [90.0 + _wobble(i) / 4 for i in range(30)] + [90.0 - 0.5 * i + _wobble(i) / 4 for i in range(1, 22)]
-    level = knee[-1]
-    since_knee = battery_projection(knee, level, since=21)
-    whole = battery_projection(knee, level)
-    assert since_knee["curved"] is False
-    assert since_knee["near"] <= level / 0.5 <= since_knee["far"], since_knee
-    assert whole["near"] > since_knee["far"]
 
 
 def test_the_range_edges_found_by_review():
@@ -183,11 +172,20 @@ def test_a_curved_fall_is_said_as_speeding_up():
     curved = battery_projection(DOOR, 16.5)
     assert curved["curved"] is True and curved["pace"] > 0
     steady = {"reading": "falling", "pace": 1.3, "fit": None}
-    words = battery_sentence(steady, date(2026, 10, 19), curved)
+    words = battery_sentence(steady, curved)
     assert words == f"Falling faster each week, about {curved['pace']:.1f} points a week today."
     assert "steady" not in words
     straight = dict(curved, curved=False)
-    assert battery_sentence(steady, date(2026, 10, 19), straight).endswith("at a steady pace.")
-    assert battery_sentence(steady, date(2026, 10, 19)).endswith("at a steady pace.")
+    assert battery_sentence(steady, straight).endswith("at a steady pace.")
+    assert battery_sentence(steady).endswith("at a steady pace.")
     # The pace today is the fitted path's, faster than the weeks' average.
     assert curved["pace"] > 1.3
+
+
+def test_a_perfectly_straight_fall_is_not_accelerating():
+    """An exact half point a day leaves the curve no error to divide by:
+    without the gain floor the F test read it as speeding up (found 22
+    October 2026)."""
+    straight = [round(61.0 - 0.5 * day, 1) for day in range(43)]
+    assert accelerating_pace(straight) is None
+    assert battery_projection(straight, 40.0, 15.0)["curved"] is False

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_panel.py, Version: 0.25.4 (2026-10-09)
+# File: tests/test_dashboard_panel.py, Version: 0.27.0 (2026-10-22)
 
 """The dashboard's sidebar entry and the one module behind it.
 
@@ -36,6 +36,10 @@ MODULE = (
     / "custom_components" / "device_sentinel" / "frontend" / "panel.js"
 )
 
+
+# The real frontend and panel_custom, the dependencies the panel is
+# registered through (#721); the rest of the suite counts them loaded.
+pytestmark = pytest.mark.real_frontend
 
 def _panel(hass: HomeAssistant):
     return hass.data.get("frontend_panels", {}).get("device-sentinel")
@@ -107,6 +111,10 @@ async def test_a_dashboard_that_cannot_be_served_stops_nothing(hass: HomeAssista
     from homeassistant.setup import async_setup_component
 
     await async_setup_component(hass, "http", {})
+    # The frontend serves its own files too, and since 0.27.0 is a
+    # dependency set up before Device Sentinel (#721), so it goes up
+    # first and only Device Sentinel's own file is refused.
+    await async_setup_component(hass, "panel_custom", {})
 
     async def _boom(configs):
         raise RuntimeError("no static paths today")
@@ -191,6 +199,10 @@ async def test_a_dashboard_never_served_names_no_file(hass: HomeAssistant, hass_
     from homeassistant.setup import async_setup_component
 
     await async_setup_component(hass, "http", {})
+    # The frontend serves its own files too, and since 0.27.0 is a
+    # dependency set up before Device Sentinel (#721), so it goes up
+    # first and only Device Sentinel's own file is refused.
+    await async_setup_component(hass, "panel_custom", {})
 
     async def _boom(configs):
         raise RuntimeError("no static paths today")
@@ -209,3 +221,36 @@ def test_the_element_is_registered_once_per_tab():
     source = MODULE.read_text(encoding="utf-8")
     assert "if (!customElements.get(PANEL_ELEMENT))" in source
     assert source.count("customElements.define(") == 1
+
+
+async def test_the_panel_goes_through_panel_custom(hass: HomeAssistant):
+    """Registered as a custom panel through panel_custom, with frontend
+    and panel_custom named as dependencies (#721, from the HACS review
+    reading of 21 October 2026). A setup that runs again with the panel
+    still there replaces it rather than raising."""
+    import json
+    from unittest.mock import patch
+
+    from custom_components.device_sentinel import _async_register_panel
+
+    manifest = json.loads((MODULE.parent.parent / "manifest.json").read_text())
+    assert {"frontend", "panel_custom"} <= set(manifest["dependencies"])
+    assert "frontend" not in manifest.get("after_dependencies", [])
+
+    from homeassistant.components import panel_custom
+
+    real = panel_custom.async_register_panel
+    calls = []
+
+    async def _spy(*args, **kwargs):
+        calls.append(kwargs)
+        return await real(*args, **kwargs)
+
+    with patch.object(panel_custom, "async_register_panel", _spy):
+        await setup_entry(hass)
+        await _async_register_panel(hass)
+    assert len(calls) == 2
+    assert calls[0]["require_admin"] is True
+    panel = _panel(hass)
+    assert panel.component_name == "custom"
+    assert panel.config["_panel_custom"]["name"] == calls[1]["webcomponent_name"]

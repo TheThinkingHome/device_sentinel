@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_steps.py, Version: 0.23.19 (2026-09-30)
+# File: tests/test_battery_steps.py, Version: 0.27.0 (2026-10-22)
 
 """A battery that reports in coarse steps is not forecast.
 
@@ -25,6 +25,7 @@ from __future__ import annotations
 from homeassistant.core import HomeAssistant
 
 from custom_components.device_sentinel.const import (
+    CONF_LOW_THRESHOLD,
     DATA_DEVICES,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
@@ -64,6 +65,11 @@ async def test_two_steps_make_it_coarse(hass: HomeAssistant):
 async def test_a_smooth_fall_is_still_forecast(hass: HomeAssistant):
     """Guard: the forecast Tim's steady cells earned stays."""
     coord, _device, record = await _cell(hass, SMOOTH_FALL)
+    # Judged only at or under three times the low threshold (#725): raised so
+    # the high cells here are judged too.
+    hass.config_entries.async_update_entry(
+        coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 49}
+    )
     assert coord.battery_steps(record) == "smooth"
     assert [row["name"] for row in coord._battery_rows()["falling"]] == [
         "Office Temp/Humid"

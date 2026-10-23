@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_falling_surfaces.py, Version: 0.23.19 (2026-09-30)
+# File: tests/test_falling_surfaces.py, Version: 0.27.0 (2026-10-22)
 
 """The falling battery on the phone and the card, and the crossing.
 
@@ -111,16 +111,22 @@ def _battery_device(hass: HomeAssistant, name: str, level: float):
     return device, entry.entity_id
 
 
+# Tim Plas's S63: steady, then speeding up. Since 0.27.0 only a cell
+# speeding up reaches the Problem List and the phone (#731).
+S63 = [73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
+       74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
+       68.5, 67.0, 67.5, 67.5, 65.0, 65.5, 65.0, 64.5, 63.0, 61.5, 60.5, 59.5,
+       58.0, 57.5, 57.5]
+
+
 def _seed(coord, device_id: str, level: float):
-    """Give a device a fourteen-day fall ending at level."""
+    """Give a device S63's six weeks, carried down to end at level."""
     now = time.time()
     record = coord.data[DATA_DEVICES].setdefault(device_id, {})
     record[DEV_EVENT_COUNT] = 500
     record[DEV_FIRST_OBSERVED] = now - 86400 * 40
     record[DEV_LAST_ACTIVITY] = now - 60
-    record[DEV_BATTERY_DAILY] = [
-        round(level + 2.25 * day, 1) for day in range(13, -1, -1)
-    ]
+    record[DEV_BATTERY_DAILY] = [round(value - S63[-1] + level, 1) for value in S63]
 
 
 def _events(coord) -> list[tuple[str, str, bool]]:
@@ -151,7 +157,7 @@ async def test_the_falling_push_reads_as_a_sentence(hass: HomeAssistant):
     assert recovery is False
     assert "_" not in line
     assert line.endswith(
-        "Door 2nd Bedroom battery is running down, empty in about 2 weeks."
+        "Door 2nd Bedroom battery is running down, reaches 18% in under a week."
     )
 
 
@@ -235,7 +241,7 @@ async def test_the_card_names_a_falling_cell(hass: HomeAssistant):
     # Since 0.23.10 a card that lists anything ends with a link to the
     # Problem List.
     assert message == (
-        "Battery: Door 2nd Bedroom empty in about 2 weeks."
+        "Battery: Door 2nd Bedroom reaches 18% in under a week."
         "\n\n[Open the Problem List](/device-sentinel/problem-list)"
     )
 

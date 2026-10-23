@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_device_labels.py, Version: 0.23.15 (2026-09-28)
+# File: tests/test_device_labels.py, Version: 0.27.0 (2026-10-22)
 
 """A device's name in an HTML report: its area, and a link to it.
 
@@ -21,6 +21,10 @@ the only HTML report left.
 """
 
 from __future__ import annotations
+
+import re
+from html import unescape
+from urllib.parse import urlparse
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
@@ -153,9 +157,10 @@ async def test_each_choice_uses_its_own_address(hass: HomeAssistant):
 
     await _linking(hass, coord, REPORT_LINKS_EXTERNAL)
     assert coord._report_link("/x") == "https://house.example.com/x"
-    assert "https://house.example.com" in coord._device_cell(
-        device.id, "Motion Laundry"
-    )
+    cell = coord._device_cell(device.id, "Motion Laundry")
+    href = re.search(r'href="([^"]+)"', cell).group(1)
+    link = urlparse(unescape(href))
+    assert (link.scheme, link.hostname) == ("https", "house.example.com")
 
 
 async def test_a_choice_that_home_assistant_cannot_serve_links_nothing(

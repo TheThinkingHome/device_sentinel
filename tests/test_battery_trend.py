@@ -3,30 +3,32 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_trend.py, Version: 0.24.6 (2026-10-05)
+# File: tests/test_battery_trend.py, Version: 0.27.0 (2026-10-22)
 
-"""The battery trend by the week, and the knee (0.23.6).
+"""The battery trend by the week (0.23.6), and accelerating on a curve
+(ruling #725, 0.27.0).
 
 The seven-day slope called a cell falling at 0.05 points a day, smaller
 than the half-point steps most cells report in. On the reference rig
 seven cells near full were listed as falling, several as
 accelerating, each "over a year", while their weekly averages moved by
 a few tenths. The owner ruled on 25 September: a cell is falling when
-its last week averages a point below the week before, and
-accelerating when two fitted lines joined at a knee show the pace
-became at least two points a week and twice what it was.
+its last week averages a point below the week before. Accelerating
+was two fitted lines joined at a knee until 0.27.0; since then it is
+the six-week curve the time left reads, guarded (#725), and the knee
+is gone.
 
 Every series here is real: the reference rig's of 25 September and
-Tim Plas's of 24 September, where S63 sped up and S71 did not.
+Tim Plas's of 24 September, where S63 sped up and S71 did not, and
+the reference rig's Door 2nd Bedroom and Tim's s26 of October.
 """
 
 from __future__ import annotations
 
-from datetime import date
-
+from custom_components.device_sentinel.battery_projection import accelerating_pace
 from custom_components.device_sentinel.report_battery import (
     _least_squares,
-    battery_knee,
+    battery_line,
     battery_month_drop,
     battery_sentence,
     battery_trend,
@@ -89,16 +91,46 @@ def test_a_week_a_point_below_the_last_is_falling():
     assert battery_trend(nearly, 79.1, True)["reading"] == ""
 
 
-def test_the_cell_that_sped_up_is_accelerating_from_its_knee():
+def test_the_cell_that_sped_up_is_accelerating_at_its_pace_today():
+    """S63: the curve's fall today is its pace, and no straight line is
+    kept for it (ruling #725)."""
     trend = battery_trend(S63, 57.0, True)
     assert trend["reading"] == "accelerating"
-    fit = trend["fit"]
-    assert fit["knee"] is True
-    assert fit["knee_ago"] == 19
-    assert 5.5 < trend["pace"] < 6.5
-    assert fit["before"] < 1.0
-    # The drawn line: from the window's first day, to the knee, to today.
-    assert [ago for ago, _ in fit["line"]] == [38, 19, 0]
+    assert trend["fit"] is None
+    assert 8.0 < trend["pace"] < 9.5
+    assert trend["pace"] == accelerating_pace(S63)
+
+
+# The reference rig's Door 2nd Bedroom, the six weeks to 21 October
+# 2026: a gradual bend, not a corner. The knee rule read it as nothing
+# at all at 14.5 percent; the curve reads it accelerating, at about 2.7
+# points a week today, the pace its time left is drawn on.
+DOOR_2ND_BEDROOM = [22.5, 23.0, 23.5, 23.0, 23.0, 23.0, 22.0, 23.0, 22.0, 23.5,
+                    22.5, 23.5, 23.0, 22.0, 22.5, 23.0, 21.0, 21.5, 22.5, 21.5,
+                    21.0, 21.0, 20.5, 20.5, 20.0, 19.5, 19.0, 19.0, 17.0, 19.5,
+                    19.0, 17.0, 17.5, 15.0, 15.0, 18.0, 18.0, 17.5, 16.5, 17.0,
+                    15.0, 14.5]
+# Tim Plas's s26, the six weeks to 1 October 2026: a door sensor that
+# reads 77 and 73 by turns and settles at 73. Without the drops guard
+# its single step read accelerating for seven days.
+S26 = [73.0, 77.0, 77.0, 77.0, 77.0, 73.0, 73.0, 73.0, 77.0, 77.0, 77.0, 77.0,
+       77.0, 77.0, 77.0, 77.0, 77.0, 77.0, 77.0, 77.0, 77.0, 77.0, 77.0, 73.0,
+       73.0, 77.0, 77.0, 77.0, 73.0, 73.0, 73.0, 73.0, 73.0, 73.0, 73.0, 73.0]
+
+
+def test_a_gradual_bend_is_accelerating():
+    """Door 2nd Bedroom: the word, the sentence and the range agree."""
+    trend = battery_trend(DOOR_2ND_BEDROOM, 14.5, True)
+    assert trend["reading"] == "accelerating"
+    assert round(trend["pace"], 1) == 2.7
+    assert battery_sentence(trend) == "Falling faster each week, about 2.7 points a week today."
+
+
+def test_one_step_down_is_not_a_curve():
+    """s26: a curve can bend through one step, and the newest two weeks
+    must hold three drops from one heard day to the next."""
+    assert accelerating_pace(S26) is None
+    assert battery_trend(S26, 73.0, True)["reading"] != "accelerating"
 
 
 def test_a_steady_fall_with_a_pause_is_falling_not_accelerating():
@@ -106,14 +138,15 @@ def test_a_steady_fall_with_a_pause_is_falling_not_accelerating():
     because the week it compared against was the pause."""
     trend = battery_trend(S71, 61.5, True)
     assert trend["reading"] == "falling"
-    assert trend["fit"]["knee"] is False
+    assert [ago for ago, _ in trend["fit"]["line"]] == [38, 0]
     assert 3.0 < trend["pace"] < 4.0
 
 
 def test_an_even_fall_is_falling_not_accelerating():
     trend = battery_trend(S91, 90.0, True)
     assert trend["reading"] == "falling"
-    assert trend["fit"]["knee"] is False
+    assert accelerating_pace(S91) is None
+    assert trend["pace"] == trend["fit"]["pace"]
 
 
 def test_one_slow_week_does_not_take_accelerating_off():
@@ -128,9 +161,11 @@ def test_one_slow_week_does_not_take_accelerating_off():
         assert battery_trend(S71[:end], S71[end - 1], True)["reading"] != "accelerating", end
 
 
-def test_no_knee_before_four_weeks():
-    assert battery_knee(S63[-27:]) is None
-    assert battery_knee(S63[-28:]) is not None
+def test_nothing_is_fitted_before_four_weeks():
+    assert battery_line(S63[-27:]) is None
+    assert battery_line(S63[-28:]) is not None
+    assert accelerating_pace(S63[-27:]) is None
+    assert accelerating_pace(S63[-28:]) is not None
 
 
 def test_a_coarse_cell_and_an_empty_cell_are_not_judged():
@@ -149,8 +184,9 @@ def test_the_month_drop_and_the_sentence():
     assert round(battery_month_drop(S63), 2) == 14.07
     assert battery_month_drop([90.0] * 20) is None
     accelerating = battery_trend(S63, 57.0, True)
-    words = battery_sentence(accelerating, date(2026, 9, 23))
-    assert words.startswith("Accelerating: steady until about Sep 4, then falling about")
+    words = battery_sentence(accelerating)
+    assert words.startswith("Falling faster each week, about 8.")
+    assert words.endswith(" points a week today.")
     assert battery_sentence(battery_trend(S71, 61.5, True)).startswith("Falling about 3.")
     assert battery_sentence(battery_trend(DOOR_MASTER_SHOWER, 76.0, True)) == ""
 
@@ -172,8 +208,8 @@ B01 = [80.5, 80.5, 80.5, 80.5, 80.5, 84.0, 80.5, 84.0, 80.5, 80.5, 80.5, 80.5,
 
 
 def test_one_step_is_not_two_fast_weeks():
-    """The knee needs two weeks after it (the owner's two fast weeks);
-    with one week allowed, this single step read as accelerating."""
+    """With one week allowed after its knee, the old rule read this
+    single step as accelerating; the curve does not."""
     assert battery_trend(S57, 34.0, True)["reading"] != "accelerating"
 
 
@@ -189,6 +225,7 @@ from homeassistant.core import HomeAssistant  # noqa: E402
 
 from custom_components.device_sentinel.const import (  # noqa: E402
     CONF_BATTERY_DAYS,
+    CONF_LOW_THRESHOLD,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
 )
@@ -220,17 +257,26 @@ async def test_every_surface_reads_the_same_trend(hass: HomeAssistant):
     _seed(coord, even.id, S91)
     _seed(coord, wobble.id, DOOR_MASTER_SHOWER)
 
+    # Radar Presence, at 90 percent, is above three times the threshold of 15
+    # and not judged (#725); Garage Door, at 21.5, is.
+    rows = {row["name"]: row for row in coord._battery_rows()["falling"]}
+    assert set(rows) == {"Garage Door"}
+    assert rows["Garage Door"]["reading"] == "accelerating"
+    above = coord._page_battery(coord.data["devices"][even.id])
+    assert above["reading"] == "" and above["left"] is None and above["ceiling"] == 45.0
+    hass.config_entries.async_update_entry(
+        coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 45}
+    )
     rows = {row["name"]: row for row in coord._battery_rows()["falling"]}
     assert set(rows) == {"Garage Door", "Radar Presence"}
-    assert rows["Garage Door"]["reading"] == "accelerating"
     assert rows["Radar Presence"]["reading"] == "falling"
 
-    # The device page: the weeks, the fitted line with its knee, and
-    # the sentence; a steady cell gets none of the three.
+    # The device page: the weeks, the sentence, and no straight line
+    # for a curve; a falling cell gets its line; a steady cell gets none.
     page = coord._page_battery(coord.data["devices"][fast.id])
-    assert page["reading"] == "accelerating" and page["fit"]["knee"] is True
-    assert len(page["fit"]["line"]) == 3
-    assert page["sentence"].startswith("Accelerating: steady until about ")
+    assert page["reading"] == "accelerating" and page["fit"] is None
+    assert page["sentence"].startswith("Falling faster each week, about ")
+    assert len(coord._page_battery(coord.data["devices"][even.id])["fit"]["line"]) == 2
     steady = coord._page_battery(coord.data["devices"][wobble.id])
     assert steady["fit"] is None and steady["sentence"] == "" and len(steady["weeks"]) == 5
 
@@ -239,7 +285,7 @@ async def test_every_surface_reads_the_same_trend(hass: HomeAssistant):
     trends = coord.battery_trends()
     falling = {row["name"]: row for row in trends["falling"]}
     assert len(falling["Garage Door"]["weeks"]) == 5
-    assert 5.5 < falling["Garage Door"]["pace"] < 6.5
+    assert 8.0 < falling["Garage Door"]["pace"] < 9.5
     steady_row = next(row for row in trends["steady"] if row["name"] == "Door Master Shower")
     assert steady_row["month_drop"] < 0, "its weekly averages rose"
 
@@ -255,12 +301,12 @@ async def test_the_diagnostics_carry_each_cells_weeks(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     fast, _ = register_device(hass, "bw4", "Garage Door")
     await registry_settled(hass)
-    _seed(coord, fast.id, S63)
+    _seed(coord, fast.id, S63_LOW)
     diagnostics = await async_get_config_entry_diagnostics(hass, coord.entry)
     trend = diagnostics["devices"][fast.id]["battery_trend"]
     assert trend["reading"] == "accelerating"
-    assert trend["knee_days_ago"] == 19
-    assert [round(week, 1) for week in trend["weeks"]] == [74.6, 73.7, 71.2, 66.0, 59.6]
+    assert "knee_days_ago" not in trend and 8.0 < trend["pace_per_week"] < 9.5
+    assert [round(week, 1) for week in trend["weeks"]] == [38.6, 37.7, 35.2, 30.0, 23.6]
 
 
 async def test_the_diagnostics_download_carries_a_week_with_no_average(hass: HomeAssistant):

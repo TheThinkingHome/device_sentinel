@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/trace_house.py, Version: 0.21.7 (2026-09-15)
+# File: tests/trace_house.py, Version: 0.27.0 (2026-10-22)
 
 """Replay a recorded outage through the shipped coordinator.
 
@@ -144,7 +144,7 @@ def load_ties() -> dict[str, str]:
     return json.loads((TRACES / "reference_ties.json").read_text())
 
 
-async def build(hass, trace: dict[str, Any], networks=("IKS_Rotarran-IoT",)):
+async def build(hass, trace: dict[str, Any], networks=("Harbor-IoT",)):
     """Build a house carrying every name the trace mentions."""
     source = MockConfigEntry(domain="wifi_hub", title="wifi hub")
     source.add_to_hass(hass)

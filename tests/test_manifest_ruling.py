@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_manifest_ruling.py, Version: 0.26.3 (2026-10-14)
+# File: tests/test_manifest_ruling.py, Version: 0.27.0 (2026-10-22)
 
 """The manifest names frontend, mqtt, esphome, zha and lutron_caseta, and nothing else (rulings #515, #639, #652 and #663).
 
@@ -28,7 +28,7 @@ ROOT = Path(__file__).parent.parent / "custom_components" / "device_sentinel"
 # The only other integrations the code may import: the entity platforms
 # Device Sentinel provides and the core services it uses, which
 # hassfest accepted from the first release.
-ALLOWED = {"button", "diagnostics", "frontend", "http", "repairs", "sensor", "todo", "websocket_api"}
+ALLOWED = {"button", "diagnostics", "frontend", "http", "panel_custom", "repairs", "sensor", "todo", "websocket_api"}
 
 
 def test_the_manifest_declares_nothing_new():
@@ -41,8 +41,11 @@ def test_the_manifest_declares_nothing_new():
     # heard each device, read the same way.
     # lutron_caseta since 0.26.3 (ruling #663): its hub's session,
     # read to judge the hub up or down.
-    assert manifest.get("after_dependencies") == ["esphome", "frontend", "lutron_caseta", "mqtt", "zha"]
-    assert manifest.get("dependencies") == ["http", "websocket_api"]
+    # frontend and panel_custom since 0.27.0 (ruling #721): the
+    # dashboard is registered through panel_custom, so both must be
+    # set up first, and frontend leaves the list loaded after.
+    assert manifest.get("after_dependencies") == ["esphome", "lutron_caseta", "mqtt", "zha"]
+    assert manifest.get("dependencies") == ["frontend", "http", "panel_custom", "websocket_api"]
     assert "requirements" not in manifest
 
 

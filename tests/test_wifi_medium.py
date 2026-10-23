@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_wifi_medium.py, Version: 0.21.7 (2026-09-15)
+# File: tests/test_wifi_medium.py, Version: 0.27.0 (2026-10-22)
 
 """What a tracker's medium is, and how it is remembered.
 Rulings #415, #417, #418, #427 and #428.
@@ -77,7 +77,7 @@ def _home(hass, tracker: str, **attrs) -> None:
         ({"connection": "host", "band": "5G"}, "wireless"),
         ({"connection": "guest"}, "wireless"),
         ({"band": "2G"}, "wireless"),
-        ({"essid": "15945-IOT"}, "wireless"),
+        ({"essid": "Lighthouse-IOT"}, "wireless"),
         ({"radio": "ng"}, "wireless"),
         ({"ap_mac": "aa:bb:cc:dd:ee:ff"}, "wireless"),
         ({"connection_type": "lan"}, "wired"),

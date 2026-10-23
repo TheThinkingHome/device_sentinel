@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: conftest.py, Version: 0.26.8 (2026-10-21)
+# File: conftest.py, Version: 0.27.0 (2026-10-22)
 
 """Shared test fixtures.
 
@@ -46,6 +46,34 @@ def clean_report_directory():
     yield
     shutil.rmtree(REPORT_DIRECTORY, ignore_errors=True)
     shutil.rmtree(WWW_DIRECTORY, ignore_errors=True)
+
+
+# ------------------------------------- the frontend counted as loaded
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "real_frontend: set up Home Assistant's real frontend and panel_custom"
+    )
+
+
+@pytest.fixture(autouse=True)
+def frontend_loaded(request):
+    """Count the frontend and panel_custom as set up, as every Home
+    Assistant has them, unless a test asks for the real ones.
+
+    0.27.0 names both as dependencies (#721). Setting up Home
+    Assistant's real frontend for each of the suite's thousands of
+    setups made it 75 percent slower; the dashboard's registration needs
+    only the panel table, which this leaves as Home Assistant keeps it.
+    A test marked `real_frontend` sets both up for real.
+    """
+    if request.node.get_closest_marker("real_frontend") is not None:
+        yield
+        return
+    hass = request.getfixturevalue("hass") if "hass" in request.fixturenames else None
+    if hass is not None:
+        hass.config.components.update({"frontend", "panel_custom"})
+    yield
 
 
 # ------------------------------------------ entries only mocked loaded

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_trends.py, Version: 0.23.6 (2026-09-25)
+# File: tests/test_dashboard_trends.py, Version: 0.27.0 (2026-10-22)
 
 """The Battery Trends and Signal Trends tabs.
 
@@ -25,6 +25,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
+    CONF_LOW_THRESHOLD,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_VALUE,
     DEV_SIGNAL_DAILY_COUNT,
@@ -53,7 +54,7 @@ def _add(hass, entry, uid, name, maker, model):
     return device
 
 
-async def _fleet(hass: HomeAssistant):
+async def _fleet(hass: HomeAssistant, options: dict | None = None):
     entry = MockConfigEntry(domain="mqtt", title="MQTT")
     entry.add_to_hass(hass)
     # Two of one model, holding; one of another, falling; one unreadable;
@@ -63,7 +64,7 @@ async def _fleet(hass: HomeAssistant):
     falling = _add(hass, entry, "m1", "Motion Hall", "Third Reality", "Wireless motion sensor")
     unreadable = _add(hass, entry, "l1", "LUX Outdoors", "Tuya", "Illuminance sensor")
     mains = _add(hass, entry, "p1", "Plug Kitchen", "Third Reality", "Smart plug")
-    coord = await setup_coordinator(hass)
+    coord = await setup_coordinator(hass, options)
     records = coord.data["devices"]
     records[holding_a.id].update({DEV_BATTERY_VALUE: 100.0, DEV_BATTERY_DAILY: [100.0] * 40})
     records[holding_b.id].update({DEV_BATTERY_VALUE: 98.0, DEV_BATTERY_DAILY: [98.0] * 40})
@@ -111,13 +112,18 @@ async def test_battery_trends_group_every_cell_by_model(hass: HomeAssistant, has
 
 
 async def test_battery_trends_carry_the_reports_own_groups(hass: HomeAssistant, hass_ws_client):
-    coord, holding, falling, unreadable, _ = await _fleet(hass)
+    # Judged only at or under three times the low threshold (#725): raised so
+    # the high cells here are judged too.
+    coord, holding, falling, unreadable, _ = await _fleet(hass, {CONF_LOW_THRESHOLD: 49})
     client = await hass_ws_client(hass)
     page = (await _call(client, type="device_sentinel/battery_trends"))["result"]
+    assert page["ceiling"] == 147.0
     report = coord._battery_rows()
     assert [row["device_id"] for row in page["falling"]] == [row["device_id"] for row in report["falling"]]
     assert page["falling"][0]["reading"] == report["falling"][0]["reading"]
-    assert page["falling"][0]["left"] == coord.battery_time_left(report["falling"][0]["days"])
+    first = report["falling"][0]
+    assert page["falling"][0]["left"] == coord.battery_time_left_range(first["days"], first.get("days_far"))
+    assert page["falling"][0]["until"] == coord.battery_until_words(first)
     assert [row["device_id"] for row in page["unreadable"]] == [unreadable.id]
     assert page["no_battery"] == 1, "the mains device"
     assert len(page["bank"]) == 10

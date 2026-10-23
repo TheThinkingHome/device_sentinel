@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.23.19 (2026-09-30)
+# File: test_todo.py, Version: 0.27.0 (2026-10-22)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -70,6 +70,14 @@ TIME_BASE = 1_780_000_000.0
 DOMAIN = "device_sentinel"
 LIST_ENTITY = "todo.device_sentinel_problem_list"
 
+
+
+# Tim Plas's S63 carried down to 21.5 percent: steady, then speeding up.
+SPEEDING = [round(level - 36.0, 1) for level in [
+    73.5, 74.0, 74.0, 74.0, 74.5, 74.5, 75.0, 74.5, 74.5, 74.5, 74.5, 74.5,
+    74.0, 74.0, 74.0, 74.0, 72.5, 73.0, 72.5, 72.5, 72.5, 72.0, 70.5, 70.0,
+    68.5, 67.0, 67.5, 67.5, 65.0, 65.5, 65.0, 64.5, 63.0, 61.5, 60.5, 59.5,
+    58.0, 57.5, 57.5]]
 
 def _register_device(hass, uid: str, name: str, battery: bool = False):
     """A device with a plain sensor and, optionally, a battery entity.
@@ -612,20 +620,17 @@ async def test_a_falling_cell_reaches_the_problem_list(
     hass.states.async_set(eids["plain"], "on")
 
     record = coord.data["devices"][device.id]
-    record[DEV_BATTERY_DAILY] = [
-        40.0, 38.5, 37.0, 35.5, 34.0, 32.5, 31.0, 29.5,
-        28.0, 26.5, 25.0, 23.5, 22.0, 20.5, 20.0, 20.0,
-    ]
-    record[DEV_BATTERY_VALUE] = 20.0
+    # Speeding up, the only fall that reaches the list since 0.27.0
+    # (#731): a steady one is a battery to watch.
+    record[DEV_BATTERY_DAILY] = list(SPEEDING)
+    record[DEV_BATTERY_VALUE] = SPEEDING[-1]
     coord._sync_problem_list()
 
     item = _item_for(coord, device.id)
     assert item is not None
-    # Two weeks since 0.23.6: the last week averaged about ten points
-    # below the one before, where the seven-day slope was flattened by
-    # the last three days.
+    # The time left runs to the 15 percent threshold (#730).
     assert item["summary"] == (
-        "Falling Cell: battery empty in about 2 weeks"
+        "Falling Cell: battery reaches 15% in under a week"
     )
 
 
@@ -668,11 +673,10 @@ async def test_the_falling_kind_keeps_an_acknowledgment(
     hass.states.async_set(eids["plain"], "on")
 
     record = coord.data["devices"][device.id]
-    record[DEV_BATTERY_DAILY] = [
-        40.0, 38.5, 37.0, 35.5, 34.0, 32.5, 31.0, 29.5,
-        28.0, 26.5, 25.0, 23.5, 22.0, 20.5, 20.0, 20.0,
-    ]
-    record[DEV_BATTERY_VALUE] = 20.0
+    # Speeding up, the only fall that reaches the list since 0.27.0
+    # (#731): a steady one is a battery to watch.
+    record[DEV_BATTERY_DAILY] = list(SPEEDING)
+    record[DEV_BATTERY_VALUE] = SPEEDING[-1]
     coord._sync_problem_list()
     uid = _item_for(coord, device.id)["uid"]
     await coord.async_todo_update(uid=uid, status="completed")

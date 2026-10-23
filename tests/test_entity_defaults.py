@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_entity_defaults.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_entity_defaults.py, Version: 0.27.0 (2026-10-22)
 
 """Which entities a first install presents, and what deletion leaves.
 
@@ -16,8 +16,10 @@ was detected, off where the house has no MQTT to watch.
 
 Deletion is the other end of the same courtesy (ruling #240): removing
 the integration removes both storage files, every backup beside
-them, and both report folders, so an uninstall leaves nothing for a
-person to find later and wonder about.
+them, every file it wrote in the reports folder and the old www
+folder, so an uninstall leaves nothing for a person to find later and
+wonder about. Only its own (#720): a file another tool keeps in the
+reports folder stays, and so does the folder that holds it.
 """
 
 from __future__ import annotations
@@ -101,9 +103,9 @@ async def test_removal_deletes_everything_written(hass: HomeAssistant):
         path.write_text("{}")
     report_dir = Path(hass.config.path(REPORT_DIR))
     www_dir = Path(hass.config.path(REPORT_WWW_DIR))
-    for folder in (report_dir, www_dir):
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / "sample.md").write_text("sample")
+    _write_own_reports(hass, report_dir)
+    www_dir.mkdir(parents=True, exist_ok=True)
+    (www_dir / "sample.md").write_text("sample")
     bystander = storage / "other_integration.storage"
     bystander.write_text("{}")
 
@@ -115,6 +117,42 @@ async def test_removal_deletes_everything_written(hass: HomeAssistant):
     assert not report_dir.exists()
     assert not www_dir.exists()
     assert bystander.exists()
+
+
+def _write_own_reports(hass, report_dir):
+    """Every file Device Sentinel writes in its reports folder."""
+    from custom_components.device_sentinel.const import TRIM_BACKUP_DIR
+
+    report_dir.mkdir(parents=True, exist_ok=True)
+    for name in (
+        "device_telemetry.md", "classification.md", "silence_episodes.md",
+        "daily_brief.html", "stack_probe.md", "stack_probe.md.1",
+        "stack_probe.md.3", "classification.md.tmp", "rhythm_shadow.md",
+    ):
+        (report_dir / name).write_text("mine")
+    trims = Path(hass.config.path(TRIM_BACKUP_DIR))
+    trims.mkdir(parents=True, exist_ok=True)
+    (trims / "device_sentinel_2026-10-01.storage.json").write_text("{}")
+
+
+async def test_removal_leaves_what_another_tool_keeps_there(hass: HomeAssistant):
+    """Tim Plas's reports folder held Mesh Probe's files beside Device
+    Sentinel's (#720): removal takes Device Sentinel's and leaves his,
+    and the folder that holds them."""
+    entry = await setup_entry(hass)
+    report_dir = Path(hass.config.path(REPORT_DIR))
+    _write_own_reports(hass, report_dir)
+    theirs = [report_dir / "mesh_probe_report.txt", report_dir / "mesh_probe_record" / "record-2026-10-21.jsonl"]
+    for path in theirs:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("theirs")
+
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert sorted(p.name for p in report_dir.iterdir()) == ["mesh_probe_record", "mesh_probe_report.txt"]
+    for path in theirs:
+        assert path.read_text() == "theirs"
 
 
 async def test_the_broker_sensor_ships_enabled_where_a_bridge_lives(

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendation_acknowledgement.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_recommendation_acknowledgement.py, Version: 0.27.0 (2026-10-22)
 
 """The switched-off cards and acknowledging a recommendation.
 
@@ -82,6 +82,22 @@ async def test_a_tick_leaves_the_count_and_the_brief_and_can_be_taken_back(hass:
     card = _card(coord, "battery_off")
     assert card["active"] == 1
     assert "Battery Sensor Switched Off" in "\n".join(coord._recommendations_section())
+
+
+async def test_the_brief_line_counts_what_is_not_ticked(hass: HomeAssistant):
+    """Ruling #724: the emailed Brief's line carries the same number as
+    the card's title, the rows not ticked, and leaves with the last."""
+    first, _ = _battery_off(hass, "a", "Alpha")
+    second, _ = _battery_off(hass, "b", "Bravo")
+    entry = await setup_entry(hass)
+    coord = entry.runtime_data
+    coord._rebuild_registry_view()
+    assert "Battery Sensor Switched Off (2): " in "\n".join(coord._recommendations_section())
+    coord.set_recommendation_ack(True, kind="battery_off", device_id=first.id)
+    section = "\n".join(coord._recommendations_section())
+    assert "Battery Sensor Switched Off (1): " in section
+    coord.set_recommendation_ack(True, kind="battery_off", device_id=second.id)
+    assert "Battery Sensor Switched Off" not in "\n".join(coord._recommendations_section())
 
 
 async def test_a_new_device_on_a_ticked_card_is_active_on_its_own(hass: HomeAssistant):

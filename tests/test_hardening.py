@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_hardening.py, Version: 0.26.7 (2026-10-19)
+# File: test_hardening.py, Version: 0.27.0 (2026-10-22)
 
 """Audit hardening, legacy cleanup, and the per-screen wiki links.
 
@@ -612,7 +612,7 @@ async def test_the_battery_screen_carries_both_questions(
     # quantity, so a reader can tell it warns rather than reports
     # (ruling #277). Pinned because the field it belongs to is
     # what 0.11.3 shipped without.
-    assert labels[CONF_BATTERY_DAYS] == "Days Till Empty Warning"
+    assert labels[CONF_BATTERY_DAYS] == "Days Till Low Warning"
 
 
 async def test_the_threshold_range_comes_from_the_constants(
