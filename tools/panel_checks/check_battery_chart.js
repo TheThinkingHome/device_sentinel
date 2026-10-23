@@ -1,6 +1,9 @@
+// File: tools/panel_checks/check_battery_chart.js, Version: 0.27.0 (2026-10-22)
 // Panel checks: the weekly bars in orange and the fitted line, drawn only
 // at 30 and 14 days.
-// Written for 0.23.7; named by subject since 0.23.19.
+// Written for 0.23.7; named by subject since 0.23.19. Since 0.27.0 the
+// fitted line is drawn for a cell falling at an even pace only: an
+// accelerating cell is judged on a curve, with no knee (ruling #725).
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_chart.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -81,8 +84,8 @@ const accelerating = {
       daily: S63, now: 57.5, threshold: 20, readable: true,
       weeks: [74.64, 73.71, 71.21, 66.0, 59.64],
       reading: "accelerating",
-      fit: { knee: true, knee_ago: 19, before: 0.5, pace: 5.9, line: [[38, 74.6], [19, 73.4], [0, 57.2]] },
-      sentence: "Accelerating: steady until about Sep 4, then falling about 5.9 points a week since.",
+      fit: null,
+      sentence: "Falling faster each week, about 5.9 points a week today.",
       falling: true, left: "about 3 months", left_soon: false,
     };
     return page;
@@ -114,7 +117,20 @@ const range = async (root, label) => {
   await settle();
 };
 const bars = (root) => [...root.querySelectorAll("svg line")].filter((l) => l.getAttribute("stroke") === "#E8A33D");
-const fitted = (root) => [...root.querySelectorAll("svg polyline")].filter((p) => (p.getAttribute("stroke") || "").includes("error-color"));
+const fitted = (root) => [...root.querySelectorAll("svg polyline")].filter((p) => p.getAttribute("stroke-dasharray") === "7 5");
+const even = {
+  device: (page) => {
+    page.battery = {
+      daily: S63, now: 57.5, threshold: 20, readable: true,
+      weeks: [74.64, 73.71, 71.21, 66.0, 59.64],
+      reading: "falling",
+      fit: { pace: 3.2, line: [[38, 75.0], [0, 57.6]] },
+      sentence: "Falling about 3.2 points a week, at a steady pace.",
+      falling: true, left: "about 4 months", left_soon: false,
+    };
+    return page;
+  },
+};
 
 (async () => {
   console.log("A cell that sped up, at each range");
@@ -127,11 +143,20 @@ const fitted = (root) => [...root.querySelectorAll("svg polyline")].filter((p) =
   await range(fast.root, "30 Days");
   check("at 30 days: five weekly bars, the oldest cut at the edge", bars(fast.root).length === 5, bars(fast.root).length);
   check("in orange, labelled with their averages", text(fast.root).includes("59.6") && text(fast.root).includes("66.0"));
-  check("the fitted line, with its knee", fitted(fast.root).length === 1 && fast.root.querySelectorAll("svg circle").length === 1);
+  check("no straight line beside a curve, and no knee marker (ruling #725)", fitted(fast.root).length === 0
+    && fast.root.querySelectorAll("svg circle").length === 0 && !text(fast.root).includes("knee"));
   await range(fast.root, "14 Days");
   check("at 14 days: the last two weekly bars", bars(fast.root).length === 2, bars(fast.root).length);
-  check("the steep part of the fitted line", fitted(fast.root).length === 1);
-  check("but no knee, which is before the chart starts", fast.root.querySelectorAll("svg circle").length === 0);
+  check("and still no straight line", fitted(fast.root).length === 0);
+
+  console.log("A cell falling at an even pace");
+  const flat = await open(`${PREFIX}/device/${DEVICE}`, even);
+  check("at all 39 days: no fitted line", fitted(flat.root).length === 0);
+  await range(flat.root, "30 Days");
+  check("at 30 days: the fitted line, dashed", fitted(flat.root).length === 1);
+  check("said as an even pace", text(flat.root).includes("Falling at an even pace."));
+  await range(flat.root, "14 Days");
+  check("at 14 days: the line cut to the range", fitted(flat.root).length === 1);
   check("the five-week table stays at every range", text(fast.root).includes("28 DAYS AGO"));
 
   console.log("A steady cell at 30 days");

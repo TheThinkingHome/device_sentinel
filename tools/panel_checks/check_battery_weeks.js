@@ -1,7 +1,9 @@
-// Panel checks: battery trends by the week, and the knee, on a device's
+// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.0 (2026-10-22)
+// Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
 // Written for 0.23.6, the knee check moved to 30 days in 0.23.7; named by
-// subject since 0.23.19.
+// subject since 0.23.19. The knee went in 0.27.0, and a cell above twice
+// the threshold is not judged (ruling #725).
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_weeks.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -82,8 +84,8 @@ const accelerating = {
       daily: S63, now: 57.5, threshold: 20, readable: true,
       weeks: [74.64, 73.71, 71.21, 66.0, 59.64],
       reading: "accelerating",
-      fit: { knee: true, knee_ago: 19, before: 0.5, pace: 5.9, line: [[38, 74.6], [19, 73.4], [0, 57.2]] },
-      sentence: "Accelerating: steady until about Sep 4, then falling about 5.9 points a week since.",
+      fit: null,
+      sentence: "Falling faster each week, about 5.9 points a week today.",
       falling: true, left: "about 3 months", left_soon: false,
     };
     return page;
@@ -101,10 +103,15 @@ const steady = {
 };
 const trends = {
   battery_trends: (page) => {
+    page.ceiling = 45;
     page.falling = [{
-      device_id: DEVICE, name: "Garage Door", level: 57.5, since: null, steps: "Smooth",
-      weeks: [74.64, 73.71, 71.21, 66.0, 59.64], reading: "accelerating", pace: 5.9,
-      left: "about 3 months", left_soon: false,
+      device_id: DEVICE, name: "Garage Door", level: 37.5, since: null, steps: "Smooth",
+      weeks: [54.64, 53.71, 51.21, 46.0, 39.64], reading: "accelerating", pace: 5.9,
+      left: "about 3 to 4 weeks", until: "reaches 15% in about 3 to 4 weeks", left_soon: true, watch: false,
+    }, {
+      device_id: page.falling && page.falling[1] ? page.falling[1].device_id : "watch-1", name: "Back Door", level: 30.5,
+      since: null, steps: "Smooth", weeks: [36, 35, 34, 32.8, 31.6], reading: "falling", pace: 1.2,
+      left: "about 3 to 5 weeks", until: "reaches 15% in about 3 to 5 weeks", left_soon: true, watch: true,
     }];
     return page;
   },
@@ -117,11 +124,10 @@ const trends = {
   const heads = [...fast.root.querySelectorAll("table.figures th")].map((th) => th.textContent);
   check("its table shows five weeks, oldest first", heads.join("|") === "LEVEL|28 DAYS AGO|21 DAYS AGO|14 DAYS AGO|7 DAYS AGO|THIS WEEK|READING|LEFT", heads);
   check("each week says what it lost", page.includes("down 6.4") && page.includes("down 5.2"), page.slice(-1500));
-  check("the sentence names the knee", page.includes("Accelerating: steady until about Sep 4"), page.slice(-1500));
-  // At 30 days: since 0.23.7 the knee is drawn only at 30 and 14 days.
+  check("the sentence gives its pace today (ruling #725)", page.includes("Falling faster each week, about 5.9 points a week today."), page.slice(-1500));
   [...fast.root.querySelectorAll("button")].find((b) => b.textContent === "30 Days").click();
   await settle();
-  check("the chart marks the knee", fast.root.querySelectorAll("svg circle").length >= 1);
+  check("the chart marks no knee", fast.root.querySelectorAll("svg circle").length === 0);
   check("no rate per day is left on the page", !page.includes("/day"), page.slice(-1500));
   check("no three-slope legend is left", !page.includes("-day rate"), page.slice(-1500));
 
@@ -132,12 +138,36 @@ const trends = {
   check("no fitted line is drawn", ![...calm.root.querySelectorAll("svg polyline")].some((p) => p.getAttribute("stroke-dasharray") === "7 5"));
   check("and no knee", calm.root.querySelectorAll("svg circle").length === 0);
 
+  console.log("A cell above twice the threshold (ruling #725)");
+  const high = await open(`${PREFIX}/device/${DEVICE}`, {
+    device: (page) => { steady.device(page); page.battery.ceiling = 40; return page; },
+  });
+  const highText = text(high.root);
+  check("it says nothing about a fall", !highText.includes("Steady:") && !highText.includes("Not judged") && !highText.includes("Falling"),
+    highText.slice(-1200));
+  const readingCell = [...high.root.querySelectorAll("table.figures td")].map((td) => td.textContent);
+  check("its reading is left empty", !readingCell.includes("steady") && !readingCell.includes("not judged"), readingCell);
+  const under = await open(`${PREFIX}/device/${DEVICE}`, {
+    device: (page) => { steady.device(page); page.battery.ceiling = 80; return page; },
+  });
+  check("under the ceiling a steady cell still reads steady", text(under.root).includes("Steady: no week has fallen"));
+
   console.log("Battery Trends");
   const tab = await open(`${PREFIX}/battery-trends`, trends);
   const tabText = text(tab.root);
   const tabHeads = [...tab.root.querySelectorAll("th")].map((th) => th.textContent);
   check("the Falling table shows the five weeks", ["28 DAYS AGO", "THIS WEEK", "PACE"].every((h) => tabHeads.some((t) => t.startsWith(h))), tabHeads);
-  check("with the pace in points a week", tabText.includes("down 5.9 a week"), tabText.slice(0, 600));
+  check("with the pace in points a week", tabText.includes("down 5.9 a week"), tabText.slice(0, 1600));
+  check("the Falling list says where judging starts (ruling #725)",
+    tabText.includes("A cell is judged falling, and given a time left, at or under 45%, three times your threshold."), tabText.slice(0, 900));
+  check("a steady fall inside the warning days is named under Batteries to Watch (#731)",
+    tabText.includes("Batteries to Watch") && tabText.includes("Back Door (reaches 15% in about 3 to 5 weeks)."), tabText.slice(0, 1200));
+  const leftCells = [...tab.root.querySelectorAll("td")].filter((td) => td.textContent.startsWith("reaches 15% in"));
+  check("the time left reaches the threshold (#730)", leftCells.length === 2, leftCells.map((td) => td.textContent));
+  check("only the accelerating cell's time left is red (#731)",
+    leftCells.filter((td) => (td.getAttribute("style") || "").includes("error-color")).map((td) => td.textContent).join("|")
+      === "reaches 15% in about 3 to 4 weeks");
+  check("the other cells are not called steady", tabText.includes("Other Cells") && !/\bSteady\b/.test(tabText), tabText.slice(0, 900));
   check("the Steady table counts four weeks in points", tabHeads.some((t) => t.startsWith("4 WEEKS")), tabHeads);
   check("the models are read a week at a time", tabText.includes("points lost a week over the last four weeks"), tabText.slice(0, 600));
 

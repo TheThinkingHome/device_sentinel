@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_device_page_layout.js, Version: 0.26.7 (2026-10-19)
+// File: tools/panel_checks/check_device_page_layout.js, Version: 0.27.0 (2026-10-22)
 // Panel checks: the device page's top half and the Recommendations tab's
 // device cards (0.24.9). The Identity section's order and groups, live
 // values, sensor links, both rule charts, Previous and Next, and setting
@@ -223,7 +223,8 @@ const rowCell = (root, label) => {
   let calls;
   ({ window, root, calls } = await open({ path: `${PREFIX}/recommendations?open=area`, answers: { recommendations: () => JSON.parse(JSON.stringify(RECS)) } }));
   const arts = [...root.querySelectorAll("article.rec")];
-  check("One card per kind, each with its list", arts.map((a) => a.querySelector("h3").textContent).join("|") === "Power Not Set|Last Seen Sensor Switched Off|No Area Assigned");
+  check("One card per kind, each with its list", arts.map((a) => a.querySelector("h3").textContent).join("|") === "Power Not Set (1)|Last Seen Sensor Switched Off (1)|No Area Assigned (2)",
+    arts.map((a) => a.querySelector("h3").textContent));
   check("The brief's link opens its card", arts[2].querySelector("details").hasAttribute("open") && !arts[0].querySelector("details").hasAttribute("open"));
   const sel = arts[0].querySelector('select[aria-label="What powers this device"]');
   sel.value = "AAA"; sel.dispatchEvent(new window.Event("change"));

@@ -1,3 +1,4 @@
+// File: tools/panel_checks/check_type_filters.js, Version: 0.27.0 (2026-10-22)
 // Panel checks: types on Battery Trends, Classification, Devices and Recommendations, and the "null" fix (0.25.3).
 // Run with: LC_ALL=en_US.UTF-8 node check_type_filters.js [path/to/panel.js]
 const fs = require("fs");
@@ -123,7 +124,7 @@ const BATTERY = {
   check("A model split between types lists each with its count, and keeps all its cells",
     motion && text(motion.children[1]) === "Motion Sensor 2, Presence Sensor 1" && text(motion.children[2]) === "3", motion && text(motion));
   check("A model with no type reads Not known", tableRows(models).some((tr) => text(tr.children[1]) === "Not known"));
-  for (const title of ["Falling", "Steady"]) {
+  for (const title of ["Falling", "Other Cells"]) {
     check(`${title} has a TYPE column`, headers(section(root, title)).includes("TYPE"), headers(section(root, title)));
   }
   const picker = root.querySelector('select[aria-label="Show one type"]');
@@ -133,12 +134,12 @@ const BATTERY = {
 
   await click(linkNamed(root, "Motion Sensor"));
   models = section(root, "By Model");
-  const steady = section(root, "Steady");
+  const steady = section(root, "Other Cells");
   check("Clicking a type says what is shown, with Show all", text(root.querySelector(".typeshowing")) === "Showing Motion Sensor only. Show all");
   check("By Model counts the model by the type chosen", tableRows(models).length === 1 && text(tableRows(models)[0].children[2]) === "2", tableRows(models).map(text));
   check("The lists show only that type", tableRows(steady).map((tr) => tr.firstChild.textContent).join("|") === "Motion Laundry|Motion Closet", tableRows(steady).map(text));
   const summary = text(root.querySelector("p"));
-  check("The summary counts what is shown", summary.startsWith("2 cells report a level. 0 falling, 2 steady, 0 at or under")
+  check("The summary counts what is shown", summary.startsWith("2 cells report a level. 0 falling, 2 not falling or not yet judged, 0 at or under")
     && summary.includes("1 watched device reports no battery"), summary);
   const bands = [...root.querySelectorAll(".band .count")].map((n) => n.textContent);
   check("The bank counts only that type", bands.join(",") === ",,,,1,1,,,,", bands);
@@ -148,15 +149,15 @@ const BATTERY = {
   await choose(window, root.querySelector('select[aria-label="Show one type"]'), "Presence Sensor");
   models = section(root, "By Model");
   check("Picking from the list narrows the same way; the split model shows its one presence cell",
-    tableRows(models).length === 1 && text(tableRows(models)[0].children[2]) === "1" && text(tableRows(section(root, "Steady"))[0].firstChild) === "Motion Hall",
+    tableRows(models).length === 1 && text(tableRows(models)[0].children[2]) === "1" && text(tableRows(section(root, "Other Cells"))[0].firstChild) === "Motion Hall",
     tableRows(models).map(text));
   await choose(window, root.querySelector('select[aria-label="Show one type"]'), "Not known");
-  check("Not known shows the devices with no type", tableRows(section(root, "Steady")).map((tr) => tr.firstChild.textContent).join("|") === "Mystery Tag");
+  check("Not known shows the devices with no type", tableRows(section(root, "Other Cells")).map((tr) => tr.firstChild.textContent).join("|") === "Mystery Tag");
 
   await click(linkNamed(root, "Show all"));
-  await click([...section(root, "Steady").querySelectorAll("thead button")].find((b) => b.textContent === "TYPE"));
-  check("Steady sorts by type", tableRows(section(root, "Steady")).map((tr) => text(tr.children[1])).join("|")
-    === "Leak Sensor|Motion Sensor|Motion Sensor|Presence Sensor|Not known", tableRows(section(root, "Steady")).map((tr) => text(tr.children[1])));
+  await click([...section(root, "Other Cells").querySelectorAll("thead button")].find((b) => b.textContent === "TYPE"));
+  check("Other Cells sorts by type", tableRows(section(root, "Other Cells")).map((tr) => text(tr.children[1])).join("|")
+    === "Leak Sensor|Motion Sensor|Motion Sensor|Presence Sensor|Not known", tableRows(section(root, "Other Cells")).map((tr) => text(tr.children[1])));
   check("Every device name and type is text, never markup", !root.querySelector("tbody img"));
 
   console.log("\nClassification by type (0.25.3)");

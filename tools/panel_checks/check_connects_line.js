@@ -1,3 +1,4 @@
+// File: tools/panel_checks/check_connects_line.js, Version: 0.27.0 (2026-10-22)
 // Panel checks: the Connects line on a device's page.
 // Written for 0.23.9; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_connects_line.js [path/to/panel.js]
@@ -80,8 +81,8 @@ const accelerating = {
       daily: S63, now: 57.5, threshold: 20, readable: true,
       weeks: [74.64, 73.71, 71.21, 66.0, 59.64],
       reading: "accelerating",
-      fit: { knee: true, knee_ago: 19, before: 0.5, pace: 5.9, line: [[38, 74.6], [19, 73.4], [0, 57.2]] },
-      sentence: "Accelerating: steady until about Sep 4, then falling about 5.9 points a week since.",
+      fit: null,
+      sentence: "Falling faster each week, about 5.9 points a week today.",
       falling: true, left: "about 3 months", left_soon: false,
     };
     return page;

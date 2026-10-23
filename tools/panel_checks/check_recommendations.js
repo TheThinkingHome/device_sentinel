@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_recommendations.js, Version: 0.26.8 (2026-10-20)
+// File: tools/panel_checks/check_recommendations.js, Version: 0.27.0 (2026-10-22)
 // Panel checks: the Recommendations tab. Its opening line counts the
 // recommendations, says they help Device Sentinel run better, and says
 // none of them is required; no card is singled out (#626, 0.25.6).
@@ -8,6 +8,8 @@
 // tab, the highlighted top-band button and the Daily Brief tab (#700).
 // Since 0.26.8: a card stays open, and the page stays put, after a
 // tick or an answer (#714).
+// Since 0.27.0: each card's title counts its rows not ticked, with no
+// number at zero or on a written line (#724).
 // Run with: LC_ALL=en_US.UTF-8 node check_recommendations.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -140,7 +142,8 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
     device_mute: (message) => { muted.push(message.device_id); return {}; },
   } });
   const card = [...slow.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "slow");
-  check("The card is drawn with James's title", !!card && card.querySelector("h3").textContent === "Slow Reporting Devices");
+  check("The card is drawn with James's title", !!card && card.querySelector("h3").textContent === "Slow Reporting Devices (2)",
+    card && card.querySelector("h3").textContent);
   check("Its body is James's text, word for word", !!card && card.querySelector("p").textContent === SLOW.body);
   check("It opens on its list when the address asks for it", !!card && card.querySelector("details").hasAttribute("open"));
   const rows = card ? [...card.querySelectorAll("tbody tr")] : [];
@@ -191,6 +194,12 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   check("The tab counts what is not acknowledged: one device and one line", tabLabel() === "Recommendations (2)", tabLabel());
   check("The top band carries Active Recommendations (2), shown", !!band() && !band().hidden && band().textContent === "Active Recommendations (2)",
     band() && band().textContent);
+  const titleOf = (kind) => {
+    const art = [...acks.root.querySelectorAll("article.rec")].find((a) => (kind ? a.dataset.kind === kind : !a.dataset.kind));
+    return art && art.querySelector("h3") ? art.querySelector("h3").textContent : null;
+  };
+  check("A card's title counts its rows not ticked (ruling #724)", titleOf("battery_off") === "Battery Sensor Switched Off (1)", titleOf("battery_off"));
+  check("A written line's title carries no number (ruling #724)", titleOf(null) === "Notifications Recipient Not Set", titleOf(null));
   check("No Enable button is left in the top band (ruling #696)", !/Enable (Signals|Last Seen|Battery)/.test(acks.root.querySelector(".actions").textContent));
   const offCard = [...acks.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "battery_off");
   const offRows = offCard ? [...offCard.querySelectorAll("tbody tr")] : [];
@@ -210,6 +219,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   const ackCall = acks.calls.find((c) => c.type === "device_sentinel/recommendation_ack");
   check("A tick names the card and the device", !!ackCall && ackCall.kind === "battery_off" && ackCall.device_id === ROWS[0].device_id && ackCall.on === true, ackCall);
   check("The tab then counts one", tabLabel() === "Recommendations (1)", tabLabel());
+  check("With every row ticked the card's title has no number", titleOf("battery_off") === "Battery Sensor Switched Off", titleOf("battery_off"));
   const lineBox = acks.root.querySelector("article.rec:not([data-kind]) input[type=checkbox]");
   lineBox.checked = true;
   lineBox.dispatchEvent(new acks.window.Event("change"));
@@ -224,6 +234,7 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   undo.dispatchEvent(new acks.window.Event("change"));
   await settle(); await settle();
   check("A tick can be taken back, and counts again", tabLabel() === "Recommendations (1)", tabLabel());
+  check("And the card's title counts it again", titleOf("battery_off") === "Battery Sensor Switched Off (1)", titleOf("battery_off"));
 
   console.log("\nA card stays open after an answer (ruling #714)");
   ticks = { line: false, [ROWS[0].device_id]: false };

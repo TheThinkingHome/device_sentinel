@@ -15,10 +15,11 @@ written rather than what it proves).
 | Every tab | `check_controls_band.js` | 14 | the controls in a band above the tabs, and tabs that read as tabs |
 | Every tab | `check_tables_hold_columns.js` | 15 | every table pinned, so filters and sorts leave the columns still |
 | Every tab | `check_stale_tab.js` | 35 | a tab left open across an update: no error from the new copy, a line offering a reload, and its glow |
+| Every tab | `check_release_line.js` | 11 | the release running at the foot, in Simple and Advanced, linked to its notes |
 | Every tab | `check_type_filters.js` | 30 | types on Battery Trends, Classification, Devices and Recommendations, and no "null" on a quiet day |
 | Daily Brief | `check_repeat_offenders.js` | 10 | the Repeat Offenders table, and the devices on MQTT's page that ride the broker |
 | Every tab | `check_simple_dashboard.js` | 38 | Simple and Advanced: the setting opens the dashboard, the switch holds while the page is open and through a hidden tab, Simple's tabs, its read-only device page and its battery chart, and Mute by label in Advanced |
-| Recommendations | `check_recommendations.js` | 33 | the opening line and its count, the Slow Reporting Devices card, the switched-off cards' Turn on chips, a tick on each row, the count on the tab and the top band, and a card that stays open after a tick |
+| Recommendations | `check_recommendations.js` | 37 | the opening line and its count, the Slow Reporting Devices card, the switched-off cards' Turn on chips, a tick on each row, the count on the tab, the top band and each card's title, and a card that stays open after a tick |
 | Classification | `check_classification_sources.js` | 16 | Classification's sources, the gear, the date beside "As of" |
 | Integrations | `check_no_hardware_integrations.js` | 13 | an integration with no hardware of its own on the Integrations tab |
 | Integrations | `check_no_hardware_pages.js` | 20 | its page, and a helper's, naming the devices it adds entities to |
@@ -39,12 +40,12 @@ written rather than what it proves).
 | A device's page | `check_device_page_text.js` | 21 | the page reads at one size: secondary text at 14px, the heartbeat line plain, sensor names in the page's font, and other tabs unchanged |
 | Devices | `check_device_finders.js` | 28 | the Devices tab's search, Area and Label filters, its Excluded list with Cancel the exclusion, and an integration's page excluding it or taking it back |
 | Battery | `check_battery_steps.js` | 6 | how a battery reports, on its page and on Battery Trends |
-| Battery | `check_battery_weeks.js` | 13 | five weekly averages, the knee and its sentence, and the weekly columns |
+| Battery | `check_battery_weeks.js` | 18 | five weekly averages, an accelerating cell's sentence and no knee, a cell above twice the threshold not judged, and the weekly columns |
 | Battery | `check_battery_future.js` | 22 | the device page's Future view: the expected fall as a shaded range, drawn as Simple's chart is |
-| Battery | `check_battery_chart.js` | 12 | the weekly bars and the fitted line only at 30 and 14 days, the knee only inside the range |
+| Battery | `check_battery_chart.js` | 15 | the weekly bars and the fitted line only at 30 and 14 days, and no straight line beside an accelerating cell's curve |
 | Signal | `check_dropping_out.js` | 5 | a device that keeps dropping out, on its page and on Signal Trends |
 
-649 checks in 33 files, as of 20 October 2026 (0.26.8).
+682 checks in 34 files, as of 22 October 2026 (0.27.0).
 
 ## Running Them
 

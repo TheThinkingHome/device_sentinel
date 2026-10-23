@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_future.js, Version: 0.26.8 (2026-10-20)
+// File: tools/panel_checks/check_battery_future.js, Version: 0.27.0 (2026-10-22)
 // Panel checks: the device page's Future view (rulings #703 to #705, #713).
 // Written for 0.26.7 (2026-10-19); the chart James reviewed on 19 October in 0.26.8.
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_future.js [path/to/panel.js]
@@ -127,6 +127,44 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   button(a.root, "30 Days").click();
   await settle();
   check("another range brings back the history chart", !chart(a.root));
+
+  console.log("The fall drawn to the low threshold (#730)");
+  const LOW_DAILY = DOOR.map((v) => v + 20);
+  const toLow = withBattery({
+    daily: LOW_DAILY, now: 36.5, threshold: 15, readable: true,
+    weeks: [43.0, 42.4, 41.2, 39.4, 36.9], reading: "accelerating", fit: null,
+    sentence: "Falling faster each week, about 3.1 points a week today.", falling: true,
+    left: "about 4 to 5 weeks", left_soon: true, target: 15, days_setting: 45,
+    projection: { ...DOOR_PROJECTION, level: 36.5, target: 15, near: 33.1, far: 43.2, centre: 37 },
+  });
+  const t = await open(`${PREFIX}/device/${DEVICE}`, toLow);
+  check("the page says where the time left ends, and why", text(t.root).includes(
+    "Falling faster each week, about 3.1 points a week today. It reaches your 15% in about 4 to 5 weeks. Many devices stop working before their battery reaches 0%."),
+    text(t.root).slice(-900));
+  button(t.root, "Future").click();
+  await settle();
+  const lowLines = [...t.root.querySelectorAll(".futurechart polyline.futureline")];
+  const atLow = (l) => l.getAttribute("points").split(" ").filter((pt) => Math.abs(Number(pt.split(",")[1]) - yOf(15)) < 0.05).length;
+  check("each line stops at the threshold, not at empty", lowLines.length === 2 && lowLines.every((l) => atLow(l) === 1)
+    && lowLines.every((l) => floor(l) === 0), lowLines.map(atLow));
+  check("the words say the threshold", text(t.root).includes("Expected to reach 15% in about 4 to 5 weeks."));
+  check("Advanced says the 0% line once, above the table", text(t.root).split("Many devices stop working").length === 2);
+
+  console.log("Earlier Forecasts (#732)");
+  const logged = withBattery({ ...JSON.parse(JSON.stringify(toLow.device({}).battery)), forecasts: [
+    { day: "2026-11-20", level: 18.5, accelerating: true, target: 15, left: "about 1 to 2 weeks", outcome: null, arrived: null },
+    { day: "2026-10-22", level: 31, accelerating: true, target: 15, left: "about 3 to 5 weeks", outcome: "inside", arrived: "2026-11-19" },
+    { day: "2026-09-01", level: 44, accelerating: false, target: 15, left: "about 2 to 3 months", outcome: "later", arrived: null },
+  ] });
+  const lg = await open(`${PREFIX}/device/${DEVICE}`, logged);
+  const items = [...lg.root.querySelectorAll("details.forecasts li")].map((li) => li.textContent);
+  check("each forecast with what happened, newest first", items.length === 3
+    && items[0].endsWith("Not there yet.")
+    && items[1].includes("at 31%: reaches 15% in about 3 to 5 weeks. Reached 15% on ") && items[1].endsWith(", inside the range.")
+    && items[2].endsWith("Still above 15% when the range ended."), items);
+  check("titled with its count", (lg.root.querySelector("details.forecasts summary") || {}).textContent === "Earlier Forecasts (3)");
+  const none = await open(`${PREFIX}/device/${DEVICE}`, toLow);
+  check("no list when nothing was forecast", !none.root.querySelector("details.forecasts"));
 
   console.log("A far end that does not empty in view");
   const wide = withBattery({ ...JSON.parse(JSON.stringify(door.device({}).battery)),
