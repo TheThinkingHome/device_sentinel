@@ -15,3 +15,7 @@ pylutron-caseta==0.29.0
 # 2026-10-15).
 aiohue==4.9.0
 pysmartthings==4.0.3
+# The frontend Home Assistant 2026.10.1 pins. Device Sentinel names
+# frontend and panel_custom as dependencies since 0.27.0 (#721), so a
+# test setup brings the frontend up, and it needs its files (2026-10-22).
+home-assistant-frontend==20260930.3

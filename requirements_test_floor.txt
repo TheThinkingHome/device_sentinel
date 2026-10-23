@@ -14,3 +14,6 @@ pylutron-caseta==0.28.0
 # 2026-10-15).
 aiohue==4.8.1
 pysmartthings==3.7.3
+# The frontend Home Assistant 2026.5 pins, for the reason
+# requirements_test.txt gives (0.27.0, 2026-10-22).
+home-assistant-frontend==20260429.3
