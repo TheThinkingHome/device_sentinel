@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.26.7 (2026-10-19)
+# File: normalise.py, Version: 0.27.0 (2026-10-22)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (ruling #370).
@@ -60,10 +60,13 @@ beside this walks the TAINT_REASONS tuple for exactly that reason.
 from __future__ import annotations
 
 import math
+from datetime import date
 from typing import Any
 
 from .records import _new_device_record
 from .const import (
+    DATA_BATTERY_FORECAST_TALLY,
+    FORECAST_OUTCOMES,
     DEV_LOGNORMAL_DAYS,
     RETIRED_DEVICE_FIELDS,
     DEV_BATTERY_DAILY,
@@ -76,6 +79,7 @@ from .const import (
     DEV_BATTERY_RAW_FIRST_DAY,
     DEV_FLAP_BACK,
     DEV_FIRMWARE_HISTORY,
+    DEV_BATTERY_FORECASTS,
     DEV_FLAP_DROPS,
     DEV_FLAP_LONGEST,
     DEV_FLAP_SINCE,
@@ -249,6 +253,9 @@ DOWN_SINCE = "None or [moment, state]"
 # A device's firmware history (0.23.4): [version, first seen] pairs,
 # the version a non-empty string and the moment a number.
 VERSION_HISTORY = "list of [version, first seen] pairs"
+FORECAST_LOG = "list of battery forecast rows"
+# A forecast is said at most as "over a year" (PROJECTION_LONGEST).
+FORECAST_DAYS_HIGHEST = 3 * 365
 
 # Every field a record is expected to hold, and what shape it takes.
 # A key absent from this table is reported as unknown; a key in this
@@ -303,10 +310,39 @@ EXPECTED: dict[str, str] = {
     DEV_FLAP_BACK: MOMENT,
     DEV_FLAP_LONGEST: SPAN,
     DEV_FIRMWARE_HISTORY: VERSION_HISTORY,
+    DEV_BATTERY_FORECASTS: FORECAST_LOG,
     DEV_FROZEN_CATEGORY: STRING,
     DEV_FROZEN_SINCE: MOMENT,
     DEV_DOWN_BEGAN_AS: STRING,
 }
+
+
+def _forecast_row_ok(row: Any) -> bool:
+    """One forecast row: a dated level, a target and a range, and an
+    outcome only from the known four (ruling #732)."""
+    if not isinstance(row, list) or len(row) != 8:
+        return False
+    day, level, accelerating, target, near, far, outcome, arrived = row
+    return (
+        _is_day(day)
+        and _is_number(level) and 0 <= level <= 100
+        and isinstance(accelerating, bool)
+        and _is_number(target) and 0 <= target <= 100
+        and _is_number(near) and 0 <= near <= FORECAST_DAYS_HIGHEST
+        and (far is None or (_is_number(far) and 0 <= far <= FORECAST_DAYS_HIGHEST))
+        and (outcome is None or outcome in FORECAST_OUTCOMES)
+        and (arrived is None or _is_day(arrived))
+    )
+
+
+def _is_day(value: Any) -> bool:
+    if not isinstance(value, str) or len(value) != 10:
+        return False
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _is_number(value: Any) -> bool:
@@ -471,6 +507,13 @@ def _fault(kind: str, value: Any) -> str | None:
             )
         ]
         return None if not bad else f"{len(bad)} bad pair(s), first {_describe(bad[0])}"
+    if kind == FORECAST_LOG:
+        # [day, level, accelerating, target, near, far, outcome, arrived]
+        # (ruling #732): each row checked whole, as the firmware pairs are.
+        if not isinstance(value, list):
+            return _describe(value)
+        bad = [row for row in value if not _forecast_row_ok(row)]
+        return None if not bad else f"{len(bad)} bad row(s), first {_describe(bad[0])}"
     if kind == INT_SERIES:
         if not isinstance(value, list):
             return _describe(value)
@@ -768,6 +811,8 @@ SCALARS: dict[str, str] = {
     # damaged one joins no history, so it is restored or dropped.
     DATA_HISTORY_GENERATION: INTEGER,
     DATA_HISTORY_LINE: MOMENT,
+    # The house's tally of scored battery forecasts (ruling #732).
+    DATA_BATTERY_FORECAST_TALLY: MAPPING,
 }
 
 # How many rows of one table are reported before the rest are counted.

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_matter.py, Version: 0.26.8 (2026-10-20)
+# File: stack_matter.py, Version: 0.27.0 (2026-10-22)
 
 """Matter: everything Device Sentinel knows about this stack.
 
@@ -61,9 +61,11 @@ STACK = STACK_MATTER
 # Nothing but Matter publishes on the matter domain (ruling #412).
 SHARED_DOMAIN = False
 
-# A Matter device with no battery, not behind a bridge, is judged by
-# being available rather than by its rhythm (ruling #710): Tim Plas's
-# unplugged lamp and plug read unavailable within about five minutes.
+# A Matter device of a type that reports only on use, not behind a bridge, is
+# judged by being available rather than by its rhythm (rulings #710 and
+# #718): Tim Plas's unplugged lamp and plug read unavailable within
+# about five minutes, and button B13 without its battery within about
+# fourteen.
 AVAILABLE_SPEAKS = True
 
 

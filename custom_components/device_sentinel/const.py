@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.26.8 (2026-10-20)
+# File: const.py, Version: 0.27.0 (2026-10-22)
 
 """Constants for the Device Sentinel integration."""
 
@@ -367,6 +367,34 @@ ZHA_JOIN_MESSAGES = frozenset(
 # recovery wrongly called handled loses one measurement, while one
 # wrongly called natural teaches a rhythm that is not real.
 ZHA_HANDLED_TAIL_SECONDS = 60.0
+# What a person's handling of a ZHA device looks like (#719, as fixed
+# by the adversarial round of 0.27.0, read from HA 2026.10.1, zha 2.3.1
+# and zigpy 2.3.0). A full init alone is the device setting itself up
+# again, as the rig's three ZHA test devices did after a restart on 21
+# October 2026. A join alone is no better: a device that changes its
+# own network address sends a join and two full inits, exactly as a
+# re-pair does, with nobody near it. So a join counts only while
+# pairing is open, and the start of a reconfigure, a raw init, counts
+# by itself, since zigpy sends one for a known device only when it is
+# interviewed again. The full inits that follow count until ZHA says
+# the device is initialized, or the window ends: a slow battery device
+# can take minutes to configure.
+ZHA_FULL_INIT = "device_fully_initialized"
+ZHA_JOINED = "device_joined"
+ZHA_RAW_INIT = "raw_device_initialized"
+ZHA_INITIALIZED = "INITIALIZED"
+ZHA_HANDLING_WINDOW_SECONDS = 900.0
+# Handlings begun and not yet answered are kept for at most this many
+# addresses, the oldest dropped first.
+ZHA_BEGUN_KEPT = 512
+# Pairing is open. ZHA keeps no such state, so it is read from what
+# opening it leaves: the zha.permit action, for as long as it asks, and
+# the Add Device page, which relays ZHA's log as log_output messages
+# while it is open. The longest a pairing can stay open is 254 seconds.
+ZHA_LOG_OUTPUT = "log_output"
+ZHA_PERMIT_SERVICE = "permit"
+ZHA_PERMIT_DEFAULT_SECONDS = 60.0
+ZHA_PERMIT_LONGEST_SECONDS = 254.0
 
 # The package logger. __package__ resolves to
 # custom_components.device_sentinel, which is the namespace Home
@@ -1314,6 +1342,21 @@ DEV_FLAP_LONGEST = "flap_longest"
 # current version always stays, and an older one goes once the version
 # that replaced it was first seen before the window opened.
 DEV_FIRMWARE_HISTORY = "firmware_history"
+# Each battery forecast, made at the midnight fold for a battery judged
+# falling or accelerating, and scored when the battery reaches the level
+# it ran to (ruling #732, battery_forecasts.py): rows of [day, level,
+# accelerating, target, near, far, outcome, arrived]. The newest
+# FORECAST_KEEP_ROWS are kept, about a year of daily rows; the house's
+# tally of outcomes is kept without end under
+# DATA_BATTERY_FORECAST_TALLY.
+DEV_BATTERY_FORECASTS = "battery_forecasts"
+DATA_BATTERY_FORECAST_TALLY = "battery_forecast_tally"
+FORECAST_KEEP_ROWS = 400
+FORECAST_INSIDE = "inside"
+FORECAST_EARLIER = "earlier"
+FORECAST_LATER = "later"
+FORECAST_REPLACED = "replaced"
+FORECAST_OUTCOMES = (FORECAST_INSIDE, FORECAST_EARLIER, FORECAST_LATER, FORECAST_REPLACED)
 BATTERY_COARSE_STEP = 5.0
 BATTERY_COARSE_CONFIRM = 2
 BATTERY_STEPS_SMOOTH = "smooth"
@@ -1340,6 +1383,18 @@ SYS_BATTERY_REPLACED = "battery_replaced"
 # month the projection is guesswork (ruling #197).
 CONF_BATTERY_DAYS = "battery_days_till_empty"
 DEFAULT_BATTERY_DAYS = 30
+# A cell is judged falling or accelerating, and given a time left, only
+# at or under this many times the low threshold (rulings #725 and #730,
+# James, 22 October 2026). No battery on either house had yet been
+# watched from new to replaced, the longest history was 96 days, and
+# every method tried, the textbook ones included, missed a far-off date:
+# most falling cells rest between steps, and a forecast is right more
+# often the fewer points it covers (an accelerating warning 97 percent
+# at 5 points, 85 at 15, 77 at 30). Three times rather than twice: the
+# time left runs to the threshold, and a battery falling 4 or 5 points a
+# week needs 20 or more points of room to be warned 30 days ahead.
+# Above it a cell shows its weekly history only.
+BATTERY_REPORT_CEILING_FACTOR = 3.0
 BATTERY_DAYS_MIN = 7
 BATTERY_DAYS_MAX = 30
 
@@ -1443,7 +1498,7 @@ DEV_BATTERY_VALUE = "battery_value"
 # The discharge recorder. At each midnight the current battery value
 # is appended here, so the history is a daily series of levels (89,
 # 89, 88, 88, 80, 65), which the trend reads: the weekly averages,
-# the fitted line and the knee (0.23.6). The value is stored rather
+# the fitted line and the curve (0.23.6, #725). The value is stored rather
 # than only the delta, because it is cheap and makes the series
 # self-describing and gap-tolerant. Kept for the retention, like every
 # daily series.
@@ -1550,6 +1605,7 @@ EPOCH_KEPT = (
     DEV_FLAP_BACK,
     DEV_FLAP_LONGEST,
     DEV_FIRMWARE_HISTORY,
+    DEV_BATTERY_FORECASTS,
     DEV_SIGNAL_READS,
     DEV_SET_ASIDE_SINCE,
     DEV_REMOVED_SINCE,
@@ -2548,7 +2604,7 @@ SYS_DEVICE_ID = "device_id"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 717
+HIGHEST_RULING = 732
 
 # The state saved with a device's outage start when its stack called
 # its node dead (ruling #670), so the dead word outlives a restart.
@@ -3092,6 +3148,10 @@ CONF_BATTERY_MUTED_LABELS = "battery_muted_labels"
 # wiki" says what the link is, and where it lands is the screen's own
 # business.
 WIKI_BASE_URL = "https://github.com/TheThinkingHome/device_sentinel/wiki"
+# Each release's notes, by its tag, which is the version itself. The
+# dashboard's foot names the version running and links here (ruling
+# #723, from Tim Plas, 21 October 2026).
+RELEASE_NOTES_URL = "https://github.com/TheThinkingHome/device_sentinel/releases/tag/{version}"
 
 
 def _wiki_link(page: str | None = None) -> str:
@@ -3201,30 +3261,46 @@ BATTERY_FALLING_WEEK_DROP = 1.0
 # a year". The owner doubted a single week was reliable; the fitted
 # line is the longer look.
 BATTERY_FALLING_MIN_PACE = 0.5
-# Accelerating is found the way battery research finds a knee point:
-# two straight lines joined at one day are fitted to the last six
-# weeks, and the join is the day the pace changed. The owner saw three
-# slope lines, a bar chart of weekly losses and a replay chart, and
-# chose this: one line, or two joined at the knee, with its date.
-BATTERY_KNEE_WINDOW_DAYS = 42
-# Four weeks of history before a knee is looked for, a week before
-# it, and two weeks after it: the owner ruled that accelerating takes
-# two fast weeks in a row. With one week allowed after the knee, a
-# single two-point step on Tim Plas's S57 read as accelerating.
-BATTERY_KNEE_MIN_DAYS = 28
-BATTERY_KNEE_EDGE_DAYS = 7
-BATTERY_KNEE_AFTER_DAYS = 14
-# The two lines must explain the history far better than one (an F
-# test on the two extra terms), and the pace after the knee must be
-# at least two points a week and at least twice the pace before, with
-# the pace before counted as at least half a point. On Tim Plas's
-# house S63 passes by a wide margin (F about 200, 0.5 then 5.9 points
-# a week); S71, falling about 3.5 points a week with a pause, does not
-# (F under 1), and neither does any cell on the reference rig.
-BATTERY_KNEE_MIN_F = 10.0
-BATTERY_KNEE_AFTER_MIN = 2.0
-BATTERY_KNEE_RATIO = 2.0
-BATTERY_KNEE_BEFORE_FLOOR = 0.5
+# Six weeks of history are fitted, with a straight line and with a
+# curve, for the falling test, the accelerating test and the time
+# left, and nothing is fitted until four weeks of them were heard.
+BATTERY_FIT_WINDOW_DAYS = 42
+BATTERY_FIT_MIN_DAYS = 28
+# One test for accelerating (ruling #725, 0.27.0): the same six-week
+# curve the time left reads (#704), so the word, the sentence and the
+# range agree. Until 0.27.0 a knee rule decided it, two straight lines
+# joined at the day the pace turned, with a week before the join and
+# two after; Door 2nd Bedroom on the reference rig, 21 October 2026,
+# bending down gradually, read "falling" and then nothing at all at
+# 14.5 percent, beside a curved range of about 3 to 5 weeks. The knee
+# rule is gone.
+#
+# The curve passes when it bends down and fits clearly better than the
+# line (an F of BATTERY_CURVE_MIN_F or more); its fall today is at
+# least BATTERY_CURVE_MIN_PACE points a week; and the newest
+# BATTERY_CURVE_RECENT_DAYS hold at least BATTERY_CURVE_MIN_FALLS drops
+# from one heard day to the next, so one step down is not a curve.
+# Walked day by day on 123 cells on both houses, 22 October 2026: these
+# two guards called no steady cell accelerating and caught the three
+# real speed-ups 41, 18 and 8 days before 21 October. Without the pace,
+# 17 steady cells read accelerating on 156 days; without the drops, 70
+# on 356. Two guards kept from the knee rule at first, twice the fall at
+# the window's start and a falling straight line, stopped no false call
+# beside these and cost Door 2nd Bedroom 31 days, so they went. 42 days
+# was measured against 28, 56 and 84 (#726): 28 missed Door 2nd Bedroom
+# and called steady cells, the longer ones only came later. The time
+# left uses this same test to choose the curve.
+BATTERY_CURVE_MIN_F = 10.0
+BATTERY_CURVE_MIN_PACE = 2.0
+BATTERY_CURVE_RECENT_DAYS = 14
+BATTERY_CURVE_MIN_FALLS = 3
+# The curve must also fit better by a measurable amount, at least one
+# square point over the six weeks. A perfectly straight fall leaves the
+# curve no error at all, the F test divides by nothing and the straight
+# line read accelerating (found 22 October 2026 by a test with an exact
+# half point a day). On both houses the smallest gain on any accelerating
+# day was 11.9, so this floor changes no real call.
+BATTERY_CURVE_MIN_GAIN = 1.0
 READING_ACCELERATING = "accelerating"
 READING_FALLING = "falling"
 

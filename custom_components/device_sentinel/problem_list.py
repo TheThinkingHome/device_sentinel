@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.26.7 (2026-10-19)
+# File: problem_list.py, Version: 0.27.0 (2026-10-22)
 
 """The problem list: the single memory every channel renders.
 
@@ -125,7 +125,7 @@ _FAULT_LINE = {
         "{name} keeps dropping out",
     ),
     TODO_KIND_FALLING_BATTERY: (
-        "{name} battery is running down, empty in {left}",
+        "{name} battery is running down, {left}",
         "{name} battery is running down",
     ),
 }
@@ -413,7 +413,8 @@ class ProblemListMixin:
         for row in self.battery_falling_list:
             entry = _entry(row["device_id"], row.get("name"))
             entry["kinds"][TODO_KIND_FALLING_BATTERY] = None
-            entry["left"] = row.get("left")
+            # The whole clause, "reaches 15% in about 2 weeks" (#730).
+            entry["left"] = row.get("until") or row.get("left")
             if entry["level"] is None:
                 entry["level"] = row.get("level")
 
@@ -448,7 +449,7 @@ class ProblemListMixin:
             # once when both kinds are present, because the level
             # clause ahead of it has already said the word.
             if left:
-                return f"empty in {left}"
+                return left if left.startswith(("reaches ", "empty in ")) else f"empty in {left}"
             return "battery running down"
         if kind == TODO_KIND_RAILED_SIGNAL:
             return "signal (rail)"
@@ -747,7 +748,7 @@ class ProblemListMixin:
             TODO_KIND_LOW_BATTERY not in order
         ):
             index = order.index(TODO_KIND_FALLING_BATTERY)
-            if words[index].startswith("empty in "):
+            if words[index].startswith(("empty in ", "reaches ")):
                 words[index] = f"battery {words[index]}"
         summary = f"{name}: " + ", ".join(words)
         lines = []

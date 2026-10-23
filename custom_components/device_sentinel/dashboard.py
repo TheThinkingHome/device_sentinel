@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.26.8 (2026-10-20)
+# File: dashboard.py, Version: 0.27.0 (2026-10-22)
 
 """What the dashboard reads from the coordinator.
 
@@ -19,6 +19,7 @@ disagree.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -153,6 +154,8 @@ from .const import (
     BROKER_SENSOR_NAME,
     WIFI_KEY,
     WIFI_SENSOR_NAME,
+    READING_ACCELERATING,
+    RELEASE_NOTES_URL,
 )
 from .escalation import fold, withdrawals_once
 from .outage_detail import pair_key
@@ -294,6 +297,22 @@ class DashboardMixin:
             "marker": self._change_marker,
             # The dashboard a window opens in (ruling #693).
             "dashboard": self.dashboard_mode,
+            # The release running, for the dashboard's foot (ruling #723).
+            "release": self.dashboard_release(),
+        }
+
+    def dashboard_release(self) -> dict[str, str | None]:
+        """The release running: its name, and a link to its notes.
+
+        The link only where the version reads as a release tag, digits
+        and dots, so an odd manifest value prints plain rather than
+        building an address from it.
+        """
+        version = self.version if isinstance(self.version, str) else ""
+        tagged = re.fullmatch(r"\d+(?:\.\d+){1,3}", version) is not None
+        return {
+            "words": f"Device Sentinel {version}".strip(),
+            "url": RELEASE_NOTES_URL.format(version=version) if tagged else None,
         }
 
     @property
@@ -481,6 +500,7 @@ class IntegrationViewMixin:
         ("unknown", TODO_KIND_UNKNOWN),
         ("signal", TODO_KIND_RAILED_SIGNAL),
         ("empty in", TODO_KIND_FALLING_BATTERY),
+        ("reaches", TODO_KIND_FALLING_BATTERY),
         ("battery", TODO_KIND_LOW_BATTERY),
     )
 
@@ -920,7 +940,7 @@ class DeviceViewMixin:
 
     def _judged_available(self, device_id: str, record: dict[str, Any]) -> bool:
         """Whether the device is judged by being available rather than by a
-        window (#710): a Matter device with no battery, with no frozen
+        window (#710, #718): a Matter device of a type that reports only on use, with no frozen
         verdict standing."""
         return bool(
             self._matter_available_now(device_id)  # type: ignore[attr-defined]
@@ -1212,8 +1232,8 @@ class DeviceViewMixin:
                 # No freeze window for a device judged by its connection
                 # alone (eighteenth adversarial round of 0.26.6).
                 "window": None if self._connection_only(device_id) else self._freeze_window(record),  # type: ignore[attr-defined]
-                # A Matter device with no battery, never newly called
-                # frozen while available (#710): the page says so in
+                # A Matter device of a type that reports only on use, never newly
+                # called frozen while available (#710, #718): the page says so in
                 # place of its window (adversarial round of 0.26.8).
                 "available_rule": self._judged_available(device_id, record),
                 # The rule in use, as people read it: "37-Day
@@ -1287,36 +1307,44 @@ class DeviceViewMixin:
             "daily": battery_calendar(record),
             "now": level,
             "threshold": self.low_threshold,
+            # The level a cell is judged falling at or under (#725).
+            "ceiling": self.battery_ceiling,  # type: ignore[attr-defined]
             "readable": readable,
+            # Earlier Forecasts, newest first, each with what happened
+            # (ruling #732).
+            "forecasts": self.battery_forecast_view(record),  # type: ignore[attr-defined]
         }
         if not isinstance(level, (int, float)) or not readable or not series:
             return page
         current = float(level)
         # The same trend the rows and the rules read (0.23.6): weekly
-        # averages, and the fitted line or knee when the cell falls.
+        # averages, and the fitted line when the cell falls.
         trend = battery_trend(
-            series, current, self.battery_steps(record) == BATTERY_STEPS_SMOOTH
+            series, current, self.battery_steps(record) == BATTERY_STEPS_SMOOTH,
+            self.battery_ceiling,  # type: ignore[attr-defined]
         )
         falling = bool(trend["reading"] and trend["pace"])
-        days = current / (trend["pace"] / BATTERY_WEEK_DAYS) if falling else None
-        # The range a falling cell runs empty in (ruling #704); the near
-        # end decides Days Till Empty, as on the Problem List.
-        knee = trend["fit"] or {}
-        projection = (
-            battery_projection(series, current, knee.get("knee_ago") if knee.get("knee") else None)
-            if falling else None
-        )
+        target = self.battery_target(current)  # type: ignore[attr-defined]
+        days = (current - target) / (trend["pace"] / BATTERY_WEEK_DAYS) if falling else None
+        # The range a falling cell reaches the low threshold in (rulings
+        # #704, #730); the near end decides Days Till Low, as on the
+        # Problem List.
+        projection = battery_projection(series, current, target) if falling else None
         far = days
         if projection is not None:
             days, far = projection["near"], projection["far"]
         page.update({
             "weeks": trend["weeks"],
             "reading": trend["reading"],
+            # The straight line, for a falling cell only: an accelerating
+            # one has none (ruling #725), its curve is the time left's.
             "fit": trend["fit"] if falling else None,
-            "sentence": battery_sentence(trend, dt_util.now().date() - timedelta(days=1), projection),
+            "sentence": battery_sentence(trend, projection),
             "falling": falling,
             "left": self.battery_time_left_range(days, far) if days is not None else None,
             "left_soon": days is not None and days <= self._battery_days(),
+            # Where the time left ends (#730): the low threshold, or 0.
+            "target": target if falling else None,
             # What the chart with its future draws (rulings #703, #705).
             "projection": projection,
             "days_setting": self._battery_days(),
@@ -1750,7 +1778,12 @@ class TrendsViewMixin:
                         "reading": row.get("reading"),
                         "pace": -row["slope"] * BATTERY_WEEK_DAYS,
                         "left": self.battery_time_left_range(row["days"], row.get("days_far")),
+                        "until": self.battery_until_words(row),
                         "left_soon": row["days"] <= self._battery_days(),
+                        # Falling at a steady pace inside Days Till Low:
+                        # Batteries to Watch, with no warning (#731).
+                        "watch": row["days"] <= self._battery_days() and not row.get("low")
+                        and row.get("reading") != READING_ACCELERATING,
                     })
                 else:
                     item["days"] = len(row.get("series") or [])
@@ -1778,6 +1811,8 @@ class TrendsViewMixin:
             "no_battery_types": _count_types(type_of(row.get("device_id")) for row in report["absent"]),
             "cell_rows": cell_rows,
             "threshold": self.low_threshold,
+            # The level a cell is judged falling at or under (#725).
+            "ceiling": self.battery_ceiling,  # type: ignore[attr-defined]
         }
 
     def signal_trends(self) -> dict[str, Any]:

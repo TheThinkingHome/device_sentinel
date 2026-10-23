@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.26.3 (2026-10-14)
+# File: notifier.py, Version: 0.27.0 (2026-10-22)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -266,8 +266,8 @@ class NotifierMixin:
                 if row.get("device_id") in acknowledged:
                     continue
                 name = row.get("name") or row.get("device_id")
-                left = row.get("left")
-                clause = f"empty in {left}" if left else "running down"
+                left = row.get("until") or (f"empty in {row['left']}" if row.get("left") else None)
+                clause = left or "running down"
                 key = _key(row, len(rows))
                 if key in rows:
                     rank, since, said = rows[key]

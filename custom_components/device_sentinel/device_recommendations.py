@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.26.8 (2026-10-20)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.27.0 (2026-10-22)
 
 """Recommendations about single devices, for the Recommendations tab (0.24.9).
 
@@ -241,7 +241,7 @@ class DeviceRecommendationsMixin:
         # it comes late and is often noise. The card offers a freeze
         # mute and changes nothing itself; a device already muted for
         # freeze or for everything, and an awake ESPHome device #636 or an
-        # available Matter device with no battery #710 never judges frozen,
+        # available Matter button, light, plug or switch #710 and #718 never judge frozen,
         # are left off. Not in the emailed brief: a slow device is not
         # a fault (#617's reasoning). The text is James's.
         slow = [d for d in watched if self._slow_reporter(d)]  # type: ignore[attr-defined]
@@ -260,7 +260,9 @@ class DeviceRecommendationsMixin:
                 ),
                 "devices": rows(slow),
             })
-        # Last: a missing or mixed type changes no judgment (0.25.3).
+        # Last: a missing or mixed type (0.25.3). The type decides a Matter
+        # device's freeze rule since 0.27.0 (#718); for any other it changes
+        # no judgment.
         kinds = {d: self.type_words(d) for d in watched}  # type: ignore[attr-defined]
         untyped = [d for d in watched if not kinds[d]]
         if untyped:
@@ -471,7 +473,7 @@ class DeviceRecommendationsMixin:
             (
                 self._awake_esphome(device_id)  # type: ignore[attr-defined]
                 or self._dropped_esphome(device_id)  # type: ignore[attr-defined]
-                # A Matter device with no battery, available (#710).
+                # a Matter device of a type that reports only on use, available (#710, #718).
                 or self._matter_available_now(device_id)  # type: ignore[attr-defined]
             )
             and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN

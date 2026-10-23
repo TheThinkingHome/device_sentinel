@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.26.7 (2026-10-19)
+# File: detect_battery.py, Version: 0.27.0 (2026-10-22)
 
 """Battery: the level threshold and what is tracked.
 
@@ -17,10 +17,9 @@ a month. A projection landing inside the chosen horizon is flagged
 while the number still looks comfortable.
 
 Time left is said in words rather than a count of days on purpose.
-The projection assumes the fitted pace continues (the six-week line,
-or the line after its knee, 0.23.6 and 0.23.7), which a failing cell
-often does not, so it is a ranking of which cell to replace first
-rather than a date.
+The projection is a range from the cell's own six weeks (#704), not a
+date: a failing cell often does not keep the pace it was fitted on,
+so it ranks which cell to replace first.
 
 One of six subject modules split out of coordinator.py, which
 had reached four thousand lines. The seam is the subject, chosen
@@ -673,9 +672,11 @@ class BatteryMixin:
 
         The Battery: Falling sensor. A different set from Battery:
         Low and a different question: low is a level that has been
-        crossed, falling is a level that is going to be. A cell at 80
-        percent dropping steadily can have less life left than one
-        sitting at 30 that has not moved in a month (ruling #209).
+        crossed, falling is a level that is going to be (ruling #209).
+        Since 0.27.0 only a cell at or under three times the low
+        threshold is judged falling at all (#725): further up, no
+        history yet says when a battery will reach it. Only a cell
+        speeding up is counted here (#731).
 
         Read from the battery rows Battery Trends shows, so the sensor,
         that page and the daily brief cannot disagree about which cells
@@ -690,6 +691,8 @@ class BatteryMixin:
                 "level": row["level"],
                 "per_day": round(row["slope"], 2),
                 "left": self.battery_time_left_range(row["days"], row.get("days_far")),  # type: ignore[attr-defined]
+                # The clause with its target: "reaches 15% in ..." (#730).
+                "until": self.battery_until_words(row),  # type: ignore[attr-defined]
             }
             for row in self._battery_brief_rows()
         ]

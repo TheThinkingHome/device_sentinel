@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.26.8 (2026-10-20)
+# File: report_brief.py, Version: 0.27.0 (2026-10-22)
 
 """The daily brief: the one report written for a person.
 
@@ -392,7 +392,7 @@ class BriefMixin:
         """
         for row in self.battery_falling_list:
             if row.get("device_id") == device_id:
-                return f"battery empty in {row['left']}{self._brief_power(device_id)}"
+                return f"battery {row.get('until') or 'empty in ' + row['left']}{self._brief_power(device_id)}"
         return f"battery running down{self._brief_power(device_id)}"
 
     def _brief_now_rows(
@@ -1434,7 +1434,9 @@ class BriefMixin:
         for card in self.device_recommendations():
             if not card.get("brief"):
                 continue  # on the tab only (0.25.3), or every row ticked (#699)
-            line = f"{card['title']}: {card['brief']}"
+            # The title counts the rows not ticked, as the card's on
+            # the tab does (ruling #724); a line here always has one.
+            line = f"{card['title']} ({card['active']}): {card['brief']}"
             url = self._report_link(f"/{PANEL_URL_PATH}/recommendations?open={card['kind']}")
             if url:
                 self._brief_rec_links[line] = url
@@ -2720,18 +2722,29 @@ class BriefMixin:
         # a season out; naming those here would be sixteen devices
         # nobody can act on (ruling #195).
         fallers = self._battery_brief_rows()
+        battery_lines: list[str] = []
         if fallers:
             named = ", ".join(
-                f"{row['name']} ({self.battery_time_left_range(row['days'], row.get('days_far'))})"
+                f"{row['name']} ({self.battery_until_words(row)})"
                 for row in fallers[:5]
             )
+            battery_lines.append(f"Batteries falling faster each week: {named}.")
+        # A cell falling at a steady pace inside Days Till Low is named
+        # here and on Battery Trends, and pushes nothing (#731).
+        watched = self.battery_watch_rows()
+        if watched:
+            named = ", ".join(
+                f"{row['name']} ({self.battery_until_words(row)})"
+                for row in watched[:5]
+            )
+            battery_lines.append(f"Batteries to watch: {named}.")
+        if battery_lines:
             # The battery report retired with the www folder (0.23.5);
             # the dashboard's Battery Trends tab carries what it did.
-            lines += [
-                f"Batteries falling: {named}. Details are in Battery "
-                f"Trends on the Device Sentinel dashboard.",
-                "",
-            ]
+            # Said once, after the last battery line.
+            battery_lines[-1] += " Details are in Battery Trends on the Device Sentinel dashboard."
+            for line in battery_lines:
+                lines += [line, ""]
         lines += self._recommendations_section()
         lines += ["## Last 24 Hours", ""]
         # The rows behind a stitched sentence are dropped here

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: sensor.py, Version: 0.26.7 (2026-10-19)
+# File: sensor.py, Version: 0.27.0 (2026-10-22)
 
 """Sensor platform for the Device Sentinel integration.
 
@@ -533,9 +533,8 @@ class DeviceSentinelFallingBatteriesSensor(DeviceSentinelBaseSensor):
 
     A different set from Battery: Low and a different question. Low is
     a level that has been crossed; falling is a level that is going to
-    be, and the two rarely name the same device: a cell at 80 percent
-    dropping steadily can have less life left than one sitting at 30
-    that has not moved in a month (ruling #209).
+    be (ruling #209). Since 0.27.0 a cell is judged falling only at or
+    under twice the low threshold (#725).
 
     The count is read from the battery rows Battery Trends shows, so
     this sensor, that page and the daily brief cannot disagree about which

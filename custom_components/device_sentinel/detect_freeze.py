@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.26.8 (2026-10-20)
+# File: detect_freeze.py, Version: 0.27.0 (2026-10-22)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -46,6 +46,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from .device_fields import device_field
+from .device_type import SOURCE_OWNER, TYPES_THAT_REPORT_ON_USE, list_name, measures
 from .records import BAD_STATES
 from .stacks import available_speaks, node_dead, node_up, reader_for_domain
 
@@ -274,28 +275,45 @@ class FreezeMixin:
         return self._esphome_flags(device_id) == (False, True)
 
     def _awake_matter(self, device_id: str) -> bool:
-        """Whether this is a Matter device with no battery, whose being
-        available speaks for it (ruling #710).
+        """Whether this is a Matter device whose being available speaks
+        for it (ruling #710, narrowed by #718).
 
-        A Matter device that is always awake is never newly judged
-        frozen while any of its entities reads available, as an awake
-        ESPHome device is (#636). Tim Plas's test of 19 October 2026: an
-        unplugged lamp and plug were marked away by the Matter server
-        and unavailable by Home Assistant in the same second, about five
-        minutes after they were last heard, so a quiet one that stays
-        available is plugged in and well. A Matter device with a battery
-        entity may sleep and check in, and keeps the freeze rule; so
-        does a device whose entities read nothing but unknown, and a
-        device behind a Matter bridge, which may keep a dead sensor
-        reachable (adversarial round of 0.26.8).
+        A Matter device of a type that reports only on use, not behind a bridge, is
+        never newly judged frozen while any of its entities reads
+        available, whatever powers it. These report only when someone
+        uses them, so a learned rhythm on one is a guess and its frozen
+        verdicts were noise: Tim Plas muted L20, L21 and P52 and the
+        buttons B13 to B15 for them. A lost one is still reported
+        unavailable, since Matter marks it away and Home Assistant
+        follows in the same second: about five minutes after a lamp and
+        a plug were unplugged (Tim, 19 October 2026), about fourteen
+        after button B13 lost its battery (21 October). A sensor, and
+        any other type, keeps the freeze rule whatever powers it: S87,
+        a Matter temperature sensor, went silent on 13 October while
+        Matter still called it available, and its frozen verdict was
+        the only catch. So does a device whose type cannot be read, a
+        device whose entities read nothing but unknown, and a device
+        behind a Matter bridge, which may keep a dead sensor reachable
+        (adversarial round of 0.26.8).
         """
         if not available_speaks(self._watched.get(device_id)):
             return False
-        if device_id in self._battery_entity:
+        known = self.type_of(device_id)  # type: ignore[attr-defined]
+        words = known.get("words")
+        if not isinstance(words, str) or list_name(words) not in TYPES_THAT_REPORT_ON_USE:
             return False
         # A child device, or one gone from the registry, keeps the rule.
         device = dr.async_get(self.hass).async_get(device_id)
-        return device_field(device, "via_device_id", "") is None
+        if device_field(device, "via_device_id", "") is not None:
+            return False
+        # A type read from the entities is not trusted over a measuring
+        # entity: a sensor with a switch is still a sensor. The owner's
+        # own type is (adversarial round of 0.27.0).
+        if known.get("source") != SOURCE_OWNER and measures(
+            er.async_entries_for_device(er.async_get(self.hass), device_id)
+        ):
+            return False
+        return True
 
     def _matter_available_now(self, device_id: str) -> bool:
         """Whether _awake_matter applies now: some entity of the device
@@ -937,7 +955,7 @@ class FreezeMixin:
         # a freeze. A verdict already standing is kept until the
         # device reports (#529): a device frozen when 0.26.0 starts is
         # not told as recovered by a rule changing. An available Matter
-        # device with no battery is the same (ruling #710).
+        # device of a type that reports only on use is the same (#710, #718).
         if (
             frozen
             and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/battery_projection.py, Version: 0.26.8 (2026-10-20)
+# File: custom_components/device_sentinel/battery_projection.py, Version: 0.27.0 (2026-10-22)
 
 """When a falling cell runs empty, as a range (ruling #704).
 
@@ -15,14 +15,19 @@ while its fall had been bending down since late September; the curve
 said about a month.
 
 The projection, for a cell Device Sentinel already calls falling or
-accelerating (#502, #503):
+accelerating (#502, #503, #725), which since 0.27.0 it does only at
+or under twice the low threshold: with no battery yet watched from new
+to replaced, a date further out was a guess, measured on both houses
+on 22 October 2026 to miss on the slow side 84 percent of the time,
+since most falling cells rest between steps.
 
 - The last six weeks of heard days are fitted twice, with a straight
   line and with a curve (a second-order fit). The curve is used only
-  when it fits clearly better, by the same test the accelerating rule
-  uses for its knee (an F of 10 or more), only when it bends downward,
-  a fall that is speeding up, and only for a cell at or under 50
-  percent (#708). Otherwise the straight line.
+  when it fits clearly better (an F of 10 or more) and bends downward,
+  a fall that is speeding up; otherwise the straight line. Until
+  0.27.0 the curve was kept to a cell at or under 50 percent (#708);
+  with judging only at or under twice the threshold (#725), that limit
+  is gone.
 - The range comes from the cell's own data, not a fixed allowance.
   Each day's miss from the fit is kept, the misses are reshuffled a
   week at a time, so a run of low readings stays a run, and the fit is
@@ -30,10 +35,10 @@ accelerating (#502, #503):
   from today's reading to empty. The near and far ends are the 10th
   and 90th percentiles of those days. The reshuffle is seeded from the
   history, so the same history always gives the same range.
-- Worked out once for each history and reading, and kept, as the knee
+- Worked out once for each history and reading, and kept, as the line
   is (0.23.19), so the minute check does not pay for it.
 
-The near end decides Days Till Empty, for the chart and for the
+The near end decides Days Till Low, for the chart and for the
 falling forecast on the Problem List (#704).
 """
 
@@ -45,12 +50,16 @@ import random
 from typing import Any
 
 from .const import (
-    BATTERY_KNEE_MIN_DAYS,
-    BATTERY_KNEE_MIN_F,
-    BATTERY_KNEE_WINDOW_DAYS,
+    BATTERY_CURVE_MIN_F,
+    BATTERY_CURVE_MIN_FALLS,
+    BATTERY_CURVE_MIN_GAIN,
+    BATTERY_CURVE_MIN_PACE,
+    BATTERY_CURVE_RECENT_DAYS,
+    BATTERY_FIT_MIN_DAYS,
+    BATTERY_FIT_WINDOW_DAYS,
     BATTERY_WEEK_DAYS,
 )
-from .records import SERIES_MEMO_SIZE
+from .records import SERIES_MEMO_SIZE, series_key
 
 # How many reshuffled histories make the range, and which of their
 # answers are its ends.
@@ -60,16 +69,9 @@ PROJECTION_FAR = 0.90
 # Days further than this are said as "over a year" and drawn no
 # further: past it the arithmetic is guesswork (#197).
 PROJECTION_LONGEST = 3 * 365
-# The curve is used only for a cell at or under this level (ruling
-# #708). Above it a fall that bends at today's rate all the way down
-# reads months too short: on the replay of 19 October 2026, cells near
-# 90 percent read about two months against five to seven on the
-# straight pace.
-PROJECTION_CURVE_LEVEL = 50.0
-# Days after a knee needed before the straight fit reads only them.
-PROJECTION_KNEE_MIN_DAYS = 7
 
 _MEMO: dict[tuple[Any, ...], dict[str, Any] | None] = {}
+_CURVE_MEMO: dict[tuple[Any, ...], float | None] = {}
 
 
 def _solve(columns: list[list[float]], y: list[float]) -> list[float] | None:
@@ -126,38 +128,36 @@ def days_to_empty(level: float, slope: float, curve: float) -> float | None:
 
 
 def battery_projection(
-    series: list[Any], level: float, since: int | None = None
+    series: list[Any], level: float, target: float = 0.0
 ) -> dict[str, Any] | None:
-    """The range of days until a falling cell is empty.
+    """The range of days until a falling cell reaches target, the low
+    threshold (#730), or empty for a cell already under it.
 
     series is the battery history one slot a day ending yesterday,
     None for a day the device was not heard (#561). Returns None when
-    fewer days were heard than the knee needs, or when no path empties.
-    The caller has already judged the cell falling. since is the days
-    since the accelerating rule's knee, when it found one: a straight
-    fit then reads only the days after it, the pace the knee reads
-    (#708), so a cell above half keeps the pace it was given before
-    0.26.7.
+    fewer than four weeks were heard, or when no path empties. The
+    caller has already judged the cell falling, which since 0.27.0 is
+    only at or under twice the low threshold (#725).
     """
-    key = (tuple(series[-BATTERY_KNEE_WINDOW_DAYS:]), round(float(level), 2), since)
+    key = (tuple(series[-BATTERY_FIT_WINDOW_DAYS:]), round(float(level), 2), round(float(target), 2))
     if key in _MEMO:
         found = _MEMO[key]
         return dict(found) if found is not None else None
-    found = _project(series, float(level), since)
+    found = _project(series, float(level), float(target))
     _MEMO[key] = found
     while len(_MEMO) > SERIES_MEMO_SIZE:
         _MEMO.pop(next(iter(_MEMO)))
     return dict(found) if found is not None else None
 
 
-def _project(series: list[Any], level: float, since: int | None = None) -> dict[str, Any] | None:
-    window = series[-BATTERY_KNEE_WINDOW_DAYS:]
+def _project(series: list[Any], level: float, target: float = 0.0) -> dict[str, Any] | None:
+    window = series[-BATTERY_FIT_WINDOW_DAYS:]
     span = len(window)
     pairs = [
         (float(i), float(v)) for i, v in enumerate(window)
         if isinstance(v, (int, float)) and not isinstance(v, bool)
     ]
-    if len(pairs) < BATTERY_KNEE_MIN_DAYS:
+    if len(pairs) < BATTERY_FIT_MIN_DAYS:
         return None
     t = [p[0] for p in pairs]
     y = [p[1] for p in pairs]
@@ -166,24 +166,13 @@ def _project(series: list[Any], level: float, since: int | None = None) -> dict[
     bend = _fit(t, y, True)
     if line is None:
         return None
-    curved = False
-    if bend is not None and bend[2] < 0 and level <= PROJECTION_CURVE_LEVEL:
-        sse1, sse2 = _sse(line, t, y), _sse(bend, t, y)
-        f_value = (sse1 - sse2) / (sse2 / (n - 3)) if sse2 > 1e-9 else math.inf
-        curved = f_value >= BATTERY_KNEE_MIN_F
-    if not curved and isinstance(since, int) and since > 0:
-        # The straight pace after the knee (#708): the days since it,
-        # when enough were heard to fit.
-        after = [(a, b) for a, b in pairs if a >= span - 1 - since]
-        if len(after) >= PROJECTION_KNEE_MIN_DAYS:
-            pairs = after
-            t = [p[0] for p in pairs]
-            y = [p[1] for p in pairs]
-            n = len(pairs)
-            refit = _fit(t, y, False)
-            if refit is not None:
-                line = refit
+    # The curve exactly when the cell reads accelerating: one test for
+    # the word and the range (#725).
+    curved = bend is not None and accelerating_pace(series) is not None
     model = bend if curved and bend is not None else line
+    # The distance to cover: to the threshold, the level a person acts on
+    # and can see arrive (#730), not to an empty many devices never reach.
+    room = level - target
     # Today is the slot after the newest, yesterday.
     today = float(span)
 
@@ -191,7 +180,7 @@ def _project(series: list[Any], level: float, since: int | None = None) -> dict[
         return p[1] + 2.0 * p[2] * today, p[2]
 
     slope, curve = path(model)
-    centre = days_to_empty(level, slope, curve)
+    centre = days_to_empty(room, slope, curve)
     # Each day's miss, reshuffled a week at a time: a run of low days
     # stays together, so the range carries the cell's own swings.
     misses = [b - _value(model, a) for a, b in zip(t, y, strict=True)]
@@ -208,7 +197,7 @@ def _project(series: list[Any], level: float, since: int | None = None) -> dict[
         if refit is None:
             continue
         s_star, c_star = path(refit)
-        days = days_to_empty(level, s_star, c_star)
+        days = days_to_empty(room, s_star, c_star)
         answers.append((math.inf if days is None else days, s_star, c_star))
     finite = [a for a in answers if math.isfinite(a[0])]
     if not finite or centre is None:
@@ -222,6 +211,9 @@ def _project(series: list[Any], level: float, since: int | None = None) -> dict[
     return {
         "curved": curved,
         "level": level,
+        # Where the time left ends: the low threshold, or 0 for a cell
+        # already under it (#730).
+        "target": target,
         "near": round(min(near[0], PROJECTION_LONGEST), 1),
         "far": round(min(far_days, PROJECTION_LONGEST), 1) if far_days is not None else None,
         "centre": round(min(centre, PROJECTION_LONGEST), 1),
@@ -235,13 +227,75 @@ def _project(series: list[Any], level: float, since: int | None = None) -> dict[
     }
 
 
+def accelerating_pace(series: list[Any]) -> float | None:
+    """The fall today, points a week, when the cell is accelerating, or
+    None (ruling #725).
+
+    The same six weeks and the same two fits the time left reads, at
+    any level: the curve must bend down and fit clearly better (an F
+    of 10 or more), its fall today must be at least two points a week,
+    and the newest two weeks must hold at least three drops from one
+    heard day to the next. Measured on both houses on 22 October 2026:
+    without the two points, 17 steady cells with gentle bends read
+    accelerating on 156 days; without the drops, 70 did on 356, single
+    steps among them. Twice the fall at the window's start and a falling
+    straight line, kept from the knee rule at first, stopped no false
+    call once these two were in, and the second caught Door 2nd Bedroom
+    31 days late, so both went. Kept per history, as the
+    line is, so the minute check does not pay for it.
+    """
+    window = series[-BATTERY_FIT_WINDOW_DAYS:]
+    key = series_key(window)
+    if key in _CURVE_MEMO:
+        return _CURVE_MEMO[key]
+    found = _accelerating(window)
+    _CURVE_MEMO[key] = found
+    while len(_CURVE_MEMO) > SERIES_MEMO_SIZE:
+        _CURVE_MEMO.pop(next(iter(_CURVE_MEMO)))
+    return found
+
+
+def _accelerating(window: list[Any]) -> float | None:
+    pairs = [
+        (float(i), float(v)) for i, v in enumerate(window)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    ]
+    n = len(pairs)
+    if n < BATTERY_FIT_MIN_DAYS:
+        return None
+    t = [p[0] for p in pairs]
+    y = [p[1] for p in pairs]
+    line = _fit(t, y, False)
+    bend = _fit(t, y, True)
+    if line is None or bend is None or bend[2] >= 0:
+        return None
+    sse1, sse2 = _sse(line, t, y), _sse(bend, t, y)
+    if sse1 - sse2 < BATTERY_CURVE_MIN_GAIN:
+        return None
+    f_value = (sse1 - sse2) / (sse2 / (n - 3)) if sse2 > 1e-9 else math.inf
+    if f_value < BATTERY_CURVE_MIN_F:
+        return None
+    today = float(len(window))
+    pace_today = -(bend[1] + 2.0 * bend[2] * today) * BATTERY_WEEK_DAYS
+    if pace_today < BATTERY_CURVE_MIN_PACE:
+        return None
+    recent = [
+        float(v) for v in window[-BATTERY_CURVE_RECENT_DAYS:]
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    ]
+    drops = sum(1 for a, b in zip(recent, recent[1:]) if b < a)
+    if drops < BATTERY_CURVE_MIN_FALLS:
+        return None
+    return pace_today
+
+
 def time_left_range(near: float, far: float | None) -> str:
     """The range in words, as #197 says time left (ruling #704).
 
     "under a week", "about 4 to 5 weeks", "about 2 to 3 months",
     "about 3 weeks to 2 months", "about 8 months to over a year",
     "over a year". Each end is said in its own unit, so a near end
-    inside Days Till Empty never reads as months (found by review); an
+    inside Days Till Low never reads as months (found by review); an
     end that never empties reads as over a year.
     """
     near = max(0.0, near)

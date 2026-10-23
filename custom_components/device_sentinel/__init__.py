@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: __init__.py, Version: 0.26.7 (2026-10-19)
+# File: __init__.py, Version: 0.27.0 (2026-10-22)
 
 """The Device Sentinel integration.
 
@@ -25,7 +25,7 @@ import shutil
 from typing import Any
 from pathlib import Path
 
-from homeassistant.components import frontend
+from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -55,9 +55,17 @@ from .const import (
     CONF_PERSISTENT_ENABLED,
     DASHBOARD_ADVANCED,
     RETIRED_SLIDER_KEYS,
+    PROBE_FILE_ROLLS,
     REPORT_BRIEF_HTML,
+    REPORT_CLASSIFICATION,
+    REPORT_DIAGNOSTIC_DIR,
     REPORT_DIR,
+    REPORT_EPISODES,
+    REPORT_STACK_PROBE,
+    REPORT_STALE_FILES,
+    REPORT_TELEMETRY,
     REPORT_WWW_DIR,
+    TRIM_BACKUP_DIR,
     STORAGE_CLOCKS_KEY,
     STORAGE_HISTORY_KEY,
     STORAGE_KEY,
@@ -457,22 +465,23 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
         LOGGER.warning("Device Sentinel could not serve its dashboard: %s", err)
         return
     hass.data[DATA_PANEL_FILE] = digest
-    frontend.async_register_built_in_panel(
+    # Registered the way a custom panel is meant to be (#721), through
+    # panel_custom, which builds the same "custom" panel underneath.
+    # panel_custom offers no update flag and refuses a path already
+    # registered, so a panel left from an earlier setup is taken down
+    # first; the unload does that too, and this covers a setup that
+    # runs again without one.
+    frontend.async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
+    await panel_custom.async_register_panel(
         hass,
-        component_name="custom",
+        frontend_url_path=PANEL_URL_PATH,
+        webcomponent_name=PANEL_ELEMENT,
         sidebar_title="Device Sentinel",
         sidebar_icon="mdi:shield-check-outline",
-        frontend_url_path=PANEL_URL_PATH,
-        config={
-            "_panel_custom": {
-                "name": PANEL_ELEMENT,
-                "module_url": url,
-                "embed_iframe": False,
-                "trust_external": False,
-            }
-        },
+        module_url=url,
+        embed_iframe=False,
+        trust_external=False,
         require_admin=True,
-        update=True,
     )
 
 
@@ -499,6 +508,23 @@ async def async_unload_entry(
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
+def _own_report_files() -> list[str]:
+    """Every file name Device Sentinel writes in its reports folder (#720):
+    the three maintainer reports, the brief, the stack probe file and its
+    rolled copies, and the names older releases wrote."""
+    probe = [REPORT_STACK_PROBE] + [
+        f"{REPORT_STACK_PROBE}.{n}" for n in range(1, PROBE_FILE_ROLLS + 1)
+    ]
+    return [
+        REPORT_TELEMETRY,
+        REPORT_CLASSIFICATION,
+        REPORT_EPISODES,
+        REPORT_BRIEF_HTML,
+        *probe,
+        *REPORT_STALE_FILES,
+    ]
+
+
 async def async_remove_entry(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
@@ -507,9 +533,11 @@ async def async_remove_entry(
     Runs when a person deletes the integration, after the unload. A
     tool whose pitch is that it costs almost nothing must also cost
     nothing to leave: every storage file with every backup copy taken
-    beside them, the reports folder, and the www folder all go, so an
-    uninstall leaves no trace for the person to find later and wonder
-    about. Deliberately not part of unload, which also runs on every
+    beside them, every file it wrote in the reports folder, and the www
+    folder all go, so an uninstall leaves no trace for the person to
+    find later and wonder about. Only its own: the reports folder goes
+    once it is empty, so a file another tool or a person keeps there
+    stays (#720). Deliberately not part of unload, which also runs on every
     restart and reconfiguration; only deletion reaches here.
 
     Each target is removed on its own and a failure is logged rather
@@ -538,8 +566,26 @@ async def async_remove_entry(
                     LOGGER.warning(
                         "Uninstall could not remove %s: %s", path, err
                     )
-        for folder in (report_dir, www_dir):
-            if not folder.exists():
+        # The reports folder holds only what Device Sentinel names, so
+        # only that goes (#720): other tools may keep files beside it,
+        # as Mesh Probe did on Tim Plas's house, and a person may too.
+        # The folder itself goes only once it is empty. The www folder
+        # is Device Sentinel's alone and goes whole.
+        for name in _own_report_files():
+            for path in (report_dir / name, report_dir / f"{name}.tmp"):
+                if not path.is_file():
+                    continue
+                try:
+                    path.unlink()
+                    removed.append(f"{report_dir.name}/{path.name}")
+                except OSError as err:
+                    LOGGER.warning("Uninstall could not remove %s: %s", path, err)
+        for folder in (
+            report_dir / REPORT_DIAGNOSTIC_DIR,
+            Path(hass.config.path(TRIM_BACKUP_DIR)),
+            www_dir,
+        ):
+            if not folder.is_dir():
                 continue
             try:
                 shutil.rmtree(folder)
@@ -547,6 +593,21 @@ async def async_remove_entry(
             except OSError as err:
                 LOGGER.warning(
                     "Uninstall could not remove %s: %s", folder, err
+                )
+        if report_dir.is_dir():
+            left = sorted(p.name for p in report_dir.iterdir())
+            if not left:
+                try:
+                    report_dir.rmdir()
+                    removed.append(f"{report_dir.name}/")
+                except OSError as err:
+                    LOGGER.warning("Uninstall could not remove %s: %s", report_dir, err)
+            else:
+                LOGGER.info(
+                    "Uninstall left %s in place: it holds files Device "
+                    "Sentinel did not write (%s)",
+                    report_dir,
+                    ", ".join(left[:10]),
                 )
         return removed
 

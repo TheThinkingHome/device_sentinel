@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: stack_zha.py, Version: 0.26.0 (2026-10-12)
+# File: stack_zha.py, Version: 0.27.0 (2026-10-22)
 
 """ZHA: everything Device Sentinel knows about this stack.
 
@@ -50,10 +50,12 @@ numbers say so.
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import EVENT_CALL_SERVICE
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
@@ -65,9 +67,19 @@ from .const import (
     LOGGER,
     STACK_ZHA,
     ZHA_DOWN_DWELL_SECONDS,
+    ZHA_BEGUN_KEPT,
+    ZHA_FULL_INIT,
     ZHA_GATEWAY_SIGNAL,
     ZHA_HANDLED_TAIL_SECONDS,
+    ZHA_HANDLING_WINDOW_SECONDS,
+    ZHA_INITIALIZED,
     ZHA_JOIN_MESSAGES,
+    ZHA_JOINED,
+    ZHA_LOG_OUTPUT,
+    ZHA_PERMIT_DEFAULT_SECONDS,
+    ZHA_PERMIT_LONGEST_SECONDS,
+    ZHA_PERMIT_SERVICE,
+    ZHA_RAW_INIT,
 )
 
 STACK = STACK_ZHA
@@ -308,14 +320,29 @@ class ZhaJoinObserver:
     observed recoveries, so nothing needs correlating backwards. The
     full init carries `device_reg_id`, the registry id this
     integration already files records under, so there is no matching
-    to get wrong. And a restart does not produce these for the
-    fleet, so no startup guard is needed; a restart that does carry
-    one is carrying a real join.
+    to get wrong. A restart was measured as producing none of these,
+    and that was wrong: on 21 October 2026, 9 to 18 seconds after a
+    restart, ZHA sent a full init alone for three devices nobody had
+    touched, the device setting itself up again (#719). And a join is
+    not enough either (adversarial round of 0.27.0, from zigpy 2.3.0's
+    source): a device that changes its own network address sends a
+    join and two full inits, exactly as a re-pair does.
 
-    What it deliberately does not do: claim a pairing window.
-    `pairing_open` stays False on this stack. The window is
-    unobservable, and the log relay that hints at it started and
-    stopped 27 times in an hour of ordinary clicking.
+    So a full init counts as handling only after one of two starts for
+    the same address, within ZHA_HANDLING_WINDOW_SECONDS and until ZHA
+    calls the device initialized: a raw init, which zigpy sends for a
+    known device only when a person asks for it to be interviewed again
+    (Reconfigure) or for a new one being paired; or a join while
+    pairing is open. Pairing is read from what opening it leaves: the
+    zha.permit action for its duration, and the log_output messages
+    the Add Device page relays while it is open. A join with pairing
+    closed, and a full init with no start, are logged and nothing else.
+
+    What it deliberately does not do: claim a pairing window for the
+    dashboard. `pairing_open` stays False on this stack. The log relay
+    that hints at it started and stopped 27 times in an hour of
+    ordinary clicking, which is too loose to show a person, though
+    tight enough to tell a re-pair from a device moving on its own.
 
     Everything is guarded. A house without ZHA never constructs it,
     a dispatcher that refuses the connection leaves the integration
@@ -337,6 +364,12 @@ class ZhaJoinObserver:
         self.seen: int = 0
         # Registry id -> when that device was last handled.
         self.handled: dict[str, float] = {}
+        # IEEE address -> when a person's handling of it began, on the
+        # monotonic clock, so a clock change moves nothing (#719).
+        self._begun: dict[str, float] = {}
+        # Until when pairing is open, on the same clock.
+        self._pairing_until: float = -math.inf
+        self._unsubscribe_permit: Any = None
 
     def async_start(self) -> bool:
         """Subscribe to the gateway signal. False if it could not."""
@@ -353,6 +386,12 @@ class ZhaJoinObserver:
                 err,
             )
             return False
+        try:
+            self._unsubscribe_permit = self._hass.bus.async_listen(
+                EVENT_CALL_SERVICE, self._on_permit, event_filter=_is_permit
+            )
+        except Exception as err:  # noqa: BLE001 - an instrument never breaks setup
+            LOGGER.debug("ZHA join observer could not watch zha.permit: %s", err)
         LOGGER.info(
             "ZHA join observer listening on %s; joins will be logged "
             "and nothing else",
@@ -360,8 +399,27 @@ class ZhaJoinObserver:
         )
         return True
 
+    @callback
+    def _on_permit(self, event: Event) -> None:
+        """Pairing opened by the zha.permit action, for as long as asked."""
+        data = event.data.get("service_data") or {}
+        asked = data.get("duration") if isinstance(data, dict) else None
+        seconds = (
+            float(asked)
+            if isinstance(asked, (int, float)) and not isinstance(asked, bool) and math.isfinite(asked)
+            else ZHA_PERMIT_DEFAULT_SECONDS
+        )
+        seconds = min(max(seconds, 0.0), ZHA_PERMIT_LONGEST_SECONDS)
+        self._pairing_until = max(self._pairing_until, time.monotonic() + seconds)
+
     def async_stop(self) -> None:
         """Unsubscribe, so a reload leaves nothing behind."""
+        if self._unsubscribe_permit is not None:
+            try:
+                self._unsubscribe_permit()
+            except Exception as err:  # noqa: BLE001
+                LOGGER.debug("ZHA join observer permit unsubscribe failed: %s", err)
+            self._unsubscribe_permit = None
         if self._unsubscribe is None:
             return
         try:
@@ -413,6 +471,11 @@ class ZhaJoinObserver:
                 type(kind).__name__,
             )
             return
+        if kind == ZHA_LOG_OUTPUT:
+            # ZHA's log, relayed only while its Add Device page is open:
+            # pairing is open, at most this long after the last line.
+            self._pairing_until = time.monotonic() + ZHA_PERMIT_LONGEST_SECONDS
+            return
         if kind not in ZHA_JOIN_MESSAGES:
             # Groups, logs and the rest. Counted by silence: this
             # instrument is about joins and says nothing else, so a
@@ -426,6 +489,42 @@ class ZhaJoinObserver:
             # August. Both shapes are read rather than one assumed.
             info = message
         registry_id = info.get("device_reg_id")
+        ieee = info.get("ieee")
+        now = dt_util.utcnow().timestamp()
+        tick = time.monotonic()
+        if kind == ZHA_RAW_INIT and isinstance(ieee, str) and ieee:
+            self._begin(ieee, tick)
+        if kind == ZHA_JOINED and isinstance(ieee, str) and ieee:
+            if tick <= self._pairing_until:
+                self._begin(ieee, tick)
+            else:
+                # A device that changed its own network address joins
+                # again with nobody near it (adversarial round of
+                # 0.27.0). Without pairing open it is not a person's.
+                LOGGER.info(
+                    "ZHA says a device joined with pairing closed: ieee=%s; "
+                    "a device moving on its own, not counted as handled",
+                    ieee,
+                )
+                self._begun.pop(ieee, None)
+                return
+        if kind == ZHA_FULL_INIT and not self._begun_lately(ieee, tick):
+            # A full init with no join or reconfigure before it is the
+            # device announcing itself again, most often just after a
+            # restart: the rig's three ZHA test devices at 15:06 on 21
+            # October 2026, 9 to 18 seconds after Home Assistant came
+            # back, with nobody near them (#719). Logged, and nothing
+            # is filed: a person did not handle it, its rhythm count
+            # stands, and the report that follows teaches as any other.
+            LOGGER.info(
+                "ZHA set up a device again on its own (%s): ieee=%s reg=%s "
+                "name=%s; not counted as handled",
+                kind,
+                ieee,
+                registry_id,
+                info.get("user_given_name") or info.get("name"),
+            )
+            return
         LOGGER.info(
             "ZHA says a device was handled (%s): ieee=%s reg=%s "
             "status=%s name=%s",
@@ -443,9 +542,42 @@ class ZhaJoinObserver:
             # file, and mapping an ieee to a device by guesswork
             # would attach a person's action to the wrong record.
             return
-        self.handled[registry_id] = dt_util.utcnow().timestamp()
+        self.handled[registry_id] = now
+        if kind == ZHA_FULL_INIT and info.get("pairing_status") == ZHA_INITIALIZED and isinstance(ieee, str):
+            # The last message of a pairing: the handling is done.
+            self._begun.pop(ieee, None)
         if self._record is not None:
             self._record(registry_id, kind)
+
+    def _begin(self, ieee: str, tick: float) -> None:
+        """A person's handling of this address began now."""
+        self._begun.pop(ieee, None)
+        self._begun[ieee] = tick
+        while len(self._begun) > ZHA_BEGUN_KEPT:
+            self._begun.pop(next(iter(self._begun)))
+
+    def _begun_lately(self, ieee: Any, tick: float) -> bool:
+        """Whether a person's handling of this address began lately
+        enough to explain a full init (#719). A re-pair sends its two
+        full inits within half a minute of the join (measured 29 August
+        2026), but a sleepy device's configure can run for minutes; an
+        entry older than the window is dropped as it is read, and the
+        oldest go when the table grows past a house's worth."""
+        if not isinstance(ieee, str) or not ieee:
+            return False
+        when = self._begun.get(ieee)
+        if when is None:
+            return False
+        if not 0 <= tick - when <= ZHA_HANDLING_WINDOW_SECONDS:
+            self._begun.pop(ieee, None)
+            return False
+        return True
+
+
+@callback
+def _is_permit(event_data: Any) -> bool:
+    """Only the zha.permit action reaches _on_permit."""
+    return event_data.get("domain") == "zha" and event_data.get("service") == ZHA_PERMIT_SERVICE
 
 
 def make_join_observer(hass: HomeAssistant, record: Any = None) -> Any:

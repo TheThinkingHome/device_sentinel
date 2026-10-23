@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.26.8 (2026-10-20)
+# File: coordinator.py, Version: 0.27.0 (2026-10-22)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -128,6 +128,7 @@ from .power_source import PowerMixin
 from .device_type import TypeMixin
 from .answers_store import AnswersMixin
 from .device_recommendations import DeviceRecommendationsMixin
+from .battery_forecasts import BatteryForecastMixin
 from .battery_replacement import BatteryReplacementMixin
 from .history_file import fold_line
 from .const import (
@@ -372,6 +373,7 @@ class DeviceSentinelCoordinator(
     AnswersMixin,
     DeviceRecommendationsMixin,
     BatteryReplacementMixin,
+    BatteryForecastMixin,
     EventMixin,
     ReportWritingMixin,
     NarrativeMixin,
@@ -5243,6 +5245,9 @@ class DeviceSentinelCoordinator(
         ).date()
         self._fold_storm_days(ended.isoformat())
         self.rule_counts_fold(now)
+        # Each battery forecast scored, and today's written (#732), once
+        # every battery history holds the day just closed.
+        self.battery_forecasts_fold(day)
         # A new day's figures are something the dashboard should offer.
         self._mark_changed()
         # The roll is what confirms a rail (three consecutive days

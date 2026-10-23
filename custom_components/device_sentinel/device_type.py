@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_type.py, Version: 0.26.8 (2026-10-20)
+# File: custom_components/device_sentinel/device_type.py, Version: 0.27.0 (2026-10-22)
 
 """What each device is, in plain words (0.25.1, Project__Device_Type.md).
 
@@ -197,6 +197,49 @@ def _folded(words: str) -> str:
 
 
 _LIST_BY_FOLD = {_folded(name): name for name in TYPE_CHOICES if name != TYPE_OTHER}
+
+# The types that report only when someone uses them, so a quiet spell
+# says nothing about whether they work. A Matter device of one of these
+# types is judged by being available rather than by a rhythm (#718).
+# Button, Light, Plug and Switch from Tim Plas's house; the rest added
+# by the adversarial round of 0.27.0, since a cover, fan, valve, lock,
+# siren, appliance or vacuum also reports when used, and a Matter
+# Bridge has nothing of its own to report: 0.26.8 spared them all when
+# on mains, and 0.27.0 would otherwise have called them frozen.
+TYPES_THAT_REPORT_ON_USE = frozenset({
+    APPLIANCE, BUTTON, COVER, FAN, LIGHT, LOCK, MATTER_BRIDGE, PLUG, SIREN,
+    SWITCH, VACUUM, VALVE,
+})
+# What a sensor measures, read from a device's own entities. A device
+# whose type was read from its entities, not set by its owner, and that
+# measures any of these is a sensor whatever else it has: a Matter
+# temperature sensor with a switch entity reads Switch, and would be
+# spared the freeze rule S87 needed (adversarial round of 0.27.0).
+MEASURING_SENSOR_CLASSES = frozenset({
+    "temperature", "humidity", "moisture", "illuminance", "pressure",
+    "carbon_dioxide", "carbon_monoxide", "pm1", "pm25", "pm10",
+    "volatile_organic_compounds", "volatile_organic_compounds_parts",
+    "nitrogen_dioxide", "ozone", "aqi", "sound_pressure", "distance",
+})
+MEASURING_BINARY_CLASSES = frozenset({
+    "motion", "occupancy", "presence", "door", "window", "opening",
+    "garage_door", "moisture", "smoke", "carbon_monoxide", "gas",
+    "vibration",
+})
+
+
+def measures(entities: list[Any]) -> bool:
+    """Whether a device's main entities measure something a sensor
+    reports on a schedule (MEASURING_SENSOR_CLASSES and
+    MEASURING_BINARY_CLASSES)."""
+    for e in _main(entities):
+        value = getattr(e, "device_class", None) or getattr(e, "original_device_class", None)
+        domain = getattr(e, "domain", None)
+        if domain == "sensor" and value in MEASURING_SENSOR_CLASSES:
+            return True
+        if domain == "binary_sensor" and value in MEASURING_BINARY_CLASSES:
+            return True
+    return False
 
 
 def list_name(words: str) -> str:
