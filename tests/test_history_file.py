@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_history_file.py, Version: 0.26.2 (2026-10-13)
+# File: tests/test_history_file.py, Version: 0.27.1 (2026-10-23)
 
 """The history file: the older part of the learned history, kept apart.
 
@@ -57,6 +57,10 @@ def series(field: str, n: int, offset: int = 0) -> list:
     """N valid, distinct entries for one daily series, oldest first."""
     if field == "daily_max":
         return [300.0 + i + offset for i in range(n)]
+    if field == "battery_evidence":
+        # Self-dated rows (#737): a day, volts, degrees, events so far.
+        return [[f"2026-{1 + (i + offset) // 28:02d}-{1 + (i + offset) % 28:02d}", 2.9, 21.0, 100 + i + offset]
+                for i in range(n)]
     if field.startswith("battery"):
         return [float(10 + (i + offset) % 80) for i in range(n)]
     if field in ("signal_daily_count", "signal_daily_rail"):

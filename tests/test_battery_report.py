@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_battery_report.py, Version: 0.27.0 (2026-10-22)
+# File: test_battery_report.py, Version: 0.27.1 (2026-10-23)
 
 """Which cells are going to be low (ruling #194).
 
@@ -65,9 +65,20 @@ TWO_WEEKS = [40.0, 38.5, 37.0, 35.5, 34.0, 32.5, 31.0, 29.5,
              28.0, 26.5, 25.0, 23.5, 22.0, 20.5, 20.0, 20.0]
 
 
+def _held(series):
+    """Two more weeks in front, carrying on the history's own first week
+    backwards: since 0.27.1 a cell is judged only with 28 heard days of
+    the last 42 (#733), and these histories are sixteen days long. A
+    flat fortnight in front would make each fall a bend, which is
+    accelerating, and these tests are about the steady kind."""
+    first = list(series[:7])
+    per_day = (first[0] - first[-1]) / 6
+    return [round(first[0] + per_day * (14 - day), 2) for day in range(14)] + list(series)
+
+
 def _seed(coord, device_id, series, level, low=False, since=None):
     record = coord.data[DATA_DEVICES][device_id]
-    record[DEV_BATTERY_DAILY] = list(series)
+    record[DEV_BATTERY_DAILY] = _held(series) if len(series) < 28 else list(series)
     record[DEV_BATTERY_VALUE] = level
     record[DEV_BATTERY_LOW] = low
     record[DEV_BATTERY_SINCE] = since
@@ -114,12 +125,18 @@ async def test_the_dying_cell_is_first_and_the_healthy_one_is_not(
 
     falling = coord._battery_rows()["falling"]
     assert _names(falling) == ["Door 2nd Bedroom", "Soil Moisture"]
-    assert round(falling[0]["slope"], 3) == -0.939
+    # The six-week line's pace since 0.27.1, four weeks being always
+    # held (#733); the weekly averages gave 0.939 on sixteen days.
+    assert round(falling[0]["slope"], 3) == -1.031
     assert coord.battery_time_left(falling[0]["days"]) == "about 2 weeks"
-    assert falling[0]["reading"] == "falling"
+    # Flat, the sag, then the fall: a bend, called accelerating once the
+    # two-point floor went (#734).
+    assert falling[0]["reading"] == "accelerating"
     # The healthy cell's time left runs to the 49 percent threshold
     # (#730); the dying one, under it, runs to empty.
-    assert coord.battery_time_left(falling[1]["days"]) == "about 2 months"
+    # About a month since 0.27.1: four weeks held, the line reads the
+    # healthy cell's last fortnight of falling too (#733).
+    assert coord.battery_time_left(falling[1]["days"]) == "about a month"
     assert falling[1]["target"] == 49.0 and falling[0]["target"] == 0.0
 
 
@@ -325,16 +342,18 @@ async def test_the_brief_leaves_out_what_nobody_can_act_on(hass: HomeAssistant):
     reference fleet the unfiltered list was sixteen devices.
     """
     coord = await setup_coordinator(hass)
-    # Judged only at or under three times the low threshold (#725): raised so
-    # the high cells here are judged too.
+    # Judged only at or under three times the low threshold (#725): raised
+    # to 28 so the 82 percent cell is judged, and its time left to 28 is
+    # still months.
     hass.config_entries.async_update_entry(
-        coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 49}
+        coord.entry, options={**coord.entry.options, CONF_LOW_THRESHOLD: 28}
     )
     near, _ = register_device(hass, "brf2", "Nearly Out")
     far, _ = register_device(hass, "brf3", "Months Away")
     await registry_settled(hass)
     _seed(coord, near.id, DYING, 12.0)
-    _seed(coord, far.id, HEALTHY, 82.0)
+    # Half a point a day for a month, down to 82: months from 28.
+    _seed(coord, far.id, [round(97.0 - 0.5 * day, 1) for day in range(31)], 82.0)
 
     await hass.async_add_executor_job(coord._write_reports, "manual")
     brief = _brief(hass)
@@ -388,3 +407,23 @@ async def test_the_horizon_is_the_persons_to_set(hass: HomeAssistant):
     assert "Batteries falling" not in _brief(hass)
     # Still falling in the rows, which list everything falling.
     assert "Two Weeks Out" in _names(coord._battery_rows()["falling"])
+
+
+async def test_a_short_history_is_shown_and_not_judged(hass: HomeAssistant):
+    """Ruling #733: sixteen days falling ten points a week, at 20
+    percent. No reading, no time left, on no list; its weeks are shown
+    and its page says it is short."""
+    coord = await setup_coordinator(hass, {CONF_BATTERY_DAYS: 30})
+    soon, _ = register_device(hass, "sh1", "Nearly Out")
+    await registry_settled(hass)
+    record = coord.data[DATA_DEVICES][soon.id]
+    record[DEV_BATTERY_DAILY] = list(TWO_WEEKS)
+    record[DEV_BATTERY_VALUE] = 20.0
+    rows = coord._battery_rows()
+    assert rows["falling"] == [] and _names(rows["flat"]) == ["Nearly Out"]
+    assert coord.battery_falling_list == [] and coord.battery_watch_rows() == []
+    page = coord._page_battery(record)
+    assert page["short"] is True and page["reading"] == "" and page["left"] is None
+    assert len(page["weeks"]) == 2
+    record[DEV_BATTERY_DAILY] = _held(TWO_WEEKS)
+    assert coord._page_battery(record)["short"] is False

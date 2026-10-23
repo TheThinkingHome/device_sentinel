@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_steps.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_battery_steps.py, Version: 0.27.1 (2026-10-23)
 
 """A battery that reports in coarse steps is not forecast.
 
@@ -37,7 +37,9 @@ S02 = [40.0] * 9 + [30.0] * 5
 TWO_STEPS = [50.0] * 6 + [40.0] * 6 + [30.0] * 5
 # Two weeks of a smooth fall: since 0.23.6 a fall is judged week
 # against week, so a cell needs two whole weeks before it is forecast.
-SMOOTH_FALL = [61.0, 59.5, 58.0, 56.5, 55.0, 53.5, 52.0, 50.0, 48.5, 47.0, 45.0, 43.5, 42.0, 40.0]
+# Four weeks of it, the least judged since 0.27.1 (#733).
+SMOOTH_FALL = [round(82.0 - 1.5 * day, 1) for day in range(14)] + [
+    61.0, 59.5, 58.0, 56.5, 55.0, 53.5, 52.0, 50.0, 48.5, 47.0, 45.0, 43.5, 42.0, 40.0]
 SAG_LAST = [60.0, 59.5, 59.0, 58.0, 57.5, 57.0, 47.0]
 
 

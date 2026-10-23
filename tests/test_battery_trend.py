@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_trend.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_battery_trend.py, Version: 0.27.1 (2026-10-23)
 
 """The battery trend by the week (0.23.6), and accelerating on a curve
 (ruling #725, 0.27.0).
@@ -84,11 +84,25 @@ def test_a_wobbling_cell_is_not_falling():
 
 
 def test_a_week_a_point_below_the_last_is_falling():
-    steady = [80.0] * 14
-    falling = steady[:7] + [79.0] * 7
-    assert battery_trend(falling, 79.0, True)["reading"] == "falling"
-    nearly = steady[:7] + [79.1] * 7
-    assert battery_trend(nearly, 79.1, True)["reading"] == ""
+    # Four weeks heard, the least judged since 0.27.1 (#733), so the
+    # six-week line always takes part: 0.15 a day is 1.05 a week, 0.14
+    # is 0.98, under the point.
+    falling = [round(80.0 - 0.15 * day, 2) for day in range(28)]
+    assert battery_trend(falling, falling[-1], True)["reading"] == "falling"
+    nearly = [round(80.0 - 0.14 * day, 2) for day in range(28)]
+    assert battery_trend(nearly, nearly[-1], True)["reading"] == ""
+
+
+def test_a_history_under_four_weeks_is_not_judged():
+    """Ruling #733: 27 heard days of the last 42 is too few, 28 is
+    enough; the weeks are shown either way."""
+    falling = [round(80.0 - 0.3 * day, 2) for day in range(28)]
+    short = battery_trend(falling[1:], falling[-1], True)
+    assert short["reading"] == "" and short["pace"] is None and len(short["weeks"]) == 3
+    assert battery_trend(falling, falling[-1], True)["reading"] == "falling"
+    # An unheard day counts against it: 28 slots, one empty.
+    gap = falling[:10] + [None] + falling[11:]
+    assert battery_trend(gap, falling[-1], True)["reading"] == ""
 
 
 def test_the_cell_that_sped_up_is_accelerating_at_its_pace_today():

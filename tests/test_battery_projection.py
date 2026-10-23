@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_projection.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_battery_projection.py, Version: 0.27.1 (2026-10-23)
 
 """When a falling cell runs empty, as a range (ruling #704).
 
@@ -189,3 +189,23 @@ def test_a_perfectly_straight_fall_is_not_accelerating():
     straight = [round(61.0 - 0.5 * day, 1) for day in range(43)]
     assert accelerating_pace(straight) is None
     assert battery_projection(straight, 40.0, 15.0)["curved"] is False
+
+
+# Door 2nd Bedroom's last six weeks on the committed reference house,
+# ending at 19 percent: the bend James saw, at 1.9 points a week today.
+DOOR_AT_19 = [24.5, 24.5, 24.0, 24.0, 24.0, 24.5, 24.0, 23.5, 23.0, 23.0, 23.0,
+              22.5, 23.0, 23.5, 23.0, 23.0, 23.0, 22.0, 23.0, 22.0, 23.5, 22.5,
+              23.5, 23.0, 22.0, 22.5, 23.0, 21.0, 21.5, 22.5, 21.5, 21.0, 21.0,
+              20.5, 20.5, 20.0, 19.5, 19.0, 19.0, 17.0, 19.5, 19.0]
+
+
+def test_a_bend_under_two_points_a_week_is_accelerating():
+    """Ruling #734 (James, 23 October 2026): the two-point floor held
+    Door 2nd Bedroom back at 1.9 a week. There is no floor; a curve that
+    passes its test and is still falling today is accelerating."""
+    pace = accelerating_pace(DOOR_AT_19)
+    assert pace is not None and 1.8 < pace < 2.0
+    assert battery_projection(DOOR_AT_19, 19.0, 15.0)["curved"] is True
+    # The same history turned upside down, rising faster, is not.
+    rising = [round(48.0 - level, 1) for level in DOOR_AT_19]
+    assert accelerating_pace(rising) is None
