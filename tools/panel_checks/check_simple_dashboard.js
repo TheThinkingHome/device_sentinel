@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.26.8 (2026-10-20)
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.1 (2026-10-23)
 // Panel checks: Simple and Advanced (rulings #693, #694, #703, #706, #716).
 // The setting opens the dashboard; the switch holds while the page is
 // open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
@@ -148,6 +148,8 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
     buttons(rowCell(root, "Muted")));
   check("no Mute by label", !anyButton(root, "Mute by label"));
   check("no rhythm or wait rule for a device that is reporting", !text(root).includes("Its rhythm") && !rowCell(root, "Wait rule"));
+  ({ root } = await open({ __mode: "simple" }, (p) => { withBattery(p); p.battery.now = 15.5; p.status.category = "reporting"; }));
+  check("a level reads as reported, 15.5% (0.27.1)", text(root).includes("15.5% now") && !text(root).includes("16% now"));
   check("no history ranges and no signal chart", !anyButton(root, "30 Days") && !text(root).includes("Signal median") && !root.querySelector("[aria-label=\"Time range for the graphs\"]"), text(root).match(/Signal.{0,40}/g));
   check("the battery chart with its expected fall", !!root.querySelector(".futurechart polygon"));
   check("in words", text(root).includes("Expected empty in about 4 to 6 weeks."));

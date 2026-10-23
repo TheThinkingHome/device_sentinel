@@ -18,7 +18,7 @@ written rather than what it proves).
 | Every tab | `check_release_line.js` | 11 | the release running at the foot, in Simple and Advanced, linked to its notes |
 | Every tab | `check_type_filters.js` | 30 | types on Battery Trends, Classification, Devices and Recommendations, and no "null" on a quiet day |
 | Daily Brief | `check_repeat_offenders.js` | 10 | the Repeat Offenders table, and the devices on MQTT's page that ride the broker |
-| Every tab | `check_simple_dashboard.js` | 38 | Simple and Advanced: the setting opens the dashboard, the switch holds while the page is open and through a hidden tab, Simple's tabs, its read-only device page and its battery chart, and Mute by label in Advanced |
+| Every tab | `check_simple_dashboard.js` | 39 | Simple and Advanced: the setting opens the dashboard, the switch holds while the page is open and through a hidden tab, Simple's tabs, its read-only device page and its battery chart, and Mute by label in Advanced |
 | Recommendations | `check_recommendations.js` | 37 | the opening line and its count, the Slow Reporting Devices card, the switched-off cards' Turn on chips, a tick on each row, the count on the tab, the top band and each card's title, and a card that stays open after a tick |
 | Classification | `check_classification_sources.js` | 16 | Classification's sources, the gear, the date beside "As of" |
 | Integrations | `check_no_hardware_integrations.js` | 13 | an integration with no hardware of its own on the Integrations tab |
@@ -26,7 +26,7 @@ written rather than what it proves).
 | A device's page | `check_device_page_layout.js` | 33 | the page's order and groups, live values, sensor links, both rule charts, Previous and Next, and the device cards |
 | A device's page | `check_device_actions.js` | 51 | rename, area, labels, Last Seen, mutes, a refused write, and excluding one device |
 | A device's page | `check_names_and_mutes.js` | 17 | names, the Last seen fallback and inherited mutes, on the page and the Problem List |
-| A device's page | `check_power_row.js` | 33 | the Power row: its words and icons, the pencil, and the report to Battery Notes; Battery Last Replaced beside it |
+| A device's page | `check_power_row.js` | 34 | the Power row: its words and icons, the pencil, and the report to Battery Notes; Battery Last Replaced beside it |
 | A device's page | `check_node_status.js` | 9 | the Z-Wave status row: the node's status, red when dead, a switched-off sensor with its button, and no row for other stacks |
 | A device's page | `check_hub_pages.js` | 34 | a hub's page and the pages of the devices it controls, and the Classification tick |
 | A device's page | `check_device_type.js` | 30 | the Type row, and the Devices tab's Type column and filter |
@@ -40,12 +40,12 @@ written rather than what it proves).
 | A device's page | `check_device_page_text.js` | 21 | the page reads at one size: secondary text at 14px, the heartbeat line plain, sensor names in the page's font, and other tabs unchanged |
 | Devices | `check_device_finders.js` | 28 | the Devices tab's search, Area and Label filters, its Excluded list with Cancel the exclusion, and an integration's page excluding it or taking it back |
 | Battery | `check_battery_steps.js` | 6 | how a battery reports, on its page and on Battery Trends |
-| Battery | `check_battery_weeks.js` | 18 | five weekly averages, an accelerating cell's sentence and no knee, a cell above twice the threshold not judged, and the weekly columns |
-| Battery | `check_battery_future.js` | 22 | the device page's Future view: the expected fall as a shaded range, drawn as Simple's chart is |
+| Battery | `check_battery_weeks.js` | 32 | five weekly averages, an accelerating cell's sentence and no knee, a cell above twice the threshold not judged, and the weekly columns |
+| Battery | `check_battery_future.js` | 30 | the device page's Future view: the expected fall as a shaded range, drawn as Simple's chart is |
 | Battery | `check_battery_chart.js` | 15 | the weekly bars and the fitted line only at 30 and 14 days, and no straight line beside an accelerating cell's curve |
 | Signal | `check_dropping_out.js` | 5 | a device that keeps dropping out, on its page and on Signal Trends |
 
-682 checks in 34 files, as of 22 October 2026 (0.27.0).
+696 checks in 34 files, as of 23 October 2026 (0.27.1).
 
 ## Running Them
 

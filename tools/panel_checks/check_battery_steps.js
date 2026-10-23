@@ -1,3 +1,4 @@
+// File: tools/panel_checks/check_battery_steps.js, Version: 0.27.1 (2026-10-23)
 // Panel checks: how a battery reports, on the device page and on Battery
 // Trends.
 // Written for 0.23.1; named by subject since 0.23.19.
@@ -101,7 +102,10 @@ const rows = (root) => [...root.querySelectorAll("tr:not(.kvgroup)")].map((tr) =
     const heads = [...root.querySelectorAll("th")].map((th) => th.textContent);
     check("the steady table has a STEPS column", heads.includes("STEPS"), heads);
     const row = rows(root).find((cells) => cells[0] === "Office Temp/Humid");
-    check("the coarse cell says so", row && row[row.length - 1] === "Coarse", row);
+    // STEPS is followed by CELL and MODEL, A WEEK since 0.27.1 (#736, #738).
+    const table = [...root.querySelectorAll("table")].find((t) => [...t.querySelectorAll("th")].some((th) => th.textContent === "STEPS"));
+    const own = table ? [...table.querySelectorAll("th")].map((th) => th.textContent) : [];
+    check("the coarse cell says so", row && row[own.indexOf("STEPS")] === "Coarse", row);
   }
   console.log(`${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

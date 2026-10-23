@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_power_row.js, Version: 0.26.7 (2026-10-19)
+// File: tools/panel_checks/check_power_row.js, Version: 0.27.1 (2026-10-23)
 // Panel checks: the Power row (0.24.7, 0.24.8). Words, the source icon in light
 // and dark, the library icon's link, the pencil's choices, Save, the
 // report button after a save, and Use the library. Since 0.26.7 the
@@ -206,6 +206,13 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   let bcell = rowCell(bpage.root, "Battery Last Replaced");
   check("Never seen replaced reads so, with a pencil", !!bcell && /No battery replacement yet/.test(bcell.textContent)
     && !!bcell.querySelector("button.edit"), bcell && bcell.textContent);
+  // With no replacement on record, the day the device was first seen
+  // (James, 23 October 2026).
+  const firstPage = await open({}, LIBRARY, false, { words: WORDS, first_seen: "2026-08-12", day: null, how: null, waiting: false });
+  const firstCell = rowCell(firstPage.root, "Battery Last Replaced");
+  check("No replacement yet says when the device was first detected",
+    !!firstCell && firstCell.textContent.includes("Device first detected August 12, 2026. No battery replacement yet.")
+    && !!firstCell.querySelector("button.edit"), firstCell && firstCell.textContent);
   await click(bcell.querySelector("button.edit"));
   bcell = rowCell(bpage.root, "Battery Last Replaced");
   const input = bcell.querySelector('input[type="date"]');

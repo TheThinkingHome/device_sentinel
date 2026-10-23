@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.0 (2026-10-22)
+// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.1 (2026-10-23)
 // Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
 // Written for 0.23.6, the knee check moved to 30 days in 0.23.7; named by
@@ -138,7 +138,7 @@ const trends = {
   check("no fitted line is drawn", ![...calm.root.querySelectorAll("svg polyline")].some((p) => p.getAttribute("stroke-dasharray") === "7 5"));
   check("and no knee", calm.root.querySelectorAll("svg circle").length === 0);
 
-  console.log("A cell above twice the threshold (ruling #725)");
+  console.log("A cell above three times the threshold (ruling #725)");
   const high = await open(`${PREFIX}/device/${DEVICE}`, {
     device: (page) => { steady.device(page); page.battery.ceiling = 40; return page; },
   });
@@ -152,9 +152,57 @@ const trends = {
   });
   check("under the ceiling a steady cell still reads steady", text(under.root).includes("Steady: no week has fallen"));
 
+  console.log("A cell with under four weeks of readings (ruling #733)");
+  const short = await open(`${PREFIX}/device/${DEVICE}`, {
+    device: (page) => { steady.device(page); page.battery.ceiling = 80; page.battery.short = true; return page; },
+  });
+  const shortText = text(short.root);
+  check("it says nothing about a fall", !shortText.includes("Steady:") && !shortText.includes("Falling"), shortText.slice(-1200));
+  const shortCells = [...short.root.querySelectorAll("table.figures td")].map((td) => td.textContent);
+  check("its reading is left empty, its weeks shown", !shortCells.includes("steady") && shortCells.length > 3, shortCells);
+
+  console.log("A level reads as reported (0.27.1)");
+  const half = await open(`${PREFIX}/device/${DEVICE}`, {
+    device: (page) => { steady.device(page); page.battery.now = 15.5; page.battery.threshold = 15; return page; },
+  });
+  const halfCells = [...half.root.querySelectorAll("table.figures td")].map((td) => td.textContent);
+  check("the LEVEL column reads 15.5%, not 16%", halfCells[0] === "15.5%", halfCells);
+  check("and the card's title the same", text(half.root).includes("15.5% now"));
+
+  console.log("A lithium cell, its model's pace and its day's evidence (#736 to #738)");
+  const coin = await open(`${PREFIX}/device/${DEVICE}`, {
+    device: (page) => {
+      steady.device(page);
+      Object.assign(page.battery, { now: 100, ceiling: 45, lithium: "CR1632",
+        model_pace: { model: "Aqara Door and window sensor", others: 7, pace: 0.04 },
+        evidence: { day: "2026-10-22", volts: 2.95, temperature: 21.5, messages: 182, days: 12 } });
+      return page;
+    },
+  });
+  const coinText = text(coin.root);
+  check("a lithium cell is said to be one", coinText.includes("A lithium cell (CR1632) holds its level near full"), coinText.slice(-1500));
+  check("its model's pace is context", coinText.includes("The 7 other cells of this model (Aqara Door and window sensor) lose almost nothing a week."));
+  check("its day's evidence is shown, for later", coinText.includes("Kept each day for a better forecast later: 2.95 V, 182 messages, 21.5 \u00b0C on"));
+  const falling = await open(`${PREFIX}/device/${DEVICE}`, {
+    device: (page) => { steady.device(page); Object.assign(page.battery, { lithium: "CR2032", reading: "falling" }); return page; },
+  });
+  check("a falling lithium cell is not given the note", !text(falling.root).includes("A lithium cell"));
+
   console.log("Battery Trends");
   const tab = await open(`${PREFIX}/battery-trends`, trends);
+  const lithiumTab = await open(`${PREFIX}/battery-trends`, {
+    battery_trends: (page) => {
+      page.steady = [{ device_id: DEVICE, name: "Door Bath Main", type: null, level: 100, steps: "Smooth", days: 60, month_drop: 0,
+        lithium: "CR1632", model_pace: { model: "Aqara Door and window sensor", others: 7, pace: 0.04 } }];
+      return page;
+    },
+  });
+  const coinRow = [...lithiumTab.root.querySelectorAll("tr")].map((tr) => [...tr.children].map((td) => td.textContent))
+    .find((cells) => cells[0] === "Door Bath Main");
+  check("Other Cells names the lithium cell and its model's pace", coinRow && coinRow.includes("CR1632, lithium") && coinRow.includes("0"), coinRow);
+  check("and says what the two columns mean", text(lithiumTab.root).includes("MODEL, A WEEK is how many points the other cells of the same model lose a week"));
   const tabText = text(tab.root);
+  check("a level reads as reported there too, 37.5%", tabText.includes("37.5%") && !tabText.includes("38%"), tabText.slice(0, 1600));
   const tabHeads = [...tab.root.querySelectorAll("th")].map((th) => th.textContent);
   check("the Falling table shows the five weeks", ["28 DAYS AGO", "THIS WEEK", "PACE"].every((h) => tabHeads.some((t) => t.startsWith(h))), tabHeads);
   check("with the pace in points a week", tabText.includes("down 5.9 a week"), tabText.slice(0, 1600));

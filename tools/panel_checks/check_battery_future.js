@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_future.js, Version: 0.27.0 (2026-10-22)
+// File: tools/panel_checks/check_battery_future.js, Version: 0.27.1 (2026-10-23)
 // Panel checks: the device page's Future view (rulings #703 to #705, #713).
 // Written for 0.26.7 (2026-10-19); the chart James reviewed on 19 October in 0.26.8.
 // Run with: LC_ALL=en_US.UTF-8 node check_battery_future.js [path/to/panel.js]
@@ -165,6 +165,17 @@ const lowLine = (root) => [...root.querySelectorAll(".futurechart line")].some((
   check("titled with its count", (lg.root.querySelector("details.forecasts summary") || {}).textContent === "Earlier Forecasts (3)");
   const none = await open(`${PREFIX}/device/${DEVICE}`, toLow);
   check("no list when nothing was forecast", !none.root.querySelector("details.forecasts"));
+  // Forecasts to empty after a first low (#735).
+  const toEmpty = withBattery({ ...JSON.parse(JSON.stringify(toLow.device({}).battery)), forecasts: [
+    { day: "2026-12-10", level: 9, accelerating: true, target: 0, left: "about 2 to 3 weeks", outcome: "inside", arrived: "2026-12-28" },
+    { day: "2026-12-01", level: 12, accelerating: true, target: 0, left: "about 1 to 2 weeks", outcome: "later", arrived: null },
+  ] });
+  const em = await open(`${PREFIX}/device/${DEVICE}`, toEmpty);
+  const emptyItems = [...em.root.querySelectorAll("details.forecasts li")].map((li) => li.textContent);
+  check("a forecast to empty reads as one", emptyItems.length === 2
+    && emptyItems[0].includes("at 9%: empty in about 2 to 3 weeks. Ran out on ") && emptyItems[0].endsWith(", inside the range.")
+    && emptyItems[1].endsWith("Still working when the range ended.")
+    && !emptyItems.join(" ").includes("0%"), emptyItems);
 
   console.log("A far end that does not empty in view");
   const wide = withBattery({ ...JSON.parse(JSON.stringify(door.device({}).battery)),
