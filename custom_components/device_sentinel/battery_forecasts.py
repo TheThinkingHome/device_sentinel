@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: battery_forecasts.py, Version: 0.27.0 (2026-10-22)
+# File: battery_forecasts.py, Version: 0.27.1 (2026-10-23)
 
 """Each battery forecast kept, and scored when the battery gets there (#732).
 
@@ -26,7 +26,15 @@ scored as replaced, which says nothing about the forecast. Every
 scored row also counts once in a tally for the house that never
 expires, so months of evidence outlive the History setting.
 
-Nothing here changes how a battery is judged. The tally is what a
+Since 0.27.1 a cell judged low gets forecasts to empty, from its first
+low until a new battery goes in (ruling #735). Few devices are seen
+reaching 0 percent: most stop reporting first. So a forecast to empty
+closes on the first reading of 0, or, when the device went silent for
+at least FORECAST_SILENT_DAYS before its battery was replaced, on the
+day it was last heard, the day it gave out; otherwise as replaced.
+Forecasts to empty are counted in a tally of their own.
+
+Nothing here changes how a battery is judged. The tallies are what a
 later ruling can use to set the width of the range.
 """
 
@@ -37,18 +45,25 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
+from .daily_dates import FAMILY_BATTERY_PREVIOUS, dates_for
 from .report_battery import battery_calendar
 from .const import (
+    DATA_BATTERY_EMPTY_TALLY,
     DATA_BATTERY_FORECAST_TALLY,
     DATA_DEVICES,
+    DEV_BATTERY_DAILY_PREVIOUS,
+    DEV_BATTERY_FIRST_LOW,
     DEV_BATTERY_FORECASTS,
+    DEV_BATTERY_LOW,
     DEV_BATTERY_REPLACED_AT,
+    DEV_BATTERY_SINCE,
     FORECAST_EARLIER,
     FORECAST_INSIDE,
     FORECAST_KEEP_ROWS,
     FORECAST_LATER,
     FORECAST_OUTCOMES,
     FORECAST_REPLACED,
+    FORECAST_SILENT_DAYS,
     READING_ACCELERATING,
 )
 
@@ -64,6 +79,13 @@ def _day(value: Any) -> date | None:
         return date.fromisoformat(value[:10])
     except ValueError:
         return None
+
+
+def _first_low_stands(record: dict[str, Any]) -> bool:
+    """Whether the first-low time is after the last replacement."""
+    first = _day(record.get(DEV_BATTERY_FIRST_LOW))
+    replaced = _day(record.get(DEV_BATTERY_REPLACED_AT))
+    return first is not None and (replaced is None or first >= replaced)
 
 
 def score_row(row: list[Any], arrived: date | None, today: date, replaced: date | None) -> str | None:
@@ -97,17 +119,24 @@ class BatteryForecastMixin:
         """Score the open rows, then write today's forecasts.
 
         day is the day the fold closed, the newest day of each battery
-        history. Scoring first, so a battery that reached its threshold
-        today closes the rows before it, and a battery now under the
-        threshold writes no new row (its time left runs to empty, which
-        nobody can see arrive)."""
-        tally = self._forecast_tally()
+        history. Scoring first, so a battery that reached its target
+        today closes the rows before it. A forecast to the threshold and
+        one to empty (#735) are written the same way and counted in
+        separate tallies."""
+        tallies = {False: self._forecast_tally(DATA_BATTERY_FORECAST_TALLY), True: self._forecast_tally(DATA_BATTERY_EMPTY_TALLY)}
         devices = self.data[DATA_DEVICES]  # type: ignore[attr-defined]
         for record in devices.values():
+            if not isinstance(record, dict):
+                continue
+            # A cell already low when 0.27.1 was installed has no
+            # first-low time; written here so the latch outlives its
+            # recovery (#735).
+            if record.get(DEV_BATTERY_LOW) and not _first_low_stands(record):
+                record[DEV_BATTERY_FIRST_LOW] = record.get(DEV_BATTERY_SINCE) or dt_util.utcnow().isoformat()
             rows = record.get(DEV_BATTERY_FORECASTS)
             if not isinstance(rows, list) or not rows:
                 continue
-            self._score_open_rows(record, rows, day, tally)
+            self._score_open_rows(record, rows, day, tallies)
         try:
             judged = self._battery_rows()["falling"]  # type: ignore[attr-defined]
         except Exception:  # noqa: BLE001 - a log never stops the fold
@@ -119,7 +148,7 @@ class BatteryForecastMixin:
             projection = row.get("projection")
             if not isinstance(record, dict) or not projection:
                 continue
-            if not isinstance(target, (int, float)) or target <= 0:
+            if not isinstance(target, (int, float)) or target < 0:
                 continue
             rows = record.setdefault(DEV_BATTERY_FORECASTS, [])
             if rows and rows[-1][ROW_DAY] == stamp:
@@ -136,31 +165,52 @@ class BatteryForecastMixin:
             ])
             del rows[:-FORECAST_KEEP_ROWS]
 
-    def _score_open_rows(self, record: dict[str, Any], rows: list[Any], day: date, tally: dict[str, int]) -> None:
-        series = self.battery_dated_levels(record)  # type: ignore[attr-defined]
-        replaced = _day(record.get(DEV_BATTERY_REPLACED_AT))
+    def _score_open_rows(
+        self, record: dict[str, Any], rows: list[Any], day: date, tallies: dict[bool, dict[str, int]]
+    ) -> None:
+        current = self.battery_dated_levels(record)
+        previous = self.battery_previous_dated_levels(record)
+        # The new cell's first heard day, when it went in, unless its
+        # history has been cut shorter than its life; never later than
+        # the day the replacement was noticed.
+        noticed = _day(record.get(DEV_BATTERY_REPLACED_AT))
+        first = current[0][0] if current and previous else None
+        replaced = min((when for when in (first, noticed) if when is not None), default=None)
+        last_heard = previous[-1][0] if previous else None
         for row in rows:
             if row[ROW_OUTCOME] is not None:
                 continue
             made = _day(row[ROW_DAY])
-            arrived = next(
-                (when for when, level in series if made is not None and when > made and level <= float(row[ROW_TARGET])),
-                None,
-            )
+            if made is None:
+                continue
+            target = float(row[ROW_TARGET])
+            # A forecast made before the last replacement is about the
+            # old cell, read from its history; one made after, the new.
+            cell = previous if replaced is not None and made < replaced else current
+            arrived = next((when for when, level in cell if when > made and level <= target), None)
+            if (
+                arrived is None and target <= 0 and cell is previous
+                and last_heard is not None and replaced is not None and last_heard >= made
+                and (replaced - last_heard).days >= FORECAST_SILENT_DAYS
+            ):
+                # The device went silent before its battery was replaced:
+                # it gave out on the day it was last heard (#735).
+                arrived = last_heard
             outcome = score_row(row, arrived, day, replaced)
             if outcome is None:
                 continue
             row[ROW_OUTCOME] = outcome
             row[ROW_ARRIVED] = arrived.isoformat() if arrived is not None and outcome != FORECAST_REPLACED else None
+            tally = tallies[target <= 0]
             if outcome in tally:
                 tally[outcome] += 1
 
-    def _forecast_tally(self) -> dict[str, int]:
-        """The house's running tally, made whole if it is missing a count."""
-        tally = self.data.get(DATA_BATTERY_FORECAST_TALLY)  # type: ignore[attr-defined]
+    def _forecast_tally(self, key: str) -> dict[str, int]:
+        """A running tally of the house's, made whole if it is missing a count."""
+        tally = self.data.get(key)  # type: ignore[attr-defined]
         if not isinstance(tally, dict):
             tally = {}
-            self.data[DATA_BATTERY_FORECAST_TALLY] = tally  # type: ignore[attr-defined]
+            self.data[key] = tally  # type: ignore[attr-defined]
         for outcome in FORECAST_OUTCOMES:
             if not isinstance(tally.get(outcome), int) or isinstance(tally.get(outcome), bool):
                 tally[outcome] = 0
@@ -175,6 +225,20 @@ class BatteryForecastMixin:
         return [
             (start + timedelta(days=index), float(level))
             for index, level in enumerate(series)
+            if isinstance(level, (int, float)) and not isinstance(level, bool)
+        ]
+
+    def battery_previous_dated_levels(self, record: dict[str, Any]) -> list[tuple[date, float]]:
+        """The replaced cell's heard days with their dates, oldest first."""
+        series = list(record.get(DEV_BATTERY_DAILY_PREVIOUS) or [])
+        if not series:
+            return []
+        current = self.battery_dated_levels(record)
+        fallback = (current[0][0] if current else dt_util.as_local(dt_util.utcnow()).date()) - timedelta(days=1)
+        dates = dates_for(record, FAMILY_BATTERY_PREVIOUS, len(series), fallback)
+        return [
+            (when, float(level))
+            for when, level in zip(dates, series, strict=False)
             if isinstance(level, (int, float)) and not isinstance(level, bool)
         ]
 

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/battery_projection.py, Version: 0.27.0 (2026-10-22)
+# File: custom_components/device_sentinel/battery_projection.py, Version: 0.27.1 (2026-10-23)
 
 """When a falling cell runs empty, as a range (ruling #704).
 
@@ -53,7 +53,6 @@ from .const import (
     BATTERY_CURVE_MIN_F,
     BATTERY_CURVE_MIN_FALLS,
     BATTERY_CURVE_MIN_GAIN,
-    BATTERY_CURVE_MIN_PACE,
     BATTERY_CURVE_RECENT_DAYS,
     BATTERY_FIT_MIN_DAYS,
     BATTERY_FIT_WINDOW_DAYS,
@@ -233,12 +232,14 @@ def accelerating_pace(series: list[Any]) -> float | None:
 
     The same six weeks and the same two fits the time left reads, at
     any level: the curve must bend down and fit clearly better (an F
-    of 10 or more), its fall today must be at least two points a week,
-    and the newest two weeks must hold at least three drops from one
-    heard day to the next. Measured on both houses on 22 October 2026:
-    without the two points, 17 steady cells with gentle bends read
-    accelerating on 156 days; without the drops, 70 did on 356, single
-    steps among them. Twice the fall at the window's start and a falling
+    of 10 or more and a gain of at least one square point), it must
+    still be falling today, and the newest two weeks must hold at least
+    three drops from one heard day to the next. Measured on both houses
+    on 22 October 2026: without the drops, 70 steady cells read
+    accelerating on 356 days, single steps among them. A floor of two
+    points a week went in 0.27.1 (#734): the 17 steady cells it stopped
+    were all above the ceiling, and under it it cost Door 2nd Bedroom
+    12 of its 27 days. Twice the fall at the window's start and a falling
     straight line, kept from the knee rule at first, stopped no false
     call once these two were in, and the second caught Door 2nd Bedroom
     31 days late, so both went. Kept per history, as the
@@ -277,7 +278,10 @@ def _accelerating(window: list[Any]) -> float | None:
         return None
     today = float(len(window))
     pace_today = -(bend[1] + 2.0 * bend[2] * today) * BATTERY_WEEK_DAYS
-    if pace_today < BATTERY_CURVE_MIN_PACE:
+    # Still falling today. There is no floor on the pace (ruling #734):
+    # two points a week held Door 2nd Bedroom back on 12 of 27 days, and
+    # under the ceiling it stopped no steady cell on either house.
+    if pace_today <= 0:
         return None
     recent = [
         float(v) for v in window[-BATTERY_CURVE_RECENT_DAYS:]

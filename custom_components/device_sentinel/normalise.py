@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.27.0 (2026-10-22)
+# File: normalise.py, Version: 0.27.1 (2026-10-23)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (ruling #370).
@@ -66,6 +66,8 @@ from typing import Any
 from .records import _new_device_record
 from .const import (
     DATA_BATTERY_FORECAST_TALLY,
+    DATA_BATTERY_EMPTY_TALLY,
+    DATA_BATTERY_LIVES,
     FORECAST_OUTCOMES,
     DEV_LOGNORMAL_DAYS,
     RETIRED_DEVICE_FIELDS,
@@ -73,6 +75,8 @@ from .const import (
     DEV_BATTERY_LOW,
     DEV_BATTERY_DAILY_PREVIOUS,
     DEV_BATTERY_REPLACED_AT,
+    DEV_BATTERY_EVIDENCE,
+    DEV_BATTERY_FIRST_LOW,
     DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_COARSE_DROPS,
     DEV_BATTERY_RAW_SCALE,
@@ -254,6 +258,8 @@ DOWN_SINCE = "None or [moment, state]"
 # the version a non-empty string and the moment a number.
 VERSION_HISTORY = "list of [version, first seen] pairs"
 FORECAST_LOG = "list of battery forecast rows"
+EVIDENCE_LOG = "list of battery evidence rows"
+LIVES_LOG = "list of battery lives"
 # A forecast is said at most as "over a year" (PROJECTION_LONGEST).
 FORECAST_DAYS_HIGHEST = 3 * 365
 
@@ -301,6 +307,7 @@ EXPECTED: dict[str, str] = {
     DEV_BATTERY_DAILY: LEVEL_SERIES,
     DEV_BATTERY_DAILY_PREVIOUS: LEVEL_SERIES,
     DEV_BATTERY_REPLACED_AT: STRING,
+    DEV_BATTERY_FIRST_LOW: STRING,
     DEV_BATTERY_REPLACED_PENDING: LEVEL,
     DEV_BATTERY_COARSE_DROPS: INTEGER,
     DEV_BATTERY_RAW_SCALE: BOOLEAN,
@@ -311,6 +318,7 @@ EXPECTED: dict[str, str] = {
     DEV_FLAP_LONGEST: SPAN,
     DEV_FIRMWARE_HISTORY: VERSION_HISTORY,
     DEV_BATTERY_FORECASTS: FORECAST_LOG,
+    DEV_BATTERY_EVIDENCE: EVIDENCE_LOG,
     DEV_FROZEN_CATEGORY: STRING,
     DEV_FROZEN_SINCE: MOMENT,
     DEV_DOWN_BEGAN_AS: STRING,
@@ -333,6 +341,42 @@ def _forecast_row_ok(row: Any) -> bool:
         and (outcome is None or outcome in FORECAST_OUTCOMES)
         and (arrived is None or _is_day(arrived))
     )
+
+
+def _evidence_row_ok(row: Any) -> bool:
+    """One day's evidence (#737): a day, then volts, degrees and the
+    event count, each None where the device gave none."""
+    if not isinstance(row, list) or len(row) != 4:
+        return False
+    day, volts, temperature, events = row
+    return (
+        _is_day(day)
+        and (volts is None or (_is_number(volts) and 0 <= volts <= 50))
+        and (temperature is None or (_is_number(temperature) and -100 <= temperature <= 150))
+        and (events is None or (isinstance(events, int) and not isinstance(events, bool) and 0 <= events <= COUNT_HIGHEST))
+    )
+
+
+def _life_row_ok(row: Any) -> bool:
+    """One finished battery (#739)."""
+    if not isinstance(row, list) or len(row) != 13:
+        return False
+    (device, maker, model, battery_type, quantity, start, start_seen, end,
+     first_day, first_level, last_level, last_heard, stamp) = row
+    return (
+        isinstance(device, str) and bool(device)
+        and all(v is None or isinstance(v, str) for v in (maker, model, battery_type, stamp))
+        and (quantity is None or (isinstance(quantity, int) and not isinstance(quantity, bool) and 0 < quantity < 100))
+        and _is_day(start) and _is_day(end) and _is_day(first_day) and _is_day(last_heard)
+        and isinstance(start_seen, bool)
+        and _is_number(first_level) and 0 <= first_level <= 100
+        and _is_number(last_level) and 0 <= last_level <= 100
+    )
+
+
+def life_row_ok(row: Any) -> bool:
+    """Whether a battery life row would pass the load check, for its writer."""
+    return _life_row_ok(row)
 
 
 def _is_day(value: Any) -> bool:
@@ -507,6 +551,18 @@ def _fault(kind: str, value: Any) -> str | None:
             )
         ]
         return None if not bad else f"{len(bad)} bad pair(s), first {_describe(bad[0])}"
+    if kind == EVIDENCE_LOG:
+        # [day, volts, temperature, events so far] (#737).
+        if not isinstance(value, list):
+            return _describe(value)
+        bad = [row for row in value if not _evidence_row_ok(row)]
+        return None if not bad else f"{len(bad)} bad row(s), first {_describe(bad[0])}"
+    if kind == LIVES_LOG:
+        # One row per battery replaced (#739).
+        if not isinstance(value, list):
+            return _describe(value)
+        bad = [row for row in value if not _life_row_ok(row)]
+        return None if not bad else f"{len(bad)} bad row(s), first {_describe(bad[0])}"
     if kind == FORECAST_LOG:
         # [day, level, accelerating, target, near, far, outcome, arrived]
         # (ruling #732): each row checked whole, as the firmware pairs are.
@@ -813,6 +869,10 @@ SCALARS: dict[str, str] = {
     DATA_HISTORY_LINE: MOMENT,
     # The house's tally of scored battery forecasts (ruling #732).
     DATA_BATTERY_FORECAST_TALLY: MAPPING,
+    # And of forecasts to empty, kept apart (#735).
+    DATA_BATTERY_EMPTY_TALLY: MAPPING,
+    # Each battery replaced, kept for good (#739).
+    DATA_BATTERY_LIVES: LIVES_LOG,
 }
 
 # How many rows of one table are reported before the rest are counted.

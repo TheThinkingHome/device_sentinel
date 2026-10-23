@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.27.0 (2026-10-22)
+# File: problem_list.py, Version: 0.27.1 (2026-10-23)
 
 """The problem list: the single memory every channel renders.
 
@@ -43,6 +43,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
+from .battery_level import level_text
 from .events import sort_kinds
 from .normalise import row_damage
 from .const import (
@@ -439,8 +440,7 @@ class ProblemListMixin:
         if kind == TODO_KIND_LOW_BATTERY:
             if level is None:
                 return "battery low"
-            shown = int(level) if float(level).is_integer() else level
-            return f"battery {shown}%"
+            return f"battery {level_text(level)}"
         if kind == TODO_KIND_FALLING_BATTERY:
             # The noun is carried, because the item may say this and
             # nothing else: "Door 2nd Bedroom: empty in about 2 weeks"

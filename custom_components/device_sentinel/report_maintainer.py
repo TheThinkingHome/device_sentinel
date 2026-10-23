@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.26.7 (2026-10-19)
+# File: report_maintainer.py, Version: 0.27.1 (2026-10-23)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -30,6 +30,7 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
+from .battery_level import level_text
 from .const import (
     CONF_UNAVAILABLE_MUTED_LABELS,
     CONF_BATTERY_MUTED_DEVICES,
@@ -498,11 +499,7 @@ class MaintainerReportMixin:
         ):
             level = row.get("level")
             if isinstance(level, (int, float)):
-                shown = (
-                    f"{int(level)}%"
-                    if float(level).is_integer()
-                    else f"{level}%"
-                )
+                shown = level_text(level)
             else:
                 shown = "low"
             tag = self._todo_tag_of(row["device_id"])

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.25.5 (2026-10-10)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.27.1 (2026-10-23)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -77,6 +77,19 @@ REPORT_FORM = "https://github.com/andrew-codechimp/HA-Battery-Notes/issues/new"
 REPORT_TEMPLATE = "new_device_request.yaml"
 LIBRARY_HOME = "https://github.com/andrew-codechimp/HA-Battery-Notes"
 NOT_KNOWN = "Not known"
+
+
+def lithium_cell(battery_type: Any) -> bool:
+    """Whether a battery type is a lithium primary cell, a coin cell
+    (CR2032, CR1632, CR2450 and their kin) or a CR123A or CR2 (#736).
+
+    Every CR type is lithium manganese dioxide: its voltage holds near
+    3 V for most of its life and falls quickly at the end, and the
+    percentage most coordinators work out from it holds near full the
+    whole time (James's 11 Aqara cells on Zigbee2MQTT read exactly 100%
+    on all 85 days of 23 October 2026). A steady reading from one says
+    nothing about how long it has left."""
+    return isinstance(battery_type, str) and battery_type.strip().upper().startswith("CR")
 
 
 def power_words(battery_type: str, quantity: int | None) -> str:
@@ -529,6 +542,14 @@ class PowerMixin:
                 "type": answer.battery_type,
                 "quantity": answer.quantity,
             }
+        return None
+
+    def battery_lithium(self, device_id: str) -> str | None:
+        """The device's battery type when it is a lithium primary cell
+        (#736), from the owner's answer or the library; None otherwise."""
+        known = self.power_of(device_id)
+        if known and known.get("kind") == KIND_BATTERY and lithium_cell(known.get("type")):
+            return str(known["type"])
         return None
 
     def power_text(self, device_id: str) -> str | None:

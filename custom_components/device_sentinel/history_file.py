@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: history_file.py, Version: 0.26.2 (2026-10-13)
+# File: history_file.py, Version: 0.27.1 (2026-10-23)
 
 """The history file: the older part of the learned history, kept apart.
 
@@ -61,6 +61,7 @@ from .const import (
     DATA_SYSTEM_EVENTS,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_DAILY_PREVIOUS,
+    DEV_BATTERY_EVIDENCE,
     DEV_DAILY_MAX,
     DEV_SIGNAL_ALT,
     DEV_SIGNAL_DAILY_COUNT,
@@ -93,6 +94,8 @@ SERIES_FIELDS = (
     DEV_DAILY_MAX,
     DEV_BATTERY_DAILY,
     DEV_BATTERY_DAILY_PREVIOUS,
+    # Self-dated daily rows (#737), cut as the series are.
+    DEV_BATTERY_EVIDENCE,
     *SIGNAL_SERIES_FIELDS,
 )
 # The long-kept row lists, each with the field that dates a row.

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/battery_replacement.py, Version: 0.26.7 (2026-10-19)
+# File: custom_components/device_sentinel/battery_replacement.py, Version: 0.27.1 (2026-10-23)
 
 """Battery Last Replaced, and a person's answer to a detected one (0.26.7).
 
@@ -62,6 +62,7 @@ from .const import (
     DEV_BATTERY_VALUE,
     SYS_DEVICE_PAGE,
 )
+from .battery_evidence import first_seen_day
 from .daily_dates import (
     _block,
     FAMILY_BATTERY,
@@ -294,8 +295,12 @@ class BatteryReplacementMixin:
             return None
         record = self.data.get(DATA_DEVICES, {}).get(device_id)  # type: ignore[attr-defined]
         entry = self._battery_entry(device_id, record if isinstance(record, dict) else {})
+        first = first_seen_day(record) if isinstance(record, dict) else None
         return {
             "words": self.battery_words(device_id),
+            # With no replacement on record, when the device was first
+            # seen (James, 23 October 2026).
+            "first_seen": first.isoformat() if first is not None and entry is None else None,
             "day": entry["day"] if entry else None,
             "how": entry["how"] if entry else None,
             "waiting": bool(entry and entry["waiting"]),
@@ -384,6 +389,8 @@ class BatteryReplacementMixin:
                 raise ValueError("No detected replacement is waiting")
             earlier = list(entry.get("history") or [])
             before = earlier[-1] if earlier else None
+            # The replacement taken back takes its life row with it (#739).
+            self.battery_life_withdrawn(device_id, record.get(DEV_BATTERY_REPLACED_AT))  # type: ignore[attr-defined]
             resplit_battery(record, _iso_day(before["day"]) if before else None, keep)
             record[DEV_BATTERY_REPLACED_AT] = before["stamp"] if before else None
             if before:
@@ -397,8 +404,13 @@ class BatteryReplacementMixin:
                 raise ValueError("That is not a day")
             if given > dt_util.now().date():
                 raise ValueError("That day has not come yet")
+            # When the battery that ends went in, read before the answer
+            # changes it; a day given over a detection still waiting
+            # corrects that replacement (#739).
+            started = self.battery_start(device_id, record)  # type: ignore[attr-defined]
             resplit_battery(record, given, keep)
             stamp = record.get(DEV_BATTERY_REPLACED_AT)
+            self.battery_life_redated(device_id, record, given, started, waiting)  # type: ignore[attr-defined]
             answers[device_id] = {
                 "day": given.isoformat(), "how": HOW_ENTERED,
                 "stamp": stamp if isinstance(stamp, str) else None, "waiting": False,

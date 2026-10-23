@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_battery.py, Version: 0.27.0 (2026-10-22)
+# File: report_battery.py, Version: 0.27.1 (2026-10-23)
 
 """Which cells are going to be low: the rows, rates and forecast.
 
@@ -26,10 +26,11 @@ is the coordinator throughout and nothing here stands alone.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 
+from .battery_level import level_text
 from .records import SERIES_MEMO_SIZE, series_key
 from .battery_projection import accelerating_pace, battery_projection, time_left_range
 from homeassistant.util import dt as dt_util
@@ -52,7 +53,9 @@ from .const import (
     CONF_BATTERY_DAYS,
     DEFAULT_BATTERY_DAYS,
     DEV_BATTERY_DAILY,
+    DEV_BATTERY_FIRST_LOW,
     DEV_BATTERY_LOW,
+    DEV_BATTERY_REPLACED_AT,
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
 )
@@ -179,14 +182,49 @@ def battery_calendar(record: dict[str, Any]) -> list[Any]:
     return on_calendar(record, FAMILY_BATTERY, list(record.get(DEV_BATTERY_DAILY) or []), end)
 
 
+def _moment(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+
+
+def battery_latched(record: dict[str, Any]) -> bool:
+    """Whether the cell has been judged low since its last replacement
+    (ruling #735). A cell low now counts even before its first-low time
+    is written, as one already low when 0.27.1 was installed is."""
+    if record.get(DEV_BATTERY_LOW):
+        return True
+    first = _moment(record.get(DEV_BATTERY_FIRST_LOW))
+    if first is None:
+        return False
+    replaced = _moment(record.get(DEV_BATTERY_REPLACED_AT))
+    return replaced is None or first > replaced
+
+
+def battery_heard_days(series: list[Any]) -> int:
+    """How many of the last 42 days hold a reading (ruling #733)."""
+    return sum(
+        1 for value in series[-BATTERY_FIT_WINDOW_DAYS:]
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    )
+
+
 def battery_trend(
     series: list[float], level: float, smooth: bool, ceiling: float | None = None
 ) -> dict[str, Any]:
     """Everything the screens and the rules say about a cell's trend.
 
+    Nothing is judged until the cell has been heard on at least 28 of
+    the last 42 days (ruling #733): a shorter history gave a new
+    battery a time left from two weeks of readings.
+
     Falling: the last week averages at least a point below the week
-    before, and once four weeks are held, the six-week fitted line is
-    going down at least half a point a week. Accelerating: the six-week
+    before, and the six-week fitted line is going down at least half a
+    point a week. Accelerating: the six-week
     curve the time left reads passes its guarded test (ruling #725,
     `accelerating_pace`), so the reading, the sentence and the range
     agree. Either needs a cell that reports in small steps (a coarse
@@ -210,6 +248,8 @@ def battery_trend(
     if not smooth or level <= 0 or len(averaged) < 2:
         return trend
     if ceiling is not None and level > ceiling:
+        return trend
+    if battery_heard_days(series) < BATTERY_FIT_MIN_DAYS:
         return trend
     week_drop = averaged[-2] - averaged[-1]
     today = accelerating_pace(series)
@@ -353,7 +393,7 @@ class BatteryReportMixin:
                 # Days Till Low. A cell with too few heard days for
                 # the fit keeps its straight pace, one figure.
                 row["slope"] = -trend["pace"] / BATTERY_WEEK_DAYS
-                target = self.battery_target(row["level"])
+                target = self.battery_target(row["level"], record)
                 row["target"] = target
                 straight = (row["level"] - target) / (trend["pace"] / BATTERY_WEEK_DAYS)
                 projection = battery_projection(series, row["level"], target)
@@ -399,12 +439,15 @@ class BatteryReportMixin:
             "pace_per_week": round(trend["pace"], 2) if trend["pace"] else None,
         }
 
-    def battery_target(self, level: float) -> float:
+    def battery_target(self, level: float, record: dict[str, Any] | None = None) -> float:
         """Where a cell's time left ends: the low threshold, the level a
-        person acts on and can see arrive (#730); 0 for a cell already at
-        or under it, which the low alert has named."""
+        person acts on and can see arrive (#730); 0 for a cell at or
+        under it, and for one judged low since its last replacement,
+        even if it reads above the threshold again (#735)."""
         threshold = float(self.low_threshold)  # type: ignore[attr-defined]
-        return threshold if level > threshold else 0.0
+        if level <= threshold or (record is not None and battery_latched(record)):
+            return 0.0
+        return threshold
 
     @property
     def battery_ceiling(self) -> float:
@@ -509,9 +552,9 @@ class BatteryReportMixin:
             return "-" if not levels else f"{levels[-1]:g} (stale)"
         if level > 100 or level < 0:
             return f"{level:g} out of range"
-        parts = [f"{level:g}%"]
+        parts = [level_text(level)]
         if level <= self.low_threshold:
-            parts = [f"**{level:g}%**"]
+            parts = [f"**{level_text(level)}**"]
         for days, label in ((7, "wk"), (30, "mo")):
             if len(levels) >= days + 1:
                 parts.append(f"{levels[-1] - levels[-1 - days]:+g}/{label}")

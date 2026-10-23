@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.27.0 (2026-10-22)
+# File: dashboard.py, Version: 0.27.1 (2026-10-23)
 
 """What the dashboard reads from the coordinator.
 
@@ -38,12 +38,15 @@ from .device_addresses import addresses, shown
 from .battery_projection import battery_projection
 from .report_battery import (
     battery_calendar,
+    battery_heard_days,
     battery_month_drop,
     battery_sentence,
     battery_trend,
 )
 from . import stacks
 from .const import (
+    BATTERY_MODEL_PACE_MIN_OTHERS,
+    BATTERY_FIT_MIN_DAYS,
     CONF_DASHBOARD_MODE,
     DASHBOARD_MODES,
     DEFAULT_DASHBOARD_MODE,
@@ -1274,7 +1277,7 @@ class DeviceViewMixin:
             # controls and its outages. None for every other device.
             "hub": self.hub_view(device_id, dt_util.utcnow().timestamp()),  # type: ignore[attr-defined]
             "hub_self": self.hub_self_view(device_id, dt_util.utcnow().timestamp()),  # type: ignore[attr-defined]
-            "battery": self._page_battery(record),
+            "battery": self._page_battery(record, device_id),
             "signal": self._page_signal(record),
             "outages": self.device_outages(domain),
             # Every daily series ends on the last day the midnight roll
@@ -1283,7 +1286,7 @@ class DeviceViewMixin:
             "history_days": self.retention_days,
         }
 
-    def _page_battery(self, record: dict[str, Any]) -> dict[str, Any]:
+    def _page_battery(self, record: dict[str, Any], device_id: str | None = None) -> dict[str, Any]:
         """The battery history and the report's own figures for it.
 
         The windows, the blocks, the reading and the time left come
@@ -1309,10 +1312,20 @@ class DeviceViewMixin:
             "threshold": self.low_threshold,
             # The level a cell is judged falling at or under (#725).
             "ceiling": self.battery_ceiling,  # type: ignore[attr-defined]
+            # Under four weeks of readings in the last six: not judged,
+            # and the page says nothing about it (#733).
+            "short": battery_heard_days(series) < BATTERY_FIT_MIN_DAYS,
             "readable": readable,
             # Earlier Forecasts, newest first, each with what happened
             # (ruling #732).
             "forecasts": self.battery_forecast_view(record),  # type: ignore[attr-defined]
+            # A lithium cell holds near full until its end (#736), and
+            # the others of its model fall at this pace (#738).
+            "lithium": self.battery_lithium(device_id) if device_id else None,  # type: ignore[attr-defined]
+            "model_pace": self.battery_model_paces().get(device_id) if device_id else None,
+            # The newest day's voltage, messages and temperature, kept
+            # for a later forecast (#737).
+            "evidence": self.battery_evidence_view(record),  # type: ignore[attr-defined]
         }
         if not isinstance(level, (int, float)) or not readable or not series:
             return page
@@ -1324,7 +1337,7 @@ class DeviceViewMixin:
             self.battery_ceiling,  # type: ignore[attr-defined]
         )
         falling = bool(trend["reading"] and trend["pace"])
-        target = self.battery_target(current)  # type: ignore[attr-defined]
+        target = self.battery_target(current, record)  # type: ignore[attr-defined]
         days = (current - target) / (trend["pace"] / BATTERY_WEEK_DAYS) if falling else None
         # The range a falling cell reaches the low threshold in (rulings
         # #704, #730); the near end decides Days Till Low, as on the
@@ -1702,6 +1715,40 @@ class TrendsViewMixin:
             cells.append((device_id, record, series))
         return cells
 
+    def battery_model_paces(self) -> dict[str, dict[str, Any]]:
+        """For each cell, how fast the others of its model fall (#738).
+
+        Others means the cells of the same maker and model, the grouping
+        By Model uses, the cell itself left out; the pace is the middle
+        of their falls over the last four weeks, points a week. Shown
+        beside a battery as context and never used as its time left:
+        measured on both houses on 23 October 2026, a battery given its
+        sisters' pace missed its own by about as much as the pace itself,
+        since a door opened forty times a day and one opened twice share
+        a model, not a drain. At least two others, or nothing is said.
+        """
+        registry = dr.async_get(self.hass)
+        groups: dict[tuple[str, str], list[tuple[str, float]]] = {}
+        for device_id, _record, series in self._battery_cells():
+            device = registry.async_get(device_id)
+            key = (
+                device_field(device, "manufacturer") or "not reported",
+                device_field(device, "model") or "not reported",
+            )
+            groups.setdefault(key, []).append((device_id, (battery_month_drop(series) or 0.0) / 3))
+        paces: dict[str, dict[str, Any]] = {}
+        for (maker, model), cells in groups.items():
+            if len(cells) < BATTERY_MODEL_PACE_MIN_OTHERS + 1:
+                continue
+            for device_id, _own in cells:
+                others = [fall for other, fall in cells if other != device_id]
+                paces[device_id] = {
+                    "model": f"{maker} {model}",
+                    "others": len(others),
+                    "pace": round(_middle(others), 2),
+                }
+        return paces
+
     def battery_trends(self) -> dict[str, Any]:
         """The battery fleet: the bank, every model, and the report's groups."""
         registry = dr.async_get(self.hass)
@@ -1760,6 +1807,7 @@ class TrendsViewMixin:
             })
         models.sort(key=lambda row: (row["rate"], -row["cells"]))
         report = self._battery_rows()
+        paces = self.battery_model_paces()
 
         def listed(rows: list[dict[str, Any]], falling: bool = False) -> list[dict[str, Any]]:
             out = []
@@ -1771,6 +1819,10 @@ class TrendsViewMixin:
                     "level": row.get("level"),
                     "since": row.get("since"),
                     "steps": BATTERY_STEPS_WORDS.get(str(row.get("steps") or ""), ""),
+                    # A lithium cell holds near full until its end (#736).
+                    "lithium": self.battery_lithium(row.get("device_id")) if row.get("device_id") else None,  # type: ignore[attr-defined]
+                    # The others of its model, as context (#738).
+                    "model_pace": paces.get(row["device_id"]) if isinstance(row.get("device_id"), str) else None,
                 }
                 if falling:
                     item.update({

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.27.0 (2026-10-22)
+# File: notifier.py, Version: 0.27.1 (2026-10-23)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -51,6 +51,7 @@ from typing import Any
 from homeassistant.components import persistent_notification
 from homeassistant.util import dt as dt_util
 
+from .battery_level import level_text
 from .const import (
     TODO_KIND_FLAPPING,
     TODO_KIND_FALLING_BATTERY,
@@ -256,7 +257,9 @@ class NotifierMixin:
                 if level is not None:
                     rows[_key(row, len(rows))] = (
                         _rank(TODO_KIND_LOW_BATTERY), _since(row),
-                        f"{name} {int(level)}%",
+                        # As reported, the same on every surface (0.27.1): this
+                        # cut 15.5 to "15%", a level the threshold did not call low.
+                        f"{name} {level_text(level)}",
                     )
                 else:
                     rows[_key(row, len(rows))] = (

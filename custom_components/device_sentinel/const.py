@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.27.0 (2026-10-22)
+# File: const.py, Version: 0.27.1 (2026-10-23)
 
 """Constants for the Device Sentinel integration."""
 
@@ -1351,6 +1351,32 @@ DEV_FIRMWARE_HISTORY = "firmware_history"
 # DATA_BATTERY_FORECAST_TALLY.
 DEV_BATTERY_FORECASTS = "battery_forecasts"
 DATA_BATTERY_FORECAST_TALLY = "battery_forecast_tally"
+# The first time a cell was judged low since its last replacement
+# (ruling #735): from then on its time left runs to empty, even if it
+# reads above the threshold again, until a new battery goes in. Compared
+# with DEV_BATTERY_REPLACED_AT rather than cleared, so a replacement
+# detected, cancelled or dated by a person moves the latch with it.
+DEV_BATTERY_FIRST_LOW = "battery_first_low"
+# A battery's model pace (#738) is said only with at least this many
+# other cells of its maker and model to take the middle of.
+BATTERY_MODEL_PACE_MIN_OTHERS = 2
+# Each battery device's day: voltage, its own temperature, its running
+# event count (#737). Recording only; kept for the History setting.
+DEV_BATTERY_EVIDENCE = "battery_evidence"
+# What a reading may be before it is kept: a battery's volts (a mains
+# reading on the same device is left out), and degrees Celsius.
+EVIDENCE_VOLTAGE_RANGE = (0.5, 15.0)
+EVIDENCE_TEMPERATURE_RANGE = (-50.0, 80.0)
+# One row per battery replaced, for the house, kept for good (#739).
+DATA_BATTERY_LIVES = "battery_lives"
+BATTERY_LIVES_KEEP = 5000
+# The house's tally of forecasts to empty, kept apart from the tally of
+# forecasts to the threshold (#735), so each says how good its own are.
+DATA_BATTERY_EMPTY_TALLY = "battery_empty_tally"
+# A device silent for at least this many days before its battery was
+# replaced gave out on the day it was last heard (#735): a forecast to
+# empty is scored against that day.
+FORECAST_SILENT_DAYS = 2
 FORECAST_KEEP_ROWS = 400
 FORECAST_INSIDE = "inside"
 FORECAST_EARLIER = "earlier"
@@ -1596,6 +1622,8 @@ EPOCH_KEPT = (
     DEV_SIGNAL_ALT,
     DEV_BATTERY_DAILY_PREVIOUS,
     DEV_BATTERY_REPLACED_AT,
+    DEV_BATTERY_FIRST_LOW,
+    DEV_BATTERY_EVIDENCE,
     DEV_BATTERY_REPLACED_PENDING,
     DEV_BATTERY_COARSE_DROPS,
     DEV_BATTERY_RAW_SCALE,
@@ -2604,7 +2632,7 @@ SYS_DEVICE_ID = "device_id"
 # pointing at reasoning that was never written down. The guard in
 # tests/test_citations.py reads this, so a stale number fails the
 # suite rather than passing quietly (ruling #233).
-HIGHEST_RULING = 732
+HIGHEST_RULING = 739
 
 # The state saved with a device's outage start when its stack called
 # its node dead (ruling #670), so the dead word outlives a restart.
@@ -3276,22 +3304,23 @@ BATTERY_FIT_MIN_DAYS = 28
 # rule is gone.
 #
 # The curve passes when it bends down and fits clearly better than the
-# line (an F of BATTERY_CURVE_MIN_F or more); its fall today is at
-# least BATTERY_CURVE_MIN_PACE points a week; and the newest
-# BATTERY_CURVE_RECENT_DAYS hold at least BATTERY_CURVE_MIN_FALLS drops
-# from one heard day to the next, so one step down is not a curve.
-# Walked day by day on 123 cells on both houses, 22 October 2026: these
-# two guards called no steady cell accelerating and caught the three
-# real speed-ups 41, 18 and 8 days before 21 October. Without the pace,
-# 17 steady cells read accelerating on 156 days; without the drops, 70
-# on 356. Two guards kept from the knee rule at first, twice the fall at
+# line (an F of BATTERY_CURVE_MIN_F or more); it is still falling
+# today; and the newest BATTERY_CURVE_RECENT_DAYS hold at least
+# BATTERY_CURVE_MIN_FALLS drops from one heard day to the next, so one
+# step down is not a curve. Without the drops, 70 steady cells read
+# accelerating on 356 days (123 cells on both houses, 22 October 2026).
+# A floor of two points a week today went in 0.27.1 (#734): the 17
+# steady cells it stopped, on 156 days, were all above the ceiling, and
+# under it it stopped none while holding Door 2nd Bedroom back on 12 of
+# its 27 days. A smoothed line in front of the test (the Simple chart's,
+# 15 days either side) was measured the same day and left out: it gained
+# Door 2 days and called one steady cell on 8. Two guards kept from the knee rule at first, twice the fall at
 # the window's start and a falling straight line, stopped no false call
 # beside these and cost Door 2nd Bedroom 31 days, so they went. 42 days
 # was measured against 28, 56 and 84 (#726): 28 missed Door 2nd Bedroom
 # and called steady cells, the longer ones only came later. The time
 # left uses this same test to choose the curve.
 BATTERY_CURVE_MIN_F = 10.0
-BATTERY_CURVE_MIN_PACE = 2.0
 BATTERY_CURVE_RECENT_DAYS = 14
 BATTERY_CURVE_MIN_FALLS = 3
 # The curve must also fit better by a measurable amount, at least one

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_battery.py, Version: 0.27.0 (2026-10-22)
+# File: detect_battery.py, Version: 0.27.1 (2026-10-23)
 
 """Battery: the level threshold and what is tracked.
 
@@ -34,7 +34,7 @@ coordinator throughout and nothing here stands alone.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 import math
 
@@ -52,6 +52,7 @@ from .daily_dates import (
     day_appended,
     set_dates,
 )
+from .report_battery import battery_latched
 from .const import (
     DEV_LOGNORMAL_DAYS,
     BATTERY_REPLACED_LANDS,
@@ -82,6 +83,7 @@ from .const import (
     DATA_DEVICES,
     DEFAULT_LOW_THRESHOLD,
     DEV_BATTERY_DAILY,
+    DEV_BATTERY_FIRST_LOW,
     DEV_BATTERY_LOW,
     DEV_BATTERY_SINCE,
     DEV_BATTERY_VALUE,
@@ -298,7 +300,9 @@ class BatteryMixin:
             # person gave the day, and those days are the old cell's too.
             kept_previous: list[Any] = []
             kept_dates: list[Any] = []
-            if dates and self._entered_just_before(device_id, dates[-1]):  # type: ignore[attr-defined]
+            entered = self._battery_answers().get(device_id) if dates else None  # type: ignore[attr-defined]
+            same = bool(dates and self._entered_just_before(device_id, dates[-1]))  # type: ignore[attr-defined]
+            if same:
                 kept_previous = list(record.get(DEV_BATTERY_DAILY_PREVIOUS) or [])
                 kept_dates = dates_for(
                     record, FAMILY_BATTERY_PREVIOUS, len(kept_previous),
@@ -310,6 +314,9 @@ class BatteryMixin:
             set_dates(record, FAMILY_BATTERY_PREVIOUS, kept_dates + dates[:-1])
             set_dates(record, FAMILY_BATTERY, dates[-1:])
             replaced_before = record.get(DEV_BATTERY_REPLACED_AT)
+            # When the battery that ends went in, read before this
+            # replacement takes its place (#739).
+            started = self.battery_start(device_id, record)  # type: ignore[attr-defined]
             record[DEV_BATTERY_REPLACED_AT] = dt_util.utcnow().isoformat()
             # The replacement waits for a person, keeping what Cancel
             # puts back (rulings #701, #702); a day the person gave
@@ -317,6 +324,16 @@ class BatteryMixin:
             self._note_detected_replacement(  # type: ignore[attr-defined]
                 record, device_id, dates[-1] if dates else None, replaced_before,
             )
+            # The battery that ended, for the lives log (#739). A rise
+            # that is the replacement the person already dated is the
+            # same battery: its row is written again to their day, now
+            # with the old cell's days up to the rise, never added twice.
+            if same and entered:
+                self.battery_life_redated(  # type: ignore[attr-defined]
+                    device_id, record, date.fromisoformat(str(entered["day"])[:10]), started, True,
+                )
+            else:
+                self.battery_life_ended(device_id, record, dates[-1] if dates else None, started)  # type: ignore[attr-defined]
             # A fresh cell can change how often a device reports, so the
             # Log-Normal Percentile counts again from here (#542, amended).
             record[DEV_LOGNORMAL_DAYS] = 0
@@ -561,6 +578,11 @@ class BatteryMixin:
                 self._dirty = True
             return
         if is_low and not was_low:
+            # The first low since the last replacement starts the time
+            # left running to empty (ruling #735). Before the flag is
+            # set, so the latch reads the flag's old state.
+            if not battery_latched(record):
+                record[DEV_BATTERY_FIRST_LOW] = dt_util.utcnow().isoformat()
             record[DEV_BATTERY_LOW] = True
             record[DEV_BATTERY_SINCE] = dt_util.utcnow().isoformat()
             LOGGER.debug(

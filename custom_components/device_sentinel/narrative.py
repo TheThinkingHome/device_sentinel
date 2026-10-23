@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.26.6 (2026-10-17)
+# File: narrative.py, Version: 0.27.1 (2026-10-23)
 
 """How to say what happened: the composer.
 
@@ -31,6 +31,7 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
+from .battery_level import level_text
 from .const import (
     RECOVERY_CAUSE_PAIRING,
     RECOVERY_CAUSES_INTERVENTION,
@@ -203,7 +204,7 @@ class NarrativeMixin:
         record = self.data[DATA_DEVICES].get(device_id) or {}
         level = record.get(DEV_BATTERY_VALUE)
         if isinstance(level, (int, float)):
-            shown = f"{level:g}%"
+            shown = level_text(level)
             if state:
                 return f"battery is at {shown}"
             if level <= self.low_threshold + BATTERY_CLEAR_MARGIN:
@@ -243,7 +244,7 @@ class NarrativeMixin:
                 DEV_BATTERY_VALUE
             )
             shown = (
-                f" ({level:g}%)"
+                f" ({level_text(level)})"
                 if isinstance(level, (int, float))
                 and level <= self.low_threshold + BATTERY_CLEAR_MARGIN
                 else ""

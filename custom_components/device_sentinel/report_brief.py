@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.27.0 (2026-10-22)
+# File: report_brief.py, Version: 0.27.1 (2026-10-23)
 
 """The daily brief: the one report written for a person.
 
@@ -32,6 +32,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.loader import async_get_loaded_integration
 from homeassistant.util import dt as dt_util
 
+from .battery_level import level_text
 from . import attribution, escalation
 from .repairs import (
     _english_list,
@@ -288,12 +289,7 @@ class BriefMixin:
         record = self.data[DATA_DEVICES].get(device_id) or {}
         level = record.get(DEV_BATTERY_VALUE)
         if isinstance(level, (int, float)):
-            shown = (
-                f"{int(level)}%"
-                if float(level).is_integer()
-                else f"{level}%"
-            )
-            return f"battery {shown}{self._brief_power(device_id)}"
+            return f"battery {level_text(level)}{self._brief_power(device_id)}"
         return f"battery low{self._brief_power(device_id)}"
 
     def _brief_power(self, device_id: str) -> str:
