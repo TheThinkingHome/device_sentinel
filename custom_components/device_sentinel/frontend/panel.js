@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.27.0 (2026-10-22)
+// File: panel.js, Version: 0.27.1 (2026-10-23)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -42,6 +42,24 @@ const TAB_SLUG = Object.fromEntries(TABS.map((name) => [name, name.toLowerCase()
 const TAB_BY_SLUG = Object.fromEntries(TABS.map((name) => [TAB_SLUG[name], name]));
 // A device no type could be found for (0.25.1), as the Type filters name it.
 const NOT_KNOWN_TYPE = "Not known";
+// A battery level as reported, the same on every surface (0.27.1):
+// "15.5%", "16%", one decimal at most, rounded half up on the number
+// as written, as battery_level.py does. Door 2nd Bedroom read 15.5% in
+// the brief, 16% on the Advanced device page and 15% on the phone.
+const levelNumber = (v) => {
+  const tenth = Number(`${Math.round(Number(`${Math.abs(v)}e1`))}e-1`) * Math.sign(v);
+  return Number.isInteger(tenth) ? String(Math.abs(tenth) === 0 ? 0 : tenth) : tenth.toFixed(1);
+};
+const levelText = (v) => (typeof v === "number" && Number.isFinite(v) ? `${levelNumber(v)}%` : "");
+// A lithium cell's level holds near full until its end (#736): said
+// whenever the cell is not falling, so a steady reading is not taken
+// for a healthy one.
+const lithiumWords = (type) => `A lithium cell (${type}) holds its level near full for most of its life and falls quickly at the end, `
+  + "so a steady reading says little about how long it has left.";
+// The others of its model, as context and never as a time left (#738).
+const modelPaceWords = (pace) => pace && typeof pace.pace === "number"
+  ? `The ${pace.others} other cells of this model (${pace.model}) lose ${pace.pace <= 0.05 ? "almost nothing" : `about ${levelNumber(pace.pace)} points`} a week.`
+  : "";
 const BUILT = new Set(["Daily Brief", "Problem List", "Battery Trends", "Signal Trends", "Classification", "Integrations", "Devices", "Recommendations"]);
 const FILTERS = [
   ["all", "All"],
@@ -2016,7 +2034,7 @@ class DeviceSentinelPanel extends HTMLElement {
           return el("tr", {},
             el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
             el("td", {}, this._typeLink(row.type, pick)),
-            el("td", { class: "num" }, pct(row.level)),
+            el("td", { class: "num" }, levelText(row.level)),
             ...padded.map((w, i) => el("td", { class: "num" }, w == null ? "–" : `${w.toFixed(1)}%`,
               i > 0 && padded[i - 1] != null ? el("div", { class: "small" }, moved(padded[i - 1] - w)) : "")),
             el("td", { class: "num" }, perWeek(-(row.pace || 0))),
@@ -2039,7 +2057,7 @@ class DeviceSentinelPanel extends HTMLElement {
         el("tbody", {}, ...lowRows.map((row) => el("tr", {},
           el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
           el("td", {}, this._typeLink(row.type, pick)),
-          el("td", { class: "num" }, pct(row.level)),
+          el("td", { class: "num" }, levelText(row.level)),
           el("td", {}, row.since ? moment(row.since) : ""))))))
       : el("p", { class: "muted", style: "margin:0" }, "No cell is at or under your threshold.");
     const steadyRows = this._sortRows(steadyAll, this._steadySort, { name: byName, type: byType,
@@ -2052,23 +2070,29 @@ class DeviceSentinelPanel extends HTMLElement {
         this._sortHead(this._steadySort, "LEVEL", "level", again, "num"),
         this._sortHead(this._steadySort, "4 WEEKS", "month", again, "num"),
         this._sortHead(this._steadySort, "DAYS RECORDED", "days", again, "num"),
-        this._sortHead(this._steadySort, "STEPS", "steps", again))),
+        this._sortHead(this._steadySort, "STEPS", "steps", again),
+        el("th", {}, "CELL"),
+        el("th", { class: "num" }, "MODEL, A WEEK"))),
       el("tbody", {}, ...steadyRows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
         el("td", {}, this._typeLink(row.type, pick)),
-        el("td", { class: "num" }, pct(row.level)),
+        el("td", { class: "num" }, levelText(row.level)),
         el("td", { class: "num" }, moved(row.month_drop)),
         el("td", { class: "num" }, String(row.days)),
         // How the cell reports (0.23.1): a coarse cell that is falling
         // sits here with no forecast, and this says why.
-        el("td", {}, row.steps || ""))))));
+        el("td", {}, row.steps || ""),
+        // A lithium cell holds near full until its end (#736).
+        el("td", {}, row.lithium ? `${row.lithium}, lithium` : ""),
+        // How fast the others of its model fall (#738).
+        el("td", { class: "num" }, row.model_pace ? `${levelNumber(row.model_pace.pace)}` : "\u2013"))))));
     const unreadable = unreadableRows.length
       ? el("div", {}, el("div", { class: "scroll" }, el("table", {},
         el("thead", {}, el("tr", {}, el("th", {}, "DEVICE"), el("th", {}, "TYPE"), el("th", { class: "num" }, "READING"))),
         el("tbody", {}, ...unreadableRows.map((row) => el("tr", {},
           el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
           el("td", {}, this._typeLink(row.type, pick)),
-          el("td", { class: "num" }, pct(row.level))))))),
+          el("td", { class: "num" }, levelText(row.level))))))),
       el("p", { class: "small", style: "margin:6px 0 0" },
         "These report a raw sensor value rather than a battery level, and are never called low. To take them out of these lists, "
         + "mute them for battery in Configure, Low Battery."))
@@ -2100,6 +2124,9 @@ class DeviceSentinelPanel extends HTMLElement {
         `A cell is judged falling, and given a time left, at or under ${page.ceiling}%, three times your threshold. Above it, its last four weeks are shown under Other Cells.`) : null,
       fallingTable,
       el("h3", { class: "section" }, "Other Cells ", el("span", { class: "small" }, `${steadyAll.length} cells`)), steady,
+      steadyAll.some((row) => row.lithium) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
+        "A lithium cell holds its level near full until close to its end, so its four weeks say little about how long it has left. "
+        + "MODEL, A WEEK is how many points the other cells of the same model lose a week: context, not this cell's time left.") : null,
       unreadable ? el("h3", { class: "section" }, "Not a Percentage") : null, unreadable].filter((part) => part));
   }
 
@@ -2482,9 +2509,11 @@ class DeviceSentinelPanel extends HTMLElement {
           // own number, marked raw, then the percentage Device Sentinel
           // reads from it (0.25.0). "182%" read as a broken cell.
           const half = Number(value) / 2;
-          value = `${value} raw (${Number.isInteger(half) ? half : half.toFixed(1)}%)`;
+          value = `${value} raw (${levelText(half)})`;
         } else if (state.attributes && state.attributes.unit_of_measurement && !Number.isNaN(Number(value))) {
-          value = `${value}${state.attributes.unit_of_measurement === "%" ? "%" : ` ${state.attributes.unit_of_measurement}`}`;
+          value = kind === "battery" && state.attributes.unit_of_measurement === "%"
+            ? levelText(Number(value))
+            : `${value}${state.attributes.unit_of_measurement === "%" ? "%" : ` ${state.attributes.unit_of_measurement}`}`;
         }
         if (kind === "last_seen" && !Number.isNaN(Date.parse(state.state))) {
           value = new Date(state.state).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -2762,7 +2791,13 @@ class DeviceSentinelPanel extends HTMLElement {
         this._actNote("batteryreplaced"));
     }
     const e = this._edit(who.device_id);
-    const words = view.day ? this._dayWords(view.day) : view.words.none;
+    // With no replacement on record, when the device was first seen
+    // (James, 23 October 2026): "Device first detected August 12, 2026.
+    // No battery replacement yet."
+    const firstSeen = view.first_seen
+      ? `Device first detected ${new Date(`${view.first_seen}T12:00:00`).toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" })}. ${view.words.none}.`
+      : null;
+    const words = view.day ? this._dayWords(view.day) : (firstSeen || view.words.none);
     const shown = el("div", { class: "actrow" }, el("span", {}, words),
       view.how === "entered" ? el("span", { class: "muted small" }, "set by you") : null,
       acts ? this._editMark(`Change the day the battery was ${view.words.done}`, () => {
@@ -3566,8 +3601,9 @@ class DeviceSentinelPanel extends HTMLElement {
       const batteryChart = (b.daily || []).some((v) => typeof v === "number") && b.readable !== false
         ? el("div", { class: "chart" },
           el("div", { class: "statusline" }, el("strong", {}, "Battery"),
-            el("span", { class: "small" }, b.now != null ? `${b.now}% now` : "")),
+            el("span", { class: "small" }, b.now != null ? `${levelText(b.now)} now` : "")),
           b.sentence ? el("p", { class: "small", style: "margin:0;line-height:1.5" }, b.sentence) : null,
+          b.lithium && !b.reading ? el("p", { class: "small", style: "margin:0;line-height:1.5" }, lithiumWords(b.lithium)) : null,
           this._batteryFutureChart(b, { future: "simple" }))
         : null;
       this._pane.replaceChildren(...[back, head, statusBox,
@@ -3910,8 +3946,10 @@ class DeviceSentinelPanel extends HTMLElement {
       batteryCard = el("p", { class: "muted", style: "margin:0" }, "No battery history for this device.");
     } else {
       const percent = b.readable !== false;
-      // Above three times the threshold a cell is not judged (ruling #725).
-      const above = typeof b.ceiling === "number" && typeof b.now === "number" && b.now > b.ceiling;
+      // Above three times the threshold a cell is not judged (ruling #725),
+      // nor with under four weeks of readings in the last six (#733).
+      const above = (typeof b.ceiling === "number" && typeof b.now === "number" && b.now > b.ceiling)
+        || b.short === true;
       const unit = percent ? "%" : "";
       const shown = battery.filter((v, i) => battery.length - 1 - i < days && v != null);
       const lowB = Math.max(0, Math.floor(Math.min(...shown)) - 1);
@@ -4000,7 +4038,7 @@ class DeviceSentinelPanel extends HTMLElement {
         };
         const head = ["LEVEL", ...heads, "READING", "LEFT"];
         const cells = [
-          el("td", {}, `${Math.round(b.now)}${unit}`),
+          el("td", {}, percent ? levelText(b.now) : `${b.now}`),
           ...weeks.map((w, i) => el("td", {}, `${w.toFixed(1)}${unit}`, el("div", { class: "small" }, change(i)))),
           el("td", {}, b.reading || (above ? "" : "steady")),
           el("td", b.left_soon ? { style: "color:var(--error-color, #db4437)" } : {}, b.left || "\u2013"),
@@ -4014,7 +4052,8 @@ class DeviceSentinelPanel extends HTMLElement {
         ? ` It reaches your ${b.target}% in ${b.left}. Many devices stop working before their battery reaches 0%.` : "";
       const meaning = el("p", { class: "small", style: "margin:0;line-height:1.5" },
         b.sentence ? `${b.sentence}${reaches}` : (above
-          // Judged only near the threshold (ruling #725): nothing is said.
+          // Judged only near the threshold (ruling #725), and with four
+          // weeks of readings (#733): nothing is said.
           ? ""
           : weeks.length < 2
           ? "Steady: two whole weeks of history are needed before a fall can be judged."
@@ -4022,17 +4061,36 @@ class DeviceSentinelPanel extends HTMLElement {
       // Earlier Forecasts (ruling #732): what was said, and what happened.
       const forecasts = Array.isArray(b.forecasts) ? b.forecasts : [];
       const shortDay = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" });
-      const outcomeWords = (f) => f.outcome === "inside" ? `Reached ${f.target}% on ${shortDay(f.arrived)}, inside the range.`
-        : f.outcome === "earlier" ? `Reached ${f.target}% on ${shortDay(f.arrived)}, earlier than the range.`
-        : f.outcome === "later" ? (f.arrived ? `Reached ${f.target}% on ${shortDay(f.arrived)}, later than the range.`
-          : `Still above ${f.target}% when the range ended.`)
+      // A forecast to empty (#735) closes on a reading of 0, or on the
+      // day a device that then went silent was last heard: it ran out.
+      const reached = (f) => f.target > 0 ? `Reached ${f.target}%` : "Ran out";
+      const outcomeWords = (f) => f.outcome === "inside" ? `${reached(f)} on ${shortDay(f.arrived)}, inside the range.`
+        : f.outcome === "earlier" ? `${reached(f)} on ${shortDay(f.arrived)}, earlier than the range.`
+        : f.outcome === "later" ? (f.arrived ? `${reached(f)} on ${shortDay(f.arrived)}, later than the range.`
+          : f.target > 0 ? `Still above ${f.target}% when the range ended.` : "Still working when the range ended.")
         : f.outcome === "replaced" ? "The battery was replaced first."
         : "Not there yet.";
+      const said = (f) => f.target > 0 ? `reaches ${f.target}% in ${f.left}` : `empty in ${f.left}`;
       const earlier = forecasts.length ? el("details", { class: "forecasts" },
         el("summary", {}, `Earlier Forecasts (${forecasts.length})`),
         el("ul", { class: "small", style: "margin:4px 0 0;padding-left:18px;line-height:1.5" }, ...forecasts.map((f) =>
-          el("li", {}, `${shortDay(f.day)}, at ${f.level}%: reaches ${f.target}% in ${f.left}. ${outcomeWords(f)}`)))) : null;
-      batteryCard = card("Battery", b.now != null ? `${b.now}${unit} now` : "", figures, meaning, earlier,
+          el("li", {}, `${shortDay(f.day)}, at ${levelText(f.level)}: ${said(f)}. ${outcomeWords(f)}`)))) : null;
+      const lithiumNote = b.lithium && !b.reading
+        ? el("p", { class: "small", style: "margin:4px 0 0;line-height:1.5" }, lithiumWords(b.lithium)) : null;
+      // Kept each day for a later forecast, and read by nothing yet (#737).
+      const ev = b.evidence;
+      const evParts = ev ? [
+        typeof ev.volts === "number" ? `${ev.volts} V` : null,
+        typeof ev.messages === "number" ? `${ev.messages} ${ev.messages === 1 ? "message" : "messages"}` : null,
+        typeof ev.temperature === "number" ? `${ev.temperature} \u00b0C` : null,
+      ].filter((part) => part) : [];
+      const evidenceNote = evParts.length
+        ? el("p", { class: "small muted", style: "margin:4px 0 0;line-height:1.5" },
+          `Kept each day for a better forecast later: ${evParts.join(", ")} on ${new Date(`${ev.day}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" })}.`)
+        : null;
+      const modelNote = modelPaceWords(b.model_pace)
+        ? el("p", { class: "small", style: "margin:4px 0 0;line-height:1.5" }, modelPaceWords(b.model_pace)) : null;
+      batteryCard = card("Battery", b.now != null ? `${percent ? levelText(b.now) : b.now} now` : "", figures, meaning, lithiumNote, modelNote, evidenceNote, earlier,
         future && b.projection ? this._batteryFutureChart(b, { future: "advanced" }) : bat.g,
         future && b.projection ? null : el("div", { class: "legend" }, ...legend));
     }
