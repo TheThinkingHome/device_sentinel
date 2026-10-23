@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.26.8 (2026-10-20)
+// File: panel.js, Version: 0.27.0 (2026-10-22)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -403,6 +403,9 @@ const STYLE = `
   .maint select { min-height: 44px; background: transparent; color: var(--primary-text-color); border: 0;
     border-left: 1px solid var(--divider-color); padding: 0 12px; border-radius: 0 22px 22px 0; }
   .asof { margin-left: auto; font-size: 13px; color: var(--secondary-text-color); }
+  /* The release running, at the foot of every view (ruling #723). */
+  .release { margin: 12px 4px 0; font-size: 13px; color: var(--secondary-text-color); text-align: center; }
+  .release a { color: inherit; }
   /* A tab older than the dashboard served (0.25.4). */
   .updated { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 14px;
     border: 1px solid var(--warning-color, #ffa600); border-left-width: 6px;
@@ -889,9 +892,13 @@ class DeviceSentinelPanel extends HTMLElement {
         }
       }
     }).observe(this._pane, { childList: true, subtree: true });
+    // The release running, linked to its notes (ruling #723), so a
+    // person sees which one this is without opening Settings or HACS.
+    this._release = el("p", { class: "release" });
     this._body = el("div", { class: "body" },
       el("div", { class: "head" }, this._statusRow, actions),
-      el("div", { class: "card" }, this._tabRow, this._pane));
+      el("div", { class: "card" }, this._tabRow, this._pane),
+      this._release);
     root.append(this._body);
     if (this._updated) this._showUpdated();
     this._paintTabs();
@@ -1016,8 +1023,21 @@ class DeviceSentinelPanel extends HTMLElement {
     this._minutes.replaceChildren(...[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].map((m) =>
       el("option", { value: String(m), ...(String(m) === chosen ? { selected: "" } : {}) }, `${m} min`)));
     this._asOf.textContent = `As of ${longMoment(at)}`;
+    this._paintRelease(status.release);
     this._paintModes();
     this._paintActiveRecs();
+  }
+
+  // The same words in Simple and Advanced (ruling #723). A link only
+  // when the server gave one, and only to the release notes page.
+  _paintRelease(release) {
+    if (!this._release) return;
+    const words = release && typeof release.words === "string" ? release.words : "";
+    const url = release && typeof release.url === "string"
+      && release.url.startsWith("https://github.com/TheThinkingHome/device_sentinel/releases/tag/") ? release.url : null;
+    this._release.replaceChildren(...(!words ? [] : url
+      ? [el("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, words)]
+      : [words]));
   }
 
   // The recommendations this view shows (ruling #695): Simple shows
@@ -1304,6 +1324,7 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _recDeviceCard(card, open) {
     const ids = card.devices.map((row) => row.device_id);
+    const unticked = card.devices.filter((row) => !row.acknowledged).length;
     const from = TAB_SLUG.Recommendations;
     const nameLink = (row) => el("a", {
       href: `${this._base}/device/${encodeURIComponent(row.device_id)}?from=${from}`,
@@ -1362,7 +1383,9 @@ class DeviceSentinelPanel extends HTMLElement {
           : this._ackBox(row.acknowledged, { kind: card.kind, device_id: row.device_id })));
     });
     return el("article", { class: "rec", "data-kind": card.kind },
-      el("h3", {}, card.title),
+      // The rows not yet ticked, as the tab and the button count them
+      // (ruling #724); no number once every row is ticked.
+      el("h3", {}, unticked ? `${card.title} (${unticked})` : card.title),
       el("p", {}, card.body),
       this._recDetails(card.kind, open,
         el("summary", {}, `Show the ${card.devices.length} ${card.devices.length === 1 ? "device" : "devices"}`),
@@ -1882,6 +1905,7 @@ class DeviceSentinelPanel extends HTMLElement {
     const keep = (row) => this._typeMatch(chosen, row.type);
     const cells = allCells.filter(keep);
     const falling = page.falling.filter(keep);
+    const watchRows = falling.filter((row) => row.watch);
     const low = page.low.filter(keep);
     const steadyAll = page.steady.filter(keep);
     const unreadableRows = page.unreadable.filter(keep);
@@ -1916,7 +1940,7 @@ class DeviceSentinelPanel extends HTMLElement {
     }
     const cellCount = chosen ? cells.length : page.cells;
     const summary = el("p", { style: "margin:0;line-height:1.5" },
-      `${cellCount} ${cellCount === 1 ? "cell reports" : "cells report"} a level. ${falling.length} falling, ${steadyAll.length} steady, `
+      `${cellCount} ${cellCount === 1 ? "cell reports" : "cells report"} a level. ${falling.length} falling, ${steadyAll.length} not falling or not yet judged, `
       + `${low.length} at or under your threshold of ${page.threshold}%. ${noBattery} watched `
       + `${noBattery === 1 ? "device reports" : "devices report"} no battery at all, and ${unreadableRows.length} ${unreadableRows.length === 1 ? "reports" : "report"} a reading that is not a percentage.`);
     // The bank.
@@ -1997,7 +2021,10 @@ class DeviceSentinelPanel extends HTMLElement {
               i > 0 && padded[i - 1] != null ? el("div", { class: "small" }, moved(padded[i - 1] - w)) : "")),
             el("td", { class: "num" }, perWeek(-(row.pace || 0))),
             el("td", { style: row.reading === "accelerating" ? "color:var(--error-color, #db4437);font-weight:500" : "" }, row.reading || ""),
-            el("td", row.left_soon ? { style: "color:var(--error-color, #db4437)" } : {}, row.left || ""));
+            // Red for a warning, an accelerating cell inside Days Till Low;
+            // a cell to watch is named above the table instead (#731).
+            el("td", row.left_soon && row.reading === "accelerating" ? { style: "color:var(--error-color, #db4437)" } : {},
+              row.until || row.left || ""));
         }))))
       : el("p", { class: "muted", style: "margin:0" }, "No cell is measurably falling.");
     const lowRows = this._sortRows(low, this._lowSort, { name: byName, type: byType, level: (row) => row.level,
@@ -2060,8 +2087,19 @@ class DeviceSentinelPanel extends HTMLElement {
         "Which of your models eat batteries, and which do not. The rate is the middle of that model's cells: points lost a week over the last four weeks, from weekly averages. Mains-powered devices are absent: they report no battery."),
       el("div", { class: "scroll" }, modelTable),
       el("h3", { class: "section" }, "At or Under the Threshold"), lowTable,
-      el("h3", { class: "section" }, "Falling"), fallingTable,
-      el("h3", { class: "section" }, "Steady ", el("span", { class: "small" }, `${steadyAll.length} cells`)), steady,
+      // Falling at a steady pace inside Days Till Low (#731): named, and
+      // no warning sent.
+      watchRows.length ? el("h3", { class: "section" }, "Batteries to Watch") : null,
+      watchRows.length ? el("p", { style: "margin:0;line-height:1.5" }, ...watchRows.flatMap((row, i) => [
+        i ? ", " : "", this._link(row.name, this._devicePath(row.device_id)), ` (${row.until || row.left})`]), ".") : null,
+      el("h3", { class: "section" }, "Falling"),
+      // Judged only near the threshold (rulings #725, #730): with no
+      // battery yet watched from new to replaced, a date further out is
+      // a guess.
+      typeof page.ceiling === "number" ? el("p", { class: "small", style: "margin:0;line-height:1.5" },
+        `A cell is judged falling, and given a time left, at or under ${page.ceiling}%, three times your threshold. Above it, its last four weeks are shown under Other Cells.`) : null,
+      fallingTable,
+      el("h3", { class: "section" }, "Other Cells ", el("span", { class: "small" }, `${steadyAll.length} cells`)), steady,
       unreadable ? el("h3", { class: "section" }, "Not a Percentage") : null, unreadable].filter((part) => part));
   }
 
@@ -3260,7 +3298,7 @@ class DeviceSentinelPanel extends HTMLElement {
         el("div", { class: "muted" }, status.connection
           // Judged by its connection alone (James, 17 October 2026).
           ? `Judged by its connection: ${status.connection}.`
-          // A Matter device with no battery (#710).
+          // A Matter device of a type that reports only on use (#710, #718).
           : status.available_rule
             ? `Last report ${ago(status.last_activity, now)}. Not called frozen while Home Assistant shows it available.`
           : status.window
@@ -3554,9 +3592,9 @@ class DeviceSentinelPanel extends HTMLElement {
   // day as a light dot under a smoothed line, the expected fall as a
   // shaded range between two lines from today, and the low battery line
   // only where the history or the range reaches it. Simple draws the
-  // future only when the near end is inside Days Till Empty; the
+  // future only when the near end is inside Days Till Low; the
   // Advanced "Future" view draws it up to half the days kept or Days
-  // Till Empty, whichever is longer, and says "empty after N days" past
+  // Till Low, whichever is longer, and says "empty after N days" past
   // that.
   _batteryFutureChart(battery, { future }) {
     const daily = battery.daily || [];
@@ -3637,18 +3675,21 @@ class DeviceSentinelPanel extends HTMLElement {
     let lowest = points.length ? Math.min(...points.map(([, v]) => v)) : 100;
     // Each zero falls on its own day, said under the axis (ruling #713).
     const zeroes = [];
+    // Where the fall is drawn to: the low threshold, the level the time
+    // left reaches (#730), or empty for a cell already under it.
+    const floor = proj && typeof proj.target === "number" && proj.target > 0 ? proj.target : 0;
     if (ahead > 0) {
       const path = (p) => (d) => level + p[0] * d + p[1] * d * d;
-      // Each end drawn until it reaches empty, and no further: the two
-      // lines never run together along the floor (ruling #713).
+      // Each end drawn until it reaches its floor, and no further: the two
+      // lines never run together along it (ruling #713).
       const run = (fn) => {
         const line = [[n, level]];
         for (let d = 1; d <= ahead; d += 1) {
           const v = fn(d);
-          if (v <= 0) {
+          if (v <= floor) {
             const before = fn(d - 1);
-            const at = d - 1 + (before <= 0 ? 0 : before / (before - v));
-            line.push([n + at, 0]);
+            const at = d - 1 + (before <= floor ? 0 : (before - floor) / (before - v));
+            line.push([n + at, floor]);
             return { line, zero: n + at };
           }
           line.push([n + d, v]);
@@ -3662,7 +3703,7 @@ class DeviceSentinelPanel extends HTMLElement {
       // one has ended before the other.
       // A far line that never empties in view closes the band along
       // empty below its last point (adversarial round of 0.26.8).
-      const floorUnderFar = near.zero !== null && far.zero === null ? [[far.line[far.line.length - 1][0], 0]] : [];
+      const floorUnderFar = near.zero !== null && far.zero === null ? [[far.line[far.line.length - 1][0], floor]] : [];
       const band = near.line.concat(floorUnderFar, far.line.slice().reverse())
         .map(([i, v]) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
       g.append(svg("polygon", { class: "futureband", points: band, fill: "var(--error-color, #db4437)", "fill-opacity": 0.16 }));
@@ -3702,8 +3743,12 @@ class DeviceSentinelPanel extends HTMLElement {
         svg("text", { x: left + 6, y: y(threshold) - 4, class: "axis", fill: "var(--error-color, #db4437)" },
           `low battery ${threshold}%`));
     }
-    const words = ahead > 0 && battery.left ? `Expected empty in ${battery.left}.`
-      : beyond !== null ? `Empty after ${beyond} days.` : "";
+    // Simple says why the fall stops at the threshold (#730); Advanced
+    // says it in the sentence above its table.
+    const why = future === "simple" && floor > 0 ? " Many devices stop working before their battery reaches 0%." : "";
+    const words = ahead > 0 && battery.left
+      ? (floor > 0 ? `Expected to reach ${floor}% in ${battery.left}.${why}` : `Expected empty in ${battery.left}.`)
+      : beyond !== null ? (floor > 0 ? `Reaches ${floor}% after ${beyond} days.` : `Empty after ${beyond} days.`) : "";
     return el("div", { class: "futurechart" }, g, words ? el("p", { class: "small", style: "margin:4px 0 0" }, words) : null);
   }
 
@@ -3865,6 +3910,8 @@ class DeviceSentinelPanel extends HTMLElement {
       batteryCard = el("p", { class: "muted", style: "margin:0" }, "No battery history for this device.");
     } else {
       const percent = b.readable !== false;
+      // Above three times the threshold a cell is not judged (ruling #725).
+      const above = typeof b.ceiling === "number" && typeof b.now === "number" && b.now > b.ceiling;
       const unit = percent ? "%" : "";
       const shown = battery.filter((v, i) => battery.length - 1 - i < days && v != null);
       const lowB = Math.max(0, Math.floor(Math.min(...shown)) - 1);
@@ -3888,7 +3935,7 @@ class DeviceSentinelPanel extends HTMLElement {
       // The last five weeks' average levels, in orange over the daily
       // line, and the fitted line on a falling cell (0.23.6), drawn
       // only at 30 and 14 days: those are the weeks the table and the
-      // accelerating rule read, and at 90 days and longer they only
+      // falling rule read, and at 90 days and longer they only
       // crowd the history (the owner, 25 September, as the old slope
       // lines were drawn). Counted back from the newest day, as the
       // rules count them; a week partly off the left edge is cut there.
@@ -3911,12 +3958,12 @@ class DeviceSentinelPanel extends HTMLElement {
           drawn += 1;
         }
         if (drawn) legend.push(key(WEEK, "Weekly average (bars).", false));
-        // The fitted line, cut to the range shown: at 14 days S63's
-        // knee falls before the chart starts, and only the steep part
-        // is drawn, with no marker.
+        // The fitted line of a cell falling at an even pace, cut to the
+        // range shown. An accelerating cell has none: its curve is drawn
+        // as the time left (ruling #725).
         const fit = b.fit;
         if (fit && Array.isArray(fit.line) && fit.line.length >= 2) {
-          const colour = fit.knee ? "var(--error-color, #db4437)" : "var(--secondary-text-color)";
+          const colour = "var(--secondary-text-color)";
           const edge = days - 1;
           const points = [];
           for (let i = 0; i < fit.line.length - 1; i += 1) {
@@ -3929,18 +3976,8 @@ class DeviceSentinelPanel extends HTMLElement {
           }
           if (points.length >= 2) {
             bat.g.append(svg("polyline", { points: points.map(([ago, v]) => `${x(ago)},${bat.y(v)}`).join(" "),
-              fill: "none", stroke: colour, "stroke-width": fit.knee ? 3 : 2, "stroke-dasharray": fit.knee ? "" : "7 5" }));
-            if (fit.knee && fit.line[1][0] <= edge) {
-              const [kAgo, kV] = fit.line[1];
-              const when = new Date(`${page.series_end}T12:00:00`);
-              when.setDate(when.getDate() - kAgo);
-              bat.g.append(svg("circle", { cx: x(kAgo), cy: bat.y(kV), r: 6, fill: "var(--card-background-color, #fff)", stroke: colour, "stroke-width": 3 }),
-                svg("text", { x: x(kAgo), y: bat.y(kV) - 12, class: "axis", "text-anchor": "middle", fill: colour, "font-weight": 700 },
-                  when.toLocaleDateString(undefined, { month: "short", day: "numeric" })));
-              legend.push(key(colour, "The knee: where the fall sped up.", false));
-            } else {
-              legend.push(key(colour, fit.knee ? "The fall since it sped up." : "Falling at an even pace.", !fit.knee));
-            }
+              fill: "none", stroke: colour, "stroke-width": 2, "stroke-dasharray": "7 5" }));
+            legend.push(key(colour, "Falling at an even pace.", true));
           }
         }
       }
@@ -3965,18 +4002,37 @@ class DeviceSentinelPanel extends HTMLElement {
         const cells = [
           el("td", {}, `${Math.round(b.now)}${unit}`),
           ...weeks.map((w, i) => el("td", {}, `${w.toFixed(1)}${unit}`, el("div", { class: "small" }, change(i)))),
-          el("td", {}, b.reading || "steady"),
+          el("td", {}, b.reading || (above ? "" : "steady")),
           el("td", b.left_soon ? { style: "color:var(--error-color, #db4437)" } : {}, b.left || "\u2013"),
         ];
         figures = el("div", { class: "scroll" }, el("table", { class: "figures" },
           el("thead", {}, el("tr", {}, ...head.map((h) => el("th", {}, h)))),
           el("tbody", {}, el("tr", {}, ...cells))));
       }
+      // The time left ends at the threshold (#730), said once with why.
+      const reaches = b.sentence && b.left && typeof b.target === "number" && b.target > 0
+        ? ` It reaches your ${b.target}% in ${b.left}. Many devices stop working before their battery reaches 0%.` : "";
       const meaning = el("p", { class: "small", style: "margin:0;line-height:1.5" },
-        b.sentence || (weeks.length < 2
+        b.sentence ? `${b.sentence}${reaches}` : (above
+          // Judged only near the threshold (ruling #725): nothing is said.
+          ? ""
+          : weeks.length < 2
           ? "Steady: two whole weeks of history are needed before a fall can be judged."
           : "Steady: no week has fallen a point below the week before, so no time left is offered."));
-      batteryCard = card("Battery", b.now != null ? `${b.now}${unit} now` : "", figures, meaning,
+      // Earlier Forecasts (ruling #732): what was said, and what happened.
+      const forecasts = Array.isArray(b.forecasts) ? b.forecasts : [];
+      const shortDay = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" });
+      const outcomeWords = (f) => f.outcome === "inside" ? `Reached ${f.target}% on ${shortDay(f.arrived)}, inside the range.`
+        : f.outcome === "earlier" ? `Reached ${f.target}% on ${shortDay(f.arrived)}, earlier than the range.`
+        : f.outcome === "later" ? (f.arrived ? `Reached ${f.target}% on ${shortDay(f.arrived)}, later than the range.`
+          : `Still above ${f.target}% when the range ended.`)
+        : f.outcome === "replaced" ? "The battery was replaced first."
+        : "Not there yet.";
+      const earlier = forecasts.length ? el("details", { class: "forecasts" },
+        el("summary", {}, `Earlier Forecasts (${forecasts.length})`),
+        el("ul", { class: "small", style: "margin:4px 0 0;padding-left:18px;line-height:1.5" }, ...forecasts.map((f) =>
+          el("li", {}, `${shortDay(f.day)}, at ${f.level}%: reaches ${f.target}% in ${f.left}. ${outcomeWords(f)}`)))) : null;
+      batteryCard = card("Battery", b.now != null ? `${b.now}${unit} now` : "", figures, meaning, earlier,
         future && b.projection ? this._batteryFutureChart(b, { future: "advanced" }) : bat.g,
         future && b.projection ? null : el("div", { class: "legend" }, ...legend));
     }
