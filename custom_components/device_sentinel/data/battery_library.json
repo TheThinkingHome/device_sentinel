@@ -2885,8 +2885,7 @@
             "manufacturer": "Develco",
             "model": "Smoke detector with siren",
             "model_id": "SMSZB-120",
-            "hw_version": "5.0.2",
-            "battery_type": "CR123"
+            "battery_type": "CR123A"
         },
         {
             "manufacturer": "Develco",
@@ -5269,6 +5268,13 @@
             "battery_quantity": 2
         },
         {
+            "manufacturer": "Hobeiam",
+            "model": "Star Ring 4 Gang Switch",
+            "model_id": "ZG-101ZS",
+            "battery_type": "CR2032 / CR2016",
+            "battery_quantity": 2
+        },
+        {
             "manufacturer": "HOBEIAN",
             "model": "24Ghz human presence sensor",
             "model_id": "ZG-204ZK",
@@ -5302,6 +5308,12 @@
             "hw_version": "1",
             "battery_type": "AAA",
             "battery_quantity": 2
+        },
+        {
+            "manufacturer": "Hobeian",
+            "model": "Luminance door sensor",
+            "model_id": "ZG-102ZL",
+            "battery_type": "CR2032"
         },
         {
             "manufacturer": "HOBEIAN",
