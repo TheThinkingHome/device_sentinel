@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.27.1 (2026-10-23)
+# File: dashboard.py, Version: 0.27.2 (2026-10-23)
 
 """What the dashboard reads from the coordinator.
 
@@ -1812,6 +1812,10 @@ class TrendsViewMixin:
         def listed(rows: list[dict[str, Any]], falling: bool = False) -> list[dict[str, Any]]:
             out = []
             for row in rows:
+                device_id = row.get("device_id")
+                cell, lithium = (
+                    self.battery_cell(device_id) if isinstance(device_id, str) else (None, None)  # type: ignore[attr-defined]
+                )
                 item = {
                     "device_id": row.get("device_id"),
                     "name": row.get("name"),
@@ -1819,8 +1823,11 @@ class TrendsViewMixin:
                     "level": row.get("level"),
                     "since": row.get("since"),
                     "steps": BATTERY_STEPS_WORDS.get(str(row.get("steps") or ""), ""),
-                    # A lithium cell holds near full until its end (#736).
-                    "lithium": self.battery_lithium(row.get("device_id")) if row.get("device_id") else None,  # type: ignore[attr-defined]
+                    # The battery it takes, as its Power row says it, or
+                    # None when nobody has said (James, 23 October 2026);
+                    # a lithium cell holds near full until its end (#736).
+                    "cell": cell,
+                    "lithium": lithium,
                     # The others of its model, as context (#738).
                     "model_pace": paces.get(row["device_id"]) if isinstance(row.get("device_id"), str) else None,
                 }

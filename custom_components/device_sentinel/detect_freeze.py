@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.27.0 (2026-10-22)
+# File: detect_freeze.py, Version: 0.27.2 (2026-10-23)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -326,6 +326,16 @@ class FreezeMixin:
             return False
         states = self._live_entity_states(device_id)  # type: ignore[attr-defined]
         known = [s for s in states if s not in (STATE_UNKNOWN, EVENT_RESTING)]
+        if not known:
+            # A button never pressed reads unknown, and its battery is the
+            # only value it shows (Tim Plas's B13 to B15, 23 October 2026,
+            # missed by 0.27.0): any entity of its own holding a value
+            # shows it available. One that reads nothing at all keeps the
+            # freeze rule.
+            known = [
+                s for s in self._states_of(self._own_entities.get(device_id, ()))  # type: ignore[attr-defined]
+                if s not in (STATE_UNKNOWN, EVENT_RESTING)
+            ]
         return bool(known) and not all(s in BAD_STATES for s in known)
 
     def _dropped_esphome(self, device_id: str) -> bool:
@@ -897,10 +907,13 @@ class FreezeMixin:
             # a frozen verdict already stands (#529). Found by the
             # adversarial round of 12 October 2026: a device of buttons
             # reads unknown until one is pressed.
+            # A Matter button never pressed is the same while an entity of
+            # its own, such as its battery, holds a value (#718; Tim Plas's
+            # B13 to B15, 23 October 2026, called frozen on 0.27.1 too).
             if (
                 frozen
                 and record.get(DEV_FROZEN_CATEGORY) != FREEZE_CATEGORY_FROZEN
-                and self._awake_esphome(device_id)
+                and (self._awake_esphome(device_id) or self._matter_available_now(device_id))
             ):
                 frozen = False
             if known:

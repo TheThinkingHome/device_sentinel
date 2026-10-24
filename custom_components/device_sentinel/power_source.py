@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/power_source.py, Version: 0.27.1 (2026-10-23)
+# File: custom_components/device_sentinel/power_source.py, Version: 0.27.2 (2026-10-23)
 
 """What powers each device (0.24.7, Project__0_24_7.md).
 
@@ -551,6 +551,18 @@ class PowerMixin:
         if known and known.get("kind") == KIND_BATTERY and lithium_cell(known.get("type")):
             return str(known["type"])
         return None
+
+    def battery_cell(self, device_id: str) -> tuple[str | None, str | None]:
+        """The battery a device takes as its Power row says it, "2× AAA",
+        and its type again when it is a lithium cell (#736); None for
+        either it is not. One lookup for Battery Trends' CELL column,
+        which shows every known battery and "Not set" for the rest
+        (James, 23 October 2026: one blank meant two things)."""
+        known = self.power_of(device_id)
+        if not known:
+            return None, None
+        lithium = known.get("kind") == KIND_BATTERY and lithium_cell(known.get("type"))
+        return known["words"], str(known["type"]) if lithium else None
 
     def power_text(self, device_id: str) -> str | None:
         """The plain words for a list or the brief, or None if unknown."""
