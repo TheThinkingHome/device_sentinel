@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_api.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_dashboard_api.py, Version: 0.27.3 (2026-10-24)
 
 """The dashboard's data layer: status, actions and the change marker.
 
@@ -255,17 +255,24 @@ async def test_classification_names_the_mute_and_the_reason_set_aside(hass: Home
     coord = await setup_coordinator(hass)
     coord._muted_devices = {device.id: "device"}
     coord._set_aside = {"x": ("Old Tracker", "tplink_router", "excluded")}
+    # The integration's name as Home Assistant gives it once loaded.
+    titles = {"tplink_router": "TP-Link Router"}
+    real_title = coord._integration_title
+    coord._integration_title = lambda domain: titles.get(domain) or real_title(domain)
     client = await hass_ws_client(hass)
     rows = (await _call(client, type="device_sentinel/classification"))["result"]["rows"]
     muted = next(row for row in rows if row["name"] == "Muted Panel")
     assert muted["muted"] == "Global (device)"
     aside = next(row for row in rows if row["name"] == "Old Tracker")
-    # An exclusion names the integration excluded since 0.22.13, and
-    # every row carries the global mute on its own for the counts.
+    # An exclusion names the integration excluded since 0.22.13, by its
+    # name since 0.27.3, as the Devices tab names it; the id still opens
+    # its page. Every row carries the global mute on its own for the
+    # counts.
     assert aside == {
         "device_id": "x", "name": "Old Tracker", "integration": "tplink_router",
+        "integration_name": "TP-Link Router",
         "watched": False, "muted": "", "muted_global": "",
-        "set_aside": "excluded (integration: tplink_router)", "copies": 1,
+        "set_aside": "excluded (integration: TP-Link Router)", "copies": 1,
         # What it is (0.25.3); a device gone from the registry has none.
         "type": None,
     }

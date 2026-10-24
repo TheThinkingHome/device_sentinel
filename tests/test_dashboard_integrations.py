@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_integrations.py, Version: 0.25.6 (2026-10-11)
+# File: tests/test_dashboard_integrations.py, Version: 0.27.3 (2026-10-24)
 
 """The Integrations tab and each integration's page.
 
@@ -115,6 +115,11 @@ async def test_an_integrations_page(hass: HomeAssistant, hass_ws_client):
     assert outage["worst"] == 75
     assert page["bursts"] == 0
     assert isinstance(page["recommendations"], list)
+    # Each device carries the global mute alone, which the Integrations
+    # tab counts, so the page's count agrees with the tab's (0.27.3).
+    coord = hass.config_entries.async_entries("device_sentinel")[0].runtime_data
+    global_mutes = {row["device_id"]: row["muted_global"] for row in coord.classification_rows()}
+    assert all(device["muted_global"] == global_mutes[device["device_id"]] for device in page["devices"])
 
 
 async def test_an_outage_still_open_is_listed_as_such(hass: HomeAssistant, hass_ws_client):

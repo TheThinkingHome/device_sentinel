@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_devices.py, Version: 0.25.6 (2026-10-11)
+# File: tests/test_dashboard_devices.py, Version: 0.27.3 (2026-10-24)
 
 """The Devices tab and each device's page.
 
@@ -119,6 +119,73 @@ async def test_the_devices_tab_lists_every_watched_device(hass: HomeAssistant, h
     assert row["window"] == coord._freeze_window(coord.data["devices"][device.id])
     assert row["last_activity"] is not None
     assert len(reply["result"]["rows"]) == len(coord._watched)
+
+
+async def test_a_window_still_learned_reads_learning(hass: HomeAssistant, hass_ws_client):
+    """Voice Assistant Kitchen on 24 October 2026: a rhythm from five
+    days, no window yet, and a blank cell. It says learning (0.27.3)."""
+    coord, device, _, _ = await _door(hass)
+    record = coord.data["devices"][device.id]
+    record[DEV_DAILY_MAX] = list(GAPS[:5])
+    assert coord._freeze_window(record) is None
+    client = await hass_ws_client(hass)
+    rows = (await _call(client, type="device_sentinel/devices"))["result"]["rows"]
+    row = next(r for r in rows if r["device_id"] == device.id)
+    assert (row["window"], row["window_learning"]) == (None, True)
+    # A window learned is not learning.
+    record[DEV_DAILY_MAX] = list(GAPS)
+    rows = (await _call(client, type="device_sentinel/devices"))["result"]["rows"]
+    row = next(r for r in rows if r["device_id"] == device.id)
+    assert row["window"] and row["window_learning"] is False
+    # And a device with no learned day yet, on a fresh install
+    # (adversarial round).
+    record[DEV_DAILY_MAX] = []
+    rows = (await _call(client, type="device_sentinel/devices"))["result"]["rows"]
+    row = next(r for r in rows if r["device_id"] == device.id)
+    assert (row["window"], row["window_learning"]) == (None, True)
+    # A hub, or a device its hub judges, is never judged by a window, so
+    # it is not learning one (adversarial round): a Lutron Caseta hub.
+    coord.hub_takes_over = lambda device_id: True
+    rows = (await _call(client, type="device_sentinel/devices"))["result"]["rows"]
+    row = next(r for r in rows if r["device_id"] == device.id)
+    assert (row["window"], row["window_learning"]) == (None, False)
+
+
+async def test_the_page_says_when_the_log_normal_count_started_again(hass: HomeAssistant):
+    """Stove Vent Relays on 24 October 2026: three long days started the
+    Log-Normal Percentile's count again, and its chart left the page
+    with nothing in its place for 20 days (James's dashboard review).
+    The page now says since when, and how many days are left (0.27.3)."""
+    from datetime import timedelta
+
+    from custom_components.device_sentinel.const import DEV_LOGNORMAL_DAYS
+
+    coord, device, _, _ = await _door(hass)
+    record = coord.data["devices"][device.id]
+    record[DEV_DAILY_MAX] = [3000.0 + (i % 5) * 20 for i in range(40)]
+    record[DEV_LOGNORMAL_DAYS] = 8
+    again = coord.dashboard_device(device.id)["rhythm"]["rules"]["counting_again"]
+    today = dt_util.now().date()
+    assert again == {"since": (today - timedelta(days=8)).isoformat(), "to_go": 20}
+    # A day with no learned gap since does not move the restart date
+    # (adversarial round): dated by the history's own days.
+    from custom_components.device_sentinel.daily_dates import FAMILY_GAP, set_dates
+
+    yesterday = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
+    days = [yesterday - timedelta(days=i) for i in range(41) if i != 3][::-1]
+    record[DEV_DAILY_MAX] = [3000.0] * len(days)
+    set_dates(record, FAMILY_GAP, days)
+    record[DEV_LOGNORMAL_DAYS] = 7
+    again = coord.dashboard_device(device.id)["rhythm"]["rules"]["counting_again"]
+    assert again["since"] == (yesterday - timedelta(days=7)).isoformat()
+    # Nothing to say once the count covers 28 days, or where none started.
+    record[DEV_LOGNORMAL_DAYS] = None
+    assert coord.dashboard_device(device.id)["rhythm"]["rules"]["counting_again"] is None
+    # Nor for a device whose history is all since the reset: it is new,
+    # not counting again.
+    record[DEV_DAILY_MAX] = [3000.0] * 5
+    record[DEV_LOGNORMAL_DAYS] = 5
+    assert coord.dashboard_device(device.id)["rhythm"]["rules"]["counting_again"] is None
 
 
 async def test_a_devices_page_carries_everything_known(hass: HomeAssistant, hass_ws_client):

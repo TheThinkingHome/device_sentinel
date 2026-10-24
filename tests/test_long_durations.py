@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_long_durations.py, Version: 0.23.19 (2026-09-30)
+# File: tests/test_long_durations.py, Version: 0.27.3 (2026-10-24)
 
 """Figures a person can read: long spans, a running silence, a scale.
 
@@ -140,6 +140,24 @@ async def test_a_rhythm_chart_is_scaled_to_what_can_be_read(hass: HomeAssistant)
     assert scale is not None and scale < 4 * HOUR, scale
     assert scale >= window, (scale, window)
     assert 43 * DAY in page["rhythm"]["daily"], "the absence is still recorded"
+
+
+async def test_a_long_day_neither_rule_reads_leaves_the_scale(hass: HomeAssistant):
+    """The rig's SLZB-06 on 24 October 2026: a day of 238.6 hours in
+    August, older than both rules read, drew every rhythm chart 240
+    hours high (James's dashboard review). The scale is taken from the
+    days the two rules read, less the days they set aside (0.27.3)."""
+    device, _entities = register_device(hass, "slzb", name="SLZB-06")
+    coord = await setup_coordinator(hass)
+    record = coord.data["devices"][device.id]
+    ordinary = [(1.0 + 0.05 * (index % 5)) * HOUR for index in range(70)]
+    ordinary[8] = 238.6 * HOUR
+    record[DEV_DAILY_MAX] = ordinary
+    page = coord.dashboard_device(device.id)
+    scale = page["rhythm"]["scale"]
+    assert scale is not None and scale < 4 * HOUR, scale
+    assert scale >= page["status"]["window"]
+    assert 238.6 * HOUR in page["rhythm"]["daily"], "the long day is still recorded"
 
 
 def test_the_chart_draws_a_day_beyond_the_scale_at_the_top():

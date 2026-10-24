@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_dashboard_trends.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_dashboard_trends.py, Version: 0.27.3 (2026-10-24)
 
 """The Battery Trends and Signal Trends tabs.
 
@@ -154,6 +154,23 @@ async def test_signal_trends_measure_each_link_against_its_own_normal(hass: Home
     assert rows[falling.id]["line"] == [day for day in last if day][-1]["line"]
     assert page["scales"] == {"lqi": 2, "rssi": 1}
     assert rows[mains.id]["scale"] == "rssi"
+
+
+async def test_signal_trends_carry_the_two_middles_the_change_is_taken_between(
+    hass: HomeAssistant, hass_ws_client
+):
+    """A row adds up: the last seven days' middle less the whole
+    history's is the change. The tab showed the latest reading beside
+    it, so Temperature Living Room read 188 with a change of -44 from
+    174 and 218 (James's dashboard review, 24 October 2026)."""
+    coord, _, falling, _, _ = await _fleet(hass)
+    coord.data["devices"][falling.id][DEV_SIGNAL_VALUE] = 188.0
+    client = await hass_ws_client(hass)
+    page = (await _call(client, type="device_sentinel/signal_trends"))["result"]
+    row = next(row for row in page["devices"] if row["device_id"] == falling.id)
+    assert (row["week"], row["usual"]) == (150.0, 200.0)
+    assert row["week"] - row["usual"] == row["change"]
+    assert row["now"] == 188.0
 
 
 async def test_signal_trends_name_the_days_several_devices_had_a_bad_one(hass: HomeAssistant, hass_ws_client):

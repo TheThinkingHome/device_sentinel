@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_projection.py, Version: 0.27.1 (2026-10-23)
+# File: tests/test_battery_projection.py, Version: 0.27.3 (2026-10-24)
 
 """When a falling cell runs empty, as a range (ruling #704).
 
@@ -137,13 +137,29 @@ def test_the_curve_is_used_at_any_level():
 def test_each_end_of_the_range_has_its_own_unit():
     """A near end inside Days Till Empty never reads as months (found
     by review)."""
-    assert time_left_range(3, 75) == "under a week to about 2 months"
-    assert time_left_range(13, 72) == "about 2 weeks to 2 months"
+    assert time_left_range(3, 75) == "under a week to about 11 weeks"
+    assert time_left_range(13, 72) == "about 2 to 10 weeks"
     assert time_left_range(0, None) == "under a week to over a year"
-    assert time_left_range(50, 80) == "about 7 weeks to 3 months"
+    assert time_left_range(50, 100) == "about 7 to 14 weeks"
     # Never backwards (found by review).
     assert time_left_range(69, 72) == "about 10 weeks"
     assert time_left_range(66, 75) == "about 9 to 11 weeks"
+
+
+def test_a_range_under_three_months_is_said_in_weeks():
+    """Door 2nd Bedroom on 24 October 2026 read "about 8 weeks to 2
+    months", one span said twice (James's dashboard review). Weeks run
+    to just under 13; months only past that."""
+    assert time_left_range(56, 75) == "about 8 to 11 weeks"
+    assert time_left_range(84, 90) == "about 12 to 13 weeks"
+    assert time_left_range(60, 120) == "about 9 weeks to 4 months"
+    assert time_left_range(91, 113) == "about 3 to 4 months"
+    # Never one span said twice near the turn (adversarial round).
+    assert time_left_range(88, 92) == "about 13 weeks"
+    assert time_left_range(88, 100) == "about 13 to 14 weeks"
+    assert time_left_range(365, 400) == "about a year or more"
+    assert time_left_range(350, 400) == "about a year or more"
+    assert time_left_range(300, 500) == "about 10 months to over a year"
 
 
 def test_the_range_edges_found_by_review():
