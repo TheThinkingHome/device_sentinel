@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_type_filters.js, Version: 0.27.0 (2026-10-22)
+// File: tools/panel_checks/check_type_filters.js, Version: 0.27.3 (2026-10-24)
 // Panel checks: types on Battery Trends, Classification, Devices and Recommendations, and the "null" fix (0.25.3).
 // Run with: LC_ALL=en_US.UTF-8 node check_type_filters.js [path/to/panel.js]
 const fs = require("fs");
@@ -139,7 +139,7 @@ const BATTERY = {
   check("By Model counts the model by the type chosen", tableRows(models).length === 1 && text(tableRows(models)[0].children[2]) === "2", tableRows(models).map(text));
   check("The lists show only that type", tableRows(steady).map((tr) => tr.firstChild.textContent).join("|") === "Motion Laundry|Motion Closet", tableRows(steady).map(text));
   const summary = text(root.querySelector("p"));
-  check("The summary counts what is shown", summary.startsWith("2 cells report a level. 0 falling, 2 not falling or not yet judged, 0 at or under")
+  check("The summary counts what is shown", summary.startsWith("2 cells report a level. 0 falling, 2 not falling or not yet judged. 1 watched")
     && summary.includes("1 watched device reports no battery"), summary);
   const bands = [...root.querySelectorAll(".band .count")].map((n) => n.textContent);
   check("The bank counts only that type", bands.join(",") === ",,,,1,1,,,,", bands);

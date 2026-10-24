@@ -1,3 +1,4 @@
+// File: tools/panel_checks/check_no_hardware_integrations.js, Version: 0.27.3 (2026-10-24)
 // Panel checks: an integration with no hardware of its own, as Battery
 // Notes is, on the Integrations tab.
 // Written for 0.22.21; named by subject since 0.23.19.
@@ -103,7 +104,10 @@ const rowOf = (root, name) => [...root.querySelectorAll(".pane tbody tr")]
   const chip = [...root.querySelectorAll(".pane .chip")].find((c) => c.textContent.startsWith("No hardware"));
   check("a No hardware filter counts it", chip && chip.textContent === "No hardware 1", chip && chip.textContent);
   const summary = root.querySelector(".pane > p").textContent;
-  check("the count of owners leaves it out", summary.startsWith("2 integrations own devices"), summary);
+  check("the count of owners leaves it out", summary.includes(". 2 own devices"), summary);
+  // Led by the total the All chip shows (0.27.3).
+  const allChip = [...root.querySelectorAll(".chips .chip")].find((c) => c.textContent.startsWith("All "));
+  check("the summary opens with the All chip's total", !!allChip && summary.startsWith(`${allChip.textContent.slice(4)} integrations in all.`), [allChip && allChip.textContent, summary]);
   check("the summary names it as having no hardware",
     summary.includes("1 more has no hardware of its own and only adds entities to other integrations' devices."), summary);
   check("the key names every standing", ["Watched", "Excluded", "Muted", "Service only", "No hardware"]

@@ -1,6 +1,8 @@
+// File: tools/panel_checks/check_mutes_shown.js, Version: 0.27.3 (2026-10-24)
 // Panel checks: every mute named where a device is, and the Battery Trends
 // advice pointing at a control that exists.
-// Written for 0.22.16; named by subject since 0.23.19.
+// Written for 0.22.16; named by subject since 0.23.19. Since 0.27.3 an
+// integration's page counts its muted devices as the Integrations tab does.
 // Run with: LC_ALL=en_US.UTF-8 node check_mutes_shown.js [path/to/panel.js]
 // The harness behaves like Home Assistant's router: whenever the
 // address changes, by a link, a pushState or the back button, it hands
@@ -90,6 +92,17 @@ const text = (root) => root.querySelector(".pane").textContent;
   ({ window, root } = await open(`${PREFIX}/integration/test?from=integrations`));
   check("its device list names every mute", text(root).includes("Watched, muted: freeze (device); battery (device)")
     && text(root).includes("Watched, muted: Global (device); battery (device)"), text(root).slice(0, 400));
+
+  // Counted as the Integrations tab counts it (0.27.3): Bravo Phone,
+  // muted for freeze and battery only, is not a muted device there.
+  const globalOf = { "Alpha Panel": "Global (device)", "Charlie Plug": "Global (label: Garage sp)" };
+  const kept = payloads.integration.devices;
+  payloads.integration.devices = kept.map((d) => ({ ...d, muted_global: globalOf[d.name] || "" }));
+  const tabCount = payloads.integration.devices.filter((d) => d.muted_global).length;
+  ({ window, root } = await open(`${PREFIX}/integration/test?from=integrations`));
+  check("its count of muted devices is the Integrations tab's", text(root).includes(`, ${tabCount} of them muted`)
+    && !text(root).includes(`, ${tabCount + 1} of them muted`), text(root).match(/\d+ of them muted/));
+  payloads.integration.devices = kept;
 
   console.log("Battery Trends");
   ({ window, root } = await open(`${PREFIX}/battery-trends`));

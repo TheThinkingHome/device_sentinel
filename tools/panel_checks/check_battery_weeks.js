@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.2 (2026-10-23)
+// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.3 (2026-10-24)
 // Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
 // Written for 0.23.6, the knee check moved to 30 days in 0.23.7; named by
@@ -236,6 +236,23 @@ const trends = {
     .find((cells) => cells[0] === "Door Bath Main");
   check("Other Cells names the lithium cell and its model's pace", coinRow && coinRow.includes("CR1632, lithium") && coinRow.includes("0"), coinRow);
   check("and says what the two columns mean", text(lithiumTab.root).includes("MODEL, A WEEK is how many points the other cells of the same model lose a week"));
+  // The summary's three parts add up to the cells (0.27.3): the rig's
+  // 54 on 24 October read 2 falling and 51 not falling, and Soil
+  // Irrigation, at 0% and not falling, was in neither.
+  const counted = await open(`${PREFIX}/battery-trends`, {
+    battery_trends: (page) => {
+      trends.battery_trends(page);
+      const soil = { device_id: "soil", name: "Soil Irrigation", type: null, level: 0, steps: "Smooth", days: 60, month_drop: 0, cell: null, lithium: null, model_pace: null };
+      page.low = [{ ...page.falling[0], level: 12 }, soil];
+      page.steady = [{ device_id: "s1", name: "Door Hall", type: null, level: 90, steps: "Smooth", days: 60, month_drop: 0, cell: null, lithium: null, model_pace: null }];
+      page.cells = 4;
+      return page;
+    },
+  });
+  const countedLine = (counted.root.querySelector(".pane > p") || {}).textContent || "";
+  check("the summary counts a low cell that is not falling on its own, and a falling one once",
+    countedLine.startsWith(`4 cells report a level. 2 falling, 1 at or under your threshold of ${payloads.battery_trends.threshold}% and not falling, 1 not falling or not yet judged.`),
+    countedLine);
   const tabText = text(tab.root);
   check("a level reads as reported there too, 37.5%", tabText.includes("37.5%") && !tabText.includes("38%"), tabText.slice(0, 1600));
   const tabHeads = [...tab.root.querySelectorAll("th")].map((th) => th.textContent);

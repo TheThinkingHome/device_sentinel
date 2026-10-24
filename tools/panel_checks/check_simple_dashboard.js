@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.1 (2026-10-23)
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.3 (2026-10-24)
 // Panel checks: Simple and Advanced (rulings #693, #694, #703, #706, #716).
 // The setting opens the dashboard; the switch holds while the page is
 // open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
@@ -153,6 +153,22 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   check("no history ranges and no signal chart", !anyButton(root, "30 Days") && !text(root).includes("Signal median") && !root.querySelector("[aria-label=\"Time range for the graphs\"]"), text(root).match(/Signal.{0,40}/g));
   check("the battery chart with its expected fall", !!root.querySelector(".futurechart polygon"));
   check("in words", text(root).includes("Expected empty in about 4 to 6 weeks."));
+  check("and only once", text(root).split("about 4 to 6 weeks").length === 2, text(root).match(/.{0,30}about 4 to 6 weeks.{0,10}/g));
+  // Door 2nd Bedroom on 24 October 2026 (0.27.3): falling, not soon, and
+  // no time left said anywhere in Simple.
+  ({ root } = await open({ __mode: "simple" }, (p) => {
+    withBattery(p); p.status.category = "reporting";
+    Object.assign(p.battery, { now: 40, sentence: "Falling about 1.6 points a week, at a steady pace.", left: "about 8 to 11 weeks", left_soon: false, target: 0 });
+  }));
+  check("a time left that is not soon is said under the sentence", text(root).includes("at a steady pace. Empty in about 8 to 11 weeks."),
+    text(root).match(/Falling.{0,80}/));
+  ({ root } = await open({ __mode: "simple" }, (p) => {
+    withBattery(p); p.status.category = "reporting";
+    Object.assign(p.battery, { now: 40, sentence: "Falling about 1.6 points a week.", left: "about 8 to 11 weeks", left_soon: false, target: 20 });
+  }));
+  check("or the day it reaches your threshold", text(root).includes("Falling about 1.6 points a week. It reaches your 20% in about 8 to 11 weeks."),
+    text(root).match(/Falling.{0,80}/));
+  ({ root } = await open({ __mode: "simple" }, (p) => { withBattery(p); p.battery.now = 15.5; p.status.category = "reporting"; }));
   check("Last seen sensor shows while it is switched off", !!rowCell(root, "Last seen sensor"));
   ({ root } = await open({ __mode: "simple" }, (p) => { p.identity.actions.last_seen_off = false; p.status.category = "frozen"; }));
   check("and not once it is on", !rowCell(root, "Last seen sensor"));

@@ -1,6 +1,8 @@
+// File: tools/panel_checks/check_rhythm_rules.js, Version: 0.27.3 (2026-10-24)
 // Panel checks: the rhythm chart shows both freeze rules, its marks follow the
 // pointer, the device page names the rule in use, and every chart legend
-// leads with a swatch (0.24.0).
+// leads with a swatch (0.24.0). Since 0.27.3 the Use the 14-Day Trimmed
+// Maximum button shows only while the Log-Normal Percentile is in use.
 // Run with: LC_ALL=en_US.UTF-8 node check_rhythm_rules.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -73,6 +75,7 @@ const withRules = {
     page.rhythm.deciding = gaps.map((_, i) => (i < 7 ? null : i >= 16 ? 15 : 3));
     page.rhythm.aside = gaps.map((_, i) => (i < 7 ? null : i >= 16 ? [12] : [5]));
     page.rhythm.scale = 7 * H;
+    page.rhythm.rules = { ...(page.rhythm.rules || {}), in_use: "lognormal" };
     // A battery and a signal history too, so all three legends draw.
     page.battery = {
       daily: Array(DAYS).fill(0).map((_, i) => 76 + ((i % 3) - 1) * 0.5), now: 76, threshold: 20, readable: true,
@@ -135,6 +138,17 @@ const withRules = {
     waitRow && waitRow.firstChild.textContent === "Wait rule" && button.previousSibling
       && /Log-Normal Percentile|Trimmed Maximum/.test(button.previousSibling.textContent),
     waitRow ? waitRow.textContent : null);
+
+  // With the Trimmed Maximum in use the button changed nothing to be
+  // seen and hid the 42-day chart for 28 days (0.27.3).
+  const trimmedInUse = await open(`${PREFIX}/device/${DEVICE}`, { device: (page) => {
+    withRules.device(page);
+    page.status.rule = "14-Day Trimmed Maximum";
+    page.rhythm.rules.in_use = "trimmed";
+    return page;
+  } });
+  check("With the Trimmed Maximum in use there is no button",
+    ![...trimmedInUse.root.querySelectorAll("button")].some((b) => b.textContent === "Use the 14-Day Trimmed Maximum"));
 
   console.log("\nPressing the button");
   const sent = [];

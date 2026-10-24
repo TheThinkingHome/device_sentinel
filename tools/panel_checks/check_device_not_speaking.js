@@ -1,3 +1,4 @@
+// File: tools/panel_checks/check_device_not_speaking.js, Version: 0.27.3 (2026-10-24)
 // Panel checks: what a device page says when the device is not speaking.
 // Written for 0.22.24; named by subject since 0.23.19.
 // Run with: LC_ALL=en_US.UTF-8 node check_device_not_speaking.js [path/to/panel.js]
@@ -109,7 +110,7 @@ const states = {
   check("a reading it cannot give gets no tile", tiles.every((t) => !t.includes("unknown")), tiles);
   check("its tiles are dated from the device", tiles.every((t) => t.includes("last heard")), tiles);
   check("none says it changed a moment ago", tiles.every((t) => !t.includes("changed 12m")), tiles);
-  check("its silence says it is still running", page.includes("still silent"), page.slice(-800));
+  check("its gap says it is still running", page.includes("still no report"), page.slice(-800));
   check("a reading that is not a percentage loses the percent sign", !page.includes("186%"), page);
   check("and loses your low-battery line", !page.includes("Your threshold, 15%"), page);
   check("and says why", page.includes("raw reading rather than a percentage"), page.slice(-900));

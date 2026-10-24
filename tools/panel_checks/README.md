@@ -18,10 +18,10 @@ written rather than what it proves).
 | Every tab | `check_release_line.js` | 11 | the release running at the foot, in Simple and Advanced, linked to its notes |
 | Every tab | `check_type_filters.js` | 30 | types on Battery Trends, Classification, Devices and Recommendations, and no "null" on a quiet day |
 | Daily Brief | `check_repeat_offenders.js` | 10 | the Repeat Offenders table, and the devices on MQTT's page that ride the broker |
-| Every tab | `check_simple_dashboard.js` | 39 | Simple and Advanced: the setting opens the dashboard, the switch holds while the page is open and through a hidden tab, Simple's tabs, its read-only device page and its battery chart, and Mute by label in Advanced |
-| Recommendations | `check_recommendations.js` | 37 | the opening line and its count, the Slow Reporting Devices card, the switched-off cards' Turn on chips, a tick on each row, the count on the tab, the top band and each card's title, and a card that stays open after a tick |
+| Every tab | `check_simple_dashboard.js` | 42 | Simple and Advanced: the setting opens the dashboard, the switch holds while the page is open and through a hidden tab, Simple's tabs, its read-only device page and its battery chart with the time left, and Mute by label in Advanced |
+| Recommendations | `check_recommendations.js` | 40 | the opening line and its count, the Slow Reporting Devices card, the switched-off cards' Turn on chips, Battery Voltage Switched Off among them, a tick on each row, the count on the tab, the top band and each card's title, and a card that stays open after a tick |
 | Classification | `check_classification_sources.js` | 16 | Classification's sources, the gear, the date beside "As of" |
-| Integrations | `check_no_hardware_integrations.js` | 13 | an integration with no hardware of its own on the Integrations tab |
+| Integrations | `check_no_hardware_integrations.js` | 14 | an integration with no hardware of its own on the Integrations tab, and a summary led by the All chip's total |
 | Integrations | `check_no_hardware_pages.js` | 20 | its page, and a helper's, naming the devices it adds entities to |
 | A device's page | `check_device_page_layout.js` | 33 | the page's order and groups, live values, sensor links, both rule charts, Previous and Next, and the device cards |
 | A device's page | `check_device_actions.js` | 51 | rename, area, labels, Last Seen, mutes, a refused write, and excluding one device |
@@ -31,21 +31,24 @@ written rather than what it proves).
 | A device's page | `check_hub_pages.js` | 34 | a hub's page and the pages of the devices it controls, and the Classification tick |
 | A device's page | `check_device_type.js` | 30 | the Type row, and the Devices tab's Type column and filter |
 | A device's page | `check_same_hardware.js` | 16 | the Same hardware row and the Type row's clear label |
-| A device's page | `check_rhythm_rules.js` | 14 | both freeze rules on the rhythm chart, the rule in use, and a swatch on every legend |
+| A device's page | `check_rhythm_rules.js` | 15 | both freeze rules on the rhythm chart, the rule in use, a swatch on every legend, and Use the 14-Day Trimmed Maximum only while the Log-Normal Percentile is in use |
+| A device's page | `check_rhythm_words.js` | 11 | "learning" for a window not yet learned, a device judged by its connection, gaps rather than silences, "1 day", and the line where the 42-day chart stood while it counts again |
 | A device's page | `check_real_device.js` | 6 | a page built by the server from a real mains plug's history |
 | A device's page | `check_device_not_speaking.js` | 11 | what the page says when the device is not speaking |
 | A device's page | `check_connects_line.js` | 4 | the Connects line, after Integration, absent where nothing is declared |
-| A device's page | `check_mutes_shown.js` | 6 | mutes named on the page, the Devices tab and an integration's page |
+| A device's page | `check_mutes_shown.js` | 7 | mutes named on the page, the Devices tab and an integration's page, which counts them as the Integrations tab does |
 | A device's page | `check_dated_histories.js` | 4 | a skipped day breaks a chart's line |
 | A device's page | `check_device_page_text.js` | 21 | the page reads at one size: secondary text at 14px, the heartbeat line plain, sensor names in the page's font, and other tabs unchanged |
 | Devices | `check_device_finders.js` | 28 | the Devices tab's search, Area and Label filters, its Excluded list with Cancel the exclusion, and an integration's page excluding it or taking it back |
 | Battery | `check_battery_steps.js` | 6 | how a battery reports, on its page and on Battery Trends |
-| Battery | `check_battery_weeks.js` | 38 | five weekly averages, an accelerating cell's sentence and no knee, a cell above twice the threshold not judged, the weekly columns, and each battery named under Other Cells, with Not set where none is known |
+| Battery | `check_battery_weeks.js` | 39 | five weekly averages, an accelerating cell's sentence and no knee, a cell above twice the threshold not judged, the weekly columns, each battery named under Other Cells, with Not set where none is known, and a summary whose parts add up |
 | Battery | `check_battery_future.js` | 30 | the device page's Future view: the expected fall as a shaded range, drawn as Simple's chart is |
 | Battery | `check_battery_chart.js` | 15 | the weekly bars and the fitted line only at 30 and 14 days, and no straight line beside an accelerating cell's curve |
 | Signal | `check_dropping_out.js` | 5 | a device that keeps dropping out, on its page and on Signal Trends |
+| Signal | `check_signal_trends.js` | 6 | Signal Trends' rows add up: LAST 7 DAYS, USUAL and CHANGE, and no "+0" or "-0.0" |
+| Signal | `check_signal_chart.js` | 8 | the Signal chart on a device's page: RSSI named, the railed-day rings in the legend, and "recording began" inside the chart |
 
-702 checks in 34 files, as of 23 October 2026 (0.27.2).
+737 checks in 37 files, as of 24 October 2026 (0.27.3).
 
 ## Running Them
 

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_recommendations.js, Version: 0.27.0 (2026-10-22)
+// File: tools/panel_checks/check_recommendations.js, Version: 0.27.3 (2026-10-24)
 // Panel checks: the Recommendations tab. Its opening line counts the
 // recommendations, says they help Device Sentinel run better, and says
 // none of them is required; no card is singled out (#626, 0.25.6).
@@ -10,6 +10,7 @@
 // tick or an answer (#714).
 // Since 0.27.0: each card's title counts its rows not ticked, with no
 // number at zero or on a written line (#724).
+// Since 0.27.3: the Battery Voltage Switched Off card's Turn on chip.
 // Run with: LC_ALL=en_US.UTF-8 node check_recommendations.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -235,6 +236,22 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   await settle(); await settle();
   check("A tick can be taken back, and counts again", tabLabel() === "Recommendations (1)", tabLabel());
   check("And the card's title counts it again", titleOf("battery_off") === "Battery Sensor Switched Off (1)", titleOf("battery_off"));
+
+  console.log("\nBattery Voltage Switched Off (0.27.3)");
+  const VOLT = { kind: "voltage_off", title: "Battery Voltage Switched Off", simple: false, active: 1,
+    body: "1 device has a battery voltage sensor that is switched off.",
+    devices: [{ device_id: ROWS[0].device_id, name: "Hall Motion", area: "Hall", acknowledged: false }] };
+  const volt = await open({ path: `${PREFIX}/recommendations`, answers: {
+    recommendations: () => ({ lines: [], devices: [JSON.parse(JSON.stringify(VOLT))], closing: "", power: {}, types: { choices: [], other: "Other" } }),
+  } });
+  const voltCard = [...volt.root.querySelectorAll("article.rec")].find((a) => a.dataset.kind === "voltage_off");
+  const voltChip = voltCard && voltCard.querySelector("tbody tr button.chip");
+  check("Its row offers Turn on its battery voltage", !!voltChip && voltChip.textContent === "Turn on its battery voltage", voltChip && voltChip.textContent);
+  if (voltChip) voltChip.click();
+  await settle(); await settle();
+  const voltCall = volt.calls.find((c) => c.type === "device_sentinel/device_turn_on");
+  check("It asks for this device's voltage sensor alone", !!voltCall && voltCall.kind === "voltage" && voltCall.device_id === ROWS[0].device_id, voltCall);
+  check("Its row can be ticked", !!(voltCard && voltCard.querySelector('tbody tr input[type="checkbox"]')));
 
   console.log("\nA card stays open after an answer (ruling #714)");
   ticks = { line: false, [ROWS[0].device_id]: false };

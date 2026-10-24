@@ -1,3 +1,4 @@
+// File: tools/panel_checks/check_no_hardware_pages.js, Version: 0.27.3 (2026-10-24)
 // Panel checks: each integration with no hardware of its own, and each
 // helper linked to a device, opens a page naming the devices it adds
 // entities to, and each entity opens Home Assistant's own window.
@@ -114,7 +115,7 @@ const rowOf = (root, name) => [...root.querySelectorAll(".pane tbody tr")]
   const chip = [...root.querySelectorAll(".pane .chip")].find((c) => c.textContent.startsWith("Helper"));
   check("a Helper filter counts it", chip && chip.textContent === "Helper 1", chip && chip.textContent);
   const summary = root.querySelector(".pane > p").textContent;
-  check("the count of owners leaves both out", summary.startsWith("2 integrations own devices"), summary);
+  check("the count of owners leaves both out", summary.startsWith("4 integrations in all. 2 own devices"), summary);
   // 0.22.24 made the singular read "to a device".
   check("the summary names the helper", summary.includes("1 is a helper you linked to a device."), summary);
   check("the key says what a helper is",
