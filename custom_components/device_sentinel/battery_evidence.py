@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: battery_evidence.py, Version: 0.27.1 (2026-10-23)
+# File: battery_evidence.py, Version: 0.27.3 (2026-10-24)
 
 """What a better battery forecast will need, kept from now (#737, #739).
 
@@ -120,6 +120,11 @@ class BatteryEvidenceMixin:
             found.append((entity_id, state))
         found.sort(key=lambda pair: ("batt" not in pair[0], pair[0]))
         return found
+
+    def battery_voltage_now(self, device_id: str) -> float | None:
+        """The battery voltage the device reports now, from any source,
+        or None (0.27.3)."""
+        return self._evidence_voltage(device_id, er.async_get(self.hass))  # type: ignore[attr-defined]
 
     def _evidence_voltage(self, device_id: str, registry: Any) -> float | None:
         """The battery voltage in volts: a voltage sensor of the device's

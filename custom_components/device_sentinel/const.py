@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.27.1 (2026-10-23)
+# File: const.py, Version: 0.27.3 (2026-10-24)
 
 """Constants for the Device Sentinel integration."""
 
@@ -2214,6 +2214,8 @@ UPSTREAM_WIFI = "wifi"
 # the hold absorbed.
 WIFI_KEY = "wifi"
 WIFI_SENSOR_NAME = "Bridge: WiFi"
+# The dashboard's status band says it as people write it (0.27.3).
+WIFI_BAND_NAME = "Wi-Fi"
 # How many tied trackers falling together declares an outage
 # (ruling #421). A bare count was set against churn on a twelve
 # tracker fleet, where three is a quarter of the house; on a hundred
@@ -2411,6 +2413,15 @@ INC_DURATION = "duration"
 # (0.24.0): the reading and the day's mean and spread so far, the same
 # snapshot a silence episode takes (#246), for the evidence #172 needs.
 INC_SIGNAL = "signal"
+# When an unavailable or unknown problem began, on its opening row only
+# (0.27.3): the row is written when the device is listed, minutes after
+# it went, and the recovery counts from when it went (#644). A row
+# written before 0.27.3 has none and reads as it did.
+INC_SINCE = "since"
+# How far before the listing a kept start may lie (0.27.3): the debounce
+# and a late sweep. A start further back, such as one held while an
+# unavailable mute hid the device, keeps the listing time as before.
+INC_SINCE_MAX_LEAD = 900.0
 # Event types: a problem opening and a problem resolving. What a
 # person does to the list is an ACTION, below.
 INCIDENT_OPENED = "opened"

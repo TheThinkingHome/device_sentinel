@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.27.1 (2026-10-23)
+# File: narrative.py, Version: 0.27.3 (2026-10-24)
 
 """How to say what happened: the composer.
 
@@ -55,6 +55,8 @@ from .const import (
     INC_EVENT,
     INC_KIND,
     INC_NAME,
+    INC_SINCE,
+    INC_SINCE_MAX_LEAD,
     INC_WHEN,
     RECOVERY_CAUSE_UNOBSERVED,
     TODO_DEVICE_ID,
@@ -291,6 +293,29 @@ class NarrativeMixin:
             return f", revived by a {cause}"
         return ""
 
+    @staticmethod
+    def _began_at(row: dict[str, Any]) -> float:
+        """When a problem began, as the table and the sentence say it.
+
+        An unavailable or unknown opening is written when the device is
+        listed, minutes after it went; the row keeps when it went
+        (0.27.3), which its recovery counts from (#644), so "became
+        unavailable" and "recovered after" agree. Any other row, and
+        one written before 0.27.3, is dated when it was written.
+        """
+        since = row.get(INC_SINCE)
+        if (
+            row.get(INC_EVENT) == INCIDENT_OPENED
+            and row.get(ESCALATED_FROM) is None
+            and isinstance(since, (int, float))
+            and not isinstance(since, bool)
+            and math.isfinite(since)
+            and 0.0 < since <= row[INC_WHEN]
+            and row[INC_WHEN] - since <= INC_SINCE_MAX_LEAD
+        ):
+            return float(since)
+        return float(row[INC_WHEN])
+
     def _opening_clause(self, row: dict[str, Any]) -> str:
         """Return how a problem began, without its full stop.
 
@@ -300,12 +325,12 @@ class NarrativeMixin:
         """
         name = self._told_name(row)
         kind = row[INC_KIND]
-        when = self._clock(row[INC_WHEN])
         # A worse problem replacing a lesser one is one change, told
         # as that change (0.22.27).
         change = self._change_clause(row)
         if change is not None:
-            return f"{name}{change} at {when}"
+            return f"{name}{change} at {self._clock(row[INC_WHEN])}"
+        when = self._clock(self._began_at(row))
         if kind == TODO_KIND_LOW_BATTERY:
             phrase = self._battery_phrase(row[INC_DEVICE_ID], False)
             return f"{name} {phrase} at {when}"

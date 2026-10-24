@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: journal.py, Version: 0.26.3 (2026-10-14)
+# File: journal.py, Version: 0.27.3 (2026-10-24)
 
 """The forensic record: silence episodes, incidents, system events.
 
@@ -26,6 +26,7 @@ throughout.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from homeassistant.util import dt as dt_util
@@ -34,8 +35,12 @@ from .normalise import row_damage
 from . import attribution
 from .const import (
     DATA_DEVICES,
+    DEV_DOWN_BEGAN_AS,
     FREEZE_CATEGORY_UNAVAILABLE,
+    FREEZE_CATEGORY_UNKNOWN,
     INC_SIGNAL,
+    INC_SINCE,
+    INC_SINCE_MAX_LEAD,
     SYS_PAIRING_OPEN,
     RECOVERY_CAUSE_PAIRING,
     RECOVERY_CAUSES_RESTART,
@@ -469,6 +474,7 @@ class JournalMixin:
         cause: str | None = None,
         superseded: bool = False,
         duration: float | None = None,
+        since: float | None = None,
     ) -> None:
         """Append one event to the incident log.
 
@@ -479,16 +485,31 @@ class JournalMixin:
         else, so what the phone says, what the brief says, and what
         a future voice answer says can never disagree.
         """
+        written = dt_util.utcnow().timestamp()
         entry = {
             INC_DEVICE_ID: device_id,
             INC_NAME: name,
             INC_KIND: kind,
             INC_EVENT: event,
-            INC_WHEN: dt_util.utcnow().timestamp(),
+            INC_WHEN: written,
             INC_CAUSE: cause,
             INC_SUPERSEDED: superseded,
             INC_DURATION: duration,
         }
+        if (
+            event == INCIDENT_OPENED
+            and kind in (FREEZE_CATEGORY_UNAVAILABLE, FREEZE_CATEGORY_UNKNOWN)
+            and isinstance(since, (int, float))
+            and not isinstance(since, bool)
+            and math.isfinite(since)
+            and 0.0 < since <= written
+            and written - since <= INC_SINCE_MAX_LEAD
+            # Only trouble that began this way: a freeze that went
+            # unavailable keeps the freeze's start, hours earlier.
+            and (self.data.get(DATA_DEVICES, {}).get(device_id) or {}).get(DEV_DOWN_BEGAN_AS) == kind
+        ):
+            # When it went, for the table and the sentence (0.27.3).
+            entry[INC_SINCE] = float(since)
         if kind == FREEZE_CATEGORY_UNAVAILABLE and event == INCIDENT_OPENED:
             # The device's signal the moment it dropped out (0.24.0).
             # Link failures surface as a device going unavailable, not

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.26.7 (2026-10-19)
+# File: dashboard_api.py, Version: 0.27.3 (2026-10-24)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -728,7 +728,7 @@ def ws_recommendation_ack(
     {
         vol.Required("type"): "device_sentinel/device_turn_on",
         vol.Required("device_id"): str,
-        vol.Required("kind"): vol.In(["last_seen", "node_status", "battery", "signal"]),
+        vol.Required("kind"): vol.In(["last_seen", "node_status", "battery", "signal", "voltage"]),
     }
 )
 @callback

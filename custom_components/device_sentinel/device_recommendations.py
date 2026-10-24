@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.27.0 (2026-10-22)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.27.3 (2026-10-24)
 
 """Recommendations about single devices, for the Recommendations tab (0.24.9).
 
@@ -57,6 +57,9 @@ KIND_SLOW = "slow"
 KIND_BATTERY_OFF = "battery_off"
 KIND_SIGNAL_OFF = "signal_off"
 KIND_NODE_STATUS_OFF = "node_status_off"
+# A battery device's own voltage sensor, all switched off (0.27.3):
+# Advanced only, and listed only for a device with a battery reading.
+KIND_VOLTAGE_OFF = "voltage_off"
 
 # The switched-off cards and the kind of sensor each one turns on
 # (ruling #698).
@@ -65,6 +68,7 @@ SWITCHED_OFF_CARDS = {
     KIND_BATTERY_OFF: "battery",
     KIND_SIGNAL_OFF: "signal",
     KIND_NODE_STATUS_OFF: "node_status",
+    KIND_VOLTAGE_OFF: "voltage",
 }
 # The cards Simple shows (ruling #695): the ones that stop a missed or
 # false alarm. Confirm Battery Replacement joins them (#701).
@@ -162,6 +166,17 @@ class DeviceRecommendationsMixin:
             kind: self.switched_off_devices(sensor)  # type: ignore[attr-defined]
             for kind, sensor in SWITCHED_OFF_CARDS.items()
         }
+        # Battery Voltage Switched Off lists only a device with a battery
+        # reading whose voltage nothing else reports, such as ZHA's
+        # battery_voltage on its battery sensor (0.27.3).
+        off[KIND_VOLTAGE_OFF] = {
+            d: who for d, who in off[KIND_VOLTAGE_OFF].items()
+            if d in self._battery_entity  # type: ignore[attr-defined]
+            and self.battery_voltage_now(d) is None  # type: ignore[attr-defined]
+            # A device whose power is mains, USB or PoE: its voltage
+            # sensor reads the supply, not a battery.
+            and (self.power_of(d) or {}).get("kind", "battery") == "battery"  # type: ignore[attr-defined]
+        }
         switched_off_words = (
             (KIND_LAST_SEEN, "Last Seen Sensor Switched Off", "a Last Seen sensor",
              "With it on, Device Sentinel notices the device going quiet sooner."),
@@ -173,11 +188,19 @@ class DeviceRecommendationsMixin:
             (KIND_SIGNAL_OFF, "Signal Sensor Switched Off", "a signal sensor",
              "With it on, Device Sentinel charts the device's signal and tells you when "
              "a signal reading is stuck."),
+            # James's words, 24 October 2026.
+            (KIND_VOLTAGE_OFF, "Battery Voltage Switched Off", "a battery voltage sensor",
+             lambda n: (
+                "This device has a battery voltage entity" if n == 1
+                else "These devices have battery voltage entities"
+             ) + " which can be used for more accurate battery reporting and forecasting."),
         )
-        for kind, title, sensor_words, gain in switched_off_words:
+        for kind, title, sensor_words, gain_words in switched_off_words:
             ids = [d for d in watched if d in off[kind]]
             if not ids:
                 continue
+            # A sentence, or one that follows the count (0.27.3).
+            gain = gain_words(len(ids)) if callable(gain_words) else gain_words
             listed = rows(ids)
             for row in listed:
                 row["by_user"] = off[kind][row["device_id"]] == "user"
@@ -190,9 +213,10 @@ class DeviceRecommendationsMixin:
                 ),
                 "devices": listed,
                 "brief_words": (
-                    lambda n, sensor_words=sensor_words, gain=gain: (
+                    lambda n, sensor_words=sensor_words, gain_words=gain_words: (
                         f"{_count(n, 'device has', 'devices have')} {sensor_words} that "
-                        f"is switched off. {gain} Turn them on from the Recommendations tab."
+                        f"is switched off. {gain_words(n) if callable(gain_words) else gain_words} "
+                        "Turn them on from the Recommendations tab."
                     )
                 ),
             })

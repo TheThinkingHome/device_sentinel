@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.27.1 (2026-10-23)
+# File: report_brief.py, Version: 0.27.3 (2026-10-24)
 
 """The daily brief: the one report written for a person.
 
@@ -2144,8 +2144,22 @@ class BriefMixin:
             return self._compose_event(opened)
         word = self._change_clause(
             members[0][0], "flood"
-        ) or self._EVENT_WORDING.get(kind, kind)
-        when = self._clock(min(row[INC_WHEN] for row, _ in members))
+        ) or (
+            # Several devices listed as never reported read "13 devices
+            # were listed as never reported at 9:58 AM", never the
+            # kind's own name, "never_reported" (Tim Plas's house,
+            # found by the reports of 0.27.3).
+            "were listed as never reported" if kind == TODO_KIND_NEVER_REPORTED
+            # And "3 devices reported a low battery", never "low_battery"
+            # (adversarial round of 0.27.3).
+            else "reported a low battery" if kind == TODO_KIND_LOW_BATTERY
+            # And the two kinds whose words follow a device's name.
+            else "had a signal railed" if kind == TODO_KIND_RAILED_SIGNAL
+            else "had a battery running down" if kind == TODO_KIND_FALLING_BATTERY
+            else self._EVENT_WORDING.get(kind, kind)
+        )
+        # From when the first of them went, as the table dates them (0.27.3).
+        when = self._clock(min(self._began_at(row) for row, _ in members))
         if resolved and credited:
             return (
                 f"{len(members)} devices {word} at {when} and "
@@ -2781,7 +2795,8 @@ class BriefMixin:
                 "|---|---|---|",
             ]
             merged: list[tuple[float, str, str]] = [
-                (row[INC_WHEN],
+                # An unavailable opening at when the device went (0.27.3).
+                (self._began_at(row),
                  self._note_brief_device(
                      row.get(INC_DEVICE_ID), self._told_name(row)
                  ),

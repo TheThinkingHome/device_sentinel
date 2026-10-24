@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.26.7 (2026-10-19)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.3 (2026-10-24)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -64,6 +64,7 @@ TURN_ON_WORDS = {
     "node_status": "Z-Wave status",
     "battery": "Battery sensor",
     "signal": "Signal sensor",
+    "voltage": "Battery voltage sensor",
 }
 
 # Each mute kind's three settings lists, in the order every mute is
@@ -99,6 +100,15 @@ class NameInUse(Exception):
         super().__init__(name)
         self.name = name
         self.area = area
+
+
+def _is_voltage(ent: Any) -> bool:
+    """A voltage sensor of the device's own: on a battery device, its
+    battery voltage (0.27.3)."""
+    return (
+        str(ent.device_class or ent.original_device_class) == "voltage"
+        and ent.entity_id.startswith("sensor.")
+    )
 
 
 def _and_list(words: list[str]) -> str:
@@ -239,6 +249,7 @@ class DeviceActionsMixin:
             "node_status": self._is_node_status_entry,  # type: ignore[attr-defined]
             "battery": self._is_battery_percentage,  # type: ignore[attr-defined]
             "signal": self._is_signal,  # type: ignore[attr-defined]
+            "voltage": _is_voltage,
         }[kind]
         return [
             ent

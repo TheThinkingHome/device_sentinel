@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.27.1 (2026-10-23)
+# File: report_maintainer.py, Version: 0.27.3 (2026-10-24)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -882,6 +882,9 @@ class MaintainerReportMixin:
                 "device_id": device_id,
                 "name": name,
                 "integration": integration_domain,
+                # The name the Devices tab shows, for the tab's column;
+                # the id still opens the integration's page (0.27.3).
+                "integration_name": self._integration_name_of(device_id, integration_domain),  # type: ignore[attr-defined]
                 "watched": True,
                 "muted": self.mute_text(device_id),
                 "muted_global": self._global_mute_text(device_id),
@@ -901,6 +904,7 @@ class MaintainerReportMixin:
                 "device_id": device_id,
                 "name": name,
                 "integration": integration_domain,
+                "integration_name": self._integration_name_of(device_id, integration_domain),  # type: ignore[attr-defined]
                 "watched": False,
                 "muted": "",
                 "muted_global": "",
@@ -909,7 +913,9 @@ class MaintainerReportMixin:
                 "set_aside": (
                     f"{reason} (device)"
                     if reason == SET_ASIDE_EXCLUDED and device_id in self.excluded_devices  # type: ignore[attr-defined]
-                    else f"{reason} (integration: {integration_domain})"
+                    # The excluded integration by its name: an excluded
+                    # MQTT is named MQTT, never the stack behind it.
+                    else f"{reason} (integration: {self._integration_title(integration_domain)})"  # type: ignore[attr-defined]
                     if reason == SET_ASIDE_EXCLUDED
                     else reason or ""
                 ),

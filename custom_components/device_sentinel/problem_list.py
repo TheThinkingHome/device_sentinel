@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.27.1 (2026-10-23)
+# File: problem_list.py, Version: 0.27.3 (2026-10-24)
 
 """The problem list: the single memory every channel renders.
 
@@ -1442,7 +1442,8 @@ class ProblemListMixin:
                 continue
             self._journal_addition(device_id, problem["name"], kind)
             self._record_incident(
-                device_id, problem["name"], kind, INCIDENT_OPENED
+                device_id, problem["name"], kind, INCIDENT_OPENED,
+                since=since,
             )
             self._collect_event(
                 kind, problem["name"], recovery=False,
@@ -1550,7 +1551,8 @@ class ProblemListMixin:
                 )
                 continue
             self._record_incident(
-                device_id, problem["name"], kind, INCIDENT_OPENED
+                device_id, problem["name"], kind, INCIDENT_OPENED,
+                since=problem["kinds"].get(kind),
             )
             self._collect_event(
                 kind, problem["name"], recovery=False,

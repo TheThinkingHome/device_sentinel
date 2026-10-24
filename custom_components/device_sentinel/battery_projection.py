@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/battery_projection.py, Version: 0.27.1 (2026-10-23)
+# File: custom_components/device_sentinel/battery_projection.py, Version: 0.27.3 (2026-10-24)
 
 """When a falling cell runs empty, as a range (ruling #704).
 
@@ -296,11 +296,15 @@ def _accelerating(window: list[Any]) -> float | None:
 def time_left_range(near: float, far: float | None) -> str:
     """The range in words, as #197 says time left (ruling #704).
 
-    "under a week", "about 4 to 5 weeks", "about 2 to 3 months",
-    "about 3 weeks to 2 months", "about 8 months to over a year",
-    "over a year". Each end is said in its own unit, so a near end
-    inside Days Till Low never reads as months (found by review); an
-    end that never empties reads as over a year.
+    "under a week", "about 4 to 5 weeks", "about 8 to 11 weeks", "about
+    13 to 15 weeks", "about 9 weeks to 4 months", "about 3 to 4 months",
+    "about 8 months to over a year", "about a year or more", "over a
+    year". Each end is said in its own unit, so a near end inside Days
+    Till Low never reads as months (found by review); an end that never
+    empties reads as over a year. A near end under 13 weeks is said in
+    weeks, and so is a far end beside it under four months, so no range
+    says one span twice: "about 8 weeks to 2 months" did (James's
+    dashboard review, 24 October 2026).
     """
     near = max(0.0, near)
     far_days = PROJECTION_LONGEST + 1 if far is None else max(far, near)
@@ -311,7 +315,7 @@ def time_left_range(near: float, far: float | None) -> str:
     month = 30.4
 
     def unit(days: float) -> tuple[int, str]:
-        if days <= 10 * BATTERY_WEEK_DAYS:
+        if days < 13 * BATTERY_WEEK_DAYS:
             return max(1, round(days / BATTERY_WEEK_DAYS)), "weeks"
         return max(1, round(days / month)), "months"
 
@@ -321,6 +325,9 @@ def time_left_range(near: float, far: float | None) -> str:
     low, low_unit = unit(near)
     low_words = "under a week" if near < BATTERY_WEEK_DAYS else None
     if far_days > 365:
+        if low_unit == "months" and low >= 12:
+            # Not "about 12 months to over a year" (adversarial round).
+            return "about a year or more"
         start = low_words or f"about {said(low, low_unit)}"
         return f"{start} to over a year"
     high, high_unit = unit(far_days)
@@ -328,6 +335,10 @@ def time_left_range(near: float, far: float | None) -> str:
         if high_unit == "weeks" and high <= 1:
             return "about 1 week"
         return f"under a week to about {said(high, high_unit)}"
+    if low_unit != high_unit and high < 4:
+        # A far end under four months next to a near end in weeks is
+        # said in weeks too: "13 weeks to 3 months" says one span twice.
+        high, high_unit = max(low, round(far_days / BATTERY_WEEK_DAYS)), low_unit
     if low_unit != high_unit and high * month <= low * BATTERY_WEEK_DAYS:
         # Months that round below the near end in weeks would read
         # backwards ("9 weeks to 2 months"): both ends in weeks then

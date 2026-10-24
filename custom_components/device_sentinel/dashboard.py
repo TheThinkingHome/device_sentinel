@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.27.2 (2026-10-23)
+# File: dashboard.py, Version: 0.27.3 (2026-10-24)
 
 """What the dashboard reads from the coordinator.
 
@@ -47,6 +47,7 @@ from . import stacks
 from .const import (
     BATTERY_MODEL_PACE_MIN_OTHERS,
     BATTERY_FIT_MIN_DAYS,
+    CLIP_START_DAYS,
     CONF_DASHBOARD_MODE,
     DASHBOARD_MODES,
     DEFAULT_DASHBOARD_MODE,
@@ -156,7 +157,7 @@ from .const import (
     BROKER_SCOPE,
     BROKER_SENSOR_NAME,
     WIFI_KEY,
-    WIFI_SENSOR_NAME,
+    WIFI_BAND_NAME,
     READING_ACCELERATING,
     RELEASE_NOTES_URL,
 )
@@ -284,7 +285,9 @@ class DashboardMixin:
         if self.wifi_capable:
             parts.append({
                 "key": WIFI_KEY,
-                "name": WIFI_SENSOR_NAME,
+                # "Wi-Fi" in the band (0.27.3): the sensor keeps its
+                # entity name, so no automation reading it breaks.
+                "name": WIFI_BAND_NAME,
                 "state": BRIDGE_DOWN if self.wifi_down_at is not None else BRIDGE_RUNNING,
             })
         now = dt_util.utcnow().timestamp()
@@ -645,6 +648,9 @@ class IntegrationViewMixin:
                 "name": row["name"],
                 "watched": row["watched"],
                 "muted": row["muted"],
+                # The global mute alone, which the Integrations tab
+                # counts (0.27.3).
+                "muted_global": row["muted_global"],
                 "set_aside": row["set_aside"],
                 "problem": problem["problem"] if problem else "",
                 "acknowledged": bool(problem and problem["acknowledged"]),
@@ -771,8 +777,29 @@ class DeviceViewMixin:
         out: dict[str, Any] = {
             "trimmed": None, "trimmed_days": None, "lognormal": None,
             "lognormal_days": None, "lognormal_gaps": [], "lognormal_set_aside": [],
-            "in_use": None,
+            "in_use": None, "counting_again": None,
         }
+        # The Log-Normal Percentile counting again after a reset (0.27.3):
+        # where its chart stood, the page says since when and how many
+        # days are left, rather than leaving the space empty.
+        since_reset = record.get(DEV_LOGNORMAL_DAYS)
+        if (
+            isinstance(since_reset, (int, float))
+            and not isinstance(since_reset, bool)
+            and 0 <= since_reset < CLIP_START_DAYS
+            and len(daily) > since_reset
+        ):
+            since_reset = int(since_reset)
+            # The first day counted since, by the history's own dates, so
+            # a day with no learned gap does not move it (adversarial
+            # round); today when none is counted yet.
+            yesterday = dt_util.as_local(dt_util.utcnow() - timedelta(days=1)).date()
+            dates = dates_for(record, FAMILY_GAP, len(daily), yesterday)
+            restarted = dates[-since_reset] if since_reset and len(dates) >= since_reset else dt_util.now().date()
+            out["counting_again"] = {
+                "since": restarted.isoformat(),
+                "to_go": CLIP_START_DAYS - since_reset,
+            }
         if not found:
             return out
         out["trimmed"] = found.get("trimmed")
@@ -892,10 +919,19 @@ class DeviceViewMixin:
         ]
         if not daily:
             return None
+        # The days the two rules read, less the days each sets aside
+        # (0.27.3): a long day older than both, such as the SLZB-06's
+        # 238.6 hours in August, set the scale of every chart after it.
         _rhythm, aside = self._trimmed_maximum(daily[-DAILY_MAX_KEEP:])
-        offset = len(daily) - len(daily[-DAILY_MAX_KEEP:])
-        skip = {index + offset for index in aside}
-        kept = [value for index, value in enumerate(daily) if index not in skip]
+        recent = daily[-DAILY_MAX_KEEP:]
+        kept = [value for index, value in enumerate(recent) if index not in aside]
+        rules = self._both_rules(record)
+        gaps = rules.get("lognormal_gaps") or []
+        set_aside = set(rules.get("lognormal_set_aside") or [])
+        kept += [
+            value for index, value in enumerate(gaps)
+            if index not in set_aside and isinstance(value, (int, float))
+        ]
         window = self._freeze_window(record)
         return max([*kept, window] if window is not None else kept or [0.0])
 
@@ -959,6 +995,21 @@ class DeviceViewMixin:
             record = records.get(device_id) or {}
             rhythm = self._rhythm_in_use(record) if record.get(DEV_DAILY_MAX) else None
             problem = problems.get(device_id)
+            # No window for a device judged by being available (#710), or
+            # by its connection alone, as its page has it (0.27.3).
+            judged_by_window = (
+                not self._judged_available(device_id, record)
+                and not self._connection_only(device_id)  # type: ignore[attr-defined]
+                # Nor a hub, or a device its hub judges (#664, #665):
+                # neither is judged by a window (adversarial round).
+                and not self.hub_takes_over(device_id)  # type: ignore[attr-defined]
+            )
+            # A device with no learned day yet is learning too, as its
+            # page says (adversarial round of 0.27.3).
+            window = (
+                self._freeze_window(record)
+                if judged_by_window and record.get(DEV_DAILY_MAX) else None
+            )
             rows.append({
                 "device_id": device_id,
                 "name": self._device_name(device_id),
@@ -970,12 +1021,10 @@ class DeviceViewMixin:
                 "acknowledged": bool(problem and problem["acknowledged"]),
                 "last_activity": _iso(record.get(DEV_LAST_ACTIVITY)),
                 "rhythm": rhythm,
-                # No window for a device judged by being available (#710).
-                "window": (
-                    self._freeze_window(record)
-                    if record.get(DEV_DAILY_MAX) and not self._judged_available(device_id, record)
-                    else None
-                ),
+                "window": window,
+                # Still learning its window: days held, not yet enough
+                # (0.27.3). The cell reads "learning", not blank.
+                "window_learning": judged_by_window and window is None,
                 "type": self.type_words(device_id),
                 # For the tab's Area and Label filters (ruling #658).
                 **self._area_and_labels(device_id),
@@ -1554,8 +1603,9 @@ class BriefViewMixin:
                 # The words the brief used when it opened: a past day
                 # has no record of the level it read that night.
                 "problem": self._brief_phrase(row),
-                "since": _iso(row.get(INC_WHEN)),
-                "seconds": moment - row[INC_WHEN],
+                # From when it went, as the events beside it (0.27.3).
+                "since": _iso(self._began_at(row)),  # type: ignore[attr-defined]
+                "seconds": moment - self._began_at(row),  # type: ignore[attr-defined]
                 "acknowledged": False,
                 "uid": None,
             })
@@ -1613,7 +1663,9 @@ class BriefViewMixin:
         ]
         events = [
             {
-                "when": _iso(row[INC_WHEN]),
+                # An unavailable opening at when the device went, as
+                # the written brief has it (0.27.3).
+                "when": _iso(self._began_at(row)),  # type: ignore[attr-defined]
                 "who": self._told_name(row),
                 "device_id": row.get(INC_DEVICE_ID),
                 "what": self._brief_phrase(row),
@@ -1934,6 +1986,11 @@ class TrendsViewMixin:
                 # history, which is a different question and says so.
                 "normal": last["normal"] if last else normal,
                 "line": last["line"] if last else None,
+                # The two middles the change is taken between, so the
+                # row adds up: the last seven days' and the days before
+                # them (James's dashboard review, 24 October 2026).
+                "week": now,
+                "usual": normal,
                 "change": now - normal,
                 # In the device's own spreads, so a steady link and a
                 # jumpy one are judged by their own standards.
