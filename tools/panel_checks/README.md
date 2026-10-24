@@ -40,12 +40,12 @@ written rather than what it proves).
 | A device's page | `check_device_page_text.js` | 21 | the page reads at one size: secondary text at 14px, the heartbeat line plain, sensor names in the page's font, and other tabs unchanged |
 | Devices | `check_device_finders.js` | 28 | the Devices tab's search, Area and Label filters, its Excluded list with Cancel the exclusion, and an integration's page excluding it or taking it back |
 | Battery | `check_battery_steps.js` | 6 | how a battery reports, on its page and on Battery Trends |
-| Battery | `check_battery_weeks.js` | 32 | five weekly averages, an accelerating cell's sentence and no knee, a cell above twice the threshold not judged, and the weekly columns |
+| Battery | `check_battery_weeks.js` | 38 | five weekly averages, an accelerating cell's sentence and no knee, a cell above twice the threshold not judged, the weekly columns, and each battery named under Other Cells, with Not set where none is known |
 | Battery | `check_battery_future.js` | 30 | the device page's Future view: the expected fall as a shaded range, drawn as Simple's chart is |
 | Battery | `check_battery_chart.js` | 15 | the weekly bars and the fitted line only at 30 and 14 days, and no straight line beside an accelerating cell's curve |
 | Signal | `check_dropping_out.js` | 5 | a device that keeps dropping out, on its page and on Signal Trends |
 
-696 checks in 34 files, as of 23 October 2026 (0.27.1).
+702 checks in 34 files, as of 23 October 2026 (0.27.2).
 
 ## Running Them
 

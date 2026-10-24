@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.1 (2026-10-23)
+// File: tools/panel_checks/check_battery_weeks.js, Version: 0.27.2 (2026-10-23)
 // Panel checks: battery trends by the week on a device's
 // page and on Battery Trends.
 // Written for 0.23.6, the knee check moved to 30 days in 0.23.7; named by
@@ -193,10 +193,45 @@ const trends = {
   const lithiumTab = await open(`${PREFIX}/battery-trends`, {
     battery_trends: (page) => {
       page.steady = [{ device_id: DEVICE, name: "Door Bath Main", type: null, level: 100, steps: "Smooth", days: 60, month_drop: 0,
-        lithium: "CR1632", model_pace: { model: "Aqara Door and window sensor", others: 7, pace: 0.04 } }];
+        cell: "CR1632", lithium: "CR1632", model_pace: { model: "Aqara Door and window sensor", others: 7, pace: 0.04 } }];
       return page;
     },
   });
+  // Each known battery named, and one nobody has set says so (James,
+  // 23 October 2026: one blank meant two things).
+  const mixed = (page) => {
+    page.steady = [
+      { device_id: "aaa1", name: "Door Kitchen", type: null, level: 80, steps: "Smooth", days: 60, month_drop: 1,
+        cell: "2× AAA", lithium: null, model_pace: { model: "Third Reality Door sensor", others: 3, pace: 0.4 } },
+      { device_id: "unk1", name: "Leak Sink", type: null, level: 90, steps: "Smooth", days: 60, month_drop: 0,
+        cell: null, lithium: null, model_pace: null }];
+    return page;
+  };
+  const rowCells = (root, name) => {
+    const tr = [...root.querySelectorAll("tr")].find((row) => row.children[0] && row.children[0].textContent === name);
+    return tr ? [...tr.children] : [];
+  };
+  const cellTab = await open(`${PREFIX}/battery-trends`, { battery_trends: mixed });
+  const cellText = text(cellTab.root);
+  check("a battery that is not lithium is named", rowCells(cellTab.root, "Door Kitchen").some((td) => td.textContent === "2× AAA"),
+    rowCells(cellTab.root, "Door Kitchen").map((td) => td.textContent));
+  const notSet = rowCells(cellTab.root, "Leak Sink").find((td) => td.textContent === "Not set");
+  const notSetLink = notSet && notSet.querySelector("a");
+  check("one nobody has set reads Not set, a link to its page",
+    Boolean(notSetLink) && notSetLink.getAttribute("href").split("?")[0].endsWith("/device/unk1"), notSet && notSet.innerHTML);
+  check("a line says where to set it", cellText.includes("Not set: no battery type is known for the device."), cellText.slice(-900));
+  check("MODEL, A WEEK is explained with no lithium cell listed",
+    cellText.includes("MODEL, A WEEK is how many points") && !cellText.includes("A lithium cell holds"), cellText.slice(-900));
+  check("the line on where to set it is absent when every battery is known",
+    !text(lithiumTab.root).includes("Not set: no battery type"));
+  const simpleTab = await open(`${PREFIX}/battery-trends`, {
+    battery_trends: mixed,
+    status: (reply) => ({ ...reply, dashboard: "simple" }),
+  });
+  const simpleNotSet = rowCells(simpleTab.root, "Leak Sink").find((td) => td.textContent === "Not set");
+  check("Simple reads Not set plainly, with no link and no line, since its Power row is read-only",
+    Boolean(simpleNotSet) && !simpleNotSet.querySelector("a") && !text(simpleTab.root).includes("Not set: no battery type"),
+    simpleNotSet && simpleNotSet.innerHTML);
   const coinRow = [...lithiumTab.root.querySelectorAll("tr")].map((tr) => [...tr.children].map((td) => td.textContent))
     .find((cells) => cells[0] === "Door Bath Main");
   check("Other Cells names the lithium cell and its model's pace", coinRow && coinRow.includes("CR1632, lithium") && coinRow.includes("0"), coinRow);
