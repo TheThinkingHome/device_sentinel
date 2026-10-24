@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.27.1 (2026-10-23)
+// File: panel.js, Version: 0.27.2 (2026-10-23)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -1900,6 +1900,8 @@ class DeviceSentinelPanel extends HTMLElement {
 
   _paintBatteryTrends() {
     const page = this._snapshot.battery;
+    // Simple reads the type and asks for nothing (ruling #694).
+    const simpleView = this._isSimple();
     // Points a week and points over four weeks, from weekly averages
     // (0.23.6), in place of a rate per day that described a wobble.
     const perWeek = (v) => (v === null || v === undefined ? "–"
@@ -2082,8 +2084,12 @@ class DeviceSentinelPanel extends HTMLElement {
         // How the cell reports (0.23.1): a coarse cell that is falling
         // sits here with no forecast, and this says why.
         el("td", {}, row.steps || ""),
-        // A lithium cell holds near full until its end (#736).
-        el("td", {}, row.lithium ? `${row.lithium}, lithium` : ""),
+        // The battery it takes, as its Power row says it, lithium named
+        // (#736); "Not set" when nobody has said, a link to the page that
+        // sets it, plain in Simple, where the Power row is read-only
+        // (James, 23 October 2026: one blank meant two things).
+        el("td", {}, row.cell ? (row.lithium ? `${row.cell}, lithium` : row.cell)
+          : simpleView ? el("span", { class: "muted" }, "Not set") : this._link("Not set", this._devicePath(row.device_id))),
         // How fast the others of its model fall (#738).
         el("td", { class: "num" }, row.model_pace ? `${levelNumber(row.model_pace.pace)}` : "\u2013"))))));
     const unreadable = unreadableRows.length
@@ -2124,9 +2130,14 @@ class DeviceSentinelPanel extends HTMLElement {
         `A cell is judged falling, and given a time left, at or under ${page.ceiling}%, three times your threshold. Above it, its last four weeks are shown under Other Cells.`) : null,
       fallingTable,
       el("h3", { class: "section" }, "Other Cells ", el("span", { class: "small" }, `${steadyAll.length} cells`)), steady,
+      // One line each, shown when its rows are there (0.27.2: the MODEL,
+      // A WEEK line hid behind the lithium one on a house of no coin cell).
       steadyAll.some((row) => row.lithium) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
-        "A lithium cell holds its level near full until close to its end, so its four weeks say little about how long it has left. "
-        + "MODEL, A WEEK is how many points the other cells of the same model lose a week: context, not this cell's time left.") : null,
+        "A lithium cell holds its level near full until close to its end, so its four weeks say little about how long it has left.") : null,
+      steadyAll.some((row) => row.model_pace) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
+        "MODEL, A WEEK is how many points the other cells of the same model lose a week: context, not this cell's time left.") : null,
+      !simpleView && steadyAll.some((row) => !row.cell) ? el("p", { class: "small", style: "margin:6px 0 0;line-height:1.5" },
+        "Not set: no battery type is known for the device. Open it and set the type with the pencil on its Power row; one answer covers every device of the same model.") : null,
       unreadable ? el("h3", { class: "section" }, "Not a Percentage") : null, unreadable].filter((part) => part));
   }
 
