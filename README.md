@@ -99,7 +99,7 @@ Device Sentinel works with its defaults from the start. Two steps on day one mak
 
 ![The Device Sentinel device page in Home Assistant, with its controls and sensors](https://raw.githubusercontent.com/TheThinkingHome/device_sentinel/main/docs/images/Device%20Page%20Full.png)
 
-It takes time to learn your house. Freeze detection arms after a week, battery trends after two weeks, and signal baselines settle after three weeks.
+It takes time to learn your house. Freeze detection arms after a week, signal baselines settle after three weeks, and a battery is judged falling after four weeks of readings.
 
 ## Settings
 
@@ -143,11 +143,11 @@ Device Sentinel was built with AI assistance under my direction. Every design de
 
 Device Sentinel is under active development. The three newest releases published as Latest are below, and the [changelog](CHANGELOG.md) lists every release since the first.
 
-**[0.27.3](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.27.3), October 24, 2026. (Latest Candidate)** Battery warnings arrive while you can still act: each battery's time left runs to your low battery threshold, a battery that starts falling faster is caught, and Battery Trends shows the battery each device takes. A Matter light, plug or button that reports only when used is not reported frozen because it is quiet, and the dashboard reads more clearly from tab to tab.
-
 **[0.26.8](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.26.8), October 20, 2026.** A device that is plugged in and quiet is no longer called frozen: ESPHome devices are judged by their connection, and Matter lights and plugs by being available. A Z-Wave device its network calls dead is reported unavailable, Lutron Caséta is judged by its hub, and freeze and unavailable mute apart. The dashboard opens in Simple, a falling battery's time left comes from its own history, and Music Assistant and your televisions are excluded for you.
 
 **[0.25.6](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.25.6), October 11, 2026.** Each device has a type you can set from its page, and the tabs sort and filter by it. Hardware that several integrations list is watched once, and you can exclude a single device from its page or from Settings.
+
+**[0.24.11](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.24.11), October 6, 2026.** A bad night no longer delays your freeze alerts for two weeks, and an outage or restart can't teach a device to stay quiet. Each device's page shows what powers it, from the Battery Notes library or your own entry, and lets you rename it, give it a room, label it and mute it where you see the problem.
 
 ## From The Thinking Home
 
