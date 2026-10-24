@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_matter_awake.py, Version: 0.27.0 (2026-10-22)
+# File: test_matter_awake.py, Version: 0.27.2 (2026-10-23)
 
 """A Matter device of a type that reports only on use is judged by being
 available (ruling #710, narrowed by #718 to those types).
@@ -28,6 +28,15 @@ October while Matter still called it available, so a sensor, and any
 type that reports on a schedule, keeps the freeze rule whatever powers
 it, as does a device that measures something whatever its entities
 call it.
+
+0.27.0 missed one shape: a Matter button whose buttons have never been
+pressed. Its main entities are event entities, which read unknown until
+the first press, and its only values are diagnostic ones such as its
+battery. Tim's B13 to B15 were called frozen on 0.26.8 and would have
+been on 0.27.1 too (23 October 2026). Since 0.27.2 an entity of its own
+holding a value shows it available; one whose entities read nothing at
+all keeps the freeze rule, and an entity another integration added never
+counts.
 """
 
 from __future__ import annotations
@@ -37,6 +46,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.entity import EntityCategory
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_sentinel.const import (
@@ -288,3 +298,108 @@ async def test_nothing_but_unknown_is_not_said_spared(hass: HomeAssistant):
 
     assert coord.dashboard_device(lamp.id)["status"]["available_rule"] is False
     assert coord._slow_reporter(lamp.id) is True
+
+
+def _button(hass, uid, battery="100", foreign_battery=None):
+    """A Matter dual button as Home Assistant registers one: two event
+    entities for its buttons, its battery, battery type and voltage, and
+    an identify button, all diagnostic but the events; and, when asked,
+    a battery another integration added. The events read unknown, as
+    they do until a button is first pressed."""
+    source = MockConfigEntry(domain="matter")
+    source.add_to_hass(hass)
+    source.mock_state(hass, ConfigEntryState.LOADED)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=source.entry_id, identifiers={("matter", uid)}, name=f"Button {uid}"
+    )
+    registry = er.async_get(hass)
+    diagnostic = EntityCategory.DIAGNOSTIC
+
+    def add(domain, key, value, device_class=None, category=diagnostic, entry=source, platform="matter"):
+        entity = registry.async_get_or_create(
+            domain, platform, f"{uid}_{key}", device_id=device.id, config_entry=entry,
+            original_device_class=device_class, entity_category=category,
+        )
+        hass.states.async_set(entity.entity_id, value)
+
+    add("event", "button_1", STATE_UNKNOWN, "button", category=None)
+    add("event", "button_2", STATE_UNKNOWN, "button", category=None)
+    add("button", "identify", STATE_UNKNOWN, "identify")
+    add("sensor", "battery", battery, "battery")
+    held = battery not in (STATE_UNKNOWN, STATE_UNAVAILABLE)
+    add("sensor", "battery_type", "CR2032" if held else battery)
+    add("sensor", "battery_voltage", "3.0" if held else battery, "voltage")
+    if foreign_battery is not None:
+        notes = MockConfigEntry(domain="battery_notes")
+        notes.add_to_hass(hass)
+        notes.mock_state(hass, ConfigEntryState.LOADED)
+        add("sensor", "battery_plus", foreign_battery, "battery", entry=notes, platform="battery_notes")
+    return device
+
+
+async def test_a_button_never_pressed_is_not_frozen(hass: HomeAssistant):
+    """Tim's B13 to B15, 23 October 2026: buttons that read unknown and
+    a battery at 100%, silent past their window, on Matter over Thread."""
+    button = _button(hass, "b13")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    record, now = _silent_past_window(coord, button.id)
+
+    assert coord.type_words(button.id) == "Button"
+    assert coord._matter_available_now(button.id) is True
+    assert coord._device_down_category(button.id, record, now) is None
+
+
+async def test_a_button_never_pressed_is_said_spared(hass: HomeAssistant):
+    """The page and the Slow Reporting Devices card agree with the rule."""
+    button = _button(hass, "b14")
+    coord = await setup_coordinator(hass)
+    record, _ = _silent_past_window(coord, button.id)
+    record[DEV_DAILY_MAX] = [3 * 86400.0] * (FREEZE_ARMING_DAYS + 2)
+    coord._rebuild_registry_view()
+
+    assert coord.dashboard_device(button.id)["status"]["available_rule"] is True
+    assert coord._slow_reporter(button.id) is False
+
+
+async def test_a_button_frozen_before_stays_frozen_until_it_reports(hass: HomeAssistant):
+    """A verdict standing at the upgrade is not told as a recovery (#529)."""
+    button = _button(hass, "b15")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    record, now = _silent_past_window(coord, button.id, frozen=True)
+
+    assert coord._device_down_category(button.id, record, now) == FREEZE_CATEGORY_FROZEN
+
+
+async def test_a_button_showing_nothing_keeps_the_freeze_rule(hass: HomeAssistant):
+    """Nothing of its own holds a value, so nothing shows it available."""
+    button = _button(hass, "blank", battery=STATE_UNKNOWN)
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    record, now = _silent_past_window(coord, button.id)
+
+    assert coord._matter_available_now(button.id) is False
+    assert coord._device_down_category(button.id, record, now) == FREEZE_CATEGORY_FROZEN
+
+
+async def test_another_integrations_battery_does_not_count(hass: HomeAssistant):
+    """Battery Notes adds a battery to Tim's buttons; its value is not the
+    device showing itself available (#463)."""
+    button = _button(hass, "notes", battery=STATE_UNKNOWN, foreign_battery="100")
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    record, now = _silent_past_window(coord, button.id)
+
+    assert coord._device_down_category(button.id, record, now) == FREEZE_CATEGORY_FROZEN
+
+
+async def test_a_button_whose_battery_went_unavailable_is_not_spared(hass: HomeAssistant):
+    """Its only value gone: unavailable or frozen, never spared."""
+    button = _button(hass, "gone", battery=STATE_UNAVAILABLE)
+    coord = await setup_coordinator(hass)
+    coord._rebuild_registry_view()
+    record, now = _silent_past_window(coord, button.id)
+
+    assert coord._matter_available_now(button.id) is False
+    assert coord._device_down_category(button.id, record, now) is not None
