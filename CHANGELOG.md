@@ -2,6 +2,12 @@
 
 Device Sentinel is under active development. These are the releases published as Latest, newest first, followed by the last release of each early version. Each version links to its full release notes, and the pre-releases between them are on the [releases page](https://github.com/TheThinkingHome/device_sentinel/releases).
 
+## [0.27.3](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.27.3), October 24, 2026 (Latest Candidate)
+
+Battery warnings arrive while you can still act: each battery's time left runs to your low battery threshold, a battery that starts falling faster is caught, and Battery Trends shows the battery each device takes. A Matter light, plug or button that reports only when used is not reported frozen because it is quiet, and the dashboard reads more clearly from tab to tab.
+
+Co-authored with Tim Plas (@tplas).
+
 ## [0.26.8](https://github.com/TheThinkingHome/device_sentinel/releases/tag/0.26.8), October 20, 2026
 
 A device that is plugged in and quiet is no longer called frozen: ESPHome devices are judged by their connection, and Matter lights and plugs by being available. A Z-Wave device its network calls dead is reported unavailable, Lutron Caséta is judged by its hub, and freeze and unavailable mute apart. The dashboard opens in Simple, a falling battery's time left comes from its own history, and Music Assistant and your televisions are excluded for you.
