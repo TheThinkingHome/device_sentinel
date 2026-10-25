@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_diagnostics_privacy.py, Version: 0.23.19 (2026-09-30)
+# File: tests/test_diagnostics_privacy.py, Version: 0.27.4 (2026-10-25)
 
 """Network addresses leave the diagnostics download (0.23.19).
 
@@ -106,3 +106,39 @@ def test_every_spelling_of_one_mac_is_one_stand_in():
     assert out["device_id"] == "0da64bc9d25530d0f144e0b0bc8e2d11"
     assert out["entry_id"] == "01KX781WVRSH9TNTNCD8R6DF09"
     assert out["z2m"] == "zigbee2mqtt_0x282c02bfffeafa5b"
+
+
+def test_a_zigbee_address_is_kept_whole():
+    """Rule STOR-21: a network (MAC) address is hidden, a Zigbee address
+    is kept whole. ZHA writes its eight-pair address with colons, and the
+    MAC pattern used to take its first six pairs, leaving
+    "00:12:4B:MAC-01:b2:c3", neither hidden nor readable."""
+    out = _redact_addresses(
+        {
+            "mac": "20:F8:3B:09:97:53",
+            "zha": "00:12:4b:00:1c:a1:b2:c3",
+            "zha_dashed": "00-12-4b-00-1c-a1-b2-c3",
+            "z2m": "0x00124b001ca1b2c3",
+            "in_text": "seen as 00:12:4b:00:1c:a1:b2:c3 beside 20:F8:3B:09:97:53",
+        }
+    )
+    assert out["mac"] == "20:F8:3B:MAC-01"
+    assert out["zha"] == "00:12:4b:00:1c:a1:b2:c3"
+    assert out["zha_dashed"] == "00-12-4b-00-1c-a1-b2-c3"
+    assert out["z2m"] == "0x00124b001ca1b2c3"
+    assert out["in_text"] == "seen as 00:12:4b:00:1c:a1:b2:c3 beside 20:F8:3B:MAC-01"
+
+
+async def test_the_download_keeps_zigbee_addresses_and_hides_a_mac(hass: HomeAssistant):
+    """The whole download: a network address and both Zigbee forms,
+    carried in device names as a person may write them."""
+    register_device(hass, "net", name="Plug 20:F8:3B:09:97:53")
+    register_device(hass, "zha", name="Sensor 00:12:4b:00:1c:a1:b2:c3")
+    register_device(hass, "z2m", name="Sensor 0x00124b001ca1b2c4")
+    entry = await setup_entry(hass)
+    text = json.dumps(await async_get_config_entry_diagnostics(hass, entry), default=str)
+    assert "20:f8:3b:09:97:53" not in text.lower()
+    assert "Plug 20:F8:3B:MAC-01" in text
+    assert "Sensor 00:12:4b:00:1c:a1:b2:c3" in text
+    assert "MAC-02" not in text
+    assert "Sensor 0x00124b001ca1b2c4" in text

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_bridge_hold.py, Version: 0.23.11 (2026-09-27)
+# File: tests/test_bridge_hold.py, Version: 0.27.4 (2026-10-25)
 
 """A bridge going down says nothing about its devices (ruled 27 September 2026).
 
@@ -135,7 +135,15 @@ async def test_a_frozen_device_stays_frozen_through_its_bridge_outage(hass: Home
     assert kinds == [("frozen", "opened")], kinds
     assert bus == [("fault", ["frozen"])], bus
     messages = [call.data.get("message", "") for call in phone]
-    assert len(messages) == 1 and "detected frozen" in messages[0], messages
+    # One push for the switch; the bridge's outage is pushed on its own,
+    # down and back, though its one device was frozen before it went
+    # (rules UP-05, UP-09).
+    device_pushes = [m for m in messages if "Switch Hall Living" in m and "Summary:" in m]
+    assert len(device_pushes) == 1 and "Switch Hall Living stopped reporting." in device_pushes[0], messages
+    bridge_pushes = [m for m in messages if m not in device_pushes]
+    assert len(bridge_pushes) == 2, messages
+    assert bridge_pushes[0].startswith("Zigbee2MQTT down: 0 of "), messages
+    assert bridge_pushes[1].startswith("The Zigbee2MQTT bridge came back at "), messages
 
 
 async def test_a_healthy_device_is_not_rewritten_by_its_bridge_outage(hass: HomeAssistant, freezer):

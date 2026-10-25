@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_stack_readers.py, Version: 0.23.10 (2026-09-26)
+# File: tests/test_stack_readers.py, Version: 0.27.4 (2026-10-25)
 
 """The Z-Wave and Matter readers in shadow (0.23.8).
 
@@ -313,6 +313,7 @@ async def test_the_flapping_description_keeps_its_capitals(hass: HomeAssistant, 
     for _ in range(4):
         await _drop(hass, coord, freezer, entity_id)
     description = _item(coord, device.id)[TODO_DESCRIPTION]
-    assert description.startswith("Flapping, dropped out 4 times since September 25, 2026 at ")
+    # The Daily Brief's words, with no leading "Flapping," (rule LIST-02).
+    assert description.startswith("Dropped out 4 times since September 25, 2026 at ")
     assert " PM." in description or " AM." in description, description
     assert "september" not in description

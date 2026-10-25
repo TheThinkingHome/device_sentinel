@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_maintenance.py, Version: 0.26.7 (2026-10-19)
+# File: tests/test_maintenance.py, Version: 0.27.4 (2026-10-25)
 
 """Maintenance mode and the surfaces that shipped beside it.
 
@@ -244,9 +244,9 @@ async def test_the_button_entity_exists_and_presses(hass: HomeAssistant):
 async def test_the_battery_conviction_carries_the_intervention_line(
     hass: HomeAssistant,
 ):
-    """A convicted battery device says what fixes it (ruling #235): a
-    person at the device. A mains device says nothing extra, and a
-    recovery never carries it."""
+    """Neither the push nor the Problem List item adds that a battery
+    device needs a person at it (James, 25 October 2026: not necessary;
+    rule NOTE-10), and a recovery never carried it."""
     device, _ = register_device(hass, "batt1", name="Batt One")
     coord = await setup_coordinator(hass)
     coord._notification_delay = lambda _device_id: 0.0
@@ -258,22 +258,23 @@ async def test_the_battery_conviction_carries_the_intervention_line(
     assert coord._pending_events
     assert sentence not in coord._pending_events[-1][1]
 
-    # Battery: the elected entity is the classification.
+    # Battery: the elected entity is the classification; the push
+    # still carries no sentence.
     coord._battery_entity[device.id] = ("sensor.batt_one_battery", False)
     coord._collect_event("frozen", "Batt One", False, device.id)
     line = coord._pending_events[-1][1]
-    assert sentence in line
-    assert "needs a person at the device" in line
+    assert sentence not in line
 
     # A recovery is good news and carries no intervention ask.
     coord._collect_event("frozen", "Batt One", True, device.id)
     assert sentence not in coord._pending_events[-1][1]
 
-    # The tap-open description says the same thing (ruling #235).
+    # The tap-open description no longer says it either (James,
+    # 25 October 2026; rule NOTE-10).
     _summary, description = coord._problem_item_text(
         "Batt One", {"frozen": None}, None, device_id=device.id
     )
-    assert sentence in description
+    assert sentence not in description
     _summary, description = coord._problem_item_text(
         "Batt One", {TODO_KIND_LOW_BATTERY: None}, 12,
         device_id=device.id

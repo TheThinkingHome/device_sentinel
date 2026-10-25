@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_lutron_campaign.py, Version: 0.26.3 (2026-10-14)
+# File: test_lutron_campaign.py, Version: 0.27.4 (2026-10-25)
 
 """Christopher Robert's Lutron campaign of 20 September 2026, replayed (#663 to #665).
 
@@ -297,7 +297,7 @@ async def test_his_day_reads_as_five_hub_outages_and_nothing_else(hass: HomeAssi
     # as dropping out, as any device that keeps dropping out is (0.23.2);
     # nothing it controls is listed.
     assert list(_items(coord)) == [hub_ids["Garage"]]
-    assert "flapping, dropped out 3 times" in _items(coord)[hub_ids["Garage"]]
+    assert ": dropped out 3 times" in _items(coord)[hub_ids["Garage"]]
 
     # Through the whole day: no Lutron device frozen or never reported.
     for device_id in controlled:

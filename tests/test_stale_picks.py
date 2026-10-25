@@ -1,7 +1,7 @@
 """Tests for ambiguous names and stale exclusion picks.
 
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
-# File: test_stale_picks.py, Version: 0.13.2 (2026-08-13)
+# File: test_stale_picks.py, Version: 0.27.4 (2026-10-25)
 # Copyright (C) 2026 James Lander
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -125,18 +125,17 @@ def test_the_picker_does_not_offer_a_deleted_pick():
     assert [option["value"] for option in options] == ["listed"]
 
 
-async def test_a_shared_name_carries_its_integration(hass: HomeAssistant):
-    """Three registry devices called Bluetooth Proxy 2d8900 produced
-    one report row nobody could act on. The integration is appended
-    where a name is shared, and only there."""
+async def test_a_shared_name_reads_plainly(hass: HomeAssistant):
+    """The brief and the dashboard keep the plain name; the integration
+    is shown once, on the Settings lists alone (rule DEV-04, ruled 25
+    October 2026). It was appended here where a name was shared."""
     first, _ = register_device(hass, "amb1", "Shared Name")
     second, _ = register_device(hass, "amb2", "Shared Name")
     alone, _ = register_device(hass, "amb3", "Its Own Name")
     coord = await setup_coordinator(hass)
 
-    integration = coord._watched[first.id]
-    assert coord._display_names[first.id] == f"Shared Name ({integration})"
-    assert coord._display_names[second.id] == f"Shared Name ({integration})"
+    assert coord._display_names[first.id] == "Shared Name"
+    assert coord._display_names[second.id] == "Shared Name"
     assert coord._display_names[alone.id] == "Its Own Name"
 
 

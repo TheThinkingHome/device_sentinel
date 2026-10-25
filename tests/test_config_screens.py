@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_config_screens.py, Version: 0.26.6 (2026-10-18)
+# File: tests/test_config_screens.py, Version: 0.27.4 (2026-10-25)
 
 """What the configuration screens promise a person reading them.
 
@@ -408,3 +408,18 @@ async def test_both_halves_carry_a_heading_and_an_explanation(
         )
         for key in ("exclude", "muting"):
             assert len(step["sections"][key]["description"]) > 60, key
+
+
+async def test_maintenance_window_sits_above_the_data_trim_section(hass: HomeAssistant):
+    """Rule CFG-02: plain settings first, sections below. The form draws
+    its fields in the schema's order."""
+    from custom_components.device_sentinel.const import CONF_MAINTENANCE_MINUTES
+
+    entry = await setup_entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "advanced"}
+    )
+    names = [str(key) for key in result["data_schema"].schema]
+    assert names[-1] == "data_trim"
+    assert names.index(CONF_MAINTENANCE_MINUTES) < names.index("data_trim")

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_foreign_entities.py, Version: 0.26.0 (2026-10-12)
+# File: tests/test_foreign_entities.py, Version: 0.27.4 (2026-10-25)
 
 """Another integration's entity on a device is not the device speaking.
 
@@ -272,5 +272,6 @@ async def test_a_linked_helper_stands_as_a_helper(hass: HomeAssistant):
     await hass.async_add_executor_job(coord._write_reports, "test")
     text = Path(hass.config.path("device_sentinel", "classification.md")).read_text()
     assert "## Integrations With No Hardware (2)" in text
-    assert "| derivative | Helper | 1 |" in text
+    # By its name, as Home Assistant shows it (rule GEN-07, 0.27.4).
+    assert "| Derivative | Helper | 1 |" in text
     assert "Helper: A Home Assistant helper you linked to a device." in text

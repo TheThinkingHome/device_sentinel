@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_outage_pairs_and_counts.py, Version: 0.26.6 (2026-10-18)
+# File: test_outage_pairs_and_counts.py, Version: 0.27.4 (2026-10-25)
 
 """Upstream outages: every down owes its restored, with one count.
 
@@ -389,7 +389,11 @@ async def test_shared_worst_and_row(hass: HomeAssistant, freezer):
                 sys=[(r.get("kind"), r.get("devices"), r.get("worst")) for r in sys],
                 said=[coord._system_event_sentence(r) for r in sys])
     up_a = [r for r in sys if r.get("kind") == "integration_up"][0]
-    assert up_a["worst"] == 0, info
+    # A's three devices went down with it; B's devices, the one frozen
+    # before and the one down under B's own outage, are not A's. Before
+    # 0.27.4 no device behind a down entry was ever counted, so this
+    # read 0 (rule UP-11).
+    assert up_a["worst"] == 3, info
 
 
 async def test_grace_two_entries_held(hass: HomeAssistant, freezer):

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_flapping.py, Version: 0.25.1 (2026-10-08)
+# File: tests/test_flapping.py, Version: 0.27.4 (2026-10-25)
 
 """A device that keeps dropping out is one problem, not fifty.
 
@@ -88,7 +88,8 @@ async def test_three_drops_make_one_flapping_item(hass: HomeAssistant, freezer):
     item = _item(coord, device.id)
     assert item is not None
     assert "flapping" in item[TODO_KINDS]
-    assert "flapping, dropped out 5 times since" in item[TODO_SUMMARY]
+    # The Daily Brief's words, with no leading "flapping," (rule LIST-02).
+    assert ": dropped out 5 times since" in item[TODO_SUMMARY]
     assert "unavailable" not in item[TODO_SUMMARY]
 
 
@@ -100,7 +101,8 @@ async def test_the_phone_hears_the_flap_once(hass: HomeAssistant, freezer):
     for _ in range(6):
         await _drop(hass, coord, freezer, entity_id)
     assert len(phone) == before, [call.data.get("message") for call in phone[before:]]
-    assert any("keeps dropping out" in call.data.get("message", "") for call in phone)
+    # Pushed in the brief's words, with how often (rule NOTE-01).
+    assert any("dropped out 3 times since" in call.data.get("message", "") for call in phone)
 
 
 async def test_every_drop_is_still_recorded(hass: HomeAssistant, freezer):
@@ -177,14 +179,14 @@ async def test_the_fault_report_counts_a_device_that_keeps_dropping_out(hass: Ho
     """The second fleet's report of 8 October counted 2 devices with a fault
     while S73 stood on the problem list after 404 drops, acknowledged. The
     section now lists it under Dropping Out and counts it (0.25.1). Fails
-    on 0.25.0, whose section reads "Devices With A Fault (0)" here."""
+    on 0.25.0, whose section reads "Devices With a Fault (0)" here."""
     coord, device, entity_id, _phone = await _shed(hass, freezer)
     for _ in range(4):
         await _drop(hass, coord, freezer, entity_id)
     item = _item(coord, device.id)
     item["status"] = "completed"
     lines = coord._reporting_lines()
-    assert lines[0] == "## Devices With A Fault (1)"
+    assert lines[0] == "## Devices With a Fault (1)"
     at = lines.index("### Dropping Out")
     assert lines[at + 2].startswith(f"- **{NAME}** (dropped out 4 times) for ")
     assert lines[at + 2].endswith("[✓ acknowledged]")

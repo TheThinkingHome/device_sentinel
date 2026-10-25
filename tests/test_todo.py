@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_todo.py, Version: 0.27.0 (2026-10-22)
+# File: test_todo.py, Version: 0.27.4 (2026-10-25)
 
 """The problem list: one item per device, maintained by the sync.
 
@@ -183,7 +183,7 @@ async def test_check_acknowledges_and_delete_removes(hass: HomeAssistant):
 
     items = await _items(hass)
     assert len(items) == 1
-    assert items[0]["summary"] == "Attic Sensor: frozen"
+    assert items[0]["summary"] == "Attic Sensor: stopped reporting"
 
     # Checking acknowledges: the item stays, marked completed.
     await hass.services.async_call(
@@ -333,7 +333,7 @@ async def test_detection_adds_and_recovery_deletes(hass: HomeAssistant):
     coord._sync_problem_list()
     item = _item_for(coord, device.id)
     assert item is not None
-    assert item["summary"] == "Presence Guest: frozen"
+    assert item["summary"] == "Presence Guest: stopped reporting"
     assert item["sort_name"] == "Presence Guest"
     assert item["status"] == "needs_action"
     assert item["kinds"] == {FREEZE_CATEGORY_FROZEN: 1_780_000_000.0}
@@ -384,7 +384,7 @@ async def test_kind_joins_and_leaves_one_item(hass: HomeAssistant):
     coord._sync_problem_list()
     item = _item_for(coord, device.id)
     assert item["uid"] == uid  # same item, not a duplicate
-    assert item["summary"] == "Laundry Leak: frozen, battery 9%"
+    assert item["summary"] == "Laundry Leak: stopped reporting, battery 9%"
 
     _clear_freeze(coord, device.id)
     coord._sync_problem_list()

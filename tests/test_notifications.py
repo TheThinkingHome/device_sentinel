@@ -3,15 +3,15 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_notifications.py, Version: 0.26.3 (2026-10-14)
+# File: test_notifications.py, Version: 0.27.4 (2026-10-25)
 
 """The config-flow backbone, the notification surface, and the engine.
 
 The integration installs with zero questions and a single instance, and
 its status sensor proves persistence across restarts. Its notification
 surface mirrors the Sentinel Notify model: two target lists (high gets
-live events, normal gets only the brief), a persistent card, quiet
-hours, and the daily brief schedule. The engine sends per-family
+every push at any hour, normal every push outside Quiet Hours), a
+persistent card, quiet hours, and the daily brief schedule. The engine sends per-family
 pushes, a fault audible on the phone's own sound and a recovery silent,
 and a self-overwriting card, all reading the same acknowledged-aware
 problem lists the sensors publish. The problem counts are opt-in and
@@ -447,16 +447,18 @@ async def test_family_summary_reads_the_lists():
 
 
 async def test_events_dropped_in_quiet_hours():
-    """Inside quiet hours, no push is sent; the card and brief carry
-    the state."""
+    """Inside Quiet Hours a normal-priority target gets no push; the
+    card and brief carry the state. A high-priority target still gets
+    it (rule NOTE-07, ruled 25 October 2026)."""
     h = _Harness(["notify.phone"], battery=[{"name": "X", "level": 10}])
     h.entry.options = {
+        CONF_NORMAL_PRIORITY_TARGETS: ["notify.tablet"],
         CONF_QUIET_ENABLED: True,
         CONF_QUIET_START: "00:00:00",
         CONF_QUIET_END: "23:59:59",
     }
     await h.async_fire_events([("battery", "At 3 am, X low.", False)])
-    assert h.sent == []
+    assert [(d, s) for d, s, _ in h.sent] == [("notify", "phone")]
 
 
 async def test_no_high_targets_sends_nothing():
@@ -569,7 +571,8 @@ def test_signal_summary_says_railed_not_low():
         ],
     )
     summary = h._family_summary("signal")
-    assert "Window Living Room Left railed" in summary
+    # The Daily Brief's words, "signal railed" (rule NOTE-01).
+    assert "Window Living Room Left signal railed" in summary
     assert "low" not in summary
 
 

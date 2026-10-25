@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_battery_projection.py, Version: 0.27.3 (2026-10-24)
+# File: tests/test_battery_projection.py, Version: 0.27.4 (2026-10-25)
 
 """When a falling cell runs empty, as a range (ruling #704).
 
@@ -177,7 +177,7 @@ async def test_a_forecast_alone_is_not_counted_among_listed_faults(hass: HomeAss
     record[DEV_BATTERY_DAILY] = list(DOOR)
     record[DEV_BATTERY_VALUE] = 16.5
     assert device.id in coord._problem_device_ids()
-    assert "## Devices With A Fault (0)" in "\n".join(coord._reporting_lines())
+    assert "## Devices With a Fault (0)" in "\n".join(coord._reporting_lines())
 
 
 def test_a_curved_fall_is_said_as_speeding_up():

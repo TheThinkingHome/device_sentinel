@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_recommendation_acknowledgement.py, Version: 0.27.0 (2026-10-22)
+# File: tests/test_recommendation_acknowledgement.py, Version: 0.27.4 (2026-10-25)
 
 """The switched-off cards and acknowledging a recommendation.
 
@@ -47,7 +47,8 @@ def _card(coord, kind: str):
 
 async def test_the_battery_card_lists_its_devices_and_is_in_simple(hass: HomeAssistant):
     """Ruling #698's Battery Sensor Switched Off card, shown in Simple
-    (#695); Signal Sensor Switched Off is Advanced only."""
+    (#695); Signal Sensor Switched Off is shown in Simple too since
+    0.27.4 (rule REC-09)."""
     device, _ = _battery_off(hass, "hall", "Hall Motion")
     sig, (sig_entity,) = register_device(hass, "sig", name="Shed Plug")
     er.async_get(hass).async_update_entity(
@@ -62,7 +63,7 @@ async def test_the_battery_card_lists_its_devices_and_is_in_simple(hass: HomeAss
     assert card["simple"] is True and card["active"] == 1
     assert "Turn them on from the Recommendations tab." in card["brief"]
     signal = _card(coord, "signal_off")
-    assert signal is not None and signal["simple"] is False
+    assert signal is not None and signal["simple"] is True
     assert [row["device_id"] for row in signal["devices"]] == [sig.id]
 
 

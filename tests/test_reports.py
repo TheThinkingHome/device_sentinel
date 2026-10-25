@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_reports.py, Version: 0.26.7 (2026-10-19)
+# File: test_reports.py, Version: 0.27.4 (2026-10-25)
 
 """The diagnostic files: telemetry and classification.
 
@@ -14,7 +14,7 @@ watched or set aside. Both are written at setup and rewritten at local
 midnight when the daily epoch rolls, so they carry each device's fresh
 daily maximum. The telemetry report marks its SIGNAL LOWS cell (bold
 floor, struck trim, italic rail), carries a battery column and a
-readable Written header, and holds a Devices With A Fault section that
+readable Written header, and holds a Devices With a Fault section that
 groups every standing fault by family. The STATUS cell reads one
 grammar (Reported or Excluded with reasons), the Regenerate Reports
 button judges then rewrites, and the whole learned state is available
@@ -514,7 +514,7 @@ async def test_regenerate_judges_then_writes(hass: HomeAssistant):
         hass.config.path("device_sentinel/device_telemetry.md")
     ).read()
     # Judgment ran, so the ghost is flagged and shows in the report.
-    assert "Devices With A Fault (1)" in text
+    assert "Devices With a Fault (1)" in text
     assert "As of" in text
     # STATUS column carries the new grammar.
     assert "Reported" in text
@@ -564,7 +564,7 @@ async def test_written_header_is_readable_on_both_reports(
 
 
 # ==================================================================
-# The Devices With A Fault section and the STATUS revert.
+# The Devices With a Fault section and the STATUS revert.
 # ==================================================================
 
 async def test_all_three_families_grouped_and_sorted(
@@ -584,7 +584,7 @@ async def test_all_three_families_grouped_and_sorted(
     coord._sync_problem_list()
 
     text = "\n".join(coord._reporting_lines())
-    assert "## Devices With A Fault (3)" in text
+    assert "## Devices With a Fault (3)" in text
     assert text.index("### Freeze") < text.index("### Battery")
     assert text.index("Apple Frozen") < text.index("Zebra Frozen")
     assert "(14%)" in text
@@ -638,7 +638,7 @@ async def test_two_family_device_appears_in_both(hass: HomeAssistant):
     coord._sync_problem_list()
 
     text = "\n".join(coord._reporting_lines())
-    assert "## Devices With A Fault (1)" in text  # distinct devices
+    assert "## Devices With a Fault (1)" in text  # distinct devices
     assert text.count("Doubled Sensor") == 2
     assert "### Freeze" in text and "### Battery" in text
     assert text.count(OPEN_TAG) == 2
@@ -648,7 +648,7 @@ async def test_empty_section_is_all_clear(hass: HomeAssistant):
     coord = await setup_coordinator(hass)
     coord._sync_problem_list()
     text = "\n".join(coord._reporting_lines())
-    assert "## Devices With A Fault (0)" in text
+    assert "## Devices With a Fault (0)" in text
     assert "low on battery" in text
 
 
@@ -656,7 +656,7 @@ async def test_status_cell_reverted_to_plain_grammar(
     hass: HomeAssistant,
 ):
     """The 0.6.1 icon is gone from STATUS: a faulted device reads
-    plain Reported there, and the icon lives in Devices With A Fault."""
+    plain Reported there, and the icon lives in Devices With a Fault."""
     device, eid = _register(hass, "s1", "Plain Status")
     coord = await setup_coordinator(hass)
     hass.states.async_set(eid, "21.5")
@@ -675,7 +675,7 @@ async def test_section_reaches_the_written_report(hass: HomeAssistant):
     path = hass.config.path("device_sentinel", "device_telemetry.md")
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
-    assert "## Devices With A Fault (1)" in text
+    assert "## Devices With a Fault (1)" in text
     assert OPEN_TAG in text
     assert "Down devices" not in text
 
