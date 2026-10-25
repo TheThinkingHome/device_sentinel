@@ -2,7 +2,7 @@
 // Licensed under GPL-3.0-or-later. See the LICENSE file in this repository.
 // Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 //   Repository: https://github.com/TheThinkingHome/device_sentinel
-// File: panel.js, Version: 0.27.3 (2026-10-24)
+// File: panel.js, Version: 0.27.4 (2026-10-25)
 //
 // The Device Sentinel dashboard. One plain custom element: no framework,
 // no build step. Data comes from the integration's WebSocket commands
@@ -42,6 +42,10 @@ const TAB_SLUG = Object.fromEntries(TABS.map((name) => [name, name.toLowerCase()
 const TAB_BY_SLUG = Object.fromEntries(TABS.map((name) => [TAB_SLUG[name], name]));
 // A device no type could be found for (0.25.1), as the Type filters name it.
 const NOT_KNOWN_TYPE = "Not known";
+// The device commands that say where they were pressed (rules BRIEF-07,
+// DEV-07): "device_page" from the device page, "recommendations" from a
+// Recommendations card.
+const PAGE_SOURCED = new Set(["device_sentinel/device_turn_on", "device_sentinel/device_power", "device_sentinel/device_type"]);
 // A battery level as reported, the same on every surface (0.27.1):
 // "15.5%", "16%", one decimal at most, rounded half up on the number
 // as written, as battery_level.py does. Door 2nd Bedroom read 15.5% in
@@ -1235,7 +1239,10 @@ class DeviceSentinelPanel extends HTMLElement {
         el("td", {}, el("div", { class: "actrow" }, el("span", {}, row.power ? `${row.problem}, ${row.power}` : row.problem),
           ...(row.mutes || []).map((kind) => el("button", { class: "chip", type: "button",
             onclick: () => this._muteFromList(row.device_id, kind) }, `Mute ${kind}`)))),
-        el("td", {}, row.since ? moment(row.since) : ""),
+        // A device that never reported has no moment it stopped: the
+        // time is when it was discovered, and it says so, as the Daily
+        // Brief does (rule LIST-10).
+        el("td", {}, row.since ? `${row.never_reported ? "discovered " : ""}${moment(row.since)}` : ""),
         el("td", {}, row.since ? span((at - new Date(row.since).getTime()) / 1000) : "")))));
     this._pane.replaceChildren(summary, chips, el("div", { class: "scroll" }, table),
       el("p", { class: "muted", style: "margin:0;font-size:13px" },
@@ -1383,7 +1390,8 @@ class DeviceSentinelPanel extends HTMLElement {
       if (TURN_ON[card.kind]) {
         const [kind, words] = TURN_ON[card.kind];
         action = el("button", { class: "chip", type: "button", onclick: async () => {
-          try { await this._call({ type: "device_sentinel/device_turn_on", device_id: row.device_id, kind }); await refresh(); } catch (err) { fail(err); }
+          // Where it was pressed, so the log says so (rules BRIEF-07, DEV-07).
+          try { await this._call({ type: "device_sentinel/device_turn_on", device_id: row.device_id, kind, source: "recommendations" }); await refresh(); } catch (err) { fail(err); }
         } }, words);
       }
       // A device slow to judge for freeze (0.26.0, ruling #637): the
@@ -1442,7 +1450,8 @@ class DeviceSentinelPanel extends HTMLElement {
     repaint();
     const save = el("button", { class: "chip", type: "button", onclick: async () => {
       if (!select.value) return;
-      const message = { type: "device_sentinel/device_power", device_id: deviceId, choice: select.value };
+      // Where it was set, so the log says so (rules BRIEF-07, DEV-07).
+      const message = { type: "device_sentinel/device_power", device_id: deviceId, choice: select.value, source: "recommendations" };
       if (!wired.includes(select.value)) message.quantity = Number(quantity.value);
       if (select.value === power.other) message.other = other.value;
       try { await this._call(message); await refresh(); } catch (err) { fail(err); }
@@ -1461,7 +1470,8 @@ class DeviceSentinelPanel extends HTMLElement {
       "aria-label": "Your own words for what this device is" });
     const save = el("button", { class: "chip", type: "button", disabled: "", onclick: async () => {
       if (!select.value) return;
-      const message = { type: "device_sentinel/device_type", device_id: deviceId, choice: select.value };
+      // Where it was set, so the log says so (rules BRIEF-07, DEV-07).
+      const message = { type: "device_sentinel/device_type", device_id: deviceId, choice: select.value, source: "recommendations" };
       if (select.value === kinds.other) message.other = other.value;
       try { await this._call(message); await refresh(); } catch (err) { fail(err); }
     } }, "Save");
@@ -1700,10 +1710,11 @@ class DeviceSentinelPanel extends HTMLElement {
       : null;
     this._pane.replaceChildren(back, head, ...(exclusion ? [exclusion] : []), stats,
       el("h3", { class: "section" }, "Recommendations"), ...recs,
-      el("h3", { class: "section" }, "Outages, last 14 days"), outages,
+      // Headings in Title Case, book-title style (rule GEN-06).
+      el("h3", { class: "section" }, "Outages, Last 14 Days"), outages,
       el("h3", { class: "section" }, `Devices `, el("span", { class: "small" }, `${page.devices.length}, problems first`)), devices,
       ...(ridersTable ? [
-        el("h3", { class: "section" }, "Also on the broker ", el("span", { class: "small" },
+        el("h3", { class: "section" }, "Also on the Broker ", el("span", { class: "small" },
           `${riders.length}, owned by another integration, and down whenever the broker is`)),
         ridersTable] : []));
   }
@@ -2174,8 +2185,10 @@ class DeviceSentinelPanel extends HTMLElement {
       },
     }, `${label} ${key === "all" ? page.devices.length : page.scales[key]}`)));
     const showing = page.devices.filter((row) => this._signalFilter === "all" || row.scale === this._signalFilter);
-    // The two middles CHANGE is taken between (0.27.3): the last seven
-    // days' and the whole history's, so a row adds up.
+    // The two middles CHANGE is taken between (0.27.3): this week's and
+    // the days before this week, so a row adds up. The second leaves
+    // the last seven days out, which is why it is named Before This
+    // Week (rule SIG-12).
     const weekOf = (row) => (row.week === undefined ? row.now : row.week);
     const usualOf = (row) => (row.usual === undefined ? row.normal : row.usual);
     // Each sign is taken from the number as shown, so nothing reads
@@ -2202,7 +2215,8 @@ class DeviceSentinelPanel extends HTMLElement {
     showing.forEach((row, index) => {
       const z = Math.max(-cap, Math.min(cap, row.spreads || 0));
       const height = Math.abs(z) / cap * 70;
-      const words = `${row.name}: ${Math.round(weekOf(row))} over the last 7 days against its usual ${Math.round(usualOf(row))}, `
+      // In the columns' own words, so the bar and its row agree (rule SIG-12).
+      const words = `${row.name}: ${Math.round(weekOf(row))} this week against ${Math.round(usualOf(row))} before this week, `
         + `${spreads(row.spreads || 0)} of its own spreads`;
       const open = () => this._navigate(this._devicePath(row.device_id));
       // A thin bar is a small target, so the whole column is clickable
@@ -2264,11 +2278,13 @@ class DeviceSentinelPanel extends HTMLElement {
       const head = el("tr", {},
         this._sortHead(this._signalSort, "DEVICE", "name", again),
         mixed ? el("th", {}, "SCALE") : null,
-        this._sortHead(this._signalSort, "LAST 7 DAYS", "now", again, "num"),
+        // James's column names (rule SIG-12), in capitals as every
+        // column head on the dashboard is.
+        this._sortHead(this._signalSort, "THIS WEEK", "now", again, "num"),
         el("th", { class: "num" }, "ITS NORMAL"),
         el("th", { class: "num" }, "BAD-DAY LINE"),
         this._sortHead(this._signalSort, "BAD DAYS", "bad", again, "num"),
-        el("th", { class: "num" }, "USUAL"),
+        el("th", { class: "num" }, "BEFORE THIS WEEK"),
         this._sortHead(this._signalSort, "CHANGE", "change", again, "num"),
         el("th", { class: "num" }, "IN ITS OWN SPREADS"),
         el("th", { class: "num" }, "READINGS A DAY"));
@@ -2321,7 +2337,9 @@ class DeviceSentinelPanel extends HTMLElement {
       badDays,
       el("h3", { class: "section" }, "How Each Link Sits Against Its Own Normal"),
       el("p", { class: "small", style: "margin:0;line-height:1.5" },
-        "Each device's last seven days against the middle of its whole history, in its own points and in its own spreads, so a steady link and a jumpy one are judged by their own standards. One bar per device, worst on the left."),
+        // James's words (rule SIG-12): the second figure leaves this
+        // week out, so "its whole history" was not true.
+        "Each device's typical signal this week, beside its history. A large drop means its radio link has weakened this week."),
       chips, chart, chartNote,
       el("h3", { class: "section" }, "Devices With Unsteady Signals ", el("span", { class: "small" }, `${unsteady.length} shown`)),
       table(unsteady),
@@ -2638,12 +2656,14 @@ class DeviceSentinelPanel extends HTMLElement {
 
   // The Z-Wave status row (ruling #671): what Z-Wave says of the node,
   // or that its sensor is switched off, with its own Turn it on (#698).
+  // Simple says it is switched off and offers no button: the
+  // Recommendations card turns it on (rule DASH-04).
   _nodeStatusCell(who, acts) {
     const WORDS = { alive: "alive", asleep: "asleep", awake: "awake", dead: "dead", unknown: "not known yet" };
     if (who.node_status === "off") {
       return el("div", { class: "actcol" },
         el("span", {}, "switched off"),
-        acts ? el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+        acts && !this._isSimple() ? el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
           onclick: () => this._deviceAct({ type: "device_sentinel/device_turn_on", device_id: who.device_id, kind: "node_status" }, "nodestatus") },
           "Turn it on")) : null,
         this._actNote("nodestatus"));
@@ -2654,11 +2674,13 @@ class DeviceSentinelPanel extends HTMLElement {
 
   // A Battery or Signal sensor switched off (0.26.7, the repair-card
   // rulings of 18 October), with the button that switches on this
-  // device's own sensor of that kind (ruling #696).
+  // device's own sensor of that kind (ruling #696). Simple says it is
+  // switched off and offers no button: its Recommendations card turns
+  // it on (rule DASH-04).
   _switchedOffCell(who, kind, row) {
     return el("div", { class: "actcol" },
       el("span", {}, "switched off"),
-      el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+      this._isSimple() ? null : el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
         onclick: () => this._deviceAct({ type: "device_sentinel/device_turn_on", device_id: who.device_id, kind }, row) },
         "Turn it on")),
       this._actNote(row));
@@ -2677,6 +2699,11 @@ class DeviceSentinelPanel extends HTMLElement {
   // says why under it.
   async _deviceAct(message, row) {
     const device = message.device_id;
+    // A sensor turned on, a power answer or a type set here says it
+    // came from the device page; the Recommendations cards send their
+    // own source, so the log says where each was done (rules BRIEF-07,
+    // DEV-07).
+    if (PAGE_SOURCED.has(message.type)) message = { ...message, source: "device_page" };
     try {
       await this._call(message);
       this._devEdit = null;
@@ -2702,6 +2729,17 @@ class DeviceSentinelPanel extends HTMLElement {
         error: (err && err.message) || "Home Assistant's list could not be read." };
     }
     this._paintDevicePage();
+  }
+
+  // The Firmware row (rule DEV-15): the version now, and beneath it
+  // each version recorded, newest first, with when it was first seen,
+  // so a change in how a device reports can be set beside an update.
+  _firmwareCell(firmware) {
+    const history = Array.isArray(firmware.history) ? firmware.history : [];
+    return el("div", { class: "actcol" }, el("span", {}, firmware.current),
+      history.length ? el("ul", { class: "small", style: "margin:2px 0 0;padding-left:18px;line-height:1.5" },
+        ...[...history].reverse().map((row) => el("li", {},
+          row.since ? `${row.version}, first seen ${moment(row.since)}` : row.version))) : null);
   }
 
   _nameCell(who) {
@@ -3415,7 +3453,9 @@ class DeviceSentinelPanel extends HTMLElement {
       ? el("div", { class: "actrow" }, sensorLinks("last_seen"), heartbeat ? el("span", { class: "hbtag" }, "heartbeat") : null)
       : acts && acts.last_seen_off ? el("div", { class: "actcol" },
         el("span", {}, "switched off"),
-        el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
+        // No button in Simple: the Recommendations card turns it on
+        // (rule DASH-04).
+        simple ? null : el("div", { class: "actrow" }, el("button", { class: "chip", type: "button",
           onclick: () => this._deviceAct({ type: "device_sentinel/device_turn_on", device_id: who.device_id, kind: "last_seen" }, "heartbeat") },
           "Turn on its Last Seen")),
         this._actNote("heartbeat"))
@@ -3429,9 +3469,10 @@ class DeviceSentinelPanel extends HTMLElement {
     // a change Device Sentinel cannot see.
     // Only while the Log-Normal Percentile is in use (0.27.3): pressed
     // with the Trimmed Maximum in use it changed nothing to be seen and
-    // hid the 42-day chart for 28 days.
+    // hid the 42-day chart for 28 days. Never in Simple, which asks
+    // for nothing it does not need (rule DASH-04).
     const lognormalInUse = Boolean(page.rhythm && page.rhythm.rules && page.rhythm.rules.in_use === "lognormal");
-    const useTrimmed = status.rule && lognormalInUse ? el("button", { class: "chip", type: "button", style: "margin-top:6px",
+    const useTrimmed = status.rule && lognormalInUse && !simple ? el("button", { class: "chip", type: "button", style: "margin-top:6px",
       onclick: async () => {
         try {
           await this._call({ type: "device_sentinel/use_trimmed_maximum", device_id: who.device_id });
@@ -3439,9 +3480,10 @@ class DeviceSentinelPanel extends HTMLElement {
         } catch (err) { /* the next refresh shows the rule as it stands */ }
       } }, "Use the 14-Day Trimmed Maximum") : null;
     const group = (title) => ["__group__", title];
-    // Read-only in Simple (ruling #694): the value when set, "Not set"
-    // when not, and nothing that asks for more.
-    const plain = (text) => (text ? el("span", {}, text) : el("span", { class: "muted" }, "Not set"));
+    // Read-only in Simple (ruling #694): the value when set, and
+    // nothing that asks for more. "Not known" when not, the words
+    // Advanced uses (rules DEV-07, DEV-10).
+    const plain = (text) => (text ? el("span", {}, text) : el("span", { class: "muted" }, "Not known"));
     const signalTrouble = (() => {
       const rail = (page.signal && page.signal.railed_days) || [];
       const last = [...rail].reverse().find((v) => v !== null && v !== undefined);
@@ -3451,7 +3493,8 @@ class DeviceSentinelPanel extends HTMLElement {
     const nodeTrouble = who.node_status === "dead" || who.node_status === "off";
     const exclusion = (acts && acts.excluded) || {};
     const identity = [
-      ["Name", acts ? this._nameCell(who) : who.name],
+      // No Rename in Simple (rule DASH-04).
+      ["Name", acts && !simple ? this._nameCell(who) : who.name],
       // What it is (0.25.1).
       ["Type", simple ? plain(who.type && who.type.words) : this._typeCell(who)],
       ["Device ID", who.device_id],
@@ -3465,6 +3508,9 @@ class DeviceSentinelPanel extends HTMLElement {
       ...(who.model ? [["Model", who.model]] : []),
       ...(who.model_id ? [["Model ID", who.model_id]] : []),
       ...(who.hw_version ? [["Hardware version", who.hw_version]] : []),
+      // What it runs, with what it ran before, in Advanced only (rule
+      // DEV-15).
+      ...(who.firmware && !simple ? [["Firmware", this._firmwareCell(who.firmware)]] : []),
       ...(who.integration_name || who.integration ? [["Integration", who.integration_name || who.integration]] : []),
       // How it connects, from its integration's declaration (0.23.9),
       // for a device that does not report on the local network as
@@ -3580,14 +3626,17 @@ class DeviceSentinelPanel extends HTMLElement {
           + "This is done so that this device is not falsely reported frozen while the 42-Day Log-Normal Percentile is re-learned. "
           + "Until then, the 14-Day Trimmed Maximum rule is used to calculate the freeze interval.")));
     }
-    const rhythm = el("div", {}, el("h3", { class: "section" }, "Its rhythm"),
+    // Headings in Title Case, book-title style (rule GEN-06).
+    const rhythm = el("div", {}, el("h3", { class: "section" }, "Its Rhythm"),
       // A device judged by its connection reports nothing to learn a
       // rhythm from (0.27.3).
       ...(status.connection ? [el("p", { style: "margin:0;line-height:1.5" }, "Judged by its connection: no rhythm to learn.")]
         : charts.length ? charts : [el("p", { style: "margin:0;line-height:1.5" }, "Not enough days yet to learn its rhythm.")]),
       charts.length > 1 && !again ? el("p", { class: "small", style: "margin:8px 0 0;line-height:1.6" },
         `Device Sentinel uses whichever of the two is shorter. The 14-day rule adjusts to a change within days, and the 42-day rule within weeks. A change to the device or the mesh around it, such as a firmware update, a new battery, a re-pair or a new router nearby, can leave the 42-day rule out of date.${
-          lognormalInUse ? " If it does, press Use the 14-Day Trimmed Maximum." : ""}`) : null);
+          // The button is not offered in Simple, so nor is the advice
+          // to press it (rule DASH-04).
+          lognormalInUse && !simple ? " If it does, press Use the 14-Day Trimmed Maximum." : ""}`) : null);
 
     const silences = page.silences.length
       ? el("div", { class: "scroll" }, el("table", {},
@@ -3649,7 +3698,7 @@ class DeviceSentinelPanel extends HTMLElement {
       this._pane.replaceChildren(back, head, hubBox,
         el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable), judgedBlock),
         ...(hubSelf ? [el("h3", { class: "section" }, "Devices This Hub Controls ", el("span", { class: "small" }, `${hubSelf.behind.length}`)), behindTable,
-          el("h3", { class: "section" }, "Outages, last 14 days"), hubOutages] : []));
+          el("h3", { class: "section" }, "Outages, Last 14 Days"), hubOutages] : []));
       this._paintReadings();
       return;
     }
@@ -3674,7 +3723,7 @@ class DeviceSentinelPanel extends HTMLElement {
         rhythmShown
           ? el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable), rhythm)
           : el("div", {}, el("h3", { class: "section" }, "Identity"), idTable),
-        ...(rhythmShown ? [el("h3", { class: "section" }, "Gaps, last 14 days"), silences] : []),
+        ...(rhythmShown ? [el("h3", { class: "section" }, "Gaps, Last 14 Days"), silences] : []),
         ...(batteryChart ? [el("h3", { class: "section" }, "Battery"), batteryChart] : [])]);
       this._paintReadings();
       return;
@@ -3682,7 +3731,7 @@ class DeviceSentinelPanel extends HTMLElement {
     this._pane.replaceChildren(back, head, statusBox,
       el("div", { class: "twocol" }, el("div", {}, el("h3", { class: "section" }, "Identity"), idTable), rhythm),
       // No silences for a device judged by its connection (0.27.3).
-      ...(status.connection ? [] : [el("h3", { class: "section" }, "Gaps, last 14 days"), silences]),
+      ...(status.connection ? [] : [el("h3", { class: "section" }, "Gaps, Last 14 Days"), silences]),
       this._graphs(page),
       el("p", { class: "muted", style: "margin:0" },
         "The Battery and Signal tabs open this page for any device, so these two graphs are where a battery or signal question ends."));
@@ -4223,11 +4272,13 @@ class DeviceSentinelPanel extends HTMLElement {
         }
       });
       // Inside the chart, on whichever side of the first day has room,
-      // so it never sits over the axis (0.27.3).
+      // so it never sits over the axis (0.27.3). Above the plot area,
+      // which starts at 20: drawn halfway down it lay across the data
+      // lines (James's FJ40 sensor, 0.27.4).
       if (p50.length < days) {
         const first = x(p50.length - 1);
         const roomRight = first < (x(0) + x(days - 1)) / 2;
-        sig.g.append(svg("text", { x: roomRight ? first + 8 : first - 8, y: 105, class: "axis", "text-anchor": roomRight ? "start" : "end" },
+        sig.g.append(svg("text", { x: roomRight ? first + 8 : first - 8, y: 14, class: "axis", "text-anchor": roomRight ? "start" : "end" },
           roomRight ? `\u2039 recording began ${fmt(dayOf(p50.length - 1))}` : `recording began ${fmt(dayOf(p50.length - 1))} \u203a`));
       }
       addHover(sig.g);
@@ -4419,7 +4470,8 @@ class DeviceSentinelPanel extends HTMLElement {
     const again = () => this._paintClassification();
     const rows = this._sortRows(ofType.filter(keep), this._classSort, {
       name: (row) => (row.name || "").toLowerCase(),
-      integration: (row) => (row.integration || "").toLowerCase(),
+      // By the name shown, as the Daily Brief names it (rule GEN-07).
+      integration: (row) => (row.integration_name || row.integration || "").toLowerCase(),
       type: (row) => (row.type || "\uffff").toLowerCase(),
       watched: (row) => (row.watched ? 0 : 1),
       muted: (row) => (row.muted || "\uffff").toLowerCase(),
@@ -4450,7 +4502,8 @@ class DeviceSentinelPanel extends HTMLElement {
         showCopies ? head("COPIES", "copies") : null)),
       el("tbody", {}, ...rows.map((row) => el("tr", {},
         el("td", {}, this._link(row.name, this._devicePath(row.device_id))),
-        el("td", {}, this._link(row.integration, this._integrationPath(row.integration))),
+        // The integration's name; its id still opens its page (rule GEN-07).
+        el("td", {}, this._link(row.integration_name || row.integration, this._integrationPath(row.integration))),
         el("td", {}, this._typeLink(row.type, pick)),
         el("td", {}, row.watched ? (row.judged ? `\u2713 ${row.judged}` : "\u2713") : ""),
         el("td", {}, row.muted),
