@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: narrative.py, Version: 0.27.3 (2026-10-24)
+# File: narrative.py, Version: 0.27.4 (2026-10-25)
 
 """How to say what happened: the composer.
 
@@ -74,6 +74,29 @@ from .const import (
 )
 from .escalation import ESCALATED_FROM, state_word
 
+
+# The Daily Brief's words for each problem, read by the push, the card
+# and the Problem List too: the brief is the surface checked most, so
+# the others say what it says, each in its own sentence shape. The
+# event words are what the device did, for a push line ("At 3:04 pm,
+# Kitchen Motion became unavailable."); the state words are what it is,
+# for a list line, as the brief's Right Now table says it. A hub that
+# goes down, and a dropping-out device's count, are worded where the
+# device is known (rules NOTE-01, LIST-02, UNAV-08).
+BRIEF_EVENT_WORDS = {
+    TODO_KIND_FROZEN: "stopped reporting",
+    TODO_KIND_NEVER_REPORTED: "never reported",
+    TODO_KIND_UNAVAILABLE: "became unavailable",
+    TODO_KIND_UNKNOWN: "went unknown",
+    TODO_KIND_RAILED_SIGNAL: "signal railed",
+}
+BRIEF_STATE_WORDS = {
+    TODO_KIND_FROZEN: "stopped reporting",
+    TODO_KIND_NEVER_REPORTED: "never reported",
+    TODO_KIND_UNAVAILABLE: "unavailable",
+    TODO_KIND_UNKNOWN: "unknown",
+    TODO_KIND_RAILED_SIGNAL: "signal railed",
+}
 
 
 class NarrativeMixin:

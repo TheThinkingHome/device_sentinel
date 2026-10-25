@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_maintainer.py, Version: 0.27.3 (2026-10-24)
+# File: report_maintainer.py, Version: 0.27.4 (2026-10-25)
 
 """The Markdown files written for whoever maintains the system:
 device telemetry, silence episodes, classification, and the stack
@@ -447,7 +447,7 @@ class MaintainerReportMixin:
         return ", ".join(parts)
 
     def _reporting_lines(self) -> list[str]:
-        """Return the telemetry report's Devices With A Fault section.
+        """Return the telemetry report's Devices With a Fault section.
 
         Every device with a fault, grouped by family (freeze, then
         dropping out, then battery, then signal) and alphabetical within each group, so
@@ -548,14 +548,16 @@ class MaintainerReportMixin:
         count = len(faults | {row["device_id"] for row in dropping})
         if count == 0:
             return [
-                "## Devices With A Fault (0)",
+                # Title Case, book-title style: the article stays small
+                # (rule GEN-06).
+                "## Devices With a Fault (0)",
                 "",
                 f"As of {as_of}, nothing is frozen, unavailable, "
                 f"unknown, dropping out, low on battery, or railed.",
                 "",
             ]
         out = [
-            f"## Devices With A Fault ({count})",
+            f"## Devices With a Fault ({count})",
             "",
             f"As of {as_of}. Every device with a fault, grouped by "
             f"family. A duration is how long the fault had lasted "
@@ -716,7 +718,7 @@ class MaintainerReportMixin:
         # Alphabetical by the device label, case-insensitive: the table
         # is a reference chart a person scans by name, so strict
         # alphabetical is what they expect (the descending-gap order
-        # that suited the soak is gone; the Devices With A Fault
+        # that suited the soak is gone; the Devices With a Fault
         # section above already surfaces what is in trouble).
         rows.sort(key=lambda row: row[0].lower())
         for (
@@ -769,11 +771,13 @@ class MaintainerReportMixin:
         is the one that would survive a prune: the owning integration,
         then the device's own labels, then the device itself. A label
         is named by its name, not its id, since the name is what a
-        person set; several matching labels are named together.
+        person set; several matching labels are named together. An
+        integration is named as Home Assistant shows it, the way the
+        Daily Brief names it, not by its id (rule GEN-07).
         """
         domain = self._watched.get(device_id)
         if domain in integrations:
-            return f"integration: {domain}"
+            return f"integration: {self._integration_title(domain)}"  # type: ignore[attr-defined]
         hit = self._device_labels.get(device_id, frozenset()) & set(labels)
         if hit:
             names = sorted(
@@ -795,13 +799,15 @@ class MaintainerReportMixin:
 
         The level comes from the registry walk, which already decided
         it; only the name of the integration or label is added here,
-        so this cell cannot disagree with what the judge does.
+        so this cell cannot disagree with what the judge does. The
+        integration is named as Home Assistant shows it, as the Daily
+        Brief names it (rule GEN-07).
         """
         level = self._muted_devices.get(device_id)
         if not level:
             return ""
         if level == "integration":
-            return f"Global (integration: {self._watched.get(device_id)})"
+            return f"Global (integration: {self._integration_title(self._watched.get(device_id))})"  # type: ignore[attr-defined]
         if level == "label":
             source = self._mute_source(
                 device_id, [], self.entry.options.get(CONF_MUTED_LABELS, []), []
@@ -940,13 +946,15 @@ class MaintainerReportMixin:
         name shared by more than one registry device. The MUTED cell
         holds every mute on a device, global first and then freeze,
         battery and signal, each with its source (0.22.13), in the
-        same words `classification_rows` gives the dashboard.
+        same words `classification_rows` gives the dashboard. The
+        INTEGRATION column names the integration as the tab and the
+        Daily Brief do, not by its id (rule GEN-07).
         """
 
         rows = [
             (
                 row["name"],
-                row["integration"],
+                row["integration_name"] or row["integration"],
                 "yes" if row["watched"] else "",
                 row["muted"],
                 row["set_aside"],
@@ -995,7 +1003,7 @@ class MaintainerReportMixin:
             watched_mark = "\u2713" if watched else ""
             set_aside_mark = aside_reason or ""
             lines.append(
-                f"| {self._report_cell(name)} | {integration} | "
+                f"| {self._report_cell(name)} | {self._report_cell(integration)} | "
                 f"{watched_mark} | "
                 f"{self._report_cell(muted)} | "
                 f"{self._report_cell(set_aside_mark)} | {copies_cell} |"
@@ -1030,8 +1038,10 @@ class MaintainerReportMixin:
                     if domain in counts and device_id in self._watched
                 ])
                 standing = "Helper" if self._is_helper(domain) else "No hardware"
+                # By its name, as the Integrations tab and the Daily
+                # Brief name it (rule GEN-07).
                 lines.append(
-                    f"| {self._report_cell(domain)} | {standing} | {adds_to} |"
+                    f"| {self._report_cell(self._integration_title(domain))} | {standing} | {adds_to} |"  # type: ignore[attr-defined]
                 )
 
         path = os.path.join(report_directory, REPORT_CLASSIFICATION)

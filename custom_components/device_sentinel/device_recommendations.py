@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.27.3 (2026-10-24)
+# File: custom_components/device_sentinel/device_recommendations.py, Version: 0.27.4 (2026-10-25)
 
 """Recommendations about single devices, for the Recommendations tab (0.24.9).
 
@@ -57,8 +57,8 @@ KIND_SLOW = "slow"
 KIND_BATTERY_OFF = "battery_off"
 KIND_SIGNAL_OFF = "signal_off"
 KIND_NODE_STATUS_OFF = "node_status_off"
-# A battery device's own voltage sensor, all switched off (0.27.3):
-# Advanced only, and listed only for a device with a battery reading.
+# A battery device's own voltage sensor, all switched off (0.27.3),
+# listed only for a device with a battery reading.
 KIND_VOLTAGE_OFF = "voltage_off"
 
 # The switched-off cards and the kind of sensor each one turns on
@@ -71,11 +71,14 @@ SWITCHED_OFF_CARDS = {
     KIND_VOLTAGE_OFF: "voltage",
 }
 # The cards Simple shows (ruling #695): the ones that stop a missed or
-# false alarm. Confirm Battery Replacement joins them (#701).
+# false alarm. Confirm Battery Replacement joins them (#701). Signal
+# Sensor Switched Off and Battery Voltage Switched Off join them too:
+# Simple's device page offers no turn-on button, so each sensor a
+# Simple user may need on has its card here (rule REC-09).
 KIND_BATTERY_CONFIRM = "battery_confirm"
 SIMPLE_CARDS = frozenset({
     KIND_LAST_SEEN, KIND_BATTERY_OFF, KIND_NODE_STATUS_OFF, KIND_NAMES, KIND_SLOW,
-    KIND_BATTERY_CONFIRM,
+    KIND_BATTERY_CONFIRM, KIND_SIGNAL_OFF, KIND_VOLTAGE_OFF,
 })
 
 
@@ -93,6 +96,24 @@ def _short_day(iso: str) -> str:
 
 class DeviceRecommendationsMixin:
     """The coordinator's device recommendations."""
+
+    def switched_off_voltage(self) -> dict[str, str]:
+        """The devices Battery Voltage Switched Off lists, with who
+        switched each off.
+
+        Only a device with a battery reading whose voltage nothing else
+        reports, such as ZHA's battery_voltage on its battery sensor
+        (0.27.3). One place, so the card and the diagnostics download
+        count the same devices (rule REC-09).
+        """
+        return {
+            d: who for d, who in self.switched_off_devices("voltage").items()  # type: ignore[attr-defined]
+            if d in self._battery_entity  # type: ignore[attr-defined]
+            and self.battery_voltage_now(d) is None  # type: ignore[attr-defined]
+            # A device whose power is mains, USB or PoE: its voltage
+            # sensor reads the supply, not a battery.
+            and (self.power_of(d) or {}).get("kind", "battery") == "battery"  # type: ignore[attr-defined]
+        }
 
     def device_recommendations(self) -> list[dict[str, Any]]:
         """Each kind that applies, with its devices in name order."""
@@ -165,18 +186,9 @@ class DeviceRecommendationsMixin:
         off = {
             kind: self.switched_off_devices(sensor)  # type: ignore[attr-defined]
             for kind, sensor in SWITCHED_OFF_CARDS.items()
+            if kind != KIND_VOLTAGE_OFF
         }
-        # Battery Voltage Switched Off lists only a device with a battery
-        # reading whose voltage nothing else reports, such as ZHA's
-        # battery_voltage on its battery sensor (0.27.3).
-        off[KIND_VOLTAGE_OFF] = {
-            d: who for d, who in off[KIND_VOLTAGE_OFF].items()
-            if d in self._battery_entity  # type: ignore[attr-defined]
-            and self.battery_voltage_now(d) is None  # type: ignore[attr-defined]
-            # A device whose power is mains, USB or PoE: its voltage
-            # sensor reads the supply, not a battery.
-            and (self.power_of(d) or {}).get("kind", "battery") == "battery"  # type: ignore[attr-defined]
-        }
+        off[KIND_VOLTAGE_OFF] = self.switched_off_voltage()
         switched_off_words = (
             (KIND_LAST_SEEN, "Last Seen Sensor Switched Off", "a Last Seen sensor",
              "With it on, Device Sentinel notices the device going quiet sooner."),

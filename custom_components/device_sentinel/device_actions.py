@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.3 (2026-10-24)
+# File: custom_components/device_sentinel/device_actions.py, Version: 0.27.4 (2026-10-25)
 
 """Acting from the device page (0.24.5, Project__Device_Page_Actions.md).
 
@@ -19,7 +19,8 @@ everything that reacts to a mute reacts the same way.
 Every act rebuilds Device Sentinel's view at once, so the page shows
 what was done even inside the registry debouncer's two seconds
 (0.24.2), and records one row in the brief, on the device's own line,
-"from its device page". The options a page mute writes are left out of
+with where it was pressed: "from its device page", or "from the
+Recommendations tab" for an act pressed on a card there. The options a page mute writes are left out of
 the "Settings changed" row, so one act makes one row (ruling #307's
 rule for the trim).
 """
@@ -28,6 +29,7 @@ from __future__ import annotations
 
 import unicodedata
 
+from collections.abc import Callable
 from typing import Any
 
 from homeassistant.helpers import area_registry as ar
@@ -333,11 +335,32 @@ class DeviceActionsMixin:
             raise KeyError(device_id)
         return device
 
+    # Where the act running now was pressed, set by `page_from` for the
+    # length of one act.
+    _page_source: str = "device_page"
+
+    def page_from(self, source: str, act: Callable[[], Any]) -> Any:
+        """Run one act, recorded as pressed where `source` says.
+
+        A sensor turned on, a power answer or a type set from a
+        Recommendations card was recorded "from its device page", the
+        only place `_page_done` knew of. The command now says where it
+        was pressed, as a mute does, and the record says so (rules
+        BRIEF-07, DEV-07).
+        """
+        self._page_source = source
+        try:
+            return act()
+        finally:
+            self._page_source = "device_page"
+
     def _page_done(self, device_id: str, what: str) -> None:
-        """Show the act at once and record it, once, on the device's line."""
+        """Show the act at once and record it, once, on the device's line,
+        with where it was pressed (rule BRIEF-07)."""
         self._rebuild_registry_view()  # type: ignore[attr-defined]
+        where = MUTE_SOURCES_SAID.get(self._page_source, MUTE_SOURCES_SAID["device_page"])
         self._record_system_event(  # type: ignore[attr-defined]
-            SYS_DEVICE_PAGE, detail=f"{what}, from its device page", device_id=device_id
+            SYS_DEVICE_PAGE, detail=f"{what}, {where}", device_id=device_id
         )
         self._mark_changed()  # type: ignore[attr-defined]
 

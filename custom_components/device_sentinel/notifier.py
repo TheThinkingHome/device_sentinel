@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: notifier.py, Version: 0.27.1 (2026-10-23)
+# File: notifier.py, Version: 0.27.4 (2026-10-25)
 
 """The event notification engine: per-family pushes and the card.
 
@@ -16,26 +16,24 @@ The persistent card. One card, always the current trouble state of the
 home, re-sent on every change. It is silent by nature and so is never
 gated by quiet hours, the same reason the problem list is not.
 
-The per-family high-priority pushes. One push per family (battery,
-signal, freeze), each carrying the triggering event line and then the
-current state of that family, so an admin reading the latest push for a
-family sees both what just happened and what is true now. A fault plays
-the device's own system sound; a recovery is sent silently. Events fire
-only outside quiet hours; what quiet hours drops, the persistent card
-and the daily brief carry.
+The per-family pushes. One push per family (battery, signal, freeze),
+each carrying the triggering event line and then the current state of
+that family, so an admin reading the latest push for a family sees both
+what just happened and what is true now. A fault plays the device's own
+system sound; a recovery is sent silently.
 
 The upstream push. A coordinator, the broker, the Wi-Fi network or a
 whole integration going down silences everything behind it at once,
 and those devices deliberately raise no faults of their own. One
-message names the thing a person can actually fix and counts the
-casualties rather than listing them; every later message about the
-same outage is silent and carries the running tally, so the number
-stays true without interrupting again, and the recovery is announced
-once and silently with how many had gone quiet.
+message, in the words of its Problem List row, names the thing a
+person can actually fix and counts the devices behind it rather than
+listing them; the return is announced once and silently, in the Daily
+Brief's words, with how long it was down.
 
-Normal-priority targets receive none of this. They get the daily brief
-and nothing else, which is the whole difference between the tiers: not
-urgency, but whether live events arrive at all.
+High-priority targets get every push at any hour. Normal-priority
+targets get every push except during Quiet Hours; what Quiet Hours
+drop, the persistent card and the Daily Brief carry. The Daily Brief
+goes only to Send the Full Brief To (rules NOTE-02, NOTE-07, BRIEF-11).
 
 Everything here is a listener on state the sync already settled, so a
 failure to notify never touches detection, the list, or the card's own
@@ -52,13 +50,26 @@ from homeassistant.components import persistent_notification
 from homeassistant.util import dt as dt_util
 
 from .battery_level import level_text
+from .narrative import BRIEF_STATE_WORDS
 from .const import (
+    BROKER_LABEL,
+    BROKER_SCOPE,
+    DATA_SYSTEM_EVENTS,
+    SYS_BRIDGE_UP,
+    SYS_BROKER_UP,
+    SYS_INTEGRATION_UP,
+    SYS_KIND,
+    SYS_SCOPE,
+    SYS_WIFI_UP,
+    UPSTREAM_KIND,
+    WIFI_KEY,
     TODO_KIND_FLAPPING,
     TODO_KIND_FALLING_BATTERY,
     TODO_KIND_LOW_BATTERY,
     TODO_KIND_SEVERITY,
     SUMMARY_NAMES,
     CONF_HIGH_PRIORITY_TARGETS,
+    CONF_NORMAL_PRIORITY_TARGETS,
     CONF_PERSISTENT_ENABLED,
     CONF_QUIET_ENABLED,
     CONF_QUIET_END,
@@ -76,11 +87,8 @@ from .const import (
     NOTIFY_FAMILY_SIGNAL,
     NOTIFY_FAMILY_TITLES,
     SIGNAL_ROW_LOW,
-    TODO_KIND_FROZEN,
-    TODO_KIND_NEVER_REPORTED,
     TODO_KIND_RAILED_SIGNAL,
     TODO_KIND_UNAVAILABLE,
-    TODO_KIND_UNKNOWN,
     STACK_DISPLAY_NAMES,
 )
 
@@ -97,15 +105,13 @@ _APPLE_SILENT = {"push": {"interruption-level": "passive"}}
 # default rather than a kind anything writes. Until 0.15.8 the railed
 # rows said "rail" here while the problem list called the same thing
 # "signal", which is why the family map had to list both; the rows
-# carry TODO_KIND_RAILED_SIGNAL now (ruling #299).
+# carry TODO_KIND_RAILED_SIGNAL now (ruling #299). The device problems
+# read the Daily Brief's words, as its Right Now table says them:
+# "stopped reporting", "signal railed" (rules NOTE-01, LIST-02).
 _SUMMARY_WORD = {
     TODO_KIND_FLAPPING: "keeps dropping out",
-    TODO_KIND_RAILED_SIGNAL: "railed",
     SIGNAL_ROW_LOW: "low signal",
-    TODO_KIND_FROZEN: "frozen",
-    TODO_KIND_UNAVAILABLE: "unavailable",
-    TODO_KIND_UNKNOWN: "unknown",
-    TODO_KIND_NEVER_REPORTED: "never reported",
+    **BRIEF_STATE_WORDS,
 }
 
 
@@ -161,6 +167,32 @@ class NotifierMixin:
             )
             if target
         ]
+
+    def _normal_priority_targets(self) -> list[str]:
+        """Return the configured normal-priority targets, cleaned."""
+        return [
+            target
+            for target in (
+                self.entry.options.get(CONF_NORMAL_PRIORITY_TARGETS) or []
+            )
+            if target
+        ]
+
+    def _push_targets(self) -> list[str]:
+        """The targets a push goes to now, each once.
+
+        High-priority targets get every push, Quiet Hours included;
+        normal-priority targets get every push except during Quiet
+        Hours. Quiet Hours once stopped every push, high priority
+        included, and normal-priority targets were sent nothing at all
+        (rules NOTE-02, NOTE-07).
+        """
+        targets = self._high_priority_targets()
+        if not _in_quiet_hours(
+            self.entry.options, dt_util.now().strftime("%H:%M:%S")
+        ):
+            targets = [*targets, *self._normal_priority_targets()]
+        return list(dict.fromkeys(targets))
 
     @staticmethod
     def _capped(
@@ -312,9 +344,10 @@ class NotifierMixin:
                 if row.get("device_id") in acknowledged:
                     continue
                 name = row.get("name") or row.get("device_id")
+                # How often, as the brief says it (rule NOTE-01).
                 entries.append((
                     _rank(TODO_KIND_FLAPPING), _since(row),
-                    f"{name} {_SUMMARY_WORD[TODO_KIND_FLAPPING]}",
+                    f"{name} {self.flap_words(row['device_id']) if row.get('device_id') else _SUMMARY_WORD[TODO_KIND_FLAPPING]}",  # type: ignore[attr-defined]
                 ))
             for row in down_rows:
                 if row.get("device_id") in acknowledged:
@@ -358,34 +391,62 @@ class NotifierMixin:
             data.update(_APPLE_SILENT)
         return {"title": title, "message": message, "data": data}
 
+    def _upstream_down_words(self, name: str, count: int) -> str:
+        """The down push, in the Problem List row's own words.
+
+        The push built its own text and named the upstream by its key,
+        "z2m is down", where the row says "Zigbee2MQTT down: 3 of 77
+        total devices unavailable". Reading the row's summary names it
+        as a person would and states the total behind it, devices
+        muted for unavailable included (rules UP-09, UP-11).
+        """
+        since = self.upstream_down_since_for(name)  # type: ignore[attr-defined]
+        summary, _ = self._upstream_item_text(  # type: ignore[attr-defined]
+            name, {UPSTREAM_KIND: since}, count
+        )
+        return f"{summary}."
+
+    def _upstream_return_words(self, name: str) -> str:
+        """The recovery push, in the Daily Brief's words for the return.
+
+        The brief's sentence for the stored return says how long the
+        upstream was down and what went down out of the total behind
+        it, so the push claims no count already back (rule UP-09).
+        Where no return is stored, the upstream is named and nothing
+        is counted.
+        """
+        if name == BROKER_LABEL:
+            wanted = (SYS_BROKER_UP, BROKER_SCOPE)
+        elif name == WIFI_KEY:
+            wanted = (SYS_WIFI_UP, WIFI_KEY)
+        elif name in self._stacks or name in self._bridge_readers:  # type: ignore[attr-defined]
+            wanted = (SYS_BRIDGE_UP, name)
+        else:
+            wanted = (SYS_INTEGRATION_UP, name)
+        for row in reversed(self.data.get(DATA_SYSTEM_EVENTS) or []):  # type: ignore[attr-defined]
+            if (row.get(SYS_KIND), row.get(SYS_SCOPE)) == wanted:
+                return self._system_event_sentence(row)  # type: ignore[attr-defined]
+        return f"{self._integration_title(name)} is back."  # type: ignore[attr-defined]
+
     async def async_push_upstream(
         self, name: str, count: int, recovered: bool = False
     ) -> None:
-        """Push the one message an upstream outage deserves.
+        """Push the message an upstream outage's phase deserves.
 
-        Ruling #265. The devices do not fall in one tick: Home
-        Assistant marks each entity unavailable as it notices, so the
-        reference system produced a push per tick until the add-on
-        came back. The first message about an upstream sounds; every
-        later one about the same upstream is silent and carries the
-        current tally, so a person always sees the true count without
-        being told about it again. Recovery is silent too, as every
-        recovery is.
+        Once when it is down, in its Problem List row's words, and
+        once when it is over, in the Daily Brief's words for its
+        return; the recovering phase sends nothing (#435). The first
+        message about an upstream sounds and the return is silent, as
+        every recovery is (#265). Sent to the targets `_push_targets`
+        names (rules UP-09, NOTE-02).
         """
         heard = name in self._upstream_announced
         if recovered:
             self._upstream_announced.pop(name, None)
-            message = (
-                f"{name} is back. {count} device(s) had gone quiet."
-                if count
-                else f"{name} is back."
-            )
+            message = self._upstream_return_words(name)
         else:
             self._upstream_announced[name] = count
-            message = (
-                f"{name} is down. {count} device(s) unavailable, "
-                f"and they are symptoms rather than faults."
-            )
+            message = self._upstream_down_words(name, count)
         payload: dict[str, Any] = {
             "title": "Device Sentinel: upstream",
             "message": message,
@@ -394,7 +455,7 @@ class NotifierMixin:
         if heard or recovered:
             payload["data"].update(_ANDROID_SILENT)
             payload["data"].update(_APPLE_SILENT)
-        for target in self._high_priority_targets():
+        for target in self._push_targets():
             domain, _, service = target.partition(".")
             if not service:
                 continue
@@ -410,19 +471,19 @@ class NotifierMixin:
     async def _push_family_event(
         self, family: str, event_line: str, recovery: bool
     ) -> None:
-        """Send one family push to every high-priority target.
+        """Send one family push to every target `_push_targets` names.
 
-        Called only outside quiet hours by the caller; the engine does
-        not re-check the clock here. Each target is tried on its own and
-        a failure is logged rather than raised, so one bad target never
-        blocks the rest.
+        Quiet Hours are applied there, to normal-priority targets only
+        (rule NOTE-07). Each target is tried on its own and a failure
+        is logged rather than raised, so one bad target never blocks
+        the rest.
         """
         payload = self._family_payload(family, event_line, recovery)
-        for target in self._high_priority_targets():
+        for target in self._push_targets():
             domain, _, service = target.partition(".")
             if not service:
                 LOGGER.warning(
-                    "High-priority target %s is not a service, skipped",
+                    "Push target %s is not a service, skipped",
                     target,
                 )
                 continue
@@ -442,15 +503,17 @@ class NotifierMixin:
     ) -> None:
         """Fire the family events the sync collected, if allowed.
 
-        events is a list of (family, event_line, recovery). Quiet hours
-        drops live events entirely: the card and the brief carry the
-        state, so nothing is queued. With no high-priority targets,
-        nothing is sent. The persistent card is updated separately and
-        always, so it is not gated here.
+        events is a list of (family, event_line, recovery). Quiet Hours
+        keep the events from normal-priority targets only, and what
+        they drop is not queued: the card and the brief carry the
+        state. High-priority targets get them at any hour (rules
+        NOTE-02, NOTE-07). With no target to send to now, nothing is
+        sent. The persistent card is updated separately and always, so
+        it is not gated here.
         """
         if not events:
             return
-        if not self._high_priority_targets():
+        if not self._push_targets():
             return
         if self._in_startup_grace():
             # Nothing is pushed inside the startup grace, for any
@@ -462,14 +525,6 @@ class NotifierMixin:
             LOGGER.debug(
                 "Device Sentinel: %d event(s) fell inside the startup "
                 "grace and were not pushed",
-                len(events),
-            )
-            return
-        now_hms = dt_util.now().strftime("%H:%M:%S")
-        if _in_quiet_hours(self.entry.options, now_hms):
-            LOGGER.debug(
-                "Device Sentinel: %d event(s) fell inside quiet hours "
-                "and were not pushed; the card and brief carry them",
                 len(events),
             )
             return

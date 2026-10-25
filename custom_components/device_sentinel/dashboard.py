@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard.py, Version: 0.27.3 (2026-10-24)
+# File: dashboard.py, Version: 0.27.4 (2026-10-25)
 
 """What the dashboard reads from the coordinator.
 
@@ -100,6 +100,7 @@ from .const import (
     DEV_BATTERY_VALUE,
     DEV_DAILY_MAX,
     DEV_EVENT_COUNT,
+    DEV_FIRMWARE_HISTORY,
     DEV_FIRST_OBSERVED,
     DEV_FROZEN_CATEGORY,
     FREEZE_CATEGORY_FROZEN,
@@ -725,6 +726,30 @@ def _iso(stamp: Any) -> str | None:
     return dt_util.utc_from_timestamp(stamp).isoformat() if isinstance(stamp, (int, float)) else None
 
 
+def _firmware(device: Any, record: dict[str, Any]) -> dict[str, Any] | None:
+    """The device's firmware for its page: the version now, and its history.
+
+    Recorded all along but shown only in the diagnostics download, so
+    the page could not say what a device runs or when it changed (rule
+    DEV-15). The version now is the registry's; a version not yet held
+    ten minutes is not in the history (0.23.10), and the page should
+    still show what the device runs. A device that stops giving one
+    keeps its last recorded, as the record does. The history is oldest
+    first, each version with the moment it was first seen. None when
+    there is neither, so the page leaves the row out. The panel draws
+    it in Advanced only (rule DEV-15).
+    """
+    history = [
+        {"version": str(pair[0]), "since": _iso(pair[1])}
+        for pair in (record.get(DEV_FIRMWARE_HISTORY) or [])
+        if isinstance(pair, (list, tuple)) and len(pair) == 2 and pair[0] is not None
+    ]
+    current = shown(device_field(device, "sw_version")) or (history[-1]["version"] if history else None)
+    if current is None:
+        return None
+    return {"current": current, "history": history}
+
+
 class DeviceViewMixin:
     """The Devices tab and each device's page."""
 
@@ -1185,6 +1210,8 @@ class DeviceViewMixin:
                 "model": shown(device_field(device, "model")),
                 "model_id": shown(device_field(device, "model_id")),
                 "hw_version": shown(device_field(device, "hw_version")),
+                # What it runs, and what it ran before (rule DEV-15).
+                "firmware": _firmware(device, record),
                 "area": area_name,
                 "integration": domain,
                 "integration_name": self._integration_name_of(device_id, domain) if domain else None,
@@ -1982,8 +2009,10 @@ class TrendsViewMixin:
                 # Its normal is the judgment's baseline, the one the
                 # bad-day line beside it is built from, so the device
                 # page and this tab print the same number. The change
-                # below is measured against the middle of its whole
-                # history, which is a different question and says so.
+                # below is measured against the middle of the days
+                # before this week, which leaves this week out and is a
+                # different question; the tab names it Before This Week
+                # (rule SIG-12).
                 "normal": last["normal"] if last else normal,
                 "line": last["line"] if last else None,
                 # The two middles the change is taken between, so the

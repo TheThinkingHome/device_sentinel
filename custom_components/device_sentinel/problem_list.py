@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.27.3 (2026-10-24)
+# File: problem_list.py, Version: 0.27.4 (2026-10-25)
 
 """The problem list: the single memory every channel renders.
 
@@ -45,6 +45,7 @@ from homeassistant.util import dt as dt_util
 
 from .battery_level import level_text
 from .events import sort_kinds
+from .narrative import BRIEF_EVENT_WORDS, BRIEF_STATE_WORDS
 from .normalise import row_damage
 from .const import (
     TODO_KIND_FLAPPING,
@@ -69,7 +70,6 @@ from .const import (
     INCIDENT_ACTION,
     INCIDENT_OPENED,
     LOGGER,
-    NOTIFY_FAMILY_FREEZE,
     NOTIFY_KIND_FAMILY,
     STACK_DISPLAY_NAMES,
     TODO_ACKED_AT,
@@ -105,12 +105,10 @@ from .const import (
 # have become one (ruling #299).
 _EVENT_WORD = {
     TODO_KIND_LOW_BATTERY: "low",
-    TODO_KIND_RAILED_SIGNAL: "railed",
-    TODO_KIND_FROZEN: "frozen",
-    TODO_KIND_UNAVAILABLE: "unavailable",
-    TODO_KIND_UNKNOWN: "unknown",
-    TODO_KIND_NEVER_REPORTED: "never reporting",
 }
+# A device problem's push line says what the device did in the Daily
+# Brief's words, "At 3:04 pm, Kitchen Motion stopped reporting.", where
+# it read "was detected frozen" (rules NOTE-01, UNAV-08).
 
 # The kinds whose push line is written rather than assembled from
 # _EVENT_WORD. A battery forecast cannot use the shared shape: "was
@@ -451,8 +449,10 @@ class ProblemListMixin:
             if left:
                 return left if left.startswith(("reaches ", "empty in ")) else f"empty in {left}"
             return "battery running down"
-        if kind == TODO_KIND_RAILED_SIGNAL:
-            return "signal (rail)"
+        # The rest in the Daily Brief's words, as its Right Now table
+        # says them: "stopped reporting", "signal railed" (rule LIST-02).
+        if kind in BRIEF_STATE_WORDS:
+            return BRIEF_STATE_WORDS[kind]
         return kind.replace("_", " ")
 
     def _upstream_item_text(
@@ -509,9 +509,9 @@ class ProblemListMixin:
         return summary, (
             f"{opening} {self._took_words(devices, behind)}, because of "
             f"it rather than on their own, so they are counted here "
-            f"instead of listed. Their verdicts are recorded and clear "
-            f"when it returns; anything still down afterward is listed "
-            f"on its own."
+            f"instead of listed. Each device keeps its own state while "
+            f"it is down. Anything still down afterwards is listed on "
+            f"its own."
         )
 
     @staticmethod
@@ -764,6 +764,16 @@ class ProblemListMixin:
             if kind == TODO_KIND_UNAVAILABLE and hub_words:
                 lines.append(self.hub_problem_line(device_id, when))  # type: ignore[attr-defined]
                 continue
+            # A never-reported device's time is when watching began,
+            # and the brief says "discovered" (rule LIST-10); a stopped
+            # device stopped at a moment, as the brief tells it (rule
+            # LIST-02).
+            if kind == TODO_KIND_NEVER_REPORTED and when is not None:
+                lines.append(f"{word.capitalize()}, discovered {when}.")
+                continue
+            if kind == TODO_KIND_FROZEN and when is not None:
+                lines.append(f"{word.capitalize()} at {when}.")
+                continue
             if when is not None:
                 lines.append(f"{word.capitalize()} since {when}.")
             else:
@@ -785,17 +795,9 @@ class ProblemListMixin:
             phrase = self.reachability_phrase(device_id)
             if phrase:
                 lines.append(phrase)
-            # The same plain sentence the push carries (ruling #235): a
-            # convicted battery device is unreachable by radio, so
-            # the tap-open says what fixes it, a person at the
-            # device, rather than leaving the reader to try remedies
-            # that cannot work.
-            if device_id in self._battery_entity:
-                lines.append(
-                    "This is a battery device. It cannot be reached "
-                    "remotely; bringing it back needs a person at "
-                    "the device."
-                )
+        # The item no longer adds that a battery device needs a person
+        # at it, as the push no longer does (James, 25 October 2026;
+        # rule NOTE-10).
         return summary, " ".join(lines)
 
     def _journal_addition(
@@ -1022,16 +1024,27 @@ class ProblemListMixin:
 
     @staticmethod
     def _event_line(
-        kind: str, name: str, when: str, recovery: bool, left: str | None
+        kind: str,
+        name: str,
+        when: str,
+        recovery: bool,
+        left: str | None,
+        said: str | None = None,
     ) -> str:
         """Return the one sentence a push carries.
 
-        Three shapes. A fault with a written line of its own, a fault
-        assembled from the shared word, and a recovery. Every one of
-        them is a sentence a person reads on a phone, so the kind
-        never appears raw: an underscore reaching a person is the
-        tell that a table was missed (ruling #215).
+        Four shapes. A fault in words the caller worked out for the
+        device (`said`: a hub that went down, a count of drop-outs), a
+        fault in the Daily Brief's word for its kind, a fault with a
+        written line of its own, and a recovery. Every one of them is a
+        sentence a person reads on a phone, so the kind never appears
+        raw: an underscore reaching a person is the tell that a table
+        was missed (ruling #215; rules NOTE-01, UNAV-08).
         """
+        if not recovery and said:
+            return f"At {when}, {name} {said}."
+        if not recovery and kind in BRIEF_EVENT_WORDS:
+            return f"At {when}, {name} {BRIEF_EVENT_WORDS[kind]}."
         if recovery:
             written = _RECOVERY_LINE.get(kind)
             if written is not None:
@@ -1085,23 +1098,23 @@ class ProblemListMixin:
             return
         family = NOTIFY_KIND_FAMILY.get(kind, "freeze")
         when = dt_util.now().strftime("%-I:%M %p").lower()
-        line = self._event_line(kind, name, when, recovery, left)
-        if (
-            not recovery
-            and family == NOTIFY_FAMILY_FREEZE
-            and device_id in self._battery_entity
-        ):
-            # A convicted battery device cannot be reached by radio;
-            # the recovery research established that plainly, so the
-            # push says it rather than leaving the reader to try
-            # (ruling #235). The elected battery entity is the
-            # classification the battery detector already maintains,
-            # so a device with one runs on battery.
-            line = (
-                f"{line} This is a battery device. It cannot be "
-                "reached remotely; bringing it back needs a "
-                "person at the device."
-            )
+        # The brief's words where they depend on the device: a hub
+        # "went down", and a device dropping out says how often, as the
+        # brief does (rules NOTE-01, UNAV-08). The push no longer adds
+        # that a battery device needs a person at it (James: not
+        # necessary; rule NOTE-10).
+        said = None
+        if not recovery and kind == TODO_KIND_UNAVAILABLE:
+            words = self.unavailable_words(device_id)  # type: ignore[attr-defined]
+            said = words[0] if words else None
+        elif not recovery and kind == TODO_KIND_FLAPPING:
+            said = self.flap_words(device_id)  # type: ignore[attr-defined]
+        elif not recovery and kind == TODO_KIND_LOW_BATTERY:
+            # A low battery reads as the brief says it, "battery fell
+            # to 12%", where the push read "was detected low" (James,
+            # 25 October 2026; rule NOTE-10).
+            said = self._battery_phrase(device_id, False)  # type: ignore[attr-defined]
+        line =self._event_line(kind, name, when, recovery, left, said)
         key = (device_id, kind)
         if recovery:
             cancel = self._held_events.pop(key, None)
@@ -1173,11 +1186,11 @@ class ProblemListMixin:
 
         Ruling #265: an outage settles before it is announced, because
         the devices arrive over tens of seconds and a count taken at
-        the first one is wrong. After the settle the count is pushed
-        whenever it changes, silently after the first, so the tally on
-        the phone is always current and only the first makes a sound.
-        A recovery is announced once the upstream is back, carrying
-        how many had gone quiet.
+        the first one is wrong. After the settle it is pushed once for
+        each phase (#435): when it is down, and once it is over; the
+        recovering phase sends nothing. Every upstream that is down
+        has a row from the start, so a healthy house losing one is
+        told too (rules UP-05, UP-09).
 
         Nothing is owed inside the startup grace (ruling #291). The
         phase is not recorded either, so an outage still standing when

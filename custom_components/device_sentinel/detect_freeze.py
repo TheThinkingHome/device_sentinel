@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.27.2 (2026-10-23)
+# File: detect_freeze.py, Version: 0.27.4 (2026-10-25)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -1701,13 +1701,54 @@ class FreezeMixin:
                 rows.append(row)
         return rows
 
+    def _down_with_upstream(
+        self, record: dict[str, Any], name: str, down_since: float
+    ) -> bool:
+        """Whether a device behind a down upstream went down with it.
+
+        A device's verdict is held while its upstream is down (#535),
+        so on a house that was healthy when the upstream went no device
+        is ever given one, and a count built from verdicts read zero:
+        no row, no push, and a brief saying none went down. What the
+        device reads is counted instead, as Home Assistant shows it: a
+        standing verdict, or the device reading unavailable or unknown
+        as a whole (its saved outage start, #647). A device whose own
+        verdict began before the outage keeps its own row and is not
+        counted here (rule UP-05).
+        """
+        category = record.get(DEV_FROZEN_CATEGORY)
+        if category is not None:
+            return not self._broken_before(
+                name, record.get(DEV_FROZEN_SINCE), down_since
+            )
+        return self._saved_down_since(record) is not None  # type: ignore[attr-defined]
+
     @property
     def suppressed_down_counts(self) -> dict[str, int]:
-        """Return how many devices each downed upstream is masking."""
+        """Return how many devices each downed upstream took down.
+
+        Every upstream that claims a watched device has an entry, at
+        zero before any device behind it reads down, so the row
+        appears when the upstream goes rather than when a device is
+        judged ("None of its 4 devices have gone down yet"). Devices
+        muted for unavailable are counted, as they are in the total
+        behind the upstream, and stay suppressed on their own (rules
+        UP-05, UP-11).
+        """
         counts: dict[str, int] = {}
+        for device_id, record in self.watched_records():
+            upstream = self.upstream_down_since(device_id)
+            if upstream is None:
+                continue
+            name, down_since = upstream
+            if name == WIFI_KEY:
+                continue
+            counts.setdefault(name, 0)
+            if self._down_with_upstream(record, name, down_since):
+                counts[name] += 1
         for row in self.frozen_devices_list:
             upstream = self.upstream_down_since(row["device_id"])
-            if upstream is None:
+            if upstream is None or upstream[0] != WIFI_KEY:
                 continue
             name, down_since = upstream
             since = row.get("since")

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: dashboard_api.py, Version: 0.27.3 (2026-10-24)
+# File: dashboard_api.py, Version: 0.27.4 (2026-10-25)
 
 """The WebSocket commands behind the dashboard, admins only.
 
@@ -56,6 +56,10 @@ from .const import (
 )
 
 _REGISTERED = f"{DOMAIN}_dashboard_api"
+
+# Where a sensor turn-on, a power answer or a type can be pressed: its
+# device page or its Recommendations card (rule BRIEF-07).
+ACT_SOURCES = ["device_page", "recommendations"]
 
 
 def mutes_for_kinds(kinds: Any) -> list[str]:
@@ -284,6 +288,9 @@ def ws_problem_list(
             "problem": problem,
             "since": dt_util.utc_from_timestamp(since).isoformat() if since is not None else None,
             "acknowledged": item.get(TODO_STATUS) == "completed",
+            # So the tab can say "discovered" with the time, in the
+            # brief's word for a device that never reported (rule LIST-10).
+            "never_reported": TODO_KIND_NEVER_REPORTED in kinds,
             # The mute beside each problem (0.24.5): the one that
             # matches it. A silence is the freeze mute's, a device gone
             # or dropping out the unavailable mute's (James, 17 October
@@ -545,18 +552,20 @@ def ws_device_rename(
         vol.Optional("choice"): vol.Any(str, None),
         vol.Optional("quantity"): vol.Any(int, None),
         vol.Optional("other"): vol.Any(str, None),
+        vol.Optional("source", default="device_page"): vol.In(ACT_SOURCES),
     }
 )
 @callback
 def ws_device_power(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Set what powers a device, or clear the owner's entry (0.24.7)."""
+    """Set what powers a device, or clear the owner's entry (0.24.7),
+    recorded with where it was pressed (rule BRIEF-07)."""
     _page_act(
         hass, connection, msg,
-        lambda c: c.page_set_power(
+        lambda c: c.page_from(msg["source"], lambda: c.page_set_power(
             msg["device_id"], msg.get("choice"), msg.get("quantity"), msg.get("other")
-        ),
+        )),
     )
 
 
@@ -567,16 +576,21 @@ def ws_device_power(
         vol.Required("device_id"): str,
         vol.Optional("choice"): vol.Any(str, None),
         vol.Optional("other"): vol.Any(str, None),
+        vol.Optional("source", default="device_page"): vol.In(ACT_SOURCES),
     }
 )
 @callback
 def ws_device_type(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Set what a device is, or go back to what its entities say (0.25.1)."""
+    """Set what a device is, or go back to what its entities say (0.25.1),
+    recorded with where it was pressed (rule BRIEF-07)."""
     _page_act(
         hass, connection, msg,
-        lambda c: c.page_set_type(msg["device_id"], msg.get("choice"), msg.get("other")),
+        lambda c: c.page_from(
+            msg["source"],
+            lambda: c.page_set_type(msg["device_id"], msg.get("choice"), msg.get("other")),
+        ),
     )
 
 
@@ -729,6 +743,7 @@ def ws_recommendation_ack(
         vol.Required("type"): "device_sentinel/device_turn_on",
         vol.Required("device_id"): str,
         vol.Required("kind"): vol.In(["last_seen", "node_status", "battery", "signal", "voltage"]),
+        vol.Optional("source", default="device_page"): vol.In(ACT_SOURCES),
     }
 )
 @callback
@@ -738,11 +753,16 @@ def ws_device_turn_on(
     """Switch on one device's own entities of one kind (ruling #696).
 
     Admin only, one device and one kind: the only way left to switch on
-    another integration's entity since the Enable buttons went.
+    another integration's entity since the Enable buttons went. Recorded
+    with where it was pressed, its device page or a Recommendations
+    card (rule BRIEF-07).
     """
     _page_act(
         hass, connection, msg,
-        lambda c: {"enabled": c.page_turn_on(msg["device_id"], msg["kind"])},
+        lambda c: c.page_from(
+            msg["source"],
+            lambda: {"enabled": c.page_turn_on(msg["device_id"], msg["kind"])},
+        ),
     )
 
 

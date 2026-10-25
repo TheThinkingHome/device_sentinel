@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: reports.py, Version: 0.26.6 (2026-10-18)
+# File: reports.py, Version: 0.27.4 (2026-10-25)
 
 """The report writers, split out of the coordinator for legibility.
 
@@ -310,7 +310,7 @@ class ReportWritingMixin(
         order when more than one applies.
 
         A todo icon lived here for one release and moved to the
-        Devices With A Fault section: the same state shown twice was
+        Devices With a Fault section: the same state shown twice was
         redundant and confusing, and that section is where a fault's
         whole story reads, list state included.
         """

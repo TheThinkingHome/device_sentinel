@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.27.1 (2026-10-23)
+# File: coordinator.py, Version: 0.27.4 (2026-10-25)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -2588,7 +2588,13 @@ class DeviceSentinelCoordinator(
             # a voice assistant, changed nothing a person could see on
             # the device's page. Disabling the entity in Home Assistant
             # is the way to take one entity out.
-            if self._is_last_seen(ent):
+            # A switched-off Last Seen has no state, so taking it as the
+            # clock left every report reading as a clock that had not
+            # moved: the device was never heard. It counts as none, and
+            # the device is timed by when its reports arrive; the Last
+            # Seen Sensor Switched Off card still finds it in the
+            # registry (rule WATCH-01).
+            if ent.disabled_by is None and self._is_last_seen(ent):
                 if last_seen_entity.get(ent.device_id) is None or (
                     own and not last_seen_own.get(ent.device_id, False)
                 ):
@@ -2687,23 +2693,12 @@ class DeviceSentinelCoordinator(
             )
             device_names.pop(device_id, None)
 
-        # A name shared by more than one watched device cannot be
-        # acted on: the reports print the name alone, so three
-        # registry devices called Bluetooth Proxy 2d8900 produce one
-        # row a person cannot find. The integration is appended to
-        # those and to no others, because a parenthetical on every
-        # row is decoration where the name is already unique.
-        seen: dict[str, int] = {}
-        for shared_name in device_names.values():
-            seen[shared_name] = seen.get(shared_name, 0) + 1
-        display_names = {
-            device_id: (
-                f"{plain} ({watched[device_id]})"
-                if seen.get(plain, 0) > 1
-                else plain
-            )
-            for device_id, plain in device_names.items()
-        }
+        # The name the brief and the railed-signal rows print: the plain
+        # name. It once carried the integration where a name was shared,
+        # "Bluetooth Proxy (esphome)"; the integration belongs on the
+        # Settings lists alone, once, and the brief and the dashboard
+        # keep the plain name (rule DEV-04).
+        display_names = dict(device_names)
 
         self._display_names = display_names
         self._watched = watched

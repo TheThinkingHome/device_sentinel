@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: config_flow.py, Version: 0.26.7 (2026-10-19)
+# File: config_flow.py, Version: 0.27.4 (2026-10-25)
 
 """Config and options flows for the Device Sentinel integration.
 
@@ -829,8 +829,8 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
 
         The device picker is populated from the detected batteries,
         the pick-from-detected ruling: what you see listed is exactly
-        what is being judged, named by device with its elected entity
-        shown.
+        what is being judged, each device named "Name (integration)" as
+        on every Settings list (rule DEV-04).
         """
         battery_rows = self.config_entry.runtime_data.detected_batteries
         if user_input is not None:
@@ -871,7 +871,9 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
             battery_rows,
             options.get(CONF_BATTERY_MUTED_DEVICES, []),
             covered,
-            lambda row: f"{row['name']} ({row['entity_id']})",
+            # "Name (integration)", as every Settings list names a
+            # device (rule DEV-04).
+            lambda row: f"{row['name']} ({row['integration']})",
             dev_reg,
             self.config_entry.runtime_data._device_name,
         )
@@ -2183,6 +2185,24 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
+                    # Above the Data Trim section: the form draws
+                    # fields in this order, and plain settings come
+                    # before sections (rule CFG-02).
+                    vol.Required(
+                        CONF_MAINTENANCE_MINUTES,
+                        default=options.get(
+                            CONF_MAINTENANCE_MINUTES,
+                            DEFAULT_MAINTENANCE_MINUTES,
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=MAINTENANCE_MINUTES_MIN,
+                            max=MAINTENANCE_MINUTES_MAX,
+                            step=MAINTENANCE_MINUTES_STEP,
+                            unit_of_measurement="min",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
                     # Optional rather than required: a save that
                     # omits the section entirely is a save that
                     # trims nothing, which is what every save of
@@ -2229,21 +2249,6 @@ class DeviceSentinelOptionsFlow(OptionsFlow):
                         # under the cursor of somebody adjusting a
                         # slider (ruling #307).
                         {"collapsed": True},
-                    ),
-                    vol.Required(
-                        CONF_MAINTENANCE_MINUTES,
-                        default=options.get(
-                            CONF_MAINTENANCE_MINUTES,
-                            DEFAULT_MAINTENANCE_MINUTES,
-                        ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=MAINTENANCE_MINUTES_MIN,
-                            max=MAINTENANCE_MINUTES_MAX,
-                            step=MAINTENANCE_MINUTES_STEP,
-                            unit_of_measurement="min",
-                            mode=selector.NumberSelectorMode.SLIDER,
-                        )
                     ),
                 }
             ),

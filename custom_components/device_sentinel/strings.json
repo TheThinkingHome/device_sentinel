@@ -36,8 +36,8 @@
               "persistent_enabled": "Create a Persistent Notification"
             },
             "data_description": {
-              "high_priority_targets": "Sent a message when a device develops a problem, and the daily brief with its history.",
-              "normal_priority_targets": "Sent the daily brief only, listing what needs attention now.",
+              "high_priority_targets": "Sent all alerts, at any hour, Quiet Hours included. The Daily Brief is not sent here; it goes only to Send the Full Brief To.",
+              "normal_priority_targets": "Sent all alerts, except during Quiet Hours. The Daily Brief is not sent here; it goes only to Send the Full Brief To.",
               "persistent_enabled": "Shows a single card on the dashboard with the current state of the home, grouped by kind."
             }
           },
@@ -49,7 +49,7 @@
               "quiet_hours_end": "End"
             },
             "data_description": {
-              "quiet_hours_enabled": "Nothing is sent during these hours. The daily brief reports what happened."
+              "quiet_hours_enabled": "During these hours, Normal-Priority Targets are sent nothing and High-Priority Targets are still sent all alerts. The Daily Brief reports what happened."
             }
           },
           "brief": {
@@ -250,7 +250,7 @@
         "title": "Extended Diagnostics",
         "description": "Device Sentinel supports some hardware only after seeing how it behaves on a real system, and nobody working on Device Sentinel owns one of everything. Turning a toggle on here adds raw readings about that hardware to your diagnostics download. Nothing is transmitted. If you want support for hardware listed here, turn this toggle on and wait 48 hours. Then, download your diagnostics from the Device Sentinel integration page and open an issue with the diagnostic file attached, saying what you would like built. [Extended Diagnostics on the wiki]({wiki_link})",
         "data": {
-          "study_hardware": "Hardware To Study"
+          "study_hardware": "Hardware to Study"
         },
         "data_description": {
           "study_hardware": "Only hardware found on your system appears here, and only where support is still being built. Choosing something changes nothing about how Device Sentinel behaves."
@@ -334,7 +334,12 @@
   "entity": {
     "sensor": {
       "status": {
-        "name": "Status"
+        "name": "Status",
+        "state": {
+          "watching": "Watching",
+          "learning": "Learning",
+          "problem": "Problem"
+        }
       },
       "devices_watched": {
         "name": "Devices: Watched"

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.26.6 (2026-10-18)
+# File: interventions.py, Version: 0.27.4 (2026-10-25)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -84,7 +84,6 @@ from .const import (
     BRIDGE_HANDBACK_SECONDS,
     DATA_DEVICES,
     DEV_REMOVED_NAME,
-    DEV_FROZEN_CATEGORY,
     BROKER_LABEL,
     BRIDGE_SEEN_SINCE,
     BRIDGE_SEEN_STATE,
@@ -902,6 +901,7 @@ class InterventionMixin:
         """Record and announce an integration that has gone."""
         self._integration_told.add(entry.entry_id)
         self._begin_upstream_peak(entry.domain)
+        self._begin_upstream_peak(_entry_key(entry))
         detail = make_detail(
             entry.entry_id,
             self._entry_only_device.get(entry.entry_id),
@@ -968,13 +968,27 @@ class InterventionMixin:
             since, dt_util.utcnow().timestamp()
         )
         self._integration_recovering_at[domain] = now
-        self._integration_fell[domain] = self._integration_casualties(
-            domain
+        # What went down is the most the outage had down at once: by
+        # the time the entry reads loaded, its devices may already read
+        # back, and the recovering row would wait for none (rule UP-08).
+        self._integration_fell[domain] = max(
+            self._integration_casualties(domain),
+            self._upstream_peak.get(domain, 0),
         )
         # Read while the window holds the claim. The total is this
         # entry's devices, not the whole integration's: one plug of
-        # five coming back says "its device" (round 31 of 0.26.6).
-        ended = self._upstream_ended(domain)
+        # five coming back says "its device" (round 31 of 0.26.6). The
+        # worst is this entry's own too, for the reason
+        # `_entry_down_counts` gives (rule UP-11).
+        key = _entry_key(entry)
+        worst = max(
+            self._upstream_peak.pop(key, 0),
+            self._entry_down_counts().get(key, 0),
+        )
+        ended = {
+            "devices": max(self.upstream_membership(domain), worst),
+            "worst": worst,
+        }
         carried = self._integration_behind.pop(entry.entry_id, None)
         if carried is None:
             # Not announced in this run (resumed after a restart): count
@@ -1061,27 +1075,14 @@ class InterventionMixin:
             self._integration_fell.pop(domain, None)
 
     def _integration_casualties(self, domain: str) -> int:
-        """How many watched devices of this integration are down.
+        """How many devices this integration's outage has down now.
 
-        Only devices no stack reader carries, which are the ones the
-        integration rung speaks for.
+        The devices its outage claims that read down, counted as its
+        row counts them. Counted from verdicts, it read zero, since a
+        device's verdict is held while its upstream is down, and the
+        recovering row never appeared (rules UP-08, UP-11).
         """
-        count = 0
-        for device_id in self._watched:
-            if self._stack_for_device(device_id) is not None:
-                continue
-            record = self.data.get(DATA_DEVICES, {}).get(device_id) or {}
-            if record.get(DEV_FROZEN_CATEGORY) is None:
-                continue
-            entry_id = self._entry_of_device.get(device_id)
-            entry = (
-                self.hass.config_entries.async_get_entry(entry_id)
-                if entry_id is not None
-                else None
-            )
-            if entry is not None and entry.domain == domain:
-                count += 1
-        return count
+        return self.suppressed_down_counts.get(domain, 0)  # type: ignore[attr-defined]
 
     def upstream_recovering_at(self, name: str) -> float | None:
         """When a bridge's or an integration's recovery began, or None.
@@ -1157,15 +1158,13 @@ class InterventionMixin:
         return stack, since
 
     def _stack_casualties(self, stack: str) -> int:
-        """How many devices on this stack are currently down."""
-        return sum(
-            1 for device_id in self.data.get(DATA_DEVICES, {})
-            if self._stack_for_device(device_id) == stack
-            and (self.data[DATA_DEVICES][device_id] or {}).get(
-                DEV_FROZEN_CATEGORY
-            )
-            is not None
-        )
+        """How many devices this bridge's outage has down now.
+
+        The devices its outage claims that read down, counted as its
+        row counts them, for the reason `_integration_casualties` gives
+        (rules UP-08, UP-11).
+        """
+        return self.suppressed_down_counts.get(stack, 0)  # type: ignore[attr-defined]
 
     def _note_loaded(self, name: str, now: float) -> None:
         """Record the first time an upstream is seen loaded this run."""
@@ -1298,6 +1297,34 @@ class InterventionMixin:
         for name, count in self.suppressed_down_counts.items():
             if count > self._upstream_peak.get(name, 0):
                 self._upstream_peak[name] = count
+        for key, count in self._entry_down_counts().items():
+            if count > self._upstream_peak.get(key, 0):
+                self._upstream_peak[key] = count
+
+    def _entry_down_counts(self) -> dict[str, int]:
+        """How many devices each down integration entry has down now.
+
+        The row counts per integration, but each entry's outage is
+        recorded on its own (#690), so its worst moment counts only its
+        own devices: two entries of one integration down together would
+        otherwise each record the other's devices (rule UP-11). Keyed
+        as the entry's outage is announced.
+        """
+        counts: dict[str, int] = {}
+        for device_id, record in self.watched_records():  # type: ignore[attr-defined]
+            if self._stack_for_device(device_id) is not None:
+                continue
+            claim = self.integration_down_since(device_id)
+            if claim is None:
+                continue
+            entry_id = self._entry_of_device.get(device_id)
+            if entry_id is None:
+                continue
+            key = f"{claim[0]}|{entry_id}"
+            counts.setdefault(key, 0)
+            if self._down_with_upstream(record, claim[0], claim[1]):  # type: ignore[attr-defined]
+                counts[key] += 1
+        return counts
 
     def _begin_upstream_peak(self, name: str) -> None:
         """Start a new outage's count from nothing."""
@@ -1648,8 +1675,11 @@ class InterventionMixin:
                     if since is not None:
                         self._bridge_handback[stack] = (since, now)
                         self._bridge_recovering_at[stack] = now
-                        self._bridge_fell[stack] = self._stack_casualties(
-                            stack
+                        # The most it had down at once, for the reason
+                        # `_integration_back` gives (rule UP-08).
+                        self._bridge_fell[stack] = max(
+                            self._stack_casualties(stack),
+                            self._upstream_peak.get(stack, 0),
                         )
                     self._record_system_event(
                         SYS_BRIDGE_UP,

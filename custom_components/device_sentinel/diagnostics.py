@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: diagnostics.py, Version: 0.27.1 (2026-10-23)
+# File: diagnostics.py, Version: 0.27.4 (2026-10-25)
 
 """Diagnostics support for the Device Sentinel integration.
 
@@ -294,7 +294,14 @@ async def _studied(read: Callable[[], Any]) -> dict[str, Any]:
 # reads as the same device in every section and a fault can still be
 # traced. A MAC keeps its first half, which names only the maker
 # (20:F8:3B is Espressif) and often tells what a device is.
-_MAC = re.compile(r"\b([0-9A-Fa-f]{2})([:-])([0-9A-Fa-f]{2})\2([0-9A-Fa-f]{2})(?:\2[0-9A-Fa-f]{2}){3}\b")
+# Exactly six pairs: a pair and a separator before the first, or a
+# separator and a pair after the sixth, means a longer run, such as
+# ZHA's eight-pair Zigbee address, which is kept whole rather than
+# half hidden (rule STOR-21).
+_MAC = re.compile(
+    r"(?<![0-9A-Fa-f]{2}[:-])\b([0-9A-Fa-f]{2})([:-])([0-9A-Fa-f]{2})\2([0-9A-Fa-f]{2})"
+    r"(?:\2[0-9A-Fa-f]{2}){3}\b(?![:-][0-9A-Fa-f]{2})"
+)
 # The same address without separators, and in the dotted form, as some
 # integrations register a device: the study snapshot's identifiers
 # carried eight bare MACs on the reference rig and nine on the second
@@ -647,14 +654,20 @@ async def async_get_config_entry_diagnostics(
         },
         # How many devices each Switched Off card lists, and how many
         # of those a person switched off themselves (ruling #698), so a
-        # card on a house can be supported from a download.
+        # card on a house can be supported from a download. Battery
+        # Voltage Switched Off is counted from the card's own list, so
+        # the count matches what the card shows (rule REC-09).
         "switched_off": {
             kind: {
                 "devices": len(found),
                 "by_user": sum(1 for who in found.values() if who == "user"),
             }
-            for kind in ("last_seen", "node_status", "battery", "signal")
-            for found in (coordinator.switched_off_devices(kind),)
+            for kind in ("last_seen", "node_status", "battery", "signal", "voltage")
+            for found in (
+                coordinator.switched_off_voltage()
+                if kind == "voltage"
+                else coordinator.switched_off_devices(kind),
+            )
         },
         # The answers owners set on device pages (0.25.1): how many the
         # answers file holds, and the ones held for devices Device

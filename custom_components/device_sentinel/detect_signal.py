@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_signal.py, Version: 0.26.3 (2026-10-14)
+# File: detect_signal.py, Version: 0.27.4 (2026-10-25)
 
 """Signal: the day's statistics, the bad-day judgment, and the rails.
 
@@ -950,11 +950,16 @@ class SignalMixin:
         options picker: pick-from-detected, what you see is what is
         being judged. Muted devices are present, because an
         muted device is exactly the thing this picker exists to
-        un-tick."""
+        un-tick.
+
+        The plain name: the picker adds the integration once, so a
+        name that already carried it would read "(zha) (zha)" (rule
+        DEV-04).
+        """
         rows = [
             {
                 "device_id": device_id,
-                "name": self._display_names.get(device_id, device_id),
+                "name": self._device_names.get(device_id, device_id),
                 "integration": self._watched.get(device_id, "?"),
                 "labels": self._device_labels.get(
                     device_id, frozenset()

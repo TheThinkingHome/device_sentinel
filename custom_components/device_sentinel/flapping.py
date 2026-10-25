@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: flapping.py, Version: 0.26.6 (2026-10-17)
+# File: flapping.py, Version: 0.27.4 (2026-10-25)
 
 """A device that keeps dropping out, learned and held (0.23.2).
 
@@ -179,17 +179,20 @@ class FlapMixin:
         return rows
 
     def flap_words(self, device_id: str) -> str:
-        """The words a flapping device is listed with.
+        """The words a flapping device is listed and pushed with.
 
-        "flapping, dropped out 53 times since 7:00 AM": the count and
-        the start of the run, because a flap's size is its point.
+        "dropped out 53 times since 7:00 AM": the count and the start
+        of the run, because a flap's size is its point. The Daily
+        Brief's words, read by the Problem List, the push and the
+        brief alike; the leading "flapping," is gone (rules NOTE-01,
+        LIST-02).
         """
         record = self.data[DATA_DEVICES].get(device_id) or {}
         drops = len(record.get(DEV_FLAP_DROPS) or [])
         since = _number(record.get(DEV_FLAP_SINCE))
         if since is None:
-            return "flapping"
+            return f"dropped out {drops} times" if drops else "keeps dropping out"
         when = self._format_report_time(
             dt_util.as_local(dt_util.utc_from_timestamp(since))
         )
-        return f"flapping, dropped out {drops} times since {when}"
+        return f"dropped out {drops} times since {when}"

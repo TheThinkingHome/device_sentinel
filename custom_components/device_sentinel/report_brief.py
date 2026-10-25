@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: report_brief.py, Version: 0.27.3 (2026-10-24)
+# File: report_brief.py, Version: 0.27.4 (2026-10-25)
 
 """The daily brief: the one report written for a person.
 
@@ -727,7 +727,8 @@ class BriefMixin:
                 f"{restarted}. Nothing learned was lost."
             )
         if kind == SYS_OPTIONS_CHANGED:
-            extra = f": {detail}" if detail else ""
+            labels = self._changed_labels(detail)
+            extra = f": {labels}" if labels else ""
             return f"Settings changed at {when}{extra}."
         if kind == SYS_DEVICE_PAGE:
             # An act from a device's page (0.24.5), with the device it
@@ -965,7 +966,8 @@ class BriefMixin:
                 else "activity clocks file missing or damaged"
             )
         if kind == SYS_OPTIONS_CHANGED:
-            return f"settings changed ({detail})" if detail else "settings changed"
+            labels = self._changed_labels(detail)
+            return f"settings changed ({labels})" if labels else "settings changed"
         if kind == SYS_FIRST_SEEN_EXCLUDED:
             return f"{self._integration_title(str(row.get(SYS_SCOPE) or ''))} excluded when first seen"
         if kind == SYS_INTEGRATION_PAGE:
@@ -1005,6 +1007,21 @@ class BriefMixin:
         """
         labels = self._option_labels()
         return labels.get(key.strip(), key.strip())
+
+    def _changed_labels(self, detail: str | None) -> str:
+        """The changed settings a row records, by their screen labels.
+
+        In Short named them by label while the Last 24 Hours row and
+        the dashboard's Daily Brief tab printed the raw option keys,
+        "settings changed (repeat_floor)"; every row now reads as In
+        Short does, joined the same way (rule BRIEF-07).
+        """
+        names: list[str] = []
+        for key in (detail or "").split(","):
+            label = self._option_label(key)
+            if label and label not in names:
+                names.append(label)
+        return "; ".join(names)
 
     def _option_labels(self) -> dict[str, str]:
         """Return every option key's screen label, read once."""
@@ -1564,13 +1581,9 @@ class BriefMixin:
         changes = [row for row in rows if row[SYS_KIND] == SYS_OPTIONS_CHANGED]
         if not changes:
             return []
-        names: list[str] = []
-        for row in changes:
-            for key in (row.get(SYS_DETAIL) or "").split(","):
-                label = self._option_label(key)
-                if label and label not in names:
-                    names.append(label)
-        listed = "; ".join(names)
+        listed = self._changed_labels(
+            ",".join(row.get(SYS_DETAIL) or "" for row in changes)
+        )
         if len(changes) == 1:
             when = self._brief_moment(changes[0][SYS_WHEN])
             return [f"Settings changed at {when}: {listed}."]

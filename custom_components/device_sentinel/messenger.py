@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: messenger.py, Version: 0.23.19 (2026-09-30)
+# File: messenger.py, Version: 0.27.4 (2026-10-25)
 
 """Sending the daily brief, and the notice after a storage restore.
 
@@ -234,7 +234,10 @@ class MessengerMixin:
             for target in (self.entry.options.get(CONF_BRIEF_TARGETS) or [])
             if target and target != PERSISTENT_TARGET
         }
-        targets.update(self._high_priority_targets())
+        # The high-priority targets at any hour, as #345 says, and the
+        # normal-priority targets outside Quiet Hours, as every push
+        # reaches them (rule NOTE-02).
+        targets.update(self._push_targets())
         for target in sorted(targets):
             call: dict[str, Any] = {}
             if target.startswith(SMTP_TARGET_PREFIX):
