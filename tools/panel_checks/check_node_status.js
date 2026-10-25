@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_node_status.js, Version: 0.26.7 (2026-10-19)
+// File: tools/panel_checks/check_node_status.js, Version: 0.27.4 (2026-10-25)
 // Panel checks: the Z-Wave status row (ruling #671, 0.26.5). A Z-Wave
 // device's page shows what Z-Wave says of the node, in red when it is
 // dead, and a switched-off sensor with the button that turns it on; a
@@ -165,6 +165,8 @@ const rowCell = (root, label) => {
     const sent = view.calls.filter((c) => c.type === "device_sentinel/device_turn_on" && c.kind === "node_status");
     check("Turn it on asks to switch on the Z-Wave status alone (ruling #698)",
       sent.length === 1 && sent[0].device_id === DEVICE, sent);
+    // Where it was pressed (rules BRIEF-07, DEV-07, 0.27.4).
+    check("It says it was pressed on the device page", sent.length === 1 && sent[0].source === "device_page", sent);
   }
 
   view = await open({ tweak: (p) => { p.identity.node_status = null; } });

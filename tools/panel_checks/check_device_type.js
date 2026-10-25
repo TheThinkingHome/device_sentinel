@@ -1,4 +1,6 @@
+// File: tools/panel_checks/check_device_type.js, Version: 0.27.4 (2026-10-25)
 // Panel checks: the Type row and the Devices tab's Type column and filter (0.25.1).
+// Since 0.27.4 a type set or cleared here says it came from the device page.
 // Run with: LC_ALL=en_US.UTF-8 node check_device_type.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -122,6 +124,8 @@ const DEVICE_PATH = `${PREFIX}/device/${DEVICE}`;
   await click(buttonIn(cell, "Save"));
   const sent = calls.find((c) => c.type === "device_sentinel/device_type");
   check("Save sends the choice and the words", sent && sent.choice === "Other" && sent.other === "Zigbee router", sent);
+  // Where it was set, so the log says so (rules BRIEF-07, DEV-07, 0.27.4).
+  check("It says it was set on the device page", sent && sent.source === "device_page", sent);
   check("After the save the row reads the owner's words", rowCell(root, "Type").textContent.startsWith("Zigbee router"));
 
   ({ root, calls } = await open(DEVICE_PATH, block({ words: "Plug", source: "owner", auto: "Switch" })));
@@ -131,7 +135,7 @@ const DEVICE_PATH = `${PREFIX}/device/${DEVICE}`;
   current.type = block({ words: "Switch", source: "entities", auto: "Switch" });
   await click(back);
   const cleared = calls.filter((c) => c.type === "device_sentinel/device_type").pop();
-  check("Going back clears the answer", cleared && cleared.choice === null, cleared);
+  check("Going back clears the answer, from the device page", cleared && cleared.choice === null && cleared.source === "device_page", cleared);
 
   ({ root } = await open(DEVICE_PATH, block({ words: "Switch", source: "entities", auto: "Switch" })));
   await click(rowCell(root, "Type").querySelector('button[aria-label="Change what this device is"]'));

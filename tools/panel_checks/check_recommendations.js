@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_recommendations.js, Version: 0.27.3 (2026-10-24)
+// File: tools/panel_checks/check_recommendations.js, Version: 0.27.4 (2026-10-25)
 // Panel checks: the Recommendations tab. Its opening line counts the
 // recommendations, says they help Device Sentinel run better, and says
 // none of them is required; no card is singled out (#626, 0.25.6).
@@ -238,7 +238,8 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   check("And the card's title counts it again", titleOf("battery_off") === "Battery Sensor Switched Off (1)", titleOf("battery_off"));
 
   console.log("\nBattery Voltage Switched Off (0.27.3)");
-  const VOLT = { kind: "voltage_off", title: "Battery Voltage Switched Off", simple: false, active: 1,
+  // In Simple too since 0.27.4 (rule REC-09, SIMPLE_CARDS).
+  const VOLT = { kind: "voltage_off", title: "Battery Voltage Switched Off", simple: true, active: 1,
     body: "1 device has a battery voltage sensor that is switched off.",
     devices: [{ device_id: ROWS[0].device_id, name: "Hall Motion", area: "Hall", acknowledged: false }] };
   const volt = await open({ path: `${PREFIX}/recommendations`, answers: {
@@ -251,6 +252,8 @@ async function open({ tweak = () => {}, states = STATES, path = `${PREFIX}/devic
   await settle(); await settle();
   const voltCall = volt.calls.find((c) => c.type === "device_sentinel/device_turn_on");
   check("It asks for this device's voltage sensor alone", !!voltCall && voltCall.kind === "voltage" && voltCall.device_id === ROWS[0].device_id, voltCall);
+  // Where it was pressed, so the log says so (rules BRIEF-07, DEV-07).
+  check("It says it was pressed on the Recommendations tab", !!voltCall && voltCall.source === "recommendations", voltCall);
   check("Its row can be ticked", !!(voltCard && voltCard.querySelector('tbody tr input[type="checkbox"]')));
 
   console.log("\nA card stays open after an answer (ruling #714)");

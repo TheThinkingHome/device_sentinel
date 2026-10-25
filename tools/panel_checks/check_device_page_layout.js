@@ -1,8 +1,9 @@
-// File: tools/panel_checks/check_device_page_layout.js, Version: 0.27.0 (2026-10-22)
+// File: tools/panel_checks/check_device_page_layout.js, Version: 0.27.4 (2026-10-25)
 // Panel checks: the device page's top half and the Recommendations tab's
 // device cards (0.24.9). The Identity section's order and groups, live
 // values, sensor links, both rule charts, Previous and Next, and setting
-// a device right from a card.
+// a device right from a card. Since 0.27.4: the Firmware row (rule
+// DEV-15) and the section headings in Title Case (rule GEN-06).
 // Run with: LC_ALL=en_US.UTF-8 node check_device_page_layout.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -233,10 +234,13 @@ const rowCell = (root, label) => {
   await settle();
   const sent = calls.find((c) => c.type === "device_sentinel/device_power");
   check("Power is set from the list", sent && sent.device_id === ROWS[1].device_id && sent.choice === "AAA" && sent.quantity === 2, sent);
+  // Where it was pressed, so the log says so (rules BRIEF-07, DEV-07, 0.27.4).
+  check("Power set from the list says so", sent && sent.source === "recommendations", sent);
   ({ root, calls } = await open({ path: `${PREFIX}/recommendations`, answers: { recommendations: () => JSON.parse(JSON.stringify(RECS)) } }));
   [...root.querySelectorAll("article.rec")[1].querySelectorAll("button")].find((b) => b.textContent === "Turn on its Last Seen").click();
   await settle();
-  check("Last Seen is switched on from the list", calls.some((c) => c.type === "device_sentinel/device_turn_on" && c.kind === "last_seen" && c.device_id === ROWS[2].device_id));
+  check("Last Seen is switched on from the list, and says so", calls.some((c) => c.type === "device_sentinel/device_turn_on" && c.kind === "last_seen"
+    && c.device_id === ROWS[2].device_id && c.source === "recommendations"), calls.filter((c) => c.type === "device_sentinel/device_turn_on"));
   ({ window, root } = await open({ path: `${PREFIX}/recommendations`, answers: { recommendations: () => JSON.parse(JSON.stringify(RECS)) } }));
   const areaCard = root.querySelectorAll("article.rec")[2];
   const cardLink = [...areaCard.querySelectorAll("a")].find((a) => a.textContent === ROWS[0].name);
@@ -274,6 +278,38 @@ const rowCell = (root, label) => {
   ({ root } = await open({ states: rawStates }));
   const plain = rowCell(root, "Battery level").textContent;
   check("A battery not marked raw reads as before", plain.startsWith("182%"), plain);
+
+  // The firmware (rule DEV-15, 0.27.4): recorded all along, shown
+  // nowhere but the diagnostics download. Advanced shows the version
+  // now beside Hardware version, with its recorded history beneath.
+  console.log("\nThe Firmware row (rule DEV-15)");
+  const FIRMWARE = { current: "9.8.7-rc42", history: [
+    { version: "1.2.3-old55", since: "2025-10-09T08:53:20+00:00" },
+    { version: "9.8.7-rc42", since: "2025-10-20T22:40:00+00:00" }] };
+  ({ root } = await open({ tweak: (p) => { Object.assign(p.identity, { hw_version: "2", firmware: FIRMWARE }); } }));
+  const fwOrder = labelsOf(root);
+  check("Advanced: a Firmware row just after Hardware version",
+    fwOrder.indexOf("Firmware") === fwOrder.indexOf("Hardware version") + 1, fwOrder);
+  const fw = rowCell(root, "Firmware");
+  const fwLines = fw ? [...fw.querySelectorAll("li")].map((li) => li.textContent) : [];
+  const fwNow = fw && fw.querySelector(".actcol > span");
+  check("It leads with the version now", !!fwNow && fwNow.textContent === "9.8.7-rc42", fw && fw.textContent);
+  check("Its history beneath, newest first, each with when it was first seen",
+    fwLines.length === 2 && fwLines[0].startsWith("9.8.7-rc42, first seen ") && fwLines[1].startsWith("1.2.3-old55, first seen ")
+    && fwLines.every((t) => /\d{1,2}:\d\d/.test(t)), fwLines);
+  ({ root } = await open({ tweak: (p) => { p.identity.firmware = { current: "2.0", history: [] }; } }));
+  check("A version with no history yet: the version alone", !!rowCell(root, "Firmware")
+    && rowCell(root, "Firmware").textContent === "2.0" && !rowCell(root, "Firmware").querySelector("li"),
+    rowCell(root, "Firmware") && rowCell(root, "Firmware").innerHTML);
+  ({ root } = await open({ tweak: (p) => { p.identity.firmware = null; } }));
+  check("No firmware known: no row", rowCell(root, "Firmware") === null, labelsOf(root));
+
+  // Headings in Title Case, book-title style (rule GEN-06, 0.27.4).
+  console.log("\nSection headings (rule GEN-06)");
+  ({ root } = await open());
+  const heads = [...root.querySelectorAll("h3.section")].map((h) => h.textContent);
+  check("Its Rhythm and Gaps, Last 14 Days, in Title Case", heads.includes("Its Rhythm") && heads.includes("Gaps, Last 14 Days")
+    && !heads.includes("Its rhythm") && !heads.includes("Gaps, last 14 days"), heads);
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

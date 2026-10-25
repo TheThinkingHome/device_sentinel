@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_power_row.js, Version: 0.27.1 (2026-10-23)
+// File: tools/panel_checks/check_power_row.js, Version: 0.27.4 (2026-10-25)
 // Panel checks: the Power row (0.24.7, 0.24.8). Words, the source icon in light
 // and dark, the library icon's link, the pencil's choices, Save, the
 // report button after a save, and Use the library. Since 0.26.7 the
@@ -160,6 +160,8 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   await click(buttonIn(cell, "Save"));
   const sent = calls.find((c) => c.type === "device_sentinel/device_power");
   check("Save sends the choice, the text and the quantity", sent && sent.choice === "Other" && sent.other === "9V" && sent.quantity === 2, sent);
+  // Where it was set, so the log says so (rules BRIEF-07, DEV-07, 0.27.4).
+  check("It says it was set on the device page", sent && sent.source === "device_page", sent);
   cell = rowCell(root, "Power");
   const report = [...cell.querySelectorAll("a.chip")].find((a) => a.textContent === "Send to Battery Notes");
   check("After a save: Send to Battery Notes opens the filled form in a new tab",
@@ -172,7 +174,7 @@ const OWNER = block({ words: "2× AAA", source: "owner", library: "CR1632",
   current.power = LIBRARY;
   await click(back);
   const cleared = calls.filter((c) => c.type === "device_sentinel/device_power").pop();
-  check("Use the library clears the entry", cleared && cleared.choice === null, cleared);
+  check("Use the library clears the entry, from the device page", cleared && cleared.choice === null && cleared.source === "device_page", cleared);
   check("No report after going back to the library", !rowCell(root, "Power").querySelector("a.chip"));
 
   // 0.25.1: a device's own entry, under a model with an answer of its own.

@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.3 (2026-10-24)
+// File: tools/panel_checks/check_simple_dashboard.js, Version: 0.27.4 (2026-10-25)
 // Panel checks: Simple and Advanced (rulings #693, #694, #703, #706, #716).
 // The setting opens the dashboard; the switch holds while the page is
 // open, through a hidden tab, and nothing is kept; Simple's tabs, its read-only device page
@@ -140,14 +140,16 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   check("Type, Area and Labels are read-only", !buttons(rowCell(root, "Type")).length
     && !buttons(rowCell(root, "Area")).length && !buttons(rowCell(root, "Labels")).length,
   [buttons(rowCell(root, "Type")), buttons(rowCell(root, "Area")), buttons(rowCell(root, "Labels"))]);
-  check("an empty type reads Not set", rowCell(root, "Type").textContent === "Not set", rowCell(root, "Type").textContent);
+  // "Not known", as Advanced says it (rules DEV-07, DEV-10, 0.27.4).
+  check("an empty type reads Not known", rowCell(root, "Type").textContent === "Not known", rowCell(root, "Type").textContent);
+  check("an unanswered Power reads Not known", rowCell(root, "Power").textContent === "Not known", rowCell(root, "Power").textContent);
   check("labels still say what they do", rowCell(root, "Labels").textContent.includes("mutes battery and signal"));
   check("Power is read-only", !buttons(rowCell(root, "Power")).length);
   check("no Exclude this device", !rowCell(root, "Excluded") && !anyButton(root, "Exclude this device"));
   check("every device mute button stays", ["Mute freeze", "Mute unavailable", "Mute everything"].every((w) => buttons(rowCell(root, "Muted")).includes(w)),
     buttons(rowCell(root, "Muted")));
   check("no Mute by label", !anyButton(root, "Mute by label"));
-  check("no rhythm or wait rule for a device that is reporting", !text(root).includes("Its rhythm") && !rowCell(root, "Wait rule"));
+  check("no rhythm or wait rule for a device that is reporting", !text(root).includes("Its Rhythm") && !rowCell(root, "Wait rule"));
   ({ root } = await open({ __mode: "simple" }, (p) => { withBattery(p); p.battery.now = 15.5; p.status.category = "reporting"; }));
   check("a level reads as reported, 15.5% (0.27.1)", text(root).includes("15.5% now") && !text(root).includes("16% now"));
   check("no history ranges and no signal chart", !anyButton(root, "30 Days") && !text(root).includes("Signal median") && !root.querySelector("[aria-label=\"Time range for the graphs\"]"), text(root).match(/Signal.{0,40}/g));
@@ -172,7 +174,7 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   check("Last seen sensor shows while it is switched off", !!rowCell(root, "Last seen sensor"));
   ({ root } = await open({ __mode: "simple" }, (p) => { p.identity.actions.last_seen_off = false; p.status.category = "frozen"; }));
   check("and not once it is on", !rowCell(root, "Last seen sensor"));
-  check("a frozen device shows its rhythm and wait rule", text(root).includes("Its rhythm") && !!rowCell(root, "Wait rule"));
+  check("a frozen device shows its rhythm and wait rule", text(root).includes("Its Rhythm") && !!rowCell(root, "Wait rule"));
   ({ root } = await open({ __mode: "simple" }, (p) => { p.identity.node_status = "alive"; }));
   check("a live Z-Wave node's status row is hidden", !rowCell(root, "Z-Wave status"));
   ({ root } = await open({ __mode: "simple" }, (p) => { p.identity.node_status = "dead"; }));
@@ -227,6 +229,53 @@ const buttons = (cell) => (cell ? [...cell.querySelectorAll("button")].map((b) =
   await click(buttonIn(rowCell(root, "Muted"), "Mute by label"));
   const byName = calls.filter((c) => c.type === "device_sentinel/device_label_mute");
   check("and saves that label, not a new one", byName.length === 1 && byName[0].label_id === "garage" && !byName[0].name, byName);
+
+  // Rule DASH-04 (James, 25 October 2026): Simple asks for nothing more
+  // than it must. No Rename, no Use the 14-Day Trimmed Maximum, and no
+  // turn-on buttons; those sensors are turned on from the
+  // Recommendations cards. The Mute buttons stay.
+  console.log("Simple's device page asks for nothing extra (rule DASH-04)");
+  ({ root } = await open({ __mode: "simple" }, (p) => { p.status.category = "reporting"; }));
+  const nameMarks = (r) => [...rowCell(r, "Name").querySelectorAll("button")].map((b) => b.getAttribute("aria-label") || b.textContent);
+  check("Simple: the Name row has no Rename mark", !nameMarks(root).length && rowCell(root, "Name").textContent === "Button Randy Night Table", nameMarks(root));
+  check("Simple: a switched-off Last Seen says so, with no button", /switched off/.test(rowCell(root, "Last seen sensor").textContent)
+    && !buttons(rowCell(root, "Last seen sensor")).length, buttons(rowCell(root, "Last seen sensor")));
+  ({ root } = await open({ __mode: "simple" }, (p) => { p.status.category = "reporting"; p.identity.node_status = "off"; }));
+  check("Simple: a switched-off Z-Wave status says so, with no button", /switched off/.test(rowCell(root, "Z-Wave status").textContent)
+    && !buttons(rowCell(root, "Z-Wave status")).length, buttons(rowCell(root, "Z-Wave status")));
+  ({ root } = await open({ __mode: "simple" }, (p) => { p.status.category = "reporting"; p.identity.actions.battery_off = true; }));
+  check("Simple: a switched-off Battery sensor says so, with no button", /switched off/.test(rowCell(root, "Battery sensor").textContent)
+    && !buttons(rowCell(root, "Battery sensor")).length, buttons(rowCell(root, "Battery sensor")));
+  ({ root } = await open({ __mode: "simple" }, (p) => {
+    p.status.category = "reporting"; p.identity.actions.signal_off = true; p.signal.railed_days = [0, 0, 3];
+  }));
+  check("Simple: a switched-off Signal sensor says so, with no button", !!rowCell(root, "Signal sensor")
+    && /switched off/.test(rowCell(root, "Signal sensor").textContent) && !buttons(rowCell(root, "Signal sensor")).length,
+    rowCell(root, "Signal sensor") && buttons(rowCell(root, "Signal sensor")));
+  const frozenLognormal = (p) => {
+    p.status.category = "frozen"; p.status.rule = "Log-Normal Percentile";
+    p.rhythm.rules = { ...(p.rhythm.rules || {}), in_use: "lognormal" };
+  };
+  ({ root } = await open({ __mode: "simple" }, frozenLognormal));
+  check("Simple: a frozen device's Wait rule offers no Use the 14-Day Trimmed Maximum",
+    !!rowCell(root, "Wait rule") && !anyButton(root, "Use the 14-Day Trimmed Maximum") && !text(root).includes("press Use the 14-Day"),
+    rowCell(root, "Wait rule") && rowCell(root, "Wait rule").textContent);
+  check("Simple: the Mute buttons stay", ["Mute freeze", "Mute everything"].every((w) => buttons(rowCell(root, "Muted")).includes(w)),
+    buttons(rowCell(root, "Muted")));
+  // Advanced keeps every one of them.
+  ({ root } = await open({ __mode: "advanced" }, (p) => { p.status.category = "reporting"; p.identity.node_status = "off"; p.identity.actions.battery_off = true; }));
+  check("Advanced keeps Rename and the turn-on buttons", nameMarks(root).includes("Rename")
+    && buttons(rowCell(root, "Last seen sensor")).includes("Turn on its Last Seen")
+    && buttons(rowCell(root, "Z-Wave status")).includes("Turn it on") && buttons(rowCell(root, "Battery sensor")).includes("Turn it on"));
+  ({ root } = await open({ __mode: "advanced" }, frozenLognormal));
+  check("Advanced keeps Use the 14-Day Trimmed Maximum", !!anyButton(root, "Use the 14-Day Trimmed Maximum"));
+
+  // Firmware in Advanced only (rule DEV-15, 0.27.4).
+  const withFirmware = (p) => { p.identity.hw_version = "2"; p.identity.firmware = { current: "9.8.7", history: [{ version: "9.8.7", since: "2025-10-20T22:40:00+00:00" }] }; };
+  ({ root } = await open({ __mode: "simple" }, withFirmware));
+  check("Simple: no Firmware row", !rowCell(root, "Firmware") && !text(root).includes("9.8.7"), labelsOf(root));
+  ({ root } = await open({ __mode: "advanced" }, withFirmware));
+  check("Advanced: the Firmware row", !!rowCell(root, "Firmware"), labelsOf(root));
 
   console.log("Simple's integration page");
   ({ root } = await open({ __mode: "simple", __path: "/integration/test", integration: () => JSON.parse(JSON.stringify(payloads.integration)) }));

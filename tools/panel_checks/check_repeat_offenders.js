@@ -1,3 +1,4 @@
+// File: tools/panel_checks/check_repeat_offenders.js, Version: 0.27.4 (2026-10-25)
 // Panel checks: the Repeat Offenders table on the Daily Brief tab, and the
 // devices on MQTT's page that ride the broker.
 // Written for 0.23.0; named by subject since 0.23.19.
@@ -106,14 +107,16 @@ const DEVICE = payloads._ids.bravo;
         muted: "", set_aside: "", problem: "", acknowledged: false }] }),
   });
   const mqttText = mqtt.root.querySelector(".pane").textContent;
-  check("lists the devices on the broker", mqttText.includes("Also on the broker") && mqttText.includes("Stove Vent Relays"), mqttText.slice(-300));
+  // Headings in Title Case, book-title style (rule GEN-06, 0.27.4).
+  check("lists the devices on the broker", mqttText.includes("Also on the Broker") && mqttText.includes("Stove Vent Relays"), mqttText.slice(-300));
+  check("its outages heading reads Outages, Last 14 Days", mqttText.includes("Outages, Last 14 Days") && !mqttText.includes("Outages, last 14 days"), mqttText.slice(0, 600));
   check("naming the integration that owns each", mqttText.includes("Tasmota"), null);
 
   console.log("Any other integration's page");
   const other = await open(`${PREFIX}/integration/zha`, {
     integration: (p) => ({ ...p, domain: "zha", name: "ZHA", behind_broker: [] }),
   });
-  check("has no such section", !other.root.querySelector(".pane").textContent.includes("Also on the broker"), null);
+  check("has no such section", !other.root.querySelector(".pane").textContent.includes("Also on the Broker"), null);
 
   console.log(`${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

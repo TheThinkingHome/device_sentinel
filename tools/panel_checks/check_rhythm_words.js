@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_rhythm_words.js, Version: 0.27.3 (2026-10-24)
+// File: tools/panel_checks/check_rhythm_words.js, Version: 0.27.4 (2026-10-25)
 // Panel checks: how a device's rhythm and gaps are worded (0.27.3). A
 // window still being learned reads "learning" on the Devices tab; a
 // device judged by its connection says it has no rhythm to learn and
@@ -84,8 +84,8 @@ const pane = (root) => root.querySelector(".pane").textContent;
   } }));
   let text = pane(root);
   check("It says there is no rhythm to learn", text.includes("Judged by its connection: no rhythm to learn.")
-    && !text.includes("Not enough days yet to learn its rhythm."), text.match(/Its rhythm.{0,80}/));
-  check("It shows no gaps section", !/Gaps, last 14 days|Silences, last 14 days/.test(text));
+    && !text.includes("Not enough days yet to learn its rhythm."), text.match(/Its Rhythm.{0,80}/));
+  check("It shows no gaps section", !/Gaps, last 14 days|Gaps, Last 14 Days|Silences, last 14 days/.test(text));
   check("One day recorded is 1 day", text.includes("All (1 day)") && text.includes("1 day recorded") && !text.includes("1 days"),
     text.match(/.{0,20}1 days?.{0,20}/g));
 
@@ -99,7 +99,8 @@ const pane = (root) => root.querySelector(".pane").textContent;
   } }));
   text = pane(root);
   check("Called frozen after a gap of 64m", text.includes("Called frozen after a gap of 64m."), text.match(/Called frozen.{0,40}/));
-  check("Its section is Gaps, last 14 days", text.includes("Gaps, last 14 days") && !/silence/i.test(text.replace(/its silence cannot be judged/g, "")),
+  // In Title Case since 0.27.4 (rule GEN-06).
+  check("Its section is Gaps, Last 14 Days", text.includes("Gaps, Last 14 Days") && !/silence/i.test(text.replace(/its silence cannot be judged/g, "")),
     text.match(/.{0,30}[Ss]ilen.{0,30}/g));
   ({ root } = await open(`${PREFIX}/device/${DEVICE}`, { device: (page) => {
     page.status.category = "frozen";

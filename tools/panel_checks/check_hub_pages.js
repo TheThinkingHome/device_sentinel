@@ -1,4 +1,4 @@
-// File: check_hub_pages.js, Version: 0.26.3 (2026-10-14)
+// File: check_hub_pages.js, Version: 0.27.4 (2026-10-25)
 // Panel checks: judged by its hub (0.26.3, rulings #663 to #665). A hub's
 // page and the pages of the devices it controls, in the words James approved
 // on 14 October 2026, and the Classification tick.
@@ -192,7 +192,7 @@ const hubPage = (tweak) => (m) => {
     text.includes("Each press of one of its buttons counts as the remote reporting, and shows as Last seen."));
 
   r = await open({ answers: { device: hubPage(() => {}) } });
-  check("Any other device keeps its rhythm section", r.root.textContent.includes("Its rhythm"));
+  check("Any other device keeps its rhythm section", r.root.textContent.includes("Its Rhythm"));
 
   // Found by the adversarial round of 14 October 2026.
   r = await open({ answers: { device: hubPage((p) => { p.identity.name = "Kitchen Main Lights"; p.hub = { ...HUB }; p.status.category = "frozen"; }) } });

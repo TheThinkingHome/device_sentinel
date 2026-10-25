@@ -1,4 +1,4 @@
-// File: tools/panel_checks/check_type_filters.js, Version: 0.27.3 (2026-10-24)
+// File: tools/panel_checks/check_type_filters.js, Version: 0.27.4 (2026-10-25)
 // Panel checks: types on Battery Trends, Classification, Devices and Recommendations, and the "null" fix (0.25.3).
 // Run with: LC_ALL=en_US.UTF-8 node check_type_filters.js [path/to/panel.js]
 const fs = require("fs");
@@ -213,6 +213,8 @@ const BATTERY = {
   await click(save);
   const sent = calls.find((c) => c.type === "device_sentinel/device_type");
   check("Save sends the choice and the words", sent && sent.device_id === "x1" && sent.choice === "Other" && sent.other === "Key Finder", sent);
+  // Where it was pressed, so the log says so (rules BRIEF-07, DEV-07, 0.27.4).
+  check("It says it was set from the Recommendations tab", sent && sent.source === "recommendations", sent);
   const mixed = root.querySelector('article[data-kind="mixed_types"]');
   check("A split model's card names the model and each device's type", text(mixed).includes("Third Reality Wireless motion sensor: Presence Sensor")
     && text(mixed).includes("Motion Laundry"), text(mixed));

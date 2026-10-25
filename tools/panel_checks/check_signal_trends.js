@@ -1,6 +1,8 @@
-// File: tools/panel_checks/check_signal_trends.js, Version: 0.27.3 (2026-10-24)
-// Panel checks: the Signal Trends tab. Each row adds up: LAST 7 DAYS
-// less USUAL is CHANGE, and no sign reads "+0" or "-0.0" (0.27.3).
+// File: tools/panel_checks/check_signal_trends.js, Version: 0.27.4 (2026-10-25)
+// Panel checks: the Signal Trends tab. Each row adds up: THIS WEEK
+// less BEFORE THIS WEEK is CHANGE, and no sign reads "+0" or "-0.0"
+// (0.27.3). Since 0.27.4 the columns and the caption are in James's
+// words (rule SIG-12).
 // Run with: LC_ALL=en_US.UTF-8 node check_signal_trends.js [path/to/panel.js]
 const fs = require("fs");
 const { JSDOM, VirtualConsole } = require("jsdom");
@@ -61,7 +63,7 @@ const row = (over) => ({
   week: 100, usual: 100, change: 0, spreads: 0, bad_days: 0, readings_a_day: 24, days: 60, ...over,
 });
 // The rig's Temperature Living Room on 24 October 2026: the last seven
-// days' middle 174, the whole history's 218, its normal 138.
+// days' middle 174, the days before them 218, its normal 138.
 const ROWS = [
   row({ device_id: "t", name: "Temperature Living Room", now: 188, normal: 138, line: 98,
     week: 174.4, usual: 218.4, change: -44.0, spreads: -2.5, bad_days: 1 }),
@@ -75,10 +77,19 @@ const TRENDS = (reply) => ({ ...reply, devices: ROWS, scales: { lqi: 3 }, counts
   const { root } = await open(`${PREFIX}/signal-trends`, { signal_trends: TRENDS });
   const tables = [...root.querySelectorAll(".pane table")].filter((t) => /CHANGE/.test(t.textContent));
   const heads = tables.length ? [...tables[0].querySelectorAll("thead th")].map((th) => th.textContent.replace(/[▲▼↑↓\s]+$/u, "").trim()) : [];
-  check("The first column of figures is LAST 7 DAYS, not NOW", heads.some((h) => h.startsWith("LAST 7 DAYS")) && !heads.some((h) => h.startsWith("NOW")), heads);
-  const usualAt = heads.findIndex((h) => h.startsWith("USUAL"));
-  const changeAt = heads.findIndex((h) => h.startsWith("CHANGE"));
-  check("USUAL stands just before CHANGE", usualAt >= 0 && changeAt === usualAt + 1, heads);
+  check("The first column of figures is THIS WEEK, not NOW or LAST 7 DAYS", heads.some((h) => h === "THIS WEEK")
+    && !heads.some((h) => h.startsWith("NOW") || h.startsWith("LAST 7 DAYS")), heads);
+  const usualAt = heads.findIndex((h) => h === "BEFORE THIS WEEK");
+  const changeAt = heads.findIndex((h) => h === "CHANGE");
+  check("BEFORE THIS WEEK stands just before CHANGE, and no column reads USUAL", usualAt >= 0 && changeAt === usualAt + 1
+    && !heads.includes("USUAL"), heads);
+  const caption = [...root.querySelectorAll(".pane p.small")].map((p) => p.textContent)
+    .find((t) => t.startsWith("Each device's"));
+  check("The caption is James's words exactly", caption === "Each device's typical signal this week, beside its history. "
+    + "A large drop means its radio link has weakened this week.", caption);
+  const bar = root.querySelector(".pane svg rect[role=link] title");
+  check("A bar's words name the same two figures", !!bar && /this week against 218 before this week/.test(bar.textContent)
+    && !/usual|last 7 days/.test(bar.textContent), bar && bar.textContent);
   const cells = (name) => {
     for (const t of tables) {
       const tr = [...t.querySelectorAll("tbody tr")].find((r) => r.textContent.startsWith(name));
@@ -86,7 +97,7 @@ const TRENDS = (reply) => ({ ...reply, devices: ROWS, scales: { lqi: 3 }, counts
     }
     return null;
   };
-  const weekAt = heads.findIndex((h) => h.startsWith("LAST 7 DAYS"));
+  const weekAt = heads.findIndex((h) => h === "THIS WEEK");
   const temp = cells("Temperature Living Room");
   check("Temperature Living Room reads 174, usual 218, change -44", !!temp && temp[weekAt] === "174" && temp[usualAt] === "218" && temp[changeAt] === "-44", temp);
   const steady = cells("Steady Plug");
