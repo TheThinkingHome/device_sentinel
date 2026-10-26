@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: detect_freeze.py, Version: 0.27.4 (2026-10-25)
+# File: detect_freeze.py, Version: 0.27.5 (2026-10-25)
 
 """Freeze: the learned rhythm, the window, and the verdict.
 
@@ -48,6 +48,7 @@ from homeassistant.util import dt as dt_util
 from .device_fields import device_field
 from .device_type import SOURCE_OWNER, TYPES_THAT_REPORT_ON_USE, list_name, measures
 from .records import BAD_STATES
+from .outage_detail import parse_detail
 from .stacks import available_speaks, node_dead, node_up, reader_for_domain
 
 from .rhythm_rules import lognormal_days, lognormal_rhythm
@@ -59,6 +60,7 @@ from .const import (
     RULE_TRIMMED,
     BROKER_SCOPE,
     SYS_DURATION,
+    SYS_DETAIL,
     SYS_WHEN,
     SYS_SCOPE,
     SYS_KIND,
@@ -1472,7 +1474,17 @@ class FreezeMixin:
             found.extend(spans.get((SYS_BRIDGE_UP, stack), []))
         domain = self._watched.get(device_id)
         if domain is not None:
+            # An integration entry's outage is its own devices' only:
+            # one Shelly plug's entry failing says nothing about the
+            # plug beside it on another entry (rule UP-07). A row that
+            # names no entry, written before entries were recorded,
+            # still covers the integration.
             found.extend(spans.get((SYS_INTEGRATION_UP, domain), []))
+            entry_id = self._entry_of_device.get(device_id)
+            if entry_id is not None:
+                found.extend(
+                    spans.get((SYS_INTEGRATION_UP, f"{domain}|{entry_id}"), [])
+                )
         if self._rides_the_broker(device_id):
             found.extend(spans.get((SYS_BROKER_UP, BROKER_SCOPE), []))
         if device_id in getattr(self, "_wifi_ties", {}):
@@ -1518,6 +1530,13 @@ class FreezeMixin:
                 or not math.isfinite(when)
             ):
                 continue
+            if kind in (SYS_INTEGRATION_DOWN, SYS_INTEGRATION_UP):
+                # Kept per entry, so its fall pairs with its own return
+                # and its time is credited to its own devices only
+                # (rule UP-07).
+                entry_id = parse_detail(row.get(SYS_DETAIL))[0]
+                if entry_id is not None:
+                    scope = f"{scope}|{entry_id}"
             if kind in falls:
                 opened.setdefault((falls[kind], str(scope)), float(when))
                 fell.setdefault((falls[kind], str(scope)), float(when))

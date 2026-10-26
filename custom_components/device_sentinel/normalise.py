@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: normalise.py, Version: 0.27.1 (2026-10-23)
+# File: normalise.py, Version: 0.27.5 (2026-10-26)
 
 """Check every stored record against its expected shape, and name
 what is wrong so the storage boundary can repair it (ruling #370).
@@ -129,6 +129,16 @@ from .const import (
     CLOCK_FIELDS,
     DATA_BRIDGE_SEEN,
     DATA_BROKER_SEEN,
+    DATA_WIFI_OUTAGE,
+    WIFI_OUTAGE_DECLARED,
+    WIFI_OUTAGE_DEVICES,
+    WIFI_OUTAGE_FALLEN,
+    WIFI_OUTAGE_PUSHED,
+    WIFI_OUTAGE_RECOVERING,
+    WIFI_OUTAGE_SCAN_DOWN,
+    WIFI_OUTAGE_SINCE,
+    WIFI_OUTAGE_TOLD,
+    WIFI_OUTAGE_WORST,
     DATA_DEVICES,
     DATA_EPISODES,
     DATA_FIRST_INSTALLED,
@@ -260,6 +270,8 @@ VERSION_HISTORY = "list of [version, first seen] pairs"
 FORECAST_LOG = "list of battery forecast rows"
 EVIDENCE_LOG = "list of battery evidence rows"
 LIVES_LOG = "list of battery lives"
+# A Wi-Fi outage still open (rule UP-04).
+WIFI_OUTAGE = "a stored Wi-Fi outage"
 # A forecast is said at most as "over a year" (PROJECTION_LONGEST).
 FORECAST_DAYS_HIGHEST = 3 * 365
 
@@ -377,6 +389,58 @@ def _life_row_ok(row: Any) -> bool:
 def life_row_ok(row: Any) -> bool:
     """Whether a battery life row would pass the load check, for its writer."""
     return _life_row_ok(row)
+
+
+def _count_ok(value: Any) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 <= value <= COUNT_HIGHEST
+    )
+
+
+def wifi_outage_ok(value: Any) -> bool:
+    """Whether a stored Wi-Fi outage is whole (rule UP-04).
+
+    Every field present and of its kind: a start and a declaration
+    moment, the fallen trackers each with a moment, the worst and the
+    announced counts, the two announcement flags, the scan's down mark
+    or None, and when its recovery began or None. Anything else is damage, and the whole entry is
+    dropped, which resumes nothing rather than half an outage.
+    """
+    if not isinstance(value, dict):
+        return False
+    if set(value) != {
+        WIFI_OUTAGE_SINCE, WIFI_OUTAGE_DECLARED, WIFI_OUTAGE_FALLEN,
+        WIFI_OUTAGE_WORST, WIFI_OUTAGE_DEVICES, WIFI_OUTAGE_TOLD,
+        WIFI_OUTAGE_PUSHED, WIFI_OUTAGE_SCAN_DOWN, WIFI_OUTAGE_RECOVERING,
+    }:
+        return False
+    fallen = value[WIFI_OUTAGE_FALLEN]
+    scan_down = value[WIFI_OUTAGE_SCAN_DOWN]
+    recovering = value[WIFI_OUTAGE_RECOVERING]
+    if recovering is not None and not _within(
+        recovering, MOMENT_LOWEST, MOMENT_HIGHEST
+    ):
+        return False
+    return (
+        _within(value[WIFI_OUTAGE_SINCE], MOMENT_LOWEST, MOMENT_HIGHEST)
+        and _within(value[WIFI_OUTAGE_DECLARED], MOMENT_LOWEST, MOMENT_HIGHEST)
+        and isinstance(fallen, dict)
+        and all(
+            isinstance(tracker, str) and tracker
+            and _within(when, MOMENT_LOWEST, MOMENT_HIGHEST)
+            for tracker, when in fallen.items()
+        )
+        and _count_ok(value[WIFI_OUTAGE_WORST])
+        and _count_ok(value[WIFI_OUTAGE_DEVICES])
+        and isinstance(value[WIFI_OUTAGE_TOLD], bool)
+        and isinstance(value[WIFI_OUTAGE_PUSHED], bool)
+        and (
+            scan_down is None
+            or _within(scan_down, MOMENT_LOWEST, MOMENT_HIGHEST)
+        )
+    )
 
 
 def _is_day(value: Any) -> bool:
@@ -557,6 +621,8 @@ def _fault(kind: str, value: Any) -> str | None:
             return _describe(value)
         bad = [row for row in value if not _evidence_row_ok(row)]
         return None if not bad else f"{len(bad)} bad row(s), first {_describe(bad[0])}"
+    if kind == WIFI_OUTAGE:
+        return None if wifi_outage_ok(value) else _describe(value)
     if kind == LIVES_LOG:
         # One row per battery replaced (#739).
         if not isinstance(value, list):
@@ -834,6 +900,13 @@ TABLES: dict[str, tuple[dict[str, str], frozenset[str]]] = {
     DATA_TODO_JOURNAL: (JOURNAL_SHAPE, frozenset()),
     DATA_STORMS: (STORM_SHAPE, frozenset()),
     DATA_STORM_DAYS: (STORM_DAY_SHAPE, frozenset()),
+    # Recoveries held inside the startup grace, kept so a restart in
+    # the grace does not lose them (rule WATCH-10).
+    "held_recoveries": (
+        {"device_id": TEXT, "name": TEXT, "area": TEXT, "kind": TEXT,
+         "down_for": SPAN, "resolved_by": TEXT},
+        frozenset(),
+    ),
 }
 
 # The keys that are one value rather than a table.
@@ -846,6 +919,12 @@ SCALARS: dict[str, str] = {
     DATA_SETUP_COUNT: INTEGER,
     DATA_BRIDGE_SEEN: MAPPING,
     DATA_BROKER_SEEN: MAPPING,
+    # A Wi-Fi outage still open, checked whole: a damaged one is
+    # dropped and nothing is resumed (rule UP-04).
+    DATA_WIFI_OUTAGE: WIFI_OUTAGE,
+    # What the bus and the phone have heard of each integration entry
+    # outage; each value is checked as it is read (rules UP-10, STOR-07).
+    "integration_seen": MAPPING,
     # The migration markers (ruling #334). Both hold a version-like
     # string that the load compares against an expected mark, and a
     # marker that does not match runs a one-time conversion over data

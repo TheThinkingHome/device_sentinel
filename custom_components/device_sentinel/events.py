@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: events.py, Version: 0.26.6 (2026-10-18)
+# File: events.py, Version: 0.27.5 (2026-10-26)
 
 """What Device Sentinel says on the Home Assistant bus.
 
@@ -64,6 +64,31 @@ from .const import (
     TODO_KIND_SEVERITY,
     UNASSIGNED_AREA,
 )
+from .normalise import SPAN_HIGHEST
+
+
+# Recoveries held inside the startup grace, kept in the stored file so
+# a reload or restart inside it does not lose them (rule WATCH-10).
+DATA_HELD_RECOVERIES = "held_recoveries"
+
+_TEXT_FIELDS = ("device_id", "name", "area", "kind", "resolved_by")
+
+
+def _sound_recovery(payload: Any) -> bool:
+    """Whether a stored held recovery has the shape `fire_recovered`
+    gives it, with values held to what is possible (rule STOR-07)."""
+    if not isinstance(payload, dict) or set(payload) != {*_TEXT_FIELDS, "down_for"}:
+        return False
+    if not all(isinstance(payload[f], str) and payload[f] for f in _TEXT_FIELDS):
+        return False
+    down_for = payload["down_for"]
+    if down_for is None:
+        return True
+    return (
+        isinstance(down_for, int)
+        and not isinstance(down_for, bool)
+        and 0 <= down_for <= SPAN_HIGHEST
+    )
 
 
 @callback
@@ -111,6 +136,9 @@ class EventMixin:
     """Fire the bus events. Mixed into the coordinator."""
 
     hass: HomeAssistant
+    # Recoveries that happened inside the startup grace, waiting for it
+    # to close (rule WATCH-10). Set per coordinator in its __init__.
+    _held_recoveries: list[dict[str, Any]]
 
     @callback
     def _area_of(self, device_id: str) -> str:
@@ -356,7 +384,74 @@ class EventMixin:
         # the automation that heard the down is waiting for it (round 33
         # of 0.26.6).
         if self._in_startup_grace() and event_type != EVENT_WITHDRAWN and not owed:
+            # A device that really reported inside the grace has already
+            # left its verdict; its recovery is kept and fired when the
+            # grace closes, so an automation that heard the fault still
+            # hears it end (rule WATCH-10).
+            if event_type == EVENT_RECOVERED:
+                self._held_recoveries.append(payload)
+                # Kept in the stored file too, saved at once, so a
+                # reload or restart inside the grace does not lose it
+                # (rules WATCH-10, LIST-08).
+                self.data[DATA_HELD_RECOVERIES] = list(self._held_recoveries)  # type: ignore[attr-defined]
+                self._dirty = True
+                self._critical = True
             return
+        # Anything fired after the grace goes behind the recoveries held
+        # inside it, so the bus keeps the order things happened in; a
+        # withdrawal or an owed restored inside the grace leaves them
+        # held (rule WATCH-10).
+        if not self._in_startup_grace():
+            self._release_held_recoveries()
+        self._send(event_type, payload)
+
+    @callback
+    def _release_held_recoveries(self) -> None:
+        """Fire the recoveries held inside the startup grace, once each.
+
+        Called when the grace closes, and before any later event, so
+        whichever comes first sends them and the other finds nothing
+        left (rule WATCH-10).
+        """
+        held, self._held_recoveries = self._held_recoveries, []
+        if not held and DATA_HELD_RECOVERIES not in self.data:  # type: ignore[attr-defined]
+            return
+        # Cleared from the stored file and saved at once, so a restart
+        # after this never sends them a second time (rule WATCH-10).
+        self.data.pop(DATA_HELD_RECOVERIES, None)  # type: ignore[attr-defined]
+        self._dirty = True
+        self._critical = True
+        self.hass.async_create_task(self._save_now())  # type: ignore[attr-defined]
+        for payload in held:
+            self._send(EVENT_RECOVERED, payload)
+
+    @callback
+    def _restore_held_recoveries(self) -> None:
+        """Take back, at a start, the recoveries a reload or restart
+        inside the last grace left held, to be sent when this run's
+        grace closes (rule WATCH-10).
+
+        Each one is checked as stored: anything that is not a recovery
+        as `fire_recovered` builds it is dropped without an exception,
+        and nothing is sent for it (rule STOR-07).
+        """
+        stored = self.data.get(DATA_HELD_RECOVERIES)  # type: ignore[attr-defined]
+        kept = [
+            payload for payload in (stored if isinstance(stored, list) else [])
+            if _sound_recovery(payload)
+        ]
+        self._held_recoveries = kept
+        if kept:
+            if kept != stored:
+                self.data[DATA_HELD_RECOVERIES] = list(kept)  # type: ignore[attr-defined]
+                self._dirty = True
+        elif stored is not None:
+            self.data.pop(DATA_HELD_RECOVERIES, None)  # type: ignore[attr-defined]
+            self._dirty = True
+
+    @callback
+    def _send(self, event_type: str, payload: dict[str, Any]) -> None:
+        """Fire one event, logging rather than raising on a failure."""
         try:
             self.hass.bus.async_fire(event_type, payload)
         except Exception:  # noqa: BLE001 - never break the sync

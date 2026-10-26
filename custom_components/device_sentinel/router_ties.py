@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: router_ties.py, Version: 0.26.8 (2026-10-20)
+# File: router_ties.py, Version: 0.27.5 (2026-10-26)
 
 """Router ties: which watched devices a router says have left.
 
@@ -61,11 +61,14 @@ log as evidence and is never a gate, because a fleet whose Wi-Fi
 devices all notice slowly would fail a confirmation gate during a
 real outage.
 
-Known limitations, recorded rather than hidden: a restart during an
-outage stays silent, because restored trackers produce no fresh
-not_home transitions to count; and an access point that keeps
-broadcasting while its backhaul fails leaves stations associated and
-trackers reading home, a fault this detector cannot see.
+An outage still open is kept in storage as it stands, and after a
+restart it is taken back from there whole: its start, its fallen set,
+its worst count and what it announced, so its claim holds and its
+recovery carries its real length and worst moment (rule UP-04).
+
+Known limitation, recorded rather than hidden: an access point that
+keeps broadcasting while its backhaul fails leaves stations associated
+and trackers reading home, a fault this detector cannot see.
 """
 
 from __future__ import annotations
@@ -77,7 +80,7 @@ import re
 from typing import Any
 
 from homeassistant.const import STATE_UNAVAILABLE
-from homeassistant.core import Event, callback
+from homeassistant.core import Event, EventStateChangedData, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
@@ -85,9 +88,24 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     WIFI_BURST_HOLD_SECONDS,
+    DATA_SYSTEM_EVENTS,
+    DATA_WIFI_OUTAGE,
     DEV_FROZEN_CATEGORY,
     LOGGER,
+    SYS_KIND,
+    SYS_SCOPE,
+    SYS_WHEN,
     SYS_WIFI_DOWN,
+    WIFI_OUTAGE_DECLARED,
+    WIFI_OUTAGE_DEVICES,
+    WIFI_OUTAGE_FALLEN,
+    WIFI_OUTAGE_PUSHED,
+    WIFI_OUTAGE_RECOVERING,
+    WIFI_OUTAGE_SCAN_DOWN,
+    UPSTREAM_SETTLE_SECONDS,
+    WIFI_OUTAGE_SINCE,
+    WIFI_OUTAGE_TOLD,
+    WIFI_OUTAGE_WORST,
     SYS_WIFI_UP,
     SYS_WIFI_RECOVERING,
     SYS_WIFI_RECOVERY_WITHDRAWN,
@@ -118,7 +136,9 @@ from .const import (
     ROUTER_INTEGRATIONS,
     SYS_FIRST_SEEN_EXCLUDED,
     WIFI_BURST_FLOOR,
+    WIFI_FALLEN_UNUSABLE_SECONDS,
     WIFI_HANDBACK_SECONDS,
+    WIFI_TIE_RETRY_SECONDS,
     WIFI_LOOKBACK_SECONDS,
     WIFI_BURST_SHARE,
     WIFI_RECOVERY_SHARE,
@@ -128,6 +148,7 @@ from .const import (
     WIFI_KEY,
 )
 from .device_fields import device_field, identifier_values
+from .normalise import wifi_outage_ok
 
 STATE_NOT_HOME = "not_home"
 STATE_HOME = "home"
@@ -245,6 +266,30 @@ def medium_from_score(score: dict[str, int]) -> str:
     return "wired" if wired > wireless else "wireless"
 
 
+def _no_router_state(state: Any) -> bool:
+    """Whether a tracker has no state from its router yet: none at all,
+    Home Assistant's restored placeholder, or unavailable or unknown
+    with no source type, as a router integration that loaded but cannot
+    reach its router publishes (rule UP-16)."""
+    if state is None or state.attributes.get("restored"):
+        return True
+    return (
+        state.state in (STATE_UNAVAILABLE, "unknown")
+        and "source_type" not in state.attributes
+    )
+
+
+def _usable_tracker_state(state: Any) -> bool:
+    """Whether a tracker reads a state its router gave: not absent, not
+    Home Assistant's placeholder, not unavailable or unknown (rule
+    UP-16)."""
+    return (
+        state is not None
+        and not state.attributes.get("restored")
+        and state.state not in (STATE_UNAVAILABLE, "unknown")
+    )
+
+
 def normalize_mac(value: Any) -> str | None:
     """Reduce any MAC spelling to twelve lowercase hex characters.
 
@@ -264,13 +309,21 @@ class RouterTiesMixin:
 
     State lives on the coordinator (initialized beside the other
     upstream state): the tie maps, the burst window, the hold, and
-    the declared outage. Nothing persists across a restart, which is
-    the recorded restart-mid-outage limitation.
+    the declared outage. The outage itself is kept in storage while
+    it stands and taken back from there after a restart (rule UP-04).
     """
 
     # Declared for the type checker, which otherwise infers it from
     # its first assignment here; the coordinator initializes it.
     _wifi_declared_from: float | None
+    _wifi_fallen: dict[str, float]
+    _wifi_scan_down_at: float | None
+    _wifi_resumed: bool
+    _wifi_resume_seed: bool
+    _wifi_fallen_unsub: Any
+    _wifi_fallen_unusable_since: dict[str, float]
+    _wifi_retry_until: float | None
+    _wifi_down_row_written: bool
 
     # ---------------------------------------------------------- medium
 
@@ -477,11 +530,22 @@ class RouterTiesMixin:
         # terminal both ways: ties appearing ends it, and every
         # tracker having a state ends it, so a house of phone
         # trackers stops after its first look and a house with no
-        # trackers never starts.
-        self._wifi_retry_pending = not ties and any(
+        # trackers never starts. Home Assistant's own "unavailable"
+        # placeholder, written at its start for an integration not yet
+        # loaded, is no state from the router either, nor is a plain
+        # unavailable from one that cannot reach its router; otherwise
+        # a router answering late never ties again (rule UP-16). The
+        # retry runs only for WIFI_TIE_RETRY_SECONDS after the first
+        # look, then stops whatever it reads: an orphaned tracker reads
+        # the placeholder for ever, and the ladder was rebuilt every
+        # minute for the life of the run.
+        now = dt_util.utcnow().timestamp()
+        if self._wifi_retry_until is None:
+            self._wifi_retry_until = now + WIFI_TIE_RETRY_SECONDS
+        self._wifi_retry_pending = not ties and now < self._wifi_retry_until and any(
             entry.domain == "device_tracker"
             and not entry.disabled_by
-            and self.hass.states.get(entry.entity_id) is None
+            and _no_router_state(self.hass.states.get(entry.entity_id))
             for entry in registry.entities.values()
         )
         if changed:
@@ -924,10 +988,14 @@ class RouterTiesMixin:
 
         if self._wifi_retry_pending or self._wired_can_rejoin():
             self._rebuild_wifi_ties()
-        if not self._wifi_ties:
-            return
+        self._resume_wifi_outage(now)
+        # A standing outage is judged whether or not anything is tied:
+        # one the scan declared on a house with no ties still has to
+        # end when the network is heard (rule UP-16).
         if self._wifi_down_at is not None:
             self._sample_wifi_recovery(now)
+            return
+        if not self._wifi_ties:
             return
         if self._wifi_hold_since is None:
             return
@@ -937,7 +1005,14 @@ class RouterTiesMixin:
         # disagreed in 0.21.0: the burst scaled with the fleet and
         # the hold did not, so a burst of seven decaying to three
         # still declared on a fleet where three is ordinary churn.
-        still_gone = len(self._wifi_not_home)
+        # Only trackers that left with the burst count, by the same
+        # line the fallen set is drawn with: one already away before
+        # it is not a casualty, and phones away all day must not lift
+        # a small flap over the threshold (rule UP-12).
+        floor = (self._wifi_first_fall or self._wifi_hold_since) - WIFI_BURST_WINDOW_SECONDS
+        still_gone = sum(
+            1 for when in self._wifi_not_home.values() if when >= floor
+        )
         if still_gone >= self._wifi_burst_needed():
             self._wifi_declare(now, still_gone)
         else:
@@ -977,13 +1052,20 @@ class RouterTiesMixin:
             confirmed,
         )
         self._begin_upstream_peak(WIFI_KEY)
+        # Dated from the outage's start as backdated, the start its row
+        # and its stored state keep (rules UP-04, UP-11).
+        start = self._wifi_down_at if self._wifi_down_at is not None else since
         self._record_system_event(
-            SYS_WIFI_DOWN, scope=WIFI_KEY, devices=len(self._wifi_ties)
+            SYS_WIFI_DOWN, scope=WIFI_KEY, devices=len(self._wifi_ties),
+            when=start,
         )
+        # From here a backdate may re-date it; never an older one.
+        self._wifi_down_row_written = True
         self._say_upstream_down(
-            UPSTREAM_WIFI, WIFI_KEY, None, since, len(self._wifi_ties),
+            UPSTREAM_WIFI, WIFI_KEY, None, start, len(self._wifi_ties),
             confirmed=confirmed,
         )
+        self._remember_wifi_outage(critical=True)
 
     @callback
     def on_wifi_scan_restored(
@@ -1010,6 +1092,14 @@ class RouterTiesMixin:
         the scan.
         """
         if self._wifi_down_at is None:
+            return
+        if not self._wifi_fallen:
+            # Nothing fell in it, so there is nothing to wait for: the
+            # outage ends when the network is heard, with no
+            # recovering phase between, inside the startup grace too,
+            # since a resumed outage's empty set stays empty (rule
+            # UP-16).
+            self._wifi_restore(now)
             return
         LOGGER.info(
             "device_sentinel: wifi scan hears the network again, "
@@ -1048,9 +1138,19 @@ class RouterTiesMixin:
         (#425), reusing the declaration floor because three trackers
         falling together is what declared the outage in the first
         place.
+
+        An outage with nothing in its fallen set ends when the network
+        is heard, because there is nothing else to wait for; until
+        0.27.5 it returned here and stayed open until a restart,
+        claiming every device that failed meanwhile (rule UP-16).
         """
+        if self._wifi_resume_waiting():
+            return
+        self._drop_removed_wifi_fallen(now)
         fell = len(self._wifi_fallen)
         if not fell:
+            if self._wifi_scan_down_at is None:
+                self._wifi_restore(now)
             return
         back = len(self._wifi_returned)
 
@@ -1133,6 +1233,7 @@ class RouterTiesMixin:
             if when >= since - WIFI_BURST_WINDOW_SECONDS
         }
         self._wifi_returned = set()
+        self._wifi_fallen_unusable_since = {}
         self._wifi_announced = False
         self._wifi_peak_back = 0
         self._wifi_quiet_ticks = 0
@@ -1156,12 +1257,319 @@ class RouterTiesMixin:
             confirmed,
         )
         self._begin_upstream_peak(WIFI_KEY)
+        # Dated from the outage's start as backdated, the start its row
+        # and its stored state keep (rules UP-04, UP-11).
+        since = self._wifi_down_at
         self._record_system_event(
-            SYS_WIFI_DOWN, scope=WIFI_KEY, devices=len(self._wifi_ties)
+            SYS_WIFI_DOWN, scope=WIFI_KEY, devices=len(self._wifi_ties),
+            when=since,
         )
+        # From here a backdate may re-date it; never an older one.
+        self._wifi_down_row_written = True
         self._say_upstream_down(
             UPSTREAM_WIFI, WIFI_KEY, None, since, len(self._wifi_ties),
             confirmed=confirmed,
+        )
+        self._remember_wifi_outage(critical=True)
+
+    def _wifi_outage_snapshot(self) -> dict[str, Any] | None:
+        """The standing outage as it is stored, or None (rule UP-04)."""
+        since = self._wifi_down_at
+        if since is None:
+            return None
+        stored = self.data.get(DATA_WIFI_OUTAGE)
+        before = (
+            stored.get(WIFI_OUTAGE_WORST, 0)
+            if isinstance(stored, dict) else 0
+        )
+        worst = max(
+            int(before) if isinstance(before, int) else 0,
+            int(self._upstream_peak.get(WIFI_KEY, 0) or 0),
+            int(self.suppressed_down_counts.get(WIFI_KEY, 0) or 0),
+        )
+        said = self._upstream_said.get(WIFI_KEY)
+        held = self._upstream_held.get(WIFI_KEY)
+        if said is not None:
+            devices = said[3]
+        elif held is not None:
+            devices = held[3]
+        else:
+            devices = len(self._wifi_ties)
+        return {
+            WIFI_OUTAGE_SINCE: float(since),
+            WIFI_OUTAGE_DECLARED: float(self._wifi_declared_from or since),
+            WIFI_OUTAGE_FALLEN: {
+                tracker: float(when)
+                for tracker, when in self._wifi_fallen.items()
+            },
+            WIFI_OUTAGE_WORST: worst,
+            WIFI_OUTAGE_DEVICES: int(devices or 0),
+            WIFI_OUTAGE_TOLD: said is not None,
+            WIFI_OUTAGE_PUSHED: self._wifi_down_push_owed(since),
+            WIFI_OUTAGE_SCAN_DOWN: (
+                float(self._wifi_scan_down_at)
+                if self._wifi_scan_down_at is not None
+                else None
+            ),
+            WIFI_OUTAGE_RECOVERING: (
+                float(self._wifi_recovering_at)
+                if self._wifi_recovering_at is not None
+                else None
+            ),
+        }
+
+    def _wifi_down_push_owed(self, since: float) -> bool:
+        """Whether the down push has gone, or goes in this minute's sync.
+
+        Marked as soon as it is owed, not when the push task has run,
+        so the critical save of the same tick carries it to disk: a
+        power cut in the minute after would otherwise push the down a
+        second time, sounding (rule UP-09). Owed is what the push gate
+        reads: past the grace, settled for a minute, with a row.
+        """
+        if WIFI_KEY in self._upstream_announced:
+            return True
+        if self._upstream_phase.get(WIFI_KEY) == "down":
+            return True
+        return (
+            not self._in_startup_grace()
+            and dt_util.utcnow().timestamp() - since >= UPSTREAM_SETTLE_SECONDS
+            and WIFI_KEY in self.suppressed_down_counts
+        )
+
+    def _remember_wifi_outage(self, critical: bool = False) -> None:
+        """Keep the standing outage in storage, or remove it once over.
+
+        Written when the outage opens, and again whenever its start,
+        fallen set, worst count or announcements change, so a restart
+        resumes it as it stood; removed when it ends (James, 26 October
+        2026; rule UP-04). It lives in the main file, which a routine
+        write takes only when marked, so every change marks it.
+        Opening, ending, and a change to whether its down was told or
+        pushed are saved at once: a power cut that lost a push already
+        sent would push the down a second time, sounding (rule UP-09).
+        Any other change is saved with the next routine write and at a
+        clean stop.
+        """
+        snapshot = self._wifi_outage_snapshot()
+        if snapshot is None:
+            if self.data.pop(DATA_WIFI_OUTAGE, None) is not None:
+                self._mark_cold_dirty()
+                self._critical = True
+            return
+        stored = self.data.get(DATA_WIFI_OUTAGE)
+        if stored == snapshot:
+            return
+        if not isinstance(stored, dict) or any(
+            stored.get(flag) != snapshot[flag]
+            for flag in (WIFI_OUTAGE_TOLD, WIFI_OUTAGE_PUSHED)
+        ):
+            critical = True
+        self.data[DATA_WIFI_OUTAGE] = snapshot
+        self._mark_cold_dirty()
+        if critical:
+            self._critical = True
+
+    def _wifi_resume_waiting(self) -> bool:
+        """Whether a resumed outage still waits for the startup grace.
+
+        After a restart the router has not reported yet, so which of the
+        stored fallen trackers are home again is not known until the
+        grace ends. Then each one reading home is counted as returned
+        and each one still away as away, and the recovery is judged
+        against the stored set as usual; one not known yet is heard when
+        it comes home (_on_wifi_fallen_change). Nothing is added to the
+        set: a tracker away before the outage was never in it (rules
+        UP-04, UP-16).
+        """
+        if not self._wifi_resume_seed:
+            return False
+        if self._in_startup_grace():
+            return True
+        self._wifi_resume_seed = False
+        if self._wifi_down_at is None:
+            return False
+        if not self.wifi_scan_configured:
+            # No adapter answered through the grace, so nothing will
+            # hear the network; the trackers decide alone.
+            self._wifi_scan_down_at = None
+        for tracker, fell_at in self._wifi_fallen.items():
+            state = self.hass.states.get(tracker)
+            if state is None:
+                continue
+            if state.state == STATE_NOT_HOME:
+                self._wifi_not_home.setdefault(tracker, fell_at)
+            elif state.state == STATE_HOME:
+                self._wifi_returned.add(tracker)
+        return False
+
+    def _listen_to_wifi_fallen(self) -> None:
+        """Listen to a resumed outage's stored fallen trackers.
+
+        By entity id, not through the ties: after a restart the router
+        integration may answer late, or a second one may stand while
+        the one whose trackers fell is still loading, so the ties can
+        be missing or formed without them and a tracker coming home
+        would go unheard. The outage then never closed (rule UP-16).
+        """
+        self._stop_wifi_fallen_listener()
+        if self._wifi_down_at is None or not self._wifi_fallen:
+            return
+        self._wifi_fallen_unsub = async_track_state_change_event(
+            self.hass, sorted(self._wifi_fallen), self._on_wifi_fallen_change
+        )
+
+    def _stop_wifi_fallen_listener(self) -> None:
+        """Stop listening to the fallen trackers: the outage is over or
+        the entry unloads."""
+        if self._wifi_fallen_unsub is not None:
+            self._wifi_fallen_unsub()
+            self._wifi_fallen_unsub = None
+
+    @callback
+    def _on_wifi_fallen_change(self, event: Event[EventStateChangedData]) -> None:
+        """A resumed outage's fallen tracker reading home has returned.
+
+        Away stays away, and no state, Home Assistant's placeholder or
+        unavailable means not known yet. Inside the grace nothing is
+        counted: the grace's end reads every one as it then stands
+        (rule UP-16).
+        """
+        new_state = event.data.get("new_state")
+        entity_id = event.data.get("entity_id")
+        if (
+            self._wifi_down_at is None
+            or self._wifi_resume_seed
+            or new_state is None
+            or new_state.state != STATE_HOME
+            or entity_id not in self._wifi_fallen
+            or entity_id in self._wifi_returned
+        ):
+            return
+        self._wifi_not_home.pop(entity_id, None)
+        self._wifi_returned.add(entity_id)
+        if self._wifi_recovering_at is not None:
+            self._notify()
+
+    def _drop_removed_wifi_fallen(self, now: float) -> None:
+        """Let go of fallen trackers that can never come home.
+
+        One whose entity is gone from the registry (its router
+        integration deleted, or removed by hand), and one with no usable
+        state for WIFI_FALLEN_UNUSABLE_SECONDS: none, Home Assistant's
+        placeholder, or unavailable or unknown, as a router never reached
+        again or an integration disabled leaves it. Left in the set
+        either held the outage open for ever, claiming every device that
+        failed meanwhile. The time runs from the first check that finds
+        it without a usable state, or from the resume (rule UP-16).
+        """
+        registry = er.async_get(self.hass)
+        unusable = self._wifi_fallen_unusable_since
+        gone = []
+        for tracker in self._wifi_fallen:
+            if registry.async_get(tracker) is None:
+                gone.append(tracker)
+                continue
+            if _usable_tracker_state(self.hass.states.get(tracker)):
+                unusable.pop(tracker, None)
+                continue
+            if now - unusable.setdefault(tracker, now) >= WIFI_FALLEN_UNUSABLE_SECONDS:
+                gone.append(tracker)
+        if not gone:
+            return
+        LOGGER.info(
+            "device_sentinel: %d fallen wifi tracker(s) removed or "
+            "without a usable state for %d hours were let go: %s",
+            len(gone),
+            int(WIFI_FALLEN_UNUSABLE_SECONDS // 3600),
+            ", ".join(sorted(gone)),
+        )
+        for tracker in gone:
+            unusable.pop(tracker, None)
+        for tracker in gone:
+            self._wifi_fallen.pop(tracker, None)
+            self._wifi_returned.discard(tracker)
+        self._remember_wifi_outage()
+
+    def _resume_wifi_outage(self, now: float) -> None:
+        """Take back, once a run, a Wi-Fi outage open before the restart.
+
+        Read from the stored outage alone (James, 26 October 2026): its
+        start as backdated, its fallen trackers with their fall times,
+        its worst count, its announced count, whether its down was told
+        and pushed, and the scan's down mark. So it stands again exactly
+        as it was, across any number of restarts: its devices stay
+        claimed, its start does not move, and its recovery carries its
+        real length and its worst moment (rules UP-04, UP-11). A file
+        written by 0.27.4 or before holds no stored outage, and nothing
+        is resumed. A stored outage that is not whole is dropped.
+
+        A down the bus heard is owed its restored, with the count it was
+        announced with (rule UP-10); one held for the grace is held
+        again. A down already pushed is marked so: no second down push,
+        which as a first push would sound, and its over push is still
+        owed when it ends (rule UP-09).
+        """
+        if self._wifi_resumed:
+            return
+        self._wifi_resumed = True
+        if self._wifi_down_at is not None:
+            return
+        stored = self.data.get(DATA_WIFI_OUTAGE)
+        if stored is None:
+            return
+        if not wifi_outage_ok(stored) or stored[WIFI_OUTAGE_SINCE] > now:
+            LOGGER.info(
+                "device_sentinel: a stored wifi outage that was not "
+                "whole was dropped, and nothing was resumed"
+            )
+            self.data.pop(DATA_WIFI_OUTAGE, None)
+            self._dirty = True
+            return
+        since = float(stored[WIFI_OUTAGE_SINCE])
+        self._wifi_down_at = since
+        self._wifi_declared_from = float(stored[WIFI_OUTAGE_DECLARED])
+        self._wifi_hold_since = None
+        self._seed_wifi_fallen(since)
+        self._wifi_fallen = {
+            str(tracker): float(when)
+            for tracker, when in stored[WIFI_OUTAGE_FALLEN].items()
+        }
+        self._wifi_resume_seed = True
+        # What each tracker read before the restart is not known, so its
+        # time without a usable state runs from the resume (rule UP-16).
+        self._wifi_fallen_unusable_since = {
+            tracker: now for tracker in self._wifi_fallen
+        }
+        self._listen_to_wifi_fallen()
+        scan_down = stored[WIFI_OUTAGE_SCAN_DOWN]
+        self._wifi_scan_down_at = (
+            float(scan_down) if scan_down is not None else None
+        )
+        # A recovery under way stays under way: its row was written
+        # once, and the Problem List keeps reading recovering
+        # (rules UP-16, LIST-13).
+        recovering = stored[WIFI_OUTAGE_RECOVERING]
+        self._wifi_recovering_at = (
+            float(recovering) if recovering is not None else None
+        )
+        # The open down row in the events is this outage's own.
+        self._wifi_down_row_written = True
+        # The worst count carries across, so the return records it.
+        self._upstream_peak[WIFI_KEY] = int(stored[WIFI_OUTAGE_WORST])
+        devices = int(stored[WIFI_OUTAGE_DEVICES])
+        if stored[WIFI_OUTAGE_TOLD]:
+            self._upstream_said[WIFI_KEY] = (UPSTREAM_WIFI, None, since, devices)
+            self._upstream_owed.add(WIFI_KEY)
+        else:
+            self._say_upstream_down(UPSTREAM_WIFI, WIFI_KEY, None, since, devices)
+        if stored[WIFI_OUTAGE_PUSHED]:
+            self._upstream_announced[WIFI_KEY] = devices
+            self._upstream_phase[WIFI_KEY] = "down"
+        LOGGER.info(
+            "device_sentinel: wifi outage open since %s resumed after "
+            "the restart",
+            dt_util.utc_from_timestamp(since).isoformat(),
         )
 
     def _wifi_restore(self, now: float) -> None:
@@ -1187,10 +1595,14 @@ class RouterTiesMixin:
         self._wifi_down_at = None
         self._wifi_declared_from = None
         self._wifi_first_fall = None
+        self._wifi_resume_seed = False
+        self._stop_wifi_fallen_listener()
+        self._wifi_down_row_written = False
         self._wifi_burst = []
-        left = len(self._wifi_fallen) - len(self._wifi_returned)
+        left =len(self._wifi_fallen) - len(self._wifi_returned)
         self._wifi_fallen = {}
         self._wifi_returned = set()
+        self._wifi_fallen_unusable_since = {}
         self._wifi_announced = False
         self._wifi_peak_back = 0
         self._wifi_quiet_ticks = 0
@@ -1207,9 +1619,14 @@ class RouterTiesMixin:
             duration=now - since if since is not None else None,
             **ended,
         )
+        # No count is passed, so the restored carries the count its
+        # down was announced with: ties rebuilt during the outage must
+        # not give the pair two numbers (rule UP-10).
         self._say_upstream_restored(
-            UPSTREAM_WIFI, WIFI_KEY, None, since, now, len(self._wifi_ties)
+            UPSTREAM_WIFI, WIFI_KEY, None, since, now
         )
+        # Over, so nothing is left to resume (rule UP-04).
+        self._remember_wifi_outage()
 
     def _wifi_confirmed_count(self) -> int:
         """How many claimed devices already read unavailable.
@@ -1218,11 +1635,15 @@ class RouterTiesMixin:
         a fleet of slow integrations would show zero here at
         declaration and still be real. Recorded because it separates
         a network outage from a tracker-side artifact after the fact.
+
+        Claimed is what the outage claims: a tied device whose tracker
+        was away before the outage began is not one, so its
+        unavailable entity is not counted (rules UP-10, UP-15).
         """
         claimed = {
             device_id
-            for device_id, tracker in self._wifi_ties.items()
-            if tracker in self._wifi_not_home
+            for device_id in self.data.get(DATA_DEVICES, {})
+            if self.wifi_down_since(device_id) is not None
         }
         if not claimed:
             return 0
@@ -1284,10 +1705,12 @@ class RouterTiesMixin:
             return None
         # A tied device whose tracker fell in this outage is claimed
         # on that evidence, whether or not a verdict has landed yet.
+        # One whose tracker was already away when the outage began is
+        # not a casualty of it, so its tracker claims nothing: it is
+        # judged by its own failure time below, like any other device
+        # (rule UP-15, ruling #409).
         tracker = self._wifi_ties.get(device_id)
-        if tracker is not None and (
-            tracker in self._wifi_fallen or tracker in self._wifi_not_home
-        ):
+        if tracker is not None and tracker in self._wifi_fallen:
             return WIFI_KEY, since
         # And so is anything else that failed inside the window, tie
         # or no tie. Without this the claim reaches only hardware the
@@ -1317,12 +1740,42 @@ class RouterTiesMixin:
 
         Run at declaration and on every tick, because a detector dates
         a failure when it began, and that verdict can land after the
-        outage was declared.
+        outage was declared. A start moved back moves its down row with
+        it, so the row, the stored state and the Problem List give one
+        start (rules UP-11, LIST-13). The tick's run also keeps the
+        stored outage up to date (rule UP-04).
         """
         if self._wifi_down_at is None or self._wifi_declared_from is None:
             return
-        floor = self._wifi_declared_from - WIFI_LOOKBACK_SECONDS
-        earliest = self._wifi_down_at
+        self._wifi_backdate_once(self._wifi_down_at, self._wifi_declared_from)
+        self._remember_wifi_outage()
+
+    def _move_wifi_down_row(self, since: float) -> None:
+        """Re-date the standing outage's down row to its start.
+
+        Found wherever it sits: its recovering and withdrawn rows may
+        come after it. A return met first means no down row is open
+        (rules UP-11, LIST-13). Only once this outage's own row is
+        written: the backdate at declaration runs before it, and the
+        open row it would find then is one an older release left behind.
+        """
+        if not getattr(self, "_wifi_down_row_written", False):
+            return
+        for row in reversed(self.data.get(DATA_SYSTEM_EVENTS) or []):
+            if not isinstance(row, dict) or row.get(SYS_SCOPE) != WIFI_KEY:
+                continue
+            kind = row.get(SYS_KIND)
+            if kind == SYS_WIFI_UP:
+                return
+            if kind == SYS_WIFI_DOWN:
+                row[SYS_WHEN] = since
+                self._mark_cold_dirty()
+                return
+
+    def _wifi_backdate_once(self, down_at: float, declared_from: float) -> None:
+        """One pass of the backdate; see _wifi_backdate."""
+        floor = declared_from - WIFI_LOOKBACK_SECONDS
+        earliest = down_at
         records = self.data.get(DATA_DEVICES, {})
         for device_id, tracker in self._wifi_ties.items():
             if device_id in self._radio_owned:
@@ -1332,13 +1785,14 @@ class RouterTiesMixin:
             began = (records.get(device_id) or {}).get(DEV_FROZEN_SINCE)
             if began is not None and floor <= began < earliest:
                 earliest = float(began)
-        if earliest < self._wifi_down_at:
+        if earliest < down_at:
             LOGGER.info(
                 "device_sentinel: wifi outage dated back %.0fs to the "
                 "first device that noticed it",
-                self._wifi_down_at - earliest,
+                down_at - earliest,
             )
             self._wifi_down_at = earliest
+            self._move_wifi_down_row(earliest)
 
     def wifi_burst_held(self) -> set[str]:
         """Tied devices whose rows wait for the router (ruling #446).

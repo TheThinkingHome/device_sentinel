@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: problem_list.py, Version: 0.27.4 (2026-10-25)
+# File: problem_list.py, Version: 0.27.5 (2026-10-26)
 
 """The problem list: the single memory every channel renders.
 
@@ -1161,22 +1161,26 @@ class ProblemListMixin:
     def _upstream_phases(self) -> dict[str, str]:
         """What phase each downed upstream is in (ruling #435).
 
-        Three phases rather than a number: "down", "recovering" and,
-        by absence, over. The push was keyed on the casualty count
-        and silent after the first of a run, which worked while the
-        count only ever grew. Once the recovering row counts down
-        live (#431) the key moves on every device that returns, and a
+        Phases rather than a number: "down", "recovering" and, by
+        absence, over. The push was keyed on the casualty count and
+        silent after the first of a run, which worked while the count
+        only ever grew. Once the recovering row counts down live
+        (#431) the key moves on every device that returns, and a
         recovery would announce itself once per device. Keyed on the
-        phase, a recovery announces once and a tracker flapping
-        inside the settle cannot announce at all, because the phase
-        has not changed.
+        phase, a tracker flapping inside the settle cannot announce at
+        all, because the phase has not changed.
+
+        A Wi-Fi outage stays open while it recovers, so its phase is
+        down until it is over: recovering sends no push, the row says
+        it, and a recovery withdrawn by losses pushes nothing again
+        either. Read as recovering it pushed a third time, unlike every
+        other upstream (rule UP-09).
         """
         phases: dict[str, str] = {}
         for name in self.suppressed_down_counts:
             recovering = (
-                self.wifi_recovering_at is not None
-                if name == WIFI_KEY
-                else self.upstream_recovering_at(name) is not None
+                name != WIFI_KEY
+                and self.upstream_recovering_at(name) is not None
             )
             phases[name] = "recovering" if recovering else "down"
         return phases
@@ -1211,6 +1215,9 @@ class ProblemListMixin:
                 continue
             self._upstream_phase[name] = phases.get(name)
             messages.append((name, count, False))
+            # Kept with a bridge or broker outage, so a restart does not
+            # push its down a second time (rule UP-09).
+            self._note_upstream_pushed(name)
         for name, count in list(self._upstream_announced.items()):
             if name not in counts and self.upstream_down_since_for(name) is None:
                 self._upstream_phase.pop(name, None)

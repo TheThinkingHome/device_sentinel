@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: interventions.py, Version: 0.27.4 (2026-10-25)
+# File: interventions.py, Version: 0.27.5 (2026-10-26)
 
 """Interventions and upstreams: the broker, the bridges and the integrations
 above the devices, their outages and recoveries, a person's hand on a
@@ -28,6 +28,7 @@ silence rather than trusting it.
 
 from __future__ import annotations
 
+import math
 from collections import deque
 from typing import Any
 from homeassistant.config_entries import ConfigEntryState
@@ -40,12 +41,15 @@ from .stacks import (
     reader_for_domain,
 )
 from .transport_mqtt import MQTTBrokerReader
+from .normalise import COUNT_HIGHEST, MOMENT_HIGHEST, MOMENT_LOWEST
 
 from .const import (
     DEV_LOGNORMAL_DAYS,
     FLAP_CHECK_WORDS,
     SYS_DETAIL,
     SYS_DEVICES,
+    SYS_DURATION,
+    SYS_WORST,
     DATA_SYSTEM_EVENTS,
     STORM_EXPLAINED_SECONDS,
     SYS_KIND,
@@ -160,6 +164,42 @@ _FAILED_SETUP = frozenset(
         ConfigEntryState.MIGRATION_ERROR,
     }
 )
+
+# Beside a remembered broker or bridge outage: how many devices its down
+# was announced with, so its restored after a restart says the same
+# (rule UP-10).
+_SEEN_DEVICES = "devices"
+# And the most devices it has had down at once so far (rule UP-11).
+_SEEN_WORST = "worst"
+# And whether its down was pushed to the phone (rule UP-09).
+_SEEN_PUSHED = "pushed"
+# And whether its down was told on the bus, which a down inside the
+# startup grace is not until the grace closes (rule UP-10).
+_SEEN_TOLD = "told"
+
+# The same four marks for each integration entry outage, keyed as the
+# outage is announced ("domain|entry_id"). The outage itself is resumed
+# from its open row in the events log; these say what the bus and the
+# phone have heard of it, so a restart neither repeats its down push nor
+# owes a restored for a down never told (rules UP-09, UP-10, UP-11).
+DATA_INTEGRATION_SEEN = "integration_seen"
+
+
+def _count(value: Any) -> int | None:
+    """A stored count, or None when it is not one (rule STOR-07)."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 0 <= value <= COUNT_HIGHEST else None
+
+
+def _moment(value: Any) -> float | None:
+    """A moment as a float, or None when it is not one a system event
+    row would accept."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value) or not MOMENT_LOWEST <= value <= MOMENT_HIGHEST:
+        return None
+    return float(value)
 
 
 def _reader_loaded(reader: Any) -> bool:
@@ -480,9 +520,25 @@ class InterventionMixin:
             # Measured from the last arrival before the restart, not
             # from the previous start: the latter is how long the
             # broker had been up, which is the opposite of an outage
-            # (ruling #396).
+            # (ruling #396). Both rows are dated by the broker's own
+            # moments, the last message before and its start after, not
+            # by when this check noticed, so the integration's page
+            # never shows it starting after it ended; and the bus hears
+            # the pair like any other outage (rules UP-02, UP-10).
             since = reader.stopped_at
-            self._record_system_event(SYS_BROKER_DOWN, scope=BROKER_SCOPE)
+            # A moment the reader cannot vouch for is left to the row's
+            # own stamp, as before, so no row is refused for its date.
+            back = _moment(started)
+            if back is not None and back > now:
+                back = None
+            fell = _moment(since)
+            if fell is not None and back is not None and fell > back:
+                fell = None
+            if fell is None:
+                fell = back
+            self._record_system_event(
+                SYS_BROKER_DOWN, scope=BROKER_SCOPE, when=fell
+            )
             self._record_system_event(
                 SYS_BROKER_UP,
                 scope=BROKER_SCOPE,
@@ -491,6 +547,18 @@ class InterventionMixin:
                     if since is not None and started is not None
                     else None
                 ),
+                when=back,
+            )
+            returned = back if back is not None else now
+            began = fell if fell is not None else returned
+            behind = self._upstream_devices(None)
+            self._say_upstream_down(
+                UPSTREAM_BROKER, BROKER_LABEL, None, began, behind
+            )
+            # Restored at the broker's return, so for_seconds is the
+            # outage's length rather than the time until it was noticed.
+            self._say_upstream_restored(
+                UPSTREAM_BROKER, BROKER_LABEL, None, began, returned
             )
         elif was is not None and was != state:
             if state == BROKER_DOWN:
@@ -498,6 +566,14 @@ class InterventionMixin:
                 if from_start is not None:
                     self._upstream_from_start.add(BROKER_LABEL)
                 stored[BRIDGE_SEEN_SINCE] = began
+                # The count the down is announced with, kept so a
+                # restart in the middle closes it with the same count
+                # (rule UP-10).
+                behind = self._upstream_devices(None)
+                stored[_SEEN_DEVICES] = behind
+                stored[_SEEN_TOLD] = False  # until the bus hears it
+                stored.pop(_SEEN_WORST, None)
+                stored.pop(_SEEN_PUSHED, None)
                 # The moment the reporting layer measures from
                 # (ruling #264), kept beside the bridges' own stamps.
                 self._broker_down_at = began
@@ -506,7 +582,7 @@ class InterventionMixin:
                     SYS_BROKER_DOWN, scope=BROKER_SCOPE
                 )
                 self._say_upstream_down(
-                    UPSTREAM_BROKER, BROKER_LABEL, None, began
+                    UPSTREAM_BROKER, BROKER_LABEL, None, began, behind
                 )
             elif was == BROKER_DOWN:
                 self._upstream_from_start.discard(BROKER_LABEL)
@@ -514,6 +590,10 @@ class InterventionMixin:
                 ended = self._upstream_ended(BROKER_LABEL)
                 self._broker_down_at = None
                 since = stored.pop(BRIDGE_SEEN_SINCE, None)
+                stored.pop(_SEEN_DEVICES, None)
+                stored.pop(_SEEN_WORST, None)
+                stored.pop(_SEEN_PUSHED, None)
+                stored.pop(_SEEN_TOLD, None)
                 self._record_system_event(
                     SYS_BROKER_UP,
                     scope=BROKER_SCOPE,
@@ -622,6 +702,60 @@ class InterventionMixin:
             else devices,
             confirmed=confirmed,
         )
+        self._note_upstream_told(key)
+
+    def _note_upstream_told(self, key: str) -> None:
+        """Remember with a standing bridge, broker or integration entry
+        outage that the bus heard its down, so after a restart only a
+        told down is owed its restored (rule UP-10)."""
+        seen = self._remembered_outage(key)
+        if seen is not None and seen.get(_SEEN_TOLD) is not True:
+            seen[_SEEN_TOLD] = True
+            self._dirty = True
+            self._critical = True
+
+    def _remembered_outage(self, key: str) -> dict[str, Any] | None:
+        """The stored state of a bridge, the broker or an integration
+        entry while it is down."""
+        if key == BROKER_LABEL:
+            stored = self.data.get(DATA_BROKER_SEEN)
+            if self._broker_down_at is not None and isinstance(stored, dict):
+                return stored
+            return None
+        seen = (self.data.get(DATA_BRIDGE_SEEN) or {}).get(key)
+        if isinstance(seen, dict) and seen.get(BRIDGE_SEEN_STATE) == BRIDGE_DOWN:
+            return seen
+        # An integration entry's outage, while it is open (rule UP-10).
+        if key.partition("|")[2] in self._integration_told:
+            entry = self._entry_outages().get(key)
+            if isinstance(entry, dict):
+                return entry
+        return None
+
+    def _entry_outages(self) -> dict[str, Any]:
+        """The stored marks of the integration entry outages.
+
+        A store that is not a mapping is replaced with an empty one,
+        never read (rule STOR-07)."""
+        stored = self.data.get(DATA_INTEGRATION_SEEN)
+        if not isinstance(stored, dict):
+            stored = self.data[DATA_INTEGRATION_SEEN] = {}
+        return stored
+
+    def _close_entry_outage(self, key: str) -> None:
+        """An entry outage has ended: its bus pair is closed, and its
+        record goes unless its down was pushed, when it stays until the
+        over push goes, so a restart before then still sends that push
+        (rules UP-09, UP-10)."""
+        stored = self._entry_outages()
+        seen = stored.get(key)
+        if seen is None:
+            return
+        if isinstance(seen, dict) and seen.get(_SEEN_PUSHED) is True:
+            seen.pop(_SEEN_TOLD, None)
+        else:
+            stored.pop(key, None)
+        self._dirty = True
 
     def _announce_held_upstreams(self) -> None:
         """Announce anything the grace swallowed, once, when it ends."""
@@ -858,9 +992,11 @@ class InterventionMixin:
             self._integration_told.add(entry_id)
             self._integration_detail[entry_id] = row[SYS_DETAIL]
             self._entry_down_at[entry_id] = float(when)
-            # The bus heard it go down before the restart, so it is owed
-            # its recovery after (round 32 of 0.26.6), with the count it
-            # was announced with where the log kept it.
+            # A down the bus heard before the restart is owed its
+            # recovery after (round 32 of 0.26.6); one it never heard is
+            # held for this grace and told once after it; a down already
+            # pushed is not pushed again. Read from the outage's stored
+            # marks, as a bridge's are (rules UP-09, UP-10).
             scope = row.get(SYS_SCOPE)
             if isinstance(scope, str):
                 self._integration_domain[entry_id] = scope
@@ -870,10 +1006,33 @@ class InterventionMixin:
                 if not isinstance(devices, int) or isinstance(devices, bool):
                     devices = behind.get(entry_id, 0)
                 key = f"{scope}|{entry_id}"
-                self._upstream_said[key] = (
-                    UPSTREAM_INTEGRATION, None, float(when), devices,
+                stored = self._entry_outages()
+                seen = stored.get(key)
+                if not isinstance(seen, dict):
+                    # Missing, written before the marks were kept, or
+                    # damaged and dropped: taken as told (rule STOR-07).
+                    seen = stored[key] = {}
+                    self._dirty = True
+                self._owe_upstream_restored(
+                    UPSTREAM_INTEGRATION, key, None, float(when), seen,
+                    name=scope, counted=devices,
                 )
-                self._upstream_owed.add(key)
+        # An entry back before the restart whose over push had not gone:
+        # sent after the grace, as the phone heard its down (rule
+        # UP-09). Any other record of an ended outage goes.
+        stored = self._entry_outages()
+        for key, seen in list(stored.items()):
+            domain, _, entry_id = key.partition("|")
+            if entry_id in open_rows:
+                continue
+            if isinstance(seen, dict) and seen.get(_SEEN_PUSHED) is True:
+                devices = _count(seen.get(_SEEN_DEVICES)) or 0
+                self._upstream_announced[domain] = max(
+                    devices, self._upstream_announced.get(domain, 0)
+                )
+                continue
+            stored.pop(key, None)
+            self._dirty = True
 
     def outage_device_name(self, detail: Any) -> str | None:
         """The device an entry outage was, by its name, or None."""
@@ -917,6 +1076,19 @@ class InterventionMixin:
         )
         self._integration_behind[entry.entry_id] = behind
         self._integration_domain[entry.entry_id] = entry.domain
+        # Its marks, kept so a restart in the middle closes it as a
+        # bridge's would: the count it is announced with, not yet told
+        # until the bus hears it, and pushed already where its
+        # integration's down push has gone for another entry or inside
+        # the hand-back (rules UP-09, UP-10).
+        seen: dict[str, Any] = {_SEEN_DEVICES: behind, _SEEN_TOLD: False}
+        if (
+            entry.domain in self._upstream_announced
+            and entry.entry_id not in self._entry_only_device
+        ):
+            seen[_SEEN_PUSHED] = True
+        self._entry_outages()[_entry_key(entry)] = seen
+        self._dirty = True
         self._say_upstream_down(
             UPSTREAM_INTEGRATION, entry.domain, None, since, behind,
             key=_entry_key(entry),
@@ -938,6 +1110,7 @@ class InterventionMixin:
         device_id = parse_detail(old)[1]
         if domain is None:
             return
+        self._close_entry_outage(f"{domain}|{entry_id}")
         self._record_system_event(
             SYS_INTEGRATION_UP,
             scope=domain,
@@ -1001,6 +1174,7 @@ class InterventionMixin:
         if carried:
             ended["devices"] = max(carried, ended["worst"])
         self._integration_told.discard(entry.entry_id)
+        self._close_entry_outage(key)
         self._record_system_event(
             SYS_INTEGRATION_UP,
             scope=domain,
@@ -1033,7 +1207,12 @@ class InterventionMixin:
         entry_id = self._entry_of_device.get(device_id)
         if entry_id is None:
             return None
-        if self._entry_only_device.get(entry_id) == device_id:
+        # A one-device entry's outage is that device's own, decided when
+        # it fell (rule UP-05); an entry not down asks the live count.
+        if entry_id in self._integration_told:
+            if self._entry_single(entry_id):
+                return None
+        elif self._entry_only_device.get(entry_id) == device_id:
             return None
         since = self._entry_down_at.get(entry_id)
         if since is None or entry_id not in self._integration_told:
@@ -1095,6 +1274,11 @@ class InterventionMixin:
         if name not in self._integration_recovering_at:
             return None
         self._integration_recovery_over(name)
+        # One entry back while another of the same integration is still
+        # down is not the integration recovering: its row stays down, so
+        # its phase does not move and nothing is pushed (rule UP-09).
+        if self.upstream_down_since_for(name) is not None:
+            return None
         return self._integration_recovering_at.get(name)
 
     def upstream_recovery_counts(self, name: str) -> tuple[int, int]:
@@ -1197,12 +1381,22 @@ class InterventionMixin:
         if not waiting:
             return set()
         held: set[str] = set()
+        reported = getattr(self, "_reported_at", {})
         for device_id in self._watched:
+            # A device that has really reported in this run reached Home
+            # Assistant, whatever its upstream reads, so it leaves its
+            # verdict and the Problem List at once (rules WATCH-10,
+            # UP-04).
+            if device_id in reported:
+                continue
             stack = self._stack_for_device(device_id)
             if stack is not None and stack in waiting:
                 held.add(device_id)
                 continue
-            if stack is not None and BROKER_LABEL in waiting:
+            # A waiting broker holds only what reaches Home Assistant
+            # through it, MQTT's own and Tasmota's alike; a ZHA or
+            # Z-Wave device has nothing to wait for (rule UP-04).
+            if BROKER_LABEL in waiting and self._rides_the_broker(device_id):
                 held.add(device_id)
                 continue
             entry_id = self._entry_of_device.get(device_id)
@@ -1300,6 +1494,59 @@ class InterventionMixin:
         for key, count in self._entry_down_counts().items():
             if count > self._upstream_peak.get(key, 0):
                 self._upstream_peak[key] = count
+        self._remember_upstream_peaks()
+
+    def _remember_upstream_peaks(self) -> None:
+        """Keep each standing bridge, broker or integration entry
+        outage's worst count with its remembered state, so an outage
+        open across a restart still ends with the most devices it had
+        down at once (rules UP-11, STOR-15)."""
+        for stack, entry in (self.data.get(DATA_BRIDGE_SEEN) or {}).items():
+            if not isinstance(entry, dict):
+                continue
+            if entry.get(BRIDGE_SEEN_STATE) != BRIDGE_DOWN:
+                # Back, and its over push has gone: nothing is owed any
+                # more, so the outage's record goes, saved at once so a
+                # power cut later cannot bring the over push back
+                # (rule UP-09).
+                if (
+                    entry.get(_SEEN_PUSHED) is True
+                    and stack not in self._upstream_announced
+                ):
+                    for field in (_SEEN_DEVICES, _SEEN_WORST, _SEEN_PUSHED):
+                        entry.pop(field, None)
+                    self._dirty = True
+                    self._critical = True
+                continue
+            peak = self._upstream_peak.get(stack)
+            if peak is not None and entry.get(_SEEN_WORST) != peak:
+                entry[_SEEN_WORST] = peak
+                self._dirty = True
+        stored = self.data.get(DATA_BROKER_SEEN)
+        if self._broker_down_at is not None and isinstance(stored, dict):
+            peak = self._upstream_peak.get(BROKER_LABEL)
+            if peak is not None and stored.get(_SEEN_WORST) != peak:
+                stored[_SEEN_WORST] = peak
+                self._dirty = True
+        # Not before this run has taken its entry outages back, or a
+        # record still owed would read as ended.
+        entries = self._entry_outages() if self._integration_resumed else {}
+        for key, seen in list(entries.items()):
+            if not isinstance(seen, dict):
+                continue
+            domain, _, entry_id = key.partition("|")
+            if entry_id not in self._integration_told:
+                # Back, and its integration's over push has gone: the
+                # record goes, saved at once, as a bridge's (rule UP-09).
+                if domain not in self._upstream_announced:
+                    entries.pop(key, None)
+                    self._dirty = True
+                    self._critical = True
+                continue
+            peak = self._upstream_peak.get(key)
+            if peak is not None and seen.get(_SEEN_WORST) != peak:
+                seen[_SEEN_WORST] = peak
+                self._dirty = True
 
     def _entry_down_counts(self) -> dict[str, int]:
         """How many devices each down integration entry has down now.
@@ -1383,6 +1630,17 @@ class InterventionMixin:
             return len(getattr(self, "_wifi_ties", {}) or {})
         if name in self._stacks:
             return self._upstream_devices(name)
+        # While its outage stands, an integration's row counts its own
+        # down entries' devices, muted or not, not the whole
+        # integration's: one entry of two devices down reads "2 of 2",
+        # as the bus says, and two entries down together count both
+        # (rule UP-11).
+        entries = self._entries_behind_row(name)
+        if entries:
+            return len([
+                device_id for device_id in self._watched
+                if self._entry_of_device.get(device_id) in entries
+            ])
         # Every device of the integration, muted or not, as on a bridge
         # (round 30 of 0.26.6), except one that is its entry's only
         # device and muted for unavailable: that entry failing is the
@@ -1404,7 +1662,10 @@ class InterventionMixin:
         gate on the push both ask this by name, and a name that does
         not resolve leaves the row undated and the push unsent. A
         domain can hold several entries, so the outage is dated from
-        the first told entry to fall.
+        the first told entry to fall. An entry that is its only
+        device's is left out, as its outage claims nothing: that device
+        is judged on its own, so the entry has no row, start, phase or
+        push of the integration's (rules UP-05, UP-09).
         """
         if name == BROKER_LABEL:
             return self._broker_down_at
@@ -1415,6 +1676,8 @@ class InterventionMixin:
             return self._wifi_down_at
         stamps = []
         for entry_id in self._integration_told:
+            if self._entry_single(entry_id):
+                continue
             entry = self.hass.config_entries.async_get_entry(entry_id)
             if entry is None or entry.domain != name:
                 continue
@@ -1422,6 +1685,104 @@ class InterventionMixin:
             if first is not None:
                 stamps.append(first)
         return min(stamps) if stamps else None
+
+    def _integration_over_row(self, domain: str) -> dict[str, Any] | None:
+        """The integration's own outage as one ended row, for its over
+        push, or None where nothing stored says what it was.
+
+        Built from the returns of the entries its down push covered,
+        which keep their pushed mark until the over push goes: from the
+        first of them to fall to the last to come back, with the devices
+        behind them and the most that went down, added together, so the
+        over push agrees with the down push. An entry that is its one
+        device's had no part in that push and is left out (rules UP-09,
+        UP-11).
+        """
+        pushed = {
+            key.partition("|")[2]
+            for key, seen in self._entry_outages().items()
+            if key.partition("|")[0] == domain
+            and isinstance(seen, dict)
+            and seen.get(_SEEN_PUSHED) is True
+        }
+        if not pushed:
+            return None
+        last: dict[str, dict[str, Any]] = {}
+        for row in self.data.get(DATA_SYSTEM_EVENTS) or []:
+            if not isinstance(row, dict) or row.get(SYS_KIND) != SYS_INTEGRATION_UP:
+                continue
+            if row.get(SYS_SCOPE) != domain:
+                continue
+            entry_id, _device, how = parse_detail(row.get(SYS_DETAIL))
+            if entry_id in pushed and how not in (REMOVED, UNWATCHED):
+                last[entry_id] = row
+        starts: list[float] = []
+        ends: list[float] = []
+        devices = worst = 0
+        for row in last.values():
+            end = _moment(row.get(SYS_WHEN))
+            if end is None:
+                continue
+            span = row.get(SYS_DURATION)
+            if isinstance(span, bool) or not isinstance(span, (int, float)) or span < 0:
+                span = 0.0
+            starts.append(end - float(span))
+            ends.append(end)
+            devices += _count(row.get(SYS_DEVICES)) or 0
+            worst += _count(row.get(SYS_WORST)) or 0
+        if not ends:
+            return None
+        ended: dict[str, Any] = {
+            SYS_KIND: SYS_INTEGRATION_UP,
+            SYS_WHEN: max(ends),
+            SYS_SCOPE: domain,
+            SYS_DETAIL: None,
+            SYS_DURATION: max(ends) - min(starts),
+        }
+        if devices:
+            ended[SYS_DEVICES] = devices
+            ended[SYS_WORST] = min(worst, devices)
+        return ended
+
+    def _entry_single(self, entry_id: str) -> bool:
+        """Whether an entry's outage is its one device's.
+
+        Decided once, when it fell, from the count stored with it: an
+        entry that fell with several devices keeps its row, start, phase
+        and push until it returns, whatever is excluded, removed or
+        added meanwhile, and one that fell with one stays out of the
+        integration's row. A count missing or damaged, as in a file
+        from 0.27.4, falls back to the live count (rules UP-05, UP-09,
+        STOR-07).
+        """
+        domain = self._integration_domain.get(entry_id)
+        if domain is not None:
+            seen = self._entry_outages().get(f"{domain}|{entry_id}")
+            if isinstance(seen, dict):
+                devices = _count(seen.get(_SEEN_DEVICES))
+                if devices is not None:
+                    return devices == 1
+        return entry_id in getattr(self, "_entry_only_device", {})
+
+    def _entries_behind_row(self, domain: str) -> set[str]:
+        """The entries of an integration its row stands for: each entry
+        of several devices that is down, or back and still inside its
+        three-minute hand-back (rules UP-08, UP-11)."""
+        found: set[str] = set()
+        for entry_id in self._integration_told:
+            if (
+                self._entry_down_at.get(entry_id) is not None
+                and not self._entry_single(entry_id)
+            ):
+                found.add(entry_id)
+        for entry_id, held in self._integration_handback.items():
+            if self._integration_window_open(held) and not self._entry_single(entry_id):
+                found.add(entry_id)
+        return {
+            entry_id for entry_id in found
+            if (entry := self.hass.config_entries.async_get_entry(entry_id))
+            is not None and entry.domain == domain
+        }
 
     def _rides_the_broker(self, device_id: str) -> bool:
         """Whether a device reaches Home Assistant through the MQTT broker.
@@ -1518,6 +1879,16 @@ class InterventionMixin:
                 entry[BRIDGE_SEEN_SINCE] = since
             elif state != BRIDGE_DOWN:
                 entry.pop(BRIDGE_SEEN_SINCE, None)
+                # Its bus pair closes at the return (rule UP-10).
+                entry.pop(_SEEN_TOLD, None)
+                # An outage whose down was pushed keeps its record until
+                # its over push goes, at the end of the hand-back, so a
+                # restart inside it still sends the over push (rule
+                # UP-09); `_remember_upstream_peaks` clears it then.
+                if entry.get(_SEEN_PUSHED) is not True:
+                    entry.pop(_SEEN_DEVICES, None)
+                    entry.pop(_SEEN_WORST, None)
+                    entry.pop(_SEEN_PUSHED, None)
             self._dirty = True
 
     def _restore_bridge_state(self) -> None:
@@ -1527,6 +1898,17 @@ class InterventionMixin:
         sample. A stack with nothing stored stays absent, which is
         the fresh-start shape the sampler already handles by
         recording no transition (ruling #222).
+
+        A bridge or broker outage still open from before the restart is
+        resumed from when it went down, so it claims its devices and its
+        recovery carries its real length (rule UP-04). Its down was
+        announced before the restart, so it is not announced again; its
+        restored is owed and sent when it returns, even inside the
+        startup grace, with the count the down was announced with
+        (rule UP-10).
+
+        The recoveries held inside the last run's grace are taken back
+        earlier, before setup listens for reports (rule WATCH-10).
         """
         for stack, entry in (self.data.get(DATA_BRIDGE_SEEN) or {}).items():
             if not isinstance(entry, dict):
@@ -1535,16 +1917,118 @@ class InterventionMixin:
             if state not in BRIDGE_STATES or state == BRIDGE_UNKNOWN:
                 continue
             self._bridge_seen[stack] = state
-            since = entry.get(BRIDGE_SEEN_SINCE)
-            if state == BRIDGE_DOWN and isinstance(since, (int, float)):
+            since = _moment(entry.get(BRIDGE_SEEN_SINCE))
+            if state == BRIDGE_DOWN and since is not None:
                 self._bridge_down_at[stack] = since
-                # Still down across a restart, so still news when the
-                # grace ends (ruling #291). Without this its recovery
-                # would arrive with no failure before it, and an
-                # automation pairing the two would never close.
-                self._upstream_held[stack] = (
-                    UPSTREAM_BRIDGE, stack, float(since), None, stack
+                self._owe_upstream_restored(
+                    UPSTREAM_BRIDGE, stack, stack, since, entry
                 )
+            elif state != BRIDGE_DOWN and _SEEN_PUSHED in entry:
+                # Back before the restart, inside its hand-back, with
+                # its over push still owed: sent after the grace, as the
+                # phone heard its down (rule UP-09). Its bus pair closed
+                # at the return. Anything but a flag is dropped
+                # (rule STOR-07).
+                if entry.get(_SEEN_PUSHED) is True:
+                    devices = _count(entry.get(_SEEN_DEVICES))
+                    self._upstream_announced[stack] = (
+                        devices if devices is not None
+                        else self._upstream_devices(stack)
+                    )
+                else:
+                    for field in (_SEEN_DEVICES, _SEEN_WORST, _SEEN_PUSHED):
+                        entry.pop(field, None)
+        stored = self.data.get(DATA_BROKER_SEEN) or {}
+        since = _moment(stored.get(BRIDGE_SEEN_SINCE))
+        if (
+            self._broker_reader is not None
+            and stored.get(BRIDGE_SEEN_STATE) == BROKER_DOWN
+            and since is not None
+        ):
+            self._broker_down_at = since
+            self._owe_upstream_restored(
+                UPSTREAM_BROKER, BROKER_LABEL, None, since, stored
+            )
+
+    def _owe_upstream_restored(
+        self, kind: str, key: str, stack: str | None, since: float,
+        seen: dict[str, Any],
+        name: str | None = None,
+        counted: int | None = None,
+    ) -> None:
+        """Mark a resumed outage as announced, with its restored owed, or
+        hold it for the grace when its down was never told.
+
+        The count is the one stored with its down; a file written before
+        it was stored is counted as the house is now, or as `counted`
+        says where the caller knows better (rule UP-10). Its worst count
+        so far comes back too, so its end records the most it had down
+        at once (rule UP-11). A stored count that is not a count is
+        dropped, never trusted (rule STOR-07). `name` is what the bus
+        and the phone call it where that is not its key: an integration
+        entry's outage is keyed by its entry and named by its domain.
+        """
+        name = name or key
+        devices = _count(seen.get(_SEEN_DEVICES))
+        if devices is None:
+            seen.pop(_SEEN_DEVICES, None)
+            devices = (
+                counted if counted is not None
+                else self._upstream_devices(stack)
+            )
+        worst = _count(seen.get(_SEEN_WORST))
+        if worst is None:
+            seen.pop(_SEEN_WORST, None)
+        else:
+            self._upstream_peak[key] = max(worst, self._upstream_peak.get(key, 0))
+        # A down the bus never heard, one that fell inside the last
+        # run's grace, is held for this grace and told once after it;
+        # only a told down is owed its restored (rule UP-10). A file
+        # written before the flag was stored is taken as told, and so is
+        # a flag that is not a flag, which is dropped (rule STOR-07).
+        told = seen.get(_SEEN_TOLD)
+        if told is False:
+            self._upstream_held[key] = (kind, stack, since, devices, name)
+            return
+        if _SEEN_TOLD in seen and not isinstance(told, bool):
+            seen.pop(_SEEN_TOLD, None)
+        self._upstream_said[key] = (kind, stack, since, devices)
+        self._upstream_owed.add(key)
+        # A down already pushed to the phone is not pushed again after
+        # the grace; its over push is owed and follows when it is over
+        # (rule UP-09). Anything but a flag is dropped (rule STOR-07).
+        pushed = seen.get(_SEEN_PUSHED)
+        if pushed is True:
+            # Several entries of one integration share its push.
+            self._upstream_announced[name] = max(
+                devices, self._upstream_announced.get(name, 0)
+            )
+            self._upstream_phase[name] = "down"
+        elif not isinstance(pushed, bool):
+            seen.pop(_SEEN_PUSHED, None)
+
+    def _note_upstream_pushed(self, name: str) -> None:
+        """Remember with a standing outage that its down was pushed,
+        saved at once, so neither a restart nor a power cut right after
+        the push brings a second down push (rule UP-09).
+
+        An integration is pushed by its domain, so the mark goes on each
+        of that domain's entry outages still open."""
+        marks = [self._remembered_outage(name)]
+        if marks[0] is None:
+            # Not an entry that is its only device's: it has no part in
+            # the integration's push (rule UP-09).
+            marks = [
+                self._remembered_outage(key)
+                for key in self._entry_outages()
+                if key.partition("|")[0] == name
+                and not self._entry_single(key.partition("|")[2])
+            ]
+        for seen in marks:
+            if seen is not None and seen.get(_SEEN_PUSHED) is not True:
+                seen[_SEEN_PUSHED] = True
+                self._dirty = True
+                self._critical = True
 
     def _read_bridge(
         self, stack: str, reader: Any
@@ -1657,12 +2141,27 @@ class InterventionMixin:
                         began = float(onset)
                     self._bridge_down_at[stack] = began
                     self._remember_bridge_state(stack, state, since=began)
+                    # The count the down is announced with, kept so a
+                    # restart in the middle closes it with the same
+                    # count (rule UP-10).
+                    behind = self._upstream_devices(stack)
+                    seen = self.data[DATA_BRIDGE_SEEN][stack]
+                    seen[_SEEN_DEVICES] = behind
+                    seen[_SEEN_TOLD] = False  # until the bus hears it
+                    seen.pop(_SEEN_WORST, None)
+                    # Down again inside the hand-back is the outage the
+                    # phone already heard: it stays pushed until its
+                    # over push goes (rule UP-09).
+                    if stack in self._upstream_announced:
+                        seen[_SEEN_PUSHED] = True
+                    else:
+                        seen.pop(_SEEN_PUSHED, None)
                     self._begin_upstream_peak(stack)
                     self._record_system_event(
                         SYS_BRIDGE_DOWN, scope=stack
                     )
                     self._say_upstream_down(
-                        UPSTREAM_BRIDGE, stack, stack, began
+                        UPSTREAM_BRIDGE, stack, stack, began, behind
                     )
                 elif was == BRIDGE_DOWN:
                     self._upstream_from_start.discard(stack)
@@ -2145,6 +2644,10 @@ class InterventionMixin:
         reports as never having spoken in the meantime, which is the
         white noise the rule exists to end (ruling #261).
         """
+        # Recoveries from inside the grace go first, before anything
+        # this close announces, so the bus keeps their order
+        # (rule WATCH-10).
+        self._release_held_recoveries()
         self._rebuild_registry_view()
         # After the rebuild, so the awaiting-enable counts are taken
         # against the registry view this close has just corrected

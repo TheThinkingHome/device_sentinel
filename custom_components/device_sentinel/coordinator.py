@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: coordinator.py, Version: 0.27.4 (2026-10-25)
+# File: coordinator.py, Version: 0.27.5 (2026-10-26)
 
 """Coordinator for the Device Sentinel integration.
 
@@ -756,12 +756,24 @@ class DeviceSentinelCoordinator(
         # Outages announced before this run, whose recovery is owed even
         # inside the startup grace (round 33 of 0.26.6).
         self._upstream_owed: set[str] = set()
+        # Recoveries from inside the startup grace, fired when it closes
+        # (rule WATCH-10).
+        self._held_recoveries: list[dict[str, Any]] = []
         self._entry_only_device: dict[str, str] = {}
         self._integration_resumed = False
         self._entry_seen_loaded: set[str] = set()
-        # The Wi-Fi outage (0.20.3). Ties resolve at registry rebuild;
-        # nothing here persists, which is the recorded
-        # restart-mid-outage limitation.
+        # The Wi-Fi outage (0.20.3). Ties resolve at registry rebuild.
+        # An outage open across a restart is resumed once a run, from
+        # when it went down (rule UP-04).
+        self._wifi_resumed = False
+        self._wifi_resume_seed = False
+        # A resumed outage listens to its stored fallen trackers by
+        # entity id, apart from the ties (rule UP-16).
+        self._wifi_fallen_unsub: Any = None
+        # When each fallen tracker was first found without a usable
+        # state, and when the tie retry stops (rule UP-16).
+        self._wifi_fallen_unusable_since: dict[str, float] = {}
+        self._wifi_retry_until: float | None = None
         self._wifi_ties: dict[str, str] = {}
         # A wireless adapter nothing is watching with, read before
         # each report write for the brief's recommendations.
@@ -1814,6 +1826,11 @@ class DeviceSentinelCoordinator(
         # brief says (fourth adversarial round of 0.26.8).
         await self._sight_router_integrations()
 
+        # The recoveries held inside the last run's grace come back
+        # before this run listens for reports: one held while setup
+        # still waits would otherwise write the stored list with only
+        # itself, and the earlier ones would be lost (rule WATCH-10).
+        self._restore_held_recoveries()
         self._unsubs.append(
             self.hass.bus.async_listen(
                 "state_changed",
@@ -1932,6 +1949,9 @@ class DeviceSentinelCoordinator(
         # and came back across this restart still closes
         # (ruling #222).
         self._restore_bridge_state()
+        # A Wi-Fi outage remembered from before the restart is back
+        # before the Problem List is first written (rule UP-04).
+        self._resume_wifi_outage(dt_util.utcnow().timestamp())
 
         # The first write of the problem list, now that a device can
         # be matched to its bridge and a remembered outage is back
@@ -2071,6 +2091,17 @@ class DeviceSentinelCoordinator(
             )
             return None
 
+    async def _on_hass_stop(self, _event: Event) -> None:
+        """Home Assistant is stopping: store the open Wi-Fi outage first.
+
+        A restart does not unload the integration, so this is the only
+        write it gets; the outage is stored as it stands now, its push
+        and worst count included, before the stop's save, so the next
+        start resumes it whole (rule UP-04).
+        """
+        self._remember_wifi_outage()
+        await super()._on_hass_stop(_event)
+
     async def async_shutdown(self) -> None:
         """Stop listening and flush storage."""
         # First, so a minute check still running writes nothing from
@@ -2088,6 +2119,7 @@ class DeviceSentinelCoordinator(
         if self._wifi_unsub is not None:
             self._wifi_unsub()
             self._wifi_unsub = None
+        self._stop_wifi_fallen_listener()
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
@@ -2115,6 +2147,10 @@ class DeviceSentinelCoordinator(
         # records is that the integration was asked to stop, not which
         # door it left by.
         self.data[DATA_CLEAN_STOP] = True
+        # A Wi-Fi outage still open is stored as it stands at the stop,
+        # its worst count and announcements included, so the next start
+        # resumes it whole (rule UP-04).
+        self._remember_wifi_outage()
         # Unconditional. A routine save writes the hot
         # file alone and clears the dirty flag, so a stop that waited
         # for a flag would leave the main file behind by however long

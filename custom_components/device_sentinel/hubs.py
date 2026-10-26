@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: hubs.py, Version: 0.26.6 (2026-10-17)
+# File: hubs.py, Version: 0.27.5 (2026-10-25)
 
 """Judged by its hub (rulings #663 to #665).
 
@@ -33,9 +33,10 @@ September 2026, and the library's own code, 0.29.0). Nothing is
 imported, nothing is sent to the hub, and any failure to read it is no
 opinion: the hub is then judged as any other device, never down.
 
-A hub reads down once its session has been gone for two readings of
-the minute check (HUB_DOWN_CONFIRM_SECONDS), which rides past the
-library's own reconnect of a few seconds. Its entity changes only at a
+A hub reads down once two not-connected readings of the minute check
+stand HUB_DOWN_CONFIRM_SECONDS or more apart, which rides past the
+library's own reconnect of a few seconds; a reading with no opinion
+between them confirms nothing (rule STACK-09). Its entity changes only at a
 restart, so its silence is not judged either. A hub whose integration
 failed to start is the integration outage rule's (#445), as before.
 """
@@ -134,12 +135,16 @@ class HubMixin:
     _hub_of: dict[str, str]
     _hub_entry: dict[str, str]
     _hub_lost: dict[str, float]
+    _hub_confirmed: set[str]
     _hub_unreadable: set[str]
 
     def _init_hubs(self) -> None:
         self._hub_of = {}
         self._hub_entry = {}
         self._hub_lost = {}
+        # Hubs whose loss a second not-connected reading has confirmed
+        # (rule STACK-09).
+        self._hub_confirmed = set()
         self._hub_unreadable = set()
 
     def _rebuild_hubs(self, all_devices: Any) -> None:
@@ -183,6 +188,7 @@ class HubMixin:
         for hub in list(self._hub_lost):
             if hub not in hub_entry:
                 self._hub_lost.pop(hub, None)
+                self._hub_confirmed.discard(hub)
 
     @callback
     def _hub_button_filter(self, event_data: Any) -> bool:
@@ -334,26 +340,32 @@ class HubMixin:
             return None
 
     def _sample_hubs(self, now: float) -> None:
-        """Note when each hub's connection was first seen gone. Each minute."""
+        """Note when each hub's connection was first seen gone, and when a
+        second not-connected reading confirms it. Each minute."""
         for hub_id in list(self._hub_entry):
             connected = self._hub_connected(hub_id)
             if connected is False:
-                self._hub_lost.setdefault(hub_id, now)
+                first = self._hub_lost.setdefault(hub_id, now)
+                # Down takes a second not-connected reading at least the
+                # confirm time after the first, so the library's own
+                # reconnect of a few seconds is never an outage
+                # (rule STACK-09).
+                if now - first >= HUB_DOWN_CONFIRM_SECONDS:
+                    self._hub_confirmed.add(hub_id)
             elif connected is True:
                 self._hub_lost.pop(hub_id, None)
-            # No opinion keeps what was known: an entry between retries,
-            # reloading, or a reading that failed says nothing of the hub.
+                self._hub_confirmed.discard(hub_id)
+            # No opinion keeps what was known and confirms nothing: an
+            # entry between retries, reloading, or a reading that failed
+            # says nothing of the hub (rule STACK-09).
 
     def hub_down_since(self, hub_id: str, now: float | None = None) -> float | None:
-        """When a hub went down, once it has read down for the confirm time."""
-        first = self._hub_lost.get(hub_id)
-        if first is None:
+        """When a hub went down, dated from when it was first seen gone,
+        once a second not-connected reading has confirmed it (rule
+        STACK-09). `now` is kept for the callers; the readings decide."""
+        if hub_id not in self._hub_confirmed:
             return None
-        if now is None:
-            now = dt_util.utcnow().timestamp()
-        if now - first < HUB_DOWN_CONFIRM_SECONDS:
-            return None
-        return first
+        return self._hub_lost.get(hub_id)
 
     def _hub_category(self, device_id: str, record: dict[str, Any], now: float) -> str | None:
         """The verdict for a hub or a device it controls (#664).

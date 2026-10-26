@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: const.py, Version: 0.27.3 (2026-10-24)
+# File: const.py, Version: 0.27.5 (2026-10-26)
 
 """Constants for the Device Sentinel integration."""
 
@@ -854,6 +854,21 @@ DATA_WIFI_MEDIUM_REJECTED = "wifi_medium_rejected"
 # writes is dated from the outage, not from the end of this window,
 # or the timeline would lie about when the device went.
 WIFI_HANDBACK_SECONDS = 180.0
+# How long after setup the tie ladder is retried while no tie formed
+# and some tracker has no router state yet (James, 26 October 2026). A
+# router integration answers within minutes of a start; an orphaned
+# tracker reads Home Assistant's placeholder for ever, and without a
+# limit the ladder was rebuilt every minute for the life of the run.
+# After the window, ties form at the next registry change (rule UP-16).
+WIFI_TIE_RETRY_SECONDS = 30 * 60.0
+# How long a fallen tracker of an open outage may go without a usable
+# state (none, Home Assistant's placeholder, or unavailable or unknown)
+# before it is let go as if removed (James, 26 October 2026). A router
+# never reached again, or an integration disabled, leaves trackers that
+# can never come home, and held in the fallen set they kept the outage
+# open for ever, claiming every device that failed. Two hours is far
+# past any router reboot or reload (rule UP-16).
+WIFI_FALLEN_UNUSABLE_SECONDS = 2 * 3600.0
 # How far before its first tracker a Wi-Fi outage may reach for its
 # start (ruling #440). A router marks a client away only after its own
 # detection time, five minutes by default for UniFi and three for Home
@@ -2565,6 +2580,21 @@ DATA_BRIDGE_SEEN = "bridge_seen"
 # The broker state, kept across a restart for the same reason
 # (ruling #222 applied to #224).
 DATA_BROKER_SEEN = "broker_seen"
+# A Wi-Fi outage still open, kept across a restart so it is resumed as
+# it stood: its start, the trackers that fell in it, its worst count,
+# what its down announced and the scan's down mark. Absent while no
+# outage is open (James, 26 October 2026; rule UP-04).
+DATA_WIFI_OUTAGE = "wifi_outage"
+WIFI_OUTAGE_SINCE = "since"
+WIFI_OUTAGE_DECLARED = "declared"
+WIFI_OUTAGE_FALLEN = "fallen"
+WIFI_OUTAGE_WORST = "worst"
+WIFI_OUTAGE_DEVICES = "devices"
+WIFI_OUTAGE_TOLD = "told"
+WIFI_OUTAGE_PUSHED = "pushed"
+WIFI_OUTAGE_SCAN_DOWN = "scan_down"
+# When its recovery began, or None, so a restart does not begin it again.
+WIFI_OUTAGE_RECOVERING = "recovering"
 BRIDGE_SEEN_STATE = "state"
 BRIDGE_SEEN_SINCE = "since"
 
