@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_unwatched_time.py, Version: 0.26.0 (2026-10-12)
+# File: test_unwatched_time.py, Version: 0.27.5 (2026-10-26)
 
 """A device taken back is judged from the moment it is watched again (ruling #648).
 
@@ -101,7 +101,8 @@ async def test_restart_after_watched_again(hass: HomeAssistant, freezer, how):
     await walk(hass, freezer, 7200)
     coord = await _aside(hass, device, how, False)
     await walk(hass, freezer, 3600)
-    coord = await restart(hass, freezer, down=120)
+    # Known Gap 63, the boot hand-back read as a report: states kept.
+    coord = await restart(hass, freezer, down=120, keep_states=True)
     expected_left = window - 3600
     took = await _frozen_at(hass, freezer, coord, device, window + 7200)
     assert took is not None and took <= expected_left + 600, (

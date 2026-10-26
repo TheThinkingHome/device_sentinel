@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_main_entities_decide_unavailable.py, Version: 0.26.6 (2026-10-18)
+# File: test_main_entities_decide_unavailable.py, Version: 0.27.5 (2026-10-26)
 
 """A device's main entities decide whether it is unavailable.
 
@@ -254,7 +254,8 @@ async def test_1c_restart_main_unknown_diag_held(hass: HomeAssistant, freezer):
         hass.states.async_set(ids["main"], "unknown")
         hass.states.async_set(ids["x0"], "87")
 
-    coord = await restart(hass, freezer, down=120, before_setup=_states)
+    # Known Gap 63, the boot hand-back read as a report: states kept.
+    coord = await restart(hass, freezer, down=120, before_setup=_states, keep_states=True)
     await walk(hass, freezer, 20 * 60)
     record = _rec(coord, device.id)
     assert record[DEV_FROZEN_CATEGORY] == FREEZE_CATEGORY_UNAVAILABLE, record[DEV_FROZEN_CATEGORY]

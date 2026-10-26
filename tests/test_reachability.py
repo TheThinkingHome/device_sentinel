@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_reachability.py, Version: 0.23.12 (2026-09-27)
+# File: tests/test_reachability.py, Version: 0.27.5 (2026-10-25)
 
 """Zigbee2MQTT reachability, replayed against a captured fleet.
 
@@ -419,16 +419,14 @@ async def test_a_fresh_install_announces_no_recovery(
     assert back == []
 
 
-async def test_a_bridge_still_down_across_a_restart_is_announced(
+async def test_a_bridge_still_down_across_a_restart_is_announced_once(
     hass: HomeAssistant,
 ):
-    """An outage that survived a restart is still news (ruling #291).
+    """An outage that survived a restart was announced before it.
 
-    Nothing is said during the grace, because every integration is
-    still coming up and none of it is news. But an upstream still
-    down when the grace ends owes the bus an announcement, or its
-    eventual recovery arrives with no failure before it and an
-    automation pairing the two never closes.
+    So it is not announced down again after the grace; its recovery is
+    owed instead, and closes the down the bus heard before the restart
+    (rule UP-10).
     """
     coord = await setup_coordinator(hass)
     _past_grace(coord)
@@ -446,16 +444,20 @@ async def test_a_bridge_still_down_across_a_restart_is_announced(
     coord._sample_bridges()
     await hass.async_block_till_done()
 
-    assert len(down) == 1, down
-    assert down[0]["name"] == "z2m"
-    # Carrying when it really began, not when the grace ended.
-    assert down[0]["since"] < dt_util.now().isoformat()
-    assert back == []
+    assert down == [] and back == []
 
-    # Said once, not on every sample after.
+    # Not said on any sample after either.
     coord._sample_bridges()
     await hass.async_block_till_done()
-    assert len(down) == 1
+    assert down == []
+
+    # Its return closes it, dated from when it really began.
+    coord._bridge_readers["z2m"] = _stub_reader(BRIDGE_RUNNING)
+    coord._sample_bridges()
+    await hass.async_block_till_done()
+    assert down == [] and len(back) == 1
+    assert back[0]["name"] == "z2m"
+    assert back[0]["for_seconds"] >= 900
 
 
 async def test_the_count_is_membership_not_casualties(

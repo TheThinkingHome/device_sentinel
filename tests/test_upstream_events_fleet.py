@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_upstream_events_fleet.py, Version: 0.26.8 (2026-10-21)
+# File: tests/test_upstream_events_fleet.py, Version: 0.27.5 (2026-10-25)
 
 """The upstream event pair, driven against both reference fleets.
 
@@ -273,9 +273,9 @@ async def test_an_outage_that_spans_a_restart_is_announced_once(
 ):
     """Down before the restart, still down after, back later.
 
-    The grace is silent. What survived it is announced when it ends,
-    carrying the moment it really failed, so the recovery that
-    follows has a failure to pair with (ruling #291).
+    The down was announced before the restart, so the grace is silent
+    and its close announces nothing again; the return is told once,
+    with the outage's real length (rule UP-10).
     """
     coord, _count = await _fleet(hass, JAMES)
     seen = _heard(hass)
@@ -301,20 +301,20 @@ async def test_an_outage_that_spans_a_restart_is_announced_once(
     await hass.async_block_till_done()
     assert seen == [], seen
 
-    # Grace over: announced once, with the true onset.
+    # Grace over: not announced down a second time (rule UP-10).
     coord._grace_until = 0.0
     coord._sample_bridges()
     coord._sample_bridges()
     await hass.async_block_till_done()
-    assert [word for word, _ in seen] == ["down"], seen
-    said = dt_util.parse_datetime(seen[0][1]["since"])
-    assert abs(said.timestamp() - failed_at) < 2.0
+    assert seen == [], seen
 
     coord._bridge_readers["z2m"] = _stub(BRIDGE_RUNNING)
     coord._sample_bridges()
     await hass.async_block_till_done()
-    assert [word for word, _ in seen] == ["down", "restored"]
-    assert seen[1][1]["for_seconds"] > 3500.0
+    assert [word for word, _ in seen] == ["restored"]
+    said = dt_util.parse_datetime(seen[0][1]["since"])
+    assert abs(said.timestamp() - failed_at) < 2.0
+    assert seen[0][1]["for_seconds"] > 3500.0
 
 
 @pytest.mark.skipif(not JAMES.exists(), reason=FLEET_ABSENT)

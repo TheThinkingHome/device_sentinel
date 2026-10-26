@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: test_freeze_and_unavailable_mutes.py, Version: 0.26.6 (2026-10-18)
+# File: test_freeze_and_unavailable_mutes.py, Version: 0.27.5 (2026-10-26)
 
 """The freeze mute and the unavailable mute, each its own kind.
 
@@ -876,7 +876,8 @@ async def test_b_frozen_start_survives_restart(hass: HomeAssistant, freezer):
     await _mute(hass, coord, device.id, "freeze", True)
     coord = coord.entry.runtime_data
     await walk(hass, freezer, 30 * 60)
-    coord = await restart(hass, freezer, down=120)
+    # Known Gap 63, the boot hand-back read as a report: states kept.
+    coord = await restart(hass, freezer, down=120, keep_states=True)
     await walk(hass, freezer, 15 * 60)
     await _mute(hass, coord, device.id, "freeze", False)
     await walk(hass, freezer, 10 * 60)

@@ -3,7 +3,7 @@
 # Device Sentinel - a Home Assistant custom integration from The Thinking Home (xeazy.com)
 #   Article: https://xeazy.com/reliable-home-assistant-dead-sensor-detection/
 #   Repository: https://github.com/TheThinkingHome/device_sentinel
-# File: tests/test_outage_credit.py, Version: 0.26.0 (2026-10-12)
+# File: tests/test_outage_credit.py, Version: 0.27.5 (2026-10-25)
 
 """An outage is not a device's silence (#536).
 
@@ -296,3 +296,68 @@ async def test_the_rigs_own_outage_is_credited_whole(hass: HomeAssistant):
     ]
     silence = coord._observed_silence(record, back + 300, device.id, coord._freeze_window(record))
     assert abs(silence - 900) < 2
+
+
+# ------------------------------------------------------ one entry's outage
+
+
+def _entry_outage(entry_id, back, duration, domain="shelly"):
+    """An integration entry's outage, its fall and its return, as stored."""
+    from custom_components.device_sentinel.outage_detail import DOWN, make_detail
+
+    detail = make_detail(entry_id, None, DOWN)
+    fall = _event("integration_down", domain, back - duration)
+    rise = _event(SYS_INTEGRATION_UP, domain, back, duration)
+    fall["detail"] = rise["detail"] = detail
+    return [fall, rise]
+
+
+async def test_an_entry_outage_is_credited_to_its_own_devices_only(hass: HomeAssistant):
+    """Plug A's entry is down two hours; plug B, on its own entry of the
+    same integration, keeps its whole silence and learns its gap, and
+    plug A has the two hours taken out (rule UP-07)."""
+    from .outage_helpers import arm
+    from .test_outage_pairs_and_counts import _one as _plug
+
+    src_a, plug_a, _ = _plug(hass, "a")
+    src_b, plug_b, _ = _plug(hass, "b")
+    coord = await setup_coordinator(hass)
+    coord._grace_until = 0.0
+    now = dt_util.utcnow().timestamp()
+    records = {}
+    for plug in (plug_a, plug_b):
+        records[plug.id] = arm(coord, plug.id, rhythm=600.0)
+        records[plug.id][DEV_LAST_ACTIVITY] = now - 3 * HOUR
+    # Six minutes after both plugs' last report, inside their windows.
+    coord.data[DATA_SYSTEM_EVENTS] = _entry_outage(
+        src_a.entry_id, now - 0.9 * HOUR, 2 * HOUR
+    )
+    window = 900.0
+    silence_b = coord._observed_silence(records[plug_b.id], now, plug_b.id, window)
+    silence_a = coord._observed_silence(records[plug_a.id], now, plug_a.id, window)
+    assert abs(silence_b - 3 * HOUR) < 5, silence_b
+    assert abs(silence_a - HOUR) < 5, silence_a
+    # B's gap is not forgotten for A's outage; A's is.
+    last = now - 3 * HOUR
+    assert coord._gap_untrusted(plug_b.id, records[plug_b.id], last, now) is None
+    assert coord._gap_untrusted(plug_a.id, records[plug_a.id], last, now) is not None
+
+
+async def test_an_outage_row_with_no_entry_still_credits_its_integration(
+    hass: HomeAssistant,
+):
+    """A row from before entries were recorded names only the domain,
+    and keeps crediting the integration's devices as it always did."""
+    from .outage_helpers import arm
+    from .test_outage_pairs_and_counts import _one as _plug
+
+    _, plug, _ = _plug(hass, "a")
+    coord = await setup_coordinator(hass)
+    now = dt_util.utcnow().timestamp()
+    record = arm(coord, plug.id, rhythm=600.0)
+    record[DEV_LAST_ACTIVITY] = now - 3 * HOUR
+    coord.data[DATA_SYSTEM_EVENTS] = _outage(
+        SYS_INTEGRATION_UP, "shelly", now - 0.9 * HOUR, 2 * HOUR
+    )
+    silence = coord._observed_silence(record, now, plug.id, 900.0)
+    assert abs(silence - HOUR) < 5, silence
